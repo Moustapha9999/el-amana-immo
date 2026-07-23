@@ -1,0 +1,235 @@
+<h2 class="text-xl font-semibold mb-4">Paramétrage</h2>
+<p class="text-sm text-slate-500 mb-4">
+  Durée d'utilisation = donnée maître ; le taux linéaire est calculé (100 ÷ durée en années).
+</p>
+
+<mat-tab-group>
+  <mat-tab label="Agences">
+    <div class="py-4 grid gap-4 md:grid-cols-3">
+      <mat-form-field appearance="outline">
+        <mat-label>Code</mat-label>
+        <input matInput [formControl]="newAgence.controls.code" aria-label="Code agence" />
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Libellé</mat-label>
+        <input matInput [formControl]="newAgence.controls.libelle" aria-label="Libellé agence" />
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Ville</mat-label>
+        <input matInput [formControl]="newAgence.controls.ville" aria-label="Ville" />
+      </mat-form-field>
+    </div>
+    <button mat-flat-button color="primary" type="button" (click)="createAgence()" class="mb-4">Ajouter agence</button>
+
+    <table mat-table [dataSource]="agences()" class="w-full bg-white rounded shadow-sm">
+      <ng-container matColumnDef="code">
+        <th mat-header-cell *matHeaderCellDef>Code</th>
+        <td mat-cell *matCellDef="let row">{{ row.code }}</td>
+      </ng-container>
+      <ng-container matColumnDef="libelle">
+        <th mat-header-cell *matHeaderCellDef>Libellé</th>
+        <td mat-cell *matCellDef="let row">{{ row.libelle }}</td>
+      </ng-container>
+      <ng-container matColumnDef="ville">
+        <th mat-header-cell *matHeaderCellDef>Ville</th>
+        <td mat-cell *matCellDef="let row">{{ row.ville ?? '—' }}</td>
+      </ng-container>
+      <ng-container matColumnDef="active">
+        <th mat-header-cell *matHeaderCellDef>Active</th>
+        <td mat-cell *matCellDef="let row">{{ row.is_active ? 'Oui' : 'Non' }}</td>
+      </ng-container>
+      <tr mat-header-row *matHeaderRowDef="agenceColumns"></tr>
+      <tr mat-row *matRowDef="let row; columns: agenceColumns"></tr>
+    </table>
+  </mat-tab>
+
+  <mat-tab label="Types / catégories">
+    <div class="py-4">
+      @if (editingCategoryId()) {
+        <div class="border rounded p-4 mb-4 bg-slate-50">
+          <h3 class="font-medium mb-3">Modifier la catégorie</h3>
+          <div class="grid gap-3 md:grid-cols-2">
+            <mat-form-field appearance="outline">
+              <mat-label>Durée (années)</mat-label>
+              <input matInput type="number" [formControl]="categoryEdit.controls.duree_annees_defaut" aria-label="Durée années" />
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Taux linéaire calculé (%)</mat-label>
+              <input matInput readonly [value]="tauxPreview() != null ? (tauxPreview() | number: '1.2-4') : '—'" aria-label="Taux calculé" />
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Compte immobilisation (142…)</mat-label>
+              <mat-select [formControl]="categoryEdit.controls.compte_immobilisation" aria-label="Compte immobilisation">
+                @for (c of comptesImmo(); track c.id) {
+                  <mat-option [value]="c.numero">{{ compteLabel(c) }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Compte amortissement (148…)</mat-label>
+              <mat-select [formControl]="categoryEdit.controls.compte_amortissement" aria-label="Compte amortissement">
+                @for (c of comptesAmort(); track c.id) {
+                  <mat-option [value]="c.numero">{{ compteLabel(c) }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Compte dotation (681…)</mat-label>
+              <mat-select [formControl]="categoryEdit.controls.compte_dotation" aria-label="Compte dotation">
+                @for (c of comptesDotation(); track c.id) {
+                  <mat-option [value]="c.numero">{{ compteLabel(c) }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Mode</mat-label>
+              <mat-select [formControl]="categoryEdit.controls.mode_amortissement_defaut" aria-label="Mode amortissement">
+                <mat-option value="lineaire">Linéaire</mat-option>
+                <mat-option value="degressif">Dégressif</mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+          <div class="flex gap-2 mt-2">
+            <button mat-flat-button color="primary" type="button" (click)="saveCategory()">Enregistrer</button>
+            <button mat-button type="button" (click)="cancelEditCategory()">Annuler</button>
+          </div>
+        </div>
+      }
+
+      <table mat-table [dataSource]="categories()" class="w-full bg-white rounded shadow-sm">
+        <ng-container matColumnDef="famille">
+          <th mat-header-cell *matHeaderCellDef>Type</th>
+          <td mat-cell *matCellDef="let row">
+            <span class="font-medium">{{ row.famille }}</span>
+            <span class="text-xs text-slate-500 block">{{ row.code }}</span>
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="comptes">
+          <th mat-header-cell *matHeaderCellDef>Comptes</th>
+          <td mat-cell *matCellDef="let row">
+            {{ row.compte_immobilisation }}
+            @if (row.compte_amortissement) {
+              <span class="text-slate-500"> / {{ row.compte_amortissement }} / {{ row.compte_dotation }}</span>
+            }
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="duree">
+          <th mat-header-cell *matHeaderCellDef>Durée (ans)</th>
+          <td mat-cell *matCellDef="let row">{{ row.amortissable ? (row.duree_annees_defaut ?? '—') : 'N/A' }}</td>
+        </ng-container>
+        <ng-container matColumnDef="taux">
+          <th mat-header-cell *matHeaderCellDef>Taux calc. (%)</th>
+          <td mat-cell *matCellDef="let row">
+            @if (row.amortissable && tauxForCategory(row) != null) {
+              {{ tauxForCategory(row) | number: '1.2-4' }}
+            } @else {
+              —
+            }
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef></th>
+          <td mat-cell *matCellDef="let row">
+            <button mat-button type="button" (click)="startEditCategory(row)">Modifier</button>
+          </td>
+        </ng-container>
+        <tr mat-header-row *matHeaderRowDef="catColumns"></tr>
+        <tr mat-row *matRowDef="let row; columns: catColumns"></tr>
+      </table>
+    </div>
+  </mat-tab>
+
+  <mat-tab label="Plan comptable">
+    <table mat-table [dataSource]="comptes()" class="w-full bg-white rounded shadow-sm mt-4">
+      <ng-container matColumnDef="numero">
+        <th mat-header-cell *matHeaderCellDef>N°</th>
+        <td mat-cell *matCellDef="let row">{{ row.numero }}</td>
+      </ng-container>
+      <ng-container matColumnDef="libelle">
+        <th mat-header-cell *matHeaderCellDef>Libellé</th>
+        <td mat-cell *matCellDef="let row">{{ row.libelle }}</td>
+      </ng-container>
+      <ng-container matColumnDef="type">
+        <th mat-header-cell *matHeaderCellDef>Nature</th>
+        <td mat-cell *matCellDef="let row">{{ row.type_compte }}</td>
+      </ng-container>
+      <tr mat-header-row *matHeaderRowDef="compteColumns"></tr>
+      <tr mat-row *matRowDef="let row; columns: compteColumns"></tr>
+    </table>
+  </mat-tab>
+
+  <mat-tab label="Amortissement (global)">
+    <div class="py-4 grid gap-3 md:grid-cols-2 max-w-2xl">
+      <mat-form-field appearance="outline">
+        <mat-label>Périodicité par défaut</mat-label>
+        <mat-select [formControl]="paramGlobal.controls.periodicite" aria-label="Périodicité">
+          <mat-option value="mensuel">Mensuel</mat-option>
+          <mat-option value="trimestriel">Trimestriel</mat-option>
+          <mat-option value="annuel">Annuel</mat-option>
+        </mat-select>
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Journal</mat-label>
+        <input matInput [formControl]="paramGlobal.controls.journal_code" aria-label="Code journal" />
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Compte dotation défaut (681…)</mat-label>
+        <mat-select [formControl]="paramGlobal.controls.compte_dotation_defaut" aria-label="Compte dotation défaut">
+          @for (c of comptesDotation(); track c.id) {
+            <mat-option [value]="c.numero">{{ compteLabel(c) }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Compte amortissement défaut (148…)</mat-label>
+        <mat-select [formControl]="paramGlobal.controls.compte_amortissement_defaut" aria-label="Compte amortissement défaut">
+          @for (c of comptesAmort(); track c.id) {
+            <mat-option [value]="c.numero">{{ compteLabel(c) }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+    </div>
+    <button mat-flat-button color="primary" type="button" (click)="saveParamGlobal()">Enregistrer</button>
+  </mat-tab>
+
+  <mat-tab label="Sécurité (2FA)">
+    <div class="py-4 max-w-xl space-y-4">
+      <p class="text-sm text-slate-600">
+        Authentification TOTP (Google Authenticator, Microsoft Authenticator, etc.).
+      </p>
+      @if (totpEnabled()) {
+        <p class="text-sm text-green-700 font-medium">2FA activée sur votre compte.</p>
+        <div class="grid gap-3" [formGroup]="totpDisableForm">
+          <mat-form-field appearance="outline">
+            <mat-label>Code 2FA</mat-label>
+            <input matInput formControlName="code" aria-label="Code pour désactiver 2FA" />
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Mot de passe</mat-label>
+            <input matInput type="password" formControlName="password" aria-label="Mot de passe" />
+          </mat-form-field>
+          <button mat-stroked-button color="warn" type="button" (click)="disableTotp()">Désactiver 2FA</button>
+        </div>
+      } @else {
+        @if (!totpSetupSecret()) {
+          <button mat-flat-button color="primary" type="button" (click)="startTotpSetup()">Configurer 2FA</button>
+        } @else {
+          @if (totpQrSrc()) {
+            <div class="flex flex-col items-start gap-2">
+              <img [src]="totpQrSrc()!" width="200" height="200" alt="QR code authenticator 2FA" class="border rounded bg-white p-2" />
+              <p class="text-xs text-slate-500">Scannez avec votre application authenticator</p>
+            </div>
+          }
+          <p class="text-sm"><span class="font-medium">Secret (saisie manuelle) :</span> {{ totpSetupSecret() }}</p>
+          <div class="flex gap-2 items-start" [formGroup]="totpEnableForm">
+            <mat-form-field appearance="outline" class="flex-1">
+              <mat-label>Code de vérification</mat-label>
+              <input matInput formControlName="code" aria-label="Code vérification 2FA" />
+            </mat-form-field>
+            <button mat-flat-button color="primary" type="button" (click)="confirmTotpEnable()" class="mt-2">Activer</button>
+          </div>
+        }
+      }
+    </div>
+  </mat-tab>
+</mat-tab-group>

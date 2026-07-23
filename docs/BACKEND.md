@@ -1,0 +1,46 @@
+# Backend — structure
+
+```
+backend/app/
+├── api/
+│   ├── deps.py              # JWT, RBAC
+│   └── v1/
+│       ├── router.py
+│       └── endpoints/       # auth, users, organisation, immobilisations, comptabilite, operations, reporting
+├── core/                    # config, security, exceptions, pagination
+├── db/                      # Base SQLAlchemy, session async
+├── models/                  # domaine découpé (auth, organisation, immobilisation, comptabilite, operations, audit)
+├── schemas/                 # Pydantic v2 par domaine
+├── repositories/          # BaseRepository (CRUD générique)
+├── services/                # logique métier / cas d'usage
+├── storage/                 # fichiers locaux (pièces jointes)
+└── workers/                 # Celery
+```
+
+## Scripts
+
+- `scripts/init_db.py` — création des tables
+- `scripts/seed_data.py` — admin, agence, rôles (+ plan El Amana à la première installation)
+- `scripts/seed_plan_comptable_el_amana.py` — plan 140/142/147/148/681 et 14 types (idempotent)
+
+Migration Alembic (base existante Supabase) :
+
+```powershell
+cd backend
+$env:PYTHONPATH="."
+.\.venv\Scripts\alembic upgrade head
+.\.venv\Scripts\python scripts/seed_plan_comptable_el_amana.py
+```
+
+Référentiel métier : `app/data/el_amana_referentiel.py`.
+
+## Démarrage
+
+```powershell
+cd backend
+$env:DATABASE_URL="postgresql+asyncpg://immo_user:immo_pass@localhost:5432/immobilisations"
+python scripts/seed_data.py
+uvicorn app.main:app --reload
+```
+
+Documentation API : http://localhost:8000/docs

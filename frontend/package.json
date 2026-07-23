@@ -1,0 +1,11 @@
+{
+  "name": "el-amana-frontend",
+  "private": true,
+  "description": "Wrapper — l'app Angular est dans angular20/",
+  "scripts": {
+    "start": "npm start --prefix angular20",
+    "build": "npm run build --prefix angular20",
+    "watch": "npm run watch --prefix angular20",
+    "install:app": "npm install --prefix angular20"
+  }
+}

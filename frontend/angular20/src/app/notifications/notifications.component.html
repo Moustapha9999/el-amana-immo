@@ -1,0 +1,49 @@
+<app-page-header title="Notifications" subtitle="Fin d'amortissement et écarts inventaire.">
+  @if (unread() > 0) {
+    <button mat-stroked-button type="button" (click)="markAllRead()">Tout marquer comme lu</button>
+  }
+</app-page-header>
+
+<p class="text-sm text-slate-600 mb-4 -mt-2">
+  Consultez aussi
+  <a routerLink="/inventaire" class="app-link">Inventaire</a>
+  et
+  <a routerLink="/amortissements" class="app-link">Amortissements</a>.
+</p>
+
+<div class="app-panel">
+  <table mat-table [dataSource]="rows()" class="w-full app-table">
+    <ng-container matColumnDef="created_at">
+      <th mat-header-cell *matHeaderCellDef>Date</th>
+      <td mat-cell *matCellDef="let row">{{ row.created_at | date: 'dd/MM/yyyy HH:mm' }}</td>
+    </ng-container>
+    <ng-container matColumnDef="type">
+      <th mat-header-cell *matHeaderCellDef>Type</th>
+      <td mat-cell *matCellDef="let row">{{ row.type_notification }}</td>
+    </ng-container>
+    <ng-container matColumnDef="titre">
+      <th mat-header-cell *matHeaderCellDef>Titre</th>
+      <td mat-cell *matCellDef="let row">{{ row.titre }}</td>
+    </ng-container>
+    <ng-container matColumnDef="message">
+      <th mat-header-cell *matHeaderCellDef>Message</th>
+      <td mat-cell *matCellDef="let row">{{ row.message }}</td>
+    </ng-container>
+    <ng-container matColumnDef="actions">
+      <th mat-header-cell *matHeaderCellDef></th>
+      <td mat-cell *matCellDef="let row">
+        @if (!row.lu) {
+          <button mat-button type="button" (click)="markRead(row)">Marquer lu</button>
+        } @else {
+          <span class="text-slate-400 text-xs">Lu</span>
+        }
+      </td>
+    </ng-container>
+    <tr mat-header-row *matHeaderRowDef="columns"></tr>
+    <tr mat-row *matRowDef="let row; columns: columns" [class.row-unread]="!row.lu"></tr>
+  </table>
+</div>
+
+@if (!rows().length) {
+  <p class="text-sm text-slate-500 mt-4">Aucune notification.</p>
+}

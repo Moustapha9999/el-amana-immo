@@ -1,0 +1,37 @@
+<div class="mb-4">
+  <h2 class="text-xl font-semibold">Réévaluations</h2>
+  <p class="text-sm text-slate-500 mt-1">Historique des mises à jour de valeur brute (§7)</p>
+</div>
+
+<table mat-table [dataSource]="rows()" class="w-full bg-white rounded shadow-sm">
+  <ng-container matColumnDef="date">
+    <th mat-header-cell *matHeaderCellDef>Date</th>
+    <td mat-cell *matCellDef="let row">{{ row.date_reevaluation | date: 'dd/MM/yyyy' }}</td>
+  </ng-container>
+  <ng-container matColumnDef="code">
+    <th mat-header-cell *matHeaderCellDef>Code</th>
+    <td mat-cell *matCellDef="let row">{{ row.code_inventaire ?? '—' }}</td>
+  </ng-container>
+  <ng-container matColumnDef="designation">
+    <th mat-header-cell *matHeaderCellDef>Désignation</th>
+    <td mat-cell *matCellDef="let row">{{ row.designation ?? '—' }}</td>
+  </ng-container>
+  <ng-container matColumnDef="ancienne">
+    <th mat-header-cell *matHeaderCellDef>Ancienne VBC</th>
+    <td mat-cell *matCellDef="let row">{{ row.ancienne_valeur | number: '1.2-2' }}</td>
+  </ng-container>
+  <ng-container matColumnDef="nouvelle">
+    <th mat-header-cell *matHeaderCellDef>Nouvelle VBC</th>
+    <td mat-cell *matCellDef="let row">{{ row.nouvelle_valeur | number: '1.2-2' }}</td>
+  </ng-container>
+  <ng-container matColumnDef="actions">
+    <th mat-header-cell *matHeaderCellDef></th>
+    <td mat-cell *matCellDef="let row">
+      <a mat-button [routerLink]="['/immobilisations', row.immobilisation_id]">Fiche</a>
+    </td>
+  </ng-container>
+  <tr mat-header-row *matHeaderRowDef="columns"></tr>
+  <tr mat-row *matRowDef="let row; columns: columns"></tr>
+</table>
+
+<p class="text-sm text-slate-500 mt-4">Nouvelle réévaluation : fiche immobilisation → section « Réévaluation & ajustements ».</p>

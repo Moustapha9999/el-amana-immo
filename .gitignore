@@ -1,0 +1,45 @@
+# Environment
+.env
+.env.local
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.egg-info/
+dist/
+build/
+
+# Node / Angular
+node_modules/
+frontend/angular20/.angular/
+frontend/angular20/dist/
+frontend/angular20/out-tsc/
+*.log
+npm-debug.log*
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Docker / DB
+database/backup/*.sql
+database/backup/*.dump
+!database/backup/.gitkeep
+
+# OS
+Thumbs.db
+.Desktop.ini
+
+# Uploads
+backend/storage/uploads/*
+!backend/storage/uploads/.gitkeep

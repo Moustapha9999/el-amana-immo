@@ -1,0 +1,44 @@
+<div class="login-screen">
+  <svg
+    class="login-screen__bg"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 1440 900"
+    preserveAspectRatio="xMidYMid slice"
+    aria-hidden="true"
+  >
+    <rect width="1440" height="900" fill="#1a5278" />
+    <polygon points="0,0 480,0 320,280 0,180" fill="#21618c" />
+    <polygon points="480,0 960,0 820,220 320,280" fill="#2874a6" />
+    <polygon points="960,0 1440,0 1440,200 820,220" fill="#1f618d" />
+    <polygon points="0,180 320,280 180,520 0,420" fill="#2e86c1" />
+    <polygon points="320,280 820,220 720,480 180,520" fill="#3498db" />
+    <polygon points="820,220 1440,200 1440,450 720,480" fill="#2980b9" />
+    <polygon points="0,420 180,520 80,720 0,650" fill="#1a5278" />
+    <polygon points="180,520 720,480 620,780 80,720" fill="#2471a3" />
+    <polygon points="720,480 1440,450 1440,720 620,780" fill="#2e86c1" />
+    <polygon points="0,650 80,720 0,900 0,900" fill="#154360" />
+    <polygon points="80,720 620,780 520,900 0,900" fill="#1f618d" />
+    <polygon points="620,780 1440,720 1440,900 520,900" fill="#21618c" />
+    <polygon points="0,0 0,180 120,90 200,0" fill="#3498db" opacity="0.85" />
+    <polygon points="1100,0 1440,0 1440,120 980,80" fill="#5dade2" opacity="0.5" />
+    <polygon points="200,0 320,280 0,180 0,0" fill="#1a5278" />
+    <polygon points="720,480 900,600 620,780" fill="#2874a6" opacity="0.9" />
+    <polygon points="900,600 1200,550 1440,720 620,780" fill="#2e86c1" opacity="0.75" />
+  </svg>
+
+  <div class="login-screen__layout">
+    <aside class="login-screen__brand">
+      <div class="login-screen__brand-body">
+        <h1 class="login-screen__brand-title">Banque El Amana</h1>
+        <p class="login-screen__brand-tagline">Gestion du parc immobilier</p>
+      </div>
+      <p class="login-screen__copyright">Copyright © 2026 Banque El Amana — Tous droits réservés.</p>
+    </aside>
+
+    <div class="login-screen__divider" aria-hidden="true"></div>
+
+    <div class="login-screen__form-area">
+      <ng-content />
+    </div>
+  </div>
+</div>

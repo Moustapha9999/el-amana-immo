@@ -1,0 +1,13 @@
+@import "tailwindcss";
+@source "./**/*.{html,ts}";
+
+@theme {
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-500: #3498db;
+  --color-brand-600: #2874a6;
+  --color-brand-700: #21618c;
+  --color-brand-800: #1a5278;
+  --color-brand-900: #154360;
+  --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
+}

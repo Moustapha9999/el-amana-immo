@@ -1,0 +1,520 @@
+<div class="mb-4 flex items-center justify-between gap-4">
+
+  <div>
+
+    <a routerLink="/immobilisations" class="text-sm text-slate-600 hover:underline">← Liste</a>
+
+    <h2 class="text-xl font-semibold mt-1">{{ id() ? 'Fiche immobilisation' : 'Nouvelle immobilisation' }}</h2>
+
+  </div>
+
+</div>
+
+
+
+<form [formGroup]="form" (ngSubmit)="submit()" class="grid gap-4 lg:grid-cols-2">
+
+  <mat-card class="p-4 lg:col-span-2">
+
+    <h3 class="text-sm font-semibold text-slate-700 mb-3">Identification (§5.1)</h3>
+
+    <div class="grid gap-3 md:grid-cols-2">
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Code inventaire</mat-label>
+
+        <input matInput formControlName="code_inventaire" [readonly]="!!id()" aria-label="Code inventaire" />
+
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Type El Amana</mat-label>
+
+        <mat-select formControlName="categorie_id" aria-label="Type El Amana">
+
+          @for (cat of categories(); track cat.id) {
+
+            <mat-option [value]="cat.id">{{ cat.famille }} ({{ cat.compte_immobilisation }})</mat-option>
+
+          }
+
+        </mat-select>
+
+      </mat-form-field>
+
+      @if (id() && qrImageSrc(); as src) {
+        <div class="md:col-span-2 flex flex-wrap items-center gap-4 rounded border border-slate-200 p-3 bg-slate-50">
+          <img [src]="src" width="120" height="120" alt="QR code inventaire" />
+          <div class="text-sm text-slate-600">
+            <p class="font-medium">Étiquette inventaire</p>
+            <p class="text-xs font-mono mt-1">{{ qrPayload() }}</p>
+            <p class="text-xs text-slate-500 mt-1">À scanner depuis le menu Inventaire</p>
+          </div>
+        </div>
+      }
+
+      <mat-form-field appearance="outline" class="w-full md:col-span-2">
+
+        <mat-label>Désignation</mat-label>
+
+        <input matInput formControlName="designation" aria-label="Désignation" />
+
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>N° facture</mat-label>
+
+        <input matInput formControlName="numero_facture" aria-label="N° facture" />
+
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Quantité</mat-label>
+
+        <input matInput type="number" formControlName="quantite" min="1" aria-label="Quantité" />
+
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Statut</mat-label>
+
+        <mat-select formControlName="statut" aria-label="Statut">
+
+          @for (opt of statutOptions; track opt.value) {
+
+            <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
+
+          }
+
+        </mat-select>
+
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Agence</mat-label>
+
+        <mat-select formControlName="agence_id" aria-label="Agence">
+
+          <mat-option value="">—</mat-option>
+
+          @for (a of agences(); track a.id) {
+
+            <mat-option [value]="a.id">{{ a.libelle }}</mat-option>
+
+          }
+
+        </mat-select>
+
+      </mat-form-field>
+
+    </div>
+
+  </mat-card>
+
+
+
+  <mat-card class="p-4">
+
+    <h3 class="text-sm font-semibold text-slate-700 mb-3">Dates & montants</h3>
+
+    <div class="grid gap-3">
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Date d'acquisition</mat-label>
+
+        <input matInput type="date" formControlName="date_acquisition" aria-label="Date d'acquisition" />
+
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Date de mise en service</mat-label>
+
+        <input matInput type="date" formControlName="date_mise_en_service" aria-label="Date de mise en service" />
+
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Valeur brute (MRU)</mat-label>
+
+        <input matInput type="number" formControlName="valeur_brute" step="0.01" aria-label="Valeur brute (MRU)" />
+
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Valeur résiduelle (MRU)</mat-label>
+
+        <input matInput type="number" formControlName="valeur_residuelle" step="0.01" aria-label="Valeur résiduelle (MRU)" />
+
+      </mat-form-field>
+
+    </div>
+
+  </mat-card>
+
+
+
+  <mat-card class="p-4">
+
+    <h3 class="text-sm font-semibold text-slate-700 mb-3">Amortissement</h3>
+
+    <div class="grid gap-3">
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Durée (années)</mat-label>
+
+        <input matInput type="number" formControlName="duree_annees" min="0" aria-label="Durée (années)" />
+
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Taux linéaire calculé (%)</mat-label>
+
+        <input matInput readonly [value]="tauxCalcule() != null ? (tauxCalcule() | number: '1.2-4') : '—'" aria-label="Taux linéaire calculé" />
+
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Mode</mat-label>
+
+        <mat-select formControlName="mode_amortissement" aria-label="Mode">
+
+          @for (m of modeOptions; track m.value) {
+
+            <mat-option [value]="m.value">{{ m.label }}</mat-option>
+
+          }
+
+        </mat-select>
+
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Périodicité</mat-label>
+
+        <mat-select formControlName="periodicite" aria-label="Périodicité">
+
+          @for (p of periodiciteOptions; track p.value) {
+
+            <mat-option [value]="p.value">{{ p.label }}</mat-option>
+
+          }
+
+        </mat-select>
+
+      </mat-form-field>
+
+    </div>
+
+  </mat-card>
+
+
+
+  <mat-card class="p-4 lg:col-span-2">
+
+    <h3 class="text-sm font-semibold text-slate-700 mb-3">Comptes (plan El Amana)</h3>
+
+    <div class="grid gap-3 md:grid-cols-3">
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Compte immobilisation</mat-label>
+
+        <input matInput formControlName="compte_immobilisation" aria-label="Compte immobilisation" />
+
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Compte amortissement</mat-label>
+
+        <input matInput formControlName="compte_amortissement" aria-label="Compte amortissement" />
+
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-full">
+
+        <mat-label>Compte dotation</mat-label>
+
+        <input matInput formControlName="compte_dotation" aria-label="Compte dotation" />
+
+      </mat-form-field>
+
+    </div>
+
+    @if (selectedCategory(); as cat) {
+
+      <p class="text-xs text-slate-500 mt-2">
+
+        @if (cat.amortissable) {
+
+          Type amortissable — paramètres par défaut Banque El Amana.
+
+        } @else {
+
+          Type non amortissable — pas de dotation.
+
+        }
+
+      </p>
+
+    }
+
+  </mat-card>
+
+
+
+  <mat-card class="p-4 lg:col-span-2">
+
+    <mat-form-field appearance="outline" class="w-full">
+
+      <mat-label>Observations</mat-label>
+
+      <textarea matInput rows="3" formControlName="observations" aria-label="Observations"></textarea>
+
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="w-full">
+
+      <mat-label>Localisation</mat-label>
+
+      <input matInput formControlName="localisation" aria-label="Localisation" />
+
+    </mat-form-field>
+
+  </mat-card>
+
+
+
+  @if (id()) {
+    <mat-card class="p-4 lg:col-span-2">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <h3 class="text-sm font-semibold text-slate-700">Amortissement & comptabilisation (§5.2)</h3>
+        <div class="flex flex-wrap gap-2">
+          @if (canMettreEnService()) {
+            <button mat-stroked-button type="button" (click)="mettreEnService()" [disabled]="workflowBusy()">
+              Mettre en service
+            </button>
+          }
+          @if (statutActuel() === 'en_service' && selectedCategory()?.amortissable) {
+            <button mat-stroked-button type="button" (click)="regenererPlan()" [disabled]="workflowBusy()">
+              Régénérer le plan
+            </button>
+          }
+        </div>
+      </div>
+      @if (dateComptabilisation()) {
+        <p class="text-xs text-slate-500 mb-3">
+          Dernière comptabilisation : {{ dateComptabilisation() }}
+        </p>
+      }
+      @if (amortissements().length === 0) {
+        <p class="text-sm text-slate-500">Aucune ligne d'amortissement. Mettez l'actif en service pour générer le plan.</p>
+      } @else {
+        <table mat-table [dataSource]="amortissements()" class="w-full">
+          <ng-container matColumnDef="periode">
+            <th mat-header-cell *matHeaderCellDef>Période</th>
+            <td mat-cell *matCellDef="let row">{{ row.periode }}</td>
+          </ng-container>
+          <ng-container matColumnDef="montant">
+            <th mat-header-cell *matHeaderCellDef>Dotation</th>
+            <td mat-cell *matCellDef="let row">{{ row.montant | number: '1.2-2' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="cumul">
+            <th mat-header-cell *matHeaderCellDef>Cumul</th>
+            <td mat-cell *matCellDef="let row">{{ row.cumul | number: '1.2-2' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="vnc">
+            <th mat-header-cell *matHeaderCellDef>VNC</th>
+            <td mat-cell *matCellDef="let row">{{ row.vnc | number: '1.2-2' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="statut">
+            <th mat-header-cell *matHeaderCellDef>Statut</th>
+            <td mat-cell *matCellDef="let row">{{ row.valide ? 'Comptabilisée' : 'À comptabiliser' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef></th>
+            <td mat-cell *matCellDef="let row">
+              @if (!row.valide && !row.simule) {
+                <button mat-button type="button" (click)="comptabiliser(row)" [disabled]="workflowBusy()">
+                  Comptabiliser
+                </button>
+              }
+            </td>
+          </ng-container>
+          <tr mat-header-row *matHeaderRowDef="amortissementColumns"></tr>
+          <tr mat-row *matRowDef="let row; columns: amortissementColumns"></tr>
+        </table>
+      }
+    </mat-card>
+  }
+
+
+
+  @if (id() && canEvolution()) {
+    <mat-card class="p-4 lg:col-span-2" [formGroup]="reevalForm">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Réévaluation & ajustements (§7)</h3>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div class="grid gap-3">
+          <p class="text-sm font-medium text-slate-600">Réévaluation de la valeur brute</p>
+          <mat-form-field appearance="outline" class="w-full">
+            <mat-label>Date</mat-label>
+            <input matInput type="date" formControlName="date_reevaluation" aria-label="Date réévaluation" />
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="w-full">
+            <mat-label>Nouvelle valeur brute (MRU)</mat-label>
+            <input matInput type="number" formControlName="nouvelle_valeur" step="0.01" aria-label="Nouvelle valeur" />
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="w-full">
+            <mat-label>Justificatif</mat-label>
+            <input matInput formControlName="justificatif" aria-label="Justificatif réévaluation" />
+          </mat-form-field>
+          <button mat-stroked-button type="button" (click)="enregistrerReevaluation()" [disabled]="workflowBusy()">
+            Enregistrer la réévaluation
+          </button>
+        </div>
+        <div class="grid gap-3" [formGroup]="ajustementForm">
+          <p class="text-sm font-medium text-slate-600">Ajustement / reprise (trace audit)</p>
+          <mat-form-field appearance="outline" class="w-full">
+            <mat-label>Type</mat-label>
+            <mat-select formControlName="type_ajustement" aria-label="Type ajustement">
+              <mat-option value="correction">Correction valeur (+/− montant)</mat-option>
+              <mat-option value="reprise">Reprise sur amortissement</mat-option>
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="w-full">
+            <mat-label>Date</mat-label>
+            <input matInput type="date" formControlName="date_ajustement" aria-label="Date ajustement" />
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="w-full">
+            <mat-label>Montant (MRU)</mat-label>
+            <input matInput type="number" formControlName="montant" step="0.01" aria-label="Montant ajustement" />
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="w-full">
+            <mat-label>Commentaire</mat-label>
+            <input matInput formControlName="commentaire" aria-label="Commentaire ajustement" />
+          </mat-form-field>
+          <button mat-stroked-button type="button" (click)="enregistrerAjustement()" [disabled]="workflowBusy()">
+            Enregistrer l'ajustement
+          </button>
+        </div>
+      </div>
+      <div class="mt-4 grid gap-3 md:grid-cols-2" [formGroup]="transfertForm">
+        <p class="text-sm font-medium text-slate-600 md:col-span-2">Transfert inter-agences</p>
+        <mat-form-field appearance="outline" class="w-full">
+          <mat-label>Nouvelle agence</mat-label>
+          <mat-select formControlName="agence_id" aria-label="Agence destination">
+            @for (a of agences(); track a.id) {
+              <mat-option [value]="a.id">{{ a.code }} — {{ a.libelle }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <mat-form-field appearance="outline" class="w-full">
+          <mat-label>Date</mat-label>
+          <input matInput type="date" formControlName="date_transfert" aria-label="Date transfert" />
+        </mat-form-field>
+        <mat-form-field appearance="outline" class="w-full md:col-span-2">
+          <mat-label>Commentaire</mat-label>
+          <input matInput formControlName="commentaire" aria-label="Commentaire transfert" />
+        </mat-form-field>
+        <button mat-stroked-button type="button" (click)="enregistrerTransfert()" [disabled]="workflowBusy()">
+          Enregistrer le transfert
+        </button>
+      </div>
+      @if (reevaluations().length) {
+        <h4 class="text-xs font-semibold text-slate-600 mt-4 mb-2">Historique réévaluations</h4>
+        <table mat-table [dataSource]="reevaluations()" class="w-full text-sm">
+          <ng-container matColumnDef="date">
+            <th mat-header-cell *matHeaderCellDef>Date</th>
+            <td mat-cell *matCellDef="let row">{{ row.date_reevaluation }}</td>
+          </ng-container>
+          <ng-container matColumnDef="ancienne">
+            <th mat-header-cell *matHeaderCellDef>Ancienne</th>
+            <td mat-cell *matCellDef="let row">{{ row.ancienne_valeur | number: '1.2-2' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="nouvelle">
+            <th mat-header-cell *matHeaderCellDef>Nouvelle</th>
+            <td mat-cell *matCellDef="let row">{{ row.nouvelle_valeur | number: '1.2-2' }}</td>
+          </ng-container>
+          <tr mat-header-row *matHeaderRowDef="reevalHistoryColumns"></tr>
+          <tr mat-row *matRowDef="let row; columns: reevalHistoryColumns"></tr>
+        </table>
+      }
+    </mat-card>
+  }
+
+  @if (id() && canSortir()) {
+    <mat-card class="p-4 lg:col-span-2" [formGroup]="sortieForm">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Sortie d'actif — cession / rebut (§7)</h3>
+      @if (situationComptable(); as sit) {
+        <p class="text-xs text-slate-500 mb-3">
+          Cumul amort. {{ sit.cumul_amortissement | number: '1.2-2' }} MRU —
+          VNC {{ sit.vnc | number: '1.2-2' }} MRU
+        </p>
+      }
+      <div class="grid gap-4 md:grid-cols-2">
+        <div class="grid gap-3">
+          <p class="text-sm font-medium text-slate-600">Cession</p>
+          <mat-form-field appearance="outline" class="w-full">
+            <mat-label>Date de cession</mat-label>
+            <input matInput type="date" formControlName="date_cession" aria-label="Date de cession" />
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="w-full">
+            <mat-label>Prix de cession (MRU)</mat-label>
+            <input matInput type="number" formControlName="prix_cession" step="0.01" aria-label="Prix de cession" />
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="w-full">
+            <mat-label>Libellé</mat-label>
+            <input matInput formControlName="libelle_cession" aria-label="Libellé cession" />
+          </mat-form-field>
+          <button mat-stroked-button type="button" color="warn" (click)="enregistrerCession()" [disabled]="workflowBusy()">
+            Enregistrer la cession
+          </button>
+        </div>
+        <div class="grid gap-3">
+          <p class="text-sm font-medium text-slate-600">Mise au rebut</p>
+          <mat-form-field appearance="outline" class="w-full">
+            <mat-label>Date de rebut</mat-label>
+            <input matInput type="date" formControlName="date_rebut" aria-label="Date de rebut" />
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="w-full">
+            <mat-label>Motif</mat-label>
+            <input matInput formControlName="motif_rebut" aria-label="Motif rebut" />
+          </mat-form-field>
+          <button mat-stroked-button type="button" color="warn" (click)="enregistrerRebut()" [disabled]="workflowBusy()">
+            Enregistrer le rebut
+          </button>
+        </div>
+      </div>
+    </mat-card>
+  }
+
+
+
+  <div class="lg:col-span-2 flex justify-end gap-2">
+
+    <a mat-stroked-button routerLink="/immobilisations">Annuler</a>
+
+    <button mat-flat-button color="primary" type="submit" [disabled]="saving()">
+
+      {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
+
+    </button>
+
+  </div>
+
+</form>
+

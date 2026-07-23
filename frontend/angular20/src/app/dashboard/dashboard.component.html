@@ -1,0 +1,444 @@
+<app-page-header
+
+  title="Tableau de bord"
+
+  subtitle="Vue synthétique du parc actif, de la VNC et des dotations de l'exercice. Cliquez sur un graphique pour filtrer les autres."
+
+/>
+
+
+
+@if (hasActiveFilters()) {
+
+  <div class="dash-filters">
+
+    <span class="dash-filters__label">Filtres actifs</span>
+
+    @if (filter().statut) {
+
+      <span class="dash-filters__chip">Statut : {{ statutFilterLabel() }}</span>
+
+    }
+
+    @if (filter().famille) {
+
+      <span class="dash-filters__chip">Famille : {{ filter().famille }}</span>
+
+    }
+
+    @if (filter().mois) {
+
+      <span class="dash-filters__chip">Mois : {{ moisFilterLabel() }}</span>
+
+    }
+
+    <button mat-stroked-button type="button" class="dash-filters__reset" (click)="resetFilters()">
+
+      Réinitialiser
+
+    </button>
+
+  </div>
+
+}
+
+
+
+@if (kpi(); as data) {
+
+  <div class="kpi-grid" [class.kpi-grid--filtered]="hasActiveFilters()">
+
+    <article class="kpi-card">
+
+      <mat-icon class="kpi-card__icon">apartment</mat-icon>
+
+      <p class="kpi-card__label">Immobilisations actives</p>
+
+      <p class="kpi-card__value">{{ data.nombre_immobilisations }}</p>
+
+    </article>
+
+    <article class="kpi-card">
+
+      <mat-icon class="kpi-card__icon">account_balance</mat-icon>
+
+      <p class="kpi-card__label">Valeur brute totale</p>
+
+      <p class="kpi-card__value">
+
+        {{ data.valeur_brute_totale | number: '1.0-0' }}
+
+        <span class="text-base font-semibold text-slate-500">MRU</span>
+
+      </p>
+
+    </article>
+
+    <article class="kpi-card">
+
+      <mat-icon class="kpi-card__icon">insights</mat-icon>
+
+      <p class="kpi-card__label">VNC totale</p>
+
+      <p class="kpi-card__value">
+
+        {{ data.vnc_totale | number: '1.0-0' }}
+
+        <span class="text-base font-semibold text-slate-500">MRU</span>
+
+      </p>
+
+    </article>
+
+    <article class="kpi-card">
+
+      <mat-icon class="kpi-card__icon">receipt_long</mat-icon>
+
+      <p class="kpi-card__label">Dotation {{ data.annee_reference }} (681)</p>
+
+      <p class="kpi-card__value">
+
+        {{ data.dotation_periode | number: '1.0-0' }}
+
+        <span class="text-base font-semibold text-slate-500">MRU</span>
+
+      </p>
+
+    </article>
+
+  </div>
+
+} @else {
+
+  <p class="text-slate-500">Chargement des indicateurs…</p>
+
+}
+
+
+
+@if (charts()) {
+
+  <div class="dash-charts">
+
+    <mat-card class="app-card dash-charts__card">
+
+      <h3 class="dash-charts__title">Répartition par statut</h3>
+
+      @if (statutDonut().length) {
+
+        <div class="dash-donut">
+
+          <svg class="dash-donut__svg" viewBox="0 0 42 42" aria-hidden="true">
+
+            @for (seg of statutDonut(); track seg.key) {
+
+              <circle
+
+                class="dash-donut__ring dash-chart--clickable"
+
+                [class.dash-chart--selected]="isStatutSelected(seg.key)"
+
+                [class.dash-chart--dimmed]="isDimmed('statut', seg.key)"
+
+                cx="21"
+
+                cy="21"
+
+                r="15.915"
+
+                fill="transparent"
+
+                [attr.stroke]="seg.color"
+
+                stroke-width="4"
+
+                [attr.stroke-dasharray]="seg.dash"
+
+                [attr.stroke-dashoffset]="seg.offset"
+
+                role="button"
+
+                tabindex="0"
+
+                [attr.aria-pressed]="isStatutSelected(seg.key)"
+
+                [attr.aria-label]="seg.label"
+
+                (click)="toggleStatut(seg.key)"
+
+                (keydown.enter)="toggleStatut(seg.key)"
+
+                (keydown.space)="$event.preventDefault(); toggleStatut(seg.key)"
+
+              />
+
+            }
+
+          </svg>
+
+          <ul class="dash-donut__legend">
+
+            @for (seg of statutDonut(); track seg.key) {
+
+              <li>
+
+                <button
+
+                  type="button"
+
+                  class="dash-legend-btn"
+
+                  [class.dash-chart--selected]="isStatutSelected(seg.key)"
+
+                  [class.dash-chart--dimmed]="isDimmed('statut', seg.key)"
+
+                  (click)="toggleStatut(seg.key)"
+
+                >
+
+                  <span class="dash-donut__swatch" [style.background]="seg.color"></span>
+
+                  {{ seg.label }} — {{ seg.value | number: '1.0-0' }}
+
+                </button>
+
+              </li>
+
+            }
+
+          </ul>
+
+        </div>
+
+      } @else {
+
+        <p class="dash-charts__empty">Aucune immobilisation pour ce filtre.</p>
+
+      }
+
+    </mat-card>
+
+
+
+    <mat-card class="app-card dash-charts__card">
+
+      <h3 class="dash-charts__title">Valeur brute par famille (top 8)</h3>
+
+      @if (familleBars().length) {
+
+        <div class="dash-bars">
+
+          @for (row of familleBars(); track row.key) {
+
+            <button
+
+              type="button"
+
+              class="dash-bars__row dash-chart--clickable"
+
+              [class.dash-chart--selected]="isFamilleSelected(row.key)"
+
+              [class.dash-chart--dimmed]="isDimmed('famille', row.key)"
+
+              (click)="toggleFamille(row.key)"
+
+            >
+
+              <span class="dash-bars__label" [title]="row.label">{{ row.label }}</span>
+
+              <div class="dash-bars__track">
+
+                <div class="dash-bars__fill" [style.width.%]="row.pct"></div>
+
+              </div>
+
+              <span class="dash-bars__value">{{ row.value | number: '1.0-0' }}</span>
+
+            </button>
+
+          }
+
+        </div>
+
+      } @else {
+
+        <p class="dash-charts__empty">Pas de données par famille.</p>
+
+      }
+
+    </mat-card>
+
+
+
+    <mat-card class="app-card dash-charts__card">
+
+      <h3 class="dash-charts__title">Dotations 681 — {{ kpi()?.annee_reference ?? 'exercice' }}</h3>
+
+      @if (dotationBars().length) {
+
+        <div class="dash-bars dash-bars--columns">
+
+          @for (row of dotationBars(); track row.key) {
+
+            <button
+
+              type="button"
+
+              class="dash-bars__col dash-chart--clickable"
+
+              [class.dash-chart--selected]="isMoisSelected(row.key)"
+
+              [class.dash-chart--dimmed]="isDimmed('mois', row.key)"
+
+              (click)="toggleMois(row.key)"
+
+            >
+
+              <div class="dash-bars__col-track">
+
+                <div class="dash-bars__col-fill" [style.height.%]="row.pct"></div>
+
+              </div>
+
+              <span class="dash-bars__col-label">{{ row.label }}</span>
+
+              @if (row.value > 0) {
+
+                <span class="dash-bars__col-value">{{ row.value | number: '1.0-0' }}</span>
+
+              }
+
+            </button>
+
+          }
+
+        </div>
+
+      } @else {
+
+        <p class="dash-charts__empty">Aucune dotation comptabilisée cette année.</p>
+
+      }
+
+    </mat-card>
+
+
+
+    <mat-card class="app-card dash-charts__card">
+
+      <h3 class="dash-charts__title">Composition comptable (MRU)</h3>
+
+      <div class="dash-bars">
+
+        @for (row of compositionBars(); track row.label) {
+
+          <div class="dash-bars__row dash-bars__row--static">
+
+            <span class="dash-bars__label">{{ row.label }}</span>
+
+            <div class="dash-bars__track">
+
+              <div class="dash-bars__fill dash-bars__fill--dark" [style.width.%]="row.pct"></div>
+
+            </div>
+
+            <span class="dash-bars__value">{{ row.value | number: '1.0-0' }}</span>
+
+          </div>
+
+        }
+
+      </div>
+
+    </mat-card>
+
+
+
+    <mat-card class="app-card dash-charts__card dash-charts__card--wide">
+
+      <h3 class="dash-charts__title">Évolution VNC — {{ kpi()?.annee_reference ?? 'exercice' }}</h3>
+
+      @if (vncLine().dots.length) {
+
+        <div class="dash-line">
+
+          <svg class="dash-line__svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+
+            <polyline class="dash-line__path" [attr.points]="vncLine().polyline" fill="none" />
+
+            @for (pt of vncLine().dots; track pt.key) {
+
+              <circle
+
+                class="dash-line__dot dash-chart--clickable"
+
+                [class.dash-chart--selected]="isMoisSelected(pt.key)"
+
+                [class.dash-chart--dimmed]="isDimmed('mois', pt.key)"
+
+                [attr.cx]="pt.x"
+
+                [attr.cy]="pt.y"
+
+                r="2.5"
+
+                role="button"
+
+                tabindex="0"
+
+                [attr.aria-label]="pt.label + ' ' + pt.value"
+
+                (click)="toggleMois(pt.key)"
+
+                (keydown.enter)="toggleMois(pt.key)"
+
+              />
+
+            }
+
+          </svg>
+
+          <div class="dash-line__labels">
+
+            @for (pt of vncLine().dots; track pt.key) {
+
+              <span
+
+                class="dash-line__label dash-chart--clickable"
+
+                [class.dash-chart--selected]="isMoisSelected(pt.key)"
+
+                [class.dash-chart--dimmed]="isDimmed('mois', pt.key)"
+
+                role="button"
+
+                tabindex="0"
+
+                (click)="toggleMois(pt.key)"
+
+                (keydown.enter)="toggleMois(pt.key)"
+
+              >
+
+                {{ pt.label }}
+
+              </span>
+
+            }
+
+          </div>
+
+        </div>
+
+      } @else {
+
+        <p class="dash-charts__empty">Pas de données VNC mensuelles.</p>
+
+      }
+
+    </mat-card>
+
+  </div>
+
+}
+

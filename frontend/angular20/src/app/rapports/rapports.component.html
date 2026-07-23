@@ -1,0 +1,76 @@
+<app-page-header
+  title="Rapports & exports"
+  subtitle="Extractions Excel/PDF pour la comptabilité, la BCM et les contrôles internes."
+/>
+
+<div class="grid gap-4 md:grid-cols-2">
+  <mat-card class="app-card p-4">
+    <h3 class="text-sm font-semibold text-slate-700 mb-2">Journal des écritures</h3>
+    <p class="text-sm text-slate-600 mb-4">
+      Export des écritures générées (amortissements 681/148, cessions, rebuts) pour la comptabilité et la BCM.
+    </p>
+    <div class="flex flex-wrap gap-2">
+      <button mat-flat-button color="primary" type="button" (click)="exportEcritures('xlsx')">
+        Télécharger Excel
+      </button>
+      <button mat-stroked-button type="button" (click)="exportEcritures('pdf')">Télécharger PDF</button>
+    </div>
+  </mat-card>
+
+  <mat-card class="app-card p-4">
+    <h3 class="text-sm font-semibold text-slate-700 mb-2">État du parc immobilisations</h3>
+    <p class="text-sm text-slate-600 mb-4">
+      Liste des immobilisations actives : codes, valeurs brutes, statuts et comptes 142xxx.
+    </p>
+    <button mat-flat-button color="primary" type="button" (click)="exportImmobilisations()">
+      Télécharger Excel
+    </button>
+  </mat-card>
+
+  <mat-card class="app-card p-4 md:col-span-2">
+    <h3 class="text-sm font-semibold text-slate-700 mb-2">Import immobilisations (Excel)</h3>
+    <p class="text-sm text-slate-600 mb-4">
+      Téléchargez le modèle, complétez les lignes (code, catégorie TY-142xxx, dates, montants), puis importez le fichier.
+    </p>
+    <div class="flex flex-wrap gap-2 items-center">
+      <button mat-stroked-button type="button" (click)="downloadImportTemplate()">Modèle Excel</button>
+      <label for="import-immobilisations-file" class="sr-only">Importer un fichier Excel d'immobilisations</label>
+      <input
+        #importFile
+        id="import-immobilisations-file"
+        type="file"
+        accept=".xlsx,.xls"
+        class="hidden"
+        (change)="onImportFile($event)"
+        [disabled]="importBusy()"
+      />
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="importFile.click()"
+        [disabled]="importBusy()"
+        aria-controls="import-immobilisations-file"
+      >
+        Choisir fichier…
+      </button>
+      @if (importBusy()) {
+        <span class="text-sm text-slate-500">Import en cours…</span>
+      }
+      @if (importResult()) {
+        <span class="text-sm text-green-700">{{ importResult() }}</span>
+      }
+    </div>
+  </mat-card>
+
+  <mat-card class="app-card p-4 md:col-span-2">
+    <h3 class="text-sm font-semibold text-slate-700 mb-2">Journal d'audit</h3>
+    <p class="text-sm text-slate-600 mb-4">Export des connexions et mutations (immobilisations, amortissements, sorties).</p>
+    <a mat-stroked-button routerLink="/audit">Ouvrir l'audit</a>
+  </mat-card>
+</div>
+
+<p class="text-xs text-slate-500 mt-6">
+  Filtres par période : utilisez l'écran
+  <a routerLink="/ecritures" class="app-link">Écritures</a>
+  avant d'exporter si besoin.
+</p>
