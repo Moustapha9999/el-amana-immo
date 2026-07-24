@@ -1,0 +1,142 @@
+<div class="rfd">
+  <header class="rfd__hero">
+    <div>
+      <a class="rfd__back" routerLink="/reevaluations">
+        <mat-icon aria-hidden="true">arrow_back</mat-icon>
+        Retour aux réévaluations
+      </a>
+      <h1 class="rfd__title">Fiche de réévaluation</h1>
+      <p class="rfd__lead">
+        @if (detail(); as d) {
+          {{ d.code_inventaire || '—' }} —
+          {{ d.date_reevaluation | date: 'dd/MM/yyyy' }}
+        } @else {
+          Détail de la réévaluation
+        }
+      </p>
+    </div>
+    <div class="rfd__hero-actions">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('xlsx')"
+        [disabled]="!detail() || exporting() !== null"
+      >
+        <mat-icon aria-hidden="true">table_view</mat-icon>
+        {{ exporting() === 'xlsx' ? 'Excel…' : 'Excel' }}
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('pdf')"
+        [disabled]="!detail() || exporting() !== null"
+      >
+        <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
+        {{ exporting() === 'pdf' ? 'PDF…' : 'PDF' }}
+      </button>
+    </div>
+  </header>
+
+  @if (loading()) {
+    <p class="rfd__empty">Chargement de la fiche…</p>
+  } @else if (detail(); as d) {
+    <article class="rfd__sheet">
+      <div class="rfd__sheet-head">
+        <div>
+          <p class="rfd__eyebrow">Banque El Amana — Immobilisations</p>
+          <h2 class="rfd__sheet-title">Fiche visuelle de réévaluation</h2>
+        </div>
+        <span
+          class="rfd__badge"
+          [class.rfd__badge--up]="d.sens === 'hausse'"
+          [class.rfd__badge--down]="d.sens === 'baisse'"
+          [class.rfd__badge--neutre]="d.sens === 'neutre'"
+        >
+          {{ sensLabel(d.sens) }}
+        </span>
+      </div>
+
+      <section class="rfd__block">
+        <h3 class="rfd__block-title">Immobilisation</h3>
+        <dl class="rfd__grid">
+          <div>
+            <dt>Code inventaire</dt>
+            <dd class="rfd__mono">{{ d.code_inventaire || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Désignation</dt>
+            <dd>{{ d.designation || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Date d’acquisition</dt>
+            <dd>{{ d.date_acquisition ? (d.date_acquisition | date: 'dd/MM/yyyy') : '—' }}</dd>
+          </div>
+          <div>
+            <dt>Compte immobilisation</dt>
+            <dd class="rfd__mono">{{ d.compte_immobilisation || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Valeur brute actuelle</dt>
+            <dd class="rfd__montant">
+              {{ d.valeur_brute != null ? (d.valeur_brute | number: '1.2-2') : '—' }}
+            </dd>
+          </div>
+          <div>
+            <dt>Statut</dt>
+            <dd>{{ d.statut_immobilisation || '—' }}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="rfd__block">
+        <h3 class="rfd__block-title">Réévaluation</h3>
+        <dl class="rfd__grid">
+          <div>
+            <dt>Date de réévaluation</dt>
+            <dd>{{ d.date_reevaluation | date: 'dd/MM/yyyy' }}</dd>
+          </div>
+          <div>
+            <dt>Ancienne VBC</dt>
+            <dd class="rfd__montant">{{ d.ancienne_valeur | number: '1.2-2' }}</dd>
+          </div>
+          <div>
+            <dt>Nouvelle VBC</dt>
+            <dd class="rfd__montant">{{ d.nouvelle_valeur | number: '1.2-2' }}</dd>
+          </div>
+          <div class="rfd__span-2">
+            <dt>Justificatif</dt>
+            <dd>{{ d.justificatif || '—' }}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="rfd__block rfd__block--result">
+        <h3 class="rfd__block-title">Écart de valeur</h3>
+        <p class="rfd__formula">Écart = Nouvelle VBC − Ancienne VBC</p>
+        <div class="rfd__result-grid">
+          <div
+            class="rfd__result-card"
+            [class.rfd__result-card--up]="d.sens === 'hausse'"
+            [class.rfd__result-card--down]="d.sens === 'baisse'"
+          >
+            <span class="rfd__result-label">Écart</span>
+            <span class="rfd__result-value">{{ d.ecart | number: '1.2-2' }}</span>
+          </div>
+          <div class="rfd__result-card">
+            <span class="rfd__result-label">Sens</span>
+            <span class="rfd__result-value">{{ sensLabel(d.sens) }}</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="rfd__footer">
+        <a mat-stroked-button [routerLink]="['/immobilisations', d.immobilisation_id]">
+          <mat-icon aria-hidden="true">inventory_2</mat-icon>
+          Voir l’immobilisation
+        </a>
+      </div>
+    </article>
+  } @else {
+    <p class="rfd__empty">Aucune donnée à afficher.</p>
+  }
+</div>

@@ -1,0 +1,131 @@
+<div class="bfd">
+  <header class="bfd__hero">
+    <div>
+      <a class="bfd__back" routerLink="/rebuts">
+        <mat-icon aria-hidden="true">arrow_back</mat-icon>
+        Retour aux rebuts
+      </a>
+      <h1 class="bfd__title">Fiche de mise au rebut</h1>
+      <p class="bfd__lead">
+        @if (detail(); as d) {
+          {{ d.code_inventaire || '—' }} —
+          {{ d.date_rebut | date: 'dd/MM/yyyy' }}
+        } @else {
+          Détail de la sortie pour rebut
+        }
+      </p>
+    </div>
+    <div class="bfd__hero-actions">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('xlsx')"
+        [disabled]="!detail() || exporting() !== null"
+      >
+        <mat-icon aria-hidden="true">table_view</mat-icon>
+        {{ exporting() === 'xlsx' ? 'Excel…' : 'Excel' }}
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('pdf')"
+        [disabled]="!detail() || exporting() !== null"
+      >
+        <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
+        {{ exporting() === 'pdf' ? 'PDF…' : 'PDF' }}
+      </button>
+    </div>
+  </header>
+
+  @if (loading()) {
+    <p class="bfd__empty">Chargement de la fiche…</p>
+  } @else if (detail(); as d) {
+    <article class="bfd__sheet">
+      <div class="bfd__sheet-head">
+        <div>
+          <p class="bfd__eyebrow">Banque El Amana — Immobilisations</p>
+          <h2 class="bfd__sheet-title">Fiche visuelle de mise au rebut</h2>
+        </div>
+        <span class="bfd__badge bfd__badge--perte">Perte = VNC</span>
+      </div>
+
+      <section class="bfd__block">
+        <h3 class="bfd__block-title">Immobilisation</h3>
+        <dl class="bfd__grid">
+          <div>
+            <dt>Code inventaire</dt>
+            <dd class="bfd__mono">{{ d.code_inventaire || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Désignation</dt>
+            <dd>{{ d.designation || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Date d’acquisition</dt>
+            <dd>{{ d.date_acquisition ? (d.date_acquisition | date: 'dd/MM/yyyy') : '—' }}</dd>
+          </div>
+          <div>
+            <dt>Compte immobilisation</dt>
+            <dd class="bfd__mono">{{ d.compte_immobilisation || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Valeur brute (VB)</dt>
+            <dd class="bfd__montant">
+              {{ d.valeur_brute != null ? (d.valeur_brute | number: '1.2-2') : '—' }}
+            </dd>
+          </div>
+          <div>
+            <dt>Statut</dt>
+            <dd>{{ d.statut_immobilisation || '—' }}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="bfd__block">
+        <h3 class="bfd__block-title">Mise au rebut</h3>
+        <dl class="bfd__grid">
+          <div>
+            <dt>Date de mise au rebut</dt>
+            <dd>{{ d.date_rebut | date: 'dd/MM/yyyy' }}</dd>
+          </div>
+          <div>
+            <dt>Cumul amortissements</dt>
+            <dd class="bfd__montant">
+              {{ d.cumul_amortissement != null ? (d.cumul_amortissement | number: '1.2-2') : '—' }}
+            </dd>
+          </div>
+          <div class="bfd__span-2">
+            <dt>Motif</dt>
+            <dd>{{ d.motif || '—' }}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="bfd__block bfd__block--result">
+        <h3 class="bfd__block-title">Résultat de sortie</h3>
+        <p class="bfd__formula">À la mise au rebut, le prix de cession est nul — la perte nette égale la VNC.</p>
+        <div class="bfd__result-grid">
+          <div class="bfd__result-card bfd__result-card--perte">
+            <span class="bfd__result-label">VNC sortie (perte)</span>
+            <span class="bfd__result-value">{{ d.vnc | number: '1.2-2' }}</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="bfd__footer">
+        <a mat-stroked-button [routerLink]="['/immobilisations', d.immobilisation_id]">
+          <mat-icon aria-hidden="true">inventory_2</mat-icon>
+          Voir l’immobilisation
+        </a>
+        @if (d.ecriture_id) {
+          <a mat-stroked-button [routerLink]="['/ecritures', d.ecriture_id]">
+            <mat-icon aria-hidden="true">receipt_long</mat-icon>
+            Voir l’écriture
+          </a>
+        }
+      </div>
+    </article>
+  } @else {
+    <p class="bfd__empty">Aucune donnée à afficher.</p>
+  }
+</div>

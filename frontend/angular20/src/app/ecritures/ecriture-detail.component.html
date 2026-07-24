@@ -1,0 +1,128 @@
+<div class="ecd">
+  <header class="ecd__hero">
+    <div>
+      <a class="ecd__back" routerLink="/ecritures">
+        <mat-icon aria-hidden="true">arrow_back</mat-icon>
+        Retour aux écritures
+      </a>
+      <h1 class="ecd__title">Fiche d’écriture</h1>
+      <p class="ecd__lead">
+        @if (detail(); as d) {
+          {{ d.reference || 'Sans référence' }} — {{ d.date_ecriture | date: 'dd/MM/yyyy' }}
+        } @else {
+          Détail de l’écriture comptable
+        }
+      </p>
+    </div>
+    <div class="ecd__hero-actions">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('xlsx')"
+        [disabled]="!detail() || exporting() !== null"
+      >
+        <mat-icon aria-hidden="true">table_view</mat-icon>
+        {{ exporting() === 'xlsx' ? 'Excel…' : 'Excel' }}
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('pdf')"
+        [disabled]="!detail() || exporting() !== null"
+      >
+        <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
+        {{ exporting() === 'pdf' ? 'PDF…' : 'PDF' }}
+      </button>
+    </div>
+  </header>
+
+  @if (loading()) {
+    <p class="ecd__empty">Chargement de la fiche…</p>
+  } @else if (detail(); as d) {
+    <article class="ecd__sheet">
+      <div class="ecd__sheet-head">
+        <div>
+          <p class="ecd__eyebrow">Banque El Amana — Comptabilité</p>
+          <h2 class="ecd__sheet-title">{{ d.libelle }}</h2>
+        </div>
+        <div class="ecd__badges">
+          <span class="ecd__badge ecd__badge--type">{{ typeLabel(d.type_mouvement) }}</span>
+          @if (d.generee_auto) {
+            <span class="ecd__badge ecd__badge--auto">Auto</span>
+          } @else {
+            <span class="ecd__badge ecd__badge--manual">Manuel</span>
+          }
+          @if (d.validee) {
+            <span class="ecd__badge ecd__badge--ok">Validée</span>
+          }
+        </div>
+      </div>
+
+      <section class="ecd__block">
+        <h3 class="ecd__block-title">Écriture</h3>
+        <dl class="ecd__grid">
+          <div>
+            <dt>Date</dt>
+            <dd>{{ d.date_ecriture | date: 'dd/MM/yyyy' }}</dd>
+          </div>
+          <div>
+            <dt>Journal</dt>
+            <dd><span class="ecd__jnl">{{ d.journal_code }}</span></dd>
+          </div>
+          <div>
+            <dt>Référence</dt>
+            <dd class="ecd__mono">{{ d.reference || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Montant</dt>
+            <dd class="ecd__montant">{{ d.montant | number: '1.2-2' }} MRU</dd>
+          </div>
+          <div class="ecd__span-2">
+            <dt>Libellé</dt>
+            <dd>{{ d.libelle }}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="ecd__block ecd__block--comptes">
+        <h3 class="ecd__block-title">Schéma comptable</h3>
+        <div class="ecd__schema">
+          <div class="ecd__schema-card ecd__schema-card--debit">
+            <span class="ecd__schema-label">Débit</span>
+            <span class="ecd__schema-compte">{{ d.compte_debit }}</span>
+            <span class="ecd__schema-montant">{{ d.montant | number: '1.2-2' }}</span>
+          </div>
+          <mat-icon class="ecd__schema-arrow" aria-hidden="true">arrow_forward</mat-icon>
+          <div class="ecd__schema-card ecd__schema-card--credit">
+            <span class="ecd__schema-label">Crédit</span>
+            <span class="ecd__schema-compte">{{ d.compte_credit }}</span>
+            <span class="ecd__schema-montant">{{ d.montant | number: '1.2-2' }}</span>
+          </div>
+        </div>
+      </section>
+
+      @if (d.code_inventaire || d.designation) {
+        <section class="ecd__block">
+          <h3 class="ecd__block-title">Immobilisation liée</h3>
+          <dl class="ecd__grid">
+            <div>
+              <dt>Code inventaire</dt>
+              <dd class="ecd__mono">{{ d.code_inventaire || '—' }}</dd>
+            </div>
+            <div>
+              <dt>Désignation</dt>
+              <dd>{{ d.designation || '—' }}</dd>
+            </div>
+          </dl>
+          @if (d.immobilisation_id) {
+            <a class="ecd__link" [routerLink]="['/immobilisations', d.immobilisation_id]">
+              Ouvrir la fiche immobilisation
+            </a>
+          }
+        </section>
+      }
+    </article>
+  } @else {
+    <p class="ecd__empty">Aucune donnée à afficher.</p>
+  }
+</div>

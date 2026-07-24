@@ -1,0 +1,229 @@
+.bfd {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding-bottom: 2rem;
+}
+
+.bfd__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.bfd__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--app-brand-700);
+  text-decoration: none;
+  margin-bottom: 0.5rem;
+}
+
+.bfd__back:hover {
+  text-decoration: underline;
+}
+
+.bfd__back mat-icon {
+  font-size: 1.1rem;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.bfd__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.bfd__lead {
+  margin: 0.35rem 0 0;
+  font-size: 0.9375rem;
+  color: #64748b;
+}
+
+.bfd__hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.bfd__empty {
+  margin: 0;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: #64748b;
+}
+
+.bfd__sheet {
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-card);
+  overflow: hidden;
+}
+
+.bfd__sheet-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1.25rem 1.35rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #fef2f2 100%);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.bfd__eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.bfd__sheet-title {
+  margin: 0.35rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.bfd__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.bfd__badge--perte {
+  background: rgb(220 38 38 / 0.1);
+  color: #b91c1c;
+  border: 1px solid rgb(220 38 38 / 0.22);
+}
+
+.bfd__block {
+  padding: 1.15rem 1.35rem;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.bfd__block:last-of-type {
+  border-bottom: none;
+}
+
+.bfd__block-title {
+  margin: 0 0 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-brand-800);
+}
+
+.bfd__grid {
+  display: grid;
+  gap: 0.85rem 1.25rem;
+  margin: 0;
+}
+
+@media (min-width: 640px) {
+  .bfd__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.bfd__span-2 {
+  grid-column: 1 / -1;
+}
+
+.bfd__grid dt {
+  margin: 0 0 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.bfd__grid dd {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: #0f172a;
+  line-height: 1.4;
+}
+
+.bfd__mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.bfd__montant {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.bfd__formula {
+  margin: 0 0 0.85rem;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.bfd__result-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .bfd__result-grid {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 20rem;
+  }
+}
+
+.bfd__result-card {
+  padding: 0.85rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.bfd__result-card--perte {
+  border-left: 4px solid #dc2626;
+  background: rgb(254 242 242 / 0.7);
+}
+
+.bfd__result-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  margin-bottom: 0.25rem;
+}
+
+.bfd__result-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+}
+
+.bfd__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 1rem 1.35rem 1.25rem;
+  border-top: 1px solid var(--app-border);
+  background: #f8fafc;
+}

@@ -490,3 +490,265 @@ def immobilisations_to_excel(rows: list[Immobilisation], *, subtitle: str | None
         rows=data,
         subtitle=subtitle,
     )
+
+
+def cession_fiche_to_excel(detail: dict[str, Any]) -> bytes:
+    """Fiche cession — Excel (libellé / valeur)."""
+    rows = [
+        ["Référence cession", detail.get("reference") or "—"],
+        ["Date de cession", detail.get("date_cession_fmt") or "—"],
+        ["Code inventaire", detail.get("code_inventaire") or "—"],
+        ["Désignation", detail.get("designation") or "—"],
+        ["Date d'acquisition", detail.get("date_acquisition_fmt") or "—"],
+        ["Compte immobilisation", detail.get("compte_immobilisation") or "—"],
+        ["Valeur brute (VB)", detail.get("valeur_brute")],
+        ["VNC à la cession", detail.get("vnc")],
+        ["Prix de cession (PC)", detail.get("prix_cession")],
+        ["Résultat (PC − VNC)", detail.get("resultat")],
+        ["Plus-value", detail.get("plus_value")],
+        ["Moins-value", detail.get("moins_value")],
+        ["Cas", detail.get("cas_label") or "—"],
+        ["Observations", detail.get("observations") or "—"],
+    ]
+    return build_styled_workbook(
+        sheet_title="Fiche cession",
+        report_title="Fiche de cession d'immobilisation",
+        headers=["Libellé", "Valeur"],
+        rows=rows,
+        subtitle=detail.get("subtitle"),
+    )
+
+
+def cession_fiche_to_pdf(detail: dict[str, Any]) -> bytes:
+    """Fiche cession — PDF."""
+    rows = [
+        ["Référence cession", detail.get("reference") or "—"],
+        ["Date de cession", detail.get("date_cession_fmt") or "—"],
+        ["Code inventaire", detail.get("code_inventaire") or "—"],
+        ["Désignation", detail.get("designation") or "—"],
+        ["Date d'acquisition", detail.get("date_acquisition_fmt") or "—"],
+        ["Compte immobilisation", detail.get("compte_immobilisation") or "—"],
+        ["Valeur brute (VB)", detail.get("valeur_brute")],
+        ["VNC à la cession", detail.get("vnc")],
+        ["Prix de cession (PC)", detail.get("prix_cession")],
+        ["Résultat (PC − VNC)", detail.get("resultat")],
+        ["Plus-value", detail.get("plus_value")],
+        ["Moins-value", detail.get("moins_value")],
+        ["Cas", detail.get("cas_label") or "—"],
+        ["Observations", detail.get("observations") or "—"],
+    ]
+    return build_styled_pdf(
+        report_title="Fiche de cession d'immobilisation",
+        headers=["Libellé", "Valeur"],
+        rows=rows,
+        subtitle=detail.get("subtitle"),
+        landscape_mode=False,
+        col_widths=None,
+        col_aligns=["left", "left"],
+    )
+
+
+def rebut_fiche_to_excel(detail: dict[str, Any]) -> bytes:
+    """Fiche mise au rebut — Excel (libellé / valeur)."""
+    rows = [
+        ["Date de mise au rebut", detail.get("date_rebut_fmt") or "—"],
+        ["Code inventaire", detail.get("code_inventaire") or "—"],
+        ["Désignation", detail.get("designation") or "—"],
+        ["Date d'acquisition", detail.get("date_acquisition_fmt") or "—"],
+        ["Compte immobilisation", detail.get("compte_immobilisation") or "—"],
+        ["Valeur brute (VB)", detail.get("valeur_brute")],
+        ["Cumul amortissements", detail.get("cumul_amortissement")],
+        ["VNC sortie (perte)", detail.get("vnc")],
+        ["Motif", detail.get("motif") or "—"],
+        ["Statut immobilisation", detail.get("statut_immobilisation") or "—"],
+    ]
+    return build_styled_workbook(
+        sheet_title="Fiche rebut",
+        report_title="Fiche de mise au rebut d'immobilisation",
+        headers=["Libellé", "Valeur"],
+        rows=rows,
+        subtitle=detail.get("subtitle"),
+    )
+
+
+def rebut_fiche_to_pdf(detail: dict[str, Any]) -> bytes:
+    """Fiche mise au rebut — PDF."""
+    rows = [
+        ["Date de mise au rebut", detail.get("date_rebut_fmt") or "—"],
+        ["Code inventaire", detail.get("code_inventaire") or "—"],
+        ["Désignation", detail.get("designation") or "—"],
+        ["Date d'acquisition", detail.get("date_acquisition_fmt") or "—"],
+        ["Compte immobilisation", detail.get("compte_immobilisation") or "—"],
+        ["Valeur brute (VB)", detail.get("valeur_brute")],
+        ["Cumul amortissements", detail.get("cumul_amortissement")],
+        ["VNC sortie (perte)", detail.get("vnc")],
+        ["Motif", detail.get("motif") or "—"],
+        ["Statut immobilisation", detail.get("statut_immobilisation") or "—"],
+    ]
+    return build_styled_pdf(
+        report_title="Fiche de mise au rebut d'immobilisation",
+        headers=["Libellé", "Valeur"],
+        rows=rows,
+        subtitle=detail.get("subtitle"),
+        landscape_mode=False,
+        col_widths=None,
+        col_aligns=["left", "left"],
+    )
+
+
+def reevaluation_fiche_to_excel(detail: dict[str, Any]) -> bytes:
+    """Fiche réévaluation — Excel (libellé / valeur)."""
+    rows = [
+        ["Date de réévaluation", detail.get("date_reevaluation_fmt") or "—"],
+        ["Code inventaire", detail.get("code_inventaire") or "—"],
+        ["Désignation", detail.get("designation") or "—"],
+        ["Date d'acquisition", detail.get("date_acquisition_fmt") or "—"],
+        ["Compte immobilisation", detail.get("compte_immobilisation") or "—"],
+        ["Valeur brute actuelle", detail.get("valeur_brute_actuelle")],
+        ["Ancienne VBC", detail.get("ancienne_valeur")],
+        ["Nouvelle VBC", detail.get("nouvelle_valeur")],
+        ["Écart", detail.get("ecart")],
+        ["Sens", detail.get("sens_label") or "—"],
+        ["Justificatif", detail.get("justificatif") or "—"],
+        ["Statut immobilisation", detail.get("statut_immobilisation") or "—"],
+    ]
+    return build_styled_workbook(
+        sheet_title="Fiche réévaluation",
+        report_title="Fiche de réévaluation d'immobilisation",
+        headers=["Libellé", "Valeur"],
+        rows=rows,
+        subtitle=detail.get("subtitle"),
+    )
+
+
+def reevaluation_fiche_to_pdf(detail: dict[str, Any]) -> bytes:
+    """Fiche réévaluation — PDF."""
+    rows = [
+        ["Date de réévaluation", detail.get("date_reevaluation_fmt") or "—"],
+        ["Code inventaire", detail.get("code_inventaire") or "—"],
+        ["Désignation", detail.get("designation") or "—"],
+        ["Date d'acquisition", detail.get("date_acquisition_fmt") or "—"],
+        ["Compte immobilisation", detail.get("compte_immobilisation") or "—"],
+        ["Valeur brute actuelle", detail.get("valeur_brute_actuelle")],
+        ["Ancienne VBC", detail.get("ancienne_valeur")],
+        ["Nouvelle VBC", detail.get("nouvelle_valeur")],
+        ["Écart", detail.get("ecart")],
+        ["Sens", detail.get("sens_label") or "—"],
+        ["Justificatif", detail.get("justificatif") or "—"],
+        ["Statut immobilisation", detail.get("statut_immobilisation") or "—"],
+    ]
+    return build_styled_pdf(
+        report_title="Fiche de réévaluation d'immobilisation",
+        headers=["Libellé", "Valeur"],
+        rows=rows,
+        subtitle=detail.get("subtitle"),
+        landscape_mode=False,
+        col_widths=None,
+        col_aligns=["left", "left"],
+    )
+
+
+def _format_periode_export(periode: str) -> str:
+    import re
+
+    q = re.match(r"^(\d{4})-Q([1-4])$", periode.strip(), re.I)
+    if q:
+        return f"Trimestre {q.group(2)} — {q.group(1)}"
+    m = re.match(r"^(\d{4})-(\d{2})$", periode.strip())
+    if m:
+        labels = {
+            "01": "Janvier",
+            "02": "Février",
+            "03": "Mars",
+            "04": "Avril",
+            "05": "Mai",
+            "06": "Juin",
+            "07": "Juillet",
+            "08": "Août",
+            "09": "Septembre",
+            "10": "Octobre",
+            "11": "Novembre",
+            "12": "Décembre",
+        }
+        return f"{labels.get(m.group(2), m.group(2))} {m.group(1)}"
+    return periode
+
+
+def amortissement_fiche_to_excel(
+    *,
+    meta: dict[str, Any],
+    lignes: Sequence[Sequence[Any]],
+) -> bytes:
+    headers = ["Période", "Amort. période", "Cumul amort.", "VNC", "Statut"]
+    return build_styled_workbook(
+        sheet_title="Amortissements",
+        report_title="Fiche d'amortissement",
+        headers=headers,
+        rows=lignes,
+        subtitle=meta.get("subtitle"),
+    )
+
+
+def amortissement_fiche_to_pdf(
+    *,
+    meta: dict[str, Any],
+    lignes: Sequence[Sequence[Any]],
+) -> bytes:
+    headers = ["Période", "Amort. période", "Cumul amort.", "VNC", "Statut"]
+    return build_styled_pdf(
+        report_title="Fiche d'amortissement",
+        headers=headers,
+        rows=lignes,
+        subtitle=meta.get("subtitle"),
+        landscape_mode=True,
+        col_aligns=["left", "right", "right", "right", "center"],
+    )
+
+
+def ecriture_fiche_to_excel(detail: dict[str, Any]) -> bytes:
+    rows = [
+        ["Date", detail.get("date_ecriture_fmt") or "—"],
+        ["Journal", detail.get("journal_code") or "—"],
+        ["Libellé", detail.get("libelle") or "—"],
+        ["Compte débit", detail.get("compte_debit") or "—"],
+        ["Compte crédit", detail.get("compte_credit") or "—"],
+        ["Montant", detail.get("montant")],
+        ["Référence", detail.get("reference") or "—"],
+        ["Origine", detail.get("origine") or "—"],
+        ["Validée", detail.get("validee") or "—"],
+        ["Type de mouvement", detail.get("type_mouvement") or "—"],
+        ["Code inventaire", detail.get("code_inventaire") or "—"],
+        ["Désignation", detail.get("designation") or "—"],
+    ]
+    return build_styled_workbook(
+        sheet_title="Fiche écriture",
+        report_title="Fiche d'écriture comptable",
+        headers=["Libellé", "Valeur"],
+        rows=rows,
+        subtitle=detail.get("subtitle"),
+    )
+
+
+def ecriture_fiche_to_pdf(detail: dict[str, Any]) -> bytes:
+    rows = [
+        ["Date", detail.get("date_ecriture_fmt") or "—"],
+        ["Journal", detail.get("journal_code") or "—"],
+        ["Libellé", detail.get("libelle") or "—"],
+        ["Compte débit", detail.get("compte_debit") or "—"],
+        ["Compte crédit", detail.get("compte_credit") or "—"],
+        ["Montant", detail.get("montant")],
+        ["Référence", detail.get("reference") or "—"],
+        ["Origine", detail.get("origine") or "—"],
+        ["Validée", detail.get("validee") or "—"],
+        ["Type de mouvement", detail.get("type_mouvement") or "—"],
+        ["Code inventaire", detail.get("code_inventaire") or "—"],
+        ["Désignation", detail.get("designation") or "—"],
+    ]
+    return build_styled_pdf(
+        report_title="Fiche d'écriture comptable",
+        headers=["Libellé", "Valeur"],
+        rows=rows,
+        subtitle=detail.get("subtitle"),
+        landscape_mode=False,
+        col_aligns=["left", "left"],
+    )

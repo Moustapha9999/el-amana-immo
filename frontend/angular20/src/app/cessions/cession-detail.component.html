@@ -1,0 +1,138 @@
+<div class="cfd">
+  <header class="cfd__hero">
+    <div>
+      <a class="cfd__back" routerLink="/cessions">
+        <mat-icon aria-hidden="true">arrow_back</mat-icon>
+        Retour aux cessions
+      </a>
+      <h1 class="cfd__title">Fiche de cession</h1>
+      <p class="cfd__lead">
+        @if (detail(); as d) {
+          {{ d.reference || 'Sans référence' }} — {{ d.code_inventaire || '—' }}
+        } @else {
+          Détail de la sortie d’actif
+        }
+      </p>
+    </div>
+    <div class="cfd__hero-actions">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('xlsx')"
+        [disabled]="!detail() || exporting() !== null"
+      >
+        <mat-icon aria-hidden="true">table_view</mat-icon>
+        {{ exporting() === 'xlsx' ? 'Excel…' : 'Excel' }}
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('pdf')"
+        [disabled]="!detail() || exporting() !== null"
+      >
+        <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
+        {{ exporting() === 'pdf' ? 'PDF…' : 'PDF' }}
+      </button>
+    </div>
+  </header>
+
+  @if (loading()) {
+    <p class="cfd__empty">Chargement de la fiche…</p>
+  } @else if (detail(); as d) {
+    <article class="cfd__sheet">
+      <div class="cfd__sheet-head">
+        <div>
+          <p class="cfd__eyebrow">Banque El Amana — Immobilisations</p>
+          <h2 class="cfd__sheet-title">Fiche visuelle de cession</h2>
+        </div>
+        <span
+          class="cfd__badge"
+          [class.cfd__badge--plus]="d.cas === 'plus_value'"
+          [class.cfd__badge--moins]="d.cas === 'moins_value'"
+          [class.cfd__badge--neutre]="d.cas === 'equilibre'"
+        >
+          {{ casLabel(d.cas) }}
+        </span>
+      </div>
+
+      <section class="cfd__block">
+        <h3 class="cfd__block-title">Immobilisation</h3>
+        <dl class="cfd__grid">
+          <div>
+            <dt>Code inventaire</dt>
+            <dd class="cfd__mono">{{ d.code_inventaire || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Désignation</dt>
+            <dd>{{ d.designation || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Date d’acquisition</dt>
+            <dd>{{ d.date_acquisition ? (d.date_acquisition | date: 'dd/MM/yyyy') : '—' }}</dd>
+          </div>
+          <div>
+            <dt>Compte immobilisation</dt>
+            <dd class="cfd__mono">{{ d.compte_immobilisation || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Valeur brute (VB)</dt>
+            <dd class="cfd__montant">
+              {{ d.valeur_brute != null ? (d.valeur_brute | number: '1.2-2') : '—' }}
+            </dd>
+          </div>
+          <div>
+            <dt>Statut</dt>
+            <dd>{{ d.statut_immobilisation || '—' }}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="cfd__block">
+        <h3 class="cfd__block-title">Cession</h3>
+        <dl class="cfd__grid">
+          <div>
+            <dt>Date de cession</dt>
+            <dd>{{ d.date_cession | date: 'dd/MM/yyyy' }}</dd>
+          </div>
+          <div>
+            <dt>Référence</dt>
+            <dd class="cfd__mono">{{ d.reference || d.libelle || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Prix de cession (PC)</dt>
+            <dd class="cfd__montant">{{ d.prix_cession | number: '1.2-2' }}</dd>
+          </div>
+          <div>
+            <dt>VNC à la date</dt>
+            <dd class="cfd__montant">{{ d.vnc | number: '1.2-2' }}</dd>
+          </div>
+          <div class="cfd__span-2">
+            <dt>Observations</dt>
+            <dd>{{ d.observations || '—' }}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="cfd__block cfd__block--result">
+        <h3 class="cfd__block-title">Résultat de cession</h3>
+        <p class="cfd__formula">Résultat = Prix de cession − VNC</p>
+        <div class="cfd__result-grid">
+          <div class="cfd__result-card">
+            <span class="cfd__result-label">Résultat</span>
+            <span class="cfd__result-value">{{ d.resultat | number: '1.2-2' }}</span>
+          </div>
+          <div class="cfd__result-card cfd__result-card--plus">
+            <span class="cfd__result-label">Plus-value</span>
+            <span class="cfd__result-value">{{ d.plus_value | number: '1.2-2' }}</span>
+          </div>
+          <div class="cfd__result-card cfd__result-card--moins">
+            <span class="cfd__result-label">Moins-value</span>
+            <span class="cfd__result-value">{{ d.moins_value | number: '1.2-2' }}</span>
+          </div>
+        </div>
+      </section>
+    </article>
+  } @else {
+    <p class="cfd__empty">Aucune donnée à afficher.</p>
+  }
+</div>

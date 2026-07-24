@@ -26,12 +26,17 @@ def immobilisations_import_template_bytes() -> bytes:
             "designation",
             "categorie_code",
             "date_acquisition",
+            "date_comptabilisation",
             "valeur_brute",
+            "taux",
             "agence_code",
             "valeur_residuelle",
+            "numero_facture",
         ]
     )
-    ws.append(["IMMO-001", "Exemple matériel", "TY-142041", "2026-01-15", "150000", "", "0"])
+    ws.append(
+        ["IMMO-001", "Exemple matériel", "TY-142041", "2026-01-15", "2026-01-15", "150000", "20", "", "0", ""]
+    )
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -110,6 +115,20 @@ class ImmobilisationImportService:
                         raise ValidationError(f"Agence inconnue : {ac}")
                     agence_id = agences.get(ac) if ac else None
 
+                date_acq = _cell_date(raw[idx["date_acquisition"]])
+                if "date_comptabilisation" in idx and raw[idx["date_comptabilisation"]]:
+                    date_compta = _cell_date(raw[idx["date_comptabilisation"]])
+                else:
+                    date_compta = date_acq
+
+                taux = None
+                if "taux" in idx and raw[idx["taux"]] is not None and str(raw[idx["taux"]]).strip() != "":
+                    taux = _cell_decimal(raw[idx["taux"]])
+
+                numero_facture = None
+                if "numero_facture" in idx and raw[idx["numero_facture"]]:
+                    numero_facture = str(raw[idx["numero_facture"]]).strip() or None
+
                 residuelle = Decimal("0")
                 if "valeur_residuelle" in idx and raw[idx["valeur_residuelle"]] is not None:
                     residuelle = _cell_decimal(raw[idx["valeur_residuelle"]])
@@ -119,15 +138,23 @@ class ImmobilisationImportService:
                     designation=designation,
                     categorie_id=categorie.id,
                     agence_id=agence_id,
-                    date_acquisition=_cell_date(raw[idx["date_acquisition"]]),
+                    date_acquisition=date_acq,
+                    date_comptabilisation=date_compta,
                     valeur_brute=_cell_decimal(raw[idx["valeur_brute"]]),
                     valeur_residuelle=residuelle,
+                    taux=taux,
+                    numero_facture=numero_facture,
                 )
                 data = prepare_create(payload, categorie)
                 item = Immobilisation(**data)
                 from app.services.immobilisation_defaults import apply_categorie_defaults
 
-                apply_categorie_defaults(item, categorie, override_comptes=True)
+                apply_categorie_defaults(
+                    item,
+                    categorie,
+                    override_comptes=True,
+                    preserve_taux=taux is not None,
+                )
                 validate_immobilisation(item, categorie)
                 item.qr_code_data = f"IMMO:{item.code_inventaire}"
                 item.barcode_data = item.code_inventaire

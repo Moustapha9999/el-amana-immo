@@ -174,10 +174,47 @@
 }
 
 .aud__table-wrap .app-table {
-  min-width: 56rem;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.aud__table-wrap .app-table th,
+.aud__table-wrap .app-table td {
+  padding: 0.7rem 0.85rem;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aud__table-wrap .mat-column-created_at {
+  width: 14%;
+}
+
+.aud__table-wrap .mat-column-user_email {
+  width: 24%;
+}
+
+.aud__table-wrap .mat-column-action {
+  width: 18%;
+}
+
+.aud__table-wrap .mat-column-entity {
+  width: 16%;
+}
+
+.aud__table-wrap .mat-column-entity_id {
+  width: 12%;
+}
+
+.aud__table-wrap .mat-column-ip_address {
+  width: 16%;
 }
 
 .aud__user {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 0.875rem;
   color: #334155;
 }
@@ -192,6 +229,7 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.8125rem;
   color: #475569;
+  white-space: nowrap;
 }
 
 .aud__badge {

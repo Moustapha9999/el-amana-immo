@@ -6,7 +6,8 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
-import { tauxLineaireFromDuree } from '../shared/amortissement-rate.util';
+import { AuthService } from '../core/services/auth.service';
+import { tauxLineaireFromDuree, formatPeriodeAmortissement } from '../shared/amortissement-rate.util';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 import {
   MODE_AMORTISSEMENT_OPTIONS,
@@ -46,6 +47,12 @@ interface Agence {
   libelle: string;
 }
 
+interface CentreCout {
+  id: string;
+  code: string;
+  libelle: string;
+}
+
 interface Fournisseur {
   id: string;
   code: string;
@@ -72,6 +79,7 @@ interface ImmobilisationDto {
   observations: string | null;
   categorie_id: string;
   agence_id: string | null;
+  centre_cout_id: string | null;
   fournisseur_id: string | null;
   date_acquisition: string;
   date_mise_en_service: string | null;
@@ -108,9 +116,11 @@ export class ImmobilisationFormComponent implements OnInit {
   /** Route `:section` — modifier | amortissement | reevaluation | sortie */
   readonly section = input<string | undefined>();
   protected readonly natureImmoOptionLabel = natureImmoOptionLabel;
+  protected readonly formatPeriode = formatPeriodeAmortissement;
 
   private readonly fb = inject(FormBuilder);
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly dialogs = inject(UiDialogService);
 
@@ -158,17 +168,30 @@ export class ImmobilisationFormComponent implements OnInit {
 
   readonly categories = signal<Categorie[]>([]);
   readonly agences = signal<Agence[]>([]);
+  readonly centresCout = signal<CentreCout[]>([]);
   readonly fournisseurs = signal<Fournisseur[]>([]);
   readonly saving = signal(false);
   readonly workflowBusy = signal(false);
   readonly statutActuel = signal('brouillon');
+  /** Date de comptabilisation d'acquisition (note banque). */
   readonly dateComptabilisation = signal<string | null>(null);
+  /** Dernière période d'amortissement validée (écritures 681/148). */
+  readonly dernierePeriodeAmort = signal<string | null>(null);
   readonly amortissements = signal<AmortissementRow[]>([]);
+  /** Exercice affiché : uniquement l'année civile en cours (Q1–Q4 ou mois). */
+  readonly anneeExerciceAmort = signal(new Date().getFullYear());
   readonly amortissementColumns = ['periode', 'montant', 'cumul', 'vnc', 'statut', 'actions'];
   readonly situationComptable = signal<{ cumul_amortissement: string; vnc: string } | null>(null);
   readonly qrImageSrc = signal<string | null>(null);
   readonly qrPayload = signal<string | null>(null);
-  readonly tauxCalcule = signal<number | null>(null);
+  /** True si un plan existe mais aucune ligne pour l'exercice courant. */
+  readonly planHorsExercice = signal(false);
+
+  /** Admin / comptable peuvent surcharger le taux issu de la catégorie. */
+  readonly canOverrideTaux = computed(() => {
+    const roles = this.auth.user()?.roles?.map((r) => r.code) ?? [];
+    return this.auth.user()?.is_superuser === true || roles.includes('administrateur') || roles.includes('comptable');
+  });
 
   readonly canMettreEnService = computed(() => {
     const statut = this.statutActuel();
@@ -202,10 +225,21 @@ export class ImmobilisationFormComponent implements OnInit {
   readonly sortieForm = this.fb.nonNullable.group({
     date_cession: [''],
     prix_cession: [0, [Validators.min(0)]],
-    libelle_cession: [''],
+    reference_cession: [''],
+    observations_cession: [''],
     date_rebut: [''],
     motif_rebut: [''],
   });
+
+  readonly cessionPreview = signal<{
+    cumul_amortissement: string;
+    vnc: string;
+    prix_cession: string;
+    resultat: string;
+    plus_value: string;
+    moins_value: string;
+    cas: string;
+  } | null>(null);
 
   readonly reevalForm = this.fb.nonNullable.group({
     date_reevaluation: [''],
@@ -242,12 +276,15 @@ export class ImmobilisationFormComponent implements OnInit {
     quantite: [1, [Validators.required, Validators.min(1)]],
     categorie_id: ['', Validators.required],
     agence_id: [''],
+    centre_cout_id: [''],
     fournisseur_id: [''],
     date_acquisition: ['', Validators.required],
+    date_comptabilisation: ['', Validators.required],
     date_mise_en_service: [''],
     valeur_brute: [0, [Validators.required, Validators.min(0.01)]],
     valeur_residuelle: [0, [Validators.min(0)]],
     duree_annees: [null as number | null],
+    taux: [null as number | null, [Validators.min(0), Validators.max(100)]],
     periodicite: [{ value: 'trimestriel', disabled: true }],
     prorata_temporis: [true],
     mode_amortissement: ['lineaire'],
@@ -269,6 +306,9 @@ export class ImmobilisationFormComponent implements OnInit {
         this.form.controls.compte_immobilisation.disable({ emitEvent: false });
         this.form.controls.compte_amortissement.disable({ emitEvent: false });
         this.form.controls.compte_dotation.disable({ emitEvent: false });
+        if (!this.canOverrideTaux()) {
+          this.form.controls.taux.disable({ emitEvent: false });
+        }
         if (this.id()) {
           this.form.controls.code_inventaire.disable({ emitEvent: false });
         }
@@ -289,6 +329,10 @@ export class ImmobilisationFormComponent implements OnInit {
     this.api.get<Paginated<Agence>>('/agences', { page: 1, size: 100 }).subscribe((res) => {
       this.agences.set(res.items);
     });
+    this.api.get<Paginated<CentreCout>>('/centres-cout', { page: 1, size: 100 }).subscribe({
+      next: (res) => this.centresCout.set(res.items ?? []),
+      error: () => this.centresCout.set([]),
+    });
     this.api.get<Paginated<Fournisseur>>('/fournisseurs', { page: 1, size: 100 }).subscribe((res) => {
       this.fournisseurs.set(res.items);
     });
@@ -305,7 +349,13 @@ export class ImmobilisationFormComponent implements OnInit {
     }
 
     this.form.controls.categorie_id.valueChanges.subscribe((catId) => this.applyCategoryDefaults(catId));
-    this.form.controls.duree_annees.valueChanges.subscribe((d) => this.tauxCalcule.set(tauxLineaireFromDuree(d)));
+    this.form.controls.date_acquisition.valueChanges.subscribe((acq) => {
+      if (acq && !this.form.controls.date_comptabilisation.value) {
+        this.form.controls.date_comptabilisation.setValue(acq, { emitEvent: false });
+      }
+    });
+    this.sortieForm.controls.date_cession.valueChanges.subscribe(() => this.refreshCessionPreview());
+    this.sortieForm.controls.prix_cession.valueChanges.subscribe(() => this.refreshCessionPreview());
   }
 
   sectionLink(section?: ImmoSection): string[] {
@@ -320,7 +370,10 @@ export class ImmobilisationFormComponent implements OnInit {
   }
 
   refreshTauxCalcule(): void {
-    this.tauxCalcule.set(tauxLineaireFromDuree(this.form.controls.duree_annees.value));
+    const duree = this.form.controls.duree_annees.value;
+    if (this.form.controls.taux.value == null) {
+      this.form.controls.taux.setValue(tauxLineaireFromDuree(duree), { emitEvent: false });
+    }
   }
 
   selectedCategory(): Categorie | undefined {
@@ -356,11 +409,12 @@ export class ImmobilisationFormComponent implements OnInit {
       compte_amortissement: cat.compte_amortissement ?? '',
       compte_dotation: cat.compte_dotation ?? '',
       duree_annees: duree,
+      taux: cat.amortissable ? taux : null,
       periodicite: 'trimestriel',
       prorata_temporis: true,
       mode_amortissement: cat.mode_amortissement_defaut,
     });
-    this.tauxCalcule.set(taux);
+    this.form.controls.taux.markAsPristine();
   }
 
   patchFromDto(row: ImmobilisationDto): void {
@@ -375,12 +429,15 @@ export class ImmobilisationFormComponent implements OnInit {
       quantite: row.quantite,
       categorie_id: row.categorie_id,
       agence_id: row.agence_id ?? '',
+      centre_cout_id: row.centre_cout_id ?? '',
       fournisseur_id: row.fournisseur_id ?? '',
       date_acquisition: row.date_acquisition,
+      date_comptabilisation: row.date_comptabilisation ?? '',
       date_mise_en_service: row.date_mise_en_service ?? '',
       valeur_brute: Number(row.valeur_brute),
       valeur_residuelle: Number(row.valeur_residuelle),
       duree_annees: row.duree_annees,
+      taux: row.taux != null ? Number(row.taux) : null,
       periodicite: row.periodicite,
       prorata_temporis: row.prorata_temporis,
       mode_amortissement: row.mode_amortissement,
@@ -390,12 +447,20 @@ export class ImmobilisationFormComponent implements OnInit {
       compte_dotation: row.compte_dotation ?? '',
       localisation: row.localisation ?? '',
     });
-    this.refreshTauxCalcule();
+    this.form.controls.taux.markAsPristine();
   }
 
   loadAmortissements(immoId: string): void {
     this.api.get<AmortissementRow[]>(`/amortissements/immobilisation/${immoId}`).subscribe((rows) => {
-      this.amortissements.set(rows.filter((r) => !r.simule));
+      const plan = rows.filter((r) => !r.simule);
+      const annee = this.anneeExerciceAmort();
+      const prefix = `${annee}-`;
+      // Affiche uniquement l'exercice courant (ex. 2026-Q1…Q4 ou 2026-01…12)
+      const exercice = plan.filter((r) => r.periode.startsWith(prefix));
+      this.amortissements.set(exercice);
+      this.planHorsExercice.set(plan.length > 0 && exercice.length === 0);
+      const validees = plan.filter((r) => r.valide).map((r) => r.periode).sort();
+      this.dernierePeriodeAmort.set(validees.length ? validees[validees.length - 1]! : null);
     });
   }
 
@@ -570,32 +635,50 @@ export class ImmobilisationFormComponent implements OnInit {
       void this.dialogs.error('Date de cession requise', 'Validation').subscribe();
       return;
     }
+    if (!s.reference_cession.trim()) {
+      void this.dialogs.error('Référence de la cession requise', 'Validation').subscribe();
+      return;
+    }
     this.dialogs
-      .confirmAction('cloture', 'Enregistrer la cession ? Le bien passera au statut cédé.')
+      .confirmAction(
+        'cloture',
+        'Valider la cession ? Les amortissements seront calculés jusqu’à cette date, puis arrêtés.',
+      )
       .subscribe((ok) => {
         if (!ok) {
           return;
         }
         this.workflowBusy.set(true);
         this.api
-          .post<{ cession: { plus_value: string; moins_value: string }; ecriture_ids: string[] }>(
-            '/cessions',
-            {
-              immobilisation_id: immoId,
-              date_cession: s.date_cession,
-              prix_cession: s.prix_cession,
-              libelle: s.libelle_cession || null,
-            },
-          )
+          .post<{
+            cession: { plus_value: string; moins_value: string; vnc: string };
+            ecriture_ids: string[];
+          }>('/cessions', {
+            immobilisation_id: immoId,
+            date_cession: s.date_cession,
+            prix_cession: s.prix_cession,
+            reference: s.reference_cession.trim(),
+            observations: s.observations_cession.trim() || null,
+          })
           .subscribe({
             next: (res) => {
               this.workflowBusy.set(false);
               this.statutActuel.set('cedee');
               this.form.patchValue({ statut: 'cedee' });
+              this.loadAmortissements(immoId);
+              this.loadSituationComptable(immoId);
+              const pv = Number(res.cession.plus_value) || 0;
+              const mv = Number(res.cession.moins_value) || 0;
+              let resultatMsg = 'cession à l’équilibre';
+              if (pv > 0) {
+                resultatMsg = `plus-value ${pv.toFixed(2)} MRU`;
+              } else if (mv > 0) {
+                resultatMsg = `moins-value ${mv.toFixed(2)} MRU`;
+              }
               void this.dialogs
                 .successAction(
                   'cloture',
-                  `Cession enregistrée — ${res.ecriture_ids.length} écriture(s), PV ${res.cession.plus_value} / MV ${res.cession.moins_value}`,
+                  `Cession enregistrée — VNC ${res.cession.vnc}, ${resultatMsg}, ${res.ecriture_ids.length} écriture(s)`,
                 )
                 .subscribe();
             },
@@ -604,6 +687,33 @@ export class ImmobilisationFormComponent implements OnInit {
               void this.dialogs.error(this.errMsg(err, 'Cession impossible')).subscribe();
             },
           });
+      });
+  }
+
+  refreshCessionPreview(): void {
+    const immoId = this.id();
+    const s = this.sortieForm.getRawValue();
+    if (!immoId || !s.date_cession) {
+      this.cessionPreview.set(null);
+      return;
+    }
+    this.api
+      .post<{
+        cumul_amortissement: string;
+        vnc: string;
+        prix_cession: string;
+        resultat: string;
+        plus_value: string;
+        moins_value: string;
+        cas: string;
+      }>('/cessions/preview', {
+        immobilisation_id: immoId,
+        date_cession: s.date_cession,
+        prix_cession: s.prix_cession ?? 0,
+      })
+      .subscribe({
+        next: (res) => this.cessionPreview.set(res),
+        error: () => this.cessionPreview.set(null),
       });
   }
 
@@ -716,7 +826,7 @@ export class ImmobilisationFormComponent implements OnInit {
     this.dialogs
       .confirmAction(
         'comptabilisation',
-        `Comptabiliser la dotation de la période ${row.periode} (écriture 681 / 148) ?`,
+        `Comptabiliser la dotation de ${this.formatPeriode(row.periode)} (écriture 681 / 148) ?`,
       )
       .subscribe((ok) => {
         if (!ok) {
@@ -733,11 +843,10 @@ export class ImmobilisationFormComponent implements OnInit {
           .subscribe({
             next: () => {
               this.workflowBusy.set(false);
-              this.dateComptabilisation.set(dateEcriture);
               this.loadAmortissements(immoId);
               this.loadSituationComptable(immoId);
               void this.dialogs
-                .successAction('comptabilisation', `Écriture 681 / 148 générée pour ${row.periode}.`)
+                .successAction('comptabilisation', `Écriture 681 / 148 générée pour ${this.formatPeriode(row.periode)}.`)
                 .subscribe();
             },
             error: (err) => {
@@ -777,16 +886,20 @@ export class ImmobilisationFormComponent implements OnInit {
           quantite: raw.quantite,
           categorie_id: raw.categorie_id,
           agence_id: raw.agence_id || null,
+          centre_cout_id: raw.centre_cout_id || null,
           fournisseur_id: raw.fournisseur_id || null,
           date_acquisition: raw.date_acquisition,
+          date_comptabilisation: raw.date_comptabilisation,
           date_mise_en_service: raw.date_mise_en_service || null,
           valeur_brute: raw.valeur_brute,
           valeur_residuelle: raw.valeur_residuelle,
           duree_annees: raw.duree_annees,
+          taux: raw.taux,
           periodicite: raw.periodicite,
           prorata_temporis: raw.prorata_temporis,
           mode_amortissement: raw.mode_amortissement,
           statut: raw.statut,
+          compte_immobilisation: raw.compte_immobilisation || null,
           localisation: raw.localisation || null,
         };
 

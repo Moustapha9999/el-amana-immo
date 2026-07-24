@@ -118,7 +118,12 @@ class ImmobilisationService:
 
         item = Immobilisation(**data)
 
-        apply_categorie_defaults(item, categorie, override_comptes=not any([payload.compte_immobilisation]))
+        apply_categorie_defaults(
+            item,
+            categorie,
+            override_comptes=not any([payload.compte_immobilisation]),
+            preserve_taux=payload.taux is not None,
+        )
 
         validate_immobilisation(item, categorie)
 
@@ -148,7 +153,8 @@ class ImmobilisationService:
 
         if categorie is not None:
 
-            apply_categorie_defaults(item, categorie, override_comptes=False)
+            # conserve le taux saisi / existant (surcharge utilisateur autorisée)
+            apply_categorie_defaults(item, categorie, override_comptes=False, preserve_taux=True)
 
         validate_immobilisation(item, categorie)
 

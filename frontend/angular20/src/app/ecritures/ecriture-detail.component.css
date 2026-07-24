@@ -1,0 +1,275 @@
+.ecd {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding-bottom: 2rem;
+}
+
+.ecd__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.ecd__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--app-brand-700);
+  text-decoration: none;
+  margin-bottom: 0.5rem;
+}
+
+.ecd__back:hover {
+  text-decoration: underline;
+}
+
+.ecd__back mat-icon {
+  font-size: 1.1rem;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.ecd__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.ecd__lead {
+  margin: 0.35rem 0 0;
+  font-size: 0.9375rem;
+  color: #64748b;
+}
+
+.ecd__hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ecd__empty {
+  margin: 0;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: #64748b;
+}
+
+.ecd__sheet {
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-card);
+  overflow: hidden;
+}
+
+.ecd__sheet-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1.25rem 1.35rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef6fc 100%);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.ecd__eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.ecd__sheet-title {
+  margin: 0.35rem 0 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+  max-width: 36rem;
+  line-height: 1.35;
+}
+
+.ecd__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.ecd__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.ecd__badge--type {
+  background: rgb(40 116 166 / 0.12);
+  color: var(--app-brand-800);
+  border: 1px solid rgb(40 116 166 / 0.25);
+}
+
+.ecd__badge--auto {
+  background: rgb(40 116 166 / 0.12);
+  color: var(--app-brand-800);
+  border: 1px solid rgb(40 116 166 / 0.25);
+}
+
+.ecd__badge--manual {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.ecd__badge--ok {
+  background: rgb(22 163 74 / 0.12);
+  color: #15803d;
+  border: 1px solid rgb(22 163 74 / 0.25);
+}
+
+.ecd__block {
+  padding: 1.15rem 1.35rem;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.ecd__block:last-child {
+  border-bottom: none;
+}
+
+.ecd__block-title {
+  margin: 0 0 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-brand-800);
+}
+
+.ecd__grid {
+  display: grid;
+  gap: 0.85rem 1.25rem;
+  margin: 0;
+}
+
+@media (min-width: 640px) {
+  .ecd__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.ecd__span-2 {
+  grid-column: 1 / -1;
+}
+
+.ecd__grid dt {
+  margin: 0 0 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.ecd__grid dd {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: #0f172a;
+}
+
+.ecd__mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.ecd__montant {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.ecd__jnl {
+  display: inline-flex;
+  min-width: 2rem;
+  justify-content: center;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+}
+
+.ecd__schema {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.75rem;
+}
+
+.ecd__schema-card {
+  flex: 1 1 10rem;
+  padding: 1rem;
+  border-radius: 0.6rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.ecd__schema-card--debit {
+  border-left: 4px solid #2563eb;
+}
+
+.ecd__schema-card--credit {
+  border-left: 4px solid #16a34a;
+}
+
+.ecd__schema-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.ecd__schema-compte {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.ecd__schema-montant {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #334155;
+}
+
+.ecd__schema-arrow {
+  align-self: center;
+  color: #94a3b8;
+}
+
+.ecd__link {
+  display: inline-block;
+  margin-top: 0.85rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--app-brand-700);
+  text-decoration: none;
+}
+
+.ecd__link:hover {
+  text-decoration: underline;
+}

@@ -72,7 +72,7 @@
         <mat-icon aria-hidden="true">inventory_2</mat-icon>
         <div>
           <h2>Identification</h2>
-          <p>§5.1 — code inventaire, type TY-142, agence</p>
+          <p>Numéro, désignation, catégorie — saisie d’acquisition Banque El Amana</p>
         </div>
       </div>
       <div class="immo-form__section-body">
@@ -81,7 +81,7 @@
             class="immo-field"
             [class.immo-field--error]="form.controls.code_inventaire.invalid && form.controls.code_inventaire.touched"
           >
-            <label class="immo-field__label" for="immo-code">Code inventaire <span class="immo-field__req">*</span></label>
+            <label class="immo-field__label" for="immo-code">N° immobilisation <span class="immo-field__req">*</span></label>
             <input
               id="immo-code"
               class="immo-field__control"
@@ -95,7 +95,7 @@
             class="immo-field"
             [class.immo-field--error]="form.controls.categorie_id.invalid && form.controls.categorie_id.touched"
           >
-            <span class="immo-field__label" id="immo-cat-label">Nature IMMO <span class="immo-field__req">*</span></span>
+            <span class="immo-field__label" id="immo-cat-label">Catégorie d'immobilisation <span class="immo-field__req">*</span></span>
             <select
               id="immo-cat"
               class="immo-field__control immo-field__control--select"
@@ -111,7 +111,7 @@
               <p class="immo-field__help immo-field__help--warn">Liste vide — connectez-vous et relancez le seed plan de la Banque El Amana.</p>
             } @else {
             <p class="immo-field__help">
-              Onze natures officielles — à la sélection : comptes, durée et taux sont renseignés automatiquement.
+              À la sélection : compte, durée et taux annuels sont proposés (le taux peut être modifié par un utilisateur autorisé).
             </p>
             }
           </div>
@@ -135,8 +135,22 @@
             <input id="immo-designation" class="immo-field__control" formControlName="designation" autocomplete="off" />
           </div>
           <div class="immo-field">
-            <label class="immo-field__label" for="immo-facture">N° facture</label>
+            <label class="immo-field__label" for="immo-facture">Référence facture</label>
             <input id="immo-facture" class="immo-field__control" formControlName="numero_facture" autocomplete="off" />
+          </div>
+          <div class="immo-field">
+            <span class="immo-field__label" id="immo-fournisseur-label">Fournisseur</span>
+            <select
+              id="immo-fournisseur"
+              class="immo-field__control immo-field__control--select"
+              formControlName="fournisseur_id"
+              aria-labelledby="immo-fournisseur-label"
+            >
+              <option value="">— Optionnel —</option>
+              @for (f of fournisseurs(); track f.id) {
+                <option [value]="f.id">{{ f.code }} — {{ f.raison_sociale }}</option>
+              }
+            </select>
           </div>
           <div
             class="immo-field"
@@ -170,6 +184,20 @@
               }
             </select>
           </div>
+          <div class="immo-field">
+            <span class="immo-field__label" id="immo-cc-label">Centre de coût</span>
+            <select
+              id="immo-cc"
+              class="immo-field__control immo-field__control--select"
+              formControlName="centre_cout_id"
+              aria-labelledby="immo-cc-label"
+            >
+              <option value="">— Si applicable —</option>
+              @for (c of centresCout(); track c.id) {
+                <option [value]="c.id">{{ c.code }} — {{ c.libelle }}</option>
+              }
+            </select>
+          </div>
         </div>
       </div>
     </section>
@@ -180,7 +208,7 @@
           <mat-icon aria-hidden="true">calendar_month</mat-icon>
           <div>
             <h2>Dates & montants</h2>
-            <p>Acquisition, mise en service, valeurs MRU</p>
+            <p>Acquisition, comptabilisation, valeur brute (base d’amortissement)</p>
           </div>
         </div>
         <div class="immo-form__section-body">
@@ -191,6 +219,14 @@
             >
               <label class="immo-field__label" for="immo-date-acq">Date d'acquisition <span class="immo-field__req">*</span></label>
               <input id="immo-date-acq" class="immo-field__control" type="date" formControlName="date_acquisition" />
+              <p class="immo-field__help">Fait générateur du calcul des amortissements — aucune dotation avant cette date.</p>
+            </div>
+            <div
+              class="immo-field"
+              [class.immo-field--error]="form.controls.date_comptabilisation.invalid && form.controls.date_comptabilisation.touched"
+            >
+              <label class="immo-field__label" for="immo-date-compta">Date de comptabilisation <span class="immo-field__req">*</span></label>
+              <input id="immo-date-compta" class="immo-field__control" type="date" formControlName="date_comptabilisation" />
             </div>
             <div class="immo-field">
               <label class="immo-field__label" for="immo-date-mes">Date de mise en service</label>
@@ -200,8 +236,9 @@
               class="immo-field"
               [class.immo-field--error]="form.controls.valeur_brute.invalid && form.controls.valeur_brute.touched"
             >
-              <label class="immo-field__label" for="immo-vb">Valeur brute (MRU) <span class="immo-field__req">*</span></label>
+              <label class="immo-field__label" for="immo-vb">Valeur brute d'acquisition — VB (MRU) <span class="immo-field__req">*</span></label>
               <input id="immo-vb" class="immo-field__control" type="number" formControlName="valeur_brute" step="0.01" min="0" />
+              <p class="immo-field__help">Base de calcul de l’amortissement.</p>
             </div>
             <div class="immo-field">
               <label class="immo-field__label" for="immo-vr">Valeur résiduelle (MRU)</label>
@@ -216,7 +253,7 @@
           <mat-icon aria-hidden="true">trending_down</mat-icon>
           <div>
             <h2>Amortissement</h2>
-            <p>Dotation = VA × (jours/360) × taux — arrêt trimestriel</p>
+            <p>Amortissement = VB × Taux × Durée — prorata jusqu’à chaque arrêté (31/03, 30/06, 30/09, 31/12)</p>
           </div>
         </div>
         <div class="immo-form__section-body">
@@ -225,11 +262,27 @@
               <label class="immo-field__label" for="immo-duree">Durée (années)</label>
               <input id="immo-duree" class="immo-field__control" type="number" formControlName="duree_annees" min="0" />
             </div>
-            <div class="immo-field immo-field--readonly">
-              <span class="immo-field__label">Taux linéaire (%)</span>
-              <div class="immo-field__value">
-                {{ tauxCalcule() != null ? (tauxCalcule() | number: '1.0-2') : '—' }}
-              </div>
+            <div
+              class="immo-field"
+              [class.immo-field--error]="form.controls.taux.invalid && form.controls.taux.touched"
+            >
+              <label class="immo-field__label" for="immo-taux">Taux annuel d'amortissement (%) <span class="immo-field__req">*</span></label>
+              <input
+                id="immo-taux"
+                class="immo-field__control"
+                type="number"
+                formControlName="taux"
+                step="0.01"
+                min="0"
+                max="100"
+              />
+              <p class="immo-field__help">
+                @if (canOverrideTaux()) {
+                  Proposé par la catégorie — modifiable (administrateur / comptable).
+                } @else {
+                  Défini selon la catégorie (lecture seule).
+                }
+              </p>
             </div>
             <div class="immo-field">
               <span class="immo-field__label" id="immo-mode-label">Mode</span>
@@ -254,7 +307,7 @@
                   <option [value]="p.value">{{ p.label }}</option>
                 }
               </select>
-              <p class="immo-field__help">Dates d’arrêt trimestrielles Banque El Amana (31/03, 30/06, 30/09, 31/12) — base 360 jours.</p>
+              <p class="immo-field__help">Dates d’arrêté des états financiers : 31/03, 30/06, 30/09, 31/12 — durée = jours (base 360) entre acquisition et arrêté.</p>
             </div>
           </div>
         </div>
@@ -266,7 +319,7 @@
         <mat-icon aria-hidden="true">account_balance</mat-icon>
         <div>
           <h2>Comptes plan de la Banque El Amana</h2>
-          <p>Renseignés automatiquement selon le type sélectionné</p>
+          <p>Compte immobilisation obligatoire — renseigné selon la catégorie</p>
         </div>
       </div>
       <div class="immo-form__section-body">
@@ -328,7 +381,10 @@
           <mat-icon aria-hidden="true">table_chart</mat-icon>
           <div>
             <h2>Amortissement & comptabilisation</h2>
-            <p>Plan et écritures 681 / 148</p>
+            <p>
+              Exercice {{ anneeExerciceAmort() }} — calcul auto à chaque arrêté :
+              amortissement période, cumul, VNC = VB − cumul
+            </p>
           </div>
         </div>
         <div class="immo-form__section-body">
@@ -336,9 +392,17 @@
             <div>
               @if (dateComptabilisation()) {
                 <p class="text-xs text-slate-500 m-0">
-                  Dernière comptabilisation : {{ dateComptabilisation() }}
+                  Date de comptabilisation (acquisition) : {{ dateComptabilisation() }}
                 </p>
               }
+              @if (dernierePeriodeAmort()) {
+                <p class="text-xs text-slate-500 m-0 mt-1">
+                  Dernière période amortissement validée : {{ formatPeriode(dernierePeriodeAmort()) }}
+                </p>
+              }
+              <p class="text-xs text-slate-500 m-0 mt-1">
+                Les exercices suivants ({{ anneeExerciceAmort() + 1 }}, …) apparaîtront automatiquement à l’arrivée de chaque année.
+              </p>
             </div>
             <div class="flex flex-wrap gap-2">
               @if (canMettreEnService()) {
@@ -355,21 +419,25 @@
           </div>
           @if (amortissements().length === 0) {
             <p class="text-sm text-slate-500 m-0">
-              Aucune ligne d'amortissement. Mettez l'actif en service pour générer le plan.
+              @if (planHorsExercice()) {
+                Aucune période pour l’exercice {{ anneeExerciceAmort() }}. Le plan existe pour d’autres années — elles s’afficheront à l’arrivée de chaque exercice.
+              } @else {
+                Aucune ligne d'amortissement pour {{ anneeExerciceAmort() }}. Mettez l'actif en service pour générer le plan.
+              }
             </p>
           } @else {
             <div class="app-panel">
               <table mat-table [dataSource]="amortissements()" class="w-full app-table">
                 <ng-container matColumnDef="periode">
                   <th mat-header-cell *matHeaderCellDef>Période</th>
-                  <td mat-cell *matCellDef="let row">{{ row.periode }}</td>
+                  <td mat-cell *matCellDef="let row">{{ formatPeriode(row.periode) }}</td>
                 </ng-container>
                 <ng-container matColumnDef="montant">
-                  <th mat-header-cell *matHeaderCellDef>Dotation</th>
+                  <th mat-header-cell *matHeaderCellDef>Amort. période</th>
                   <td mat-cell *matCellDef="let row">{{ row.montant | number: '1.2-2' }}</td>
                 </ng-container>
                 <ng-container matColumnDef="cumul">
-                  <th mat-header-cell *matHeaderCellDef>Cumul</th>
+                  <th mat-header-cell *matHeaderCellDef>Cumul amort.</th>
                   <td mat-cell *matCellDef="let row">{{ row.cumul | number: '1.2-2' }}</td>
                 </ng-container>
                 <ng-container matColumnDef="vnc">
@@ -522,33 +590,47 @@
             <mat-icon aria-hidden="true">logout</mat-icon>
             <div>
               <h2>Sortie d'actif</h2>
-              <p>Cession ou mise au rebut</p>
+              <p>Cession : amortissements jusqu’à la date, VNC, plus/moins-value, écritures de sortie</p>
             </div>
           </div>
           <div class="immo-form__section-body">
-            @if (situationComptable(); as sit) {
-              <p class="text-xs text-slate-500 mb-3 mt-0">
-                Cumul amort. {{ sit.cumul_amortissement | number: '1.2-2' }} MRU —
-                VNC {{ sit.vnc | number: '1.2-2' }} MRU
-              </p>
-            }
             <div class="immo-form__grid immo-form__grid--2">
               <div class="immo-form__grid">
                 <p class="immo-form__workflow-title immo-form__span-full">Cession</p>
                 <div class="immo-field">
-                  <label class="immo-field__label" for="cess-date">Date de cession</label>
+                  <label class="immo-field__label" for="cess-date">Date de cession <span class="immo-field__req">*</span></label>
                   <input id="cess-date" class="immo-field__control" type="date" formControlName="date_cession" />
                 </div>
                 <div class="immo-field">
-                  <label class="immo-field__label" for="cess-prix">Prix de cession (MRU)</label>
-                  <input id="cess-prix" class="immo-field__control" type="number" formControlName="prix_cession" step="0.01" />
+                  <label class="immo-field__label" for="cess-prix">Prix de cession — PC (MRU) <span class="immo-field__req">*</span></label>
+                  <input id="cess-prix" class="immo-field__control" type="number" formControlName="prix_cession" step="0.01" min="0" />
                 </div>
                 <div class="immo-field">
-                  <label class="immo-field__label" for="cess-lib">Libellé</label>
-                  <input id="cess-lib" class="immo-field__control" formControlName="libelle_cession" />
+                  <label class="immo-field__label" for="cess-ref">Référence de la cession <span class="immo-field__req">*</span></label>
+                  <input id="cess-ref" class="immo-field__control" formControlName="reference_cession" autocomplete="off" placeholder="Ex. CESS-2026-001" />
                 </div>
+                <div class="immo-field immo-form__span-full">
+                  <label class="immo-field__label" for="cess-obs">Observations</label>
+                  <textarea id="cess-obs" class="immo-field__control" formControlName="observations_cession" rows="2"></textarea>
+                </div>
+                @if (cessionPreview(); as prev) {
+                  <div class="immo-form__span-full immo-form__preview text-sm">
+                    <p class="m-0"><strong>Avant validation (calcul auto)</strong></p>
+                    <p class="m-0 mt-1">Cumul amort. à la date : {{ prev.cumul_amortissement | number: '1.2-2' }} MRU</p>
+                    <p class="m-0">VNC à la date : {{ prev.vnc | number: '1.2-2' }} MRU</p>
+                    <p class="m-0">Résultat (PC − VNC) :
+                      @if (prev.cas === 'plus_value') {
+                        plus-value {{ prev.plus_value | number: '1.2-2' }} MRU
+                      } @else if (prev.cas === 'moins_value') {
+                        moins-value {{ prev.moins_value | number: '1.2-2' }} MRU
+                      } @else {
+                        équilibre (0)
+                      }
+                    </p>
+                  </div>
+                }
                 <button mat-stroked-button type="button" color="warn" (click)="enregistrerCession()" [disabled]="workflowBusy()">
-                  Enregistrer la cession
+                  Valider la cession
                 </button>
               </div>
               <div class="immo-form__grid">

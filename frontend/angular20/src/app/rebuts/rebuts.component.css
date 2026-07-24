@@ -164,6 +164,12 @@
   color: #0f172a;
 }
 
+.reb__designation {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .reb__montant {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
@@ -172,6 +178,10 @@
 }
 
 .reb__motif {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #475569;
   font-size: 0.875rem;
 }
@@ -189,5 +199,48 @@
 }
 
 .reb__table-wrap .app-table {
-  min-width: 48rem;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.reb__table-wrap .app-table th,
+.reb__table-wrap .app-table td {
+  padding: 0.7rem 0.85rem;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reb__table-wrap .mat-column-date {
+  width: 10%;
+}
+
+.reb__table-wrap .mat-column-code {
+  width: 18%;
+}
+
+.reb__table-wrap .mat-column-designation {
+  width: 30%;
+}
+
+.reb__table-wrap .mat-column-vnc {
+  width: 12%;
+  text-align: right;
+}
+
+.reb__table-wrap .mat-column-motif {
+  width: 18%;
+}
+
+.reb__table-wrap .mat-column-actions {
+  width: 12%;
+  text-align: right;
+}
+
+.reb__actions-cell {
+  white-space: nowrap;
+}
+
+.reb__voir {
+  white-space: nowrap;
 }

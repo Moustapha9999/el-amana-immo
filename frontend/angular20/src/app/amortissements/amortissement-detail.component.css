@@ -1,0 +1,233 @@
+.amd {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding-bottom: 2rem;
+}
+
+.amd__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.amd__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--app-brand-700);
+  text-decoration: none;
+  margin-bottom: 0.5rem;
+}
+
+.amd__back:hover {
+  text-decoration: underline;
+}
+
+.amd__back mat-icon {
+  font-size: 1.1rem;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.amd__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.amd__lead {
+  margin: 0.35rem 0 0;
+  font-size: 0.9375rem;
+  color: #64748b;
+}
+
+.amd__hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.amd__empty,
+.amd__hint {
+  margin: 0;
+  padding: 1.5rem 0.25rem;
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.amd__sheet {
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-card);
+  overflow: hidden;
+}
+
+.amd__sheet-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1.25rem 1.35rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef6fc 100%);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.amd__eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.amd__sheet-title {
+  margin: 0.35rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.amd__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgb(40 116 166 / 0.12);
+  color: var(--app-brand-800);
+  border: 1px solid rgb(40 116 166 / 0.25);
+}
+
+.amd__block {
+  padding: 1.15rem 1.35rem;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.amd__block:last-child {
+  border-bottom: none;
+}
+
+.amd__block-title {
+  margin: 0 0 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-brand-800);
+}
+
+.amd__grid {
+  display: grid;
+  gap: 0.85rem 1.25rem;
+  margin: 0;
+}
+
+@media (min-width: 640px) {
+  .amd__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.amd__grid dt {
+  margin: 0 0 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.amd__grid dd {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: #0f172a;
+}
+
+.amd__mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.amd__montant,
+.amd__num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.amd__result-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .amd__result-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.amd__result-card {
+  padding: 0.85rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.amd__result-card--vnc {
+  border-left: 4px solid var(--app-brand-600);
+}
+
+.amd__result-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  margin-bottom: 0.25rem;
+}
+
+.amd__result-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+}
+
+.amd__formula {
+  margin: 0.85rem 0 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.amd__table-wrap {
+  overflow-x: auto;
+}
+
+.amd__pill {
+  display: inline-flex;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.amd__pill--ok {
+  background: rgb(22 163 74 / 0.12);
+  color: #15803d;
+  border-color: rgb(22 163 74 / 0.25);
+}

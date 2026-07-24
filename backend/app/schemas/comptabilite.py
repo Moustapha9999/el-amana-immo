@@ -91,6 +91,14 @@ class EcritureRead(EcritureCreate, ORMModel):
     validee: bool
 
 
+class EcritureDetailRead(EcritureRead):
+    """Fiche visuelle d'une écriture comptable."""
+
+    code_inventaire: str | None = None
+    designation: str | None = None
+    type_mouvement: str | None = None  # amortissement | cession | rebut | reevaluation | manuel | autre
+
+
 class AmortissementComptabiliserResponse(BaseModel):
     amortissement: AmortissementRead
     ecriture: EcritureRead

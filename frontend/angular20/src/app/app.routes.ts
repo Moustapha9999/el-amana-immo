@@ -9,13 +9,18 @@ import { ImmobilisationsListComponent } from './immobilisations/immobilisations-
 import { ImmobilisationFormComponent } from './immobilisations/immobilisation-form.component';
 import { InventaireComponent } from './inventaire/inventaire.component';
 import { EcrituresComponent } from './ecritures/ecritures.component';
+import { EcritureDetailComponent } from './ecritures/ecriture-detail.component';
 import { RapportsComponent } from './rapports/rapports.component';
 import { AuditComponent } from './audit/audit.component';
 import { CessionsComponent } from './cessions/cessions.component';
+import { CessionDetailComponent } from './cessions/cession-detail.component';
 import { RebutsComponent } from './rebuts/rebuts.component';
+import { RebutDetailComponent } from './rebuts/rebut-detail.component';
 import { UtilisateursComponent } from './utilisateurs/utilisateurs.component';
 import { AmortissementsComponent } from './amortissements/amortissements.component';
+import { AmortissementDetailComponent } from './amortissements/amortissement-detail.component';
 import { ReevaluationsComponent } from './reevaluations/reevaluations.component';
+import { ReevaluationDetailComponent } from './reevaluations/reevaluation-detail.component';
 import { ParametresComponent } from './parametres/parametres.component';
 import { NotificationsComponent } from './notifications/notifications.component';
 
@@ -36,10 +41,15 @@ export const routes: Routes = [
       { path: 'immobilisations/:id', component: ImmobilisationFormComponent },
       { path: 'inventaire', component: InventaireComponent },
       { path: 'amortissements', component: AmortissementsComponent },
+      { path: 'amortissements/:id', component: AmortissementDetailComponent },
       { path: 'ecritures', component: EcrituresComponent },
+      { path: 'ecritures/:id', component: EcritureDetailComponent },
       { path: 'cessions', component: CessionsComponent },
+      { path: 'cessions/:id', component: CessionDetailComponent },
       { path: 'rebuts', component: RebutsComponent },
+      { path: 'rebuts/:id', component: RebutDetailComponent },
       { path: 'reevaluations', component: ReevaluationsComponent },
+      { path: 'reevaluations/:id', component: ReevaluationDetailComponent },
       { path: 'notifications', component: NotificationsComponent },
       { path: 'rapports', component: RapportsComponent },
       { path: 'utilisateurs', component: UtilisateursComponent },

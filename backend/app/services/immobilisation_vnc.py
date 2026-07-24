@@ -6,9 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
 from app.models import Amortissement, Immobilisation
+from app.services.amortissement_engine import vnc_a_date
 
 
-async def compute_situation_comptable(db: AsyncSession, immobilisation_id: UUID) -> tuple[Immobilisation, Decimal, Decimal, Decimal]:
+async def compute_situation_comptable(
+    db: AsyncSession,
+    immobilisation_id: UUID,
+) -> tuple[Immobilisation, Decimal, Decimal]:
+    """Situation actuelle : cumul des amortissements déjà validés."""
     immo = await db.get(Immobilisation, immobilisation_id)
     if immo is None or immo.deleted_at is not None:
         raise NotFoundError("Immobilisation", str(immobilisation_id))
@@ -24,3 +29,8 @@ async def compute_situation_comptable(db: AsyncSession, immobilisation_id: UUID)
     cumul = Decimal(str(result.scalar_one())).quantize(Decimal("0.01"))
     vnc = (immo.valeur_brute - cumul).quantize(Decimal("0.01"))
     return immo, cumul, vnc
+
+
+def compute_situation_a_date(immo: Immobilisation, date_limite) -> tuple[Decimal, Decimal]:
+    """Cumul + VNC calculés jusqu'à une date (prorata) — note banque cession."""
+    return vnc_a_date(immo, date_limite)

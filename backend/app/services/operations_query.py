@@ -7,6 +7,57 @@ from app.core.pagination import page_offset
 from app.models import Ajustement, Cession, Immobilisation, Rebut, Reevaluation
 
 
+async def get_cession(
+    db: AsyncSession,
+    cession_id,
+) -> tuple[Cession, Immobilisation | None]:
+    from app.core.exceptions import NotFoundError
+
+    result = await db.execute(
+        select(Cession, Immobilisation)
+        .join(Immobilisation, Cession.immobilisation_id == Immobilisation.id, isouter=True)
+        .where(Cession.id == cession_id)
+    )
+    row = result.first()
+    if row is None:
+        raise NotFoundError("Cession", str(cession_id))
+    return row[0], row[1]
+
+
+async def get_reevaluation(
+    db: AsyncSession,
+    reevaluation_id,
+) -> tuple[Reevaluation, Immobilisation | None]:
+    from app.core.exceptions import NotFoundError
+
+    result = await db.execute(
+        select(Reevaluation, Immobilisation)
+        .join(Immobilisation, Reevaluation.immobilisation_id == Immobilisation.id, isouter=True)
+        .where(Reevaluation.id == reevaluation_id)
+    )
+    row = result.first()
+    if row is None:
+        raise NotFoundError("Réévaluation", str(reevaluation_id))
+    return row[0], row[1]
+
+
+async def get_rebut(
+    db: AsyncSession,
+    rebut_id,
+) -> tuple[Rebut, Immobilisation | None]:
+    from app.core.exceptions import NotFoundError
+
+    result = await db.execute(
+        select(Rebut, Immobilisation)
+        .join(Immobilisation, Rebut.immobilisation_id == Immobilisation.id, isouter=True)
+        .where(Rebut.id == rebut_id)
+    )
+    row = result.first()
+    if row is None:
+        raise NotFoundError("Rebut", str(rebut_id))
+    return row[0], row[1]
+
+
 async def list_cessions(
     db: AsyncSession,
     page: int,

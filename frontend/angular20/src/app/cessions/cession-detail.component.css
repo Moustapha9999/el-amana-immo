@@ -1,0 +1,234 @@
+.cfd {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding-bottom: 2rem;
+}
+
+.cfd__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.cfd__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--app-brand-700);
+  text-decoration: none;
+  margin-bottom: 0.5rem;
+}
+
+.cfd__back:hover {
+  text-decoration: underline;
+}
+
+.cfd__back mat-icon {
+  font-size: 1.1rem;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.cfd__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.cfd__lead {
+  margin: 0.35rem 0 0;
+  font-size: 0.9375rem;
+  color: #64748b;
+}
+
+.cfd__hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.cfd__empty {
+  margin: 0;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: #64748b;
+}
+
+.cfd__sheet {
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-card);
+  overflow: hidden;
+}
+
+.cfd__sheet-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1.25rem 1.35rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef6fc 100%);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.cfd__eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.cfd__sheet-title {
+  margin: 0.35rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.cfd__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.cfd__badge--plus {
+  background: rgb(22 163 74 / 0.12);
+  color: #15803d;
+  border: 1px solid rgb(22 163 74 / 0.25);
+}
+
+.cfd__badge--moins {
+  background: rgb(220 38 38 / 0.1);
+  color: #b91c1c;
+  border: 1px solid rgb(220 38 38 / 0.22);
+}
+
+.cfd__badge--neutre {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.cfd__block {
+  padding: 1.15rem 1.35rem;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.cfd__block:last-child {
+  border-bottom: none;
+}
+
+.cfd__block-title {
+  margin: 0 0 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-brand-800);
+}
+
+.cfd__grid {
+  display: grid;
+  gap: 0.85rem 1.25rem;
+  margin: 0;
+}
+
+@media (min-width: 640px) {
+  .cfd__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.cfd__span-2 {
+  grid-column: 1 / -1;
+}
+
+.cfd__grid dt {
+  margin: 0 0 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.cfd__grid dd {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: #0f172a;
+  line-height: 1.4;
+}
+
+.cfd__mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.cfd__montant {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.cfd__formula {
+  margin: 0 0 0.85rem;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.cfd__result-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .cfd__result-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.cfd__result-card {
+  padding: 0.85rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.cfd__result-card--plus {
+  border-left: 4px solid #16a34a;
+}
+
+.cfd__result-card--moins {
+  border-left: 4px solid #dc2626;
+}
+
+.cfd__result-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  margin-bottom: 0.25rem;
+}
+
+.cfd__result-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+}

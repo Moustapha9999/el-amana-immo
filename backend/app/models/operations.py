@@ -22,6 +22,8 @@ class Cession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     vnc: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     plus_value: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
     moins_value: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    reference: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    observations: Mapped[str | None] = mapped_column(Text, nullable=True)
     libelle: Mapped[str | None] = mapped_column(String(255), nullable=True)
     ecriture_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ecritures_comptables.id"), nullable=True

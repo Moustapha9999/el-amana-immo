@@ -156,7 +156,7 @@ class AmortissementService:
         )
         self.db.add(ecriture)
         row.valide = True
-        immo.date_comptabilisation = date_ecriture
+        # date_comptabilisation reste la date de comptabilisation d'acquisition (note banque)
         await self.db.flush()
         await self._notify_fin_amortissement_if_needed(immo, row)
         return row, ecriture

@@ -217,5 +217,54 @@
 }
 
 .ces__table-wrap .app-table {
-  min-width: 52rem;
+  width: 100%;
+  min-width: 64rem;
+  table-layout: fixed;
+}
+
+.ces__table-wrap .app-table th,
+.ces__table-wrap .app-table td {
+  padding: 0.7rem 0.85rem;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ces__table-wrap .mat-column-date {
+  width: 7rem;
+}
+
+.ces__table-wrap .mat-column-code {
+  width: 10.5rem;
+}
+
+.ces__table-wrap .mat-column-reference {
+  width: 8.5rem;
+}
+
+.ces__table-wrap .mat-column-designation {
+  width: auto;
+}
+
+.ces__table-wrap .mat-column-prix,
+.ces__table-wrap .mat-column-vnc {
+  width: 7.5rem;
+  text-align: right;
+}
+
+.ces__table-wrap .mat-column-resultat {
+  width: 7.5rem;
+}
+
+.ces__table-wrap .mat-column-actions {
+  width: 8.5rem;
+  text-align: right;
+}
+
+.ces__actions-cell {
+  white-space: nowrap;
+}
+
+.ces__voir {
+  white-space: nowrap;
 }

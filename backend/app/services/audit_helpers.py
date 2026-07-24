@@ -1,6 +1,7 @@
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.request_client import get_client_ip
 from app.models import User
 from app.services.audit_service import AuditService
 
@@ -16,7 +17,7 @@ async def record_audit(
     before: dict | None = None,
     after: dict | None = None,
 ) -> None:
-    ip = request.client.host if request and request.client else None
+    ip = get_client_ip(request)
     await AuditService(db).log(
         user=user,
         action=action,

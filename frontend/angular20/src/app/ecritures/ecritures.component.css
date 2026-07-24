@@ -220,7 +220,20 @@
 }
 
 .ecr__table-wrap .mat-column-generee_auto {
-  width: 9%;
+  width: 8%;
+}
+
+.ecr__table-wrap .mat-column-actions {
+  width: 10%;
+  text-align: right;
+}
+
+.ecr__actions-cell {
+  white-space: nowrap;
+}
+
+.ecr__voir {
+  white-space: nowrap;
 }
 
 .ecr__table-wrap .mat-column-libelle .mat-mdc-cell,
@@ -235,7 +248,7 @@
 
 @media (max-width: 900px) {
   .ecr__table-wrap .app-table {
-    min-width: 56rem;
+    min-width: 64rem;
     table-layout: auto;
   }
 }

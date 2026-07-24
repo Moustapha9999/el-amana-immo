@@ -88,6 +88,10 @@
                 <span class="ces__code">{{ row.code_inventaire ?? '—' }}</span>
               </td>
             </ng-container>
+            <ng-container matColumnDef="reference">
+              <th mat-header-cell *matHeaderCellDef>Référence</th>
+              <td mat-cell *matCellDef="let row">{{ row.reference || row.libelle || '—' }}</td>
+            </ng-container>
             <ng-container matColumnDef="designation">
               <th mat-header-cell *matHeaderCellDef>Désignation</th>
               <td mat-cell *matCellDef="let row">{{ row.designation ?? '—' }}</td>
@@ -118,9 +122,11 @@
               </td>
             </ng-container>
             <ng-container matColumnDef="actions">
-              <th mat-header-cell *matHeaderCellDef></th>
-              <td mat-cell *matCellDef="let row">
-                <a mat-button [routerLink]="['/immobilisations', row.immobilisation_id]">Fiche</a>
+              <th mat-header-cell *matHeaderCellDef>Actions</th>
+              <td mat-cell *matCellDef="let row" class="ces__actions-cell">
+                <a mat-stroked-button class="ces__voir" [routerLink]="['/cessions', row.id]">
+                  Voir fiche
+                </a>
               </td>
             </ng-container>
             <tr mat-header-row *matHeaderRowDef="columns"></tr>

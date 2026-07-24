@@ -16,6 +16,8 @@ interface CessionRow {
   vnc: string;
   plus_value: string;
   moins_value: string;
+  reference: string | null;
+  observations: string | null;
   libelle: string | null;
   code_inventaire: string | null;
   designation: string | null;
@@ -48,7 +50,7 @@ export class CessionsComponent implements OnInit {
   readonly rows = signal<CessionRow[]>([]);
   readonly total = signal(0);
   readonly loading = signal(false);
-  readonly columns = ['date', 'code', 'designation', 'prix', 'vnc', 'resultat', 'actions'];
+  readonly columns = ['date', 'code', 'reference', 'designation', 'prix', 'vnc', 'resultat', 'actions'];
 
   readonly filterForm = this.fb.nonNullable.group({
     date_debut: [''],

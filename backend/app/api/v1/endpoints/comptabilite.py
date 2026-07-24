@@ -7,10 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
 from app.api.v1.endpoints.helpers import to_paginated
-from app.core.exceptions import AppError, raise_http_from_app
+from app.core.exceptions import AppError, NotFoundError, raise_http_from_app
 from app.core.pagination import page_offset
 from app.db.session import get_db
-from app.models import EcritureComptable, User
+from app.models import EcritureComptable, Immobilisation, User
 from app.schemas.comptabilite import (
     AmortissementComptabiliserRequest,
     AmortissementComptabiliserResponse,
@@ -20,6 +20,7 @@ from app.schemas.comptabilite import (
     ComptePlanCreate,
     ComptePlanRead,
     EcritureCreate,
+    EcritureDetailRead,
     EcritureRead,
     JournalCreate,
     JournalRead,
@@ -74,6 +75,66 @@ async def update_parametrage(payload: ParametrageAmortissementUpdate, _: User = 
 async def list_amortissements(immobilisation_id: UUID, _: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     rows = await AmortissementService(db).list_for_immobilisation(immobilisation_id)
     return [AmortissementRead.model_validate(r) for r in rows]
+
+
+@router.get("/amortissements/immobilisation/{immobilisation_id}/export")
+async def export_amortissement_fiche(
+    immobilisation_id: UUID,
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    annee: int | None = Query(None, ge=2000, le=2100),
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export fiche amortissement (exercice courant par défaut)."""
+    from datetime import date as date_cls
+
+    from fastapi.responses import Response
+
+    from app.services.immobilisation_service import ImmobilisationService
+    from app.services.reporting_export import (
+        _format_periode_export,
+        amortissement_fiche_to_excel,
+        amortissement_fiche_to_pdf,
+    )
+
+    try:
+        immo = await ImmobilisationService(db).get(immobilisation_id)
+        rows = await AmortissementService(db).list_for_immobilisation(immobilisation_id)
+        year = annee or date_cls.today().year
+        prefix = f"{year}-"
+        plan = [r for r in rows if not r.simule and not r.annule and r.periode.startswith(prefix)]
+        lignes = [
+            [
+                _format_periode_export(r.periode),
+                float(r.montant),
+                float(r.cumul),
+                float(r.vnc),
+                "Comptabilisée" if r.valide else "À comptabiliser",
+            ]
+            for r in plan
+        ]
+        meta = {
+            "subtitle": (
+                f"{immo.code_inventaire} — {immo.designation} — "
+                f"Exercice {year} — VB {immo.valeur_brute}"
+            ),
+        }
+        code = immo.code_inventaire.replace(" ", "_")
+        if format == "pdf":
+            content = amortissement_fiche_to_pdf(meta=meta, lignes=lignes)
+            media = "application/pdf"
+            filename = f"fiche-amortissement-{code}-{year}.pdf"
+        else:
+            content = amortissement_fiche_to_excel(meta=meta, lignes=lignes)
+            media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            filename = f"fiche-amortissement-{code}-{year}.xlsx"
+        return Response(
+            content=content,
+            media_type=media,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except AppError as exc:
+        raise_http_from_app(exc)
 
 
 @router.post("/amortissements/simuler", response_model=AmortissementRead, status_code=status.HTTP_201_CREATED)
@@ -154,6 +215,107 @@ async def list_ecritures(
     )
     items = list(result.scalars().all())
     return to_paginated(items, total, page, size, EcritureRead.model_validate)
+
+
+def _type_mouvement_ecriture(ecriture: EcritureComptable) -> str:
+    ref = (ecriture.reference or "").upper()
+    lib = (ecriture.libelle or "").lower()
+    if ref.startswith("AMORT") or "amortissement" in lib or "dotation" in lib:
+        return "amortissement"
+    if ref.startswith("CESS") or "cession" in lib:
+        return "cession"
+    if ref.startswith("REBUT") or "rebut" in lib:
+        return "rebut"
+    if ref.startswith("REEVAL") or "réévalu" in lib or "reeval" in lib:
+        return "reevaluation"
+    if not ecriture.generee_auto:
+        return "manuel"
+    return "autre"
+
+
+async def _ecriture_detail(db: AsyncSession, ecriture_id: UUID) -> EcritureDetailRead:
+    row = await db.get(EcritureComptable, ecriture_id)
+    if row is None:
+        raise NotFoundError("Écriture comptable", str(ecriture_id))
+    code = designation = None
+    if row.immobilisation_id:
+        immo = await db.get(Immobilisation, row.immobilisation_id)
+        if immo is not None:
+            code = immo.code_inventaire
+            designation = immo.designation
+    base = EcritureRead.model_validate(row)
+    return EcritureDetailRead(
+        **base.model_dump(),
+        code_inventaire=code,
+        designation=designation,
+        type_mouvement=_type_mouvement_ecriture(row),
+    )
+
+
+@router.get("/ecritures/{ecriture_id}", response_model=EcritureDetailRead)
+async def get_ecriture(
+    ecriture_id: UUID,
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await _ecriture_detail(db, ecriture_id)
+    except AppError as exc:
+        raise_http_from_app(exc)
+
+
+@router.get("/ecritures/{ecriture_id}/export")
+async def export_ecriture_fiche(
+    ecriture_id: UUID,
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from fastapi.responses import Response
+
+    from app.services.reporting_export import ecriture_fiche_to_excel, ecriture_fiche_to_pdf
+
+    try:
+        detail = await _ecriture_detail(db, ecriture_id)
+        type_labels = {
+            "amortissement": "Dotation / amortissement",
+            "cession": "Cession",
+            "rebut": "Mise au rebut",
+            "reevaluation": "Réévaluation",
+            "manuel": "Saisie manuelle",
+            "autre": "Autre",
+        }
+        payload = {
+            "date_ecriture_fmt": detail.date_ecriture.strftime("%d/%m/%Y"),
+            "journal_code": detail.journal_code,
+            "libelle": detail.libelle,
+            "compte_debit": detail.compte_debit,
+            "compte_credit": detail.compte_credit,
+            "montant": float(detail.montant),
+            "reference": detail.reference or "—",
+            "origine": "Automatique" if detail.generee_auto else "Manuelle",
+            "validee": "Oui" if detail.validee else "Non",
+            "code_inventaire": detail.code_inventaire or "—",
+            "designation": detail.designation or "—",
+            "type_mouvement": type_labels.get(detail.type_mouvement or "", detail.type_mouvement or "—"),
+            "subtitle": f"{detail.reference or detail.id} — {detail.libelle[:60]}",
+        }
+        ref = (detail.reference or str(detail.id)[:8]).replace(" ", "_")
+        if format == "pdf":
+            content = ecriture_fiche_to_pdf(payload)
+            media = "application/pdf"
+            filename = f"fiche-ecriture-{ref}.pdf"
+        else:
+            content = ecriture_fiche_to_excel(payload)
+            media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            filename = f"fiche-ecriture-{ref}.xlsx"
+        return Response(
+            content=content,
+            media_type=media,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except AppError as exc:
+        raise_http_from_app(exc)
 
 
 @router.post("/ecritures", response_model=EcritureRead, status_code=status.HTTP_201_CREATED)

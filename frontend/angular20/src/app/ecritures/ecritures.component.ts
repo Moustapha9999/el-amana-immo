@@ -1,6 +1,7 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
@@ -27,7 +28,7 @@ interface Paginated<T> {
 
 @Component({
   selector: 'app-ecritures',
-  imports: [ReactiveFormsModule, DatePipe, DecimalPipe, MatButtonModule, MatIconModule, MatTableModule],
+  imports: [ReactiveFormsModule, RouterLink, DatePipe, DecimalPipe, MatButtonModule, MatIconModule, MatTableModule],
   templateUrl: './ecritures.component.html',
   styleUrl: './ecritures.component.css',
 })
@@ -48,6 +49,7 @@ export class EcrituresComponent implements OnInit {
     'montant',
     'reference',
     'generee_auto',
+    'actions',
   ];
 
   readonly filterForm = this.fb.nonNullable.group({
