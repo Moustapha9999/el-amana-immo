@@ -2,11 +2,10 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
+import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
+import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 
 interface EcritureRow {
   id: string;
@@ -28,24 +27,18 @@ interface Paginated<T> {
 
 @Component({
   selector: 'app-ecritures',
-  imports: [
-    ReactiveFormsModule,
-    DatePipe,
-    DecimalPipe,
-    MatCardModule,
-    MatFormFieldModule,
-    MatInputModule,
-    MatButtonModule,
-    MatTableModule,
-  ],
+  imports: [ReactiveFormsModule, DatePipe, DecimalPipe, MatButtonModule, MatIconModule, MatTableModule],
   templateUrl: './ecritures.component.html',
+  styleUrl: './ecritures.component.css',
 })
 export class EcrituresComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
+  private readonly dialogs = inject(UiDialogService);
 
   readonly rows = signal<EcritureRow[]>([]);
   readonly total = signal(0);
+  readonly loading = signal(false);
   readonly displayedColumns = [
     'date_ecriture',
     'journal_code',
@@ -75,10 +68,23 @@ export class EcrituresComponent implements OnInit {
     if (f.date_fin) {
       params['date_fin'] = f.date_fin;
     }
-    this.api.get<Paginated<EcritureRow>>('/ecritures', params).subscribe((res) => {
-      this.rows.set(res.items);
-      this.total.set(res.total);
+    this.loading.set(true);
+    this.api.get<Paginated<EcritureRow>>('/ecritures', params).subscribe({
+      next: (res) => {
+        this.rows.set(res.items);
+        this.total.set(res.total);
+        this.loading.set(false);
+      },
+      error: () => {
+        this.loading.set(false);
+        void this.dialogs.error('Impossible de charger les écritures').subscribe();
+      },
     });
+  }
+
+  resetFilters(): void {
+    this.filterForm.reset({ date_debut: '', date_fin: '' });
+    this.load();
   }
 
   export(format: 'xlsx' | 'pdf'): void {
@@ -90,9 +96,14 @@ export class EcrituresComponent implements OnInit {
     if (f.date_fin) {
       params['date_fin'] = f.date_fin;
     }
-    this.api.download('/reporting/ecritures/export', params).subscribe((blob) => {
-      const ext = format === 'pdf' ? 'pdf' : 'xlsx';
-      this.saveBlob(blob, `ecritures-el-amana.${ext}`);
+    this.api.download('/reporting/ecritures/export', params).subscribe({
+      next: (blob) => {
+        const ext = format === 'pdf' ? 'pdf' : 'xlsx';
+        this.saveBlob(blob, `ecritures-el-amana.${ext}`);
+      },
+      error: () => {
+        void this.dialogs.error('Export impossible').subscribe();
+      },
     });
   }
 

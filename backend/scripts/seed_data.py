@@ -16,6 +16,7 @@ from app.models import (
     User,
 )
 from app.models import entities  # noqa: F401
+from app.services.agences_seed import seed_agences_el_amana
 from app.services.plan_comptable_seed import seed_plan_comptable_el_amana
 
 
@@ -27,11 +28,10 @@ async def seed() -> None:
             print("Seed déjà appliqué — admin@el-amana.mr existe.")
             return
 
-        agence = Agence(code="AG001", libelle="Siège Nouakchott", ville="Nouakchott")
         direction = Direction(code="DIR001", libelle="Direction Générale")
         journal = Journal(code="OD", libelle="Opérations diverses")
 
-        admin_role = Role(code="administrateur", label="Administrateur", description="Accès complet")
+        admin_role = Role(code="administrateur", label="Admin", description="Accès complet")
         comptable_role = Role(code="comptable", label="Comptable")
         auditeur_role = Role(code="auditeur", label="Auditeur")
         lecture_role = Role(code="lecture_seule", label="Lecture seule")
@@ -44,7 +44,6 @@ async def seed() -> None:
 
         session.add_all(
             [
-                agence,
                 direction,
                 journal,
                 admin_role,
@@ -58,6 +57,10 @@ async def seed() -> None:
         )
         await session.flush()
 
+        agence_stats = await seed_agences_el_amana(session)
+        centrale = (
+            await session.execute(select(Agence).where(Agence.code == "00001"))
+        ).scalar_one()
         plan_stats = await seed_plan_comptable_el_amana(session)
 
         admin = User(
@@ -65,12 +68,13 @@ async def seed() -> None:
             full_name="Administrateur Système",
             hashed_password=get_password_hash("Admin@2026"),
             is_superuser=True,
-            agence_id=agence.id,
+            agence_id=centrale.id,
             roles=[admin_role, comptable_role, auditeur_role, lecture_role],
         )
         session.add(admin)
         await session.commit()
         print(f"Seed OK — admin: admin@el-amana.mr / Admin@2026 ({settings.app_env})")
+        print(f"Agences El Amana: {agence_stats}")
         print(f"Plan El Amana: {plan_stats}")
 
 

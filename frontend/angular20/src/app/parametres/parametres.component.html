@@ -1,235 +1,566 @@
-<h2 class="text-xl font-semibold mb-4">Paramétrage</h2>
-<p class="text-sm text-slate-500 mb-4">
-  Durée d'utilisation = donnée maître ; le taux linéaire est calculé (100 ÷ durée en années).
-</p>
-
-<mat-tab-group>
-  <mat-tab label="Agences">
-    <div class="py-4 grid gap-4 md:grid-cols-3">
-      <mat-form-field appearance="outline">
-        <mat-label>Code</mat-label>
-        <input matInput [formControl]="newAgence.controls.code" aria-label="Code agence" />
-      </mat-form-field>
-      <mat-form-field appearance="outline">
-        <mat-label>Libellé</mat-label>
-        <input matInput [formControl]="newAgence.controls.libelle" aria-label="Libellé agence" />
-      </mat-form-field>
-      <mat-form-field appearance="outline">
-        <mat-label>Ville</mat-label>
-        <input matInput [formControl]="newAgence.controls.ville" aria-label="Ville" />
-      </mat-form-field>
+<div class="par">
+  <header class="par__hero">
+    <div>
+      <h1 class="par__title">Paramètres</h1>
+      <p class="par__lead">Référentiels, amortissement et sécurité</p>
     </div>
-    <button mat-flat-button color="primary" type="button" (click)="createAgence()" class="mb-4">Ajouter agence</button>
+  </header>
 
-    <table mat-table [dataSource]="agences()" class="w-full bg-white rounded shadow-sm">
-      <ng-container matColumnDef="code">
-        <th mat-header-cell *matHeaderCellDef>Code</th>
-        <td mat-cell *matCellDef="let row">{{ row.code }}</td>
-      </ng-container>
-      <ng-container matColumnDef="libelle">
-        <th mat-header-cell *matHeaderCellDef>Libellé</th>
-        <td mat-cell *matCellDef="let row">{{ row.libelle }}</td>
-      </ng-container>
-      <ng-container matColumnDef="ville">
-        <th mat-header-cell *matHeaderCellDef>Ville</th>
-        <td mat-cell *matCellDef="let row">{{ row.ville ?? '—' }}</td>
-      </ng-container>
-      <ng-container matColumnDef="active">
-        <th mat-header-cell *matHeaderCellDef>Active</th>
-        <td mat-cell *matCellDef="let row">{{ row.is_active ? 'Oui' : 'Non' }}</td>
-      </ng-container>
-      <tr mat-header-row *matHeaderRowDef="agenceColumns"></tr>
-      <tr mat-row *matRowDef="let row; columns: agenceColumns"></tr>
-    </table>
-  </mat-tab>
+  <div class="par__kpis">
+    <div class="par__kpi">
+      <span class="par__kpi-label">Agences</span>
+      <span class="par__kpi-value">{{ kpi().agences }}</span>
+    </div>
+    <div class="par__kpi">
+      <span class="par__kpi-label">Types</span>
+      <span class="par__kpi-value">{{ kpi().categories }}</span>
+    </div>
+    <div class="par__kpi">
+      <span class="par__kpi-label">Comptes</span>
+      <span class="par__kpi-value">{{ kpi().comptes }}</span>
+    </div>
+    <div class="par__kpi" [class.par__kpi--ok]="totpEnabled()" [class.par__kpi--warn]="!totpEnabled()">
+      <span class="par__kpi-label">2FA</span>
+      <span class="par__kpi-value">{{ kpi().totp }}</span>
+    </div>
+  </div>
 
-  <mat-tab label="Types / catégories">
-    <div class="py-4">
-      @if (editingCategoryId()) {
-        <div class="border rounded p-4 mb-4 bg-slate-50">
-          <h3 class="font-medium mb-3">Modifier la catégorie</h3>
-          <div class="grid gap-3 md:grid-cols-2">
-            <mat-form-field appearance="outline">
-              <mat-label>Durée (années)</mat-label>
-              <input matInput type="number" [formControl]="categoryEdit.controls.duree_annees_defaut" aria-label="Durée années" />
-            </mat-form-field>
-            <mat-form-field appearance="outline">
-              <mat-label>Taux linéaire calculé (%)</mat-label>
-              <input matInput readonly [value]="tauxPreview() != null ? (tauxPreview() | number: '1.2-4') : '—'" aria-label="Taux calculé" />
-            </mat-form-field>
-            <mat-form-field appearance="outline">
-              <mat-label>Compte immobilisation (142…)</mat-label>
-              <mat-select [formControl]="categoryEdit.controls.compte_immobilisation" aria-label="Compte immobilisation">
-                @for (c of comptesImmo(); track c.id) {
-                  <mat-option [value]="c.numero">{{ compteLabel(c) }}</mat-option>
-                }
-              </mat-select>
-            </mat-form-field>
-            <mat-form-field appearance="outline">
-              <mat-label>Compte amortissement (148…)</mat-label>
-              <mat-select [formControl]="categoryEdit.controls.compte_amortissement" aria-label="Compte amortissement">
-                @for (c of comptesAmort(); track c.id) {
-                  <mat-option [value]="c.numero">{{ compteLabel(c) }}</mat-option>
-                }
-              </mat-select>
-            </mat-form-field>
-            <mat-form-field appearance="outline">
-              <mat-label>Compte dotation (681…)</mat-label>
-              <mat-select [formControl]="categoryEdit.controls.compte_dotation" aria-label="Compte dotation">
-                @for (c of comptesDotation(); track c.id) {
-                  <mat-option [value]="c.numero">{{ compteLabel(c) }}</mat-option>
-                }
-              </mat-select>
-            </mat-form-field>
-            <mat-form-field appearance="outline">
-              <mat-label>Mode</mat-label>
-              <mat-select [formControl]="categoryEdit.controls.mode_amortissement_defaut" aria-label="Mode amortissement">
-                <mat-option value="lineaire">Linéaire</mat-option>
-                <mat-option value="degressif">Dégressif</mat-option>
-              </mat-select>
-            </mat-form-field>
+  <section class="par__section">
+    <div class="par__tabs" role="tablist" aria-label="Sections paramètres">
+      @for (t of tabs; track t.id) {
+        <button
+          type="button"
+          class="par__tab"
+          role="tab"
+          [class.par__tab--active]="tab() === t.id"
+          [attr.aria-selected]="tab() === t.id"
+          (click)="setTab(t.id)"
+        >
+          {{ t.label }}
+        </button>
+      }
+    </div>
+
+    @if (tab() === 'agences') {
+      <div class="par__toolbar">
+        <div class="par__filters">
+          <div class="par-field par-field--grow">
+            <label class="par-field__label" for="par-ag-search">Recherche</label>
+            <input
+              id="par-ag-search"
+              class="par-field__control"
+              [value]="searchAgences()"
+              (input)="searchAgences.set($any($event.target).value)"
+              placeholder="Code, libellé, ville"
+              aria-label="Recherche agences"
+            />
           </div>
-          <div class="flex gap-2 mt-2">
-            <button mat-flat-button color="primary" type="button" (click)="saveCategory()">Enregistrer</button>
-            <button mat-button type="button" (click)="cancelEditCategory()">Annuler</button>
-          </div>
+          <button mat-flat-button color="primary" type="button" (click)="openCreateAgence()">
+            <mat-icon aria-hidden="true">add</mat-icon>
+            Nouvelle agence
+          </button>
+        </div>
+      </div>
+
+      @if (agenceFormOpen()) {
+        <div class="par__panel">
+          <h2 class="par__panel-title">
+            {{ editingAgenceId() ? 'Modifier l’agence' : 'Nouvelle agence' }}
+          </h2>
+          <form [formGroup]="agenceForm" (ngSubmit)="saveAgence()">
+            <div class="par__form-grid par__form-grid--3">
+              <div class="par-field">
+                <label class="par-field__label" for="par-ag-code">Code agence</label>
+                <input
+                  id="par-ag-code"
+                  class="par-field__control"
+                  formControlName="code"
+                  placeholder="00001"
+                  aria-label="Code agence"
+                />
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-ag-lib">Nom</label>
+                <input
+                  id="par-ag-lib"
+                  class="par-field__control"
+                  formControlName="libelle"
+                  placeholder="AGENCE …"
+                  aria-label="Nom agence"
+                />
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-ag-ville">Ville</label>
+                <input id="par-ag-ville" class="par-field__control" formControlName="ville" aria-label="Ville" />
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-ag-banque">Code banque</label>
+                <input
+                  id="par-ag-banque"
+                  class="par-field__control"
+                  formControlName="code_banque"
+                  aria-label="Code banque"
+                />
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-ag-sigle">Sigle banque</label>
+                <input
+                  id="par-ag-sigle"
+                  class="par-field__control"
+                  formControlName="banque_sigle"
+                  aria-label="Sigle banque"
+                />
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-ag-raison">Raison sociale</label>
+                <input
+                  id="par-ag-raison"
+                  class="par-field__control"
+                  formControlName="banque_raison_sociale"
+                  aria-label="Raison sociale banque"
+                />
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-ag-swift">Code SWIFT</label>
+                <input
+                  id="par-ag-swift"
+                  class="par-field__control"
+                  formControlName="code_swift"
+                  aria-label="Code SWIFT"
+                />
+              </div>
+              @if (editingAgenceId()) {
+                <label class="par__check">
+                  <input type="checkbox" formControlName="is_active" />
+                  Active
+                </label>
+              }
+            </div>
+            <div class="par__form-actions">
+              <button mat-flat-button color="primary" type="submit" [disabled]="saving()">
+                {{ saving() ? '…' : 'Enregistrer' }}
+              </button>
+              <button mat-stroked-button type="button" (click)="cancelAgenceForm()">Annuler</button>
+            </div>
+          </form>
         </div>
       }
 
-      <table mat-table [dataSource]="categories()" class="w-full bg-white rounded shadow-sm">
-        <ng-container matColumnDef="famille">
-          <th mat-header-cell *matHeaderCellDef>Type</th>
-          <td mat-cell *matCellDef="let row">
-            <span class="font-medium">{{ row.famille }}</span>
-            <span class="text-xs text-slate-500 block">{{ row.code }}</span>
-          </td>
-        </ng-container>
-        <ng-container matColumnDef="comptes">
-          <th mat-header-cell *matHeaderCellDef>Comptes</th>
-          <td mat-cell *matCellDef="let row">
-            {{ row.compte_immobilisation }}
-            @if (row.compte_amortissement) {
-              <span class="text-slate-500"> / {{ row.compte_amortissement }} / {{ row.compte_dotation }}</span>
-            }
-          </td>
-        </ng-container>
-        <ng-container matColumnDef="duree">
-          <th mat-header-cell *matHeaderCellDef>Durée (ans)</th>
-          <td mat-cell *matCellDef="let row">{{ row.amortissable ? (row.duree_annees_defaut ?? '—') : 'N/A' }}</td>
-        </ng-container>
-        <ng-container matColumnDef="taux">
-          <th mat-header-cell *matHeaderCellDef>Taux calc. (%)</th>
-          <td mat-cell *matCellDef="let row">
-            @if (row.amortissable && tauxForCategory(row) != null) {
-              {{ tauxForCategory(row) | number: '1.2-4' }}
-            } @else {
-              —
-            }
-          </td>
-        </ng-container>
-        <ng-container matColumnDef="actions">
-          <th mat-header-cell *matHeaderCellDef></th>
-          <td mat-cell *matCellDef="let row">
-            <button mat-button type="button" (click)="startEditCategory(row)">Modifier</button>
-          </td>
-        </ng-container>
-        <tr mat-header-row *matHeaderRowDef="catColumns"></tr>
-        <tr mat-row *matRowDef="let row; columns: catColumns"></tr>
-      </table>
-    </div>
-  </mat-tab>
-
-  <mat-tab label="Plan comptable">
-    <table mat-table [dataSource]="comptes()" class="w-full bg-white rounded shadow-sm mt-4">
-      <ng-container matColumnDef="numero">
-        <th mat-header-cell *matHeaderCellDef>N°</th>
-        <td mat-cell *matCellDef="let row">{{ row.numero }}</td>
-      </ng-container>
-      <ng-container matColumnDef="libelle">
-        <th mat-header-cell *matHeaderCellDef>Libellé</th>
-        <td mat-cell *matCellDef="let row">{{ row.libelle }}</td>
-      </ng-container>
-      <ng-container matColumnDef="type">
-        <th mat-header-cell *matHeaderCellDef>Nature</th>
-        <td mat-cell *matCellDef="let row">{{ row.type_compte }}</td>
-      </ng-container>
-      <tr mat-header-row *matHeaderRowDef="compteColumns"></tr>
-      <tr mat-row *matRowDef="let row; columns: compteColumns"></tr>
-    </table>
-  </mat-tab>
-
-  <mat-tab label="Amortissement (global)">
-    <div class="py-4 grid gap-3 md:grid-cols-2 max-w-2xl">
-      <mat-form-field appearance="outline">
-        <mat-label>Périodicité par défaut</mat-label>
-        <mat-select [formControl]="paramGlobal.controls.periodicite" aria-label="Périodicité">
-          <mat-option value="mensuel">Mensuel</mat-option>
-          <mat-option value="trimestriel">Trimestriel</mat-option>
-          <mat-option value="annuel">Annuel</mat-option>
-        </mat-select>
-      </mat-form-field>
-      <mat-form-field appearance="outline">
-        <mat-label>Journal</mat-label>
-        <input matInput [formControl]="paramGlobal.controls.journal_code" aria-label="Code journal" />
-      </mat-form-field>
-      <mat-form-field appearance="outline">
-        <mat-label>Compte dotation défaut (681…)</mat-label>
-        <mat-select [formControl]="paramGlobal.controls.compte_dotation_defaut" aria-label="Compte dotation défaut">
-          @for (c of comptesDotation(); track c.id) {
-            <mat-option [value]="c.numero">{{ compteLabel(c) }}</mat-option>
-          }
-        </mat-select>
-      </mat-form-field>
-      <mat-form-field appearance="outline">
-        <mat-label>Compte amortissement défaut (148…)</mat-label>
-        <mat-select [formControl]="paramGlobal.controls.compte_amortissement_defaut" aria-label="Compte amortissement défaut">
-          @for (c of comptesAmort(); track c.id) {
-            <mat-option [value]="c.numero">{{ compteLabel(c) }}</mat-option>
-          }
-        </mat-select>
-      </mat-form-field>
-    </div>
-    <button mat-flat-button color="primary" type="button" (click)="saveParamGlobal()">Enregistrer</button>
-  </mat-tab>
-
-  <mat-tab label="Sécurité (2FA)">
-    <div class="py-4 max-w-xl space-y-4">
-      <p class="text-sm text-slate-600">
-        Authentification TOTP (Google Authenticator, Microsoft Authenticator, etc.).
-      </p>
-      @if (totpEnabled()) {
-        <p class="text-sm text-green-700 font-medium">2FA activée sur votre compte.</p>
-        <div class="grid gap-3" [formGroup]="totpDisableForm">
-          <mat-form-field appearance="outline">
-            <mat-label>Code 2FA</mat-label>
-            <input matInput formControlName="code" aria-label="Code pour désactiver 2FA" />
-          </mat-form-field>
-          <mat-form-field appearance="outline">
-            <mat-label>Mot de passe</mat-label>
-            <input matInput type="password" formControlName="password" aria-label="Mot de passe" />
-          </mat-form-field>
-          <button mat-stroked-button color="warn" type="button" (click)="disableTotp()">Désactiver 2FA</button>
-        </div>
-      } @else {
-        @if (!totpSetupSecret()) {
-          <button mat-flat-button color="primary" type="button" (click)="startTotpSetup()">Configurer 2FA</button>
+      <div class="par__body">
+        @if (loading()) {
+          <p class="par__empty">Chargement…</p>
+        } @else if (filteredAgences().length === 0) {
+          <p class="par__empty">Aucune agence.</p>
         } @else {
-          @if (totpQrSrc()) {
-            <div class="flex flex-col items-start gap-2">
-              <img [src]="totpQrSrc()!" width="200" height="200" alt="QR code authenticator 2FA" class="border rounded bg-white p-2" />
-              <p class="text-xs text-slate-500">Scannez avec votre application authenticator</p>
-            </div>
-          }
-          <p class="text-sm"><span class="font-medium">Secret (saisie manuelle) :</span> {{ totpSetupSecret() }}</p>
-          <div class="flex gap-2 items-start" [formGroup]="totpEnableForm">
-            <mat-form-field appearance="outline" class="flex-1">
-              <mat-label>Code de vérification</mat-label>
-              <input matInput formControlName="code" aria-label="Code vérification 2FA" />
-            </mat-form-field>
-            <button mat-flat-button color="primary" type="button" (click)="confirmTotpEnable()" class="mt-2">Activer</button>
+          <div class="par__table-wrap">
+            <table mat-table [dataSource]="filteredAgences()" class="w-full app-table par-agences">
+              <ng-container matColumnDef="code">
+                <th mat-header-cell *matHeaderCellDef>Code agence</th>
+                <td mat-cell *matCellDef="let row">
+                  <span class="par__code">{{ row.code }}</span>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="libelle">
+                <th mat-header-cell *matHeaderCellDef>Nom</th>
+                <td mat-cell *matCellDef="let row">
+                  {{ row.libelle }}
+                  <span class="par__sub">{{ row.banque_sigle ?? banque.sigle }} — {{ row.banque_raison_sociale ?? banque.raison_sociale }}</span>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="code_banque">
+                <th mat-header-cell *matHeaderCellDef>Code banque</th>
+                <td mat-cell *matCellDef="let row">
+                  <span class="par__code">{{ row.code_banque ?? banque.code_banque }}</span>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="code_swift">
+                <th mat-header-cell *matHeaderCellDef>SWIFT</th>
+                <td mat-cell *matCellDef="let row">
+                  <span class="par__code">{{ row.code_swift ?? banque.code_swift }}</span>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="ville">
+                <th mat-header-cell *matHeaderCellDef>Ville</th>
+                <td mat-cell *matCellDef="let row">{{ row.ville ?? '—' }}</td>
+              </ng-container>
+              <ng-container matColumnDef="active">
+                <th mat-header-cell *matHeaderCellDef>Statut</th>
+                <td mat-cell *matCellDef="let row">
+                  <span class="par__badge" [class.par__badge--ok]="row.is_active" [class.par__badge--off]="!row.is_active">
+                    {{ row.is_active ? 'Active' : 'Inactive' }}
+                  </span>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="actions">
+                <th mat-header-cell *matHeaderCellDef></th>
+                <td mat-cell *matCellDef="let row">
+                  <div class="par__actions">
+                    <button mat-button type="button" (click)="openEditAgence(row)">Modifier</button>
+                    <button mat-button type="button" color="warn" (click)="deleteAgence(row)">Désactiver</button>
+                  </div>
+                </td>
+              </ng-container>
+              <tr mat-header-row *matHeaderRowDef="agenceColumns"></tr>
+              <tr mat-row *matRowDef="let row; columns: agenceColumns"></tr>
+            </table>
           </div>
         }
+      </div>
+    }
+
+    @if (tab() === 'categories') {
+      <div class="par__toolbar">
+        <div class="par__filters">
+          <div class="par-field par-field--grow">
+            <label class="par-field__label" for="par-cat-search">Recherche</label>
+            <input
+              id="par-cat-search"
+              class="par-field__control"
+              [value]="searchCategories()"
+              (input)="searchCategories.set($any($event.target).value)"
+              placeholder="Type, code, compte"
+              aria-label="Recherche types"
+            />
+          </div>
+        </div>
+      </div>
+
+      @if (editingCategoryId()) {
+        <div class="par__panel">
+          <h2 class="par__panel-title">Modifier le type</h2>
+          <form [formGroup]="categoryEdit" (ngSubmit)="saveCategory()">
+            <div class="par__form-grid">
+              <div class="par-field">
+                <label class="par-field__label" for="par-cat-duree">Durée (années)</label>
+                <input
+                  id="par-cat-duree"
+                  class="par-field__control"
+                  type="number"
+                  formControlName="duree_annees_defaut"
+                  aria-label="Durée années"
+                />
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-cat-taux">Taux linéaire (%)</label>
+                <input
+                  id="par-cat-taux"
+                  class="par-field__control"
+                  readonly
+                  [value]="tauxPreview() != null ? (tauxPreview() | number: '1.2-4') : '—'"
+                  aria-label="Taux calculé"
+                />
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-cat-immo">Compte immobilisation</label>
+                <select
+                  id="par-cat-immo"
+                  class="par-field__control"
+                  formControlName="compte_immobilisation"
+                  aria-label="Compte immobilisation"
+                >
+                  @for (c of comptesImmo(); track c.id) {
+                    <option [value]="c.numero">{{ compteLabel(c) }}</option>
+                  }
+                </select>
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-cat-amort">Compte amortissement</label>
+                <select
+                  id="par-cat-amort"
+                  class="par-field__control"
+                  formControlName="compte_amortissement"
+                  aria-label="Compte amortissement"
+                >
+                  <option value="">—</option>
+                  @for (c of comptesAmort(); track c.id) {
+                    <option [value]="c.numero">{{ compteLabel(c) }}</option>
+                  }
+                </select>
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-cat-dot">Compte dotation</label>
+                <select
+                  id="par-cat-dot"
+                  class="par-field__control"
+                  formControlName="compte_dotation"
+                  aria-label="Compte dotation"
+                >
+                  <option value="">—</option>
+                  @for (c of comptesDotation(); track c.id) {
+                    <option [value]="c.numero">{{ compteLabel(c) }}</option>
+                  }
+                </select>
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-cat-mode">Mode</label>
+                <select
+                  id="par-cat-mode"
+                  class="par-field__control"
+                  formControlName="mode_amortissement_defaut"
+                  aria-label="Mode amortissement"
+                >
+                  <option value="lineaire">Linéaire</option>
+                  <option value="degressif">Dégressif</option>
+                </select>
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-cat-per">Périodicité</label>
+                <select
+                  id="par-cat-per"
+                  class="par-field__control"
+                  formControlName="periodicite_defaut"
+                  aria-label="Périodicité"
+                >
+                  <option value="trimestriel">Trimestriel</option>
+                  <option value="mensuel">Mensuel</option>
+                  <option value="annuel">Annuel</option>
+                </select>
+              </div>
+              <label class="par__check">
+                <input type="checkbox" formControlName="amortissable" />
+                Amortissable
+              </label>
+            </div>
+            <div class="par__form-actions">
+              <button mat-flat-button color="primary" type="submit" [disabled]="saving()">
+                {{ saving() ? '…' : 'Enregistrer' }}
+              </button>
+              <button mat-stroked-button type="button" (click)="cancelEditCategory()">Annuler</button>
+            </div>
+          </form>
+        </div>
       }
-    </div>
-  </mat-tab>
-</mat-tab-group>
+
+      <div class="par__body">
+        @if (loading()) {
+          <p class="par__empty">Chargement…</p>
+        } @else if (filteredCategories().length === 0) {
+          <p class="par__empty">Aucun type.</p>
+        } @else {
+          <div class="par__table-wrap">
+            <table mat-table [dataSource]="filteredCategories()" class="w-full app-table">
+              <ng-container matColumnDef="famille">
+                <th mat-header-cell *matHeaderCellDef>Type</th>
+                <td mat-cell *matCellDef="let row">
+                  {{ row.famille }}
+                  <span class="par__sub">{{ row.code }}</span>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="comptes">
+                <th mat-header-cell *matHeaderCellDef>Comptes</th>
+                <td mat-cell *matCellDef="let row">
+                  <span class="par__code">{{ row.compte_immobilisation }}</span>
+                  @if (row.compte_amortissement) {
+                    <span class="par__sub">{{ row.compte_amortissement }} / {{ row.compte_dotation }}</span>
+                  }
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="duree">
+                <th mat-header-cell *matHeaderCellDef>Durée</th>
+                <td mat-cell *matCellDef="let row">
+                  {{ row.amortissable ? (row.duree_annees_defaut ?? '—') + ' ans' : 'N/A' }}
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="taux">
+                <th mat-header-cell *matHeaderCellDef>Taux %</th>
+                <td mat-cell *matCellDef="let row">
+                  @if (row.amortissable && tauxForCategory(row) != null) {
+                    {{ tauxForCategory(row) | number: '1.2-2' }}
+                  } @else {
+                    —
+                  }
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="actions">
+                <th mat-header-cell *matHeaderCellDef></th>
+                <td mat-cell *matCellDef="let row">
+                  <div class="par__actions">
+                    <button mat-button type="button" (click)="startEditCategory(row)">Modifier</button>
+                  </div>
+                </td>
+              </ng-container>
+              <tr mat-header-row *matHeaderRowDef="catColumns"></tr>
+              <tr mat-row *matRowDef="let row; columns: catColumns"></tr>
+            </table>
+          </div>
+        }
+      </div>
+    }
+
+    @if (tab() === 'comptes') {
+      <div class="par__toolbar">
+        <div class="par__filters">
+          <div class="par-field par-field--grow">
+            <label class="par-field__label" for="par-cpt-search">Recherche</label>
+            <input
+              id="par-cpt-search"
+              class="par-field__control"
+              [value]="searchComptes()"
+              (input)="searchComptes.set($any($event.target).value)"
+              placeholder="N°, libellé, nature"
+              aria-label="Recherche comptes"
+            />
+          </div>
+        </div>
+      </div>
+      <div class="par__body">
+        @if (loading()) {
+          <p class="par__empty">Chargement…</p>
+        } @else if (filteredComptes().length === 0) {
+          <p class="par__empty">Aucun compte.</p>
+        } @else {
+          <div class="par__table-wrap">
+            <table mat-table [dataSource]="filteredComptes()" class="w-full app-table">
+              <ng-container matColumnDef="numero">
+                <th mat-header-cell *matHeaderCellDef>N°</th>
+                <td mat-cell *matCellDef="let row">
+                  <span class="par__code">{{ row.numero }}</span>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="libelle">
+                <th mat-header-cell *matHeaderCellDef>Libellé</th>
+                <td mat-cell *matCellDef="let row">{{ row.libelle }}</td>
+              </ng-container>
+              <ng-container matColumnDef="type">
+                <th mat-header-cell *matHeaderCellDef>Nature</th>
+                <td mat-cell *matCellDef="let row">
+                  <span class="par__badge">{{ typeLabel(row.type_compte) }}</span>
+                </td>
+              </ng-container>
+              <tr mat-header-row *matHeaderRowDef="compteColumns"></tr>
+              <tr mat-row *matRowDef="let row; columns: compteColumns"></tr>
+            </table>
+          </div>
+        }
+      </div>
+    }
+
+    @if (tab() === 'amortissement') {
+      <div class="par__panel">
+        <h2 class="par__panel-title">Paramètres globaux</h2>
+        <form [formGroup]="paramGlobal" (ngSubmit)="saveParamGlobal()">
+          <div class="par__form-grid">
+            <div class="par-field">
+              <label class="par-field__label" for="par-am-per">Périodicité</label>
+              <select
+                id="par-am-per"
+                class="par-field__control"
+                formControlName="periodicite"
+                aria-label="Périodicité"
+              >
+                <option value="trimestriel">Trimestriel</option>
+                <option value="mensuel">Mensuel</option>
+                <option value="annuel">Annuel</option>
+              </select>
+            </div>
+            <div class="par-field">
+              <label class="par-field__label" for="par-am-jnl">Journal</label>
+              <input
+                id="par-am-jnl"
+                class="par-field__control"
+                formControlName="journal_code"
+                aria-label="Code journal"
+              />
+            </div>
+            <div class="par-field">
+              <label class="par-field__label" for="par-am-dot">Compte dotation défaut</label>
+              <select
+                id="par-am-dot"
+                class="par-field__control"
+                formControlName="compte_dotation_defaut"
+                aria-label="Compte dotation défaut"
+              >
+                @for (c of comptesDotation(); track c.id) {
+                  <option [value]="c.numero">{{ compteLabel(c) }}</option>
+                }
+              </select>
+            </div>
+            <div class="par-field">
+              <label class="par-field__label" for="par-am-amort">Compte amortissement défaut</label>
+              <select
+                id="par-am-amort"
+                class="par-field__control"
+                formControlName="compte_amortissement_defaut"
+                aria-label="Compte amortissement défaut"
+              >
+                @for (c of comptesAmort(); track c.id) {
+                  <option [value]="c.numero">{{ compteLabel(c) }}</option>
+                }
+              </select>
+            </div>
+            <label class="par__check">
+              <input type="checkbox" formControlName="prorata" />
+              Prorata temporis
+            </label>
+          </div>
+          <div class="par__form-actions">
+            <button mat-flat-button color="primary" type="submit" [disabled]="saving()">
+              {{ saving() ? '…' : 'Enregistrer' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    }
+
+    @if (tab() === 'securite') {
+      <div class="par__secure">
+        @if (totpEnabled()) {
+          <p class="par__secure-status par__secure-status--on">2FA activée sur votre compte</p>
+          <form [formGroup]="totpDisableForm" (ngSubmit)="disableTotp()">
+            <div class="par__form-grid">
+              <div class="par-field">
+                <label class="par-field__label" for="par-2fa-off-code">Code 2FA</label>
+                <input
+                  id="par-2fa-off-code"
+                  class="par-field__control"
+                  formControlName="code"
+                  aria-label="Code pour désactiver 2FA"
+                />
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-2fa-off-pwd">Mot de passe</label>
+                <input
+                  id="par-2fa-off-pwd"
+                  class="par-field__control"
+                  type="password"
+                  formControlName="password"
+                  aria-label="Mot de passe"
+                />
+              </div>
+            </div>
+            <div class="par__form-actions">
+              <button mat-stroked-button color="warn" type="submit">Désactiver 2FA</button>
+            </div>
+          </form>
+        } @else {
+          <p class="par__secure-status par__secure-status--off">2FA non activée</p>
+          @if (!totpSetupSecret()) {
+            <button mat-flat-button color="primary" type="button" (click)="startTotpSetup()">
+              <mat-icon aria-hidden="true">shield</mat-icon>
+              Configurer 2FA
+            </button>
+          } @else {
+            @if (totpQrSrc()) {
+              <img class="par__qr" [src]="totpQrSrc()!" width="200" height="200" alt="QR code authenticator 2FA" />
+            }
+            <p class="par__secret"><strong>Secret :</strong> {{ totpSetupSecret() }}</p>
+            <form [formGroup]="totpEnableForm" (ngSubmit)="confirmTotpEnable()">
+              <div class="par-field">
+                <label class="par-field__label" for="par-2fa-on-code">Code de vérification</label>
+                <input
+                  id="par-2fa-on-code"
+                  class="par-field__control"
+                  formControlName="code"
+                  aria-label="Code vérification 2FA"
+                />
+              </div>
+              <div class="par__form-actions">
+                <button mat-flat-button color="primary" type="submit">Activer</button>
+              </div>
+            </form>
+          }
+        }
+      </div>
+    }
+  </section>
+</div>

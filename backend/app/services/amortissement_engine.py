@@ -1,15 +1,25 @@
-"""Calcul des dotations (linéaire / dégressif) avec prorata temporis."""
+"""Calcul des dotations — logique Banque El Amana.
+
+Dotation = VA × (jours_360 / 360) × taux
+- VA = valeur brute
+- jours en base commerciale 360 (mois de 30 jours)
+- dates d'arrêt trimestrielles : 31/03, 30/06, 30/09, 31/12
+- point de départ = date d'acquisition
+"""
 
 from calendar import monthrange
 from datetime import date
 from decimal import Decimal
 
 from app.models import Immobilisation
-from app.models.enums import ModeAmortissement
+
+# Base commerciale banque
+JOURS_AN_COMMERCIAL = Decimal("360")
+JOURS_MOIS_COMMERCIAL = 30
 
 
 def months_in_period(periodicite: str) -> int:
-    return {"mensuel": 1, "trimestriel": 3, "annuel": 12}.get(periodicite, 12)
+    return {"mensuel": 1, "trimestriel": 3, "annuel": 12}.get(periodicite, 3)
 
 
 def add_months(d: date, months: int) -> date:
@@ -20,12 +30,24 @@ def add_months(d: date, months: int) -> date:
     return date(year, month, day)
 
 
+def quarter_index(d: date) -> int:
+    return (d.month - 1) // 3
+
+
+def quarter_start(d: date) -> date:
+    return date(d.year, quarter_index(d) * 3 + 1, 1)
+
+
+def quarter_end(d: date) -> date:
+    end_month = quarter_index(d) * 3 + 3
+    return date(d.year, end_month, monthrange(d.year, end_month)[1])
+
+
 def period_start_for_end(period_end: date, periodicite: str) -> date:
     if periodicite == "annuel":
         return date(period_end.year, 1, 1)
     if periodicite == "trimestriel":
-        q_start_month = ((period_end.month - 1) // 3) * 3 + 1
-        return date(period_end.year, q_start_month, 1)
+        return quarter_start(period_end)
     return date(period_end.year, period_end.month, 1)
 
 
@@ -33,113 +55,108 @@ def end_of_period(start: date, periodicite: str) -> date:
     if periodicite == "annuel":
         return date(start.year, 12, 31)
     if periodicite == "trimestriel":
-        q_end_month = ((start.month - 1) // 3 + 1) * 3
-        return date(start.year, q_end_month, monthrange(start.year, q_end_month)[1])
+        return quarter_end(start)
     return date(start.year, start.month, monthrange(start.year, start.month)[1])
 
 
 def period_key(period_end: date, periodicite: str) -> str:
     if periodicite == "annuel":
         return str(period_end.year)
+    if periodicite == "trimestriel":
+        q = quarter_index(period_end) + 1
+        return f"{period_end.year}-Q{q}"
     return f"{period_end.year}-{period_end.month:02d}"
 
 
-def prorata_fraction(period_start: date, period_end: date, periodicite: str) -> Decimal:
-    if period_start > period_end:
-        return Decimal("0")
-    full_start = period_start_for_end(period_end, periodicite)
-    used_days = (period_end - period_start).days + 1
-    full_days = (period_end - full_start).days + 1
-    if full_days <= 0:
-        return Decimal("1")
-    return min(Decimal("1"), (Decimal(used_days) / Decimal(full_days)).quantize(Decimal("0.0001")))
+def days_360(start: date, end_exclusive: date) -> int:
+    """Nombre de jours en base 30/360 entre start (inclus) et end_exclusive (exclu).
+
+    Convention commerciale : chaque mois = 30 jours, année = 360.
+    Ex. 01/01 → 01/04 = 90 jours (un trimestre plein).
+    """
+    if end_exclusive <= start:
+        return 0
+    d1 = min(start.day, JOURS_MOIS_COMMERCIAL)
+    d2 = min(end_exclusive.day, JOURS_MOIS_COMMERCIAL)
+    return (
+        360 * (end_exclusive.year - start.year)
+        + 30 * (end_exclusive.month - start.month)
+        + (d2 - d1)
+    )
 
 
-def _annual_rate(immo: Immobilisation) -> Decimal:
+def _annual_rate_percent(immo: Immobilisation) -> Decimal:
+    """Taux annuel en % — priorité au taux stocké, sinon dérivé de la durée."""
+    if immo.taux is not None and immo.taux > 0:
+        return Decimal(immo.taux)
     if immo.duree_annees and immo.duree_annees > 0:
         return (Decimal("100") / Decimal(immo.duree_annees)).quantize(Decimal("0.0001"))
     if immo.duree_mois > 0:
         return (Decimal("100") * Decimal("12") / Decimal(immo.duree_mois)).quantize(Decimal("0.0001"))
-    if immo.taux is not None and immo.taux > 0:
-        return immo.taux
     return Decimal("0")
 
 
+def _max_end_date(immo: Immobilisation, start: date) -> date:
+    if immo.duree_annees and immo.duree_annees > 0:
+        return add_months(start, immo.duree_annees * 12)
+    if immo.duree_mois > 0:
+        return add_months(start, immo.duree_mois)
+    return add_months(start, 12 * 50)
+
+
 def build_amortissement_schedule(immo: Immobilisation) -> list[tuple[str, Decimal]]:
-    """Retourne (clé période, montant) pour toute la durée d'utilisation."""
-    base = (immo.valeur_brute - immo.valeur_residuelle).quantize(Decimal("0.01"))
-    if base <= 0 or immo.duree_mois <= 0:
+    """Plan trimestriel Banque El Amana.
+
+    Dotation période = VA × (jours_360 / 360) × (taux / 100)
+    avec VA = valeur brute, départ = date d'acquisition, arrêt = fin de trimestre.
+    Le cumul est plafonné à (VA − valeur résiduelle).
+    """
+    va = immo.valeur_brute.quantize(Decimal("0.01"))
+    residuelle = (immo.valeur_residuelle or Decimal("0")).quantize(Decimal("0.01"))
+    base_max = (va - residuelle).quantize(Decimal("0.01"))
+    if va <= 0 or base_max <= 0:
         return []
 
-    start = immo.date_mise_en_service or immo.date_acquisition
-    periodicite = immo.periodicite or "annuel"
-    mip = months_in_period(periodicite)
-    n_periods = max(1, (immo.duree_mois + mip - 1) // mip)
+    taux = _annual_rate_percent(immo)
+    if taux <= 0:
+        return []
 
-    if immo.mode_amortissement == ModeAmortissement.DEGRESSIF:
-        return _schedule_degressif(immo, base, start, periodicite, mip, n_periods)
+    start = immo.date_acquisition
+    if start is None:
+        return []
 
-    return _schedule_lineaire(immo, base, start, periodicite, mip, n_periods)
-
-
-def _schedule_lineaire(
-    immo: Immobilisation,
-    base: Decimal,
-    start: date,
-    periodicite: str,
-    mip: int,
-    n_periods: int,
-) -> list[tuple[str, Decimal]]:
-    full_amount = (base / Decimal(n_periods)).quantize(Decimal("0.01"))
-    amounts: list[Decimal] = [full_amount] * n_periods
-    diff = base - sum(amounts)
-    if amounts:
-        amounts[-1] = (amounts[-1] + diff).quantize(Decimal("0.01"))
-
-    cursor = start
+    max_end = _max_end_date(immo, start)
     schedule: list[tuple[str, Decimal]] = []
-    for i, amount in enumerate(amounts):
-        p_end = end_of_period(cursor, periodicite)
-        key = period_key(p_end, periodicite)
-        montant = amount
-        if i == 0 and immo.prorata_temporis:
-            frac = prorata_fraction(cursor, p_end, periodicite)
-            if frac < Decimal("1"):
-                montant = (amount * frac).quantize(Decimal("0.01"))
-        schedule.append((key, montant))
-        next_month = add_months(p_end, 1)
-        cursor = date(next_month.year, next_month.month, 1)
-    return schedule
-
-
-def _schedule_degressif(
-    immo: Immobilisation,
-    base: Decimal,
-    start: date,
-    periodicite: str,
-    mip: int,
-    n_periods: int,
-) -> list[tuple[str, Decimal]]:
-    annual = _annual_rate(immo)
-    periods_per_year = Decimal(12) / Decimal(mip)
-    vnc = base
+    cumul = Decimal("0")
     cursor = start
-    schedule: list[tuple[str, Decimal]] = []
+    safety = 0
 
-    for i in range(n_periods):
-        if vnc <= 0:
+    while cumul < base_max and cursor < max_end and safety < 500:
+        safety += 1
+        q_start = quarter_start(cursor)
+        q_end = quarter_end(cursor)
+        next_q = add_months(q_start, 3)  # début trimestre suivant (borne exclusive 360)
+
+        debut = max(start, q_start)
+        fin_excl = min(next_q, max_end)
+        if fin_excl <= debut:
             break
-        p_end = end_of_period(cursor, periodicite)
-        key = period_key(p_end, periodicite)
-        montant = (vnc * annual / Decimal("100") / periods_per_year).quantize(Decimal("0.01"))
-        if i == 0 and immo.prorata_temporis:
-            frac = prorata_fraction(cursor, p_end, periodicite)
-            if frac < Decimal("1"):
-                montant = (montant * frac).quantize(Decimal("0.01"))
-        montant = min(montant, vnc)
-        schedule.append((key, montant))
-        vnc = (vnc - montant).quantize(Decimal("0.01"))
-        next_month = add_months(p_end, 1)
-        cursor = date(next_month.year, next_month.month, 1)
+
+        jours = days_360(debut, fin_excl)
+        if jours <= 0:
+            cursor = next_q
+            continue
+
+        montant = (va * taux / Decimal("100") * Decimal(jours) / JOURS_AN_COMMERCIAL).quantize(
+            Decimal("0.01")
+        )
+        restant = (base_max - cumul).quantize(Decimal("0.01"))
+        if montant > restant:
+            montant = restant
+        if montant > 0:
+            schedule.append((period_key(q_end, "trimestriel"), montant))
+            cumul = (cumul + montant).quantize(Decimal("0.01"))
+
+        cursor = next_q
 
     return schedule

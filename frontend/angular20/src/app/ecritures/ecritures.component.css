@@ -1,0 +1,241 @@
+.ecr {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding-bottom: 1rem;
+}
+
+.ecr__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.ecr__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.ecr__lead {
+  margin: 0.35rem 0 0;
+  font-size: 0.9375rem;
+  color: #64748b;
+}
+
+.ecr__hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.ecr__section {
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-card);
+  overflow: hidden;
+}
+
+.ecr__toolbar {
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef6fc 100%);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.ecr__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.85rem 1rem;
+}
+
+.ecr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 9.5rem;
+}
+
+.ecr-field__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ecr-field__control {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: #0f172a;
+  background: #fff;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.ecr-field__control:hover {
+  border-color: #94a3b8;
+}
+
+.ecr-field__control:focus {
+  outline: none;
+  border-color: var(--app-brand-600);
+  box-shadow: 0 0 0 3px rgb(52 152 219 / 0.22);
+}
+
+.ecr__filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-bottom: 0.05rem;
+}
+
+.ecr__body {
+  padding: 0;
+}
+
+.ecr__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.ecr__badge--auto {
+  background: rgb(40 116 166 / 0.12);
+  color: var(--app-brand-800);
+  border: 1px solid rgb(40 116 166 / 0.25);
+}
+
+.ecr__badge--manual {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.ecr__compte {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.ecr__montant {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.ecr__ref {
+  font-size: 0.8125rem;
+  color: #475569;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ecr__jnl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+}
+
+.ecr__empty {
+  margin: 0;
+  padding: 2.5rem 1.25rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.ecr__table-wrap {
+  overflow-x: auto;
+  width: 100%;
+}
+
+.ecr__table-wrap .app-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.ecr__table-wrap .mat-mdc-cell,
+.ecr__table-wrap .mat-mdc-header-cell {
+  padding-left: 0.85rem;
+  padding-right: 0.85rem;
+  vertical-align: middle;
+}
+
+.ecr__table-wrap .mat-column-date_ecriture {
+  width: 9%;
+}
+
+.ecr__table-wrap .mat-column-journal_code {
+  width: 6%;
+}
+
+.ecr__table-wrap .mat-column-libelle {
+  width: 28%;
+}
+
+.ecr__table-wrap .mat-column-compte_debit,
+.ecr__table-wrap .mat-column-compte_credit {
+  width: 9%;
+}
+
+.ecr__table-wrap .mat-column-montant {
+  width: 12%;
+  text-align: right;
+}
+
+.ecr__table-wrap .mat-column-reference {
+  width: 14%;
+}
+
+.ecr__table-wrap .mat-column-generee_auto {
+  width: 9%;
+}
+
+.ecr__table-wrap .mat-column-libelle .mat-mdc-cell,
+.ecr__table-wrap .mat-column-libelle .mat-mdc-header-cell {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.ecr__table-wrap .mat-column-montant .mat-mdc-header-cell {
+  text-align: right;
+}
+
+@media (max-width: 900px) {
+  .ecr__table-wrap .app-table {
+    min-width: 56rem;
+    table-layout: auto;
+  }
+}

@@ -14,10 +14,9 @@ from sqlalchemy.orm import selectinload
 
 
 from app.core.exceptions import NotFoundError
-
 from app.models import Amortissement, CategorieImmobilisation, EcritureComptable, Immobilisation, ParametrageAmortissement
 from app.models.enums import StatutImmobilisation
-
+from app.repositories.base import BaseRepository
 from app.schemas.immobilisation import ImmobilisationCreate, ImmobilisationUpdate
 
 from app.services.immobilisation_defaults import (
@@ -127,7 +126,9 @@ class ImmobilisationService:
 
         item.barcode_data = item.code_inventaire
 
-        return await self.repo.add(item)
+        await self.repo.add(item)
+        # Recharger avec la relation categorie (évite MissingGreenlet sur ImmobilisationRead)
+        return await self.get(item.id)
 
 
 

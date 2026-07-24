@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatIconModule } from '@angular/material/icon';
 import { AuthService } from '../../core/services/auth.service';
@@ -16,12 +16,19 @@ export class LoginComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   private static readonly REMEMBER_KEY = 'el_amana_login_email';
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+  readonly info = signal<string | null>(null);
   readonly totpRequired = signal(false);
+  readonly showPassword = signal(false);
+
+  togglePasswordVisibility(): void {
+    this.showPassword.update((v) => !v);
+  }
 
   readonly form = this.fb.nonNullable.group({
     email: ['admin@el-amana.mr', [Validators.required, Validators.email]],
@@ -34,6 +41,12 @@ export class LoginComponent implements OnInit {
     const saved = localStorage.getItem(LoginComponent.REMEMBER_KEY);
     if (saved) {
       this.form.patchValue({ email: saved, remember_me: true });
+    }
+    const reset = this.route.snapshot.queryParamMap.get('reset');
+    if (reset === 'expired') {
+      this.info.set('Lien de réinitialisation expiré — recommencez depuis Mot de passe oublié.');
+    } else if (reset === 'ok') {
+      this.info.set('Mot de passe mis à jour. Vous pouvez vous connecter.');
     }
   }
 

@@ -1,47 +1,136 @@
-from sqlalchemy import func, select
+from datetime import date
+
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.pagination import page_offset
-from app.models import Cession, Immobilisation, Rebut, Reevaluation, Ajustement
+from app.models import Ajustement, Cession, Immobilisation, Rebut, Reevaluation
 
 
-async def list_cessions(db: AsyncSession, page: int, size: int) -> tuple[list[tuple[Cession, Immobilisation | None]], int]:
-    count = await db.execute(select(func.count()).select_from(Cession))
-    total = int(count.scalar_one())
-    result = await db.execute(
-        select(Cession, Immobilisation)
+async def list_cessions(
+    db: AsyncSession,
+    page: int,
+    size: int,
+    *,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    search: str | None = None,
+) -> tuple[list[tuple[Cession, Immobilisation | None]], int]:
+    filters = []
+    if date_debut is not None:
+        filters.append(Cession.date_cession >= date_debut)
+    if date_fin is not None:
+        filters.append(Cession.date_cession <= date_fin)
+    if search:
+        pattern = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                Immobilisation.code_inventaire.ilike(pattern),
+                Immobilisation.designation.ilike(pattern),
+            )
+        )
+
+    base = select(Cession, Immobilisation).join(
+        Immobilisation, Cession.immobilisation_id == Immobilisation.id, isouter=True
+    )
+    count_stmt = (
+        select(func.count())
+        .select_from(Cession)
         .join(Immobilisation, Cession.immobilisation_id == Immobilisation.id, isouter=True)
-        .order_by(Cession.date_cession.desc())
-        .offset(page_offset(page, size))
-        .limit(size)
     )
-    rows = [(c, immo) for c, immo in result.all()]
-    return rows, total
+    if filters:
+        base = base.where(*filters)
+        count_stmt = count_stmt.where(*filters)
 
-
-async def list_rebuts(db: AsyncSession, page: int, size: int) -> tuple[list[tuple[Rebut, Immobilisation | None]], int]:
-    count = await db.execute(select(func.count()).select_from(Rebut))
-    total = int(count.scalar_one())
+    total = int((await db.execute(count_stmt)).scalar_one())
     result = await db.execute(
-        select(Rebut, Immobilisation)
-        .join(Immobilisation, Rebut.immobilisation_id == Immobilisation.id, isouter=True)
-        .order_by(Rebut.date_rebut.desc())
-        .offset(page_offset(page, size))
-        .limit(size)
+        base.order_by(Cession.date_cession.desc()).offset(page_offset(page, size)).limit(size)
     )
-    rows = [(r, immo) for r, immo in result.all()]
-    return rows, total
+    return [(c, immo) for c, immo in result.all()], total
+
+
+async def list_rebuts(
+    db: AsyncSession,
+    page: int,
+    size: int,
+    *,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    search: str | None = None,
+) -> tuple[list[tuple[Rebut, Immobilisation | None]], int]:
+    filters = []
+    if date_debut is not None:
+        filters.append(Rebut.date_rebut >= date_debut)
+    if date_fin is not None:
+        filters.append(Rebut.date_rebut <= date_fin)
+    if search:
+        pattern = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                Immobilisation.code_inventaire.ilike(pattern),
+                Immobilisation.designation.ilike(pattern),
+                Rebut.motif.ilike(pattern),
+            )
+        )
+
+    base = select(Rebut, Immobilisation).join(
+        Immobilisation, Rebut.immobilisation_id == Immobilisation.id, isouter=True
+    )
+    count_stmt = (
+        select(func.count())
+        .select_from(Rebut)
+        .join(Immobilisation, Rebut.immobilisation_id == Immobilisation.id, isouter=True)
+    )
+    if filters:
+        base = base.where(*filters)
+        count_stmt = count_stmt.where(*filters)
+
+    total = int((await db.execute(count_stmt)).scalar_one())
+    result = await db.execute(
+        base.order_by(Rebut.date_rebut.desc()).offset(page_offset(page, size)).limit(size)
+    )
+    return [(r, immo) for r, immo in result.all()], total
 
 
 async def list_reevaluations(
-    db: AsyncSession, page: int, size: int
+    db: AsyncSession,
+    page: int,
+    size: int,
+    *,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    search: str | None = None,
 ) -> tuple[list[tuple[Reevaluation, Immobilisation | None]], int]:
-    count = await db.execute(select(func.count()).select_from(Reevaluation))
-    total = int(count.scalar_one())
-    result = await db.execute(
-        select(Reevaluation, Immobilisation)
+    filters = []
+    if date_debut is not None:
+        filters.append(Reevaluation.date_reevaluation >= date_debut)
+    if date_fin is not None:
+        filters.append(Reevaluation.date_reevaluation <= date_fin)
+    if search:
+        pattern = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                Immobilisation.code_inventaire.ilike(pattern),
+                Immobilisation.designation.ilike(pattern),
+                Reevaluation.justificatif.ilike(pattern),
+            )
+        )
+
+    base = select(Reevaluation, Immobilisation).join(
+        Immobilisation, Reevaluation.immobilisation_id == Immobilisation.id, isouter=True
+    )
+    count_stmt = (
+        select(func.count())
+        .select_from(Reevaluation)
         .join(Immobilisation, Reevaluation.immobilisation_id == Immobilisation.id, isouter=True)
-        .order_by(Reevaluation.date_reevaluation.desc())
+    )
+    if filters:
+        base = base.where(*filters)
+        count_stmt = count_stmt.where(*filters)
+
+    total = int((await db.execute(count_stmt)).scalar_one())
+    result = await db.execute(
+        base.order_by(Reevaluation.date_reevaluation.desc())
         .offset(page_offset(page, size))
         .limit(size)
     )

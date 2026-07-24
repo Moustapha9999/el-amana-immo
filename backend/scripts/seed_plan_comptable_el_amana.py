@@ -1,15 +1,21 @@
 """Charge le plan comptable et les types d'immobilisation El Amana (idempotent).
 
-Usage (depuis backend/, PYTHONPATH=.):
+Usage (depuis backend/) :
   .\\.venv\\Scripts\\python scripts/seed_plan_comptable_el_amana.py
 
-Appliquer d'abord la migration Alembic si la base existe déjà:
+Appliquer d'abord la migration Alembic si la base existe déjà :
   .\\.venv\\Scripts\\alembic upgrade head
 """
 
 import asyncio
 import sys
 from pathlib import Path
+
+_backend_root = Path(__file__).resolve().parents[1]
+if not _backend_root.joinpath("app").is_dir():
+    sys.exit("Exécuter depuis le répertoire backend (dossier app/ introuvable).")
+if str(_backend_root) not in sys.path:
+    sys.path.insert(0, str(_backend_root))
 
 from sqlalchemy import select
 
@@ -32,9 +38,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    backend_root = Path(__file__).resolve().parents[1]
-    if not backend_root.joinpath("app").is_dir():
-        sys.exit("Exécuter depuis le répertoire backend avec PYTHONPATH=.")
 
     async def _run() -> None:
         await main()

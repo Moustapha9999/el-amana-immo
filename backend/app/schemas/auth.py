@@ -72,13 +72,17 @@ class UserCreate(BaseModel):
     full_name: str
     password: str = Field(min_length=8)
     role_codes: list[str] = Field(default_factory=list)
+    is_superuser: bool = False
     agence_id: UUID | None = None
 
 
 class UserUpdate(BaseModel):
+    email: EmailStr | None = None
     full_name: str | None = None
     phone: str | None = None
+    password: str | None = Field(default=None, min_length=8)
     is_active: bool | None = None
+    is_superuser: bool | None = None
     role_codes: list[str] | None = None
     agence_id: UUID | None = None
 
@@ -100,6 +104,9 @@ class ResetPasswordRequest(BaseModel):
 class ForgotPasswordResponse(BaseModel):
     message: str
     reset_token: str | None = None
+    account_found: bool = False
+    dev_mode: bool = False
+    expires_in_seconds: int | None = None
 
 
 class RoleCreate(BaseModel):

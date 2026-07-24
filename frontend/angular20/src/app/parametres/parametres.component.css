@@ -1,0 +1,348 @@
+.par {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding-bottom: 1rem;
+}
+
+.par__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.par__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.par__lead {
+  margin: 0.35rem 0 0;
+  font-size: 0.9375rem;
+  color: #64748b;
+}
+
+.par__kpis {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+@media (min-width: 768px) {
+  .par__kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.par__kpi {
+  padding: 1rem 1.15rem;
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-card);
+  border-left: 4px solid var(--app-brand-600);
+}
+
+.par__kpi--ok {
+  border-left-color: #16a34a;
+}
+
+.par__kpi--warn {
+  border-left-color: #d97706;
+}
+
+.par__kpi-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  margin-bottom: 0.35rem;
+}
+
+.par__kpi-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+}
+
+.par__section {
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-card);
+  overflow: hidden;
+}
+
+.par__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef6fc 100%);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.par__tab {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.45rem 0.85rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.par__tab:hover {
+  background: #fff;
+  border-color: #e2e8f0;
+  color: #0f172a;
+}
+
+.par__tab--active {
+  background: #fff;
+  border-color: rgb(40 116 166 / 0.35);
+  color: var(--app-brand-800);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
+}
+
+.par__panel {
+  padding: 1.15rem 1.25rem;
+  border-bottom: 1px solid var(--app-border);
+  background: #f8fafc;
+}
+
+.par__panel-title {
+  margin: 0 0 0.85rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.par__toolbar {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.par__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.85rem 1rem;
+}
+
+.par__form-grid {
+  display: grid;
+  gap: 0.85rem 1rem;
+}
+
+@media (min-width: 768px) {
+  .par__form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .par__form-grid--3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.par-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.par-field--grow {
+  flex: 1 1 14rem;
+  min-width: 12rem;
+}
+
+.par-field__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.par-field__control {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: #0f172a;
+  background: #fff;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.par-field__control:hover {
+  border-color: #94a3b8;
+}
+
+.par-field__control:focus {
+  outline: none;
+  border-color: var(--app-brand-600);
+  box-shadow: 0 0 0 3px rgb(52 152 219 / 0.22);
+}
+
+.par-field__control:disabled,
+.par-field__control[readonly] {
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.par__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.875rem;
+  color: #334155;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.par__check input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--app-brand-600);
+}
+
+.par__form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.par__body {
+  padding: 0;
+}
+
+.par__empty {
+  margin: 0;
+  padding: 2.5rem 1.25rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.par__table-wrap {
+  overflow-x: auto;
+}
+
+.par__table-wrap .app-table {
+  min-width: 40rem;
+}
+
+.par__table-wrap .app-table.par-agences {
+  min-width: 56rem;
+}
+
+.par__code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.par__sub {
+  display: block;
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 0.15rem;
+}
+
+.par__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.2;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.par__badge--ok {
+  background: rgb(22 163 74 / 0.12);
+  color: #15803d;
+  border-color: rgb(22 163 74 / 0.25);
+}
+
+.par__badge--off {
+  background: rgb(220 38 38 / 0.1);
+  color: #b91c1c;
+  border-color: rgb(220 38 38 / 0.22);
+}
+
+.par__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  justify-content: flex-end;
+}
+
+.par__secure {
+  padding: 1.25rem;
+  max-width: 36rem;
+}
+
+.par__secure-status {
+  margin: 0 0 1rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.par__secure-status--on {
+  color: #15803d;
+}
+
+.par__secure-status--off {
+  color: #64748b;
+}
+
+.par__qr {
+  display: block;
+  width: 200px;
+  height: 200px;
+  border: 1px solid var(--app-border);
+  border-radius: 0.5rem;
+  background: #fff;
+  padding: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.par__secret {
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+  color: #334155;
+  word-break: break-all;
+}
+
+.par__secret strong {
+  font-weight: 700;
+}

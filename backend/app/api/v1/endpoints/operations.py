@@ -1,6 +1,5 @@
+from datetime import date
 from uuid import UUID
-
-
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
@@ -145,23 +144,24 @@ def _ajustement_list_read(row: Ajustement, immo: Immobilisation | None) -> Ajust
 
 
 @router.get("/cessions", response_model=PaginatedResponse[CessionListRead])
-
 async def list_cessions_endpoint(
-
     page: int = Query(1, ge=1),
-
     size: int = Query(20, ge=1, le=100),
-
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    search: str | None = None,
     _: User = Depends(get_current_user),
-
     db: AsyncSession = Depends(get_db),
-
 ):
-
-    rows, total = await list_cessions(db, page, size)
-
+    rows, total = await list_cessions(
+        db,
+        page,
+        size,
+        date_debut=date_debut,
+        date_fin=date_fin,
+        search=search,
+    )
     items = [_cession_list_read(c, immo) for c, immo in rows]
-
     return PaginatedResponse(items=items, total=total, page=page, size=size)
 
 
@@ -169,23 +169,24 @@ async def list_cessions_endpoint(
 
 
 @router.get("/rebuts", response_model=PaginatedResponse[RebutListRead])
-
 async def list_rebuts_endpoint(
-
     page: int = Query(1, ge=1),
-
     size: int = Query(20, ge=1, le=100),
-
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    search: str | None = None,
     _: User = Depends(get_current_user),
-
     db: AsyncSession = Depends(get_db),
-
 ):
-
-    rows, total = await list_rebuts(db, page, size)
-
+    rows, total = await list_rebuts(
+        db,
+        page,
+        size,
+        date_debut=date_debut,
+        date_fin=date_fin,
+        search=search,
+    )
     items = [_rebut_list_read(r, immo) for r, immo in rows]
-
     return PaginatedResponse(items=items, total=total, page=page, size=size)
 
 
@@ -193,23 +194,24 @@ async def list_rebuts_endpoint(
 
 
 @router.get("/reevaluations", response_model=PaginatedResponse[ReevaluationListRead])
-
 async def list_reevaluations_endpoint(
-
     page: int = Query(1, ge=1),
-
     size: int = Query(20, ge=1, le=100),
-
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    search: str | None = None,
     _: User = Depends(get_current_user),
-
     db: AsyncSession = Depends(get_db),
-
 ):
-
-    rows, total = await list_reevaluations(db, page, size)
-
+    rows, total = await list_reevaluations(
+        db,
+        page,
+        size,
+        date_debut=date_debut,
+        date_fin=date_fin,
+        search=search,
+    )
     items = [_reevaluation_list_read(r, immo) for r, immo in rows]
-
     return PaginatedResponse(items=items, total=total, page=page, size=size)
 
 

@@ -304,6 +304,11 @@ export class DashboardComponent implements OnInit {
 
 
 
+  chartExerciceLabel(): string {
+    const k = this.kpi();
+    return k != null ? String(k.annee_reference) : 'exercice';
+  }
+
   statutFilterLabel(): string {
 
     const key = this.filter().statut;

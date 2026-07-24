@@ -199,6 +199,42 @@ app-auth-screen {
   }
 }
 
+.login-field--password .login-field__input {
+  padding-right: 0.35rem;
+}
+
+.login-field__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2.75rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-left: 1px solid rgb(255 255 255 / 0.2);
+  background: transparent;
+  color: rgb(255 255 255 / 0.85);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  mat-icon {
+    font-size: 1.25rem;
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  &:hover {
+    background: rgb(255 255 255 / 0.1);
+    color: #fff;
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgb(255 255 255 / 0.55);
+    outline-offset: -2px;
+  }
+}
+
 .login-panel__options {
   display: flex;
   flex-wrap: wrap;
@@ -252,6 +288,20 @@ app-auth-screen {
   line-height: 1.45;
 }
 
+.login-panel__success--warn {
+  color: #fde68a;
+}
+
+.login-panel__reset-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.85rem 0.75rem;
+  border: 1px solid rgb(255 255 255 / 0.25);
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.1);
+}
+
 .login-panel__dev-hint {
   margin: 0;
   font-size: 0.75rem;
@@ -263,6 +313,33 @@ app-auth-screen {
   a {
     color: #fff;
     font-weight: 600;
+  }
+}
+
+.login-panel__reset-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.75rem 1rem;
+  border-radius: 2px;
+  background: #fff;
+  color: #1e3a5f;
+  font-weight: 700;
+  font-size: 0.8125rem;
+  text-decoration: none;
+  text-align: center;
+
+  mat-icon {
+    font-size: 1.15rem;
+    width: 1.15rem;
+    height: 1.15rem;
+  }
+
+  &:hover {
+    background: #eef6fc;
   }
 }
 

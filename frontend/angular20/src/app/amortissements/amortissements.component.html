@@ -1,35 +1,60 @@
-<div class="mb-4">
-  <h2 class="text-xl font-semibold">Amortissements</h2>
-  <p class="text-sm text-slate-500 mt-1">Immobilisations amortissables en service — plans et comptabilisation sur la fiche</p>
-</div>
+<div class="amo">
+  <header class="amo__hero">
+    <div>
+      <h1 class="amo__title">Amortissements</h1>
+      <p class="amo__lead">{{ rows().length }} immobilisation(s) amortissable(s)</p>
+    </div>
+  </header>
 
-<table mat-table [dataSource]="rows()" class="w-full bg-white rounded shadow-sm">
-  <ng-container matColumnDef="code">
-    <th mat-header-cell *matHeaderCellDef>Code</th>
-    <td mat-cell *matCellDef="let row">{{ row.code_inventaire }}</td>
-  </ng-container>
-  <ng-container matColumnDef="designation">
-    <th mat-header-cell *matHeaderCellDef>Désignation</th>
-    <td mat-cell *matCellDef="let row">{{ row.designation }}</td>
-  </ng-container>
-  <ng-container matColumnDef="type">
-    <th mat-header-cell *matHeaderCellDef>Type</th>
-    <td mat-cell *matCellDef="let row">{{ row.categorie?.famille ?? '—' }}</td>
-  </ng-container>
-  <ng-container matColumnDef="statut">
-    <th mat-header-cell *matHeaderCellDef>Statut</th>
-    <td mat-cell *matCellDef="let row">{{ statutLabel(row.statut) }}</td>
-  </ng-container>
-  <ng-container matColumnDef="valeur">
-    <th mat-header-cell *matHeaderCellDef>Valeur brute</th>
-    <td mat-cell *matCellDef="let row">{{ row.valeur_brute | number: '1.2-2' }}</td>
-  </ng-container>
-  <ng-container matColumnDef="actions">
-    <th mat-header-cell *matHeaderCellDef></th>
-    <td mat-cell *matCellDef="let row">
-      <a mat-button [routerLink]="['/immobilisations', row.id]">Plan & dotations</a>
-    </td>
-  </ng-container>
-  <tr mat-header-row *matHeaderRowDef="columns"></tr>
-  <tr mat-row *matRowDef="let row; columns: columns"></tr>
-</table>
+  <section class="amo__section">
+    @if (loading()) {
+      <p class="amo__empty">Chargement…</p>
+    } @else if (rows().length === 0) {
+      <p class="amo__empty">Aucune immobilisation amortissable en service.</p>
+    } @else {
+      <div class="amo__table-wrap">
+        <table mat-table [dataSource]="rows()" class="w-full app-table">
+          <ng-container matColumnDef="code">
+            <th mat-header-cell *matHeaderCellDef>Code</th>
+            <td mat-cell *matCellDef="let row">
+              <span class="amo__code">{{ row.code_inventaire }}</span>
+            </td>
+          </ng-container>
+          <ng-container matColumnDef="designation">
+            <th mat-header-cell *matHeaderCellDef>Désignation</th>
+            <td mat-cell *matCellDef="let row">{{ row.designation }}</td>
+          </ng-container>
+          <ng-container matColumnDef="type">
+            <th mat-header-cell *matHeaderCellDef>Type</th>
+            <td mat-cell *matCellDef="let row">{{ row.categorie?.famille ?? '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="statut">
+            <th mat-header-cell *matHeaderCellDef>Statut</th>
+            <td mat-cell *matCellDef="let row">
+              <span class="amo__badge">{{ statutLabel(row.statut) }}</span>
+            </td>
+          </ng-container>
+          <ng-container matColumnDef="valeur">
+            <th mat-header-cell *matHeaderCellDef>Valeur brute</th>
+            <td mat-cell *matCellDef="let row">
+              <span class="amo__montant">{{ row.valeur_brute | number: '1.2-2' }}</span>
+            </td>
+          </ng-container>
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef></th>
+            <td mat-cell *matCellDef="let row">
+              <div class="amo__actions">
+                <a mat-stroked-button [routerLink]="['/immobilisations', row.id, 'amortissement']">
+                  Détails
+                </a>
+                <button mat-button type="button" color="warn" (click)="remove(row)">Supprimer</button>
+              </div>
+            </td>
+          </ng-container>
+          <tr mat-header-row *matHeaderRowDef="columns"></tr>
+          <tr mat-row *matRowDef="let row; columns: columns"></tr>
+        </table>
+      </div>
+    }
+  </section>
+</div>

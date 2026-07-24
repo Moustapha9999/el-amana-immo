@@ -1,0 +1,239 @@
+.aud {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding-bottom: 1rem;
+}
+
+.aud__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.aud__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.aud__lead {
+  margin: 0.35rem 0 0;
+  font-size: 0.9375rem;
+  color: #64748b;
+}
+
+.aud__hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.aud__kpis {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+@media (min-width: 768px) {
+  .aud__kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.aud__kpi {
+  padding: 1rem 1.15rem;
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-card);
+  border-left: 4px solid var(--app-brand-600);
+}
+
+.aud__kpi--login {
+  border-left-color: #16a34a;
+}
+
+.aud__kpi--mut {
+  border-left-color: #d97706;
+}
+
+.aud__kpi-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  margin-bottom: 0.35rem;
+}
+
+.aud__kpi-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+}
+
+.aud__section {
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-card);
+  overflow: hidden;
+}
+
+.aud__toolbar {
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef6fc 100%);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.aud__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.85rem 1rem;
+}
+
+.aud-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 9.5rem;
+}
+
+.aud-field--grow {
+  flex: 1 1 12rem;
+  min-width: 11rem;
+}
+
+.aud-field__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.aud-field__control {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: #0f172a;
+  background: #fff;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.aud-field__control:hover {
+  border-color: #94a3b8;
+}
+
+.aud-field__control:focus {
+  outline: none;
+  border-color: var(--app-brand-600);
+  box-shadow: 0 0 0 3px rgb(52 152 219 / 0.22);
+}
+
+.aud__filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.aud__body {
+  padding: 0;
+}
+
+.aud__empty {
+  margin: 0;
+  padding: 2.5rem 1.25rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.aud__empty--err {
+  color: #b91c1c;
+}
+
+.aud__table-wrap {
+  overflow-x: auto;
+}
+
+.aud__table-wrap .app-table {
+  min-width: 56rem;
+}
+
+.aud__user {
+  font-size: 0.875rem;
+  color: #334155;
+}
+
+.aud__id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.aud__ip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8125rem;
+  color: #475569;
+}
+
+.aud__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.2;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.aud__badge--login {
+  background: rgb(22 163 74 / 0.12);
+  color: #15803d;
+  border-color: rgb(22 163 74 / 0.25);
+}
+
+.aud__badge--create {
+  background: rgb(40 116 166 / 0.12);
+  color: var(--app-brand-800);
+  border-color: rgb(40 116 166 / 0.25);
+}
+
+.aud__badge--update {
+  background: rgb(217 119 6 / 0.12);
+  color: #b45309;
+  border-color: rgb(217 119 6 / 0.28);
+}
+
+.aud__badge--delete {
+  background: rgb(220 38 38 / 0.1);
+  color: #b91c1c;
+  border-color: rgb(220 38 38 / 0.22);
+}
+
+.aud__entity {
+  font-size: 0.875rem;
+  color: #334155;
+  font-weight: 500;
+}

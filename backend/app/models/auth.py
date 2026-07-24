@@ -35,6 +35,11 @@ class Agence(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     libelle: Mapped[str] = mapped_column(String(255))
     adresse: Mapped[str | None] = mapped_column(Text, nullable=True)
     ville: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Référentiel bancaire BEA (code banque / SWIFT)
+    code_banque: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
+    banque_sigle: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    banque_raison_sociale: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    code_swift: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 
 class User(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):

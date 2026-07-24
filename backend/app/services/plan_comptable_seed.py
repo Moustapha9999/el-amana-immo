@@ -81,7 +81,8 @@ async def seed_plan_comptable_el_amana(session: AsyncSession) -> dict[str, int]:
         categorie = existing_types[row["code"]]
         debit = row["compte_dotation"]
         credit = row["compte_amortissement"]
-        assert debit and credit
+        if not debit or not credit:
+            continue
         if categorie.id in existing_param:
             param = existing_param[categorie.id]
             param.journal_code = "OD"

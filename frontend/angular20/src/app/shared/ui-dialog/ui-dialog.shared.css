@@ -1,0 +1,77 @@
+.ui-dlg {
+  min-width: min(22rem, 86vw);
+  max-width: 28rem;
+  padding: 0.35rem 0.15rem 0.15rem;
+  text-align: center;
+}
+
+.ui-dlg__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  margin: 0.25rem auto 0.65rem;
+  border-radius: 999px;
+  background: rgb(40 116 166 / 0.12);
+  color: var(--app-brand-700);
+}
+
+.ui-dlg[data-tone='danger'] .ui-dlg__icon {
+  background: rgb(220 38 38 / 0.12);
+  color: #b91c1c;
+}
+
+.ui-dlg[data-tone='success'] .ui-dlg__icon {
+  background: rgb(22 163 74 / 0.12);
+  color: #15803d;
+}
+
+.ui-dlg[data-tone='warn'] .ui-dlg__icon {
+  background: rgb(217 119 6 / 0.14);
+  color: #b45309;
+}
+
+.ui-dlg[data-tone='info'] .ui-dlg__icon {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.ui-dlg__icon mat-icon {
+  font-size: 1.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.ui-dlg__title {
+  margin: 0 !important;
+  padding: 0 0.5rem !important;
+  font-size: 1.125rem !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+}
+
+.ui-dlg__body {
+  padding: 0.65rem 0.75rem 0.35rem !important;
+}
+
+.ui-dlg__message {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: #475569;
+  white-space: pre-wrap;
+}
+
+.ui-dlg__actions {
+  display: flex !important;
+  flex-wrap: wrap;
+  justify-content: center !important;
+  gap: 0.5rem;
+  padding: 0.85rem 0.5rem 0.35rem !important;
+  margin: 0 !important;
+}
+
+.ui-dlg__actions--single {
+  justify-content: center !important;
+}

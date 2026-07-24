@@ -3,7 +3,7 @@ from typing import Any
 from uuid import UUID
 
 import bcrypt
-from jose import JWTError, jwt
+from jose import ExpiredSignatureError, JWTError, jwt
 
 from app.core.config import get_settings
 
@@ -32,9 +32,13 @@ def create_refresh_token(subject: str | UUID) -> str:
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
 
+# Lien de réinitialisation court (sécurité + UX locale)
+PASSWORD_RESET_EXPIRE_SECONDS = 45
+
+
 def create_password_reset_token(subject: str | UUID) -> str:
     settings = get_settings()
-    expire = datetime.now(UTC) + timedelta(hours=1)
+    expire = datetime.now(UTC) + timedelta(seconds=PASSWORD_RESET_EXPIRE_SECONDS)
     payload = {"sub": str(subject), "exp": expire, "type": "password_reset"}
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
@@ -43,5 +47,7 @@ def decode_token(token: str) -> dict[str, Any]:
     settings = get_settings()
     try:
         return jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+    except ExpiredSignatureError as exc:
+        raise ValueError("Lien expiré — recommencez depuis Mot de passe oublié") from exc
     except JWTError as exc:
-        raise ValueError("Invalid token") from exc
+        raise ValueError("Token invalide") from exc

@@ -1,21 +1,24 @@
 import { DecimalPipe } from '@angular/common';
-import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
-import { MatSelectModule } from '@angular/material/select';
-import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
 import { tauxLineaireFromDuree } from '../shared/amortissement-rate.util';
+import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 import {
   MODE_AMORTISSEMENT_OPTIONS,
   PERIODICITE_OPTIONS,
+  findNatureImmoOfficielle,
+  sortCategoriesNatureImmo,
+  natureImmoOptionLabel,
+  statutLabel,
   STATUT_IMMOBILISATION_LABELS,
 } from './immobilisation.constants';
+
+type ImmoSection = 'fiche' | 'modifier' | 'amortissement' | 'reevaluation' | 'sortie';
 
 interface Paginated<T> {
   items: T[];
@@ -93,23 +96,65 @@ interface ImmobilisationDto {
     ReactiveFormsModule,
     RouterLink,
     DecimalPipe,
-    MatCardModule,
-    MatFormFieldModule,
-    MatInputModule,
-    MatSelectModule,
     MatButtonModule,
-    MatSnackBarModule,
+    MatIconModule,
     MatTableModule,
   ],
   templateUrl: './immobilisation-form.component.html',
+  styleUrl: './immobilisation-form.component.css',
 })
 export class ImmobilisationFormComponent implements OnInit {
   readonly id = input<string | undefined>();
+  /** Route `:section` — modifier | amortissement | reevaluation | sortie */
+  readonly section = input<string | undefined>();
+  protected readonly natureImmoOptionLabel = natureImmoOptionLabel;
 
   private readonly fb = inject(FormBuilder);
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
-  private readonly snack = inject(MatSnackBar);
+  private readonly dialogs = inject(UiDialogService);
+
+  private errMsg(err: { error?: { detail?: unknown } }, fallback: string): string {
+    const d = err.error?.detail;
+    return typeof d === 'string' ? d : fallback;
+  }
+
+  readonly activeSection = computed<ImmoSection>(() => {
+    if (!this.id()) {
+      return 'fiche';
+    }
+    const s = (this.section() ?? '').toLowerCase();
+    if (s === 'modifier' || s === 'amortissement' || s === 'reevaluation' || s === 'sortie') {
+      return s;
+    }
+    return 'fiche';
+  });
+
+  readonly isCreate = computed(() => !this.id());
+  readonly isView = computed(() => !!this.id() && this.activeSection() === 'fiche');
+  readonly isEdit = computed(() => this.isCreate() || this.activeSection() === 'modifier');
+  readonly showFiche = computed(() => this.isCreate() || this.activeSection() === 'fiche' || this.activeSection() === 'modifier');
+  readonly showAmortissement = computed(() => this.activeSection() === 'amortissement');
+  readonly showReevaluation = computed(() => this.activeSection() === 'reevaluation');
+  readonly showSortie = computed(() => this.activeSection() === 'sortie');
+
+  readonly pageTitle = computed(() => {
+    if (this.isCreate()) {
+      return 'Nouvelle Saisie';
+    }
+    switch (this.activeSection()) {
+      case 'modifier':
+        return 'Modifier l’immobilisation';
+      case 'amortissement':
+        return 'Amortissement & comptabilisation';
+      case 'reevaluation':
+        return 'Réévaluation & ajustements';
+      case 'sortie':
+        return 'Sortie d’actif';
+      default:
+        return 'Détails immobilisation';
+    }
+  });
 
   readonly categories = signal<Categorie[]>([]);
   readonly agences = signal<Agence[]>([]);
@@ -203,7 +248,7 @@ export class ImmobilisationFormComponent implements OnInit {
     valeur_brute: [0, [Validators.required, Validators.min(0.01)]],
     valeur_residuelle: [0, [Validators.min(0)]],
     duree_annees: [null as number | null],
-    periodicite: ['annuel'],
+    periodicite: [{ value: 'trimestriel', disabled: true }],
     prorata_temporis: [true],
     mode_amortissement: ['lineaire'],
     statut: ['brouillon'],
@@ -213,9 +258,33 @@ export class ImmobilisationFormComponent implements OnInit {
     localisation: [''],
   });
 
+  constructor() {
+    effect(() => {
+      const view = this.isView();
+      if (view) {
+        this.form.disable({ emitEvent: false });
+      } else if (this.isEdit()) {
+        this.form.enable({ emitEvent: false });
+        this.form.controls.periodicite.disable({ emitEvent: false });
+        this.form.controls.compte_immobilisation.disable({ emitEvent: false });
+        this.form.controls.compte_amortissement.disable({ emitEvent: false });
+        this.form.controls.compte_dotation.disable({ emitEvent: false });
+        if (this.id()) {
+          this.form.controls.code_inventaire.disable({ emitEvent: false });
+        }
+      }
+    });
+  }
+
   ngOnInit(): void {
-    this.api.get<Paginated<Categorie>>('/immobilisations/categories', { page: 1, size: 100 }).subscribe((res) => {
-      this.categories.set(res.items.filter((c) => c.code.startsWith('TY-')));
+    this.api.get<Paginated<Categorie>>('/categories', { page: 1, size: 100 }).subscribe({
+      next: (res) => this.categories.set(sortCategoriesNatureImmo(res.items ?? [])),
+      error: () => {
+        this.categories.set([]);
+        void this.dialogs
+          .error('Impossible de charger les natures IMMO. Vérifiez la connexion API / votre session.')
+          .subscribe();
+      },
     });
     this.api.get<Paginated<Agence>>('/agences', { page: 1, size: 100 }).subscribe((res) => {
       this.agences.set(res.items);
@@ -239,6 +308,17 @@ export class ImmobilisationFormComponent implements OnInit {
     this.form.controls.duree_annees.valueChanges.subscribe((d) => this.tauxCalcule.set(tauxLineaireFromDuree(d)));
   }
 
+  sectionLink(section?: ImmoSection): string[] {
+    const immoId = this.id();
+    if (!immoId) {
+      return ['/immobilisations'];
+    }
+    if (!section || section === 'fiche') {
+      return ['/immobilisations', immoId];
+    }
+    return ['/immobilisations', immoId, section];
+  }
+
   refreshTauxCalcule(): void {
     this.tauxCalcule.set(tauxLineaireFromDuree(this.form.controls.duree_annees.value));
   }
@@ -247,21 +327,40 @@ export class ImmobilisationFormComponent implements OnInit {
     return this.categories().find((c) => c.id === this.form.controls.categorie_id.value);
   }
 
+  canRegenererPlan(): boolean {
+    const cat = this.selectedCategory();
+    return this.statutActuel() === 'en_service' && !!cat?.amortissable;
+  }
+
+  statutBadgeLabel(): string {
+    const key = this.id() ? this.statutActuel() : this.form.controls.statut.value;
+    return statutLabel(key);
+  }
+
   applyCategoryDefaults(catId: string): void {
     const cat = this.categories().find((c) => c.id === catId);
     if (!cat) {
       return;
     }
+    const ref = findNatureImmoOfficielle(cat.code);
+    const duree =
+      ref?.duree_annees ??
+      (cat.amortissable ? (cat.duree_annees_defaut ?? null) : null);
+    const taux =
+      ref?.taux ??
+      (cat.taux_lineaire_defaut != null ? Number(cat.taux_lineaire_defaut) : null) ??
+      tauxLineaireFromDuree(duree);
+
     this.form.patchValue({
       compte_immobilisation: cat.compte_immobilisation,
       compte_amortissement: cat.compte_amortissement ?? '',
       compte_dotation: cat.compte_dotation ?? '',
-      duree_annees: cat.amortissable ? (cat.duree_annees_defaut ?? null) : null,
-      periodicite: cat.periodicite_defaut,
-      prorata_temporis: cat.prorata_temporis,
+      duree_annees: duree,
+      periodicite: 'trimestriel',
+      prorata_temporis: true,
       mode_amortissement: cat.mode_amortissement_defaut,
     });
-    this.refreshTauxCalcule();
+    this.tauxCalcule.set(taux);
   }
 
   patchFromDto(row: ImmobilisationDto): void {
@@ -342,39 +441,48 @@ export class ImmobilisationFormComponent implements OnInit {
     }
     const r = this.reevalForm.getRawValue();
     if (!r.date_reevaluation) {
-      this.snack.open('Date de réévaluation requise', 'Fermer', { duration: 3000 });
+      void this.dialogs.error('Date de réévaluation requise', 'Validation').subscribe();
       return;
     }
-    this.workflowBusy.set(true);
-    this.api
-      .post<{
-        reevaluation: { nouvelle_valeur: string };
-        plan_regenere: boolean;
-        ecriture_ids: string[];
-      }>('/reevaluations', {
-        immobilisation_id: immoId,
-        date_reevaluation: r.date_reevaluation,
-        nouvelle_valeur: r.nouvelle_valeur,
-        justificatif: r.justificatif || null,
-      })
-      .subscribe({
-        next: (res) => {
-          this.workflowBusy.set(false);
-          this.form.patchValue({ valeur_brute: Number(res.reevaluation.nouvelle_valeur) });
-          this.loadReevaluations(immoId);
-          this.loadSituationComptable(immoId);
-          this.loadAmortissements(immoId);
-          const ecritPart =
-            res.ecriture_ids?.length ? ` — ${res.ecriture_ids.length} écriture(s) 142/282` : '';
-          const msg = (res.plan_regenere
-            ? 'Réévaluation enregistrée — plan d\'amortissement régénéré'
-            : 'Réévaluation enregistrée — régénérez le plan si des dotations étaient déjà validées') + ecritPart;
-          this.snack.open(msg, 'Fermer', { duration: 5000 });
-        },
-        error: (err) => {
-          this.workflowBusy.set(false);
-          this.snack.open(err.error?.detail ?? 'Réévaluation impossible', 'Fermer', { duration: 5000 });
-        },
+    this.dialogs
+      .confirmAction('enregistrement', 'Enregistrer cette réévaluation de valeur brute ?')
+      .subscribe((ok) => {
+        if (!ok) {
+          return;
+        }
+        this.workflowBusy.set(true);
+        this.api
+          .post<{
+            reevaluation: { nouvelle_valeur: string };
+            plan_regenere: boolean;
+            ecriture_ids: string[];
+          }>('/reevaluations', {
+            immobilisation_id: immoId,
+            date_reevaluation: r.date_reevaluation,
+            nouvelle_valeur: r.nouvelle_valeur,
+            justificatif: r.justificatif || null,
+          })
+          .subscribe({
+            next: (res) => {
+              this.workflowBusy.set(false);
+              this.form.patchValue({ valeur_brute: Number(res.reevaluation.nouvelle_valeur) });
+              this.loadReevaluations(immoId);
+              this.loadSituationComptable(immoId);
+              this.loadAmortissements(immoId);
+              const ecritPart = res.ecriture_ids?.length
+                ? ` — ${res.ecriture_ids.length} écriture(s) 142/282`
+                : '';
+              const msg =
+                (res.plan_regenere
+                  ? 'Réévaluation enregistrée — plan d’amortissement régénéré'
+                  : 'Réévaluation enregistrée — régénérez le plan si besoin') + ecritPart;
+              void this.dialogs.successAction('enregistrement', msg).subscribe();
+            },
+            error: (err) => {
+              this.workflowBusy.set(false);
+              void this.dialogs.error(this.errMsg(err, 'Réévaluation impossible')).subscribe();
+            },
+          });
       });
   }
 
@@ -385,31 +493,36 @@ export class ImmobilisationFormComponent implements OnInit {
     }
     const a = this.ajustementForm.getRawValue();
     if (!a.date_ajustement) {
-      this.snack.open('Date d\'ajustement requise', 'Fermer', { duration: 3000 });
+      void this.dialogs.error('Date d’ajustement requise', 'Validation').subscribe();
       return;
     }
-    this.workflowBusy.set(true);
-    this.api
-      .post<{ ecriture_ids: string[] }>('/ajustements', {
-        immobilisation_id: immoId,
-        type_ajustement: a.type_ajustement,
-        date_ajustement: a.date_ajustement,
-        montant: a.montant,
-        commentaire: a.commentaire || null,
-      })
-      .subscribe({
-        next: (res) => {
-          this.workflowBusy.set(false);
-          this.loadSituationComptable(immoId);
-          this.api.get<ImmobilisationDto>(`/immobilisations/${immoId}`).subscribe((row) => this.patchFromDto(row));
-          const ecritPart = res.ecriture_ids?.length ? ` — ${res.ecriture_ids.length} écriture(s) 781/148` : '';
-          this.snack.open(`Ajustement enregistré${ecritPart}`, 'Fermer', { duration: 4000 });
-        },
-        error: (err) => {
-          this.workflowBusy.set(false);
-          this.snack.open(err.error?.detail ?? 'Ajustement impossible', 'Fermer', { duration: 5000 });
-        },
-      });
+    this.dialogs.confirmAction('enregistrement', 'Enregistrer cet ajustement ?').subscribe((ok) => {
+      if (!ok) {
+        return;
+      }
+      this.workflowBusy.set(true);
+      this.api
+        .post<{ ecriture_ids: string[] }>('/ajustements', {
+          immobilisation_id: immoId,
+          type_ajustement: a.type_ajustement,
+          date_ajustement: a.date_ajustement,
+          montant: a.montant,
+          commentaire: a.commentaire || null,
+        })
+        .subscribe({
+          next: (res) => {
+            this.workflowBusy.set(false);
+            this.loadSituationComptable(immoId);
+            this.api.get<ImmobilisationDto>(`/immobilisations/${immoId}`).subscribe((row) => this.patchFromDto(row));
+            const ecritPart = res.ecriture_ids?.length ? ` — ${res.ecriture_ids.length} écriture(s)` : '';
+            void this.dialogs.successAction('enregistrement', `Ajustement enregistré${ecritPart}`).subscribe();
+          },
+          error: (err) => {
+            this.workflowBusy.set(false);
+            void this.dialogs.error(this.errMsg(err, 'Ajustement impossible')).subscribe();
+          },
+        });
+    });
   }
 
   enregistrerTransfert(): void {
@@ -419,27 +532,32 @@ export class ImmobilisationFormComponent implements OnInit {
     }
     const t = this.transfertForm.getRawValue();
     if (!t.agence_id || !t.date_transfert) {
-      this.snack.open('Agence et date de transfert requises', 'Fermer', { duration: 3000 });
+      void this.dialogs.error('Agence et date de transfert requises', 'Validation').subscribe();
       return;
     }
-    this.workflowBusy.set(true);
-    this.api
-      .post(`/immobilisations/${immoId}/transfert`, {
-        agence_id: t.agence_id,
-        date_transfert: t.date_transfert,
-        commentaire: t.commentaire || null,
-      })
-      .subscribe({
-        next: () => {
-          this.workflowBusy.set(false);
-          this.form.patchValue({ agence_id: t.agence_id });
-          this.snack.open('Transfert inter-agences enregistré', 'Fermer', { duration: 3000 });
-        },
-        error: (err) => {
-          this.workflowBusy.set(false);
-          this.snack.open(err.error?.detail ?? 'Transfert impossible', 'Fermer', { duration: 5000 });
-        },
-      });
+    this.dialogs.confirmAction('modification', 'Confirmer le transfert inter-agences ?').subscribe((ok) => {
+      if (!ok) {
+        return;
+      }
+      this.workflowBusy.set(true);
+      this.api
+        .post(`/immobilisations/${immoId}/transfert`, {
+          agence_id: t.agence_id,
+          date_transfert: t.date_transfert,
+          commentaire: t.commentaire || null,
+        })
+        .subscribe({
+          next: () => {
+            this.workflowBusy.set(false);
+            this.form.patchValue({ agence_id: t.agence_id });
+            void this.dialogs.successAction('modification', 'Transfert inter-agences enregistré.').subscribe();
+          },
+          error: (err) => {
+            this.workflowBusy.set(false);
+            void this.dialogs.error(this.errMsg(err, 'Transfert impossible')).subscribe();
+          },
+        });
+    });
   }
 
   enregistrerCession(): void {
@@ -449,33 +567,43 @@ export class ImmobilisationFormComponent implements OnInit {
     }
     const s = this.sortieForm.getRawValue();
     if (!s.date_cession) {
-      this.snack.open('Date de cession requise', 'Fermer', { duration: 3000 });
+      void this.dialogs.error('Date de cession requise', 'Validation').subscribe();
       return;
     }
-    this.workflowBusy.set(true);
-    this.api
-      .post<{ cession: { plus_value: string; moins_value: string }; ecriture_ids: string[] }>('/cessions', {
-        immobilisation_id: immoId,
-        date_cession: s.date_cession,
-        prix_cession: s.prix_cession,
-        libelle: s.libelle_cession || null,
-      })
-      .subscribe({
-        next: (res) => {
-          this.workflowBusy.set(false);
-          this.statutActuel.set('cedee');
-          this.form.patchValue({ statut: 'cedee' });
-          this.snack.open(
-            `Cession enregistrée — ${res.ecriture_ids.length} écriture(s), PV ${res.cession.plus_value} / MV ${res.cession.moins_value}`,
-            'Fermer',
-            { duration: 5000 },
-          );
-        },
-        error: (err) => {
-          this.workflowBusy.set(false);
-          const msg = err.error?.detail ?? 'Cession impossible';
-          this.snack.open(typeof msg === 'string' ? msg : 'Erreur', 'Fermer', { duration: 5000 });
-        },
+    this.dialogs
+      .confirmAction('cloture', 'Enregistrer la cession ? Le bien passera au statut cédé.')
+      .subscribe((ok) => {
+        if (!ok) {
+          return;
+        }
+        this.workflowBusy.set(true);
+        this.api
+          .post<{ cession: { plus_value: string; moins_value: string }; ecriture_ids: string[] }>(
+            '/cessions',
+            {
+              immobilisation_id: immoId,
+              date_cession: s.date_cession,
+              prix_cession: s.prix_cession,
+              libelle: s.libelle_cession || null,
+            },
+          )
+          .subscribe({
+            next: (res) => {
+              this.workflowBusy.set(false);
+              this.statutActuel.set('cedee');
+              this.form.patchValue({ statut: 'cedee' });
+              void this.dialogs
+                .successAction(
+                  'cloture',
+                  `Cession enregistrée — ${res.ecriture_ids.length} écriture(s), PV ${res.cession.plus_value} / MV ${res.cession.moins_value}`,
+                )
+                .subscribe();
+            },
+            error: (err) => {
+              this.workflowBusy.set(false);
+              void this.dialogs.error(this.errMsg(err, 'Cession impossible')).subscribe();
+            },
+          });
       });
   }
 
@@ -486,32 +614,39 @@ export class ImmobilisationFormComponent implements OnInit {
     }
     const s = this.sortieForm.getRawValue();
     if (!s.date_rebut) {
-      this.snack.open('Date de rebut requise', 'Fermer', { duration: 3000 });
+      void this.dialogs.error('Date de rebut requise', 'Validation').subscribe();
       return;
     }
-    this.workflowBusy.set(true);
-    this.api
-      .post<{ rebut: { vnc: string }; ecriture_ids: string[] }>('/rebuts', {
-        immobilisation_id: immoId,
-        date_rebut: s.date_rebut,
-        motif: s.motif_rebut || null,
-      })
-      .subscribe({
-        next: (res) => {
-          this.workflowBusy.set(false);
-          this.statutActuel.set('mise_au_rebut');
-          this.form.patchValue({ statut: 'mise_au_rebut' });
-          this.snack.open(
-            `Rebut enregistré — VNC ${res.rebut.vnc}, ${res.ecriture_ids.length} écriture(s)`,
-            'Fermer',
-            { duration: 5000 },
-          );
-        },
-        error: (err) => {
-          this.workflowBusy.set(false);
-          const msg = err.error?.detail ?? 'Rebut impossible';
-          this.snack.open(typeof msg === 'string' ? msg : 'Erreur', 'Fermer', { duration: 5000 });
-        },
+    this.dialogs
+      .confirmAction('cloture', 'Enregistrer la mise au rebut ? Le bien sera sorti du parc.')
+      .subscribe((ok) => {
+        if (!ok) {
+          return;
+        }
+        this.workflowBusy.set(true);
+        this.api
+          .post<{ rebut: { vnc: string }; ecriture_ids: string[] }>('/rebuts', {
+            immobilisation_id: immoId,
+            date_rebut: s.date_rebut,
+            motif: s.motif_rebut || null,
+          })
+          .subscribe({
+            next: (res) => {
+              this.workflowBusy.set(false);
+              this.statutActuel.set('mise_au_rebut');
+              this.form.patchValue({ statut: 'mise_au_rebut' });
+              void this.dialogs
+                .successAction(
+                  'cloture',
+                  `Rebut enregistré — VNC ${res.rebut.vnc}, ${res.ecriture_ids.length} écriture(s)`,
+                )
+                .subscribe();
+            },
+            error: (err) => {
+              this.workflowBusy.set(false);
+              void this.dialogs.error(this.errMsg(err, 'Rebut impossible')).subscribe();
+            },
+          });
       });
   }
 
@@ -520,23 +655,29 @@ export class ImmobilisationFormComponent implements OnInit {
     if (!immoId) {
       return;
     }
-    this.workflowBusy.set(true);
-    this.api.post<ImmobilisationDto>(`/immobilisations/${immoId}/mettre-en-service`, {}).subscribe({
-      next: (row) => {
-        this.workflowBusy.set(false);
-        this.patchFromDto(row);
-          this.loadAmortissements(immoId);
-          this.loadSituationComptable(immoId);
-          this.snack.open('Immobilisation mise en service — plan d\'amortissement généré', 'Fermer', {
-          duration: 4000,
+    this.dialogs
+      .confirmAction('ouverture', 'Mettre en service cette immobilisation et générer le plan d’amortissement ?')
+      .subscribe((ok) => {
+        if (!ok) {
+          return;
+        }
+        this.workflowBusy.set(true);
+        this.api.post<ImmobilisationDto>(`/immobilisations/${immoId}/mettre-en-service`, {}).subscribe({
+          next: (row) => {
+            this.workflowBusy.set(false);
+            this.patchFromDto(row);
+            this.loadAmortissements(immoId);
+            this.loadSituationComptable(immoId);
+            void this.dialogs
+              .successAction('ouverture', 'Immobilisation mise en service — plan d’amortissement généré.')
+              .subscribe();
+          },
+          error: (err) => {
+            this.workflowBusy.set(false);
+            void this.dialogs.error(this.errMsg(err, 'Mise en service impossible')).subscribe();
+          },
         });
-      },
-      error: (err) => {
-        this.workflowBusy.set(false);
-        const msg = err.error?.detail ?? 'Mise en service impossible';
-        this.snack.open(typeof msg === 'string' ? msg : 'Erreur', 'Fermer', { duration: 5000 });
-      },
-    });
+      });
   }
 
   regenererPlan(): void {
@@ -544,20 +685,26 @@ export class ImmobilisationFormComponent implements OnInit {
     if (!immoId) {
       return;
     }
-    this.workflowBusy.set(true);
-    this.api
-      .post<AmortissementRow[]>('/amortissements/generer-plan', { immobilisation_id: immoId })
-      .subscribe({
-        next: () => {
-          this.workflowBusy.set(false);
-          this.loadAmortissements(immoId);
-          this.snack.open('Plan d\'amortissement régénéré', 'Fermer', { duration: 3000 });
-        },
-        error: (err) => {
-          this.workflowBusy.set(false);
-          const msg = err.error?.detail ?? 'Régénération impossible';
-          this.snack.open(typeof msg === 'string' ? msg : 'Erreur', 'Fermer', { duration: 5000 });
-        },
+    this.dialogs
+      .confirmAction('validation', 'Régénérer le plan d’amortissement ?')
+      .subscribe((ok) => {
+        if (!ok) {
+          return;
+        }
+        this.workflowBusy.set(true);
+        this.api
+          .post<AmortissementRow[]>('/amortissements/generer-plan', { immobilisation_id: immoId })
+          .subscribe({
+            next: () => {
+              this.workflowBusy.set(false);
+              this.loadAmortissements(immoId);
+              void this.dialogs.successAction('validation', 'Plan d’amortissement régénéré.').subscribe();
+            },
+            error: (err) => {
+              this.workflowBusy.set(false);
+              void this.dialogs.error(this.errMsg(err, 'Régénération impossible')).subscribe();
+            },
+          });
       });
   }
 
@@ -566,75 +713,114 @@ export class ImmobilisationFormComponent implements OnInit {
     if (!immoId) {
       return;
     }
-    const dateEcriture = new Date().toISOString().slice(0, 10);
-    this.workflowBusy.set(true);
-    this.api
-      .post<{ amortissement: AmortissementRow }>('/amortissements/comptabiliser', {
-        immobilisation_id: immoId,
-        periode: row.periode,
-        date_ecriture: dateEcriture,
-      })
-      .subscribe({
-        next: () => {
-          this.workflowBusy.set(false);
-          this.dateComptabilisation.set(dateEcriture);
-          this.loadAmortissements(immoId);
-          this.loadSituationComptable(immoId);
-          this.snack.open(`Écriture 681 / 148 générée pour ${row.periode}`, 'Fermer', { duration: 4000 });
-        },
-        error: (err) => {
-          this.workflowBusy.set(false);
-          const msg = err.error?.detail ?? 'Comptabilisation impossible';
-          this.snack.open(typeof msg === 'string' ? msg : 'Erreur', 'Fermer', { duration: 5000 });
-        },
+    this.dialogs
+      .confirmAction(
+        'comptabilisation',
+        `Comptabiliser la dotation de la période ${row.periode} (écriture 681 / 148) ?`,
+      )
+      .subscribe((ok) => {
+        if (!ok) {
+          return;
+        }
+        const dateEcriture = new Date().toISOString().slice(0, 10);
+        this.workflowBusy.set(true);
+        this.api
+          .post<{ amortissement: AmortissementRow }>('/amortissements/comptabiliser', {
+            immobilisation_id: immoId,
+            periode: row.periode,
+            date_ecriture: dateEcriture,
+          })
+          .subscribe({
+            next: () => {
+              this.workflowBusy.set(false);
+              this.dateComptabilisation.set(dateEcriture);
+              this.loadAmortissements(immoId);
+              this.loadSituationComptable(immoId);
+              void this.dialogs
+                .successAction('comptabilisation', `Écriture 681 / 148 générée pour ${row.periode}.`)
+                .subscribe();
+            },
+            error: (err) => {
+              this.workflowBusy.set(false);
+              void this.dialogs.error(this.errMsg(err, 'Comptabilisation impossible')).subscribe();
+            },
+          });
       });
   }
 
   submit(): void {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
+      void this.dialogs.error('Complétez les champs obligatoires', 'Validation').subscribe();
       return;
     }
-    const raw = this.form.getRawValue();
-    const body: Record<string, unknown> = {
-      code_inventaire: raw.code_inventaire.trim(),
-      designation: raw.designation.trim(),
-      description: raw.description || null,
-      observations: raw.observations || null,
-      numero_facture: raw.numero_facture || null,
-      quantite: raw.quantite,
-      categorie_id: raw.categorie_id,
-      agence_id: raw.agence_id || null,
-      fournisseur_id: raw.fournisseur_id || null,
-      date_acquisition: raw.date_acquisition,
-      date_mise_en_service: raw.date_mise_en_service || null,
-      valeur_brute: raw.valeur_brute,
-      valeur_residuelle: raw.valeur_residuelle,
-      duree_annees: raw.duree_annees,
-      periodicite: raw.periodicite,
-      prorata_temporis: raw.prorata_temporis,
-      mode_amortissement: raw.mode_amortissement,
-      statut: raw.statut,
-      localisation: raw.localisation || null,
-    };
-
-    this.saving.set(true);
     const immoId = this.id();
-    const req = immoId
-      ? this.api.patch<ImmobilisationDto>(`/immobilisations/${immoId}`, body)
-      : this.api.post<ImmobilisationDto>('/immobilisations', body);
+    const action = immoId ? 'modification' : 'ajout';
+    const code = this.form.getRawValue().code_inventaire.trim();
 
-    req.subscribe({
-      next: (saved) => {
-        this.saving.set(false);
-        this.snack.open('Immobilisation enregistrée', 'Fermer', { duration: 3000 });
-        void this.router.navigate(['/immobilisations', saved.id]);
-      },
-      error: (err) => {
-        this.saving.set(false);
-        const msg = err.error?.detail ?? 'Erreur lors de l’enregistrement';
-        this.snack.open(typeof msg === 'string' ? msg : 'Erreur', 'Fermer', { duration: 5000 });
-      },
-    });
+    this.dialogs
+      .confirmAction(
+        action,
+        immoId ? `Enregistrer les modifications de « ${code} » ?` : `Créer l’immobilisation « ${code} » ?`,
+      )
+      .subscribe((ok) => {
+        if (!ok) {
+          return;
+        }
+        const raw = this.form.getRawValue();
+        const body: Record<string, unknown> = {
+          code_inventaire: raw.code_inventaire.trim(),
+          designation: raw.designation.trim(),
+          description: raw.description || null,
+          observations: raw.observations || null,
+          numero_facture: raw.numero_facture || null,
+          quantite: raw.quantite,
+          categorie_id: raw.categorie_id,
+          agence_id: raw.agence_id || null,
+          fournisseur_id: raw.fournisseur_id || null,
+          date_acquisition: raw.date_acquisition,
+          date_mise_en_service: raw.date_mise_en_service || null,
+          valeur_brute: raw.valeur_brute,
+          valeur_residuelle: raw.valeur_residuelle,
+          duree_annees: raw.duree_annees,
+          periodicite: raw.periodicite,
+          prorata_temporis: raw.prorata_temporis,
+          mode_amortissement: raw.mode_amortissement,
+          statut: raw.statut,
+          localisation: raw.localisation || null,
+        };
+
+        this.saving.set(true);
+        const req = immoId
+          ? this.api.patch<ImmobilisationDto>(`/immobilisations/${immoId}`, body)
+          : this.api.post<ImmobilisationDto>('/immobilisations', body);
+
+        req.subscribe({
+          next: (saved) => {
+            this.saving.set(false);
+            this.dialogs
+              .successAction(
+                action,
+                immoId
+                  ? `« ${saved.code_inventaire} » a été mise à jour.`
+                  : `« ${saved.code_inventaire} » a été créée.`,
+              )
+              .subscribe(() => void this.router.navigate(['/immobilisations', saved.id]));
+          },
+          error: (err) => {
+            this.saving.set(false);
+            void this.dialogs.error(this.errMsg(err, 'Erreur lors de l’enregistrement')).subscribe();
+          },
+        });
+      });
+  }
+
+  cancel(): void {
+    const immoId = this.id();
+    if (immoId && this.activeSection() === 'modifier') {
+      void this.router.navigate(['/immobilisations', immoId]);
+      return;
+    }
+    void this.router.navigate(['/immobilisations']);
   }
 }

@@ -1,37 +1,64 @@
-<app-page-header title="Immobilisations" subtitle="Parc actif — codes inventaire, catégories TY-142 et valeurs brutes.">
-  <a mat-flat-button color="primary" routerLink="/immobilisations/nouveau">Nouvelle immobilisation</a>
-</app-page-header>
+<div class="iml">
+  <header class="iml__hero">
+    <div>
+      <h1 class="iml__title">Immobilisations</h1>
+      <p class="iml__lead">{{ rows().length }} bien(s)</p>
+    </div>
+    <a mat-flat-button color="primary" routerLink="/immobilisations/nouveau">
+      <mat-icon aria-hidden="true">add</mat-icon>
+      Nouvelle Saisie
+    </a>
+  </header>
 
-<div class="app-panel">
-  <table mat-table [dataSource]="rows()" class="w-full app-table">
-    <ng-container matColumnDef="code">
-      <th mat-header-cell *matHeaderCellDef>Code inventaire</th>
-      <td mat-cell *matCellDef="let row">{{ row.code_inventaire }}</td>
-    </ng-container>
-    <ng-container matColumnDef="designation">
-      <th mat-header-cell *matHeaderCellDef>Désignation</th>
-      <td mat-cell *matCellDef="let row">{{ row.designation }}</td>
-    </ng-container>
-    <ng-container matColumnDef="famille">
-      <th mat-header-cell *matHeaderCellDef>Type</th>
-      <td mat-cell *matCellDef="let row">{{ row.categorie?.famille ?? '—' }}</td>
-    </ng-container>
-    <ng-container matColumnDef="valeur">
-      <th mat-header-cell *matHeaderCellDef>Valeur brute</th>
-      <td mat-cell *matCellDef="let row">{{ row.valeur_brute | number: '1.2-2' }}</td>
-    </ng-container>
-    <ng-container matColumnDef="statut">
-      <th mat-header-cell *matHeaderCellDef>Statut</th>
-      <td mat-cell *matCellDef="let row">{{ statutLabel(row.statut) }}</td>
-    </ng-container>
-    <ng-container matColumnDef="actions">
-      <th mat-header-cell *matHeaderCellDef></th>
-      <td mat-cell *matCellDef="let row">
-        <a mat-button [routerLink]="['/immobilisations', row.id]">Ouvrir</a>
-      </td>
-    </ng-container>
-
-    <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-    <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
-  </table>
+  <section class="iml__section">
+    <div class="iml__body">
+      @if (loading()) {
+        <p class="iml__empty">Chargement…</p>
+      } @else if (rows().length === 0) {
+        <p class="iml__empty">Aucune immobilisation.</p>
+      } @else {
+        <div class="iml__table-wrap">
+          <table mat-table [dataSource]="rows()" class="w-full app-table">
+            <ng-container matColumnDef="code">
+              <th mat-header-cell *matHeaderCellDef>Code inventaire</th>
+              <td mat-cell *matCellDef="let row">
+                <span class="iml__code">{{ row.code_inventaire }}</span>
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="designation">
+              <th mat-header-cell *matHeaderCellDef>Désignation</th>
+              <td mat-cell *matCellDef="let row">{{ row.designation }}</td>
+            </ng-container>
+            <ng-container matColumnDef="famille">
+              <th mat-header-cell *matHeaderCellDef>Type</th>
+              <td mat-cell *matCellDef="let row">{{ row.categorie?.famille ?? '—' }}</td>
+            </ng-container>
+            <ng-container matColumnDef="valeur">
+              <th mat-header-cell *matHeaderCellDef>Valeur brute</th>
+              <td mat-cell *matCellDef="let row">
+                <span class="iml__montant">{{ row.valeur_brute | number: '1.2-2' }}</span>
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="statut">
+              <th mat-header-cell *matHeaderCellDef>Statut</th>
+              <td mat-cell *matCellDef="let row">
+                <span class="iml__badge">{{ statutLabel(row.statut) }}</span>
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="actions">
+              <th mat-header-cell *matHeaderCellDef></th>
+              <td mat-cell *matCellDef="let row">
+                <div class="iml__actions">
+                  <a mat-stroked-button [routerLink]="['/immobilisations', row.id]">Détails</a>
+                  <button mat-button type="button" color="warn" (click)="remove(row)">Supprimer</button>
+                </div>
+              </td>
+            </ng-container>
+            <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+          </table>
+        </div>
+      }
+    </div>
+  </section>
 </div>

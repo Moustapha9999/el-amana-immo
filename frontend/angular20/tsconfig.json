@@ -4,6 +4,7 @@
   "compileOnSave": false,
   "compilerOptions": {
     "strict": true,
+    "forceConsistentCasingInFileNames": true,
     "noImplicitOverride": true,
     "noPropertyAccessFromIndexSignature": true,
     "noImplicitReturns": true,
@@ -21,7 +22,14 @@
     "strictInjectionParameters": true,
     "strictInputAccessModifiers": true,
     "typeCheckHostBindings": true,
-    "strictTemplates": true
+    "strictTemplates": true,
+    "extendedDiagnostics": {
+      "defaultCategory": "error",
+      "checks": {
+        "nullishCoalescingNotNullable": "error",
+        "optionalChainNotNullable": "error"
+      }
+    }
   },
   "files": [],
   "references": [

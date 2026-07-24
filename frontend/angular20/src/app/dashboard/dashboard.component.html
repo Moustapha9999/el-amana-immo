@@ -176,37 +176,22 @@
 
           </svg>
 
-          <ul class="dash-donut__legend">
-
+          <div class="dash-donut__legend" role="list">
             @for (seg of statutDonut(); track seg.key) {
-
-              <li>
-
+              <div role="listitem">
                 <button
-
                   type="button"
-
                   class="dash-legend-btn"
-
                   [class.dash-chart--selected]="isStatutSelected(seg.key)"
-
                   [class.dash-chart--dimmed]="isDimmed('statut', seg.key)"
-
                   (click)="toggleStatut(seg.key)"
-
                 >
-
                   <span class="dash-donut__swatch" [style.background]="seg.color"></span>
-
                   {{ seg.label }} — {{ seg.value | number: '1.0-0' }}
-
                 </button>
-
-              </li>
-
+              </div>
             }
-
-          </ul>
+          </div>
 
         </div>
 
@@ -272,7 +257,7 @@
 
     <mat-card class="app-card dash-charts__card">
 
-      <h3 class="dash-charts__title">Dotations 681 — {{ kpi()?.annee_reference ?? 'exercice' }}</h3>
+      <h3 class="dash-charts__title">Dotations 681 — {{ chartExerciceLabel() }}</h3>
 
       @if (dotationBars().length) {
 
@@ -356,7 +341,7 @@
 
     <mat-card class="app-card dash-charts__card dash-charts__card--wide">
 
-      <h3 class="dash-charts__title">Évolution VNC — {{ kpi()?.annee_reference ?? 'exercice' }}</h3>
+      <h3 class="dash-charts__title">Évolution VNC — {{ chartExerciceLabel() }}</h3>
 
       @if (vncLine().dots.length) {
 

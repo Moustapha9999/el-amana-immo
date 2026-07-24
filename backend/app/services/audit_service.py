@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,7 +41,19 @@ class AuditService:
         *,
         entity: str | None = None,
         action: str | None = None,
+        search: str | None = None,
+        date_debut: date | None = None,
+        date_fin: date | None = None,
     ) -> tuple[list[AuditLog], int]:
         from app.services.audit_query import list_audit_logs
 
-        return await list_audit_logs(self.db, page, size, entity=entity, action=action)
+        return await list_audit_logs(
+            self.db,
+            page,
+            size,
+            entity=entity,
+            action=action,
+            search=search,
+            date_debut=date_debut,
+            date_fin=date_fin,
+        )

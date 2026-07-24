@@ -58,8 +58,19 @@ async def list_categories(
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    from pydantic import ValidationError
+
     items, total = await BaseRepository(db, CategorieImmobilisation).list(page, size, search, ("famille", "code"))
-    return to_paginated(items, total, page, size, CategorieRead.model_validate)
+
+    # Une catégorie legacy invalide (ex. compte_immobilisation NULL) ne doit pas
+    # faire échouer toute la liste Nature IMMO du formulaire.
+    mapped: list[CategorieRead] = []
+    for row in items:
+        try:
+            mapped.append(CategorieRead.model_validate(row))
+        except ValidationError:
+            continue
+    return PaginatedResponse(items=mapped, total=total, page=page, size=size)
 
 
 @router.post("/categories", response_model=CategorieRead, status_code=status.HTTP_201_CREATED)

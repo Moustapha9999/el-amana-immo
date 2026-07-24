@@ -13,8 +13,15 @@ from app.schemas.reporting import AuditLogRead, DashboardCharts, DashboardKpi
 from app.services.audit_query import list_audit_for_export
 from app.services.audit_service import AuditService
 from app.services.immobilisation_service import DashboardService
-from app.services.reporting_export import audit_logs_to_excel, ecritures_to_excel, ecritures_to_pdf, immobilisations_to_excel
+from app.services.reporting_export import (
+    audit_logs_to_excel,
+    ecritures_to_excel,
+    ecritures_to_pdf,
+    format_period_label,
+    immobilisations_to_excel,
+)
 from app.services.reporting_service import list_ecritures_for_export, list_immobilisations_for_export
+
 router = APIRouter(tags=["reporting"])
 
 
@@ -61,20 +68,43 @@ async def list_audit(
     size: int = Query(50, ge=1, le=200),
     entity: str | None = None,
     action: str | None = None,
+    search: str | None = None,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
     _: User = Depends(require_roles("administrateur", "auditeur")),
     db: AsyncSession = Depends(get_db),
 ):
-    items, total = await AuditService(db).list(page, size, entity=entity, action=action)
+    items, total = await AuditService(db).list(
+        page,
+        size,
+        entity=entity,
+        action=action,
+        search=search,
+        date_debut=date_debut,
+        date_fin=date_fin,
+    )
     return to_paginated(items, total, page, size, _audit_to_read)
 
 
 @router.get("/reporting/audit/export")
 async def export_audit(
+    entity: str | None = None,
+    action: str | None = None,
+    search: str | None = None,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
     _: User = Depends(require_roles("administrateur", "auditeur")),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = await list_audit_for_export(db)
-    content = audit_logs_to_excel(rows)
+    rows = await list_audit_for_export(
+        db,
+        entity=entity,
+        action=action,
+        search=search,
+        date_debut=date_debut,
+        date_fin=date_fin,
+    )
+    content = audit_logs_to_excel(rows, subtitle=format_period_label(date_debut, date_fin))
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -91,12 +121,13 @@ async def export_ecritures(
     db: AsyncSession = Depends(get_db),
 ):
     rows = await list_ecritures_for_export(db, date_debut=date_debut, date_fin=date_fin)
+    subtitle = format_period_label(date_debut, date_fin)
     if format == "pdf":
-        content = ecritures_to_pdf(rows)
+        content = ecritures_to_pdf(rows, subtitle=subtitle)
         media = "application/pdf"
         filename = "ecritures-el-amana.pdf"
     else:
-        content = ecritures_to_excel(rows)
+        content = ecritures_to_excel(rows, subtitle=subtitle)
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         filename = "ecritures-el-amana.xlsx"
     return Response(
@@ -112,7 +143,7 @@ async def export_immobilisations(
     db: AsyncSession = Depends(get_db),
 ):
     rows = await list_immobilisations_for_export(db)
-    content = immobilisations_to_excel(rows)
+    content = immobilisations_to_excel(rows, subtitle="Parc actif (hors biens supprimés)")
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

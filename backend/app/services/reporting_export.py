@@ -1,19 +1,369 @@
-from datetime import date
+"""Exports Excel / PDF avec en-tête Banque El Amana et horodatage."""
+
+from __future__ import annotations
+
+from datetime import date, datetime
 from io import BytesIO
+from typing import Any, Sequence
+from zoneinfo import ZoneInfo
 
 from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from app.data.el_amana_referentiel import BANQUE_EL_AMANA
 from app.models import EcritureComptable, Immobilisation
 
+_TZ = ZoneInfo("Africa/Nouakchott")
 
-def ecritures_to_excel(rows: list[EcritureComptable]) -> bytes:
+# Palette alignée UI (navy / brand)
+_COLOR_NAVY = "1E3A5F"
+_COLOR_BRAND = "2874A6"
+_COLOR_HEADER_FG = "FFFFFF"
+_COLOR_ZEBRA = "F8FAFC"
+_COLOR_META = "64748B"
+_COLOR_TITLE = "0F172A"
+_COLOR_BORDER = "CBD5E1"
+
+_THIN = Border(
+    left=Side(style="thin", color=_COLOR_BORDER),
+    right=Side(style="thin", color=_COLOR_BORDER),
+    top=Side(style="thin", color=_COLOR_BORDER),
+    bottom=Side(style="thin", color=_COLOR_BORDER),
+)
+
+
+def export_now() -> datetime:
+    return datetime.now(_TZ)
+
+
+def format_export_datetime(when: datetime | None = None) -> str:
+    dt = when or export_now()
+    return dt.strftime("%d/%m/%Y à %H:%M")
+
+
+def format_period_label(date_debut: date | None, date_fin: date | None) -> str | None:
+    if date_debut and date_fin:
+        return f"Période du {date_debut.strftime('%d/%m/%Y')} au {date_fin.strftime('%d/%m/%Y')}"
+    if date_debut:
+        return f"À partir du {date_debut.strftime('%d/%m/%Y')}"
+    if date_fin:
+        return f"Jusqu’au {date_fin.strftime('%d/%m/%Y')}"
+    return None
+
+
+def _bank_line() -> str:
+    return (
+        f"{BANQUE_EL_AMANA['raison_sociale']} ({BANQUE_EL_AMANA['sigle']}) — "
+        f"Code banque {BANQUE_EL_AMANA['code_banque']} — SWIFT {BANQUE_EL_AMANA['code_swift']}"
+    )
+
+
+def _autosize_columns(ws, min_width: int = 10, max_width: int = 42) -> None:
+    for col_idx in range(1, ws.max_column + 1):
+        letter = get_column_letter(col_idx)
+        max_len = min_width
+        for cell in ws[letter]:
+            if cell.value is None:
+                continue
+            max_len = max(max_len, min(max_width, len(str(cell.value)) + 2))
+        ws.column_dimensions[letter].width = max_len
+
+
+def build_styled_workbook(
+    *,
+    sheet_title: str,
+    report_title: str,
+    headers: Sequence[str],
+    rows: Sequence[Sequence[Any]],
+    subtitle: str | None = None,
+    exported_at: datetime | None = None,
+) -> bytes:
+    """Classeur Excel avec en-tête banque, titre, date/heure d'export et tableau stylé."""
+    when = exported_at or export_now()
     wb = Workbook()
     ws = wb.active
-    ws.title = "Ecritures"
+    ws.title = sheet_title[:31]
+
+    n_cols = len(headers)
+    last_col = get_column_letter(n_cols)
+
+    # Ligne 1 — Banque
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
+    c1 = ws["A1"]
+    c1.value = _bank_line()
+    c1.font = Font(name="Calibri", size=11, bold=True, color=_COLOR_NAVY)
+    c1.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[1].height = 20
+
+    # Ligne 2 — Titre du rapport
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
+    c2 = ws["A2"]
+    c2.value = report_title
+    c2.font = Font(name="Calibri", size=14, bold=True, color=_COLOR_TITLE)
+    c2.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[2].height = 22
+
+    # Ligne 3 — Métadonnées (date/heure + sous-titre)
+    meta_parts = [f"Exporté le {format_export_datetime(when)}"]
+    if subtitle:
+        meta_parts.append(subtitle)
+    meta_parts.append(f"{len(rows)} ligne(s)")
+    ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=n_cols)
+    c3 = ws["A3"]
+    c3.value = "  ·  ".join(meta_parts)
+    c3.font = Font(name="Calibri", size=10, italic=True, color=_COLOR_META)
+    c3.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[3].height = 18
+
+    # Ligne 4 — vide
+    ws.row_dimensions[4].height = 8
+
+    # Ligne 5 — en-têtes colonnes
+    header_row = 5
+    header_fill = PatternFill("solid", fgColor=_COLOR_NAVY)
+    header_font = Font(name="Calibri", size=10, bold=True, color=_COLOR_HEADER_FG)
+    for col_idx, label in enumerate(headers, start=1):
+        cell = ws.cell(row=header_row, column=col_idx, value=label)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = _THIN
+    ws.row_dimensions[header_row].height = 22
+
+    # Données
+    zebra = PatternFill("solid", fgColor=_COLOR_ZEBRA)
+    data_font = Font(name="Calibri", size=10, color=_COLOR_TITLE)
+    for r_idx, row in enumerate(rows):
+        excel_row = header_row + 1 + r_idx
+        for c_idx, value in enumerate(row, start=1):
+            cell = ws.cell(row=excel_row, column=c_idx, value=value)
+            cell.font = data_font
+            cell.border = _THIN
+            cell.alignment = Alignment(vertical="center", wrap_text=False)
+            if r_idx % 2 == 1:
+                cell.fill = zebra
+
+    # Bandeau décoratif haut + accent
+    for col_idx in range(1, n_cols + 1):
+        top_cell = ws.cell(row=1, column=col_idx)
+        top_cell.fill = PatternFill("solid", fgColor="EEF6FC")
+        top_cell.border = Border(bottom=Side(style="medium", color=_COLOR_BRAND))
+
+    ws.freeze_panes = "A6"
+    ws.auto_filter.ref = f"A{header_row}:{last_col}{header_row + max(len(rows), 1)}"
+    _autosize_columns(ws)
+
+    ws.print_title_rows = f"1:{header_row}"
+    ws.oddHeader.center.text = report_title
+    ws.oddFooter.center.text = f"Exporté le {format_export_datetime(when)} — Page &P / &N"
+    ws.oddFooter.left.text = BANQUE_EL_AMANA["raison_sociale"]
+
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _pdf_styles():
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+
+    base = getSampleStyleSheet()
+    return {
+        "bank": ParagraphStyle(
+            "BankLine",
+            parent=base["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=10,
+            textColor=colors.HexColor(f"#{_COLOR_NAVY}"),
+            spaceAfter=2,
+        ),
+        "title": ParagraphStyle(
+            "ReportTitle",
+            parent=base["Title"],
+            fontName="Helvetica-Bold",
+            fontSize=14,
+            textColor=colors.HexColor(f"#{_COLOR_TITLE}"),
+            spaceBefore=4,
+            spaceAfter=4,
+            alignment=TA_LEFT,
+        ),
+        "meta": ParagraphStyle(
+            "ReportMeta",
+            parent=base["Normal"],
+            fontName="Helvetica-Oblique",
+            fontSize=9,
+            textColor=colors.HexColor(f"#{_COLOR_META}"),
+            spaceAfter=10,
+        ),
+        "header": ParagraphStyle(
+            "HeaderCell",
+            parent=base["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=8,
+            leading=10,
+            textColor=colors.whitesmoke,
+            alignment=TA_CENTER,
+        ),
+        "cell": ParagraphStyle(
+            "CellWrap",
+            parent=base["Normal"],
+            fontName="Helvetica",
+            fontSize=7,
+            leading=9,
+            textColor=colors.HexColor(f"#{_COLOR_TITLE}"),
+            alignment=TA_LEFT,
+        ),
+        "cell_center": ParagraphStyle(
+            "CellCenter",
+            parent=base["Normal"],
+            fontName="Helvetica",
+            fontSize=7,
+            leading=9,
+            textColor=colors.HexColor(f"#{_COLOR_TITLE}"),
+            alignment=TA_CENTER,
+        ),
+        "cell_right": ParagraphStyle(
+            "CellRight",
+            parent=base["Normal"],
+            fontName="Helvetica",
+            fontSize=7,
+            leading=9,
+            textColor=colors.HexColor(f"#{_COLOR_TITLE}"),
+            alignment=TA_RIGHT,
+        ),
+    }
+
+
+def _pdf_footer(canvas, doc, *, exported_label: str, report_title: str) -> None:
+    canvas.saveState()
+    page_w, _ = canvas._pagesize
+    canvas.setStrokeColor(colors.HexColor(f"#{_COLOR_BRAND}"))
+    canvas.setLineWidth(1.2)
+    canvas.line(12 * mm, 12 * mm, page_w - 12 * mm, 12 * mm)
+    canvas.setFont("Helvetica", 8)
+    canvas.setFillColor(colors.HexColor(f"#{_COLOR_META}"))
+    canvas.drawString(12 * mm, 7 * mm, BANQUE_EL_AMANA["raison_sociale"])
+    canvas.drawCentredString(page_w / 2, 7 * mm, exported_label)
+    canvas.drawRightString(page_w - 12 * mm, 7 * mm, f"Page {doc.page}")
+    # Bandeau haut
+    canvas.setFillColor(colors.HexColor(f"#{_COLOR_NAVY}"))
+    canvas.rect(0, canvas._pagesize[1] - 8 * mm, page_w, 8 * mm, fill=1, stroke=0)
+    canvas.setFillColor(colors.white)
+    canvas.setFont("Helvetica-Bold", 8)
+    canvas.drawString(12 * mm, canvas._pagesize[1] - 5.2 * mm, "Banque El Amana — Immobilisations")
+    canvas.drawRightString(page_w - 12 * mm, canvas._pagesize[1] - 5.2 * mm, report_title[:48])
+    canvas.restoreState()
+
+
+def build_styled_pdf(
+    *,
+    report_title: str,
+    headers: Sequence[str],
+    rows: Sequence[Sequence[Any]],
+    subtitle: str | None = None,
+    exported_at: datetime | None = None,
+    landscape_mode: bool = True,
+    col_widths: Sequence[float] | None = None,
+    col_aligns: Sequence[str] | None = None,
+) -> bytes:
+    when = exported_at or export_now()
+    exported_label = f"Exporté le {format_export_datetime(when)}"
+    styles = _pdf_styles()
+    buf = BytesIO()
+    pagesize = landscape(A4) if landscape_mode else A4
+    left_m = 12 * mm
+    right_m = 12 * mm
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=pagesize,
+        title=report_title,
+        leftMargin=left_m,
+        rightMargin=right_m,
+        topMargin=16 * mm,
+        bottomMargin=18 * mm,
+    )
+    usable_width = pagesize[0] - left_m - right_m
+
+    meta_parts = [exported_label]
+    if subtitle:
+        meta_parts.append(subtitle)
+    meta_parts.append(f"{len(rows)} ligne(s)")
+
+    story: list = [
+        Paragraph(_bank_line(), styles["bank"]),
+        Paragraph(report_title, styles["title"]),
+        Paragraph("  ·  ".join(meta_parts), styles["meta"]),
+        Spacer(1, 4),
+    ]
+
+    n_cols = len(headers)
+    aligns = list(col_aligns) if col_aligns else ["left"] * n_cols
+    style_map = {
+        "left": styles["cell"],
+        "center": styles["cell_center"],
+        "right": styles["cell_right"],
+    }
+
+    def _cell(value: Any, align: str) -> Paragraph:
+        text = "" if value is None else str(value)
+        # Échapper pour ReportLab Paragraph
+        text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return Paragraph(text or "—", style_map.get(align, styles["cell"]))
+
+    data = [[Paragraph(h, styles["header"]) for h in headers]]
+    for row in rows:
+        data.append([_cell(v, aligns[i] if i < len(aligns) else "left") for i, v in enumerate(row)])
+
+    if col_widths:
+        widths = list(col_widths)
+        total = sum(widths)
+        if total > 0 and abs(total - usable_width) > 0.5:
+            # Normaliser pour occuper toute la largeur utile
+            widths = [w * usable_width / total for w in widths]
+    else:
+        widths = [usable_width / n_cols] * n_cols
+
+    table = Table(data, repeatRows=1, colWidths=widths, hAlign="LEFT")
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(f"#{_COLOR_NAVY}")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor(f"#{_COLOR_BORDER}")),
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor(f"#{_COLOR_NAVY}")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor(f"#{_COLOR_ZEBRA}")]),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    story.append(table)
+
+    def _on_page(canvas, document):
+        _pdf_footer(canvas, document, exported_label=exported_label, report_title=report_title)
+
+    doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Exports métier
+# ---------------------------------------------------------------------------
+
+
+def ecritures_to_excel(
+    rows: list[EcritureComptable],
+    *,
+    subtitle: str | None = None,
+) -> bytes:
     headers = [
         "Date",
         "Journal",
@@ -25,71 +375,78 @@ def ecritures_to_excel(rows: list[EcritureComptable]) -> bytes:
         "Auto",
         "Validée",
     ]
-    ws.append(headers)
-    for row in rows:
-        ws.append(
-            [
-                row.date_ecriture.isoformat(),
-                row.journal_code,
-                row.libelle,
-                row.compte_debit,
-                row.compte_credit,
-                float(row.montant),
-                row.reference or "",
-                "Oui" if row.generee_auto else "Non",
-                "Oui" if row.validee else "Non",
-            ]
-        )
-    buf = BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
-
-
-def ecritures_to_pdf(rows: list[EcritureComptable], *, titre: str = "Journal des écritures comptables") -> bytes:
-    buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), title=titre)
-    styles = getSampleStyleSheet()
-    story = [Paragraph(titre, styles["Title"]), Spacer(1, 12)]
-    data = [["Date", "Jnl", "Libellé", "Débit", "Crédit", "Montant", "Réf."]]
-    for row in rows:
-        data.append(
-            [
-                row.date_ecriture.strftime("%d/%m/%Y"),
-                row.journal_code,
-                row.libelle[:40],
-                row.compte_debit,
-                row.compte_credit,
-                f"{row.montant:,.2f}",
-                (row.reference or "")[:20],
-            ]
-        )
-    table = Table(data, repeatRows=1)
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e3a5f")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                ("FONTSIZE", (0, 0), (-1, -1), 8),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
-            ]
-        )
+    data = [
+        [
+            row.date_ecriture.strftime("%d/%m/%Y"),
+            row.journal_code,
+            row.libelle,
+            row.compte_debit,
+            row.compte_credit,
+            float(row.montant),
+            row.reference or "",
+            "Oui" if row.generee_auto else "Non",
+            "Oui" if row.validee else "Non",
+        ]
+        for row in rows
+    ]
+    return build_styled_workbook(
+        sheet_title="Ecritures",
+        report_title="Journal des écritures comptables",
+        headers=headers,
+        rows=data,
+        subtitle=subtitle,
     )
-    story.append(table)
-    doc.build(story)
-    return buf.getvalue()
 
 
-def audit_logs_to_excel(rows: list) -> bytes:
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Audit"
-    ws.append(["Date", "Utilisateur", "Action", "Entité", "ID entité", "IP"])
+def ecritures_to_pdf(
+    rows: list[EcritureComptable],
+    *,
+    titre: str = "Journal des écritures comptables",
+    subtitle: str | None = None,
+) -> bytes:
+    headers = ["Date", "Jnl", "Libellé", "Débit", "Crédit", "Montant", "Référence"]
+    data = [
+        [
+            row.date_ecriture.strftime("%d/%m/%Y"),
+            row.journal_code,
+            row.libelle or "",
+            row.compte_debit,
+            row.compte_credit,
+            f"{float(row.montant):,.2f}".replace(",", " "),
+            row.reference or "",
+        ]
+        for row in rows
+    ]
+    # Proportions (normalisées sur la largeur utile paysage)
+    widths = [24 * mm, 14 * mm, 72 * mm, 24 * mm, 24 * mm, 28 * mm, 58 * mm]
+    return build_styled_pdf(
+        report_title=titre,
+        headers=headers,
+        rows=data,
+        subtitle=subtitle,
+        landscape_mode=True,
+        col_widths=widths,
+        col_aligns=["center", "center", "left", "center", "center", "right", "left"],
+    )
+
+
+def audit_logs_to_excel(rows: list, *, subtitle: str | None = None) -> bytes:
+    headers = ["Date", "Utilisateur", "Action", "Entité", "ID entité", "IP"]
+    data = []
     for row in rows:
         email = row.user.email if getattr(row, "user", None) else ""
-        ws.append(
+        created = row.created_at
+        if created is not None:
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=_TZ)
+            else:
+                created = created.astimezone(_TZ)
+            date_str = created.strftime("%d/%m/%Y %H:%M")
+        else:
+            date_str = ""
+        data.append(
             [
-                row.created_at.isoformat() if row.created_at else "",
+                date_str,
                 email,
                 row.action,
                 row.entity,
@@ -97,36 +454,39 @@ def audit_logs_to_excel(rows: list) -> bytes:
                 row.ip_address or "",
             ]
         )
-    buf = BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
-
-
-def immobilisations_to_excel(rows: list[Immobilisation]) -> bytes:
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Immobilisations"
-    ws.append(
-        [
-            "Code inventaire",
-            "Désignation",
-            "Statut",
-            "Valeur brute",
-            "Compte immo",
-            "Date acquisition",
-        ]
+    return build_styled_workbook(
+        sheet_title="Audit",
+        report_title="Journal d’audit",
+        headers=headers,
+        rows=data,
+        subtitle=subtitle,
     )
-    for row in rows:
-        ws.append(
-            [
-                row.code_inventaire,
-                row.designation,
-                row.statut.value if hasattr(row.statut, "value") else str(row.statut),
-                float(row.valeur_brute),
-                row.compte_immobilisation or "",
-                row.date_acquisition.isoformat(),
-            ]
-        )
-    buf = BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
+
+
+def immobilisations_to_excel(rows: list[Immobilisation], *, subtitle: str | None = None) -> bytes:
+    headers = [
+        "Code inventaire",
+        "Désignation",
+        "Statut",
+        "Valeur brute",
+        "Compte immo",
+        "Date acquisition",
+    ]
+    data = [
+        [
+            row.code_inventaire,
+            row.designation,
+            row.statut.value if hasattr(row.statut, "value") else str(row.statut),
+            float(row.valeur_brute),
+            row.compte_immobilisation or "",
+            row.date_acquisition.strftime("%d/%m/%Y"),
+        ]
+        for row in rows
+    ]
+    return build_styled_workbook(
+        sheet_title="Immobilisations",
+        report_title="Inventaire des immobilisations",
+        headers=headers,
+        rows=data,
+        subtitle=subtitle,
+    )

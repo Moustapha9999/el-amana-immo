@@ -13,6 +13,10 @@ class ReferentielBase(BaseModel):
 class AgenceCreate(ReferentielBase):
     adresse: str | None = None
     ville: str | None = None
+    code_banque: str | None = Field(default="00007", max_length=10)
+    banque_sigle: str | None = Field(default="BEA", max_length=20)
+    banque_raison_sociale: str | None = Field(default="Banque El Amana", max_length=255)
+    code_swift: str | None = Field(default="AMDHMRMRXXX", max_length=20)
 
 
 class AgenceUpdate(BaseModel):
@@ -20,6 +24,10 @@ class AgenceUpdate(BaseModel):
     adresse: str | None = None
     ville: str | None = None
     is_active: bool | None = None
+    code_banque: str | None = Field(default=None, max_length=10)
+    banque_sigle: str | None = Field(default=None, max_length=20)
+    banque_raison_sociale: str | None = Field(default=None, max_length=255)
+    code_swift: str | None = Field(default=None, max_length=20)
 
 
 class AgenceRead(AgenceCreate, ORMModel):

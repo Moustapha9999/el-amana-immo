@@ -32,6 +32,7 @@ export const routes: Routes = [
       { path: 'dashboard', component: DashboardComponent },
       { path: 'immobilisations', component: ImmobilisationsListComponent },
       { path: 'immobilisations/nouveau', component: ImmobilisationFormComponent },
+      { path: 'immobilisations/:id/:section', component: ImmobilisationFormComponent },
       { path: 'immobilisations/:id', component: ImmobilisationFormComponent },
       { path: 'inventaire', component: InventaireComponent },
       { path: 'amortissements', component: AmortissementsComponent },

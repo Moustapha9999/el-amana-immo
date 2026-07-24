@@ -39,10 +39,15 @@ def apply_categorie_defaults(
             immo.duree_annees = categorie.duree_annees_defaut
         if immo.duree_mois in (0, 60) and immo.duree_annees is not None:
             immo.duree_mois = _sync_duree_mois_from_annees(immo.duree_annees)
-        immo.taux = _taux_from_duree_annees(immo.duree_annees)
+        # Taux métier El Amana (prioritaire) — sinon dérivé de la durée
+        if categorie.taux_lineaire_defaut is not None:
+            immo.taux = categorie.taux_lineaire_defaut
+        else:
+            immo.taux = _taux_from_duree_annees(immo.duree_annees)
         immo.mode_amortissement = categorie.mode_amortissement_defaut
-        immo.periodicite = categorie.periodicite_defaut
-        immo.prorata_temporis = categorie.prorata_temporis
+        # Banque El Amana : dates d'arrêt trimestrielles
+        immo.periodicite = "trimestriel"
+        immo.prorata_temporis = True
     else:
         immo.compte_amortissement = None
         immo.compte_dotation = None
@@ -60,6 +65,9 @@ def validate_immobilisation(immo: Immobilisation, categorie: CategorieImmobilisa
         raise ValidationError("La date de mise en service ne peut pas être antérieure à la date d'acquisition.")
     if categorie.amortissable and (immo.duree_annees is None or immo.duree_annees <= 0):
         raise ValidationError("Durée d'utilisation (années) requise pour une immobilisation amortissable.")
+    # Forcer la périodicité trimestrielle (dates d'arrêt banque)
+    if categorie.amortissable:
+        immo.periodicite = "trimestriel"
 
 
 def prepare_create(payload: ImmobilisationCreate, categorie: CategorieImmobilisation) -> dict:
@@ -72,8 +80,12 @@ def prepare_create(payload: ImmobilisationCreate, categorie: CategorieImmobilisa
         data["duree_annees"] = categorie.duree_annees_defaut
         data["duree_mois"] = _sync_duree_mois_from_annees(categorie.duree_annees_defaut)
     annees = data.get("duree_annees")
-    if categorie.amortissable and annees:
-        data["taux"] = _taux_from_duree_annees(annees)
+    if categorie.amortissable:
+        data["periodicite"] = "trimestriel"
+        if categorie.taux_lineaire_defaut is not None:
+            data["taux"] = categorie.taux_lineaire_defaut
+        elif annees:
+            data["taux"] = _taux_from_duree_annees(annees)
     return data
 
 
@@ -86,5 +98,6 @@ def apply_update_fields(immo: Immobilisation, payload: ImmobilisationUpdate) -> 
         immo.duree_mois = _sync_duree_mois_from_annees(duree_annees)
     for key, value in data.items():
         setattr(immo, key, value)
-    if immo.duree_annees and immo.duree_annees > 0:
+    if immo.duree_annees and immo.duree_annees > 0 and immo.taux is None:
         immo.taux = _taux_from_duree_annees(immo.duree_annees)
+    immo.periodicite = "trimestriel"

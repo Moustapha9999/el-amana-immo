@@ -1,0 +1,125 @@
+.amo {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding-bottom: 1rem;
+}
+
+.amo__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.amo__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.amo__lead {
+  margin: 0.35rem 0 0;
+  font-size: 0.9375rem;
+  color: #64748b;
+}
+
+.amo__section {
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-card);
+  overflow: hidden;
+}
+
+.amo__empty {
+  margin: 0;
+  padding: 2.5rem 1.25rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.amo__table-wrap {
+  overflow-x: auto;
+  width: 100%;
+}
+
+.amo__table-wrap .app-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.amo__table-wrap .mat-column-code {
+  width: 16%;
+}
+
+.amo__table-wrap .mat-column-designation {
+  width: 28%;
+}
+
+.amo__table-wrap .mat-column-type {
+  width: 16%;
+}
+
+.amo__table-wrap .mat-column-statut {
+  width: 12%;
+}
+
+.amo__table-wrap .mat-column-valeur {
+  width: 14%;
+}
+
+.amo__table-wrap .mat-column-actions {
+  width: 14%;
+}
+
+.amo__table-wrap .mat-mdc-cell,
+.amo__table-wrap .mat-mdc-header-cell {
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+.amo__table-wrap .mat-column-designation .mat-mdc-cell,
+.amo__table-wrap .mat-column-designation .mat-mdc-header-cell {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.amo__code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.amo__montant {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.amo__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgb(40 116 166 / 0.12);
+  color: var(--app-brand-800);
+  border: 1px solid rgb(40 116 166 / 0.25);
+}
+
+.amo__actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  justify-content: flex-end;
+  align-items: center;
+}

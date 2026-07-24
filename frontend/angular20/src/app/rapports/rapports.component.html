@@ -1,76 +1,225 @@
-<app-page-header
-  title="Rapports & exports"
-  subtitle="Extractions Excel/PDF pour la comptabilité, la BCM et les contrôles internes."
-/>
-
-<div class="grid gap-4 md:grid-cols-2">
-  <mat-card class="app-card p-4">
-    <h3 class="text-sm font-semibold text-slate-700 mb-2">Journal des écritures</h3>
-    <p class="text-sm text-slate-600 mb-4">
-      Export des écritures générées (amortissements 681/148, cessions, rebuts) pour la comptabilité et la BCM.
-    </p>
-    <div class="flex flex-wrap gap-2">
-      <button mat-flat-button color="primary" type="button" (click)="exportEcritures('xlsx')">
-        Télécharger Excel
-      </button>
-      <button mat-stroked-button type="button" (click)="exportEcritures('pdf')">Télécharger PDF</button>
+<div class="rap">
+  <header class="rap__hero">
+    <div>
+      <h1 class="rap__title">Rapports</h1>
+      <p class="rap__lead">
+        @if (loadingKpi()) {
+          Chargement…
+        } @else if (kpi(); as k) {
+          {{ k.nombre_immobilisations }} immobilisation(s) — exports Excel / PDF
+        } @else {
+          Exports Excel / PDF
+        }
+      </p>
     </div>
-  </mat-card>
-
-  <mat-card class="app-card p-4">
-    <h3 class="text-sm font-semibold text-slate-700 mb-2">État du parc immobilisations</h3>
-    <p class="text-sm text-slate-600 mb-4">
-      Liste des immobilisations actives : codes, valeurs brutes, statuts et comptes 142xxx.
-    </p>
-    <button mat-flat-button color="primary" type="button" (click)="exportImmobilisations()">
-      Télécharger Excel
-    </button>
-  </mat-card>
-
-  <mat-card class="app-card p-4 md:col-span-2">
-    <h3 class="text-sm font-semibold text-slate-700 mb-2">Import immobilisations (Excel)</h3>
-    <p class="text-sm text-slate-600 mb-4">
-      Téléchargez le modèle, complétez les lignes (code, catégorie TY-142xxx, dates, montants), puis importez le fichier.
-    </p>
-    <div class="flex flex-wrap gap-2 items-center">
-      <button mat-stroked-button type="button" (click)="downloadImportTemplate()">Modèle Excel</button>
-      <label for="import-immobilisations-file" class="sr-only">Importer un fichier Excel d'immobilisations</label>
-      <input
-        #importFile
-        id="import-immobilisations-file"
-        type="file"
-        accept=".xlsx,.xls"
-        class="hidden"
-        (change)="onImportFile($event)"
-        [disabled]="importBusy()"
-      />
-      <button
-        mat-stroked-button
-        type="button"
-        (click)="importFile.click()"
-        [disabled]="importBusy()"
-        aria-controls="import-immobilisations-file"
-      >
-        Choisir fichier…
-      </button>
-      @if (importBusy()) {
-        <span class="text-sm text-slate-500">Import en cours…</span>
-      }
-      @if (importResult()) {
-        <span class="text-sm text-green-700">{{ importResult() }}</span>
-      }
+    <div class="rap__hero-actions">
+      <a mat-stroked-button routerLink="/ecritures">
+        <mat-icon aria-hidden="true">menu_book</mat-icon>
+        Écritures
+      </a>
+      <a mat-stroked-button routerLink="/immobilisations">
+        <mat-icon aria-hidden="true">inventory_2</mat-icon>
+        Immobilisations
+      </a>
     </div>
-  </mat-card>
+  </header>
 
-  <mat-card class="app-card p-4 md:col-span-2">
-    <h3 class="text-sm font-semibold text-slate-700 mb-2">Journal d'audit</h3>
-    <p class="text-sm text-slate-600 mb-4">Export des connexions et mutations (immobilisations, amortissements, sorties).</p>
-    <a mat-stroked-button routerLink="/audit">Ouvrir l'audit</a>
-  </mat-card>
+  <div class="rap__kpis">
+    <div class="rap__kpi">
+      <span class="rap__kpi-label">Immobilisations</span>
+      <span class="rap__kpi-value">{{ kpi()?.nombre_immobilisations ?? '—' }}</span>
+    </div>
+    <div class="rap__kpi">
+      <span class="rap__kpi-label">Valeur brute</span>
+      <span class="rap__kpi-value">
+        @if (kpi(); as k) {
+          {{ k.valeur_brute_totale | number: '1.2-2' }}
+        } @else {
+          —
+        }
+      </span>
+    </div>
+    <div class="rap__kpi">
+      <span class="rap__kpi-label">VNC</span>
+      <span class="rap__kpi-value">
+        @if (kpi(); as k) {
+          {{ k.vnc_totale | number: '1.2-2' }}
+        } @else {
+          —
+        }
+      </span>
+    </div>
+  </div>
+
+  <section class="rap__section">
+    <div class="rap__toolbar">
+      <form [formGroup]="filterForm" class="rap__filters" (ngSubmit)="$event.preventDefault()">
+        <div class="rap-field">
+          <label class="rap-field__label" for="rap-debut">Du</label>
+          <input
+            id="rap-debut"
+            class="rap-field__control"
+            type="date"
+            formControlName="date_debut"
+            aria-label="Date début (écritures)"
+          />
+        </div>
+        <div class="rap-field">
+          <label class="rap-field__label" for="rap-fin">Au</label>
+          <input
+            id="rap-fin"
+            class="rap-field__control"
+            type="date"
+            formControlName="date_fin"
+            aria-label="Date fin (écritures)"
+          />
+        </div>
+        <div class="rap__filter-actions">
+          <button mat-stroked-button type="button" (click)="resetFilters()">Réinitialiser</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="rap__body">
+      <div class="rap__grid">
+        <article class="rap__tile">
+          <div class="rap__tile-head">
+            <span class="rap__tile-icon" aria-hidden="true">
+              <mat-icon>receipt_long</mat-icon>
+            </span>
+            <div>
+              <h2 class="rap__tile-title">Journal des écritures</h2>
+              <p class="rap__tile-meta">Période optionnelle ci-dessus</p>
+            </div>
+          </div>
+          <div class="rap__tile-actions">
+            <button
+              mat-flat-button
+              color="primary"
+              type="button"
+              (click)="exportEcritures('xlsx')"
+              [disabled]="busy() !== null"
+            >
+              <mat-icon aria-hidden="true">table_view</mat-icon>
+              {{ busy() === 'ecritures-xlsx' ? '…' : 'Excel' }}
+            </button>
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="exportEcritures('pdf')"
+              [disabled]="busy() !== null"
+            >
+              <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
+              {{ busy() === 'ecritures-pdf' ? '…' : 'PDF' }}
+            </button>
+          </div>
+        </article>
+
+        <article class="rap__tile">
+          <div class="rap__tile-head">
+            <span class="rap__tile-icon" aria-hidden="true">
+              <mat-icon>domain</mat-icon>
+            </span>
+            <div>
+              <h2 class="rap__tile-title">État du parc</h2>
+              <p class="rap__tile-meta">Immobilisations actives</p>
+            </div>
+          </div>
+          <div class="rap__tile-actions">
+            <button
+              mat-flat-button
+              color="primary"
+              type="button"
+              (click)="exportImmobilisations()"
+              [disabled]="busy() !== null"
+            >
+              <mat-icon aria-hidden="true">table_view</mat-icon>
+              {{ busy() === 'immo' ? '…' : 'Excel' }}
+            </button>
+          </div>
+        </article>
+
+        @if (canImport()) {
+          <article class="rap__tile">
+            <div class="rap__tile-head">
+              <span class="rap__tile-icon" aria-hidden="true">
+                <mat-icon>upload_file</mat-icon>
+              </span>
+              <div>
+                <h2 class="rap__tile-title">Import immobilisations</h2>
+                <p class="rap__tile-meta">Modèle Excel puis fichier</p>
+              </div>
+            </div>
+            <div class="rap__tile-actions">
+              <button
+                mat-stroked-button
+                type="button"
+                (click)="downloadImportTemplate()"
+                [disabled]="busy() !== null"
+              >
+                <mat-icon aria-hidden="true">download</mat-icon>
+                {{ busy() === 'template' ? '…' : 'Modèle' }}
+              </button>
+              <label for="rap-import-file" class="sr-only">Fichier Excel d'import</label>
+              <input
+                #importFile
+                id="rap-import-file"
+                type="file"
+                accept=".xlsx,.xls"
+                class="sr-only"
+                (change)="onImportFile($event)"
+                [disabled]="busy() !== null"
+              />
+              <button
+                mat-flat-button
+                color="primary"
+                type="button"
+                (click)="importFile.click()"
+                [disabled]="busy() !== null"
+              >
+                <mat-icon aria-hidden="true">folder_open</mat-icon>
+                {{ busy() === 'import' ? 'Import…' : 'Importer' }}
+              </button>
+            </div>
+            @if (importFileName()) {
+              <p class="rap__file-name">{{ importFileName() }}</p>
+            }
+            @if (importResult()) {
+              <p class="rap__status rap__status--ok">{{ importResult() }}</p>
+            }
+          </article>
+        }
+
+        @if (canAudit()) {
+          <article class="rap__tile">
+            <div class="rap__tile-head">
+              <span class="rap__tile-icon" aria-hidden="true">
+                <mat-icon>policy</mat-icon>
+              </span>
+              <div>
+                <h2 class="rap__tile-title">Journal d'audit</h2>
+                <p class="rap__tile-meta">Connexions et mutations</p>
+              </div>
+            </div>
+            <div class="rap__tile-actions">
+              <button
+                mat-flat-button
+                color="primary"
+                type="button"
+                (click)="exportAudit()"
+                [disabled]="busy() !== null"
+              >
+                <mat-icon aria-hidden="true">table_view</mat-icon>
+                {{ busy() === 'audit' ? '…' : 'Excel' }}
+              </button>
+              <a mat-stroked-button routerLink="/audit">
+                <mat-icon aria-hidden="true">open_in_new</mat-icon>
+                Ouvrir
+              </a>
+            </div>
+          </article>
+        }
+      </div>
+    </div>
+  </section>
 </div>
-
-<p class="text-xs text-slate-500 mt-6">
-  Filtres par période : utilisez l'écran
-  <a routerLink="/ecritures" class="app-link">Écritures</a>
-  avant d'exporter si besoin.
-</p>

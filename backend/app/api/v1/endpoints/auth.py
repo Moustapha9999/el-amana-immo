@@ -302,18 +302,59 @@ async def totp_disable(
 
 @router.post("/auth/forgot-password", response_model=ForgotPasswordResponse)
 async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
-    from app.core.config import get_settings
-    from app.core.security import create_password_reset_token
+    """Réinitialisation : pas d'envoi SMTP pour l'instant.
 
+    En mode développement (`APP_DEBUG=true`), le token est renvoyé dans la réponse
+    pour permettre de réinitialiser sans boîte mail. En production, seul un message
+    générique est renvoyé (le token n'est jamais exposé).
+    """
+    import logging
+
+    from app.core.config import get_settings
+    from app.core.security import PASSWORD_RESET_EXPIRE_SECONDS, create_password_reset_token
+
+    settings = get_settings()
     service = AuthService(db)
     user = await service.find_active_by_email(payload.email)
+    dev_mode = bool(settings.app_debug) or settings.app_env.lower() in {"development", "dev", "local"}
+
+    # Message générique (ne révèle pas l'existence du compte en prod)
     message = "Si l'email existe, un lien de réinitialisation a été envoyé."
     reset_token: str | None = None
+    account_found = user is not None
+    expires_in: int | None = None
+
     if user is not None:
         reset_token = create_password_reset_token(user.id)
-        if get_settings().app_debug:
-            message = f"Mode dev : utilisez le token ci-dessous (validité 1 h)."
-    return ForgotPasswordResponse(message=message, reset_token=reset_token)
+        expires_in = PASSWORD_RESET_EXPIRE_SECONDS
+        logging.getLogger("el_amana.auth").info(
+            "Password reset token generated for %s (dev_mode=%s, ttl=%ss)",
+            user.email,
+            dev_mode,
+            PASSWORD_RESET_EXPIRE_SECONDS,
+        )
+        if not dev_mode:
+            # Production : ne pas exposer le token tant que l'email n'est pas branché
+            reset_token = None
+            expires_in = None
+        else:
+            message = (
+                f"Compte trouvé — cliquez sur le lien ci-dessous pour choisir un nouveau mot de passe "
+                f"(valide {PASSWORD_RESET_EXPIRE_SECONDS} s)."
+            )
+    elif dev_mode:
+        message = (
+            "Aucun compte actif avec cet email. "
+            "Utilisez un email existant (ex. admin@el-amana.mr)."
+        )
+
+    return ForgotPasswordResponse(
+        message=message,
+        reset_token=reset_token if dev_mode else None,
+        account_found=account_found if dev_mode else False,
+        dev_mode=dev_mode,
+        expires_in_seconds=expires_in if dev_mode else None,
+    )
 
 
 @router.post("/auth/reset-password", response_model=MessageResponse)

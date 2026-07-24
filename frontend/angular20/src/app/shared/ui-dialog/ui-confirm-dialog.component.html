@@ -1,0 +1,22 @@
+<div class="ui-dlg" [attr.data-tone]="tone">
+  <div class="ui-dlg__icon" aria-hidden="true">
+    <mat-icon>{{ data.icon || 'help' }}</mat-icon>
+  </div>
+  <h2 class="ui-dlg__title" mat-dialog-title>{{ data.title }}</h2>
+  <div mat-dialog-content class="ui-dlg__body">
+    <p class="ui-dlg__message">{{ data.message }}</p>
+  </div>
+  <div mat-dialog-actions class="ui-dlg__actions">
+    <button mat-stroked-button type="button" (click)="cancel()">
+      {{ data.cancelLabel || 'Annuler' }}
+    </button>
+    <button
+      mat-flat-button
+      type="button"
+      [color]="tone === 'danger' ? 'warn' : 'primary'"
+      (click)="confirm()"
+    >
+      {{ data.confirmLabel || 'Confirmer' }}
+    </button>
+  </div>
+</div>
