@@ -1,4 +1,4 @@
-<div class="ces">
+﻿<div class="ces">
   <header class="ces__hero">
     <div>
       <h1 class="ces__title">Cessions</h1>
@@ -15,15 +15,15 @@
   <div class="ces__kpis">
     <div class="ces__kpi">
       <span class="ces__kpi-label">Prix cédés</span>
-      <span class="ces__kpi-value">{{ kpi().prix | number: '1.2-2' }}</span>
+      <span class="ces__kpi-value">{{ montant(kpi().prix) }}</span>
     </div>
     <div class="ces__kpi ces__kpi--plus">
       <span class="ces__kpi-label">Plus-values</span>
-      <span class="ces__kpi-value">{{ kpi().plus | number: '1.2-2' }}</span>
+      <span class="ces__kpi-value">{{ montant(kpi().plus) }}</span>
     </div>
     <div class="ces__kpi ces__kpi--moins">
       <span class="ces__kpi-label">Moins-values</span>
-      <span class="ces__kpi-value">{{ kpi().moins | number: '1.2-2' }}</span>
+      <span class="ces__kpi-value">{{ montant(kpi().moins) }}</span>
     </div>
   </div>
 
@@ -99,13 +99,13 @@
             <ng-container matColumnDef="prix">
               <th mat-header-cell *matHeaderCellDef>Prix</th>
               <td mat-cell *matCellDef="let row">
-                <span class="ces__montant">{{ row.prix_cession | number: '1.2-2' }}</span>
+                <span class="ces__montant">{{ montant(row.prix_cession) }}</span>
               </td>
             </ng-container>
             <ng-container matColumnDef="vnc">
               <th mat-header-cell *matHeaderCellDef>VNC</th>
               <td mat-cell *matCellDef="let row">
-                <span class="ces__montant">{{ row.vnc | number: '1.2-2' }}</span>
+                <span class="ces__montant">{{ montant(row.vnc) }}</span>
               </td>
             </ng-container>
             <ng-container matColumnDef="resultat">

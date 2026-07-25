@@ -1,4 +1,4 @@
-<div class="bfd">
+﻿<div class="bfd">
   <header class="bfd__hero">
     <div>
       <a class="bfd__back" routerLink="/rebuts">
@@ -71,7 +71,7 @@
           <div>
             <dt>Valeur brute (VB)</dt>
             <dd class="bfd__montant">
-              {{ d.valeur_brute != null ? (d.valeur_brute | number: '1.2-2') : '—' }}
+              {{ d.valeur_brute != null ? (d.valeur_brute | montant) : '—' }}
             </dd>
           </div>
           <div>
@@ -91,7 +91,7 @@
           <div>
             <dt>Cumul amortissements</dt>
             <dd class="bfd__montant">
-              {{ d.cumul_amortissement != null ? (d.cumul_amortissement | number: '1.2-2') : '—' }}
+              {{ d.cumul_amortissement != null ? (d.cumul_amortissement | montant) : '—' }}
             </dd>
           </div>
           <div class="bfd__span-2">
@@ -103,11 +103,11 @@
 
       <section class="bfd__block bfd__block--result">
         <h3 class="bfd__block-title">Résultat de sortie</h3>
-        <p class="bfd__formula">À la mise au rebut, le prix de cession est nul — la perte nette égale la VNC.</p>
+        <p class="bfd__formula app-explain">À la mise au rebut, le prix de cession est nul — la perte nette égale la VNC.</p>
         <div class="bfd__result-grid">
           <div class="bfd__result-card bfd__result-card--perte">
             <span class="bfd__result-label">VNC sortie (perte)</span>
-            <span class="bfd__result-value">{{ d.vnc | number: '1.2-2' }}</span>
+            <span class="bfd__result-value">{{ d.vnc | montant }}</span>
           </div>
         </div>
       </section>

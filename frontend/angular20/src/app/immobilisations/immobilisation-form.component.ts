@@ -1,4 +1,5 @@
-import { DecimalPipe } from '@angular/common';
+﻿import { DatePipe } from '@angular/common';
+import { MontantPipe } from '../shared/montant.pipe';
 import { Component, computed, effect, inject, input, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -19,7 +20,19 @@ import {
   STATUT_IMMOBILISATION_LABELS,
 } from './immobilisation.constants';
 
-type ImmoSection = 'fiche' | 'modifier' | 'amortissement' | 'reevaluation' | 'sortie';
+type ImmoSection = 'fiche' | 'modifier' | 'amortissement' | 'reevaluation' | 'sortie' | 'pieces';
+
+interface PieceComptable {
+  id: string;
+  immobilisation_id: string;
+  filename: string;
+  mime_type: string | null;
+  size_bytes: number;
+  type_piece: string;
+  date_journee: string;
+  reference: string | null;
+  libelle: string | null;
+}
 
 interface Paginated<T> {
   items: T[];
@@ -103,7 +116,8 @@ interface ImmobilisationDto {
   imports: [
     ReactiveFormsModule,
     RouterLink,
-    DecimalPipe,
+    DatePipe,
+    MontantPipe,
     MatButtonModule,
     MatIconModule,
     MatTableModule,
@@ -113,10 +127,22 @@ interface ImmobilisationDto {
 })
 export class ImmobilisationFormComponent implements OnInit {
   readonly id = input<string | undefined>();
-  /** Route `:section` — modifier | amortissement | reevaluation | sortie */
+  /** Route `:section` — modifier | amortissement | reevaluation | sortie | pieces */
   readonly section = input<string | undefined>();
   protected readonly natureImmoOptionLabel = natureImmoOptionLabel;
   protected readonly formatPeriode = formatPeriodeAmortissement;
+  protected readonly pieceTypeLabel = (v: string) =>
+    (
+      {
+        facture: 'Facture',
+        pv: 'PV',
+        bon_commande: 'Bon de commande',
+        bon_livraison: 'Bon de livraison',
+        contrat: 'Contrat',
+        protocole_accord: "Protocole d'accord",
+        autre: 'Autre',
+      } as Record<string, string>
+    )[v] || v;
 
   private readonly fb = inject(FormBuilder);
   private readonly api = inject(ApiService);
@@ -134,7 +160,13 @@ export class ImmobilisationFormComponent implements OnInit {
       return 'fiche';
     }
     const s = (this.section() ?? '').toLowerCase();
-    if (s === 'modifier' || s === 'amortissement' || s === 'reevaluation' || s === 'sortie') {
+    if (
+      s === 'modifier' ||
+      s === 'amortissement' ||
+      s === 'reevaluation' ||
+      s === 'sortie' ||
+      s === 'pieces'
+    ) {
       return s;
     }
     return 'fiche';
@@ -147,6 +179,7 @@ export class ImmobilisationFormComponent implements OnInit {
   readonly showAmortissement = computed(() => this.activeSection() === 'amortissement');
   readonly showReevaluation = computed(() => this.activeSection() === 'reevaluation');
   readonly showSortie = computed(() => this.activeSection() === 'sortie');
+  readonly showPieces = computed(() => this.activeSection() === 'pieces');
 
   readonly pageTitle = computed(() => {
     if (this.isCreate()) {
@@ -161,6 +194,8 @@ export class ImmobilisationFormComponent implements OnInit {
         return 'Réévaluation & ajustements';
       case 'sortie':
         return 'Sortie d’actif';
+      case 'pieces':
+        return 'Pièces comptables';
       default:
         return 'Détails immobilisation';
     }
@@ -186,6 +221,16 @@ export class ImmobilisationFormComponent implements OnInit {
   readonly qrPayload = signal<string | null>(null);
   /** True si un plan existe mais aucune ligne pour l'exercice courant. */
   readonly planHorsExercice = signal(false);
+  readonly pieces = signal<PieceComptable[]>([]);
+  readonly piecesBusy = signal(false);
+  selectedPieceFile: File | null = null;
+
+  readonly pieceForm = this.fb.nonNullable.group({
+    type_piece: ['facture'],
+    date_journee: [new Date().toISOString().slice(0, 10)],
+    reference: [''],
+    libelle: [''],
+  });
 
   /** Admin / comptable peuvent surcharger le taux issu de la catégorie. */
   readonly canOverrideTaux = computed(() => {
@@ -343,9 +388,17 @@ export class ImmobilisationFormComponent implements OnInit {
         this.patchFromDto(row);
         this.loadSituationComptable(immoId);
         this.loadQrCode(immoId);
+        const journee = row.date_comptabilisation || row.date_acquisition;
+        if (journee) {
+          this.pieceForm.controls.date_journee.setValue(journee.slice(0, 10));
+        }
+        if (row.numero_facture) {
+          this.pieceForm.controls.reference.setValue(row.numero_facture);
+        }
       });
       this.loadAmortissements(immoId);
       this.loadReevaluations(immoId);
+      this.loadPieces(immoId);
     }
 
     this.form.controls.categorie_id.valueChanges.subscribe((catId) => this.applyCategoryDefaults(catId));
@@ -462,6 +515,84 @@ export class ImmobilisationFormComponent implements OnInit {
       const validees = plan.filter((r) => r.valide).map((r) => r.periode).sort();
       this.dernierePeriodeAmort.set(validees.length ? validees[validees.length - 1]! : null);
     });
+  }
+
+  loadPieces(immoId: string): void {
+    this.api.get<PieceComptable[]>(`/immobilisations/${immoId}/pieces`).subscribe({
+      next: (rows) => this.pieces.set(rows),
+      error: () => this.pieces.set([]),
+    });
+  }
+
+  onPieceFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const files = input.files;
+    this.selectedPieceFile = files && files.length > 0 ? files[0] : null;
+  }
+
+  uploadPiece(): void {
+    const immoId = this.id();
+    if (!immoId) {
+      return;
+    }
+    if (!this.selectedPieceFile) {
+      void this.dialogs.error('Sélectionnez un fichier PDF ou image').subscribe();
+      return;
+    }
+    const raw = this.pieceForm.getRawValue();
+    this.piecesBusy.set(true);
+    this.api
+      .upload<PieceComptable>(`/immobilisations/${immoId}/pieces`, this.selectedPieceFile, {
+        type_piece: raw.type_piece,
+        date_journee: raw.date_journee,
+        reference: raw.reference,
+        libelle: raw.libelle,
+      })
+      .subscribe({
+        next: () => {
+          this.piecesBusy.set(false);
+          this.selectedPieceFile = null;
+          this.loadPieces(immoId);
+          void this.dialogs.successAction('enregistrement', 'Pièce archivée.').subscribe();
+        },
+        error: (err) => {
+          this.piecesBusy.set(false);
+          void this.dialogs
+            .error(typeof err.error?.detail === 'string' ? err.error.detail : 'Upload impossible')
+            .subscribe();
+        },
+      });
+  }
+
+  downloadPiece(row: PieceComptable): void {
+    this.api.download(`/pieces/${row.id}/download`).subscribe({
+      next: (blob) => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = row.filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      },
+      error: () => void this.dialogs.error('Téléchargement impossible').subscribe(),
+    });
+  }
+
+  deletePiece(row: PieceComptable): void {
+    const immoId = this.id();
+    if (!immoId) {
+      return;
+    }
+    this.dialogs
+      .confirmAction('suppression', `Supprimer « ${row.filename} » ?`)
+      .subscribe((ok) => {
+        if (!ok) {
+          return;
+        }
+        this.api.delete(`/pieces/${row.id}`).subscribe({
+          next: () => this.loadPieces(immoId),
+          error: () => void this.dialogs.error('Suppression impossible').subscribe(),
+        });
+      });
   }
 
   loadSituationComptable(immoId: string): void {

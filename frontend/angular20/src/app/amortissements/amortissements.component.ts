@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+﻿import { MontantPipe } from '../shared/montant.pipe';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -23,7 +23,7 @@ interface Paginated<T> {
 
 @Component({
   selector: 'app-amortissements',
-  imports: [RouterLink, DecimalPipe, MatTableModule, MatButtonModule],
+  imports: [RouterLink, MontantPipe, MatTableModule, MatButtonModule],
   templateUrl: './amortissements.component.html',
   styleUrl: './amortissements.component.css',
 })

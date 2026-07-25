@@ -1,4 +1,5 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+﻿import { DatePipe } from '@angular/common';
+import { MontantPipe } from '../shared/montant.pipe';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -29,7 +30,7 @@ interface Paginated<T> {
     ReactiveFormsModule,
     RouterLink,
     DatePipe,
-    DecimalPipe,
+    MontantPipe,
     MatButtonModule,
     MatIconModule,
     MatTableModule,

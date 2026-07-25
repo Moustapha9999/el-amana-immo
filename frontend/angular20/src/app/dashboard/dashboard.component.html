@@ -1,4 +1,4 @@
-<app-page-header
+﻿<app-page-header
 
   title="Tableau de bord"
 
@@ -66,7 +66,7 @@
 
       <p class="kpi-card__value">
 
-        {{ data.valeur_brute_totale | number: '1.0-0' }}
+        {{ data.valeur_brute_totale | montant }}
 
         <span class="text-base font-semibold text-slate-500">MRU</span>
 
@@ -82,7 +82,7 @@
 
       <p class="kpi-card__value">
 
-        {{ data.vnc_totale | number: '1.0-0' }}
+        {{ data.vnc_totale | montant }}
 
         <span class="text-base font-semibold text-slate-500">MRU</span>
 
@@ -98,7 +98,7 @@
 
       <p class="kpi-card__value">
 
-        {{ data.dotation_periode | number: '1.0-0' }}
+        {{ data.dotation_periode | montant }}
 
         <span class="text-base font-semibold text-slate-500">MRU</span>
 
@@ -187,7 +187,7 @@
                   (click)="toggleStatut(seg.key)"
                 >
                   <span class="dash-donut__swatch" [style.background]="seg.color"></span>
-                  {{ seg.label }} — {{ seg.value | number: '1.0-0' }}
+                  {{ seg.label }} — {{ seg.value | montant: 0 }}
                 </button>
               </div>
             }
@@ -237,7 +237,7 @@
 
               </div>
 
-              <span class="dash-bars__value">{{ row.value | number: '1.0-0' }}</span>
+              <span class="dash-bars__value">{{ row.value | montant }}</span>
 
             </button>
 
@@ -289,7 +289,7 @@
 
               @if (row.value > 0) {
 
-                <span class="dash-bars__col-value">{{ row.value | number: '1.0-0' }}</span>
+                <span class="dash-bars__col-value">{{ row.value | montant }}</span>
 
               }
 
@@ -327,7 +327,7 @@
 
             </div>
 
-            <span class="dash-bars__value">{{ row.value | number: '1.0-0' }}</span>
+            <span class="dash-bars__value">{{ row.value | montant }}</span>
 
           </div>
 

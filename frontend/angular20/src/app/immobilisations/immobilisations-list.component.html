@@ -1,4 +1,4 @@
-<div class="iml">
+﻿<div class="iml">
   <header class="iml__hero">
     <div>
       <h1 class="iml__title">Immobilisations</h1>
@@ -36,7 +36,7 @@
             <ng-container matColumnDef="valeur">
               <th mat-header-cell *matHeaderCellDef>Valeur brute</th>
               <td mat-cell *matCellDef="let row">
-                <span class="iml__montant">{{ row.valeur_brute | number: '1.2-2' }}</span>
+                <span class="iml__montant">{{ row.valeur_brute | montant }}</span>
               </td>
             </ng-container>
             <ng-container matColumnDef="statut">

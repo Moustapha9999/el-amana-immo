@@ -1,4 +1,4 @@
-<div class="immo-form">
+﻿<div class="immo-form">
   <header class="immo-form__hero">
     <a routerLink="/immobilisations" class="immo-form__back">
       <mat-icon aria-hidden="true">arrow_back</mat-icon>
@@ -61,6 +61,13 @@
         [routerLink]="sectionLink('sortie')"
       >
         Sortie
+      </a>
+      <a
+        class="immo-form__tab"
+        [class.immo-form__tab--active]="activeSection() === 'pieces'"
+        [routerLink]="sectionLink('pieces')"
+      >
+        Pièces
       </a>
     </nav>
   }
@@ -434,15 +441,15 @@
                 </ng-container>
                 <ng-container matColumnDef="montant">
                   <th mat-header-cell *matHeaderCellDef>Amort. période</th>
-                  <td mat-cell *matCellDef="let row">{{ row.montant | number: '1.2-2' }}</td>
+                  <td mat-cell *matCellDef="let row">{{ row.montant | montant }}</td>
                 </ng-container>
                 <ng-container matColumnDef="cumul">
                   <th mat-header-cell *matHeaderCellDef>Cumul amort.</th>
-                  <td mat-cell *matCellDef="let row">{{ row.cumul | number: '1.2-2' }}</td>
+                  <td mat-cell *matCellDef="let row">{{ row.cumul | montant }}</td>
                 </ng-container>
                 <ng-container matColumnDef="vnc">
                   <th mat-header-cell *matHeaderCellDef>VNC</th>
-                  <td mat-cell *matCellDef="let row">{{ row.vnc | number: '1.2-2' }}</td>
+                  <td mat-cell *matCellDef="let row">{{ row.vnc | montant }}</td>
                 </ng-container>
                 <ng-container matColumnDef="statut">
                   <th mat-header-cell *matHeaderCellDef>Statut</th>
@@ -565,11 +572,11 @@
                   </ng-container>
                   <ng-container matColumnDef="ancienne">
                     <th mat-header-cell *matHeaderCellDef>Ancienne</th>
-                    <td mat-cell *matCellDef="let row">{{ row.ancienne_valeur | number: '1.2-2' }}</td>
+                    <td mat-cell *matCellDef="let row">{{ row.ancienne_valeur | montant }}</td>
                   </ng-container>
                   <ng-container matColumnDef="nouvelle">
                     <th mat-header-cell *matHeaderCellDef>Nouvelle</th>
-                    <td mat-cell *matCellDef="let row">{{ row.nouvelle_valeur | number: '1.2-2' }}</td>
+                    <td mat-cell *matCellDef="let row">{{ row.nouvelle_valeur | montant }}</td>
                   </ng-container>
                   <tr mat-header-row *matHeaderRowDef="reevalHistoryColumns"></tr>
                   <tr mat-row *matRowDef="let row; columns: reevalHistoryColumns"></tr>
@@ -616,13 +623,13 @@
                 @if (cessionPreview(); as prev) {
                   <div class="immo-form__span-full immo-form__preview text-sm">
                     <p class="m-0"><strong>Avant validation (calcul auto)</strong></p>
-                    <p class="m-0 mt-1">Cumul amort. à la date : {{ prev.cumul_amortissement | number: '1.2-2' }} MRU</p>
-                    <p class="m-0">VNC à la date : {{ prev.vnc | number: '1.2-2' }} MRU</p>
+                    <p class="m-0 mt-1">Cumul amort. à la date : {{ prev.cumul_amortissement | montant }} MRU</p>
+                    <p class="m-0">VNC à la date : {{ prev.vnc | montant }} MRU</p>
                     <p class="m-0">Résultat (PC − VNC) :
                       @if (prev.cas === 'plus_value') {
-                        plus-value {{ prev.plus_value | number: '1.2-2' }} MRU
+                        plus-value {{ prev.plus_value | montant }} MRU
                       } @else if (prev.cas === 'moins_value') {
-                        moins-value {{ prev.moins_value | number: '1.2-2' }} MRU
+                        moins-value {{ prev.moins_value | montant }} MRU
                       } @else {
                         équilibre (0)
                       }
@@ -651,6 +658,125 @@
           </div>
         </section>
       }
+    }
+
+    @if (showPieces()) {
+      <section class="immo-form__section">
+        <div class="immo-form__section-head">
+          <mat-icon aria-hidden="true">document_scanner</mat-icon>
+          <div>
+            <h2>Pièces comptables</h2>
+            <p>Factures, PV et documents archivés par journée comptable</p>
+          </div>
+        </div>
+
+        <div class="immo-form__grid" [formGroup]="pieceForm">
+          <div class="immo-field">
+            <label class="immo-field__label" for="piece-type">Type</label>
+            <select id="piece-type" class="immo-field__control" formControlName="type_piece">
+              <option value="facture">Facture</option>
+              <option value="pv">PV</option>
+              <option value="bon_commande">Bon de commande</option>
+              <option value="bon_livraison">Bon de livraison</option>
+              <option value="contrat">Contrat</option>
+              <option value="protocole_accord">Protocole d'accord</option>
+              <option value="autre">Autre</option>
+            </select>
+          </div>
+          <div class="immo-field">
+            <label class="immo-field__label" for="piece-journee">Journée comptable</label>
+            <input
+              id="piece-journee"
+              class="immo-field__control"
+              type="date"
+              formControlName="date_journee"
+            />
+          </div>
+          <div class="immo-field">
+            <label class="immo-field__label" for="piece-ref">Référence</label>
+            <input
+              id="piece-ref"
+              class="immo-field__control"
+              type="text"
+              formControlName="reference"
+              placeholder="N° facture / PV"
+            />
+          </div>
+          <div class="immo-field">
+            <label class="immo-field__label" for="piece-lib">Libellé</label>
+            <input id="piece-lib" class="immo-field__control" type="text" formControlName="libelle" />
+          </div>
+          <div class="immo-field immo-field--full">
+            <label class="immo-field__label" for="piece-file">Fichier (PDF / scan / image)</label>
+            <input
+              id="piece-file"
+              class="immo-field__control"
+              type="file"
+              accept=".pdf,image/*,.tif,.tiff"
+              (change)="onPieceFileSelected($event)"
+            />
+          </div>
+          <div class="immo-field immo-field--full">
+            <button
+              mat-flat-button
+              color="primary"
+              type="button"
+              (click)="uploadPiece()"
+              [disabled]="piecesBusy()"
+            >
+              <mat-icon aria-hidden="true">upload_file</mat-icon>
+              {{ piecesBusy() ? 'Envoi…' : 'Archiver la pièce' }}
+            </button>
+          </div>
+        </div>
+
+        @if (pieces().length === 0) {
+          <p class="immo-field__help">Aucune pièce archivée pour cette immobilisation.</p>
+        } @else {
+          <table class="w-full app-table immo-pieces-table">
+            <thead>
+              <tr>
+                <th>Journée</th>
+                <th>Type</th>
+                <th>Référence</th>
+                <th>Fichier</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of pieces(); track row.id) {
+                <tr>
+                  <td>{{ row.date_journee | date: 'dd/MM/yyyy' }}</td>
+                  <td>{{ pieceTypeLabel(row.type_piece) }}</td>
+                  <td>{{ row.reference || '—' }}</td>
+                  <td>{{ row.filename }}</td>
+                  <td class="immo-pieces-actions">
+                    <button
+                      mat-stroked-button
+                      type="button"
+                      (click)="downloadPiece(row)"
+                      aria-label="Ouvrir la pièce"
+                      title="Ouvrir"
+                    >
+                      Ouvrir
+                    </button>
+                    <button
+                      mat-stroked-button
+                      type="button"
+                      color="warn"
+                      (click)="deletePiece(row)"
+                      aria-label="Supprimer la pièce"
+                      title="Supprimer"
+                    >
+                      Supprimer
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </section>
     }
 
     @if (isEdit()) {

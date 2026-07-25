@@ -1,4 +1,4 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+﻿import { DatePipe } from '@angular/common';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -6,6 +6,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
+import { formatMontant } from '../shared/montant.pipe';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 
 interface CessionRow {
@@ -30,11 +31,11 @@ interface Paginated<T> {
 
 @Component({
   selector: 'app-cessions',
+  standalone: true,
   imports: [
+    DatePipe,
     ReactiveFormsModule,
     RouterLink,
-    DatePipe,
-    DecimalPipe,
     MatButtonModule,
     MatIconModule,
     MatTableModule,
@@ -46,6 +47,8 @@ export class CessionsComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
   private readonly dialogs = inject(UiDialogService);
+
+  readonly montant = formatMontant;
 
   readonly rows = signal<CessionRow[]>([]);
   readonly total = signal(0);
@@ -110,10 +113,10 @@ export class CessionsComponent implements OnInit {
     const plus = Number(row.plus_value) || 0;
     const moins = Number(row.moins_value) || 0;
     if (plus > 0) {
-      return `+${plus.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      return `+${formatMontant(plus)}`;
     }
     if (moins > 0) {
-      return `-${moins.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      return `-${formatMontant(moins)}`;
     }
     return '0,00';
   }

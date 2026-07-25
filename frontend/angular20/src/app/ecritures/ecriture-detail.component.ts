@@ -1,4 +1,5 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+﻿import { DatePipe } from '@angular/common';
+import { MontantPipe } from '../shared/montant.pipe';
 import { Component, inject, input, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -25,7 +26,7 @@ export interface EcritureDetail {
 
 @Component({
   selector: 'app-ecriture-detail',
-  imports: [RouterLink, DatePipe, DecimalPipe, MatButtonModule, MatIconModule],
+  imports: [RouterLink, DatePipe, MontantPipe, MatButtonModule, MatIconModule],
   templateUrl: './ecriture-detail.component.html',
   styleUrl: './ecriture-detail.component.css',
 })

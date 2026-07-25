@@ -1,0 +1,188 @@
+<div class="pcs">
+  <header class="pcs__hero">
+    <div>
+      <h1 class="pcs__title">Pièces comptables</h1>
+      <p class="pcs__lead">
+        Archive par journée comptable — factures, PV et autres pièces relatives aux immobilisations
+      </p>
+    </div>
+  </header>
+
+  <section class="pcs__section">
+    <div class="pcs__toolbar">
+      <h2 class="pcs__subtitle">Scanner / déposer une pièce</h2>
+      <form [formGroup]="uploadForm" class="pcs__upload" (ngSubmit)="upload()">
+        <div class="pcs-field pcs-field--wide">
+          <label class="pcs-field__label" for="pcs-immo">Immobilisation</label>
+          <select id="pcs-immo" class="pcs-field__control" formControlName="immobilisation_id">
+            <option value="">— Choisir —</option>
+            @for (immo of immobilisations(); track immo.id) {
+              <option [value]="immo.id">
+                {{ immo.code_inventaire }} — {{ immo.designation }}
+              </option>
+            }
+          </select>
+        </div>
+        <div class="pcs-field">
+          <label class="pcs-field__label" for="pcs-type-up">Type</label>
+          <select id="pcs-type-up" class="pcs-field__control" formControlName="type_piece">
+            @for (t of types(); track t.value) {
+              <option [value]="t.value">{{ t.label }}</option>
+            }
+          </select>
+        </div>
+        <div class="pcs-field">
+          <label class="pcs-field__label" for="pcs-journee-up">Journée comptable</label>
+          <input
+            id="pcs-journee-up"
+            class="pcs-field__control"
+            type="date"
+            formControlName="date_journee"
+          />
+        </div>
+        <div class="pcs-field">
+          <label class="pcs-field__label" for="pcs-ref">Référence</label>
+          <input
+            id="pcs-ref"
+            class="pcs-field__control"
+            type="text"
+            formControlName="reference"
+            placeholder="N° facture / PV"
+          />
+        </div>
+        <div class="pcs-field pcs-field--wide">
+          <label class="pcs-field__label" for="pcs-lib">Libellé</label>
+          <input
+            id="pcs-lib"
+            class="pcs-field__control"
+            type="text"
+            formControlName="libelle"
+            placeholder="Optionnel"
+          />
+        </div>
+        <div class="pcs-field pcs-field--wide">
+          <label class="pcs-field__label" for="pcs-file">Fichier (PDF / image / scan)</label>
+          <input
+            id="pcs-file"
+            class="pcs-field__control pcs-field__file"
+            type="file"
+            accept=".pdf,image/*,.tif,.tiff"
+            (change)="onFileSelected($event)"
+          />
+        </div>
+        <div class="pcs__actions">
+          <button mat-flat-button color="primary" type="submit" [disabled]="uploading()">
+            <mat-icon aria-hidden="true">document_scanner</mat-icon>
+            {{ uploading() ? 'Envoi…' : 'Archiver la pièce' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="pcs__section pcs__section--list">
+    <div class="pcs__toolbar">
+      <h2 class="pcs__subtitle">Archive du jour</h2>
+      <form [formGroup]="filterForm" (ngSubmit)="load()" class="pcs__filters">
+        <div class="pcs-field">
+          <label class="pcs-field__label" for="pcs-journee">Journée comptable</label>
+          <input
+            id="pcs-journee"
+            class="pcs-field__control"
+            type="date"
+            formControlName="date_journee"
+          />
+        </div>
+        <div class="pcs-field">
+          <label class="pcs-field__label" for="pcs-type">Type</label>
+          <select id="pcs-type" class="pcs-field__control" formControlName="type_piece">
+            <option value="">Tous</option>
+            @for (t of types(); track t.value) {
+              <option [value]="t.value">{{ t.label }}</option>
+            }
+          </select>
+        </div>
+        <div class="pcs-field pcs-field--wide">
+          <label class="pcs-field__label" for="pcs-search">Recherche</label>
+          <input
+            id="pcs-search"
+            class="pcs-field__control"
+            type="search"
+            formControlName="search"
+            placeholder="Code immo, désignation, référence…"
+          />
+        </div>
+        <div class="pcs__actions">
+          <button mat-flat-button color="primary" type="submit" [disabled]="loading()">
+            Afficher
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="pcs__body">
+      @if (loading()) {
+        <p class="pcs__empty">Chargement…</p>
+      } @else if (pieces().length === 0) {
+        <p class="pcs__empty">Aucune pièce pour cette journée / ce filtre.</p>
+      } @else {
+        <p class="pcs__count">{{ total() }} pièce(s)</p>
+        <div class="pcs__table-wrap">
+          <table class="w-full app-table pcs__table">
+            <thead>
+              <tr>
+                <th>Journée</th>
+                <th>Type</th>
+                <th>Immobilisation</th>
+                <th>Référence</th>
+                <th>Fichier</th>
+                <th>Taille</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of pieces(); track row.id) {
+                <tr>
+                  <td>{{ row.date_journee | date: 'dd/MM/yyyy' }}</td>
+                  <td>{{ typeLabel(row.type_piece) }}</td>
+                  <td>
+                    <a class="pcs__link" [routerLink]="['/immobilisations', row.immobilisation_id, 'pieces']">
+                      {{ row.code_inventaire || '—' }}
+                    </a>
+                    <span class="pcs__sub">{{ row.designation || row.libelle || '' }}</span>
+                  </td>
+                  <td>{{ row.reference || '—' }}</td>
+                  <td>{{ row.filename }}</td>
+                  <td>{{ formatSize(row.size_bytes) }}</td>
+                  <td class="pcs__row-actions">
+                    <button
+                      mat-stroked-button
+                      type="button"
+                      (click)="download(row)"
+                      aria-label="Ouvrir la pièce"
+                      title="Ouvrir"
+                    >
+                      <mat-icon aria-hidden="true">download</mat-icon>
+                      Ouvrir
+                    </button>
+                    <button
+                      mat-stroked-button
+                      type="button"
+                      color="warn"
+                      (click)="remove(row)"
+                      aria-label="Supprimer la pièce"
+                      title="Supprimer"
+                    >
+                      <mat-icon aria-hidden="true">delete</mat-icon>
+                      Supprimer
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </div>
+  </section>
+</div>

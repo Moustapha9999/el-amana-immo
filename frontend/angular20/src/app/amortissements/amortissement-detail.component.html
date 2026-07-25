@@ -1,4 +1,4 @@
-<div class="amd">
+﻿<div class="amd">
   <header class="amd__hero">
     <div>
       <a class="amd__back" routerLink="/amortissements">
@@ -71,11 +71,11 @@
           </div>
           <div>
             <dt>Valeur brute (VB)</dt>
-            <dd class="amd__montant">{{ i.valeur_brute | number: '1.2-2' }}</dd>
+            <dd class="amd__montant">{{ i.valeur_brute | montant }}</dd>
           </div>
           <div>
             <dt>Taux annuel</dt>
-            <dd>{{ i.taux != null ? (i.taux | number: '1.0-2') + ' %' : '—' }}</dd>
+            <dd>{{ i.taux != null ? (i.taux | montant) + ' %' : '—' }}</dd>
           </div>
           <div>
             <dt>Durée</dt>
@@ -93,22 +93,22 @@
         <div class="amd__result-grid">
           <div class="amd__result-card">
             <span class="amd__result-label">Valeur brute</span>
-            <span class="amd__result-value">{{ i.valeur_brute | number: '1.2-2' }}</span>
+            <span class="amd__result-value">{{ i.valeur_brute | montant }}</span>
           </div>
           <div class="amd__result-card">
             <span class="amd__result-label">Cumul amort.</span>
             <span class="amd__result-value">
-              {{ situation()?.cumul_amortissement != null ? (situation()!.cumul_amortissement | number: '1.2-2') : '—' }}
+              {{ situation()?.cumul_amortissement != null ? (situation()!.cumul_amortissement | montant) : '—' }}
             </span>
           </div>
           <div class="amd__result-card amd__result-card--vnc">
             <span class="amd__result-label">VNC</span>
             <span class="amd__result-value">
-              {{ situation()?.vnc != null ? (situation()!.vnc | number: '1.2-2') : '—' }}
+              {{ situation()?.vnc != null ? (situation()!.vnc | montant) : '—' }}
             </span>
           </div>
         </div>
-        <p class="amd__formula">VNC = VB − amortissements cumulés — Amortissement = VB × Taux × Durée</p>
+        <p class="amd__formula app-explain">VNC = VB − amortissements cumulés — Amortissement = VB × Taux × Durée</p>
       </section>
 
       <section class="amd__block">
@@ -127,19 +127,19 @@
               <ng-container matColumnDef="montant">
                 <th mat-header-cell *matHeaderCellDef>Amort. période</th>
                 <td mat-cell *matCellDef="let row" class="amd__num">
-                  {{ row.montant | number: '1.2-2' }}
+                  {{ row.montant | montant }}
                 </td>
               </ng-container>
               <ng-container matColumnDef="cumul">
                 <th mat-header-cell *matHeaderCellDef>Cumul</th>
                 <td mat-cell *matCellDef="let row" class="amd__num">
-                  {{ row.cumul | number: '1.2-2' }}
+                  {{ row.cumul | montant }}
                 </td>
               </ng-container>
               <ng-container matColumnDef="vnc">
                 <th mat-header-cell *matHeaderCellDef>VNC</th>
                 <td mat-cell *matCellDef="let row" class="amd__num">
-                  {{ row.vnc | number: '1.2-2' }}
+                  {{ row.vnc | montant }}
                 </td>
               </ng-container>
               <ng-container matColumnDef="statut">

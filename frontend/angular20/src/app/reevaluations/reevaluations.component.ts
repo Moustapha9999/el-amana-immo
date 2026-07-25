@@ -1,4 +1,4 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+﻿import { DatePipe } from '@angular/common';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -6,6 +6,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
+import { formatMontant } from '../shared/montant.pipe';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 
 interface ReevalRow {
@@ -26,11 +27,11 @@ interface Paginated<T> {
 
 @Component({
   selector: 'app-reevaluations',
+  standalone: true,
   imports: [
+    DatePipe,
     ReactiveFormsModule,
     RouterLink,
-    DatePipe,
-    DecimalPipe,
     MatButtonModule,
     MatIconModule,
     MatTableModule,
@@ -42,6 +43,8 @@ export class ReevaluationsComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
   private readonly dialogs = inject(UiDialogService);
+
+  readonly montant = formatMontant;
 
   readonly rows = signal<ReevalRow[]>([]);
   readonly total = signal(0);
@@ -120,7 +123,7 @@ export class ReevaluationsComponent implements OnInit {
 
   ecartLabel(row: ReevalRow): string {
     const e = this.ecartValue(row);
-    const abs = Math.abs(e).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const abs = formatMontant(Math.abs(e));
     if (e > 0) {
       return `+${abs}`;
     }

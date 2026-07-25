@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+﻿import { MontantPipe } from '../shared/montant.pipe';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -70,7 +70,7 @@ const TYPE_LABELS: Record<string, string> = {
   selector: 'app-parametres',
   imports: [
     ReactiveFormsModule,
-    DecimalPipe,
+    MontantPipe,
     MatTableModule,
     MatButtonModule,
     MatIconModule,

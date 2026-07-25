@@ -1,0 +1,244 @@
+﻿<div class="cpt">
+  <header class="cpt__hero">
+    <div>
+      <h1 class="cpt__title">Comptes par nature</h1>
+      <p class="cpt__lead">
+        @if (data(); as d) {
+          @if (d.compte_filtre) {
+            Arrêté au 31/12/{{ d.annee }} — compte {{ d.compte_filtre }}
+            @if (d.groupes[0]; as g) {
+              ({{ g.intitule }})
+            }
+          } @else {
+            Arrêté au 31/12/{{ d.annee }} — tous les comptes 142000–147030
+          }
+        } @else {
+          État des comptes d’immobilisation avec amortissements
+        }
+      </p>
+    </div>
+    <div class="cpt__hero-actions">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('xlsx')"
+        [disabled]="!data() || !hasLignes() || exporting() !== null || loading()"
+      >
+        <mat-icon aria-hidden="true">table_view</mat-icon>
+        {{ exporting() === 'xlsx' ? 'Excel…' : 'Excel' }}
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('pdf')"
+        [disabled]="!data() || !hasLignes() || exporting() !== null || loading()"
+      >
+        <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
+        {{ exporting() === 'pdf' ? 'PDF…' : 'PDF' }}
+      </button>
+    </div>
+  </header>
+
+  <section class="cpt__section">
+    <div class="cpt__toolbar">
+      <form [formGroup]="filterForm" (ngSubmit)="load()" class="cpt__filters">
+        <div class="cpt-field">
+          <label class="cpt-field__label" for="cpt-annee">Année (arrêté 31/12)</label>
+          <input
+            id="cpt-annee"
+            class="cpt-field__control"
+            type="number"
+            formControlName="annee"
+            min="2000"
+            max="2100"
+            step="1"
+            aria-label="Année"
+          />
+        </div>
+        <div class="cpt-field cpt-field--compte">
+          <label class="cpt-field__label" for="cpt-compte">Compte</label>
+          <select
+            id="cpt-compte"
+            class="cpt-field__control"
+            formControlName="compte"
+            aria-label="Compte immobilisation"
+          >
+            <option value="">Tous les comptes</option>
+            @for (c of comptesOptions(); track c.numero) {
+              <option [value]="c.numero">{{ c.numero }} — {{ c.libelle }}</option>
+            }
+          </select>
+        </div>
+        <div class="cpt__filter-actions">
+          <button mat-flat-button color="primary" type="submit" [disabled]="loading()">
+            Afficher
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="cpt__body">
+      @if (loading()) {
+        <p class="cpt__empty">Chargement des comptes…</p>
+      } @else if (data(); as d) {
+        @if (!hasLignes()) {
+          <p class="cpt__empty">
+            @if (d.compte_filtre) {
+              Aucune immobilisation sur le compte {{ d.compte_filtre }} pour {{ d.annee }}.
+            } @else {
+              Aucune immobilisation sur les comptes 142000–147030 pour {{ d.annee }}.
+            }
+          </p>
+        } @else {
+          @for (g of d.groupes; track g.compte_immobilisation) {
+            @if (g.lignes.length) {
+              <div class="cpt__groupe">
+                <h2 class="cpt__groupe-title">
+                  <span class="cpt__mono">{{ g.compte_immobilisation }}</span>
+                  <span class="cpt__groupe-libelle">{{ g.intitule }}</span>
+                  <span class="cpt__groupe-count">{{ g.lignes.length }} bien(s)</span>
+                </h2>
+                <div class="cpt__table-wrap">
+                  <table class="w-full app-table cpt__table">
+                    <colgroup>
+                      <col class="cpt__col-date" />
+                      <col class="cpt__col-qty" />
+                      <col class="cpt__col-desig" />
+                      <col class="cpt__col-money" />
+                      <col class="cpt__col-taux" />
+                      <col class="cpt__col-money" />
+                      <col class="cpt__col-money" />
+                      <col class="cpt__col-money" />
+                      <col class="cpt__col-money" />
+                      <col class="cpt__col-agence" />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th scope="col">Date</th>
+                        <th scope="col" class="cpt__num">Qté</th>
+                        <th scope="col">Désignation</th>
+                        <th scope="col" class="cpt__num">Valeur d’acquisition MRU</th>
+                        <th scope="col" class="cpt__num">Taux</th>
+                        <th scope="col" class="cpt__num">Amt cumulés fin ex. préc.</th>
+                        <th scope="col" class="cpt__num">Dotation</th>
+                        <th scope="col" class="cpt__num">Montant amt</th>
+                        <th scope="col" class="cpt__num">Valeur nette comptable</th>
+                        <th scope="col">Agence</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (row of g.lignes; track row.immobilisation_id) {
+                        <tr>
+                          <td class="cpt__date">
+                            {{
+                              row.date_acquisition
+                                ? (row.date_acquisition | date: 'dd/MM/yyyy')
+                                : '—'
+                            }}
+                          </td>
+                          <td class="cpt__num">{{ row.quantite }}</td>
+                          <td class="cpt__desig">
+                            @if (row.immobilisation_id) {
+                              <a
+                                class="cpt__link"
+                                [routerLink]="['/immobilisations', row.immobilisation_id]"
+                              >
+                                {{ row.designation }}
+                              </a>
+                            } @else {
+                              {{ row.designation }}
+                            }
+                          </td>
+                          <td class="cpt__num">{{ row.valeur_acquisition | montant }}</td>
+                          <td class="cpt__num">
+                            {{ row.taux != null ? (row.taux | montant) + ' %' : '—' }}
+                          </td>
+                          <td class="cpt__num">
+                            {{ row.amorts_cumules_n1 | montant }}
+                          </td>
+                          <td class="cpt__num">
+                            {{ row.dotations_annee | montant }}
+                          </td>
+                          <td class="cpt__num">
+                            {{ row.amorts_cumules_n | montant }}
+                          </td>
+                          <td class="cpt__num cpt__cell-vnc">
+                            {{ row.vnc | montant }}
+                          </td>
+                          <td class="cpt__agence">{{ agenceLabel(row) }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td class="cpt__foot-label">Total</td>
+                        <td class="cpt__num">{{ g.totaux.quantite }}</td>
+                        <td></td>
+                        <td class="cpt__num">
+                          {{ g.totaux.valeur_acquisition | montant }}
+                        </td>
+                        <td class="cpt__num">—</td>
+                        <td class="cpt__num">
+                          {{ g.totaux.amorts_cumules_n1 | montant }}
+                        </td>
+                        <td class="cpt__num">
+                          {{ g.totaux.dotations_annee | montant }}
+                        </td>
+                        <td class="cpt__num">
+                          {{ g.totaux.amorts_cumules_n | montant }}
+                        </td>
+                        <td class="cpt__num cpt__cell-vnc">
+                          {{ g.totaux.vnc | montant }}
+                        </td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            }
+          }
+
+          @if (!singleCompte()) {
+            <div class="cpt__totaux">
+              <table class="w-full app-table cpt__table">
+                <colgroup>
+                  <col class="cpt__col-date" />
+                  <col class="cpt__col-qty" />
+                  <col class="cpt__col-desig" />
+                  <col class="cpt__col-money" />
+                  <col class="cpt__col-taux" />
+                  <col class="cpt__col-money" />
+                  <col class="cpt__col-money" />
+                  <col class="cpt__col-money" />
+                  <col class="cpt__col-money" />
+                  <col class="cpt__col-agence" />
+                </colgroup>
+                <tfoot>
+                  <tr>
+                    <td class="cpt__foot-label">Total général</td>
+                    <td class="cpt__num">{{ d.totaux.quantite }}</td>
+                    <td></td>
+                    <td class="cpt__num">{{ d.totaux.valeur_acquisition | montant }}</td>
+                    <td class="cpt__num">—</td>
+                    <td class="cpt__num">{{ d.totaux.amorts_cumules_n1 | montant }}</td>
+                    <td class="cpt__num">{{ d.totaux.dotations_annee | montant }}</td>
+                    <td class="cpt__num">{{ d.totaux.amorts_cumules_n | montant }}</td>
+                    <td class="cpt__num">{{ d.totaux.vnc | montant }}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          }
+
+          <p class="app-explain cpt__note">
+            Amt cumulés fin ex. préc. = cumul au 31/12/{{ d.annee - 1 }}. Dotation = amortissements
+            comptabilisés de l’exercice. Montant amt = cumul fin exercice. VNC = valeur d’acquisition −
+            montant amt.
+          </p>
+        }
+      }
+    </div>
+  </section>
+</div>

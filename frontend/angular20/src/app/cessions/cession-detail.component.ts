@@ -1,9 +1,10 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+﻿import { DatePipe } from '@angular/common';
 import { Component, inject, input, OnInit, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
+import { MontantPipe } from '../shared/montant.pipe';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 
 export interface CessionDetail {
@@ -29,7 +30,8 @@ export interface CessionDetail {
 
 @Component({
   selector: 'app-cession-detail',
-  imports: [RouterLink, DatePipe, DecimalPipe, MatButtonModule, MatIconModule],
+  standalone: true,
+  imports: [MontantPipe, DatePipe, RouterLink, MatButtonModule, MatIconModule],
   templateUrl: './cession-detail.component.html',
   styleUrl: './cession-detail.component.css',
 })

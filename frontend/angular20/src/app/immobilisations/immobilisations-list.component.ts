@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+﻿import { MontantPipe } from '../shared/montant.pipe';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -24,7 +24,7 @@ interface Paginated<T> {
 
 @Component({
   selector: 'app-immobilisations-list',
-  imports: [MatTableModule, MatButtonModule, MatIconModule, DecimalPipe, RouterLink],
+  imports: [MatTableModule, MatButtonModule, MatIconModule, MontantPipe, RouterLink],
   templateUrl: './immobilisations-list.component.html',
   styleUrl: './immobilisations-list.component.css',
 })

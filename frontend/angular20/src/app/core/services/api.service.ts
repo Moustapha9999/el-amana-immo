@@ -31,9 +31,16 @@ export class ApiService {
     });
   }
 
-  upload<T>(path: string, file: File): Observable<T> {
+  upload<T>(path: string, file: File, fields?: Record<string, string>): Observable<T> {
     const form = new FormData();
     form.append('file', file);
+    if (fields) {
+      for (const [key, value] of Object.entries(fields)) {
+        if (value != null && value !== '') {
+          form.append(key, value);
+        }
+      }
+    }
     return this.http.post<T>(`${this.baseUrl}${path}`, form);
   }
 }

@@ -1,4 +1,4 @@
-<div class="rev">
+﻿<div class="rev">
   <header class="rev__hero">
     <div>
       <h1 class="rev__title">Réévaluations</h1>
@@ -19,11 +19,11 @@
     </div>
     <div class="rev__kpi rev__kpi--up">
       <span class="rev__kpi-label">Hausses (Σ)</span>
-      <span class="rev__kpi-value">{{ kpi().hausses | number: '1.2-2' }}</span>
+      <span class="rev__kpi-value">{{ montant(kpi().hausses) }}</span>
     </div>
     <div class="rev__kpi rev__kpi--down">
       <span class="rev__kpi-label">Baisses (Σ)</span>
-      <span class="rev__kpi-value">{{ kpi().baisses | number: '1.2-2' }}</span>
+      <span class="rev__kpi-value">{{ montant(kpi().baisses) }}</span>
     </div>
   </div>
 
@@ -95,13 +95,13 @@
             <ng-container matColumnDef="ancienne">
               <th mat-header-cell *matHeaderCellDef>Ancienne VBC</th>
               <td mat-cell *matCellDef="let row">
-                <span class="rev__montant">{{ row.ancienne_valeur | number: '1.2-2' }}</span>
+                <span class="rev__montant">{{ montant(row.ancienne_valeur) }}</span>
               </td>
             </ng-container>
             <ng-container matColumnDef="nouvelle">
               <th mat-header-cell *matHeaderCellDef>Nouvelle VBC</th>
               <td mat-cell *matCellDef="let row">
-                <span class="rev__montant">{{ row.nouvelle_valeur | number: '1.2-2' }}</span>
+                <span class="rev__montant">{{ montant(row.nouvelle_valeur) }}</span>
               </td>
             </ng-container>
             <ng-container matColumnDef="ecart">

@@ -415,3 +415,13 @@
   color: #0f172a;
   background: #fff;
 }
+
+.immo-pieces-table {
+  margin-top: 1rem;
+}
+
+.immo-pieces-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}

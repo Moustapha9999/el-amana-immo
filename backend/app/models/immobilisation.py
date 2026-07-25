@@ -2,12 +2,12 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, Enum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, Enum, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.enums import ModeAmortissement, StatutImmobilisation, TypeImmobilisation
+from app.models.enums import ModeAmortissement, StatutImmobilisation, TypeImmobilisation, TypePieceComptable
 from app.models.mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -96,6 +96,8 @@ class Immobilisation(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin)
 
 
 class PieceJointe(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """Pièce comptable (facture, PV, …) archivée par journée et rattachée à une immo."""
+
     __tablename__ = "pieces_jointes"
 
     immobilisation_id: Mapped[uuid.UUID] = mapped_column(
@@ -106,6 +108,23 @@ class PieceJointe(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     mime_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
     is_photo: Mapped[bool] = mapped_column(Boolean, default=False)
+    type_piece: Mapped[TypePieceComptable] = mapped_column(
+        Enum(
+            TypePieceComptable,
+            name="typepiececomptable",
+            values_callable=lambda enum_cls: [m.value for m in enum_cls],
+        ),
+        default=TypePieceComptable.FACTURE,
+        index=True,
+    )
+    date_journee: Mapped[date] = mapped_column(Date, index=True)
+    reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    libelle: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    uploaded_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
+    immobilisation: Mapped["Immobilisation"] = relationship(foreign_keys=[immobilisation_id])
 
 
 class InventaireScan(Base, UUIDPrimaryKeyMixin, TimestampMixin):

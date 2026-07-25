@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from io import BytesIO
 from typing import Any, Sequence
 from zoneinfo import ZoneInfo
@@ -20,6 +21,7 @@ from app.data.el_amana_referentiel import BANQUE_EL_AMANA
 from app.models import EcritureComptable, Immobilisation
 
 _TZ = ZoneInfo("Africa/Nouakchott")
+_EXCEL_MONTANT_FORMAT = "#,##0.00"
 
 # Palette alignée UI (navy / brand)
 _COLOR_NAVY = "1E3A5F"
@@ -45,6 +47,25 @@ def export_now() -> datetime:
 def format_export_datetime(when: datetime | None = None) -> str:
     dt = when or export_now()
     return dt.strftime("%d/%m/%Y à %H:%M")
+
+
+def format_montant(value: Any) -> str:
+    """Montant avec exactement 2 décimales (séparateur français)."""
+    if value is None:
+        return "—"
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    formatted = f"{n:,.2f}"
+    return formatted.replace(",", "X").replace(".", ",").replace("X", " ")
+
+
+def _is_montant_number(value: Any) -> bool:
+    """True pour les montants numériques (float/Decimal ; int entiers exclus — années, compteurs)."""
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, (float, Decimal))
 
 
 def format_period_label(date_debut: date | None, date_fin: date | None) -> str | None:
@@ -142,10 +163,15 @@ def build_styled_workbook(
     for r_idx, row in enumerate(rows):
         excel_row = header_row + 1 + r_idx
         for c_idx, value in enumerate(row, start=1):
-            cell = ws.cell(row=excel_row, column=c_idx, value=value)
+            cell_value = float(value) if _is_montant_number(value) else value
+            cell = ws.cell(row=excel_row, column=c_idx, value=cell_value)
             cell.font = data_font
             cell.border = _THIN
-            cell.alignment = Alignment(vertical="center", wrap_text=False)
+            if _is_montant_number(value):
+                cell.number_format = _EXCEL_MONTANT_FORMAT
+                cell.alignment = Alignment(horizontal="right", vertical="center", wrap_text=False)
+            else:
+                cell.alignment = Alignment(vertical="center", wrap_text=False)
             if r_idx % 2 == 1:
                 cell.fill = zebra
 
@@ -310,7 +336,12 @@ def build_styled_pdf(
     }
 
     def _cell(value: Any, align: str) -> Paragraph:
-        text = "" if value is None else str(value)
+        if value is None:
+            text = ""
+        elif _is_montant_number(value):
+            text = format_montant(value)
+        else:
+            text = str(value)
         # Échapper pour ReportLab Paragraph
         text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         return Paragraph(text or "—", style_map.get(align, styles["cell"]))
@@ -412,7 +443,7 @@ def ecritures_to_pdf(
             row.libelle or "",
             row.compte_debit,
             row.compte_credit,
-            f"{float(row.montant):,.2f}".replace(",", " "),
+            format_montant(row.montant),
             row.reference or "",
         ]
         for row in rows
@@ -751,4 +782,353 @@ def ecriture_fiche_to_pdf(detail: dict[str, Any]) -> bytes:
         subtitle=detail.get("subtitle"),
         landscape_mode=False,
         col_aligns=["left", "left"],
+    )
+
+
+def recap_amortissement_to_excel(payload: dict[str, Any]) -> bytes:
+    """Récapitulatif tableau d'amortissement au 31/12/N."""
+    annee = payload.get("annee")
+    headers = [
+        "Compte",
+        "Intitulé",
+        f"VB 31/12/{annee}",
+        "Compte amort.",
+        f"Amorts cumulés {int(annee) - 1}",
+        f"Cessions {annee}",
+        f"Dotations {annee}",
+        f"Amorts cumulés {annee}",
+        f"VNC 31/12/{annee}",
+    ]
+    rows: list[list[Any]] = []
+    for line in payload.get("lignes") or []:
+        rows.append(
+            [
+                line.get("compte_immobilisation") or "",
+                line.get("intitule") or "",
+                line.get("valeur_brute"),
+                line.get("compte_amortissement") or "—",
+                line.get("amorts_cumules_n1"),
+                line.get("cessions_annee"),
+                line.get("dotations_annee"),
+                line.get("amorts_cumules_n"),
+                line.get("vnc"),
+            ]
+        )
+    totaux = payload.get("totaux") or {}
+    rows.append(
+        [
+            "",
+            "TOTAL",
+            totaux.get("valeur_brute"),
+            "",
+            totaux.get("amorts_cumules_n1"),
+            totaux.get("cessions_annee"),
+            totaux.get("dotations_annee"),
+            totaux.get("amorts_cumules_n"),
+            totaux.get("vnc"),
+        ]
+    )
+    return build_styled_workbook(
+        sheet_title="Récap amortissement",
+        report_title="Récapitulatif tableau d'amortissement",
+        headers=headers,
+        rows=rows,
+        subtitle=payload.get("subtitle"),
+    )
+
+
+def recap_amortissement_to_pdf(payload: dict[str, Any]) -> bytes:
+    annee = payload.get("annee")
+    headers = [
+        "Compte",
+        "Intitulé",
+        f"VB {annee}",
+        "Cpt amort.",
+        f"Cumul {int(annee) - 1}",
+        "Cessions",
+        "Dotations",
+        f"Cumul {annee}",
+        f"VNC {annee}",
+    ]
+    rows: list[list[Any]] = []
+    for line in payload.get("lignes") or []:
+        rows.append(
+            [
+                line.get("compte_immobilisation") or "",
+                line.get("intitule") or "",
+                line.get("valeur_brute"),
+                line.get("compte_amortissement") or "—",
+                line.get("amorts_cumules_n1"),
+                line.get("cessions_annee"),
+                line.get("dotations_annee"),
+                line.get("amorts_cumules_n"),
+                line.get("vnc"),
+            ]
+        )
+    totaux = payload.get("totaux") or {}
+    rows.append(
+        [
+            "",
+            "TOTAL",
+            totaux.get("valeur_brute"),
+            "",
+            totaux.get("amorts_cumules_n1"),
+            totaux.get("cessions_annee"),
+            totaux.get("dotations_annee"),
+            totaux.get("amorts_cumules_n"),
+            totaux.get("vnc"),
+        ]
+    )
+    return build_styled_pdf(
+        report_title="Récapitulatif tableau d'amortissement",
+        headers=headers,
+        rows=rows,
+        subtitle=payload.get("subtitle"),
+        landscape_mode=True,
+        col_aligns=["left", "left", "right", "left", "right", "right", "right", "right", "right"],
+    )
+
+
+def recap_amortissement_detail_to_excel(payload: dict[str, Any]) -> bytes:
+    """Détail des dotations comptabilisées par immobilisation."""
+    annee = payload.get("annee")
+    headers = [
+        "Code",
+        "Désignation",
+        "Compte",
+        f"Dotation comptabilisée {annee}",
+        f"Cumul amort. {annee}",
+        f"VNC 31/12/{annee}",
+    ]
+    rows: list[list[Any]] = []
+    for line in payload.get("details") or []:
+        rows.append(
+            [
+                line.get("code_inventaire") or "",
+                line.get("designation") or "",
+                line.get("compte_immobilisation") or "",
+                line.get("dotations_annee"),
+                line.get("amorts_cumules_n"),
+                line.get("vnc"),
+            ]
+        )
+    totaux = payload.get("totaux") or {}
+    rows.append(
+        [
+            "",
+            "TOTAL",
+            "",
+            totaux.get("dotations_annee"),
+            totaux.get("amorts_cumules_n"),
+            totaux.get("vnc"),
+        ]
+    )
+    return build_styled_workbook(
+        sheet_title="Détail dotations",
+        report_title="Détail des dotations d'amortissement par immobilisation",
+        headers=headers,
+        rows=rows,
+        subtitle=payload.get("subtitle"),
+    )
+
+
+def recap_amortissement_detail_to_pdf(payload: dict[str, Any]) -> bytes:
+    annee = payload.get("annee")
+    headers = [
+        "Code",
+        "Désignation",
+        "Compte",
+        f"Dotation {annee}",
+        f"Cumul {annee}",
+        f"VNC {annee}",
+    ]
+    rows: list[list[Any]] = []
+    for line in payload.get("details") or []:
+        rows.append(
+            [
+                line.get("code_inventaire") or "",
+                line.get("designation") or "",
+                line.get("compte_immobilisation") or "",
+                line.get("dotations_annee"),
+                line.get("amorts_cumules_n"),
+                line.get("vnc"),
+            ]
+        )
+    totaux = payload.get("totaux") or {}
+    rows.append(
+        [
+            "",
+            "TOTAL",
+            "",
+            totaux.get("dotations_annee"),
+            totaux.get("amorts_cumules_n"),
+            totaux.get("vnc"),
+        ]
+    )
+    return build_styled_pdf(
+        report_title="Détail des dotations d'amortissement par immobilisation",
+        headers=headers,
+        rows=rows,
+        subtitle=payload.get("subtitle"),
+        landscape_mode=True,
+        col_aligns=["left", "left", "left", "right", "right", "right"],
+    )
+
+
+def _comptes_nature_headers(annee: int) -> list[str]:
+    return [
+        "Compte",
+        "Date",
+        "Qté",
+        "Désignation",
+        "Valeur d'acquisition MRU",
+        "Taux",
+        f"Amt cumulés fin ex. préc. ({annee - 1})",
+        f"Dotation {annee}",
+        f"Montant amt fin exercice {annee}",
+        "Valeur nette comptable",
+        "Agence",
+    ]
+
+
+def _comptes_nature_row(line: dict[str, Any], *, compte: str = "") -> list[Any]:
+    taux = line.get("taux")
+    return [
+        compte,
+        line.get("date_acquisition_fmt") or "",
+        line.get("quantite"),
+        line.get("designation") or "",
+        line.get("valeur_acquisition"),
+        float(taux) if taux is not None else "",
+        line.get("amorts_cumules_n1"),
+        line.get("dotations_annee"),
+        line.get("amorts_cumules_n"),
+        line.get("vnc"),
+        line.get("agence") or "",
+    ]
+
+
+def comptes_par_nature_to_excel(payload: dict[str, Any]) -> bytes:
+    annee = int(payload.get("annee"))
+    headers = _comptes_nature_headers(annee)
+    rows: list[list[Any]] = []
+    for groupe in payload.get("groupes") or []:
+        compte = groupe.get("compte_immobilisation") or ""
+        intitule = groupe.get("intitule") or ""
+        rows.append([f"{compte} — {intitule}", "", "", "", "", "", "", "", "", "", ""])
+        for line in groupe.get("lignes") or []:
+            rows.append(_comptes_nature_row(line, compte=compte))
+        tot = groupe.get("totaux") or {}
+        rows.append(
+            [
+                "",
+                "",
+                tot.get("quantite"),
+                tot.get("designation") or "Total",
+                tot.get("valeur_acquisition"),
+                "",
+                tot.get("amorts_cumules_n1"),
+                tot.get("dotations_annee"),
+                tot.get("amorts_cumules_n"),
+                tot.get("vnc"),
+                "",
+            ]
+        )
+        rows.append(["", "", "", "", "", "", "", "", "", "", ""])
+    totaux = payload.get("totaux") or {}
+    rows.append(
+        [
+            "",
+            "",
+            totaux.get("quantite"),
+            totaux.get("designation") or "Total général",
+            totaux.get("valeur_acquisition"),
+            "",
+            totaux.get("amorts_cumules_n1"),
+            totaux.get("dotations_annee"),
+            totaux.get("amorts_cumules_n"),
+            totaux.get("vnc"),
+            "",
+        ]
+    )
+    return build_styled_workbook(
+        sheet_title="Comptes par nature",
+        report_title="Comptes d'immobilisation par nature",
+        headers=headers,
+        rows=rows,
+        subtitle=payload.get("subtitle"),
+    )
+
+
+def comptes_par_nature_to_pdf(payload: dict[str, Any]) -> bytes:
+    annee = int(payload.get("annee"))
+    headers = [
+        "Compte",
+        "Date",
+        "Qté",
+        "Désignation",
+        "V. acq.",
+        "Taux",
+        f"Cumul {annee - 1}",
+        f"Dot. {annee}",
+        f"Amt {annee}",
+        "VNC",
+        "Agence",
+    ]
+    rows: list[list[Any]] = []
+    for groupe in payload.get("groupes") or []:
+        compte = groupe.get("compte_immobilisation") or ""
+        for line in groupe.get("lignes") or []:
+            rows.append(_comptes_nature_row(line, compte=compte))
+        tot = groupe.get("totaux") or {}
+        rows.append(
+            [
+                "",
+                "",
+                tot.get("quantite"),
+                tot.get("designation") or "Total",
+                tot.get("valeur_acquisition"),
+                "",
+                tot.get("amorts_cumules_n1"),
+                tot.get("dotations_annee"),
+                tot.get("amorts_cumules_n"),
+                tot.get("vnc"),
+                "",
+            ]
+        )
+    totaux = payload.get("totaux") or {}
+    rows.append(
+        [
+            "",
+            "",
+            totaux.get("quantite"),
+            totaux.get("designation") or "Total général",
+            totaux.get("valeur_acquisition"),
+            "",
+            totaux.get("amorts_cumules_n1"),
+            totaux.get("dotations_annee"),
+            totaux.get("amorts_cumules_n"),
+            totaux.get("vnc"),
+            "",
+        ]
+    )
+    return build_styled_pdf(
+        report_title="Comptes d'immobilisation par nature",
+        headers=headers,
+        rows=rows,
+        subtitle=payload.get("subtitle"),
+        landscape_mode=True,
+        col_aligns=[
+            "left",
+            "center",
+            "center",
+            "left",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "left",
+        ],
     )

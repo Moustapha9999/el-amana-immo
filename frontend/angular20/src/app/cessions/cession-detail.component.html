@@ -1,4 +1,4 @@
-<div class="cfd">
+﻿<div class="cfd">
   <header class="cfd__hero">
     <div>
       <a class="cfd__back" routerLink="/cessions">
@@ -77,7 +77,7 @@
           <div>
             <dt>Valeur brute (VB)</dt>
             <dd class="cfd__montant">
-              {{ d.valeur_brute != null ? (d.valeur_brute | number: '1.2-2') : '—' }}
+              {{ d.valeur_brute != null ? (d.valeur_brute | montant) : '—' }}
             </dd>
           </div>
           <div>
@@ -100,11 +100,11 @@
           </div>
           <div>
             <dt>Prix de cession (PC)</dt>
-            <dd class="cfd__montant">{{ d.prix_cession | number: '1.2-2' }}</dd>
+            <dd class="cfd__montant">{{ d.prix_cession | montant }}</dd>
           </div>
           <div>
             <dt>VNC à la date</dt>
-            <dd class="cfd__montant">{{ d.vnc | number: '1.2-2' }}</dd>
+            <dd class="cfd__montant">{{ d.vnc | montant }}</dd>
           </div>
           <div class="cfd__span-2">
             <dt>Observations</dt>
@@ -115,19 +115,19 @@
 
       <section class="cfd__block cfd__block--result">
         <h3 class="cfd__block-title">Résultat de cession</h3>
-        <p class="cfd__formula">Résultat = Prix de cession − VNC</p>
+        <p class="cfd__formula app-explain">Résultat = Prix de cession − VNC</p>
         <div class="cfd__result-grid">
           <div class="cfd__result-card">
             <span class="cfd__result-label">Résultat</span>
-            <span class="cfd__result-value">{{ d.resultat | number: '1.2-2' }}</span>
+            <span class="cfd__result-value">{{ d.resultat | montant }}</span>
           </div>
           <div class="cfd__result-card cfd__result-card--plus">
             <span class="cfd__result-label">Plus-value</span>
-            <span class="cfd__result-value">{{ d.plus_value | number: '1.2-2' }}</span>
+            <span class="cfd__result-value">{{ d.plus_value | montant }}</span>
           </div>
           <div class="cfd__result-card cfd__result-card--moins">
             <span class="cfd__result-label">Moins-value</span>
-            <span class="cfd__result-value">{{ d.moins_value | number: '1.2-2' }}</span>
+            <span class="cfd__result-value">{{ d.moins_value | montant }}</span>
           </div>
         </div>
       </section>

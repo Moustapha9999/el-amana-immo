@@ -1,4 +1,4 @@
-<div class="rfd">
+﻿<div class="rfd">
   <header class="rfd__hero">
     <div>
       <a class="rfd__back" routerLink="/reevaluations">
@@ -78,7 +78,7 @@
           <div>
             <dt>Valeur brute actuelle</dt>
             <dd class="rfd__montant">
-              {{ d.valeur_brute != null ? (d.valeur_brute | number: '1.2-2') : '—' }}
+              {{ d.valeur_brute != null ? (d.valeur_brute | montant) : '—' }}
             </dd>
           </div>
           <div>
@@ -97,11 +97,11 @@
           </div>
           <div>
             <dt>Ancienne VBC</dt>
-            <dd class="rfd__montant">{{ d.ancienne_valeur | number: '1.2-2' }}</dd>
+            <dd class="rfd__montant">{{ d.ancienne_valeur | montant }}</dd>
           </div>
           <div>
             <dt>Nouvelle VBC</dt>
-            <dd class="rfd__montant">{{ d.nouvelle_valeur | number: '1.2-2' }}</dd>
+            <dd class="rfd__montant">{{ d.nouvelle_valeur | montant }}</dd>
           </div>
           <div class="rfd__span-2">
             <dt>Justificatif</dt>
@@ -112,7 +112,7 @@
 
       <section class="rfd__block rfd__block--result">
         <h3 class="rfd__block-title">Écart de valeur</h3>
-        <p class="rfd__formula">Écart = Nouvelle VBC − Ancienne VBC</p>
+        <p class="rfd__formula app-explain">Écart = Nouvelle VBC − Ancienne VBC</p>
         <div class="rfd__result-grid">
           <div
             class="rfd__result-card"
@@ -120,7 +120,7 @@
             [class.rfd__result-card--down]="d.sens === 'baisse'"
           >
             <span class="rfd__result-label">Écart</span>
-            <span class="rfd__result-value">{{ d.ecart | number: '1.2-2' }}</span>
+            <span class="rfd__result-value">{{ d.ecart | montant }}</span>
           </div>
           <div class="rfd__result-card">
             <span class="rfd__result-label">Sens</span>

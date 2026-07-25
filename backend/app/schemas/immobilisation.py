@@ -72,7 +72,8 @@ class ImmobilisationBase(BaseModel):
     # Date de comptabilisation d'acquisition (obligatoire à la saisie — ImmobilisationCreate)
     date_comptabilisation: date | None = None
     date_fin: date | None = None
-    valeur_brute: Decimal = Field(gt=0)
+    # Peut être négative (reclassements / régularisations banque)
+    valeur_brute: Decimal
     valeur_residuelle: Decimal = Field(default=Decimal("0"), ge=0)
     duree_annees: int | None = Field(default=None, ge=0, le=100)
     duree_mois: int = Field(default=0, ge=0)
@@ -132,7 +133,7 @@ class ImmobilisationUpdate(BaseModel):
     date_comptabilisation: date | None = None
     date_fin: date | None = None
     statut: StatutImmobilisation | None = None
-    valeur_brute: Decimal | None = Field(default=None, gt=0)
+    valeur_brute: Decimal | None = None
     valeur_residuelle: Decimal | None = Field(default=None, ge=0)
     duree_annees: int | None = Field(default=None, ge=0, le=100)
     duree_mois: int | None = Field(default=None, ge=0)
@@ -162,6 +163,19 @@ class PieceJointeRead(ORMModel):
     mime_type: str | None
     size_bytes: int
     is_photo: bool
+    type_piece: str
+    date_journee: date
+    reference: str | None = None
+    libelle: str | None = None
+    created_at: datetime | None = None
+    code_inventaire: str | None = None
+    designation: str | None = None
+
+
+class PieceJointeArchiveRead(PieceJointeRead):
+    """Liste archive journée — mêmes champs + libellés immo."""
+
+    pass
 
 
 class InventaireScanCreate(BaseModel):

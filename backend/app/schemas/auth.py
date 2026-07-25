@@ -92,6 +92,20 @@ class ImmobilisationImportResponse(BaseModel):
     errors: list[str]
 
 
+class BankImmoImportResponse(BaseModel):
+    created: int
+    amortissements_created: int
+    errors: list[str]
+    totaux_par_compte: list[dict]
+    reports_created: int = 0
+    negatives: int = 0
+
+
+class BankImmoPurgeResponse(BaseModel):
+    deleted: int
+    message: str
+
+
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 

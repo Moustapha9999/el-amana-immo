@@ -1,4 +1,4 @@
-<div class="amo">
+﻿<div class="amo">
   <header class="amo__hero">
     <div>
       <h1 class="amo__title">Amortissements</h1>
@@ -37,7 +37,7 @@
           <ng-container matColumnDef="valeur">
             <th mat-header-cell *matHeaderCellDef>Valeur brute</th>
             <td mat-cell *matCellDef="let row">
-              <span class="amo__montant">{{ row.valeur_brute | number: '1.2-2' }}</span>
+              <span class="amo__montant">{{ row.valeur_brute | montant }}</span>
             </td>
           </ng-container>
           <ng-container matColumnDef="actions">

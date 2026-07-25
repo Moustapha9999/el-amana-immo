@@ -183,3 +183,31 @@ table.mat-mdc-table.app-table {
     height: 1.75rem;
   }
 }
+
+/* Textes d'explication / formules — discrets (italique + opacité réduite) */
+.app-explain,
+[class$='__formula'],
+[class$='__note'],
+[class$='__hint'],
+.immo-field__help:not(.immo-field__help--warn),
+.immo-form__hint,
+.immo-form__section-head p,
+.inv__help-item,
+.rca__lead--inline {
+  font-style: italic !important;
+  opacity: 0.55;
+  color: #64748b !important;
+  font-weight: 400;
+}
+
+.app-explain strong,
+[class$='__note'] strong,
+[class$='__formula'] strong {
+  font-weight: 600;
+  font-style: italic;
+}
+
+.immo-field__help--warn {
+  font-style: italic;
+  opacity: 0.85;
+}

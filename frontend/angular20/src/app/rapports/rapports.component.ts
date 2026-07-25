@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+﻿import { MontantPipe } from '../shared/montant.pipe';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -16,11 +16,20 @@ interface DashboardKpi {
   annee_reference: number;
 }
 
-type BusyKey = 'ecritures-xlsx' | 'ecritures-pdf' | 'immo' | 'template' | 'import' | 'audit' | null;
+type BusyKey =
+  | 'ecritures-xlsx'
+  | 'ecritures-pdf'
+  | 'immo'
+  | 'template'
+  | 'import'
+  | 'import-banque'
+  | 'purge-banque'
+  | 'audit'
+  | null;
 
 @Component({
   selector: 'app-rapports',
-  imports: [DecimalPipe, ReactiveFormsModule, RouterLink, MatButtonModule, MatIconModule],
+  imports: [MontantPipe, ReactiveFormsModule, RouterLink, MatButtonModule, MatIconModule],
   templateUrl: './rapports.component.html',
   styleUrl: './rapports.component.css',
 })
@@ -35,6 +44,9 @@ export class RapportsComponent implements OnInit {
   readonly busy = signal<BusyKey>(null);
   readonly importResult = signal<string | null>(null);
   readonly importFileName = signal<string | null>(null);
+  readonly bankImportResult = signal<string | null>(null);
+  readonly bankImportFileName = signal<string | null>(null);
+  readonly bankImportCount = signal<number | null>(null);
 
   readonly filterForm = this.fb.nonNullable.group({
     date_debut: '',
@@ -65,6 +77,17 @@ export class RapportsComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadKpi();
+    this.refreshBankImportCount();
+  }
+
+  refreshBankImportCount(): void {
+    if (!this.canImport()) {
+      return;
+    }
+    this.api.get<{ count: number }>('/immobilisations/import-banque/count').subscribe({
+      next: (res) => this.bankImportCount.set(res.count),
+      error: () => this.bankImportCount.set(null),
+    });
   }
 
   loadKpi(): void {
@@ -152,6 +175,95 @@ export class RapportsComponent implements OnInit {
           },
         });
       });
+  }
+
+  onBankImportFile(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) {
+      return;
+    }
+    this.dialogs
+      .confirmAction(
+        'ajout',
+        `Importer le tableau banque « ${file.name} » (immobilisations + amortissements) ?`,
+      )
+      .subscribe((ok) => {
+        if (!ok) {
+          return;
+        }
+        this.bankImportFileName.set(file.name);
+        this.bankImportResult.set(null);
+        this.busy.set('import-banque');
+        this.api
+          .upload<{
+            created: number;
+            amortissements_created: number;
+            errors: string[];
+            reports_created: number;
+            negatives: number;
+          }>('/immobilisations/import-banque', file)
+          .subscribe({
+            next: (res) => {
+              this.busy.set(null);
+              const errPart = res.errors.length ? ` — ${res.errors.length} erreur(s)` : '';
+              this.bankImportResult.set(
+                `${res.created} bien(s), ${res.amortissements_created} amort.${errPart}`,
+              );
+              if (res.errors.length) {
+                void this.dialogs
+                  .error(res.errors.slice(0, 3).join(' · '), 'Import banque partiel')
+                  .subscribe();
+              } else {
+                void this.dialogs
+                  .successAction(
+                    'ajout',
+                    `${res.created} immobilisation(s) et ${res.amortissements_created} amortissement(s) importés`,
+                  )
+                  .subscribe();
+              }
+              this.loadKpi();
+              this.refreshBankImportCount();
+            },
+            error: (err) => {
+              this.busy.set(null);
+              this.bankImportResult.set(null);
+              void this.dialogs
+                .error(err.error?.detail ?? 'Import banque impossible')
+                .subscribe();
+            },
+          });
+      });
+  }
+
+  purgeBankImport(): void {
+    const n = this.bankImportCount();
+    const msg =
+      n != null && n > 0
+        ? `Supprimer définitivement les ${n} immobilisation(s) issues de l’import banque (et leurs amortissements) ? Vous pourrez réimporter ensuite.`
+        : 'Supprimer définitivement tous les biens issus de l’import banque (et leurs amortissements) ?';
+    this.dialogs.confirmAction('suppression', msg).subscribe((ok) => {
+      if (!ok) {
+        return;
+      }
+      this.busy.set('purge-banque');
+      this.api.post<{ deleted: number; message: string }>('/immobilisations/import-banque/purge', {}).subscribe({
+        next: (res) => {
+          this.busy.set(null);
+          this.bankImportResult.set(res.message);
+          void this.dialogs.successAction('suppression', res.message).subscribe();
+          this.loadKpi();
+          this.refreshBankImportCount();
+        },
+        error: (err) => {
+          this.busy.set(null);
+          void this.dialogs
+            .error(err.error?.detail ?? 'Suppression de l’import impossible')
+            .subscribe();
+        },
+      });
+    });
   }
 
   private runDownload(

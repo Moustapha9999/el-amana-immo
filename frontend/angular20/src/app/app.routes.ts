@@ -19,6 +19,9 @@ import { RebutDetailComponent } from './rebuts/rebut-detail.component';
 import { UtilisateursComponent } from './utilisateurs/utilisateurs.component';
 import { AmortissementsComponent } from './amortissements/amortissements.component';
 import { AmortissementDetailComponent } from './amortissements/amortissement-detail.component';
+import { RecapAmortissementComponent } from './recap-amortissement/recap-amortissement.component';
+import { ComptesComponent } from './comptes/comptes.component';
+import { PiecesComptablesComponent } from './pieces-comptables/pieces-comptables.component';
 import { ReevaluationsComponent } from './reevaluations/reevaluations.component';
 import { ReevaluationDetailComponent } from './reevaluations/reevaluation-detail.component';
 import { ParametresComponent } from './parametres/parametres.component';
@@ -42,6 +45,9 @@ export const routes: Routes = [
       { path: 'inventaire', component: InventaireComponent },
       { path: 'amortissements', component: AmortissementsComponent },
       { path: 'amortissements/:id', component: AmortissementDetailComponent },
+      { path: 'recap-amortissement', component: RecapAmortissementComponent },
+      { path: 'comptes', component: ComptesComponent },
+      { path: 'pieces-comptables', component: PiecesComptablesComponent },
       { path: 'ecritures', component: EcrituresComponent },
       { path: 'ecritures/:id', component: EcritureDetailComponent },
       { path: 'cessions', component: CessionsComponent },

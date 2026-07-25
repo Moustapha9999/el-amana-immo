@@ -13,8 +13,8 @@ from sqlalchemy.orm import selectinload
 
 
 
-from app.core.exceptions import NotFoundError
-from app.models import Amortissement, CategorieImmobilisation, EcritureComptable, Immobilisation, ParametrageAmortissement
+from app.core.exceptions import NotFoundError, ValidationError
+from app.models import Amortissement, CategorieImmobilisation, Immobilisation, ParametrageAmortissement
 from app.models.enums import StatutImmobilisation
 from app.repositories.base import BaseRepository
 from app.schemas.immobilisation import ImmobilisationCreate, ImmobilisationUpdate
@@ -26,6 +26,7 @@ from app.services.immobilisation_defaults import (
     prepare_create,
     validate_immobilisation,
 )
+from app.services.amortissement_engine import parse_period_end
 from app.services.amortissement_service import AmortissementService
 
 __all__ = ["AmortissementCalculator", "AmortissementService", "DashboardService", "ImmobilisationService", "ParametrageService"]
@@ -116,6 +117,15 @@ class ImmobilisationService:
 
         data = prepare_create(payload, categorie)
 
+        code = str(data.get("code_inventaire") or payload.code_inventaire or "").strip()
+        if not code:
+            raise ValidationError("Le numéro / code inventaire est obligatoire.")
+        existing = await self.db.execute(
+            select(Immobilisation.id).where(Immobilisation.code_inventaire == code).limit(1)
+        )
+        if existing.scalar_one_or_none() is not None:
+            raise ValidationError(f"Le code inventaire « {code} » existe déjà. Choisissez un autre numéro.")
+
         item = Immobilisation(**data)
 
         apply_categorie_defaults(
@@ -148,6 +158,22 @@ class ImmobilisationService:
             categorie = await load_categorie(self.db, payload.categorie_id)
 
             item.categorie_id = payload.categorie_id
+
+        if payload.code_inventaire is not None:
+            new_code = payload.code_inventaire.strip()
+            if new_code and new_code != item.code_inventaire:
+                existing = await self.db.execute(
+                    select(Immobilisation.id)
+                    .where(
+                        Immobilisation.code_inventaire == new_code,
+                        Immobilisation.id != item.id,
+                    )
+                    .limit(1)
+                )
+                if existing.scalar_one_or_none() is not None:
+                    raise ValidationError(
+                        f"Le code inventaire « {new_code} » existe déjà. Choisissez un autre numéro."
+                    )
 
         apply_update_fields(item, payload)
 
@@ -282,14 +308,40 @@ class DashboardService:
         result = await self.db.execute(select(func.coalesce(func.sum(cumul_subq.c.cumul), 0)))
         return float(result.scalar_one())
 
+    async def _fin_dernier_trimestre_comptabilise(self, annee: int) -> date | None:
+        """Date d'arrêté du dernier trimestre déjà comptabilisé sur l'exercice."""
+        result = await self.db.execute(
+            select(Amortissement.periode).where(
+                Amortissement.valide.is_(True),
+                Amortissement.annule.is_(False),
+                Amortissement.simule.is_(False),
+                Amortissement.periode.like(f"{annee}-%"),
+            )
+        )
+        ends: list[date] = []
+        for (periode,) in result.all():
+            end = parse_period_end(str(periode))
+            if end is not None and end.year == annee:
+                ends.append(end)
+        return max(ends) if ends else None
+
+    async def _bornes_dotation_exercice(
+        self, ref: date | None = None
+    ) -> tuple[date, date | None, int]:
+        """Début d'exercice → fin du dernier trimestre comptabilisé (ex. 30/06)."""
+        today = ref or date.today()
+        year = today.year
+        year_start = date(year, 1, 1)
+        year_end = await self._fin_dernier_trimestre_comptabilise(year)
+        return year_start, year_end, year
+
     async def kpi(
         self,
         statut: str | None = None,
         famille: str | None = None,
         mois: int | None = None,
     ) -> dict[str, float | int]:
-        today = date.today()
-        year_start = date(today.year, 1, 1)
+        _year_start, year_end, year = await self._bornes_dotation_exercice()
         immo_ids = self._immo_ids_select(statut, famille, apply_statut=True, apply_famille=True)
 
         total = await self.db.execute(
@@ -301,26 +353,36 @@ class DashboardService:
         valeur_brute = await self._sum_valeur_brute(immo_ids)
         cumul_amort = await self._sum_cumul_amort(immo_ids)
 
-        dotation_q = select(func.coalesce(func.sum(EcritureComptable.montant), 0)).where(
-            EcritureComptable.compte_debit.like("681%"),
-            EcritureComptable.date_ecriture >= year_start,
-            EcritureComptable.date_ecriture <= today,
-        )
-        if statut or famille:
-            dotation_q = dotation_q.where(EcritureComptable.immobilisation_id.in_(immo_ids))
-        if mois:
-            from sqlalchemy import extract
-
-            dotation_q = dotation_q.where(extract("month", EcritureComptable.date_ecriture) == mois)
-
-        dotation = await self.db.execute(dotation_q)
+        # Dotation 681 : somme des amortissements COMPTABILISÉS de l'exercice
+        # (jusqu'à la fin du dernier trimestre validé — pas la date du jour ni le 31/12)
+        if year_end is None:
+            dotation_valeur = 0.0
+        else:
+            periodes_rows = await self.db.execute(
+                select(Amortissement.periode, Amortissement.montant).where(
+                    Amortissement.valide.is_(True),
+                    Amortissement.annule.is_(False),
+                    Amortissement.simule.is_(False),
+                    Amortissement.periode.like(f"{year}-%"),
+                    Amortissement.immobilisation_id.in_(immo_ids),
+                )
+            )
+            total_dot = 0.0
+            for periode, montant in periodes_rows.all():
+                end = parse_period_end(str(periode))
+                if end is None or end > year_end:
+                    continue
+                if mois is not None and end.month != mois:
+                    continue
+                total_dot += float(montant)
+            dotation_valeur = total_dot
 
         return {
             "nombre_immobilisations": int(total.scalar_one()),
             "valeur_brute_totale": valeur_brute,
             "vnc_totale": max(0.0, valeur_brute - cumul_amort),
-            "dotation_periode": float(dotation.scalar_one()),
-            "annee_reference": today.year,
+            "dotation_periode": dotation_valeur,
+            "annee_reference": year,
         }
 
     async def charts(
@@ -329,11 +391,9 @@ class DashboardService:
         famille: str | None = None,
         mois: int | None = None,
     ) -> dict:
-        from sqlalchemy import extract
-
-        today = date.today()
-        year_start = date(today.year, 1, 1)
-        year = today.year
+        _year_start, year_end, year = await self._bornes_dotation_exercice()
+        # Mois affichés : jusqu'à la fin du trimestre comptabilisé (sinon aucun)
+        mois_max = year_end.month if year_end is not None else 0
 
         immo_ids_full = self._immo_ids_select(statut, famille, apply_statut=True, apply_famille=True)
         immo_ids_for_statut = self._immo_ids_select(statut, famille, apply_statut=False, apply_famille=True)
@@ -374,32 +434,35 @@ class DashboardService:
             if float(row[1]) > 0
         ]
 
-        dotation_base = select(
-            extract("month", EcritureComptable.date_ecriture),
-            func.coalesce(func.sum(EcritureComptable.montant), 0),
-        ).where(
-            EcritureComptable.compte_debit.like("681%"),
-            EcritureComptable.date_ecriture >= year_start,
-            EcritureComptable.date_ecriture <= today,
-        )
-        if statut or famille:
-            dotation_base = dotation_base.where(EcritureComptable.immobilisation_id.in_(immo_ids_full))
-        dotation_base = dotation_base.group_by(extract("month", EcritureComptable.date_ecriture)).order_by(
-            extract("month", EcritureComptable.date_ecriture)
-        )
-        mois_rows = await self.db.execute(dotation_base)
-        by_month = {int(r[0]): float(r[1]) for r in mois_rows.all()}
+        by_month: dict[int, float] = {}
+        if year_end is not None:
+            # Agrégation par mois d'arrêté du trimestre comptabilisé (31/03, 30/06, …)
+            periodes_rows = await self.db.execute(
+                select(Amortissement.periode, Amortissement.montant).where(
+                    Amortissement.valide.is_(True),
+                    Amortissement.annule.is_(False),
+                    Amortissement.simule.is_(False),
+                    Amortissement.periode.like(f"{year}-%"),
+                    Amortissement.immobilisation_id.in_(immo_ids_full),
+                )
+            )
+            for periode, montant in periodes_rows.all():
+                end = parse_period_end(str(periode))
+                if end is None or end > year_end:
+                    continue
+                by_month[end.month] = by_month.get(end.month, 0.0) + float(montant)
+
         dotations_mensuelles = [
             {
                 "label": self.MOIS_NOMS[m],
                 "value": by_month.get(m, 0.0),
                 "key": str(m),
             }
-            for m in range(1, today.month + 1)
+            for m in range(1, mois_max + 1)
         ]
 
         evolution_vnc: list[dict] = []
-        for m in range(1, today.month + 1):
+        for m in range(1, mois_max + 1):
             periode_max = f"{year}-{m:02d}"
             brut = await self._sum_valeur_brute(immo_ids_full)
             cumul = await self._sum_cumul_amort(immo_ids_full, periode_max=periode_max)

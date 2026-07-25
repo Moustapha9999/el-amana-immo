@@ -1,0 +1,249 @@
+﻿<div class="rca">
+  <header class="rca__hero">
+    <div>
+      <h1 class="rca__title">Récapitulatif tableau d’amortissement</h1>
+      <p class="rca__lead">
+        @if (data(); as d) {
+          Arrêté au 31/12/{{ d.annee }} — comptes 142000 à 147030
+        } @else {
+          Agrégation par nature de compte d’immobilisation
+        }
+      </p>
+    </div>
+    <div class="rca__hero-actions">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('xlsx')"
+        [disabled]="!data() || exporting() !== null || loading()"
+      >
+        <mat-icon aria-hidden="true">table_view</mat-icon>
+        {{ exporting() === 'xlsx' ? 'Excel…' : 'Excel' }}
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('pdf')"
+        [disabled]="!data() || exporting() !== null || loading()"
+      >
+        <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
+        {{ exporting() === 'pdf' ? 'PDF…' : 'PDF' }}
+      </button>
+    </div>
+  </header>
+
+  <section class="rca__section">
+    <div class="rca__toolbar">
+      <form [formGroup]="filterForm" (ngSubmit)="load()" class="rca__filters">
+        <div class="rca-field">
+          <label class="rca-field__label" for="rca-annee">Année (arrêté 31/12)</label>
+          <input
+            id="rca-annee"
+            class="rca-field__control"
+            type="number"
+            formControlName="annee"
+            min="2000"
+            max="2100"
+            step="1"
+            aria-label="Année"
+          />
+        </div>
+        <div class="rca__filter-actions">
+          <button mat-flat-button color="primary" type="submit" [disabled]="loading()">
+            Afficher
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="rca__body">
+      @if (loading()) {
+        <p class="rca__empty">Chargement du récapitulatif…</p>
+      } @else if (data(); as d) {
+        @if (d.lignes.length === 0) {
+          <p class="rca__empty">Aucune immobilisation sur les comptes 142000–147030 pour {{ d.annee }}.</p>
+        } @else {
+          <div class="rca__table-wrap">
+            <table mat-table [dataSource]="d.lignes" class="w-full app-table rca__table">
+              <ng-container matColumnDef="compte">
+                <th mat-header-cell *matHeaderCellDef>Compte</th>
+                <td mat-cell *matCellDef="let row" class="rca__mono">{{ row.compte_immobilisation }}</td>
+                <td mat-footer-cell *matFooterCellDef class="rca__foot-label">Total</td>
+              </ng-container>
+
+              <ng-container matColumnDef="intitule">
+                <th mat-header-cell *matHeaderCellDef>Intitulé</th>
+                <td mat-cell *matCellDef="let row">{{ row.intitule }}</td>
+                <td mat-footer-cell *matFooterCellDef></td>
+              </ng-container>
+
+              <ng-container matColumnDef="vb">
+                <th mat-header-cell *matHeaderCellDef>VB 31/12/{{ d.annee }}</th>
+                <td mat-cell *matCellDef="let row" class="rca__num">
+                  {{ row.valeur_brute | montant }}
+                </td>
+                <td mat-footer-cell *matFooterCellDef class="rca__num rca__foot">
+                  {{ d.totaux.valeur_brute | montant }}
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="compte_amort">
+                <th mat-header-cell *matHeaderCellDef>Compte amort.</th>
+                <td mat-cell *matCellDef="let row" class="rca__mono">
+                  {{ row.compte_amortissement || '—' }}
+                </td>
+                <td mat-footer-cell *matFooterCellDef></td>
+              </ng-container>
+
+              <ng-container matColumnDef="cumul_n1">
+                <th mat-header-cell *matHeaderCellDef>Amorts cumulés {{ d.annee - 1 }}</th>
+                <td mat-cell *matCellDef="let row" class="rca__num">
+                  {{ row.amorts_cumules_n1 | montant }}
+                </td>
+                <td mat-footer-cell *matFooterCellDef class="rca__num rca__foot">
+                  {{ d.totaux.amorts_cumules_n1 | montant }}
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="cessions">
+                <th mat-header-cell *matHeaderCellDef>Cessions {{ d.annee }}</th>
+                <td mat-cell *matCellDef="let row" class="rca__num">
+                  {{ row.cessions_annee | montant }}
+                </td>
+                <td mat-footer-cell *matFooterCellDef class="rca__num rca__foot">
+                  {{ d.totaux.cessions_annee | montant }}
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="dotations">
+                <th mat-header-cell *matHeaderCellDef>Dotations {{ d.annee }}</th>
+                <td mat-cell *matCellDef="let row" class="rca__num">
+                  {{ row.dotations_annee | montant }}
+                </td>
+                <td mat-footer-cell *matFooterCellDef class="rca__num rca__foot">
+                  {{ d.totaux.dotations_annee | montant }}
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="cumul_n">
+                <th mat-header-cell *matHeaderCellDef>Amorts cumulés {{ d.annee }}</th>
+                <td mat-cell *matCellDef="let row" class="rca__num">
+                  {{ row.amorts_cumules_n | montant }}
+                </td>
+                <td mat-footer-cell *matFooterCellDef class="rca__num rca__foot">
+                  {{ d.totaux.amorts_cumules_n | montant }}
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="vnc">
+                <th mat-header-cell *matHeaderCellDef>VNC 31/12/{{ d.annee }}</th>
+                <td mat-cell *matCellDef="let row" class="rca__num">
+                  {{ row.vnc | montant }}
+                </td>
+                <td mat-footer-cell *matFooterCellDef class="rca__num rca__foot">
+                  {{ d.totaux.vnc | montant }}
+                </td>
+              </ng-container>
+
+              <tr mat-header-row *matHeaderRowDef="columns"></tr>
+              <tr mat-row *matRowDef="let row; columns: columns"></tr>
+              <tr mat-footer-row *matFooterRowDef="columns"></tr>
+            </table>
+          </div>
+          <p class="rca__note app-explain">
+            Dotations {{ d.annee }} = somme des dotations d’amortissement
+            <strong>comptabilisées</strong> de l’exercice (périodes validées uniquement).
+            Amorts cumulés {{ d.annee }} = Amorts cumulés {{ d.annee - 1 }} − Cessions
+            {{ d.annee }} + Dotations {{ d.annee }}. VNC = VB − Amorts cumulés {{ d.annee }}.
+          </p>
+        }
+      } @else {
+        <p class="rca__empty">Aucune donnée à afficher.</p>
+      }
+    </div>
+  </section>
+
+  @if (data(); as d) {
+    @if (!loading() && d.details.length) {
+      <section class="rca__section rca__section--detail">
+        <div class="rca__toolbar rca__toolbar--detail">
+          <div>
+            <h2 class="rca__subtitle">Détail des dotations {{ d.annee }} par immobilisation</h2>
+            <p class="app-explain rca__lead--inline">
+              Total Dotations = somme des amortissements comptabilisés de l’exercice
+            </p>
+          </div>
+          <div class="rca__hero-actions">
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="export('xlsx', 'detail')"
+              [disabled]="!data() || exporting() !== null || loading()"
+            >
+              <mat-icon aria-hidden="true">table_view</mat-icon>
+              {{ exporting() === 'detail-xlsx' ? 'Excel…' : 'Excel' }}
+            </button>
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="export('pdf', 'detail')"
+              [disabled]="!data() || exporting() !== null || loading()"
+            >
+              <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
+              {{ exporting() === 'detail-pdf' ? 'PDF…' : 'PDF' }}
+            </button>
+          </div>
+        </div>
+        <div class="rca__table-wrap">
+          <table mat-table [dataSource]="d.details" class="w-full app-table rca__table rca__table--detail">
+            <ng-container matColumnDef="code">
+              <th mat-header-cell *matHeaderCellDef>Code</th>
+              <td mat-cell *matCellDef="let row" class="rca__mono">{{ row.code_inventaire }}</td>
+              <td mat-footer-cell *matFooterCellDef class="rca__foot-label">Total</td>
+            </ng-container>
+            <ng-container matColumnDef="designation">
+              <th mat-header-cell *matHeaderCellDef>Désignation</th>
+              <td mat-cell *matCellDef="let row">{{ row.designation }}</td>
+              <td mat-footer-cell *matFooterCellDef></td>
+            </ng-container>
+            <ng-container matColumnDef="compte">
+              <th mat-header-cell *matHeaderCellDef>Compte</th>
+              <td mat-cell *matCellDef="let row" class="rca__mono">{{ row.compte_immobilisation }}</td>
+              <td mat-footer-cell *matFooterCellDef></td>
+            </ng-container>
+            <ng-container matColumnDef="dotations">
+              <th mat-header-cell *matHeaderCellDef>Dotation comptabilisée {{ d.annee }}</th>
+              <td mat-cell *matCellDef="let row" class="rca__num">
+                {{ row.dotations_annee | montant }}
+              </td>
+              <td mat-footer-cell *matFooterCellDef class="rca__num rca__foot">
+                {{ d.totaux.dotations_annee | montant }}
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="cumul_n">
+              <th mat-header-cell *matHeaderCellDef>Cumul amort. {{ d.annee }}</th>
+              <td mat-cell *matCellDef="let row" class="rca__num">
+                {{ row.amorts_cumules_n | montant }}
+              </td>
+              <td mat-footer-cell *matFooterCellDef class="rca__num rca__foot">
+                {{ d.totaux.amorts_cumules_n | montant }}
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="vnc">
+              <th mat-header-cell *matHeaderCellDef>VNC 31/12/{{ d.annee }}</th>
+              <td mat-cell *matCellDef="let row" class="rca__num">
+                {{ row.vnc | montant }}
+              </td>
+              <td mat-footer-cell *matFooterCellDef class="rca__num rca__foot">
+                {{ d.totaux.vnc | montant }}
+              </td>
+            </ng-container>
+            <tr mat-header-row *matHeaderRowDef="detailColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: detailColumns"></tr>
+            <tr mat-footer-row *matFooterRowDef="detailColumns"></tr>
+          </table>
+        </div>
+      </section>
+    }
+  }
+</div>

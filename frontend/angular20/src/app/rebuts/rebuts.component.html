@@ -1,4 +1,4 @@
-<div class="reb">
+﻿<div class="reb">
   <header class="reb__hero">
     <div>
       <h1 class="reb__title">Rebuts</h1>
@@ -19,7 +19,7 @@
     </div>
     <div class="reb__kpi reb__kpi--perte">
       <span class="reb__kpi-label">VNC sortie (perte)</span>
-      <span class="reb__kpi-value">{{ kpi().vnc | number: '1.2-2' }}</span>
+      <span class="reb__kpi-value">{{ kpi().vnc | montant }}</span>
     </div>
   </div>
 
@@ -91,7 +91,7 @@
             <ng-container matColumnDef="vnc">
               <th mat-header-cell *matHeaderCellDef>VNC</th>
               <td mat-cell *matCellDef="let row">
-                <span class="reb__montant">{{ row.vnc | number: '1.2-2' }}</span>
+                <span class="reb__montant">{{ row.vnc | montant }}</span>
               </td>
             </ng-container>
             <ng-container matColumnDef="motif">

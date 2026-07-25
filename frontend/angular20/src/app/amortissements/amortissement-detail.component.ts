@@ -1,4 +1,5 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+﻿import { DatePipe } from '@angular/common';
+import { MontantPipe } from '../shared/montant.pipe';
 import { Component, inject, input, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -39,7 +40,7 @@ interface AmortRow {
 
 @Component({
   selector: 'app-amortissement-detail',
-  imports: [RouterLink, DatePipe, DecimalPipe, MatButtonModule, MatIconModule, MatTableModule],
+  imports: [RouterLink, DatePipe, MontantPipe, MatButtonModule, MatIconModule, MatTableModule],
   templateUrl: './amortissement-detail.component.html',
   styleUrl: './amortissement-detail.component.css',
 })

@@ -1,0 +1,279 @@
+.cpt {
+  max-width: 96rem;
+  margin: 0 auto;
+  padding-bottom: 1.5rem;
+}
+
+.cpt__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.cpt__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.cpt__lead {
+  margin: 0.35rem 0 0;
+  font-size: 0.9375rem;
+  color: #64748b;
+}
+
+.cpt__hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.cpt__section {
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-card);
+  overflow: hidden;
+}
+
+.cpt__toolbar {
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef6fc 100%);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.cpt__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.85rem 1rem;
+}
+
+.cpt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 10rem;
+}
+
+.cpt-field--compte {
+  min-width: 18rem;
+  flex: 1 1 18rem;
+  max-width: 28rem;
+}
+
+.cpt-field__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cpt-field__control {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: #0f172a;
+  background: #fff;
+}
+
+.cpt-field__control:focus {
+  outline: none;
+  border-color: var(--app-brand-600);
+  box-shadow: 0 0 0 3px rgb(52 152 219 / 0.22);
+}
+
+.cpt__filter-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.cpt__body {
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.cpt__empty {
+  margin: 0;
+  padding: 2.5rem 1.25rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.cpt__groupe {
+  margin-bottom: 1.5rem;
+}
+
+.cpt__groupe-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 0.75rem;
+  margin: 0 0 0.65rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.cpt__groupe-libelle {
+  font-weight: 500;
+  color: #475569;
+}
+
+.cpt__groupe-count {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cpt__mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.cpt__table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--app-border);
+  border-radius: 0.5rem;
+}
+
+.cpt__table {
+  width: 100%;
+  min-width: 78rem;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.cpt__col-date {
+  width: 6.5rem;
+}
+
+.cpt__col-qty {
+  width: 3.5rem;
+}
+
+.cpt__col-desig {
+  width: 18rem;
+}
+
+.cpt__col-money {
+  width: 8.25rem;
+}
+
+.cpt__col-taux {
+  width: 5rem;
+}
+
+.cpt__col-agence {
+  width: 11rem;
+}
+
+.cpt__table th {
+  background: #1e3a5f;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 0.7rem 0.6rem;
+  text-align: left;
+  vertical-align: middle;
+  line-height: 1.25;
+  white-space: normal;
+  hyphens: auto;
+}
+
+.cpt__table th.cpt__num,
+.cpt__table td.cpt__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cpt__table td {
+  padding: 0.65rem 0.6rem;
+  font-size: 0.8125rem;
+  border-top: 1px solid #e2e8f0;
+  vertical-align: middle;
+  color: #0f172a;
+}
+
+.cpt__table td.cpt__date {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.cpt__table td.cpt__desig {
+  text-align: left;
+  word-break: break-word;
+}
+
+.cpt__table td.cpt__agence {
+  text-align: left;
+  word-break: break-word;
+}
+
+.cpt__table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.cpt__table td.cpt__cell-vnc {
+  font-weight: 600;
+}
+
+.cpt__table tfoot td {
+  background: #eef6fc;
+  font-weight: 600;
+  border-top: 2px solid #cbd5e1;
+  vertical-align: middle;
+}
+
+.cpt__foot-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.75rem;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.cpt__link {
+  color: #1e3a5f;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.cpt__link:hover {
+  text-decoration: underline;
+}
+
+.cpt__totaux {
+  margin-top: 0.5rem;
+  overflow-x: auto;
+}
+
+.cpt__totaux .cpt__table {
+  min-width: 78rem;
+}
+
+.cpt__totaux tfoot td {
+  background: #1e3a5f;
+  color: #fff;
+  border-top: none;
+}
+
+.cpt__note {
+  margin: 1rem 0 0;
+}

@@ -1,4 +1,4 @@
-<div class="par">
+﻿<div class="par">
   <header class="par__hero">
     <div>
       <h1 class="par__title">Paramètres</h1>
@@ -246,7 +246,7 @@
                   id="par-cat-taux"
                   class="par-field__control"
                   readonly
-                  [value]="tauxPreview() != null ? (tauxPreview() | number: '1.2-4') : '—'"
+                  [value]="tauxPreview() != null ? (tauxPreview() | montant: 4) : '—'"
                   aria-label="Taux calculé"
                 />
               </div>
@@ -365,7 +365,7 @@
                 <th mat-header-cell *matHeaderCellDef>Taux %</th>
                 <td mat-cell *matCellDef="let row">
                   @if (row.amortissable && tauxForCategory(row) != null) {
-                    {{ tauxForCategory(row) | number: '1.2-2' }}
+                    {{ tauxForCategory(row) | montant }}
                   } @else {
                     —
                   }

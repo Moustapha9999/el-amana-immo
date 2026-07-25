@@ -1,4 +1,5 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+﻿import { DatePipe } from '@angular/common';
+import { MontantPipe } from '../shared/montant.pipe';
 import { Component, inject, input, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -25,7 +26,8 @@ export interface ReevaluationDetail {
 
 @Component({
   selector: 'app-reevaluation-detail',
-  imports: [RouterLink, DatePipe, DecimalPipe, MatButtonModule, MatIconModule],
+  standalone: true,
+  imports: [MontantPipe, DatePipe, RouterLink, MatButtonModule, MatIconModule],
   templateUrl: './reevaluation-detail.component.html',
   styleUrl: './reevaluation-detail.component.css',
 })

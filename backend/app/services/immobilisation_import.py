@@ -5,12 +5,11 @@ from io import BytesIO
 from openpyxl import load_workbook
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import ValidationError
 from app.models import Agence, CategorieImmobilisation, Immobilisation
 from app.schemas.immobilisation import ImmobilisationCreate
-from app.services.immobilisation_defaults import load_categorie, prepare_create, validate_immobilisation
+from app.services.immobilisation_defaults import prepare_create, validate_immobilisation
 from app.services.immobilisation_service import ImmobilisationService
 
 

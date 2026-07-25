@@ -1,4 +1,4 @@
-<div class="ecd">
+﻿<div class="ecd">
   <header class="ecd__hero">
     <div>
       <a class="ecd__back" routerLink="/ecritures">
@@ -75,7 +75,7 @@
           </div>
           <div>
             <dt>Montant</dt>
-            <dd class="ecd__montant">{{ d.montant | number: '1.2-2' }} MRU</dd>
+            <dd class="ecd__montant">{{ d.montant | montant }} MRU</dd>
           </div>
           <div class="ecd__span-2">
             <dt>Libellé</dt>
@@ -90,13 +90,13 @@
           <div class="ecd__schema-card ecd__schema-card--debit">
             <span class="ecd__schema-label">Débit</span>
             <span class="ecd__schema-compte">{{ d.compte_debit }}</span>
-            <span class="ecd__schema-montant">{{ d.montant | number: '1.2-2' }}</span>
+            <span class="ecd__schema-montant">{{ d.montant | montant }}</span>
           </div>
           <mat-icon class="ecd__schema-arrow" aria-hidden="true">arrow_forward</mat-icon>
           <div class="ecd__schema-card ecd__schema-card--credit">
             <span class="ecd__schema-label">Crédit</span>
             <span class="ecd__schema-compte">{{ d.compte_credit }}</span>
-            <span class="ecd__schema-montant">{{ d.montant | number: '1.2-2' }}</span>
+            <span class="ecd__schema-montant">{{ d.montant | montant }}</span>
           </div>
         </div>
       </section>

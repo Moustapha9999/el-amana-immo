@@ -1,4 +1,4 @@
-<div class="rap">
+﻿<div class="rap">
   <header class="rap__hero">
     <div>
       <h1 class="rap__title">Rapports</h1>
@@ -33,7 +33,7 @@
       <span class="rap__kpi-label">Valeur brute</span>
       <span class="rap__kpi-value">
         @if (kpi(); as k) {
-          {{ k.valeur_brute_totale | number: '1.2-2' }}
+          {{ k.valeur_brute_totale | montant }}
         } @else {
           —
         }
@@ -43,7 +43,7 @@
       <span class="rap__kpi-label">VNC</span>
       <span class="rap__kpi-value">
         @if (kpi(); as k) {
-          {{ k.vnc_totale | number: '1.2-2' }}
+          {{ k.vnc_totale | montant }}
         } @else {
           —
         }
@@ -186,6 +186,62 @@
             }
             @if (importResult()) {
               <p class="rap__status rap__status--ok">{{ importResult() }}</p>
+            }
+          </article>
+
+          <article class="rap__tile">
+            <div class="rap__tile-head">
+              <span class="rap__tile-icon" aria-hidden="true">
+                <mat-icon>account_balance</mat-icon>
+              </span>
+              <div>
+                <h2 class="rap__tile-title">Import tableau banque</h2>
+                <p class="rap__tile-meta">Classeur IMMO (.xls) — biens + amortissements</p>
+              </div>
+            </div>
+            <div class="rap__tile-actions">
+              <label for="rap-bank-import-file" class="sr-only">Fichier tableau banque</label>
+              <input
+                #bankImportFile
+                id="rap-bank-import-file"
+                type="file"
+                accept=".xlsx,.xls"
+                class="sr-only"
+                (change)="onBankImportFile($event)"
+                [disabled]="busy() !== null"
+              />
+              <button
+                mat-flat-button
+                color="primary"
+                type="button"
+                (click)="bankImportFile.click()"
+                [disabled]="busy() !== null"
+              >
+                <mat-icon aria-hidden="true">upload_file</mat-icon>
+                {{ busy() === 'import-banque' ? 'Import…' : 'Import tableau banque' }}
+              </button>
+              <button
+                mat-stroked-button
+                color="warn"
+                type="button"
+                (click)="purgeBankImport()"
+                [disabled]="busy() !== null || (bankImportCount() !== null && bankImportCount() === 0)"
+              >
+                <mat-icon aria-hidden="true">delete_forever</mat-icon>
+                {{
+                  busy() === 'purge-banque'
+                    ? 'Suppression…'
+                    : bankImportCount() != null
+                      ? 'Annuler l’import (' + bankImportCount() + ')'
+                      : 'Annuler l’import'
+                }}
+              </button>
+            </div>
+            @if (bankImportFileName()) {
+              <p class="rap__file-name">{{ bankImportFileName() }}</p>
+            }
+            @if (bankImportResult()) {
+              <p class="rap__status rap__status--ok">{{ bankImportResult() }}</p>
             }
           </article>
         }

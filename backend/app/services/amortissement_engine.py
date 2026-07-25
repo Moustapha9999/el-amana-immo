@@ -234,23 +234,23 @@ def cumul_amortissement_a_date(immo: Immobilisation, date_limite: date) -> Decim
     # Borne exclusive pour inclure le jour de cession (30/06 → 01/07)
     from datetime import timedelta
 
-    fin_globale_excl = date_limite + timedelta(days=1)
+    fin_globale_excl = max_end + timedelta(days=1)
 
     cumul = Decimal("0")
     cursor = start
     safety = 0
-    while cumul < base_max and cursor <= date_limite and safety < 500:
+    while cumul < base_max and cursor <= max_end and safety < 500:
         safety += 1
         q_start = quarter_start(cursor)
         q_end = quarter_end(cursor)
         next_q = add_months(q_start, 3)
 
         debut = max(start, q_start)
-        if debut > date_limite:
+        if debut > max_end:
             break
 
-        # Fin de la portion : min(fin trimestre, lendemain de date_limite, fin durée)
-        fin_excl = min(next_q, fin_globale_excl, _max_end_date(immo, start))
+        # Fin de la portion : min(fin trimestre, lendemain de max_end)
+        fin_excl = min(next_q, fin_globale_excl)
         if fin_excl <= debut:
             break
 
@@ -266,7 +266,7 @@ def cumul_amortissement_a_date(immo: Immobilisation, date_limite: date) -> Decim
             montant = restant
         cumul = (cumul + montant).quantize(Decimal("0.01"))
 
-        if date_limite <= q_end:
+        if max_end <= q_end:
             break
         cursor = next_q
 

@@ -1,6 +1,5 @@
 from datetime import date
 from decimal import Decimal
-from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 

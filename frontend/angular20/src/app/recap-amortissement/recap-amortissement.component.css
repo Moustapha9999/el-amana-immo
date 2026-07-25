@@ -1,0 +1,240 @@
+.rca {
+  max-width: 92rem;
+  margin: 0 auto;
+  padding-bottom: 1.5rem;
+}
+
+.rca__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.rca__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.rca__lead {
+  margin: 0.35rem 0 0;
+  font-size: 0.9375rem;
+  color: #64748b;
+}
+
+.rca__hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.rca__section {
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-card);
+  overflow: hidden;
+}
+
+.rca__toolbar {
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef6fc 100%);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.rca__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.85rem 1rem;
+}
+
+.rca-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 10rem;
+}
+
+.rca-field__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rca-field__control {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: #0f172a;
+  background: #fff;
+}
+
+.rca-field__control:focus {
+  outline: none;
+  border-color: var(--app-brand-600);
+  box-shadow: 0 0 0 3px rgb(52 152 219 / 0.22);
+}
+
+.rca__filter-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.rca__empty {
+  margin: 0;
+  padding: 2.5rem 1.25rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.rca__table-wrap {
+  overflow-x: auto;
+}
+
+.rca__table {
+  width: 100%;
+  table-layout: fixed;
+  min-width: 70rem;
+}
+
+.rca__table th,
+.rca__table td {
+  padding: 0.7rem 0.75rem;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.8125rem;
+}
+
+.rca__table .mat-mdc-header-cell {
+  white-space: normal;
+  line-height: 1.3;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.rca__table .mat-column-compte {
+  width: 7.5%;
+}
+
+.rca__table .mat-column-intitule {
+  width: 14%;
+}
+
+.rca__table .mat-column-compte_amort {
+  width: 9%;
+}
+
+.rca__table .mat-column-vb,
+.rca__table .mat-column-cumul_n1,
+.rca__table .mat-column-cessions,
+.rca__table .mat-column-dotations,
+.rca__table .mat-column-cumul_n,
+.rca__table .mat-column-vnc {
+  width: 11.5%;
+  text-align: right;
+}
+
+.rca__mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.rca__num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.rca__table .mat-mdc-footer-row,
+.rca__table .mat-mdc-footer-cell {
+  background: #f8fafc;
+  font-weight: 700;
+  border-top: 1px solid var(--app-border);
+}
+
+.rca__foot-label {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.75rem;
+}
+
+.rca__foot {
+  font-weight: 700;
+}
+
+.rca__note {
+  margin: 0;
+  padding: 0.75rem 1.25rem 0.9rem;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  border-top: 1px solid var(--app-border);
+  background: #fafbfc;
+}
+
+.rca__section--detail {
+  margin-top: 1.25rem;
+}
+
+.rca__toolbar--detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.rca__subtitle {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.rca__lead--inline {
+  margin: 0.3rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.rca__table--detail {
+  min-width: 52rem;
+}
+
+.rca__table--detail .mat-column-code {
+  width: 13%;
+}
+
+.rca__table--detail .mat-column-designation {
+  width: 36%;
+}
+
+.rca__table--detail .mat-column-compte {
+  width: 9%;
+}
+
+.rca__table--detail .mat-column-dotations,
+.rca__table--detail .mat-column-cumul_n,
+.rca__table--detail .mat-column-vnc {
+  width: 14%;
+  text-align: right;
+}

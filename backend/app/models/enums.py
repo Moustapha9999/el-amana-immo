@@ -62,6 +62,18 @@ class TypeAjustement(str, enum.Enum):
     REPRISE = "reprise"
 
 
+class TypePieceComptable(str, enum.Enum):
+    """Pièces comptables relatives aux immobilisations."""
+
+    FACTURE = "facture"
+    PV = "pv"
+    BON_COMMANDE = "bon_commande"
+    BON_LIVRAISON = "bon_livraison"
+    CONTRAT = "contrat"
+    PROTOCOLE_ACCORD = "protocole_accord"
+    AUTRE = "autre"
+
+
 class TypeNotification(str, enum.Enum):
     FIN_AMORTISSEMENT = "fin_amortissement"
     MAINTENANCE = "maintenance"

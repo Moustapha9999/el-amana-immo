@@ -1,13 +1,15 @@
+from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
 from app.api.v1.endpoints.helpers import to_paginated
 from app.core.exceptions import AppError, raise_http_from_app
 from app.db.session import get_db
-from app.models import CategorieImmobilisation, Immobilisation, InventaireScan, PieceJointe, User
+from app.models import CategorieImmobilisation, InventaireScan, PieceJointe, User
 from app.repositories.base import BaseRepository
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.immobilisation import (
@@ -27,13 +29,35 @@ from app.services.categorie_service import CategorieService
 from app.services.immobilisation_service import ImmobilisationService
 from app.services.amortissement_service import AmortissementService
 from app.services.immobilisation_vnc import compute_situation_comptable
-from app.schemas.auth import ImmobilisationImportResponse
+from app.schemas.auth import BankImmoImportResponse, BankImmoPurgeResponse, ImmobilisationImportResponse
 from app.services.inventaire_service import InventaireService
 from app.services.immobilisation_import import ImmobilisationImportService
+from app.services.bank_immo_import import BankImmoImportService
 from app.services.audit_helpers import record_audit
+from app.services.pieces_comptables_service import PiecesComptablesService, TYPE_LABELS
+from app.services.transfert_service import TransfertService
 from app.storage.local_storage import LocalStorageService
 
 router = APIRouter(tags=["immobilisations"])
+
+
+def _piece_to_read(row: PieceJointe) -> PieceJointeRead:
+    immo = row.immobilisation
+    return PieceJointeRead(
+        id=row.id,
+        immobilisation_id=row.immobilisation_id,
+        filename=row.filename,
+        mime_type=row.mime_type,
+        size_bytes=row.size_bytes,
+        is_photo=row.is_photo,
+        type_piece=row.type_piece.value if hasattr(row.type_piece, "value") else str(row.type_piece),
+        date_journee=row.date_journee,
+        reference=row.reference,
+        libelle=row.libelle,
+        created_at=row.created_at,
+        code_inventaire=immo.code_inventaire if immo else None,
+        designation=immo.designation if immo else None,
+    )
 
 
 def _scan_to_read(row: InventaireScan) -> InventaireScanRead:
@@ -293,25 +317,135 @@ async def delete_immobilisation(
 @router.post("/immobilisations/{item_id}/pieces", response_model=PieceJointeRead, status_code=status.HTTP_201_CREATED)
 async def upload_piece(
     item_id: UUID,
+    request: Request,
     file: UploadFile = File(...),
-    is_photo: bool = False,
-    _: User = Depends(require_roles("administrateur", "comptable")),
+    type_piece: str = Form("facture"),
+    date_journee: date | None = Form(None),
+    reference: str | None = Form(None),
+    libelle: str | None = Form(None),
+    is_photo: bool = Form(False),
+    user: User = Depends(require_roles("administrateur", "comptable")),
     db: AsyncSession = Depends(get_db),
 ):
-    await ImmobilisationService(db).get(item_id)
-    storage = LocalStorageService()
-    relative, size = await storage.save(file, subdir=f"immobilisations/{item_id}")
-    row = PieceJointe(
-        immobilisation_id=item_id,
-        filename=file.filename or "fichier",
-        stored_path=relative,
-        mime_type=file.content_type,
-        size_bytes=size,
-        is_photo=is_photo,
+    try:
+        row = await PiecesComptablesService(db).upload(
+            immobilisation_id=item_id,
+            file=file,
+            type_piece=type_piece,
+            date_journee=date_journee,
+            reference=reference,
+            libelle=libelle,
+            user=user,
+            is_photo=is_photo,
+        )
+        await record_audit(
+            db,
+            user=user,
+            action="upload_piece_comptable",
+            entity="piece_jointe",
+            entity_id=str(row.id),
+            after={
+                "immobilisation_id": str(item_id),
+                "type_piece": row.type_piece.value,
+                "date_journee": row.date_journee.isoformat(),
+                "filename": row.filename,
+            },
+            request=request,
+        )
+        row = await PiecesComptablesService(db).get(row.id)
+        return _piece_to_read(row)
+    except AppError as exc:
+        raise_http_from_app(exc)
+
+
+@router.get("/immobilisations/{item_id}/pieces", response_model=list[PieceJointeRead])
+async def list_pieces(
+    item_id: UUID,
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        rows = await PiecesComptablesService(db).list_for_immobilisation(item_id)
+        return [_piece_to_read(r) for r in rows]
+    except AppError as exc:
+        raise_http_from_app(exc)
+
+
+@router.get("/pieces/{piece_id}/download")
+async def download_piece(
+    piece_id: UUID,
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await PiecesComptablesService(db).get(piece_id)
+    except AppError as exc:
+        raise_http_from_app(exc)
+    path = LocalStorageService().absolute_path(row.stored_path)
+    if not path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier introuvable sur le serveur")
+    return FileResponse(
+        path,
+        media_type=row.mime_type or "application/octet-stream",
+        filename=row.filename,
     )
-    db.add(row)
-    await db.flush()
-    return row
+
+
+@router.delete("/pieces/{piece_id}", response_model=MessageResponse)
+async def delete_piece(
+    piece_id: UUID,
+    request: Request,
+    user: User = Depends(require_roles("administrateur", "comptable")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        svc = PiecesComptablesService(db)
+        row = await svc.get(piece_id)
+        await record_audit(
+            db,
+            user=user,
+            action="delete_piece_comptable",
+            entity="piece_jointe",
+            entity_id=str(piece_id),
+            before={"filename": row.filename, "immobilisation_id": str(row.immobilisation_id)},
+            request=request,
+        )
+        await svc.delete(piece_id)
+        return MessageResponse(message="Pièce supprimée")
+    except AppError as exc:
+        raise_http_from_app(exc)
+
+
+@router.get("/archives/pieces-comptables", response_model=PaginatedResponse[PieceJointeRead])
+async def archive_pieces_comptables(
+    date_journee: date | None = Query(None),
+    type_piece: str | None = Query(None),
+    immobilisation_id: UUID | None = Query(None),
+    search: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        rows, total = await PiecesComptablesService(db).archive(
+            date_journee=date_journee,
+            type_piece=type_piece,
+            immobilisation_id=immobilisation_id,
+            search=search,
+            page=page,
+            size=size,
+        )
+        return to_paginated(rows, total, page, size, _piece_to_read)
+    except AppError as exc:
+        raise_http_from_app(exc)
+
+
+@router.get("/archives/pieces-comptables/types")
+async def list_types_pieces(
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+):
+    return [{"value": t.value, "label": TYPE_LABELS[t]} for t in TYPE_LABELS]
 
 
 @router.post("/immobilisations/import", response_model=ImmobilisationImportResponse)
@@ -328,6 +462,81 @@ async def import_immobilisations(
     except AppError as exc:
         raise_http_from_app(exc)
     return ImmobilisationImportResponse(created=created, errors=errors)
+
+
+@router.post("/immobilisations/import-banque", response_model=BankImmoImportResponse)
+async def import_immobilisations_banque(
+    file: UploadFile = File(...),
+    user: User = Depends(require_roles("administrateur", "comptable")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Import du tableau d'amortissement banque (classeur multi-feuilles IMMO)."""
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xls")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Fichier Excel banque (.xls / .xlsx) requis",
+        )
+    content = await file.read()
+    try:
+        result = await BankImmoImportService(db).import_from_bytes(content, file.filename)
+    except AppError as exc:
+        raise_http_from_app(exc)
+    await record_audit(
+        db,
+        user=user,
+        action="import_banque_immobilisations",
+        entity="immobilisation",
+        entity_id=None,
+        after={
+            "filename": file.filename,
+            "created": result.created,
+            "amortissements_created": result.amortissements_created,
+            "errors": len(result.errors),
+        },
+    )
+    return BankImmoImportResponse(
+        created=result.created,
+        amortissements_created=result.amortissements_created,
+        errors=result.errors,
+        totaux_par_compte=result.totaux_par_compte,
+        reports_created=result.reports_created,
+        negatives=result.negatives,
+    )
+
+
+@router.get("/immobilisations/import-banque/count")
+async def count_import_banque(
+    user: User = Depends(require_roles("administrateur", "comptable")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Nombre de biens encore présents issus de l'import tableau banque."""
+    n = await BankImmoImportService(db).count_import_banque()
+    return {"count": n}
+
+
+@router.post("/immobilisations/import-banque/purge", response_model=BankImmoPurgeResponse)
+async def purge_import_banque(
+    user: User = Depends(require_roles("administrateur", "comptable")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Annule l'import banque : supprime tous les biens marqués import_banque."""
+    try:
+        deleted = await BankImmoImportService(db).purge_import_banque()
+    except AppError as exc:
+        raise_http_from_app(exc)
+    await record_audit(
+        db,
+        user=user,
+        action="purge_import_banque_immobilisations",
+        entity="immobilisation",
+        entity_id=None,
+        after={"deleted": deleted},
+    )
+    if deleted == 0:
+        msg = "Aucun bien issu de l'import banque à supprimer."
+    else:
+        msg = f"{deleted} immobilisation(s) de l'import banque supprimée(s)."
+    return BankImmoPurgeResponse(deleted=deleted, message=msg)
 
 
 @router.post("/inventaire/scans", response_model=InventaireScanRead, status_code=status.HTTP_201_CREATED)

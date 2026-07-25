@@ -1,4 +1,5 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+﻿import { DatePipe } from '@angular/common';
+import { MontantPipe } from '../shared/montant.pipe';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -28,7 +29,7 @@ interface Paginated<T> {
 
 @Component({
   selector: 'app-ecritures',
-  imports: [ReactiveFormsModule, RouterLink, DatePipe, DecimalPipe, MatButtonModule, MatIconModule, MatTableModule],
+  imports: [ReactiveFormsModule, RouterLink, DatePipe, MontantPipe, MatButtonModule, MatIconModule, MatTableModule],
   templateUrl: './ecritures.component.html',
   styleUrl: './ecritures.component.css',
 })
