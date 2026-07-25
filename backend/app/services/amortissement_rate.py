@@ -1,9 +1,10 @@
-"""Taux linéaire dérivé de la durée d'utilisation (source métier banque)."""
+"""Taux linéaire — priorise le référentiel banque (Types), sinon 100/durée."""
 
 from decimal import Decimal
 
+from app.services.nature_immo_referentiel import bank_taux_for_duree
+
 
 def taux_lineaire_from_duree_annees(annees: int | None) -> Decimal | None:
-    if annees is None or annees <= 0:
-        return None
-    return (Decimal("100") / Decimal(annees)).quantize(Decimal("0.0001"))
+    """Taux annuel (%). Pour 3 ans → 33.33 (banque), pas 33.3333."""
+    return bank_taux_for_duree(annees)

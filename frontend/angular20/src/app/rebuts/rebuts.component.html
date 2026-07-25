@@ -5,6 +5,10 @@
       <p class="reb__lead">{{ total() }} mise(s) au rebut</p>
     </div>
     <div class="reb__hero-actions">
+      <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Actualiser
+      </button>
       <a mat-stroked-button routerLink="/immobilisations">
         <mat-icon aria-hidden="true">inventory_2</mat-icon>
         Immobilisations
@@ -19,13 +23,13 @@
     </div>
     <div class="reb__kpi reb__kpi--perte">
       <span class="reb__kpi-label">VNC sortie (perte)</span>
-      <span class="reb__kpi-value">{{ kpi().vnc | montant }}</span>
+      <span class="reb__kpi-value">{{ kpi().vnc | montant: 'MRU' }}</span>
     </div>
   </div>
 
   <section class="reb__section">
     <div class="reb__toolbar">
-      <form [formGroup]="filterForm" (ngSubmit)="load()" class="reb__filters">
+      <form [formGroup]="filterForm" (ngSubmit)="applyFilters()" class="reb__filters">
         <div class="reb-field reb-field--grow">
           <label class="reb-field__label" for="reb-search">Recherche</label>
           <input
@@ -33,7 +37,7 @@
             class="reb-field__control"
             formControlName="search"
             autocomplete="off"
-            placeholder="Code, désignation ou motif"
+            placeholder="Code, désignation, motif, VNC…"
             aria-label="Recherche"
           />
         </div>
@@ -72,7 +76,7 @@
       } @else if (rows().length === 0) {
         <p class="reb__empty">Aucun rebut trouvé.</p>
       } @else {
-        <div class="reb__table-wrap">
+        <div class="reb__table-wrap app-table-scroll">
           <table mat-table [dataSource]="rows()" class="w-full app-table">
             <ng-container matColumnDef="date">
               <th mat-header-cell *matHeaderCellDef>Date</th>
@@ -108,10 +112,17 @@
                 </a>
               </td>
             </ng-container>
-            <tr mat-header-row *matHeaderRowDef="columns"></tr>
+            <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
             <tr mat-row *matRowDef="let row; columns: columns"></tr>
           </table>
         </div>
+        <app-pagination
+          [page]="page()"
+          [total]="total()"
+          [pageSize]="pageSize"
+          label="rebut(s)"
+          (pageChange)="goToPage($event)"
+        />
       }
     </div>
   </section>

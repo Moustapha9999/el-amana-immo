@@ -6,6 +6,12 @@
         Archive par journée comptable — factures, PV et autres pièces relatives aux immobilisations
       </p>
     </div>
+    <div class="pcs__hero-actions">
+      <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Actualiser
+      </button>
+    </div>
   </header>
 
   <section class="pcs__section">

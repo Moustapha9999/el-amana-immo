@@ -97,11 +97,11 @@
           </div>
           <div>
             <dt>Ancienne VBC</dt>
-            <dd class="rfd__montant">{{ d.ancienne_valeur | montant }}</dd>
+            <dd class="rfd__montant">{{ d.ancienne_valeur | montant: 'MRU' }}</dd>
           </div>
           <div>
             <dt>Nouvelle VBC</dt>
-            <dd class="rfd__montant">{{ d.nouvelle_valeur | montant }}</dd>
+            <dd class="rfd__montant">{{ d.nouvelle_valeur | montant: 'MRU' }}</dd>
           </div>
           <div class="rfd__span-2">
             <dt>Justificatif</dt>
@@ -120,7 +120,7 @@
             [class.rfd__result-card--down]="d.sens === 'baisse'"
           >
             <span class="rfd__result-label">Écart</span>
-            <span class="rfd__result-value">{{ d.ecart | montant }}</span>
+            <span class="rfd__result-value">{{ d.ecart | montant: 'MRU' }}</span>
           </div>
           <div class="rfd__result-card">
             <span class="rfd__result-label">Sens</span>

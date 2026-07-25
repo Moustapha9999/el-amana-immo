@@ -18,9 +18,11 @@ import { RebutsComponent } from './rebuts/rebuts.component';
 import { RebutDetailComponent } from './rebuts/rebut-detail.component';
 import { UtilisateursComponent } from './utilisateurs/utilisateurs.component';
 import { AmortissementsComponent } from './amortissements/amortissements.component';
+import { CalculAmortissementsComponent } from './amortissements/calcul-amortissements.component';
 import { AmortissementDetailComponent } from './amortissements/amortissement-detail.component';
 import { RecapAmortissementComponent } from './recap-amortissement/recap-amortissement.component';
 import { ComptesComponent } from './comptes/comptes.component';
+import { Soldes14868Component } from './comptes/soldes-148-68.component';
 import { PiecesComptablesComponent } from './pieces-comptables/pieces-comptables.component';
 import { ReevaluationsComponent } from './reevaluations/reevaluations.component';
 import { ReevaluationDetailComponent } from './reevaluations/reevaluation-detail.component';
@@ -44,8 +46,10 @@ export const routes: Routes = [
       { path: 'immobilisations/:id', component: ImmobilisationFormComponent },
       { path: 'inventaire', component: InventaireComponent },
       { path: 'amortissements', component: AmortissementsComponent },
+      { path: 'amortissements/calculer', component: CalculAmortissementsComponent },
       { path: 'amortissements/:id', component: AmortissementDetailComponent },
       { path: 'recap-amortissement', component: RecapAmortissementComponent },
+      { path: 'comptes/soldes-148-68', component: Soldes14868Component },
       { path: 'comptes', component: ComptesComponent },
       { path: 'pieces-comptables', component: PiecesComptablesComponent },
       { path: 'ecritures', component: EcrituresComponent },

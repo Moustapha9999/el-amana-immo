@@ -7,6 +7,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
 import { formatMontant } from '../shared/montant.pipe';
+import { PaginationComponent } from '../shared/pagination.component';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 
 interface ReevalRow {
@@ -35,6 +36,7 @@ interface Paginated<T> {
     MatButtonModule,
     MatIconModule,
     MatTableModule,
+    PaginationComponent,
   ],
   templateUrl: './reevaluations.component.html',
   styleUrl: './reevaluations.component.css',
@@ -48,6 +50,8 @@ export class ReevaluationsComponent implements OnInit {
 
   readonly rows = signal<ReevalRow[]>([]);
   readonly total = signal(0);
+  readonly page = signal(1);
+  readonly pageSize = 50;
   readonly loading = signal(false);
   readonly columns = ['date', 'code', 'designation', 'ancienne', 'nouvelle', 'ecart', 'justificatif', 'actions'];
 
@@ -77,7 +81,7 @@ export class ReevaluationsComponent implements OnInit {
 
   load(): void {
     const f = this.filterForm.getRawValue();
-    const params: Record<string, string | number> = { page: 1, size: 100 };
+    const params: Record<string, string | number> = { page: this.page(), size: this.pageSize };
     if (f.date_debut) {
       params['date_debut'] = f.date_debut;
     }
@@ -101,8 +105,19 @@ export class ReevaluationsComponent implements OnInit {
     });
   }
 
+  applyFilters(): void {
+    this.page.set(1);
+    this.load();
+  }
+
+  goToPage(page: number): void {
+    this.page.set(page);
+    this.load();
+  }
+
   resetFilters(): void {
     this.filterForm.reset({ date_debut: '', date_fin: '', search: '' });
+    this.page.set(1);
     this.load();
   }
 

@@ -2,6 +2,7 @@ import { DatePipe } from '@angular/common';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
 
@@ -23,7 +24,7 @@ import { PageHeaderComponent } from '../shared/page-header.component';
 
 @Component({
   selector: 'app-notifications',
-  imports: [DatePipe, RouterLink, MatButtonModule, MatTableModule, PageHeaderComponent],
+  imports: [DatePipe, RouterLink, MatButtonModule, MatIconModule, MatTableModule, PageHeaderComponent],
   templateUrl: './notifications.component.html',
 })
 export class NotificationsComponent implements OnInit {
@@ -31,6 +32,7 @@ export class NotificationsComponent implements OnInit {
 
   readonly rows = signal<NotificationRow[]>([]);
   readonly unread = signal(0);
+  readonly loading = signal(false);
   readonly columns = ['created_at', 'type', 'titre', 'message', 'actions'];
 
   ngOnInit(): void {
@@ -38,9 +40,14 @@ export class NotificationsComponent implements OnInit {
   }
 
   load(): void {
-    this.api.get<Paginated<NotificationRow>>('/notifications', { page: 1, size: 100 }).subscribe((res) => {
-      this.rows.set(res.items);
-      this.unread.set(res.items.filter((n) => !n.lu).length);
+    this.loading.set(true);
+    this.api.get<Paginated<NotificationRow>>('/notifications', { page: 1, size: 100 }).subscribe({
+      next: (res) => {
+        this.rows.set(res.items);
+        this.unread.set(res.items.filter((n) => !n.lu).length);
+        this.loading.set(false);
+      },
+      error: () => this.loading.set(false),
     });
   }
 

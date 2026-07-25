@@ -1,10 +1,18 @@
 <div class="inv">
   <header class="inv__hero">
-    <h1 class="inv__title">Inventaire physique</h1>
-    <p class="inv__lead">
-      Contrôle du parc par scan QR ou code-barres — format
-      <code>IMMO:&lt;code inventaire&gt;</code> ou code inventaire seul.
-    </p>
+    <div>
+      <h1 class="inv__title">Inventaire physique</h1>
+      <p class="inv__lead">
+        Contrôle du parc par scan QR ou code-barres — format
+        <code>IMMO:&lt;code inventaire&gt;</code> ou code inventaire seul.
+      </p>
+    </div>
+    <div class="inv__hero-actions">
+      <button mat-stroked-button type="button" (click)="loadScans()" [disabled]="loading()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Actualiser
+      </button>
+    </div>
   </header>
 
   <div class="inv__layout">

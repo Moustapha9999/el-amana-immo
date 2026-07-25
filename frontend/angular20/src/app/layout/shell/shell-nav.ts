@@ -19,6 +19,12 @@ export const SHELL_NAV: ShellNavItem[] = [
   },
   { section: 'Patrimoine', label: 'Comptes', path: '/comptes', icon: 'account_balance_wallet' },
   {
+    section: 'Patrimoine',
+    label: 'Soldes 148 / 68',
+    path: '/comptes/soldes-148-68',
+    icon: 'account_balance',
+  },
+  {
     section: 'Comptabilité',
     label: 'Pièces comptables',
     path: '/pieces-comptables',

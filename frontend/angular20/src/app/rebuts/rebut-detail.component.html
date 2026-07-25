@@ -71,7 +71,7 @@
           <div>
             <dt>Valeur brute (VB)</dt>
             <dd class="bfd__montant">
-              {{ d.valeur_brute != null ? (d.valeur_brute | montant) : '—' }}
+              {{ d.valeur_brute != null ? (d.valeur_brute | montant: 'MRU') : '—' }}
             </dd>
           </div>
           <div>
@@ -107,7 +107,7 @@
         <div class="bfd__result-grid">
           <div class="bfd__result-card bfd__result-card--perte">
             <span class="bfd__result-label">VNC sortie (perte)</span>
-            <span class="bfd__result-value">{{ d.vnc | montant }}</span>
+            <span class="bfd__result-value">{{ d.vnc | montant: 'MRU' }}</span>
           </div>
         </div>
       </section>

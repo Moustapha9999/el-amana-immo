@@ -20,12 +20,15 @@ from app.schemas.reporting import (
     RecapAmortissementDetailRead,
     RecapAmortissementLigneRead,
     RecapAmortissementRead,
+    SoldeNatureLigneRead,
+    Soldes14868Read,
 )
 from app.services.audit_query import list_audit_for_export
 from app.services.audit_service import AuditService
 from app.services.comptes_par_nature import build_comptes_par_nature
 from app.services.immobilisation_service import DashboardService
 from app.services.recap_amortissement import build_recap_amortissement
+from app.services.soldes_148_68 import build_soldes_148_68
 from app.services.reporting_export import (
     audit_logs_to_excel,
     comptes_par_nature_to_excel,
@@ -428,4 +431,42 @@ async def export_comptes_par_nature(
         content=content,
         media_type=media,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/reporting/soldes-148-68", response_model=Soldes14868Read)
+async def get_soldes_148_68(
+    annee: int = Query(..., ge=2000, le=2100),
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Soldes des comptes 148 (amort.) et 68 (dotations) par nature d'immobilisation."""
+    result = await build_soldes_148_68(db, annee)
+    return Soldes14868Read(
+        annee=result.annee,
+        date_arrete=result.date_arrete.isoformat(),
+        lignes=[
+            SoldeNatureLigneRead(
+                nature_code=ligne.nature_code,
+                nature=ligne.nature,
+                compte_immobilisation=ligne.compte_immobilisation,
+                compte_amortissement=ligne.compte_amortissement,
+                libelle_amortissement=ligne.libelle_amortissement,
+                solde_148=float(ligne.solde_148),
+                solde_148_n1=float(ligne.solde_148_n1),
+                compte_dotation=ligne.compte_dotation,
+                libelle_dotation=ligne.libelle_dotation,
+                solde_68=float(ligne.solde_68),
+                valeur_brute=float(ligne.valeur_brute),
+                vnc=float(ligne.vnc),
+                nb_biens=ligne.nb_biens,
+            )
+            for ligne in result.lignes
+        ],
+        total_148=float(result.total_148),
+        total_148_n1=float(result.total_148_n1),
+        total_68=float(result.total_68),
+        total_valeur_brute=float(result.total_valeur_brute),
+        total_vnc=float(result.total_vnc),
+        nb_biens=result.nb_biens,
     )

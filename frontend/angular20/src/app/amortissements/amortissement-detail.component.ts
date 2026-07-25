@@ -7,7 +7,10 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
 import { statutLabel } from '../immobilisations/immobilisation.constants';
-import { formatPeriodeAmortissement } from '../shared/amortissement-rate.util';
+import {
+  formatPeriodeAmortissement,
+  formatTauxPercent,
+} from '../shared/amortissement-rate.util';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 
 interface ImmoDetail {
@@ -57,6 +60,7 @@ export class AmortissementDetailComponent implements OnInit {
   readonly loading = signal(true);
   readonly exporting = signal<'xlsx' | 'pdf' | null>(null);
   readonly formatPeriode = formatPeriodeAmortissement;
+  readonly formatTaux = formatTauxPercent;
   readonly statutLabel = statutLabel;
   readonly columns = ['periode', 'montant', 'cumul', 'vnc', 'statut'];
 

@@ -36,6 +36,7 @@ class CategorieUpdate(BaseModel):
     comptes_amortissement_alternatifs: str | None = None
     amortissable: bool | None = None
     duree_annees_defaut: int | None = Field(default=None, ge=0, le=100)
+    taux_lineaire_defaut: Decimal | None = Field(default=None, ge=0, le=100)
     mode_amortissement_defaut: ModeAmortissement | None = None
     periodicite_defaut: str | None = None
     prorata_temporis: bool | None = None
@@ -50,6 +51,9 @@ class CategorieRead(CategorieCreate, ORMModel):
     @computed_field
     @property
     def taux_lineaire_calcule(self) -> Decimal | None:
+        # Affiche le taux banque stocké ; fallback 100/durée uniquement si absent
+        if self.taux_lineaire_defaut is not None:
+            return self.taux_lineaire_defaut
         return taux_lineaire_from_duree_annees(self.duree_annees_defaut)
 
 
@@ -114,12 +118,29 @@ class ImmobilisationCreate(ImmobilisationBase):
     """Saisie d'acquisition — date de comptabilisation obligatoire (note banque)."""
 
     date_comptabilisation: date
+    # Si omis : généré automatiquement (ex. AAI-2026-001) selon la nature + année d'acquisition
+    code_inventaire: str | None = Field(default=None, max_length=50)
+
+    @field_validator("code_inventaire")
+    @classmethod
+    def empty_code_as_none(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip()
+        return cleaned or None
+
+
+class NextCodeInventaireResponse(BaseModel):
+    code_inventaire: str
+    prefix: str
+    annee: int
 
 
 class ImmobilisationUpdate(BaseModel):
     designation: str | None = Field(default=None, max_length=255)
     description: str | None = None
     observations: str | None = None
+    code_inventaire: str | None = Field(default=None, max_length=50)
     numero_serie: str | None = None
     numero_facture: str | None = None
     quantite: int | None = Field(default=None, ge=1)

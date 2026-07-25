@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -14,7 +14,7 @@ from app.services.amortissement_engine import (
     _annual_rate_fraction,
     build_amortissement_schedule,
     calcul_amortissement,
-    days_360,
+    jours_commerciaux_periode,
     parse_period_end,
     quarter_start,
     vnc_a_date,
@@ -48,8 +48,6 @@ async def preparer_amortissements_cession(
     taux = _annual_rate_fraction(immo)
     vb = immo.valeur_brute.quantize(Decimal("0.01"))
     start = immo.date_acquisition
-    fin_excl_cession = date_cession + timedelta(days=1)
-
     running = Decimal("0.00")
     for periode, montant_plein in schedule_full:
         q_end = parse_period_end(periode)
@@ -69,8 +67,8 @@ async def preparer_amortissements_cession(
         if date_cession >= q_end:
             montant = montant_plein
         else:
-            # Prorata jusqu'à la date de cession
-            jours = days_360(debut, fin_excl_cession)
+            # Prorata Excel DAYS360(debut, date_cession)
+            jours = jours_commerciaux_periode(debut, q_start, date_cession)
             duree = Decimal(jours) / JOURS_AN_COMMERCIAL if jours > 0 else Decimal("0")
             montant = calcul_amortissement(vb, taux, duree)
             if montant > montant_plein:

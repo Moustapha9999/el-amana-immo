@@ -1,10 +1,11 @@
 ﻿import { MontantPipe } from '../shared/montant.pipe';
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
+import { PaginationComponent } from '../shared/pagination.component';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 
 interface RecapLigne {
@@ -40,9 +41,18 @@ interface RecapResponse {
   totaux: RecapLigne;
 }
 
+function matchesText(haystack: unknown, needle: string): boolean {
+  if (needle === '') {
+    return true;
+  }
+  return String(haystack ?? '')
+    .toLowerCase()
+    .includes(needle);
+}
+
 @Component({
   selector: 'app-recap-amortissement',
-  imports: [ReactiveFormsModule, MontantPipe, MatButtonModule, MatIconModule, MatTableModule],
+  imports: [ReactiveFormsModule, MontantPipe, MatButtonModule, MatIconModule, MatTableModule, PaginationComponent],
   templateUrl: './recap-amortissement.component.html',
   styleUrl: './recap-amortissement.component.css',
 })
@@ -53,7 +63,13 @@ export class RecapAmortissementComponent implements OnInit {
 
   readonly data = signal<RecapResponse | null>(null);
   readonly loading = signal(false);
+  readonly detailPage = signal(1);
+  readonly detailPageSize = 50;
   readonly exporting = signal<'xlsx' | 'pdf' | 'detail-xlsx' | 'detail-pdf' | null>(null);
+
+  /** Filtres locaux appliqués sur les données déjà chargées. */
+  readonly localSearch = signal('');
+  readonly localCompte = signal('');
 
   readonly columns = [
     'compte',
@@ -71,6 +87,70 @@ export class RecapAmortissementComponent implements OnInit {
 
   readonly filterForm = this.fb.nonNullable.group({
     annee: [new Date().getFullYear()],
+    search: [''],
+    compte: [''],
+  });
+
+  readonly compteOptions = computed(() => {
+    const lignes = this.data()?.lignes ?? [];
+    return lignes.map((l) => ({
+      value: l.compte_immobilisation,
+      label: `${l.compte_immobilisation} — ${l.intitule}`,
+    }));
+  });
+
+  readonly filteredLignes = computed(() => {
+    const lignes = this.data()?.lignes ?? [];
+    const q = this.localSearch().trim().toLowerCase();
+    const compte = this.localCompte().trim();
+    return lignes.filter((row) => {
+      if (compte && row.compte_immobilisation !== compte) {
+        return false;
+      }
+      if (!q) {
+        return true;
+      }
+      return (
+        matchesText(row.compte_immobilisation, q) ||
+        matchesText(row.intitule, q) ||
+        matchesText(row.compte_amortissement, q) ||
+        matchesText(row.valeur_brute, q) ||
+        matchesText(row.amorts_cumules_n1, q) ||
+        matchesText(row.cessions_annee, q) ||
+        matchesText(row.dotations_annee, q) ||
+        matchesText(row.amorts_cumules_n, q) ||
+        matchesText(row.vnc, q)
+      );
+    });
+  });
+
+  readonly filteredDetails = computed(() => {
+    const details = this.data()?.details ?? [];
+    const q = this.localSearch().trim().toLowerCase();
+    const compte = this.localCompte().trim();
+    return details.filter((row) => {
+      if (compte && row.compte_immobilisation !== compte) {
+        return false;
+      }
+      if (!q) {
+        return true;
+      }
+      return (
+        matchesText(row.code_inventaire, q) ||
+        matchesText(row.designation, q) ||
+        matchesText(row.compte_immobilisation, q) ||
+        matchesText(row.valeur_brute, q) ||
+        matchesText(row.dotations_annee, q) ||
+        matchesText(row.amorts_cumules_n, q) ||
+        matchesText(row.vnc, q)
+      );
+    });
+  });
+
+  readonly pagedDetails = computed<RecapDetail[]>(() => {
+    const details = this.filteredDetails();
+    const start = (this.detailPage() - 1) * this.detailPageSize;
+    return details.slice(start, start + this.detailPageSize);
   });
 
   ngOnInit(): void {
@@ -87,6 +167,8 @@ export class RecapAmortissementComponent implements OnInit {
     this.api.get<RecapResponse>('/reporting/recap-amortissement', { annee }).subscribe({
       next: (res) => {
         this.data.set(res);
+        this.detailPage.set(1);
+        this.applyLocalFilters();
         this.loading.set(false);
       },
       error: (err) => {
@@ -96,6 +178,19 @@ export class RecapAmortissementComponent implements OnInit {
           .subscribe();
       },
     });
+  }
+
+  applyLocalFilters(): void {
+    const f = this.filterForm.getRawValue();
+    this.localSearch.set(f.search);
+    this.localCompte.set(f.compte);
+    this.detailPage.set(1);
+  }
+
+  resetFilters(): void {
+    const annee = this.filterForm.controls.annee.value;
+    this.filterForm.reset({ annee, search: '', compte: '' });
+    this.applyLocalFilters();
   }
 
   export(format: 'xlsx' | 'pdf', vue: 'synthese' | 'detail' = 'synthese'): void {

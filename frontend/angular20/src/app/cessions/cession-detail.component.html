@@ -100,11 +100,11 @@
           </div>
           <div>
             <dt>Prix de cession (PC)</dt>
-            <dd class="cfd__montant">{{ d.prix_cession | montant }}</dd>
+            <dd class="cfd__montant">{{ d.prix_cession | montant: 'MRU' }}</dd>
           </div>
           <div>
             <dt>VNC à la date</dt>
-            <dd class="cfd__montant">{{ d.vnc | montant }}</dd>
+            <dd class="cfd__montant">{{ d.vnc | montant: 'MRU' }}</dd>
           </div>
           <div class="cfd__span-2">
             <dt>Observations</dt>
@@ -119,15 +119,15 @@
         <div class="cfd__result-grid">
           <div class="cfd__result-card">
             <span class="cfd__result-label">Résultat</span>
-            <span class="cfd__result-value">{{ d.resultat | montant }}</span>
+            <span class="cfd__result-value">{{ d.resultat | montant: 'MRU' }}</span>
           </div>
           <div class="cfd__result-card cfd__result-card--plus">
             <span class="cfd__result-label">Plus-value</span>
-            <span class="cfd__result-value">{{ d.plus_value | montant }}</span>
+            <span class="cfd__result-value">{{ d.plus_value | montant: 'MRU' }}</span>
           </div>
           <div class="cfd__result-card cfd__result-card--moins">
             <span class="cfd__result-label">Moins-value</span>
-            <span class="cfd__result-value">{{ d.moins_value | montant }}</span>
+            <span class="cfd__result-value">{{ d.moins_value | montant: 'MRU' }}</span>
           </div>
         </div>
       </section>

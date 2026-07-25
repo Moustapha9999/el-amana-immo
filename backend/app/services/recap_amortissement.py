@@ -1,6 +1,6 @@
 """Récapitulatif tableau d'amortissement — arrêté au 31/12/N.
 
-Agrégation par compte d'immobilisation (142000 → 147030).
+Agrégation par compte d'immobilisation (142000 → 147530).
 
 Colonnes (formule banque) :
   • Compte immo / Intitulé
@@ -34,7 +34,8 @@ from app.services.amortissement_engine import (
 )
 
 COMPTE_IMMO_MIN = 142000
-COMPTE_IMMO_MAX = 147030
+# Inclut frais immobilisés (147050) et logiciels (147530)
+COMPTE_IMMO_MAX = 147530
 
 
 def _compte_num(compte: str | None) -> int | None:

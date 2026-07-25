@@ -5,6 +5,10 @@
       <p class="ces__lead">{{ total() }} cession(s)</p>
     </div>
     <div class="ces__hero-actions">
+      <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Actualiser
+      </button>
       <a mat-stroked-button routerLink="/immobilisations">
         <mat-icon aria-hidden="true">inventory_2</mat-icon>
         Immobilisations
@@ -15,21 +19,21 @@
   <div class="ces__kpis">
     <div class="ces__kpi">
       <span class="ces__kpi-label">Prix cédés</span>
-      <span class="ces__kpi-value">{{ montant(kpi().prix) }}</span>
+      <span class="ces__kpi-value">{{ montant(kpi().prix, 'MRU') }}</span>
     </div>
     <div class="ces__kpi ces__kpi--plus">
       <span class="ces__kpi-label">Plus-values</span>
-      <span class="ces__kpi-value">{{ montant(kpi().plus) }}</span>
+      <span class="ces__kpi-value">{{ montant(kpi().plus, 'MRU') }}</span>
     </div>
     <div class="ces__kpi ces__kpi--moins">
       <span class="ces__kpi-label">Moins-values</span>
-      <span class="ces__kpi-value">{{ montant(kpi().moins) }}</span>
+      <span class="ces__kpi-value">{{ montant(kpi().moins, 'MRU') }}</span>
     </div>
   </div>
 
   <section class="ces__section">
     <div class="ces__toolbar">
-      <form [formGroup]="filterForm" (ngSubmit)="load()" class="ces__filters">
+      <form [formGroup]="filterForm" (ngSubmit)="applyFilters()" class="ces__filters">
         <div class="ces-field ces-field--grow">
           <label class="ces-field__label" for="ces-search">Recherche</label>
           <input
@@ -37,7 +41,7 @@
             class="ces-field__control"
             formControlName="search"
             autocomplete="off"
-            placeholder="Code ou désignation"
+            placeholder="Code, désignation, référence, libellé, montant…"
             aria-label="Recherche"
           />
         </div>
@@ -76,7 +80,7 @@
       } @else if (rows().length === 0) {
         <p class="ces__empty">Aucune cession trouvée.</p>
       } @else {
-        <div class="ces__table-wrap">
+        <div class="ces__table-wrap app-table-scroll">
           <table mat-table [dataSource]="rows()" class="w-full app-table">
             <ng-container matColumnDef="date">
               <th mat-header-cell *matHeaderCellDef>Date</th>
@@ -129,10 +133,17 @@
                 </a>
               </td>
             </ng-container>
-            <tr mat-header-row *matHeaderRowDef="columns"></tr>
+            <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
             <tr mat-row *matRowDef="let row; columns: columns"></tr>
           </table>
         </div>
+        <app-pagination
+          [page]="page()"
+          [total]="total()"
+          [pageSize]="pageSize"
+          label="cession(s)"
+          (pageChange)="goToPage($event)"
+        />
       }
     </div>
   </section>

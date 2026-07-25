@@ -73,21 +73,68 @@ class ImmobilisationService:
 
 
 
-    async def list(self, page: int, size: int, search: str | None = None) -> tuple[list[Immobilisation], int]:
+    async def list(
+        self,
+        page: int,
+        size: int,
+        search: str | None = None,
+        *,
+        amortissable: bool | None = None,
+        statuts: list[StatutImmobilisation] | None = None,
+        famille: str | None = None,
+    ) -> tuple[list[Immobilisation], int]:
 
-        items, total = await self.repo.list(page, size, search, search_columns=("designation", "code_inventaire"))
+        from sqlalchemy import String, cast, or_
 
-        if not items:
+        from app.core.pagination import page_offset
 
-            return items, total
+        filters = [Immobilisation.deleted_at.is_(None)]
+        need_cat_join = amortissable is not None or bool(famille and famille.strip())
+        if search and search.strip():
+            pattern = f"%{search.strip()}%"
+            need_cat_join = True
+            filters.append(
+                or_(
+                    Immobilisation.designation.ilike(pattern),
+                    Immobilisation.code_inventaire.ilike(pattern),
+                    Immobilisation.numero_serie.ilike(pattern),
+                    Immobilisation.compte_immobilisation.ilike(pattern),
+                    cast(Immobilisation.statut, String).ilike(pattern),
+                    cast(Immobilisation.valeur_brute, String).ilike(pattern),
+                    CategorieImmobilisation.famille.ilike(pattern),
+                    CategorieImmobilisation.code.ilike(pattern),
+                )
+            )
+        if statuts:
+            filters.append(Immobilisation.statut.in_(statuts))
+        if famille and famille.strip():
+            filters.append(CategorieImmobilisation.famille.ilike(famille.strip()))
 
-        ids = [i.id for i in items]
+        stmt = self._base_query()
+        count_stmt = select(func.count()).select_from(Immobilisation)
+        if need_cat_join:
+            join_on = Immobilisation.categorie_id == CategorieImmobilisation.id
+            # outerjoin pour ne pas exclure les biens sans catégorie lors d'une recherche texte
+            if amortissable is not None or (famille and famille.strip()):
+                stmt = stmt.join(CategorieImmobilisation, join_on)
+                count_stmt = count_stmt.join(CategorieImmobilisation, join_on)
+            else:
+                stmt = stmt.outerjoin(CategorieImmobilisation, join_on)
+                count_stmt = count_stmt.outerjoin(CategorieImmobilisation, join_on)
+        if amortissable is not None:
+            amort_filter = CategorieImmobilisation.amortissable.is_(amortissable)
+            stmt = stmt.where(amort_filter)
+            count_stmt = count_stmt.where(amort_filter)
+        stmt = stmt.where(*filters)
+        count_stmt = count_stmt.where(*filters)
 
-        result = await self.db.execute(self._base_query().where(Immobilisation.id.in_(ids)))
-
-        loaded = {i.id: i for i in result.scalars().all()}
-
-        return [loaded.get(i.id, i) for i in items], total
+        total = int((await self.db.execute(count_stmt)).scalar_one())
+        result = await self.db.execute(
+            stmt.order_by(Immobilisation.code_inventaire.asc())
+            .offset(page_offset(page, size))
+            .limit(size)
+        )
+        return list(result.scalars().all()), total
 
 
 
@@ -117,9 +164,17 @@ class ImmobilisationService:
 
         data = prepare_create(payload, categorie)
 
-        code = str(data.get("code_inventaire") or payload.code_inventaire or "").strip()
+        raw_code = data.get("code_inventaire") or payload.code_inventaire
+        code = str(raw_code).strip() if raw_code else ""
         if not code:
-            raise ValidationError("Le numéro / code inventaire est obligatoire.")
+            from app.services.code_inventaire import next_code_inventaire
+
+            code = await next_code_inventaire(
+                self.db, categorie.code, payload.date_acquisition.year
+            )
+            data["code_inventaire"] = code
+        else:
+            data["code_inventaire"] = code
         existing = await self.db.execute(
             select(Immobilisation.id).where(Immobilisation.code_inventaire == code).limit(1)
         )
@@ -159,23 +214,26 @@ class ImmobilisationService:
 
             item.categorie_id = payload.categorie_id
 
-        if payload.code_inventaire is not None:
-            new_code = payload.code_inventaire.strip()
-            if new_code and new_code != item.code_inventaire:
-                existing = await self.db.execute(
-                    select(Immobilisation.id)
-                    .where(
-                        Immobilisation.code_inventaire == new_code,
-                        Immobilisation.id != item.id,
-                    )
-                    .limit(1)
+        new_code = (payload.code_inventaire or "").strip() if payload.code_inventaire is not None else ""
+        if new_code and new_code != item.code_inventaire:
+            existing = await self.db.execute(
+                select(Immobilisation.id)
+                .where(
+                    Immobilisation.code_inventaire == new_code,
+                    Immobilisation.id != item.id,
                 )
-                if existing.scalar_one_or_none() is not None:
-                    raise ValidationError(
-                        f"Le code inventaire « {new_code} » existe déjà. Choisissez un autre numéro."
-                    )
+                .limit(1)
+            )
+            if existing.scalar_one_or_none() is not None:
+                raise ValidationError(
+                    f"Le code inventaire « {new_code} » existe déjà. Choisissez un autre numéro."
+                )
 
         apply_update_fields(item, payload)
+        if new_code:
+            item.code_inventaire = new_code
+            item.qr_code_data = f"IMMO:{new_code}"
+            item.barcode_data = new_code
 
         if categorie is not None:
 

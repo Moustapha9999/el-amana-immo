@@ -33,7 +33,7 @@ SHEET_CATEGORY_MAP: dict[str, str] = {
 }
 
 SKIP_DESIGNATION_RE = re.compile(
-    r"^(solde\b|s/t\b|désignation|designation|date\b|report\s+de\s+solde|"
+    r"^(solde\b|s/t\b|total\b|sous[- ]?total\b|désignation|designation|date\b|report\s+de\s+solde|"
     r"report\s+exercice|report\s+de\s+l[' ]|report\s+\d{1,2}[/.\-])",
     re.IGNORECASE,
 )
@@ -49,6 +49,16 @@ AGENCE_ALIASES: dict[str, str] = {
 
 PERIODE_OUVERTURE = "2025-12"
 PERIODE_ARRETE = "2026-06"
+# Feuilles sans colonnes Dotation / Fin exercice (ex. Logiciel 147530) :
+# acquisitions < 2026 → 12 mois pleins, arrêté au 31/12/2026 ;
+# acquisitions 2026 → prorata jusqu'au trimestre comptabilisé (30/06/2026).
+PERIODE_ARRETE_ANNUELLE = "2026-12"
+EXERCICE_CALCUL = 2026
+# Arrêté prorata Excel DAYS360(..., 30/06/2026)
+DATE_ARRETE_PRORATA = date(2026, 6, 30)
+# Alias historique (évite de casser les imports de scripts)
+DATE_ARRETE_PRORATA_EXCL = DATE_ARRETE_PRORATA
+
 
 
 @dataclass
@@ -68,6 +78,8 @@ class ParsedBankRow:
     agence_label: str | None
     is_report: bool = False
     is_negative: bool = False
+    # Feuille sans colonnes Dotation / Fin exercice : dotation à recalculer
+    calc_dotation: bool = False
 
 
 @dataclass
@@ -304,7 +316,14 @@ def _detect_columns(header_cells: list[Any]) -> dict[str, int] | None:
     )
     col_taux = find(lambda n: "taux" in n)
     col_n1 = find(
-        lambda n: "prec" in n or "preced" in n or "debut" in n or "cumul" in n
+        lambda n: (
+            "prec" in n
+            or "preced" in n
+            or "debut" in n
+            or "cumul" in n
+            or "fin exr" in n  # ex. Fin Exr.2025
+            or "exr.20" in n
+        )
     )
     col_dot = find(lambda n: "dotation" in n or "en. c" in n or "en cours" in n)
     col_fin = find(
@@ -327,6 +346,10 @@ def _detect_columns(header_cells: list[Any]) -> dict[str, int] | None:
     if col_des is None:
         col_des = 2 if col_vb != 2 else 1
 
+    # La feuille fournit-elle réellement les colonnes Dotation / Fin exercice ?
+    # (avant application des positions par défaut ci-dessous)
+    has_bank_dotation = col_dot is not None or col_fin is not None
+
     # Fallback positions if headers are incomplete
     if col_n1 is None and col_taux is not None:
         col_n1 = col_taux + 1
@@ -348,6 +371,7 @@ def _detect_columns(header_cells: list[Any]) -> dict[str, int] | None:
         "fin": col_fin if col_fin is not None else col_vb + 4,
         "vnc": col_vnc if col_vnc is not None else col_vb + 5,
         "agence": col_agence if col_agence is not None else -1,
+        "has_dotation": 1 if has_bank_dotation else 0,
     }
 
 
@@ -429,6 +453,8 @@ def _parse_sheet_grid(
 
     out: list[ParsedBankRow] = []
     anon = 0
+    # Dernière ligne "Solde ..." de la feuille = totaux de référence du tableau
+    last_solde: tuple[Decimal, Decimal, Decimal | None] | None = None
     # Un seul REPORT YYYY par feuille (ex. REPORT 2003) — les suivants (REPORT 2006…)
     # sont des reports de solde et doubleraient la VB.
     report_historique_pris = False
@@ -436,6 +462,7 @@ def _parse_sheet_grid(
         cols = _detect_columns(list(grid[header_row]))
         if cols is None:
             continue
+        calc_mode = cols["has_dotation"] == 0
         end = header_indices[h_idx + 1] if h_idx + 1 < len(header_indices) else len(grid)
         for r in range(header_row + 1, end):
             raw = list(grid[r]) if grid[r] else []
@@ -451,6 +478,16 @@ def _parse_sheet_grid(
 
             # Reports de solde / exercice / date → ignorer (évite le double comptage)
             if des and SKIP_DESIGNATION_RE.search(des):
+                des_l = des.lower()
+                if (des_l.startswith("solde") or des_l.startswith("total")) and vb is not None:
+                    s_n1 = parse_amount(_cell(raw, cols["n1"]))
+                    s_fin = parse_amount(_cell(raw, cols["fin"]))
+                    if s_n1 is not None and (s_fin is not None or calc_mode):
+                        last_solde = (
+                            _q(vb),
+                            _q(s_n1),
+                            _q(s_fin) if s_fin is not None else None,
+                        )
                 continue
             # "Report 01/01/2010", "Report 31/12/2015" non couverts par le pattern ci-dessus
             if des and REPORT_RE.search(des) and not REPORT_HISTORIQUE_RE.search(des):
@@ -518,13 +555,107 @@ def _parse_sheet_grid(
                     agence_label=agence_label,
                     is_report=is_report,
                     is_negative=vb < 0,
+                    calc_dotation=calc_mode,
                 )
             )
+    _reconcile_with_solde(out, last_solde)
     return out
 
 
+def _reconcile_with_solde(
+    rows: list[ParsedBankRow], solde: tuple[Decimal, Decimal, Decimal | None] | None
+) -> None:
+    """Absorbe les écarts d'arrondi entre les lignes et la ligne Solde du tableau.
+
+    Les totaux Excel sont calculés en pleine précision alors que les cellules
+    lignes sont arrondies au centime : quelques centimes d'écart peuvent
+    apparaître. On les reporte sur la ligne au cumul le plus élevé afin que les
+    totaux plateforme soient identiques au tableau banque.
+
+    ``s_fin`` peut être absent (feuilles sans colonne Fin exercice, dotation
+    recalculée) : on ne réconcilie alors que la VB et le cumul N-1.
+    """
+    if not rows or solde is None:
+        return
+    s_vb, s_n1, s_fin = solde
+    tolerance = Decimal("1.00")
+    zero = Decimal("0.00")
+    d_vb = _q(sum((r.valeur_brute for r in rows), zero) - s_vb)
+    d_n1 = _q(sum((r.amt_n1 for r in rows), zero) - s_n1)
+    d_fin = _q(sum((r.amt_fin for r in rows), zero) - s_fin) if s_fin is not None else zero
+    if d_vb == 0 and d_n1 == 0 and d_fin == 0:
+        return
+    # Écart trop important : probable problème de parsing, ne pas le masquer
+    if abs(d_vb) > tolerance or abs(d_n1) > tolerance or abs(d_fin) > tolerance:
+        return
+    if d_vb:
+        cible_vb = max(rows, key=lambda r: abs(r.valeur_brute))
+        cible_vb.valeur_brute = _q(cible_vb.valeur_brute - d_vb)
+        cible_vb.vnc = _q(cible_vb.valeur_brute - cible_vb.amt_fin)
+    cible = max(rows, key=lambda r: abs(r.amt_fin))
+    cible.amt_n1 = _q(cible.amt_n1 - d_n1)
+    if s_fin is not None:
+        cible.amt_fin = _q(cible.amt_fin - d_fin)
+        cible.dotation = _q(cible.amt_fin - cible.amt_n1)
+    else:
+        # Dotation recalculée plus tard : le cumul fin suit le cumul N-1
+        cible.amt_fin = _q(cible.amt_fin - d_n1)
+    cible.vnc = _q(cible.valeur_brute - cible.amt_fin)
+
+
+# Lignes de mouvement (pas une acquisition) : pas de nouvelle dotation calculée.
+# Le cumul N-1 banque est figé ; VNC = VB − cumul N-1.
+SKIP_DOTATION_DES_RE = re.compile(
+    r"\b(nivellement|reclassement|annulation|annuation)\b",
+    re.IGNORECASE,
+)
+
+
+def compute_dotation_exercice(
+    vb: Decimal,
+    amt_n1: Decimal,
+    taux_pct: Decimal | None,
+    date_acquisition: date,
+    *,
+    annee: int = EXERCICE_CALCUL,
+    designation: str | None = None,
+) -> Decimal:
+    """Dotation de l'exercice ``annee`` pour une feuille sans colonne Dotation.
+
+    Règles banque :
+      • VB ≤ 0 (reclassement / annulation) → pas de dotation ;
+      • nivellement / reclassement (libellé) → pas de dotation (transfert) ;
+      • acquisition antérieure à ``annee`` → 12 mois pleins (VB × taux) ;
+      • acquisition de ``annee`` → prorata 30/360 jusqu'au trimestre
+        comptabilisé (arrêté du 30/06/2026) ;
+      • plafonnée au restant à amortir (VB − cumul N-1).
+    """
+    if taux_pct is None or taux_pct == 0 or vb <= 0:
+        return Decimal("0.00")
+    if designation and SKIP_DOTATION_DES_RE.search(designation):
+        return Decimal("0.00")
+    from app.services.amortissement_engine import days_360
+
+    taux = Decimal(taux_pct) / Decimal("100")
+    if date_acquisition.year < annee:
+        duree = Decimal("1")
+    else:
+        jours = days_360(max(date_acquisition, date(annee, 1, 1)), DATE_ARRETE_PRORATA)
+        if jours <= 0:
+            return Decimal("0.00")
+        duree = Decimal(jours) / Decimal("360")
+
+    dotation = _q(vb * taux * duree)
+    restant = _q(vb - amt_n1)
+    if restant <= 0:
+        return Decimal("0.00")
+    return min(dotation, restant)
+
+
 def _prefix_from_category(code: str) -> str:
-    return code.replace("TY-", "")
+    from app.services.code_inventaire import prefix_from_categorie_code
+
+    return prefix_from_categorie_code(code)
 
 
 def _resolve_agence_id(
@@ -578,8 +709,16 @@ class BankImmoImportService:
         if not ids:
             return 0
 
+        from app.models import EcritureComptable, InventaireScan
+
         await self.db.execute(delete(Amortissement).where(Amortissement.immobilisation_id.in_(ids)))
         await self.db.execute(delete(PieceJointe).where(PieceJointe.immobilisation_id.in_(ids)))
+        await self.db.execute(
+            delete(EcritureComptable).where(EcritureComptable.immobilisation_id.in_(ids))
+        )
+        await self.db.execute(
+            delete(InventaireScan).where(InventaireScan.immobilisation_id.in_(ids))
+        )
         await self.db.execute(delete(Immobilisation).where(Immobilisation.id.in_(ids)))
         await self.db.flush()
         return len(ids)
@@ -605,13 +744,15 @@ class BankImmoImportService:
         agences_by_code = {a.code: a.id for a in agences}
         agences_by_libelle = {a.libelle.strip().upper(): a.id for a in agences}
 
+        from app.services.code_inventaire import format_code_inventaire, load_max_sequences_map
+
         existing_codes = set(
             (
                 await self.db.execute(select(Immobilisation.code_inventaire))
             ).scalars().all()
         )
-
-        counters: dict[str, int] = {}
+        # Compteurs par (préfixe nature, année d'acquisition) → AAI-2026-001
+        counters: dict[tuple[str, int], int] = await load_max_sequences_map(self.db)
         totaux: dict[str, BankImportTotaux] = {}
         errors: list[str] = []
         created = 0
@@ -628,15 +769,34 @@ class BankImmoImportService:
                 continue
 
             prefix = _prefix_from_category(row.categorie_code)
-            counters[prefix] = counters.get(prefix, 0) + 1
-            code = f"{prefix}-{row.date_acquisition.strftime('%Y%m%d')}-{counters[prefix]:04d}"
+            year = row.date_acquisition.year
+            key = (prefix, year)
+            counters[key] = counters.get(key, 0) + 1
+            code = format_code_inventaire(prefix, year, counters[key])
             while code in existing_codes:
-                counters[prefix] += 1
-                code = f"{prefix}-{row.date_acquisition.strftime('%Y%m%d')}-{counters[prefix]:04d}"
+                counters[key] += 1
+                code = format_code_inventaire(prefix, year, counters[key])
             existing_codes.add(code)
 
             agence_id = _resolve_agence_id(row.agence_label, agences_by_code, agences_by_libelle)
-            taux = row.taux if row.taux is not None else categorie.taux_lineaire_defaut
+            from app.services.nature_immo_referentiel import normalize_taux_for_categorie
+
+            taux_raw = row.taux if row.taux is not None else categorie.taux_lineaire_defaut
+            taux = normalize_taux_for_categorie(categorie.code, taux_raw)
+
+            if row.calc_dotation:
+                # Feuille sans colonnes Dotation / Fin exercice (ex. Logiciel 147530) :
+                # 12 mois pour les acquisitions < 2026, prorata jusqu'au trimestre
+                # comptabilisé (30/06/2026) pour celles de 2026, puis cumul et VNC recalculés.
+                row.dotation = compute_dotation_exercice(
+                    row.valeur_brute,
+                    row.amt_n1,
+                    taux,
+                    row.date_acquisition,
+                    designation=row.designation,
+                )
+                row.amt_fin = _q(row.amt_n1 + row.dotation)
+                row.vnc = _q(row.valeur_brute - row.amt_fin)
 
             try:
                 immo = Immobilisation(
@@ -657,6 +817,7 @@ class BankImmoImportService:
                         "fichier": filename,
                         "feuille": row.sheet,
                         "is_report": row.is_report,
+                        "dotation_calculee": row.calc_dotation,
                         "bank": {
                             "amt_n1": str(row.amt_n1),
                             "dotation": str(row.dotation),
@@ -687,13 +848,15 @@ class BankImmoImportService:
                 self.db.add(immo)
                 await self.db.flush()
 
-                # Seed amortissements banque
+                # Seed amortissements banque.
+                # montant = amt_n1 pour que SUM(montant) = cumul à l'arrêté
+                # (le batch lit SUM(montant), pas seulement .cumul).
                 vnc_n1 = _q(row.valeur_brute - row.amt_n1)
                 self.db.add(
                     Amortissement(
                         immobilisation_id=immo.id,
                         periode=PERIODE_OUVERTURE,
-                        montant=Decimal("0.00"),
+                        montant=row.amt_n1,
                         cumul=row.amt_n1,
                         vnc=vnc_n1,
                         valide=True,
@@ -703,12 +866,26 @@ class BankImmoImportService:
                 )
                 amort_created += 1
 
-                if row.dotation != 0:
+                # Période de la dotation : 31/12/2026 (12 mois) si feuille sans
+                # colonnes Dotation et acquisition < 2026 ; sinon arrêté 30/06/2026.
+                if row.calc_dotation and row.date_acquisition.year < EXERCICE_CALCUL:
+                    periode_arrete = PERIODE_ARRETE_ANNUELLE
+                else:
+                    periode_arrete = PERIODE_ARRETE
+
+                # Conserver la colonne « Exer. En C » pour le Total 68 (sinon
+                # Fin − N-1 décale de quelques centimes vs le solde Excel).
+                # Feuilles sans cette colonne : on retombe sur Fin − N-1.
+                if row.calc_dotation:
+                    dotation_arrete = _q(row.amt_fin - row.amt_n1)
+                else:
+                    dotation_arrete = _q(row.dotation)
+                if dotation_arrete != 0 or row.dotation != 0:
                     self.db.add(
                         Amortissement(
                             immobilisation_id=immo.id,
-                            periode=PERIODE_ARRETE,
-                            montant=row.dotation,
+                            periode=periode_arrete,
+                            montant=dotation_arrete,
                             cumul=row.amt_fin,
                             vnc=row.vnc,
                             valide=True,

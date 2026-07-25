@@ -130,3 +130,31 @@ class ComptesParNatureRead(BaseModel):
     totaux: CompteNatureLigneRead
     compte_filtre: str | None = None
     comptes_disponibles: list[CompteOptionRead] = []
+
+
+class SoldeNatureLigneRead(BaseModel):
+    nature_code: str
+    nature: str
+    compte_immobilisation: str
+    compte_amortissement: str | None = None
+    libelle_amortissement: str | None = None
+    solde_148: float
+    solde_148_n1: float
+    compte_dotation: str | None = None
+    libelle_dotation: str | None = None
+    solde_68: float
+    valeur_brute: float
+    vnc: float
+    nb_biens: int
+
+
+class Soldes14868Read(BaseModel):
+    annee: int
+    date_arrete: str
+    lignes: list[SoldeNatureLigneRead]
+    total_148: float
+    total_148_n1: float
+    total_68: float
+    total_valeur_brute: float
+    total_vnc: float
+    nb_biens: int

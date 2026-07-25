@@ -5,6 +5,10 @@
       <p class="usr__lead">{{ total() }} compte(s) actif(s)</p>
     </div>
     <div class="usr__hero-actions">
+      <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Actualiser
+      </button>
       <button mat-flat-button color="primary" type="button" (click)="openCreate()">
         <mat-icon aria-hidden="true">person_add</mat-icon>
         Nouvel utilisateur

@@ -4,6 +4,12 @@
       <h1 class="par__title">Paramètres</h1>
       <p class="par__lead">Référentiels, amortissement et sécurité</p>
     </div>
+    <div class="par__hero-actions">
+      <button mat-stroked-button type="button" (click)="reloadAll()" [disabled]="loading()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Actualiser
+      </button>
+    </div>
   </header>
 
   <div class="par__kpis">
@@ -50,7 +56,7 @@
               id="par-ag-search"
               class="par-field__control"
               [value]="searchAgences()"
-              (input)="searchAgences.set($any($event.target).value)"
+              (input)="onSearchAgences($any($event.target).value)"
               placeholder="Code, libellé, ville"
               aria-label="Recherche agences"
             />
@@ -152,8 +158,8 @@
         } @else if (filteredAgences().length === 0) {
           <p class="par__empty">Aucune agence.</p>
         } @else {
-          <div class="par__table-wrap">
-            <table mat-table [dataSource]="filteredAgences()" class="w-full app-table par-agences">
+          <div class="par__table-wrap app-table-scroll">
+            <table mat-table [dataSource]="pagedAgences()" class="w-full app-table par-agences">
               <ng-container matColumnDef="code">
                 <th mat-header-cell *matHeaderCellDef>Code agence</th>
                 <td mat-cell *matCellDef="let row">
@@ -200,10 +206,17 @@
                   </div>
                 </td>
               </ng-container>
-              <tr mat-header-row *matHeaderRowDef="agenceColumns"></tr>
+              <tr mat-header-row *matHeaderRowDef="agenceColumns; sticky: true"></tr>
               <tr mat-row *matRowDef="let row; columns: agenceColumns"></tr>
             </table>
           </div>
+          <app-pagination
+            [page]="pageAgences()"
+            [total]="filteredAgences().length"
+            [pageSize]="pageSize"
+            label="agence(s)"
+            (pageChange)="pageAgences.set($event)"
+          />
         }
       </div>
     }
@@ -217,7 +230,7 @@
               id="par-cat-search"
               class="par-field__control"
               [value]="searchCategories()"
-              (input)="searchCategories.set($any($event.target).value)"
+              (input)="onSearchCategories($any($event.target).value)"
               placeholder="Type, code, compte"
               aria-label="Recherche types"
             />
@@ -337,8 +350,8 @@
         } @else if (filteredCategories().length === 0) {
           <p class="par__empty">Aucun type.</p>
         } @else {
-          <div class="par__table-wrap">
-            <table mat-table [dataSource]="filteredCategories()" class="w-full app-table">
+          <div class="par__table-wrap app-table-scroll">
+            <table mat-table [dataSource]="pagedCategories()" class="w-full app-table">
               <ng-container matColumnDef="famille">
                 <th mat-header-cell *matHeaderCellDef>Type</th>
                 <td mat-cell *matCellDef="let row">
@@ -379,10 +392,17 @@
                   </div>
                 </td>
               </ng-container>
-              <tr mat-header-row *matHeaderRowDef="catColumns"></tr>
+              <tr mat-header-row *matHeaderRowDef="catColumns; sticky: true"></tr>
               <tr mat-row *matRowDef="let row; columns: catColumns"></tr>
             </table>
           </div>
+          <app-pagination
+            [page]="pageCategories()"
+            [total]="filteredCategories().length"
+            [pageSize]="pageSize"
+            label="type(s)"
+            (pageChange)="pageCategories.set($event)"
+          />
         }
       </div>
     }
@@ -396,21 +416,155 @@
               id="par-cpt-search"
               class="par-field__control"
               [value]="searchComptes()"
-              (input)="searchComptes.set($any($event.target).value)"
+              (input)="onSearchComptes($any($event.target).value)"
               placeholder="N°, libellé, nature"
               aria-label="Recherche comptes"
             />
           </div>
+          <button mat-flat-button color="primary" type="button" (click)="openCreateCompte()">
+            <mat-icon aria-hidden="true">add</mat-icon>
+            Nouveau compte
+          </button>
         </div>
       </div>
+
+      @if (compteFormOpen()) {
+        <div class="par__panel">
+          <h2 class="par__panel-title">
+            {{ editingCompteId() ? 'Modifier le compte' : 'Nouveau compte' }}
+          </h2>
+          <form [formGroup]="compteForm" (ngSubmit)="saveCompte()">
+            <div class="par__form-grid par__form-grid--3">
+              <div class="par-field">
+                <label class="par-field__label" for="par-cpt-num">N° compte</label>
+                <input
+                  id="par-cpt-num"
+                  class="par-field__control"
+                  formControlName="numero"
+                  placeholder="142010"
+                  aria-label="Numéro de compte"
+                  (input)="onCompteNumeroOrTypeChange()"
+                />
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-cpt-lib">Libellé</label>
+                <input
+                  id="par-cpt-lib"
+                  class="par-field__control"
+                  formControlName="libelle"
+                  placeholder="AAI"
+                  aria-label="Libellé compte"
+                  (input)="onCompteNumeroOrTypeChange()"
+                />
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-cpt-type">Type de compte</label>
+                <select
+                  id="par-cpt-type"
+                  class="par-field__control"
+                  formControlName="type_compte"
+                  aria-label="Type de compte"
+                  (change)="onCompteNumeroOrTypeChange()"
+                >
+                  @for (opt of typeCompteOptions; track opt.value) {
+                    <option [value]="opt.value">{{ opt.label }}</option>
+                  }
+                </select>
+              </div>
+              <div class="par-field">
+                <label class="par-field__label" for="par-cpt-ana">Centre analytique</label>
+                <input
+                  id="par-cpt-ana"
+                  class="par-field__control"
+                  formControlName="centre_analytique"
+                  placeholder="Optionnel"
+                  aria-label="Centre analytique"
+                />
+              </div>
+              @if (!editingCompteId() && compteForm.controls.type_compte.value === 'immobilisation') {
+                <div class="par-field">
+                  <label class="par-field__label" for="par-cpt-nat">Nature IMMO</label>
+                  <input
+                    id="par-cpt-nat"
+                    class="par-field__control"
+                    formControlName="nature_libelle"
+                    placeholder="Ex. Frais émission emprunt"
+                    aria-label="Nature immobilisation"
+                  />
+                </div>
+                <div class="par-field">
+                  <label class="par-field__label" for="par-cpt-duree">Durée (années) <span class="par__req">*</span></label>
+                  <input
+                    id="par-cpt-duree"
+                    class="par-field__control"
+                    type="number"
+                    min="1"
+                    formControlName="duree_annees"
+                    aria-label="Durée années"
+                    (input)="refreshCompteTauxPreview()"
+                  />
+                </div>
+                <div class="par-field">
+                  <label class="par-field__label" for="par-cpt-taux">Taux annuel (%)</label>
+                  <input
+                    id="par-cpt-taux"
+                    class="par-field__control"
+                    readonly
+                    [value]="compteTauxPreview() != null ? (compteTauxPreview() | montant: 4) : '—'"
+                    aria-label="Taux calculé"
+                  />
+                </div>
+                <div class="par-field">
+                  <label class="par-field__label" for="par-cpt-amort">Compte amortissement</label>
+                  <input
+                    id="par-cpt-amort"
+                    class="par-field__control"
+                    formControlName="compte_amortissement"
+                    placeholder="148xxx"
+                    aria-label="Compte amortissement"
+                  />
+                </div>
+                <div class="par-field">
+                  <label class="par-field__label" for="par-cpt-dot">Compte dotation</label>
+                  <input
+                    id="par-cpt-dot"
+                    class="par-field__control"
+                    formControlName="compte_dotation"
+                    placeholder="681xxx"
+                    aria-label="Compte dotation"
+                  />
+                </div>
+              }
+              @if (editingCompteId()) {
+                <label class="par__check">
+                  <input type="checkbox" formControlName="is_active" />
+                  Actif
+                </label>
+              }
+            </div>
+            @if (!editingCompteId() && compteForm.controls.type_compte.value === 'immobilisation') {
+              <p class="par__hint">
+                Un compte immobilisation crée aussi la nature (taux/durée) et les comptes 148 / 681 liés.
+              </p>
+            }
+            <div class="par__form-actions">
+              <button mat-flat-button color="primary" type="submit" [disabled]="saving()">
+                {{ saving() ? '…' : 'Enregistrer' }}
+              </button>
+              <button mat-stroked-button type="button" (click)="cancelCompteForm()">Annuler</button>
+            </div>
+          </form>
+        </div>
+      }
+
       <div class="par__body">
         @if (loading()) {
           <p class="par__empty">Chargement…</p>
         } @else if (filteredComptes().length === 0) {
           <p class="par__empty">Aucun compte.</p>
         } @else {
-          <div class="par__table-wrap">
-            <table mat-table [dataSource]="filteredComptes()" class="w-full app-table">
+          <div class="par__table-wrap app-table-scroll">
+            <table mat-table [dataSource]="pagedComptes()" class="w-full app-table">
               <ng-container matColumnDef="numero">
                 <th mat-header-cell *matHeaderCellDef>N°</th>
                 <td mat-cell *matCellDef="let row">
@@ -422,15 +576,63 @@
                 <td mat-cell *matCellDef="let row">{{ row.libelle }}</td>
               </ng-container>
               <ng-container matColumnDef="type">
-                <th mat-header-cell *matHeaderCellDef>Nature</th>
+                <th mat-header-cell *matHeaderCellDef>Type</th>
                 <td mat-cell *matCellDef="let row">
                   <span class="par__badge">{{ typeLabel(row.type_compte) }}</span>
                 </td>
               </ng-container>
-              <tr mat-header-row *matHeaderRowDef="compteColumns"></tr>
+              <ng-container matColumnDef="nature">
+                <th mat-header-cell *matHeaderCellDef>Nature IMMO</th>
+                <td mat-cell *matCellDef="let row">
+                  @if (row.nature_libelle) {
+                    <span>{{ row.nature_libelle }}</span>
+                    <span class="par__sub">{{ row.nature_code }}</span>
+                  } @else {
+                    —
+                  }
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="taux">
+                <th mat-header-cell *matHeaderCellDef>Taux / durée</th>
+                <td mat-cell *matCellDef="let row">
+                  @if (row.nature_taux != null) {
+                    {{ row.nature_taux | montant: 2 }} %
+                    @if (row.nature_duree_annees != null) {
+                      <span class="par__sub">{{ row.nature_duree_annees }} ans</span>
+                    }
+                  } @else {
+                    —
+                  }
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="active">
+                <th mat-header-cell *matHeaderCellDef>Statut</th>
+                <td mat-cell *matCellDef="let row">
+                  <span class="par__badge" [class.par__badge--ok]="row.is_active" [class.par__badge--off]="!row.is_active">
+                    {{ row.is_active ? 'Actif' : 'Inactif' }}
+                  </span>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="actions">
+                <th mat-header-cell *matHeaderCellDef></th>
+                <td mat-cell *matCellDef="let row">
+                  <div class="par__actions">
+                    <button mat-button type="button" (click)="openEditCompte(row)">Modifier</button>
+                    <button mat-button type="button" color="warn" (click)="deleteCompte(row)">Désactiver</button>
+                  </div>
+                </td>
+              </ng-container>
+              <tr mat-header-row *matHeaderRowDef="compteColumns; sticky: true"></tr>
               <tr mat-row *matRowDef="let row; columns: compteColumns"></tr>
             </table>
           </div>
+          <app-pagination
+            [page]="pageComptes()"
+            [total]="filteredComptes().length"
+            [pageSize]="pageSize"
+            label="compte(s)"
+            (pageChange)="pageComptes.set($event)"
+          />
         }
       </div>
     }

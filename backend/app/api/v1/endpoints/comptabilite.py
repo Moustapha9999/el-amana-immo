@@ -12,13 +12,17 @@ from app.core.pagination import page_offset
 from app.db.session import get_db
 from app.models import EcritureComptable, Immobilisation, User
 from app.schemas.comptabilite import (
+    AmortissementCalculerLigneRead,
+    AmortissementCalculerRequest,
+    AmortissementCalculerResponse,
     AmortissementComptabiliserRequest,
     AmortissementComptabiliserResponse,
     AmortissementGenererPlanRequest,
     AmortissementRead,
     AmortissementSimulateRequest,
-    ComptePlanCreate,
+    ComptePlanCreateLinked,
     ComptePlanRead,
+    ComptePlanUpdate,
     EcritureCreate,
     EcritureDetailRead,
     EcritureRead,
@@ -27,11 +31,33 @@ from app.schemas.comptabilite import (
     ParametrageAmortissementRead,
     ParametrageAmortissementUpdate,
 )
-from app.schemas.common import PaginatedResponse
+from app.schemas.common import MessageResponse, PaginatedResponse
+from app.services.amortissement_batch import AmortissementBatchService, CalculAmortLigne
 from app.services.amortissement_service import AmortissementService
 from app.services.audit_helpers import record_audit
 from app.services.immobilisation_service import ParametrageService
+from app.services.compte_nature_service import CompteNatureService
 from app.services.organisation_service import ComptePlanService, JournalService
+
+
+def _calcul_ligne_read(ligne: CalculAmortLigne) -> AmortissementCalculerLigneRead:
+    return AmortissementCalculerLigneRead(
+        immobilisation_id=ligne.immobilisation_id,
+        code_inventaire=ligne.code_inventaire,
+        designation=ligne.designation,
+        statut=ligne.statut,
+        vnc_avant=ligne.vnc_avant,
+        dotation=ligne.dotation,
+        vnc_apres=ligne.vnc_apres,
+        cumul_avant=ligne.cumul_avant,
+        cumul_apres=ligne.cumul_apres,
+        valeur_brute=ligne.valeur_brute,
+        nature=ligne.nature,
+        compte_dotation=ligne.compte_dotation,
+        compte_amortissement=ligne.compte_amortissement,
+        taux=ligne.taux,
+        message=ligne.message,
+    )
 
 router = APIRouter(tags=["comptabilite"])
 
@@ -48,17 +74,96 @@ async def create_journal(payload: JournalCreate, _: User = Depends(require_roles
 
 
 @router.get("/plan-comptable", response_model=PaginatedResponse[ComptePlanRead])
-async def list_plan(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), search: str | None = None, _: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    from app.models import ComptePlanComptable
-    from app.repositories.base import BaseRepository
+async def list_plan(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    search: str | None = None,
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models import CategorieImmobilisation
 
-    items, total = await BaseRepository(db, ComptePlanComptable).list(page, size, search, ("numero", "libelle"))
-    return to_paginated(items, total, page, size, ComptePlanRead.model_validate)
+    items, total = await ComptePlanService(db).list(page, size, search)
+    categories = list(
+        (
+            await db.execute(
+                select(CategorieImmobilisation).where(CategorieImmobilisation.deleted_at.is_(None))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    natures = {c.compte_immobilisation: c for c in categories if c.compte_immobilisation}
+    by_amort = {c.compte_amortissement: c for c in categories if c.compte_amortissement}
+    by_dot = {c.compte_dotation: c for c in categories if c.compte_dotation}
+
+    def to_read(row) -> ComptePlanRead:
+        nat = natures.get(row.numero) or by_amort.get(row.numero) or by_dot.get(row.numero)
+        data = ComptePlanRead.model_validate(row)
+        if nat is None:
+            return data
+        return data.model_copy(
+            update={
+                "nature_code": nat.code,
+                "nature_libelle": nat.famille,
+                "nature_taux": nat.taux_lineaire_defaut,
+                "nature_duree_annees": nat.duree_annees_defaut,
+                "nature_compte_amortissement": nat.compte_amortissement,
+                "nature_compte_dotation": nat.compte_dotation,
+            }
+        )
+
+    return to_paginated(items, total, page, size, to_read)
 
 
 @router.post("/plan-comptable", response_model=ComptePlanRead, status_code=status.HTTP_201_CREATED)
-async def create_compte(payload: ComptePlanCreate, _: User = Depends(require_roles("administrateur", "comptable")), db: AsyncSession = Depends(get_db)):
-    return await ComptePlanService(db).create(payload)
+async def create_compte(
+    payload: ComptePlanCreateLinked,
+    _: User = Depends(require_roles("administrateur", "comptable")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await CompteNatureService(db).create_linked(payload)
+    except AppError as exc:
+        raise_http_from_app(exc)
+
+
+@router.get("/plan-comptable/{entity_id}", response_model=ComptePlanRead)
+async def get_compte(
+    entity_id: UUID,
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await ComptePlanService(db).get(entity_id)
+    except AppError as exc:
+        raise_http_from_app(exc)
+
+
+@router.patch("/plan-comptable/{entity_id}", response_model=ComptePlanRead)
+async def update_compte(
+    entity_id: UUID,
+    payload: ComptePlanUpdate,
+    _: User = Depends(require_roles("administrateur", "comptable")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await ComptePlanService(db).update(entity_id, payload)
+    except AppError as exc:
+        raise_http_from_app(exc)
+
+
+@router.delete("/plan-comptable/{entity_id}", response_model=MessageResponse)
+async def delete_compte(
+    entity_id: UUID,
+    _: User = Depends(require_roles("administrateur")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await ComptePlanService(db).soft_delete(entity_id)
+        return MessageResponse(message="Compte désactivé")
+    except AppError as exc:
+        raise_http_from_app(exc)
 
 
 @router.get("/parametrage/amortissement", response_model=ParametrageAmortissementRead)
@@ -189,20 +294,93 @@ async def comptabiliser_amortissement(
         raise_http_from_app(exc)
 
 
+@router.post("/amortissements/calculer", response_model=AmortissementCalculerResponse)
+async def calculer_amortissements(
+    payload: AmortissementCalculerRequest,
+    request: Request,
+    user: User = Depends(require_roles("administrateur", "comptable")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Campagne batch : simulation (aperçu) ou validation (écritures de dotation)."""
+    try:
+        result = await AmortissementBatchService(db).calculer(
+            periodicite=payload.periodicite,
+            annee=payload.annee,
+            periode_index=payload.periode_index,
+            mode=payload.mode,
+            categorie_ids=payload.categorie_ids,
+            date_ecriture=payload.date_ecriture,
+        )
+        if result.mode == "validation" and result.nb_calcules > 0:
+            await record_audit(
+                db,
+                user=user,
+                action="calculer_amortissements",
+                entity="amortissement",
+                entity_id=result.periode,
+                request=request,
+                after={
+                    "periode": result.periode,
+                    "periodicite": result.periodicite,
+                    "nb_calcules": result.nb_calcules,
+                    "total_dotations": str(result.total_dotations),
+                },
+            )
+        return AmortissementCalculerResponse(
+            periodicite=result.periodicite,
+            annee=result.annee,
+            periode_index=result.periode_index,
+            periode=result.periode,
+            date_debut=result.date_debut,
+            date_arrete=result.date_arrete,
+            date_ecriture=result.date_ecriture,
+            mode=result.mode,
+            nb_calcules=result.nb_calcules,
+            nb_ignores_vnc=result.nb_ignores_vnc,
+            nb_deja_comptabilises=result.nb_deja_comptabilises,
+            nb_erreurs=result.nb_erreurs,
+            total_dotations=result.total_dotations,
+            lignes=[_calcul_ligne_read(x) for x in result.lignes],
+            ignores=[_calcul_ligne_read(x) for x in result.ignores],
+            deja_comptabilises=[_calcul_ligne_read(x) for x in result.deja_comptabilises],
+            erreurs=[_calcul_ligne_read(x) for x in result.erreurs],
+        )
+    except AppError as exc:
+        raise_http_from_app(exc)
+
+
 @router.get("/ecritures", response_model=PaginatedResponse[EcritureRead])
 async def list_ecritures(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     date_debut: date | None = None,
     date_fin: date | None = None,
+    search: str | None = None,
+    journal_code: str | None = None,
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    from sqlalchemy import String, cast, or_
+
     filters = []
     if date_debut is not None:
         filters.append(EcritureComptable.date_ecriture >= date_debut)
     if date_fin is not None:
         filters.append(EcritureComptable.date_ecriture <= date_fin)
+    if journal_code and journal_code.strip():
+        filters.append(EcritureComptable.journal_code.ilike(journal_code.strip()))
+    if search and search.strip():
+        pattern = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                EcritureComptable.libelle.ilike(pattern),
+                EcritureComptable.journal_code.ilike(pattern),
+                EcritureComptable.compte_debit.ilike(pattern),
+                EcritureComptable.compte_credit.ilike(pattern),
+                EcritureComptable.reference.ilike(pattern),
+                cast(EcritureComptable.montant, String).ilike(pattern),
+            )
+        )
 
     count = await db.execute(select(func.count()).select_from(EcritureComptable).where(*filters))
     total = int(count.scalar_one())

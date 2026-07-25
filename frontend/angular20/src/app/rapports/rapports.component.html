@@ -13,6 +13,10 @@
       </p>
     </div>
     <div class="rap__hero-actions">
+      <button mat-stroked-button type="button" (click)="loadKpi()" [disabled]="loadingKpi()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Actualiser
+      </button>
       <a mat-stroked-button routerLink="/ecritures">
         <mat-icon aria-hidden="true">menu_book</mat-icon>
         Écritures
@@ -33,7 +37,7 @@
       <span class="rap__kpi-label">Valeur brute</span>
       <span class="rap__kpi-value">
         @if (kpi(); as k) {
-          {{ k.valeur_brute_totale | montant }}
+          {{ k.valeur_brute_totale | montant: 'MRU' }}
         } @else {
           —
         }
@@ -43,7 +47,7 @@
       <span class="rap__kpi-label">VNC</span>
       <span class="rap__kpi-value">
         @if (kpi(); as k) {
-          {{ k.vnc_totale | montant }}
+          {{ k.vnc_totale | montant: 'MRU' }}
         } @else {
           —
         }

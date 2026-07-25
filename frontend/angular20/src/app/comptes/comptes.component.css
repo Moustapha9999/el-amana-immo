@@ -61,6 +61,11 @@
   min-width: 10rem;
 }
 
+.cpt-field--grow {
+  flex: 1 1 14rem;
+  min-width: 12rem;
+}
+
 .cpt-field--compte {
   min-width: 18rem;
   flex: 1 1 18rem;

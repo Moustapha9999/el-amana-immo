@@ -95,8 +95,13 @@
               formControlName="code_inventaire"
               [readonly]="!!id()"
               autocomplete="off"
-              placeholder="Ex. IMMO-2026-001"
+              placeholder="Ex. AAI-2026-001"
             />
+            @if (!id()) {
+              <p class="immo-field__help">
+                Proposé automatiquement selon la nature (AAI, Log, Frais…) et l’année d’acquisition — incrémenté par nature.
+              </p>
+            }
           </div>
           <div
             class="immo-field"
@@ -146,18 +151,20 @@
             <input id="immo-facture" class="immo-field__control" formControlName="numero_facture" autocomplete="off" />
           </div>
           <div class="immo-field">
-            <span class="immo-field__label" id="immo-fournisseur-label">Fournisseur</span>
-            <select
+            <label class="immo-field__label" for="immo-fournisseur">Fournisseur</label>
+            <input
               id="immo-fournisseur"
-              class="immo-field__control immo-field__control--select"
-              formControlName="fournisseur_id"
-              aria-labelledby="immo-fournisseur-label"
-            >
-              <option value="">— Optionnel —</option>
+              class="immo-field__control"
+              formControlName="fournisseur_libre"
+              list="immo-fournisseurs-datalist"
+              placeholder="— Optionnel —"
+              autocomplete="off"
+            />
+            <datalist id="immo-fournisseurs-datalist">
               @for (f of fournisseurs(); track f.id) {
-                <option [value]="f.id">{{ f.code }} — {{ f.raison_sociale }}</option>
+                <option [value]="f.raison_sociale">{{ f.code }}</option>
               }
-            </select>
+            </datalist>
           </div>
           <div
             class="immo-field"
@@ -192,18 +199,20 @@
             </select>
           </div>
           <div class="immo-field">
-            <span class="immo-field__label" id="immo-cc-label">Centre de coût</span>
-            <select
+            <label class="immo-field__label" for="immo-cc">Centre de coût</label>
+            <input
               id="immo-cc"
-              class="immo-field__control immo-field__control--select"
-              formControlName="centre_cout_id"
-              aria-labelledby="immo-cc-label"
-            >
-              <option value="">— Si applicable —</option>
+              class="immo-field__control"
+              formControlName="centre_cout_libre"
+              list="immo-centres-cout-datalist"
+              placeholder="— Si applicable —"
+              autocomplete="off"
+            />
+            <datalist id="immo-centres-cout-datalist">
               @for (c of centresCout(); track c.id) {
-                <option [value]="c.id">{{ c.code }} — {{ c.libelle }}</option>
+                <option [value]="c.libelle">{{ c.code }}</option>
               }
-            </select>
+            </datalist>
           </div>
         </div>
       </div>
@@ -244,12 +253,12 @@
               [class.immo-field--error]="form.controls.valeur_brute.invalid && form.controls.valeur_brute.touched"
             >
               <label class="immo-field__label" for="immo-vb">Valeur brute d'acquisition — VB (MRU) <span class="immo-field__req">*</span></label>
-              <input id="immo-vb" class="immo-field__control" type="number" formControlName="valeur_brute" step="0.01" min="0" />
-              <p class="immo-field__help">Base de calcul de l’amortissement.</p>
+              <input id="immo-vb" class="immo-field__control" appMontantInput formControlName="valeur_brute" />
+              <p class="immo-field__help">Base de calcul de l’amortissement — séparateur de milliers automatique.</p>
             </div>
             <div class="immo-field">
               <label class="immo-field__label" for="immo-vr">Valeur résiduelle (MRU)</label>
-              <input id="immo-vr" class="immo-field__control" type="number" formControlName="valeur_residuelle" step="0.01" min="0" />
+              <input id="immo-vr" class="immo-field__control" appMontantInput formControlName="valeur_residuelle" />
             </div>
           </div>
         </div>
@@ -496,7 +505,7 @@
                 </div>
                 <div class="immo-field">
                   <label class="immo-field__label" for="reeval-val">Nouvelle valeur brute (MRU)</label>
-                  <input id="reeval-val" class="immo-field__control" type="number" formControlName="nouvelle_valeur" step="0.01" />
+                  <input id="reeval-val" class="immo-field__control" appMontantInput formControlName="nouvelle_valeur" />
                 </div>
                 <div class="immo-field">
                   <label class="immo-field__label" for="reeval-just">Justificatif</label>
@@ -525,7 +534,7 @@
                 </div>
                 <div class="immo-field">
                   <label class="immo-field__label" for="ajust-mnt">Montant (MRU)</label>
-                  <input id="ajust-mnt" class="immo-field__control" type="number" formControlName="montant" step="0.01" />
+                  <input id="ajust-mnt" class="immo-field__control" appMontantInput formControlName="montant" />
                 </div>
                 <div class="immo-field">
                   <label class="immo-field__label" for="ajust-com">Commentaire</label>
@@ -610,7 +619,7 @@
                 </div>
                 <div class="immo-field">
                   <label class="immo-field__label" for="cess-prix">Prix de cession — PC (MRU) <span class="immo-field__req">*</span></label>
-                  <input id="cess-prix" class="immo-field__control" type="number" formControlName="prix_cession" step="0.01" min="0" />
+                  <input id="cess-prix" class="immo-field__control" appMontantInput formControlName="prix_cession" />
                 </div>
                 <div class="immo-field">
                   <label class="immo-field__label" for="cess-ref">Référence de la cession <span class="immo-field__req">*</span></label>

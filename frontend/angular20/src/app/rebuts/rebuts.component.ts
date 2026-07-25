@@ -7,6 +7,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
+import { PaginationComponent } from '../shared/pagination.component';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 
 interface RebutRow {
@@ -34,6 +35,7 @@ interface Paginated<T> {
     MatButtonModule,
     MatIconModule,
     MatTableModule,
+    PaginationComponent,
   ],
   templateUrl: './rebuts.component.html',
   styleUrl: './rebuts.component.css',
@@ -45,6 +47,8 @@ export class RebutsComponent implements OnInit {
 
   readonly rows = signal<RebutRow[]>([]);
   readonly total = signal(0);
+  readonly page = signal(1);
+  readonly pageSize = 50;
   readonly loading = signal(false);
   readonly columns = ['date', 'code', 'designation', 'vnc', 'motif', 'actions'];
 
@@ -68,7 +72,7 @@ export class RebutsComponent implements OnInit {
 
   load(): void {
     const f = this.filterForm.getRawValue();
-    const params: Record<string, string | number> = { page: 1, size: 100 };
+    const params: Record<string, string | number> = { page: this.page(), size: this.pageSize };
     if (f.date_debut) {
       params['date_debut'] = f.date_debut;
     }
@@ -92,8 +96,19 @@ export class RebutsComponent implements OnInit {
     });
   }
 
+  applyFilters(): void {
+    this.page.set(1);
+    this.load();
+  }
+
+  goToPage(page: number): void {
+    this.page.set(page);
+    this.load();
+  }
+
   resetFilters(): void {
     this.filterForm.reset({ date_debut: '', date_fin: '', search: '' });
+    this.page.set(1);
     this.load();
   }
 }

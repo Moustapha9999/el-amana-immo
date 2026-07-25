@@ -1,0 +1,241 @@
+<div class="calc">
+  <header class="calc__hero">
+    <div>
+      <p class="calc__back">
+        <a routerLink="/amortissements">← Amortissements</a>
+      </p>
+      <h1 class="calc__title">Calculer les amortissements</h1>
+      <p class="calc__lead">
+        Campagne de dotations par période — simulation puis validation (écritures 681 → 148). VNC jamais
+        négative.
+      </p>
+    </div>
+  </header>
+
+  <section class="calc__section">
+    <form [formGroup]="form" class="calc__form" (ngSubmit)="simuler()">
+      <div class="calc__fields">
+        <div class="calc-field">
+          <label class="calc-field__label" for="calc-periodicite">Périodicité</label>
+          <select id="calc-periodicite" class="calc-field__control" formControlName="periodicite">
+            <option value="mensuel">Mensuel</option>
+            <option value="trimestriel">Trimestriel</option>
+            <option value="annuel">Annuel</option>
+          </select>
+        </div>
+
+        <div class="calc-field">
+          <label class="calc-field__label" for="calc-annee">Année</label>
+          <input
+            id="calc-annee"
+            type="number"
+            class="calc-field__control"
+            formControlName="annee"
+            min="2000"
+            max="2100"
+          />
+        </div>
+
+        <div class="calc-field">
+          <label class="calc-field__label" for="calc-periode">Période</label>
+          <select id="calc-periode" class="calc-field__control" formControlName="periode_index">
+            @for (opt of periodOptions(); track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="calc-field">
+          <label class="calc-field__label" for="calc-date">Date d’écriture</label>
+          <input
+            id="calc-date"
+            type="date"
+            class="calc-field__control"
+            formControlName="date_ecriture"
+          />
+        </div>
+      </div>
+
+      <div class="calc__cats">
+        <div class="calc__cats-head">
+          <span class="calc-field__label">Catégories (optionnel)</span>
+          <div class="calc__cats-actions">
+            <button mat-button type="button" (click)="selectAllCategories()">Toutes</button>
+            <button mat-button type="button" (click)="clearCategories()">Aucune</button>
+          </div>
+        </div>
+        <div class="calc__cats-list" role="group" aria-label="Catégories d’immobilisation">
+          @for (cat of categories(); track cat.id) {
+            <label class="calc__cat">
+              <input
+                type="checkbox"
+                [checked]="isCategorieSelected(cat.id)"
+                (change)="onCategorieToggle(cat.id, $any($event.target).checked)"
+              />
+              <span>{{ cat.libelle || cat.famille }}</span>
+            </label>
+          }
+          @if (categories().length === 0) {
+            <p class="calc__hint">Aucune catégorie amortissable chargée.</p>
+          }
+        </div>
+      </div>
+
+      <div class="calc__actions">
+        <button mat-stroked-button type="submit" [disabled]="loading()">
+          <mat-icon>science</mat-icon>
+          Simuler
+        </button>
+        <button
+          mat-flat-button
+          color="primary"
+          type="button"
+          (click)="valider()"
+          [disabled]="loading() || !result() || result()!.nb_calcules === 0"
+        >
+          <mat-icon>done_all</mat-icon>
+          Valider et comptabiliser
+        </button>
+      </div>
+    </form>
+  </section>
+
+  @if (loading()) {
+    <p class="calc__empty">Calcul en cours…</p>
+  } @else if (result(); as r) {
+    <section class="calc__kpis">
+      <article class="calc__kpi">
+        <span class="calc__kpi-label">Période</span>
+        <span class="calc__kpi-value">{{ formatPeriode(r.periode) }}</span>
+        <span class="calc__kpi-hint">
+          {{ r.date_debut }} → {{ r.date_arrete }} · écriture {{ r.date_ecriture }}
+        </span>
+      </article>
+      <article class="calc__kpi calc__kpi--dotation">
+        <span class="calc__kpi-label">Total dotations</span>
+        <span class="calc__kpi-value">{{ r.total_dotations | montant: 'MRU' }}</span>
+        <span class="calc__kpi-hint">{{ r.nb_calcules }} bien(s) calculé(s) — mode {{ r.mode }}</span>
+      </article>
+      <article class="calc__kpi">
+        <span class="calc__kpi-label">Hors calcul</span>
+        <span class="calc__kpi-value">
+          {{ r.nb_ignores_vnc + r.nb_deja_comptabilises + r.nb_erreurs }}
+        </span>
+        <span class="calc__kpi-hint">
+          {{ r.nb_ignores_vnc }} VNC=0 · {{ r.nb_deja_comptabilises }} déjà OK · {{ r.nb_erreurs }} erreur(s)
+        </span>
+      </article>
+    </section>
+
+    <section class="calc__section">
+      <div class="calc__toolbar">
+        <form [formGroup]="filterForm" (ngSubmit)="applyListFilter()" class="calc__filters">
+          <div class="calc-field calc-field--grow">
+            <label class="calc-field__label" for="calc-search">Recherche</label>
+            <input
+              id="calc-search"
+              class="calc-field__control"
+              formControlName="search"
+              autocomplete="off"
+              placeholder="Code, désignation, nature, compte…"
+            />
+          </div>
+          <div class="calc-field">
+            <label class="calc-field__label" for="calc-statut">Statut</label>
+            <select id="calc-statut" class="calc-field__control" formControlName="statut">
+              @for (s of statutOptions; track s.value) {
+                <option [value]="s.value">{{ s.label }}</option>
+              }
+            </select>
+          </div>
+          <div class="calc__filter-actions">
+            <button mat-flat-button color="primary" type="submit">Filtrer</button>
+            <button mat-stroked-button type="button" (click)="resetListFilter()">Réinitialiser</button>
+          </div>
+        </form>
+      </div>
+
+      @if (filteredRows().length === 0) {
+        <p class="calc__empty">Aucun bien dans le périmètre filtré.</p>
+      } @else {
+        <div class="calc__table-wrap app-table-scroll">
+          <table mat-table [dataSource]="pagedRows()" class="w-full app-table">
+            <ng-container matColumnDef="code">
+              <th mat-header-cell *matHeaderCellDef>Code</th>
+              <td mat-cell *matCellDef="let row">
+                <span class="calc__code">{{ row.code_inventaire }}</span>
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="designation">
+              <th mat-header-cell *matHeaderCellDef>Désignation</th>
+              <td mat-cell *matCellDef="let row">{{ row.designation }}</td>
+            </ng-container>
+            <ng-container matColumnDef="nature">
+              <th mat-header-cell *matHeaderCellDef>Nature</th>
+              <td mat-cell *matCellDef="let row">{{ row.nature || '—' }}</td>
+            </ng-container>
+            <ng-container matColumnDef="vb">
+              <th mat-header-cell *matHeaderCellDef>Valeur brute</th>
+              <td mat-cell *matCellDef="let row" class="calc__num">{{ row.valeur_brute | montant }}</td>
+            </ng-container>
+            <ng-container matColumnDef="taux">
+              <th mat-header-cell *matHeaderCellDef>Taux</th>
+              <td mat-cell *matCellDef="let row" class="calc__num">{{ formatTaux(row.taux) }}</td>
+            </ng-container>
+            <ng-container matColumnDef="cumul_avant">
+              <th mat-header-cell *matHeaderCellDef>Cumul avant</th>
+              <td mat-cell *matCellDef="let row" class="calc__num">{{ row.cumul_avant | montant }}</td>
+            </ng-container>
+            <ng-container matColumnDef="vnc_avant">
+              <th mat-header-cell *matHeaderCellDef>VNC avant</th>
+              <td mat-cell *matCellDef="let row" class="calc__num">{{ row.vnc_avant | montant }}</td>
+            </ng-container>
+            <ng-container matColumnDef="dotation">
+              <th mat-header-cell *matHeaderCellDef>Dotation</th>
+              <td mat-cell *matCellDef="let row" class="calc__num">{{ row.dotation | montant }}</td>
+            </ng-container>
+            <ng-container matColumnDef="cumul_apres">
+              <th mat-header-cell *matHeaderCellDef>Cumul après</th>
+              <td mat-cell *matCellDef="let row" class="calc__num">{{ row.cumul_apres | montant }}</td>
+            </ng-container>
+            <ng-container matColumnDef="vnc_apres">
+              <th mat-header-cell *matHeaderCellDef>VNC après</th>
+              <td mat-cell *matCellDef="let row" class="calc__num">{{ row.vnc_apres | montant }}</td>
+            </ng-container>
+            <ng-container matColumnDef="compte_68">
+              <th mat-header-cell *matHeaderCellDef>Compte 68</th>
+              <td mat-cell *matCellDef="let row">
+                <span class="calc__mono">{{ row.compte_dotation || '—' }}</span>
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="compte_148">
+              <th mat-header-cell *matHeaderCellDef>Compte 148</th>
+              <td mat-cell *matCellDef="let row">
+                <span class="calc__mono">{{ row.compte_amortissement || '—' }}</span>
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="statut">
+              <th mat-header-cell *matHeaderCellDef>Statut</th>
+              <td mat-cell *matCellDef="let row">
+                <span class="calc__badge" [attr.data-statut]="row.statut">{{ statutLabel(row.statut) }}</span>
+                @if (row.message) {
+                  <span class="calc__msg">{{ row.message }}</span>
+                }
+              </td>
+            </ng-container>
+            <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
+            <tr mat-row *matRowDef="let row; columns: columns"></tr>
+          </table>
+        </div>
+
+        <app-pagination
+          [page]="page()"
+          [total]="filteredRows().length"
+          [pageSize]="pageSize"
+          label="ligne(s)"
+          (pageChange)="goToPage($event)"
+        />
+      }
+    </section>
+  }
+</div>

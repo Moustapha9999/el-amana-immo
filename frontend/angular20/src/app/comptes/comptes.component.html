@@ -18,6 +18,14 @@
       </p>
     </div>
     <div class="cpt__hero-actions">
+      <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Actualiser
+      </button>
+      <a mat-stroked-button routerLink="/comptes/soldes-148-68">
+        <mat-icon aria-hidden="true">account_balance</mat-icon>
+        Soldes 148 / 68
+      </a>
       <button
         mat-stroked-button
         type="button"
@@ -69,9 +77,26 @@
             }
           </select>
         </div>
+        <div class="cpt-field cpt-field--grow">
+          <label class="cpt-field__label" for="cpt-search">Recherche</label>
+          <input
+            id="cpt-search"
+            class="cpt-field__control"
+            formControlName="search"
+            autocomplete="off"
+            placeholder="Code, désignation, agence, montants, date…"
+            aria-label="Recherche"
+          />
+        </div>
         <div class="cpt__filter-actions">
           <button mat-flat-button color="primary" type="submit" [disabled]="loading()">
             Afficher
+          </button>
+          <button mat-stroked-button type="button" (click)="applyLocalSearch()" [disabled]="loading()">
+            Filtrer
+          </button>
+          <button mat-stroked-button type="button" (click)="resetFilters()" [disabled]="loading()">
+            Réinitialiser
           </button>
         </div>
       </form>
@@ -90,7 +115,7 @@
             }
           </p>
         } @else {
-          @for (g of d.groupes; track g.compte_immobilisation) {
+          @for (g of filteredGroupes(); track g.compte_immobilisation) {
             @if (g.lignes.length) {
               <div class="cpt__groupe">
                 <h2 class="cpt__groupe-title">
@@ -98,7 +123,7 @@
                   <span class="cpt__groupe-libelle">{{ g.intitule }}</span>
                   <span class="cpt__groupe-count">{{ g.lignes.length }} bien(s)</span>
                 </h2>
-                <div class="cpt__table-wrap">
+                <div class="cpt__table-wrap app-table-scroll">
                   <table class="w-full app-table cpt__table">
                     <colgroup>
                       <col class="cpt__col-date" />
@@ -127,7 +152,7 @@
                       </tr>
                     </thead>
                     <tbody>
-                      @for (row of g.lignes; track row.immobilisation_id) {
+                      @for (row of pagedLignes(g); track row.immobilisation_id) {
                         <tr>
                           <td class="cpt__date">
                             {{
@@ -151,7 +176,7 @@
                           </td>
                           <td class="cpt__num">{{ row.valeur_acquisition | montant }}</td>
                           <td class="cpt__num">
-                            {{ row.taux != null ? (row.taux | montant) + ' %' : '—' }}
+                            {{ formatTaux(row.taux) }}
                           </td>
                           <td class="cpt__num">
                             {{ row.amorts_cumules_n1 | montant }}
@@ -195,6 +220,15 @@
                     </tfoot>
                   </table>
                 </div>
+                @if (g.lignes.length > groupPageSize) {
+                  <app-pagination
+                    [page]="pageFor(g.compte_immobilisation)"
+                    [total]="g.lignes.length"
+                    [pageSize]="groupPageSize"
+                    label="bien(s)"
+                    (pageChange)="setGroupPage(g.compte_immobilisation, $event)"
+                  />
+                }
               </div>
             }
           }

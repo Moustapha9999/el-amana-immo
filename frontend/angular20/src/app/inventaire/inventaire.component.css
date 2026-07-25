@@ -5,6 +5,11 @@
 }
 
 .inv__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
   margin-bottom: 1.5rem;
 }
 
@@ -22,6 +27,13 @@
   color: #475569;
   max-width: 40rem;
   line-height: 1.5;
+}
+
+.inv__hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .inv__layout {

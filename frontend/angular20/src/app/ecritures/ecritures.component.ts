@@ -7,6 +7,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
+import { PaginationComponent } from '../shared/pagination.component';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 
 interface EcritureRow {
@@ -29,7 +30,7 @@ interface Paginated<T> {
 
 @Component({
   selector: 'app-ecritures',
-  imports: [ReactiveFormsModule, RouterLink, DatePipe, MontantPipe, MatButtonModule, MatIconModule, MatTableModule],
+  imports: [ReactiveFormsModule, RouterLink, DatePipe, MontantPipe, MatButtonModule, MatIconModule, MatTableModule, PaginationComponent],
   templateUrl: './ecritures.component.html',
   styleUrl: './ecritures.component.css',
 })
@@ -40,6 +41,8 @@ export class EcrituresComponent implements OnInit {
 
   readonly rows = signal<EcritureRow[]>([]);
   readonly total = signal(0);
+  readonly page = signal(1);
+  readonly pageSize = 50;
   readonly loading = signal(false);
   readonly displayedColumns = [
     'date_ecriture',
@@ -54,6 +57,8 @@ export class EcrituresComponent implements OnInit {
   ];
 
   readonly filterForm = this.fb.nonNullable.group({
+    search: [''],
+    journal_code: [''],
     date_debut: [''],
     date_fin: [''],
   });
@@ -64,7 +69,13 @@ export class EcrituresComponent implements OnInit {
 
   load(): void {
     const f = this.filterForm.getRawValue();
-    const params: Record<string, string> = { page: '1', size: '100' };
+    const params: Record<string, string> = { page: String(this.page()), size: String(this.pageSize) };
+    if (f.search.trim()) {
+      params['search'] = f.search.trim();
+    }
+    if (f.journal_code.trim()) {
+      params['journal_code'] = f.journal_code.trim();
+    }
     if (f.date_debut) {
       params['date_debut'] = f.date_debut;
     }
@@ -85,8 +96,19 @@ export class EcrituresComponent implements OnInit {
     });
   }
 
+  applyFilters(): void {
+    this.page.set(1);
+    this.load();
+  }
+
+  goToPage(page: number): void {
+    this.page.set(page);
+    this.load();
+  }
+
   resetFilters(): void {
-    this.filterForm.reset({ date_debut: '', date_fin: '' });
+    this.filterForm.reset({ search: '', journal_code: '', date_debut: '', date_fin: '' });
+    this.page.set(1);
     this.load();
   }
 

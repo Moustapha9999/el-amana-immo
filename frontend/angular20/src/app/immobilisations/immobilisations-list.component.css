@@ -28,12 +28,82 @@
   color: #64748b;
 }
 
+.iml__hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .iml__section {
   background: var(--app-surface-elevated);
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-md);
   box-shadow: var(--app-shadow-card);
   overflow: hidden;
+}
+
+.iml__toolbar {
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef6fc 100%);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.iml__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.85rem 1rem;
+}
+
+.iml-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 9.5rem;
+}
+
+.iml-field--grow {
+  flex: 1 1 14rem;
+  min-width: 12rem;
+}
+
+.iml-field--type {
+  min-width: 14rem;
+}
+
+.iml-field__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.iml-field__control {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: #0f172a;
+  background: #fff;
+}
+
+.iml-field__control:focus {
+  outline: none;
+  border-color: #2874a6;
+  box-shadow: 0 0 0 3px rgba(40, 116, 166, 0.15);
+}
+
+.iml__filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .iml__body {
@@ -49,8 +119,46 @@
 }
 
 .iml__table-wrap {
-  overflow-x: auto;
+  overflow: auto;
   width: 100%;
+  max-height: max(50vh, calc(100vh - 380px));
+}
+
+/* En-tête figé, fond bleu */
+.iml__table-wrap .mat-mdc-header-row {
+  background: #2874a6;
+}
+
+.iml__table-wrap .mat-mdc-header-cell {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #2874a6;
+  color: #fff;
+  font-weight: 600;
+  border-bottom: none;
+}
+
+.iml__pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--app-border);
+  background: var(--app-surface-elevated);
+}
+
+.iml__pagination-info {
+  font-size: 0.8125rem;
+  color: #475569;
+  font-variant-numeric: tabular-nums;
+}
+
+.iml__pagination-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .iml__table-wrap .app-table {

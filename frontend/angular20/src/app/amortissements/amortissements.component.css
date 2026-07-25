@@ -14,6 +14,19 @@
   margin-bottom: 1.25rem;
 }
 
+.amo__hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.amo__hero-actions a mat-icon {
+  margin-right: 0.25rem;
+  font-size: 1.1rem;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
 .amo__title {
   margin: 0;
   font-size: 1.5rem;
@@ -36,6 +49,69 @@
   overflow: hidden;
 }
 
+.amo__toolbar {
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef6fc 100%);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.amo__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.85rem 1rem;
+}
+
+.amo-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 9.5rem;
+}
+
+.amo-field--grow {
+  flex: 1 1 14rem;
+  min-width: 12rem;
+}
+
+.amo-field--type {
+  min-width: 14rem;
+}
+
+.amo-field__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.amo-field__control {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: #0f172a;
+  background: #fff;
+}
+
+.amo-field__control:focus {
+  outline: none;
+  border-color: #2874a6;
+  box-shadow: 0 0 0 3px rgba(40, 116, 166, 0.15);
+}
+
+.amo__filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .amo__empty {
   margin: 0;
   padding: 2.5rem 1.25rem;
@@ -45,8 +121,46 @@
 }
 
 .amo__table-wrap {
-  overflow-x: auto;
+  overflow: auto;
   width: 100%;
+  max-height: max(50vh, calc(100vh - 380px));
+}
+
+/* En-tête figé, fond bleu */
+.amo__table-wrap .mat-mdc-header-row {
+  background: #2874a6;
+}
+
+.amo__table-wrap .mat-mdc-header-cell {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #2874a6;
+  color: #fff;
+  font-weight: 600;
+  border-bottom: none;
+}
+
+.amo__pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--app-border);
+  background: var(--app-surface-elevated);
+}
+
+.amo__pagination-info {
+  font-size: 0.8125rem;
+  color: #475569;
+  font-variant-numeric: tabular-nums;
+}
+
+.amo__pagination-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .amo__table-wrap .app-table {

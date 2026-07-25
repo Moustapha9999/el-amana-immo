@@ -34,17 +34,17 @@ export const MODE_AMORTISSEMENT_OPTIONS = [
  * Durée dérivée du taux métier (durée ≈ 100 ÷ taux).
  */
 export const NATURE_IMMO_OFFICIELLE = [
-  { code: 'TY-142010', libelle: 'AAI', compte: '142010', taux: 10, duree_annees: 10 },
-  { code: 'TY-147530', libelle: 'Logiciel', compte: '147530', taux: 10, duree_annees: 10 },
-  { code: 'TY-147050', libelle: 'Frais immobilisés', compte: '147050', taux: 33, duree_annees: 3 },
-  { code: 'TY-147030', libelle: 'Frais émission emprunt', compte: '147030', taux: 33, duree_annees: 3 },
-  { code: 'TY-142060', libelle: 'Matériel de bureau', compte: '142060', taux: 10, duree_annees: 10 },
-  { code: 'TY-142041', libelle: 'Matériel informatique', compte: '142041', taux: 20, duree_annees: 5 },
-  { code: 'TY-142050', libelle: 'Matériel transport', compte: '142050', taux: 25, duree_annees: 4 },
-  { code: 'TY-142020', libelle: 'Construction', compte: '142020', taux: 4, duree_annees: 25 },
-  { code: 'TY-142097', libelle: "Matériel d'exploitation historique", compte: '142097', taux: 10, duree_annees: 10 },
-  { code: 'TY-142080', libelle: 'Autres immobilisation', compte: '142080', taux: 4, duree_annees: 25 },
-  { code: 'TY-142160', libelle: 'Autres immobilisations corporelles', compte: '142160', taux: 10, duree_annees: 10 },
+  { code: 'TY-142010', libelle: 'AAI', compte: '142010', amort: '148211', dotation: '681211', taux: 10, duree_annees: 10, prefix: 'AAI' },
+  { code: 'TY-147530', libelle: 'Logiciel', compte: '147530', amort: '148700', dotation: '681700', taux: 10, duree_annees: 10, prefix: 'Log' },
+  { code: 'TY-147050', libelle: 'Frais immobilisés', compte: '147050', amort: '148050', dotation: '681050', taux: 33.33, duree_annees: 3, prefix: 'Frais' },
+  { code: 'TY-147030', libelle: 'Frais émission emprunt', compte: '147030', amort: '148030', dotation: '681030', taux: 33.33, duree_annees: 3, prefix: 'FraisEmp' },
+  { code: 'TY-142060', libelle: 'Matériel de bureau', compte: '142060', amort: '148299', dotation: '681299', taux: 10, duree_annees: 10, prefix: 'MatBur' },
+  { code: 'TY-142041', libelle: 'Matériel informatique', compte: '142041', amort: '148240', dotation: '681240', taux: 20, duree_annees: 5, prefix: 'MatInfo' },
+  { code: 'TY-142050', libelle: 'Matériel transport', compte: '142050', amort: '148250', dotation: '681250', taux: 25, duree_annees: 4, prefix: 'MatTrans' },
+  { code: 'TY-142020', libelle: 'Construction', compte: '142020', amort: '148220', dotation: '681220', taux: 4, duree_annees: 25, prefix: 'Const' },
+  { code: 'TY-142097', libelle: "Matériel d'exploitation historique", compte: '142097', amort: '148230', dotation: '681230', taux: 10, duree_annees: 10, prefix: 'MatExp' },
+  { code: 'TY-142080', libelle: 'Autres immobilisation', compte: '142080', amort: '148298', dotation: '681298', taux: 4, duree_annees: 25, prefix: 'Autres' },
+  { code: 'TY-142160', libelle: 'Autres immobilisations corporelles', compte: '142160', amort: '148270', dotation: '681270', taux: 10, duree_annees: 10, prefix: 'AutCorp' },
 ] as const;
 
 export type NatureImmoOfficielle = (typeof NATURE_IMMO_OFFICIELLE)[number];
@@ -54,6 +54,15 @@ export const NATURE_IMMO_CODES_OFFICIELS: readonly string[] = NATURE_IMMO_OFFICI
 
 export function findNatureImmoOfficielle(code: string): NatureImmoOfficielle | undefined {
   return NATURE_IMMO_OFFICIELLE.find((n) => n.code === code);
+}
+
+/** Paire 148/681 officielle pour un compte immobilisation. */
+export function pairedAccountsForImmo(compteImmo: string): { amort: string; dotation: string } | null {
+  const ref = NATURE_IMMO_OFFICIELLE.find((n) => n.compte === compteImmo.trim());
+  if (!ref) {
+    return null;
+  }
+  return { amort: ref.amort, dotation: ref.dotation };
 }
 
 export function natureImmoOptionLabel(cat: {

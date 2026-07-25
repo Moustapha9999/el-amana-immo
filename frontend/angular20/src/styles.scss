@@ -166,6 +166,13 @@ table.mat-mdc-table.app-table {
     color: #0f172a;
   }
 
+  &__currency {
+    margin-left: 0.35rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #64748b;
+  }
+
   &__icon {
     position: absolute;
     top: 1rem;
@@ -182,6 +189,13 @@ table.mat-mdc-table.app-table {
     width: 1.75rem;
     height: 1.75rem;
   }
+}
+
+.kpi-currency {
+  margin-left: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #64748b;
 }
 
 /* Textes d'explication / formules — discrets (italique + opacité réduite) */
@@ -210,4 +224,43 @@ table.mat-mdc-table.app-table {
 .immo-field__help--warn {
   font-style: italic;
   opacity: 0.85;
+}
+
+/* Tableaux : corps défilant + en-tête figé sur fond bleu (marque) */
+.app-table-scroll {
+  overflow: auto;
+  width: 100%;
+  max-height: max(50vh, calc(100vh - 380px));
+}
+
+.app-table-scroll .mat-mdc-header-row,
+.app-table-scroll thead tr {
+  background: #2874a6;
+}
+
+.app-table-scroll .mat-mdc-header-cell,
+.app-table-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #2874a6;
+  color: #fff;
+  font-weight: 600;
+  border-bottom: none;
+}
+
+/* Montants : lisibilité (séparateur de milliers via pipe / saisie FR) */
+input[appMontantInput],
+.iml__montant,
+.ecr__montant,
+.rev__montant,
+.cpt__num,
+.dash__kpi-value,
+[class*='__montant'] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+input[appMontantInput] {
+  text-align: right;
 }

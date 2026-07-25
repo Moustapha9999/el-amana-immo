@@ -37,6 +37,7 @@ export class InventaireComponent implements OnInit {
 
   readonly scans = signal<InventaireScanRow[]>([]);
   readonly scanning = signal(false);
+  readonly loading = signal(false);
   readonly displayedColumns = ['created_at', 'code_scanne', 'valide', 'designation', 'localisation'];
 
   readonly scanForm = this.fb.nonNullable.group({
@@ -49,8 +50,13 @@ export class InventaireComponent implements OnInit {
   }
 
   loadScans(): void {
-    this.api.get<Paginated<InventaireScanRow>>('/inventaire/scans', { page: 1, size: 50 }).subscribe((res) => {
-      this.scans.set(res.items);
+    this.loading.set(true);
+    this.api.get<Paginated<InventaireScanRow>>('/inventaire/scans', { page: 1, size: 50 }).subscribe({
+      next: (res) => {
+        this.scans.set(res.items);
+        this.loading.set(false);
+      },
+      error: () => this.loading.set(false),
     });
   }
 

@@ -71,11 +71,11 @@
           </div>
           <div>
             <dt>Valeur brute (VB)</dt>
-            <dd class="amd__montant">{{ i.valeur_brute | montant }}</dd>
+            <dd class="amd__montant">{{ i.valeur_brute | montant: 'MRU' }}</dd>
           </div>
           <div>
             <dt>Taux annuel</dt>
-            <dd>{{ i.taux != null ? (i.taux | montant) + ' %' : '—' }}</dd>
+            <dd>{{ formatTaux(i.taux) }}</dd>
           </div>
           <div>
             <dt>Durée</dt>
@@ -93,7 +93,7 @@
         <div class="amd__result-grid">
           <div class="amd__result-card">
             <span class="amd__result-label">Valeur brute</span>
-            <span class="amd__result-value">{{ i.valeur_brute | montant }}</span>
+            <span class="amd__result-value">{{ i.valeur_brute | montant: 'MRU' }}</span>
           </div>
           <div class="amd__result-card">
             <span class="amd__result-label">Cumul amort.</span>
@@ -118,7 +118,7 @@
             Aucune période pour {{ anneeExercice() }}. Mettez l’actif en service ou régénérez le plan.
           </p>
         } @else {
-          <div class="amd__table-wrap">
+          <div class="amd__table-wrap app-table-scroll">
             <table mat-table [dataSource]="lignes()" class="w-full app-table">
               <ng-container matColumnDef="periode">
                 <th mat-header-cell *matHeaderCellDef>Période</th>
@@ -153,7 +153,7 @@
                   </span>
                 </td>
               </ng-container>
-              <tr mat-header-row *matHeaderRowDef="columns"></tr>
+              <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
               <tr mat-row *matRowDef="let row; columns: columns"></tr>
             </table>
           </div>

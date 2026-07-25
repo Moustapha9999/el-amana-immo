@@ -6,6 +6,8 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
+import { formatTauxPercent } from '../shared/amortissement-rate.util';
+import { PaginationComponent } from '../shared/pagination.component';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 
 interface CompteNatureLigne {
@@ -47,7 +49,7 @@ interface ComptesParNatureResponse {
 
 @Component({
   selector: 'app-comptes',
-  imports: [ReactiveFormsModule, MontantPipe, DatePipe, MatButtonModule, MatIconModule, RouterLink],
+  imports: [ReactiveFormsModule, MontantPipe, DatePipe, MatButtonModule, MatIconModule, RouterLink, PaginationComponent],
   templateUrl: './comptes.component.html',
   styleUrl: './comptes.component.css',
 })
@@ -59,17 +61,40 @@ export class ComptesComponent implements OnInit {
   readonly data = signal<ComptesParNatureResponse | null>(null);
   readonly loading = signal(false);
   readonly exporting = signal<'xlsx' | 'pdf' | null>(null);
+  readonly formatTaux = formatTauxPercent;
+
+  /* Pagination indépendante par groupe de compte (les données arrivent en bloc). */
+  readonly groupPageSize = 50;
+  private readonly groupPages = signal<Record<string, number>>({});
 
   readonly filterForm = this.fb.nonNullable.group({
     annee: [new Date().getFullYear()],
     compte: [''],
+    search: [''],
   });
+
+  /** Recherche locale appliquée après chargement. */
+  readonly localSearch = signal('');
 
   readonly comptesOptions = computed(() => this.data()?.comptes_disponibles ?? []);
   readonly singleCompte = computed(() => !!this.data()?.compte_filtre);
   readonly hasLignes = computed(() =>
-    (this.data()?.groupes ?? []).some((g) => g.lignes.length > 0),
+    this.filteredGroupes().some((g) => g.lignes.length > 0),
   );
+
+  readonly filteredGroupes = computed(() => {
+    const groupes = this.data()?.groupes ?? [];
+    const q = this.localSearch().trim().toLowerCase();
+    if (!q) {
+      return groupes;
+    }
+    return groupes
+      .map((g) => ({
+        ...g,
+        lignes: g.lignes.filter((row) => this.ligneMatches(row, q)),
+      }))
+      .filter((g) => g.lignes.length > 0);
+  });
 
   ngOnInit(): void {
     this.load();
@@ -90,6 +115,8 @@ export class ComptesComponent implements OnInit {
     this.api.get<ComptesParNatureResponse>('/reporting/comptes-par-nature', params).subscribe({
       next: (res) => {
         this.data.set(res);
+        this.groupPages.set({});
+        this.applyLocalSearch();
         this.loading.set(false);
       },
       error: (err: { error?: { detail?: unknown } }) => {
@@ -102,8 +129,51 @@ export class ComptesComponent implements OnInit {
     });
   }
 
+  applyLocalSearch(): void {
+    this.localSearch.set(this.filterForm.controls.search.value);
+    this.groupPages.set({});
+  }
+
+  resetFilters(): void {
+    const annee = this.filterForm.controls.annee.value;
+    this.filterForm.reset({ annee, compte: '', search: '' });
+    this.applyLocalSearch();
+    this.load();
+  }
+
   agenceLabel(row: CompteNatureLigne): string {
     return row.agence_libelle || row.agence_code || '—';
+  }
+
+  private ligneMatches(row: CompteNatureLigne, q: string): boolean {
+    const fields = [
+      row.code_inventaire,
+      row.designation,
+      row.date_acquisition,
+      row.quantite,
+      row.valeur_acquisition,
+      row.taux,
+      row.amorts_cumules_n1,
+      row.dotations_annee,
+      row.amorts_cumules_n,
+      row.vnc,
+      row.agence_code,
+      row.agence_libelle,
+    ];
+    return fields.some((f) => String(f ?? '').toLowerCase().includes(q));
+  }
+
+  pageFor(compte: string): number {
+    return this.groupPages()[compte] ?? 1;
+  }
+
+  setGroupPage(compte: string, page: number): void {
+    this.groupPages.update((pages) => ({ ...pages, [compte]: page }));
+  }
+
+  pagedLignes(groupe: CompteNatureGroupe): CompteNatureLigne[] {
+    const start = (this.pageFor(groupe.compte_immobilisation) - 1) * this.groupPageSize;
+    return groupe.lignes.slice(start, start + this.groupPageSize);
   }
 
   export(format: 'xlsx' | 'pdf'): void {

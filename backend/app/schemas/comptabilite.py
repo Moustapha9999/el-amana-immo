@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.enums import TypeComptePlan
 from app.schemas.common import ORMModel
@@ -25,9 +25,34 @@ class ComptePlanCreate(BaseModel):
     centre_analytique: str | None = None
 
 
+class ComptePlanCreateLinked(ComptePlanCreate):
+    """Création compte + nature IMMO (obligatoire si type = immobilisation)."""
+
+    nature_libelle: str | None = None
+    nature_code: str | None = None
+    duree_annees: int | None = Field(default=None, ge=1, le=100)
+    taux_lineaire: Decimal | None = Field(default=None, ge=0, le=100)
+    compte_amortissement: str | None = None
+    compte_dotation: str | None = None
+
+
+class ComptePlanUpdate(BaseModel):
+    libelle: str | None = None
+    type_compte: TypeComptePlan | None = None
+    centre_analytique: str | None = None
+    is_active: bool | None = None
+
+
 class ComptePlanRead(ComptePlanCreate, ORMModel):
     id: UUID
     is_active: bool
+    # Nature IMMO liée (renseignée en lecture liste si compte immo)
+    nature_code: str | None = None
+    nature_libelle: str | None = None
+    nature_taux: Decimal | None = None
+    nature_duree_annees: int | None = None
+    nature_compte_amortissement: str | None = None
+    nature_compte_dotation: str | None = None
 
 
 class ParametrageAmortissementRead(ORMModel):
@@ -102,3 +127,50 @@ class EcritureDetailRead(EcritureRead):
 class AmortissementComptabiliserResponse(BaseModel):
     amortissement: AmortissementRead
     ecriture: EcritureRead
+
+
+class AmortissementCalculerRequest(BaseModel):
+    periodicite: str  # mensuel | trimestriel | annuel
+    annee: int
+    periode_index: int  # mois 1-12 | trimestre 1-4 | année = 1
+    mode: str  # simulation | validation
+    categorie_ids: list[UUID] | None = None
+    date_ecriture: date | None = None
+
+
+class AmortissementCalculerLigneRead(BaseModel):
+    immobilisation_id: UUID
+    code_inventaire: str
+    designation: str
+    statut: str
+    vnc_avant: Decimal
+    dotation: Decimal
+    vnc_apres: Decimal
+    cumul_avant: Decimal
+    cumul_apres: Decimal
+    valeur_brute: Decimal
+    nature: str | None = None
+    compte_dotation: str | None = None
+    compte_amortissement: str | None = None
+    taux: Decimal | None = None
+    message: str | None = None
+
+
+class AmortissementCalculerResponse(BaseModel):
+    periodicite: str
+    annee: int
+    periode_index: int
+    periode: str
+    date_debut: date
+    date_arrete: date
+    date_ecriture: date
+    mode: str
+    nb_calcules: int
+    nb_ignores_vnc: int
+    nb_deja_comptabilises: int
+    nb_erreurs: int
+    total_dotations: Decimal
+    lignes: list[AmortissementCalculerLigneRead]
+    ignores: list[AmortissementCalculerLigneRead]
+    deja_comptabilises: list[AmortissementCalculerLigneRead]
+    erreurs: list[AmortissementCalculerLigneRead]

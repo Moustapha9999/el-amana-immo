@@ -8,6 +8,7 @@ import xlrd
 from openpyxl import Workbook
 
 from app.services.bank_immo_import import (
+    compute_dotation_exercice,
     parse_amount,
     parse_bank_workbook,
     parse_date,
@@ -119,6 +120,81 @@ def test_parse_bank_workbook_aai_fixture():
 
     vb = sum((r.valeur_brute for r in rows), Decimal("0"))
     assert vb == Decimal("5916327.70")
+
+
+def _build_logiciel_fixture_xlsx() -> bytes:
+    """Feuille type Logiciel 147530 : pas de colonnes Dotation / Fin exercice / VNC."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "logiciel"
+    ws.append(["BEA"])
+    ws.append(["TABLEAU D'AMORTISSEMENT LOGICIEL"])
+    ws.append(["COMPTE N°: 1475300008  Compte Amort : N° 148700"])
+    ws.append(["Date", "Qté", "Désignation", "d'acquisition", "Taux", "Fin Exr.Précé"])
+    ws.append(["0101/05", None, "REPORT 2004", 1588323.26, "10%", 1588323.26])
+    ws.append(["13/04/15", 1, "Licence CBS 30 000 Euros", 1035240.00, "10%", 1009359.00])
+    # Lignes de total / report annuels — à ignorer
+    ws.append(["31/12/16", None, "Total au 31/12/2016", 2623563.26, None, 2597682.26])
+    ws.append(["01/01/17", None, "Report 01/01/2017", 2623563.26, None, 2597682.26])
+    ws.append(["06/10/25", None, "RGLT FACT NSERVICES", 637200.00, "10%", None])
+    ws.append(["15/01/26", None, "RGLT FACT EUT N° F128726", 363803.18, "10%", None])
+    ws.append(["30/06/26", None, "Solde au 30/06/2026", 3624566.44, None, 2597682.26])
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_parse_bank_workbook_logiciel_sans_colonnes_dotation():
+    rows = parse_bank_workbook(_build_logiciel_fixture_xlsx(), "fixture.xlsx")
+    assert len(rows) == 4
+    assert all(r.calc_dotation is True for r in rows)
+    assert all(r.categorie_code == "TY-147530" for r in rows)
+    # Au parsing, pas de dotation banque : cumul fin = cumul N-1
+    assert all(r.dotation == Decimal("0.00") for r in rows)
+    assert all(r.amt_fin == r.amt_n1 for r in rows)
+
+    vb = sum((r.valeur_brute for r in rows), Decimal("0"))
+    n1 = sum((r.amt_n1 for r in rows), Decimal("0"))
+    assert vb == Decimal("3624566.44")
+    assert n1 == Decimal("2597682.26")
+
+
+def test_compute_dotation_exercice_2026():
+    dix = Decimal("10")
+    # Bien totalement amorti → dotation nulle
+    assert compute_dotation_exercice(
+        Decimal("1588323.26"), Decimal("1588323.26"), dix, date(2004, 1, 1)
+    ) == Decimal("0.00")
+    # Acquisition < 2026 : 12 mois pleins, plafonnés au restant à amortir
+    assert compute_dotation_exercice(
+        Decimal("637200.00"), Decimal("0.00"), dix, date(2025, 10, 6)
+    ) == Decimal("63720.00")
+    assert compute_dotation_exercice(
+        Decimal("1035240.00"), Decimal("1009359.00"), dix, date(2015, 4, 13)
+    ) == Decimal("25881.00")
+    # Acquisition 2026 : Excel DAYS360(15/01, 30/06) = 165 jours
+    assert compute_dotation_exercice(
+        Decimal("363803.18"), Decimal("0.00"), dix, date(2026, 1, 15)
+    ) == Decimal("16674.31")
+    # Acquisition postérieure à l'arrêté → aucune dotation
+    assert compute_dotation_exercice(
+        Decimal("100000.00"), Decimal("0.00"), dix, date(2026, 8, 10)
+    ) == Decimal("0.00")
+    # VB négative / reclassement / nivellement : pas de nouvelle dotation
+    assert compute_dotation_exercice(
+        Decimal("-2168127.00"),
+        Decimal("-216812.70"),
+        dix,
+        date(2005, 11, 24),
+        designation="Reclassement Financement BID",
+    ) == Decimal("0.00")
+    assert compute_dotation_exercice(
+        Decimal("7953216.59"),
+        Decimal("0.00"),
+        dix,
+        date(2025, 1, 14),
+        designation="NIVELLEMENT SOLDE COMPTE 147530/47 VERS COMPTE 147530/50",
+    ) == Decimal("0.00")
 
 
 def test_mouvements_prefer_bank_seed():

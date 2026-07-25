@@ -21,6 +21,7 @@ from app.schemas.immobilisation import (
     ImmobilisationUpdate,
     InventaireScanCreate,
     InventaireScanRead,
+    NextCodeInventaireResponse,
     PieceJointeRead,
     QrCodeResponse,
 )
@@ -162,16 +163,56 @@ async def update_category(
         raise_http_from_app(exc)
 
 
+@router.get("/immobilisations/next-code", response_model=NextCodeInventaireResponse)
+async def next_code_inventaire(
+    categorie_id: UUID = Query(..., description="Nature IMMO"),
+    annee: int = Query(..., ge=2000, le=2100, description="Année du N° (souvent année d'acquisition)"),
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Prochain N° immobilisation pour une nature : ``AAI-2026-001``, ``Log-2026-001``, …"""
+    from app.services.code_inventaire import next_code_for_categorie_id, parse_code_inventaire
+
+    try:
+        code = await next_code_for_categorie_id(db, categorie_id, annee)
+        parsed = parse_code_inventaire(code)
+        prefix = parsed[0] if parsed else ""
+        return NextCodeInventaireResponse(code_inventaire=code, prefix=prefix, annee=annee)
+    except AppError as exc:
+        raise_http_from_app(exc)
+
+
 @router.get("/immobilisations", response_model=PaginatedResponse[ImmobilisationRead])
 async def list_immobilisations(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     search: str | None = None,
+    amortissable: bool | None = Query(None),
+    statuts: str | None = Query(None, description="Statuts séparés par des virgules"),
+    famille: str | None = Query(None, description="Filtre sur le type / famille de catégorie"),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.models.enums import StatutImmobilisation
+
+    statut_list: list[StatutImmobilisation] | None = None
+    if statuts:
+        try:
+            statut_list = [
+                StatutImmobilisation(s.strip()) for s in statuts.split(",") if s.strip()
+            ]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Statut invalide dans le paramètre 'statuts'.")
+
     service = ImmobilisationService(db)
-    items, total = await service.list(page, size, search)
+    items, total = await service.list(
+        page,
+        size,
+        search,
+        amortissable=amortissable,
+        statuts=statut_list,
+        famille=famille,
+    )
     return to_paginated(items, total, page, size, ImmobilisationRead.model_validate)
 
 

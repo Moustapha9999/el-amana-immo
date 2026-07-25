@@ -5,6 +5,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
+import { PaginationComponent } from '../shared/pagination.component';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 import { AUDIT_ENTITY_OPTIONS, auditActionLabel, auditEntityLabel } from './audit.constants';
 
@@ -25,7 +26,7 @@ interface Paginated<T> {
 
 @Component({
   selector: 'app-audit',
-  imports: [ReactiveFormsModule, DatePipe, MatButtonModule, MatIconModule, MatTableModule],
+  imports: [ReactiveFormsModule, DatePipe, MatButtonModule, MatIconModule, MatTableModule, PaginationComponent],
   templateUrl: './audit.component.html',
   styleUrl: './audit.component.css',
 })
@@ -36,6 +37,8 @@ export class AuditComponent implements OnInit {
 
   readonly rows = signal<AuditRow[]>([]);
   readonly total = signal(0);
+  readonly page = signal(1);
+  readonly pageSize = 50;
   readonly loading = signal(true);
   readonly exporting = signal(false);
   readonly error = signal<string | null>(null);
@@ -108,6 +111,16 @@ export class AuditComponent implements OnInit {
     });
   }
 
+  applyFilters(): void {
+    this.page.set(1);
+    this.load();
+  }
+
+  goToPage(page: number): void {
+    this.page.set(page);
+    this.load();
+  }
+
   resetFilters(): void {
     this.filterForm.reset({
       search: '',
@@ -116,6 +129,7 @@ export class AuditComponent implements OnInit {
       date_debut: '',
       date_fin: '',
     });
+    this.page.set(1);
     this.load();
   }
 
@@ -143,7 +157,7 @@ export class AuditComponent implements OnInit {
 
   private filterParams(): Record<string, string> {
     const f = this.filterForm.getRawValue();
-    const params: Record<string, string> = { page: '1', size: '100' };
+    const params: Record<string, string> = { page: String(this.page()), size: String(this.pageSize) };
     if (f.search.trim()) {
       params['search'] = f.search.trim();
     }

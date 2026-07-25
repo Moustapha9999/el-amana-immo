@@ -72,12 +72,19 @@ async def list_cessions(
         filters.append(Cession.date_cession >= date_debut)
     if date_fin is not None:
         filters.append(Cession.date_cession <= date_fin)
-    if search:
+    if search and search.strip():
+        from sqlalchemy import String, cast
+
         pattern = f"%{search.strip()}%"
         filters.append(
             or_(
                 Immobilisation.code_inventaire.ilike(pattern),
                 Immobilisation.designation.ilike(pattern),
+                Cession.reference.ilike(pattern),
+                Cession.libelle.ilike(pattern),
+                Cession.observations.ilike(pattern),
+                cast(Cession.prix_cession, String).ilike(pattern),
+                cast(Cession.vnc, String).ilike(pattern),
             )
         )
 
@@ -114,13 +121,16 @@ async def list_rebuts(
         filters.append(Rebut.date_rebut >= date_debut)
     if date_fin is not None:
         filters.append(Rebut.date_rebut <= date_fin)
-    if search:
+    if search and search.strip():
+        from sqlalchemy import String, cast
+
         pattern = f"%{search.strip()}%"
         filters.append(
             or_(
                 Immobilisation.code_inventaire.ilike(pattern),
                 Immobilisation.designation.ilike(pattern),
                 Rebut.motif.ilike(pattern),
+                cast(Rebut.vnc, String).ilike(pattern),
             )
         )
 
@@ -157,13 +167,17 @@ async def list_reevaluations(
         filters.append(Reevaluation.date_reevaluation >= date_debut)
     if date_fin is not None:
         filters.append(Reevaluation.date_reevaluation <= date_fin)
-    if search:
+    if search and search.strip():
+        from sqlalchemy import String, cast
+
         pattern = f"%{search.strip()}%"
         filters.append(
             or_(
                 Immobilisation.code_inventaire.ilike(pattern),
                 Immobilisation.designation.ilike(pattern),
                 Reevaluation.justificatif.ilike(pattern),
+                cast(Reevaluation.ancienne_valeur, String).ilike(pattern),
+                cast(Reevaluation.nouvelle_valeur, String).ilike(pattern),
             )
         )
 

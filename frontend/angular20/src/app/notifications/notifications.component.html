@@ -1,4 +1,8 @@
 <app-page-header title="Notifications" subtitle="Fin d'amortissement et écarts inventaire.">
+  <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()">
+    <mat-icon aria-hidden="true">refresh</mat-icon>
+    Actualiser
+  </button>
   @if (unread() > 0) {
     <button mat-stroked-button type="button" (click)="markAllRead()">Tout marquer comme lu</button>
   }

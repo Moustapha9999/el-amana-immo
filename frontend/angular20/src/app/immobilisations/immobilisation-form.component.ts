@@ -1,4 +1,5 @@
 ﻿import { DatePipe } from '@angular/common';
+import { MontantInputDirective } from '../shared/montant-input.directive';
 import { MontantPipe } from '../shared/montant.pipe';
 import { Component, computed, effect, inject, input, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -6,6 +7,7 @@ import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
+import { map, Observable, of, switchMap } from 'rxjs';
 import { ApiService } from '../core/services/api.service';
 import { AuthService } from '../core/services/auth.service';
 import { tauxLineaireFromDuree, formatPeriodeAmortissement } from '../shared/amortissement-rate.util';
@@ -118,6 +120,7 @@ interface ImmobilisationDto {
     RouterLink,
     DatePipe,
     MontantPipe,
+    MontantInputDirective,
     MatButtonModule,
     MatIconModule,
     MatTableModule,
@@ -205,6 +208,8 @@ export class ImmobilisationFormComponent implements OnInit {
   readonly agences = signal<Agence[]>([]);
   readonly centresCout = signal<CentreCout[]>([]);
   readonly fournisseurs = signal<Fournisseur[]>([]);
+  /** True si l'utilisateur a modifié le N° à la main (stoppe l'auto-proposition). */
+  private codeManuallyEdited = false;
   readonly saving = signal(false);
   readonly workflowBusy = signal(false);
   readonly statutActuel = signal('brouillon');
@@ -321,8 +326,8 @@ export class ImmobilisationFormComponent implements OnInit {
     quantite: [1, [Validators.required, Validators.min(1)]],
     categorie_id: ['', Validators.required],
     agence_id: [''],
-    centre_cout_id: [''],
-    fournisseur_id: [''],
+    centre_cout_libre: [''],
+    fournisseur_libre: [''],
     date_acquisition: ['', Validators.required],
     date_comptabilisation: ['', Validators.required],
     date_mise_en_service: [''],
@@ -375,11 +380,18 @@ export class ImmobilisationFormComponent implements OnInit {
       this.agences.set(res.items);
     });
     this.api.get<Paginated<CentreCout>>('/centres-cout', { page: 1, size: 100 }).subscribe({
-      next: (res) => this.centresCout.set(res.items ?? []),
+      next: (res) => {
+        this.centresCout.set(res.items ?? []);
+        this.applyPendingReferentielLabels();
+      },
       error: () => this.centresCout.set([]),
     });
-    this.api.get<Paginated<Fournisseur>>('/fournisseurs', { page: 1, size: 100 }).subscribe((res) => {
-      this.fournisseurs.set(res.items);
+    this.api.get<Paginated<Fournisseur>>('/fournisseurs', { page: 1, size: 100 }).subscribe({
+      next: (res) => {
+        this.fournisseurs.set(res.items ?? []);
+        this.applyPendingReferentielLabels();
+      },
+      error: () => this.fournisseurs.set([]),
     });
 
     const immoId = this.id();
@@ -401,11 +413,20 @@ export class ImmobilisationFormComponent implements OnInit {
       this.loadPieces(immoId);
     }
 
-    this.form.controls.categorie_id.valueChanges.subscribe((catId) => this.applyCategoryDefaults(catId));
+    this.form.controls.code_inventaire.valueChanges.subscribe(() => {
+      if (!this.id()) {
+        this.codeManuallyEdited = true;
+      }
+    });
+    this.form.controls.categorie_id.valueChanges.subscribe((catId) => {
+      this.applyCategoryDefaults(catId);
+      this.refreshCodeInventairePropose();
+    });
     this.form.controls.date_acquisition.valueChanges.subscribe((acq) => {
       if (acq && !this.form.controls.date_comptabilisation.value) {
         this.form.controls.date_comptabilisation.setValue(acq, { emitEvent: false });
       }
+      this.refreshCodeInventairePropose();
     });
     this.sortieForm.controls.date_cession.valueChanges.subscribe(() => this.refreshCessionPreview());
     this.sortieForm.controls.prix_cession.valueChanges.subscribe(() => this.refreshCessionPreview());
@@ -423,10 +444,16 @@ export class ImmobilisationFormComponent implements OnInit {
   }
 
   refreshTauxCalcule(): void {
-    const duree = this.form.controls.duree_annees.value;
-    if (this.form.controls.taux.value == null) {
-      this.form.controls.taux.setValue(tauxLineaireFromDuree(duree), { emitEvent: false });
+    if (this.form.controls.taux.value != null) {
+      return;
     }
+    const cat = this.selectedCategory();
+    if (cat?.taux_lineaire_defaut != null) {
+      this.form.controls.taux.setValue(Number(cat.taux_lineaire_defaut), { emitEvent: false });
+      return;
+    }
+    const duree = this.form.controls.duree_annees.value;
+    this.form.controls.taux.setValue(tauxLineaireFromDuree(duree), { emitEvent: false });
   }
 
   selectedCategory(): Categorie | undefined {
@@ -450,11 +477,13 @@ export class ImmobilisationFormComponent implements OnInit {
     }
     const ref = findNatureImmoOfficielle(cat.code);
     const duree =
+      cat.duree_annees_defaut ??
       ref?.duree_annees ??
-      (cat.amortissable ? (cat.duree_annees_defaut ?? null) : null);
+      (cat.amortissable ? null : null);
+    // Source de vérité : Type (DB) puis référentiel officiel — jamais 100/durée si Type connu
     const taux =
-      ref?.taux ??
       (cat.taux_lineaire_defaut != null ? Number(cat.taux_lineaire_defaut) : null) ??
+      ref?.taux ??
       tauxLineaireFromDuree(duree);
 
     this.form.patchValue({
@@ -470,9 +499,40 @@ export class ImmobilisationFormComponent implements OnInit {
     this.form.controls.taux.markAsPristine();
   }
 
+  /** Propose AAI-2026-001 / Log-2026-001… (création uniquement, si non saisi à la main). */
+  refreshCodeInventairePropose(): void {
+    if (this.id() || this.codeManuallyEdited) {
+      return;
+    }
+    const catId = this.form.controls.categorie_id.value;
+    const acq = this.form.controls.date_acquisition.value;
+    if (!catId || !acq) {
+      return;
+    }
+    const annee = Number(String(acq).slice(0, 4));
+    if (!Number.isFinite(annee) || annee < 2000) {
+      return;
+    }
+    this.api
+      .get<{ code_inventaire: string }>('/immobilisations/next-code', {
+        categorie_id: catId,
+        annee,
+      })
+      .subscribe({
+        next: (res) => {
+          if (this.codeManuallyEdited || this.id()) {
+            return;
+          }
+          this.form.controls.code_inventaire.setValue(res.code_inventaire, { emitEvent: false });
+        },
+      });
+  }
+
   patchFromDto(row: ImmobilisationDto): void {
     this.statutActuel.set(row.statut);
     this.dateComptabilisation.set(row.date_comptabilisation);
+    this.pendingFournisseurId = row.fournisseur_id;
+    this.pendingCentreCoutId = row.centre_cout_id;
     this.form.patchValue({
       code_inventaire: row.code_inventaire,
       designation: row.designation,
@@ -482,8 +542,8 @@ export class ImmobilisationFormComponent implements OnInit {
       quantite: row.quantite,
       categorie_id: row.categorie_id,
       agence_id: row.agence_id ?? '',
-      centre_cout_id: row.centre_cout_id ?? '',
-      fournisseur_id: row.fournisseur_id ?? '',
+      centre_cout_libre: this.labelCentreCout(row.centre_cout_id),
+      fournisseur_libre: this.labelFournisseur(row.fournisseur_id),
       date_acquisition: row.date_acquisition,
       date_comptabilisation: row.date_comptabilisation ?? '',
       date_mise_en_service: row.date_mise_en_service ?? '',
@@ -501,6 +561,7 @@ export class ImmobilisationFormComponent implements OnInit {
       localisation: row.localisation ?? '',
     });
     this.form.controls.taux.markAsPristine();
+    this.applyPendingReferentielLabels();
   }
 
   loadAmortissements(immoId: string): void {
@@ -988,6 +1049,105 @@ export class ImmobilisationFormComponent implements OnInit {
       });
   }
 
+  private pendingFournisseurId: string | null = null;
+  private pendingCentreCoutId: string | null = null;
+
+  private labelFournisseur(id: string | null | undefined): string {
+    if (!id) {
+      return '';
+    }
+    return this.fournisseurs().find((f) => f.id === id)?.raison_sociale ?? '';
+  }
+
+  private labelCentreCout(id: string | null | undefined): string {
+    if (!id) {
+      return '';
+    }
+    return this.centresCout().find((c) => c.id === id)?.libelle ?? '';
+  }
+
+  private applyPendingReferentielLabels(): void {
+    if (this.pendingFournisseurId) {
+      const label = this.labelFournisseur(this.pendingFournisseurId);
+      if (label) {
+        this.form.controls.fournisseur_libre.setValue(label, { emitEvent: false });
+        this.pendingFournisseurId = null;
+      }
+    }
+    if (this.pendingCentreCoutId) {
+      const label = this.labelCentreCout(this.pendingCentreCoutId);
+      if (label) {
+        this.form.controls.centre_cout_libre.setValue(label, { emitEvent: false });
+        this.pendingCentreCoutId = null;
+      }
+    }
+  }
+
+  private referentielCode(label: string, prefix: string): string {
+    const base = label
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 20);
+    return `${prefix}-${base || 'X'}`.slice(0, 30);
+  }
+
+  private resolveFournisseurId(): Observable<string | null> {
+    const raw = this.form.getRawValue();
+    const libre = (raw.fournisseur_libre ?? '').trim();
+    if (!libre) {
+      return of(null);
+    }
+    const existing = this.fournisseurs().find(
+      (f) =>
+        f.raison_sociale.trim().toLowerCase() === libre.toLowerCase() ||
+        f.code.trim().toLowerCase() === libre.toLowerCase(),
+    );
+    if (existing) {
+      return of(existing.id);
+    }
+    return this.api
+      .post<Fournisseur>('/fournisseurs', {
+        code: this.referentielCode(libre, 'FRN'),
+        raison_sociale: libre,
+      })
+      .pipe(
+        map((created) => {
+          this.fournisseurs.update((list) => [...list, created]);
+          return created.id;
+        }),
+      );
+  }
+
+  private resolveCentreCoutId(): Observable<string | null> {
+    const raw = this.form.getRawValue();
+    const libre = (raw.centre_cout_libre ?? '').trim();
+    if (!libre) {
+      return of(null);
+    }
+    const existing = this.centresCout().find(
+      (c) =>
+        c.libelle.trim().toLowerCase() === libre.toLowerCase() ||
+        c.code.trim().toLowerCase() === libre.toLowerCase(),
+    );
+    if (existing) {
+      return of(existing.id);
+    }
+    return this.api
+      .post<CentreCout>('/centres-cout', {
+        code: this.referentielCode(libre, 'CC'),
+        libelle: libre,
+      })
+      .pipe(
+        map((created) => {
+          this.centresCout.update((list) => [...list, created]);
+          return created.id;
+        }),
+      );
+  }
+
   submit(): void {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
@@ -1007,55 +1167,62 @@ export class ImmobilisationFormComponent implements OnInit {
         if (!ok) {
           return;
         }
-        const raw = this.form.getRawValue();
-        const body: Record<string, unknown> = {
-          code_inventaire: raw.code_inventaire.trim(),
-          designation: raw.designation.trim(),
-          description: raw.description || null,
-          observations: raw.observations || null,
-          numero_facture: raw.numero_facture || null,
-          quantite: raw.quantite,
-          categorie_id: raw.categorie_id,
-          agence_id: raw.agence_id || null,
-          centre_cout_id: raw.centre_cout_id || null,
-          fournisseur_id: raw.fournisseur_id || null,
-          date_acquisition: raw.date_acquisition,
-          date_comptabilisation: raw.date_comptabilisation,
-          date_mise_en_service: raw.date_mise_en_service || null,
-          valeur_brute: raw.valeur_brute,
-          valeur_residuelle: raw.valeur_residuelle,
-          duree_annees: raw.duree_annees,
-          taux: raw.taux,
-          periodicite: raw.periodicite,
-          prorata_temporis: raw.prorata_temporis,
-          mode_amortissement: raw.mode_amortissement,
-          statut: raw.statut,
-          compte_immobilisation: raw.compte_immobilisation || null,
-          localisation: raw.localisation || null,
-        };
-
         this.saving.set(true);
-        const req = immoId
-          ? this.api.patch<ImmobilisationDto>(`/immobilisations/${immoId}`, body)
-          : this.api.post<ImmobilisationDto>('/immobilisations', body);
-
-        req.subscribe({
-          next: (saved) => {
-            this.saving.set(false);
-            this.dialogs
-              .successAction(
-                action,
-                immoId
-                  ? `« ${saved.code_inventaire} » a été mise à jour.`
-                  : `« ${saved.code_inventaire} » a été créée.`,
-              )
-              .subscribe(() => void this.router.navigate(['/immobilisations', saved.id]));
-          },
-          error: (err) => {
-            this.saving.set(false);
-            void this.dialogs.error(this.errMsg(err, 'Erreur lors de l’enregistrement')).subscribe();
-          },
-        });
+        this.resolveFournisseurId()
+          .pipe(
+            switchMap((fournisseur_id) =>
+              this.resolveCentreCoutId().pipe(
+                switchMap((centre_cout_id) => {
+                  const raw = this.form.getRawValue();
+                  const body: Record<string, unknown> = {
+                    code_inventaire: raw.code_inventaire.trim(),
+                    designation: raw.designation.trim(),
+                    description: raw.description || null,
+                    observations: raw.observations || null,
+                    numero_facture: raw.numero_facture || null,
+                    quantite: raw.quantite,
+                    categorie_id: raw.categorie_id,
+                    agence_id: raw.agence_id || null,
+                    centre_cout_id,
+                    fournisseur_id,
+                    date_acquisition: raw.date_acquisition,
+                    date_comptabilisation: raw.date_comptabilisation,
+                    date_mise_en_service: raw.date_mise_en_service || null,
+                    valeur_brute: raw.valeur_brute,
+                    valeur_residuelle: raw.valeur_residuelle,
+                    duree_annees: raw.duree_annees,
+                    taux: raw.taux,
+                    periodicite: raw.periodicite,
+                    prorata_temporis: raw.prorata_temporis,
+                    mode_amortissement: raw.mode_amortissement,
+                    statut: raw.statut,
+                    compte_immobilisation: raw.compte_immobilisation || null,
+                    localisation: raw.localisation || null,
+                  };
+                  return immoId
+                    ? this.api.patch<ImmobilisationDto>(`/immobilisations/${immoId}`, body)
+                    : this.api.post<ImmobilisationDto>('/immobilisations', body);
+                }),
+              ),
+            ),
+          )
+          .subscribe({
+            next: (saved) => {
+              this.saving.set(false);
+              this.dialogs
+                .successAction(
+                  action,
+                  immoId
+                    ? `« ${saved.code_inventaire} » a été mise à jour.`
+                    : `« ${saved.code_inventaire} » a été créée.`,
+                )
+                .subscribe(() => void this.router.navigate(['/immobilisations', saved.id]));
+            },
+            error: (err) => {
+              this.saving.set(false);
+              void this.dialogs.error(this.errMsg(err, 'Erreur lors de l’enregistrement')).subscribe();
+            },
+          });
       });
   }
 

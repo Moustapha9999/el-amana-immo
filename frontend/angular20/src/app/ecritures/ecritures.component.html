@@ -5,6 +5,10 @@
       <p class="ecr__lead">{{ total() }} écriture(s)</p>
     </div>
     <div class="ecr__hero-actions">
+      <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Actualiser
+      </button>
       <button mat-stroked-button type="button" (click)="export('xlsx')" [disabled]="loading()">
         <mat-icon aria-hidden="true">table_view</mat-icon>
         Excel
@@ -18,7 +22,29 @@
 
   <section class="ecr__section">
     <div class="ecr__toolbar">
-      <form [formGroup]="filterForm" (ngSubmit)="load()" class="ecr__filters">
+      <form [formGroup]="filterForm" (ngSubmit)="applyFilters()" class="ecr__filters">
+        <div class="ecr-field ecr-field--grow">
+          <label class="ecr-field__label" for="ecr-search">Recherche</label>
+          <input
+            id="ecr-search"
+            class="ecr-field__control"
+            formControlName="search"
+            autocomplete="off"
+            placeholder="Libellé, journal, comptes, référence, montant…"
+            aria-label="Recherche"
+          />
+        </div>
+        <div class="ecr-field">
+          <label class="ecr-field__label" for="ecr-journal">Journal</label>
+          <input
+            id="ecr-journal"
+            class="ecr-field__control"
+            formControlName="journal_code"
+            autocomplete="off"
+            placeholder="Ex. OD"
+            aria-label="Journal"
+          />
+        </div>
         <div class="ecr-field">
           <label class="ecr-field__label" for="ecr-debut">Du</label>
           <input
@@ -56,7 +82,7 @@
       } @else if (rows().length === 0) {
         <p class="ecr__empty">Aucune écriture pour cette période.</p>
       } @else {
-        <div class="ecr__table-wrap">
+        <div class="ecr__table-wrap app-table-scroll">
           <table mat-table [dataSource]="rows()" class="w-full app-table">
             <ng-container matColumnDef="date_ecriture">
               <th mat-header-cell *matHeaderCellDef>Date</th>
@@ -114,10 +140,17 @@
                 </a>
               </td>
             </ng-container>
-            <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+            <tr mat-header-row *matHeaderRowDef="displayedColumns; sticky: true"></tr>
             <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
           </table>
         </div>
+        <app-pagination
+          [page]="page()"
+          [total]="total()"
+          [pageSize]="pageSize"
+          label="écriture(s)"
+          (pageChange)="goToPage($event)"
+        />
       }
     </div>
   </section>

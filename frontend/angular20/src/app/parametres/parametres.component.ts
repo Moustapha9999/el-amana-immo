@@ -6,7 +6,9 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
 import { tauxLineaireFromDuree } from '../shared/amortissement-rate.util';
+import { PaginationComponent } from '../shared/pagination.component';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
+import { pairedAccountsForImmo } from '../immobilisations/immobilisation.constants';
 import { BANQUE_EL_AMANA } from './agence.constants';
 
 type ParamTab = 'agences' | 'categories' | 'comptes' | 'amortissement' | 'securite';
@@ -47,6 +49,14 @@ interface CompteRow {
   numero: string;
   libelle: string;
   type_compte: string;
+  centre_analytique?: string | null;
+  is_active: boolean;
+  nature_code?: string | null;
+  nature_libelle?: string | null;
+  nature_taux?: string | number | null;
+  nature_duree_annees?: number | null;
+  nature_compte_amortissement?: string | null;
+  nature_compte_dotation?: string | null;
 }
 
 interface ParamAmortissement {
@@ -62,9 +72,19 @@ const TYPE_LABELS: Record<string, string> = {
   immobilisation: 'Immobilisation',
   amortissement: 'Amortissement',
   dotation: 'Dotation',
+  reprise: 'Reprise',
   cession: 'Cession',
-  autre: 'Autre',
+  rebut: 'Rebut',
 };
+
+const TYPE_COMPTE_OPTIONS = [
+  { value: 'immobilisation', label: 'Immobilisation' },
+  { value: 'amortissement', label: 'Amortissement' },
+  { value: 'dotation', label: 'Dotation' },
+  { value: 'reprise', label: 'Reprise' },
+  { value: 'cession', label: 'Cession' },
+  { value: 'rebut', label: 'Rebut' },
+] as const;
 
 @Component({
   selector: 'app-parametres',
@@ -74,6 +94,7 @@ const TYPE_LABELS: Record<string, string> = {
     MatTableModule,
     MatButtonModule,
     MatIconModule,
+    PaginationComponent,
   ],
   templateUrl: './parametres.component.html',
   styleUrl: './parametres.component.css',
@@ -100,8 +121,11 @@ export class ParametresComponent implements OnInit {
 
   readonly editingAgenceId = signal<string | null>(null);
   readonly agenceFormOpen = signal(false);
+  readonly editingCompteId = signal<string | null>(null);
+  readonly compteFormOpen = signal(false);
   readonly editingCategoryId = signal<string | null>(null);
   readonly tauxPreview = signal<number | null>(null);
+  readonly typeCompteOptions = TYPE_COMPTE_OPTIONS;
 
   readonly totpEnabled = signal(false);
   readonly totpSetupUrl = signal<string | null>(null);
@@ -111,6 +135,11 @@ export class ParametresComponent implements OnInit {
   readonly searchAgences = signal('');
   readonly searchCategories = signal('');
   readonly searchComptes = signal('');
+
+  readonly pageSize = 50;
+  readonly pageAgences = signal(1);
+  readonly pageCategories = signal(1);
+  readonly pageComptes = signal(1);
 
   readonly comptesImmo = computed(() => this.comptes().filter((c) => c.type_compte === 'immobilisation'));
   readonly comptesAmort = computed(() => this.comptes().filter((c) => c.type_compte === 'amortissement'));
@@ -155,6 +184,32 @@ export class ParametresComponent implements OnInit {
     );
   });
 
+  readonly pagedAgences = computed(() => this.slicePage(this.filteredAgences(), this.pageAgences()));
+  readonly pagedCategories = computed(() =>
+    this.slicePage(this.filteredCategories(), this.pageCategories()),
+  );
+  readonly pagedComptes = computed(() => this.slicePage(this.filteredComptes(), this.pageComptes()));
+
+  private slicePage<T>(items: T[], page: number): T[] {
+    const start = (page - 1) * this.pageSize;
+    return items.slice(start, start + this.pageSize);
+  }
+
+  onSearchAgences(value: string): void {
+    this.searchAgences.set(value);
+    this.pageAgences.set(1);
+  }
+
+  onSearchCategories(value: string): void {
+    this.searchCategories.set(value);
+    this.pageCategories.set(1);
+  }
+
+  onSearchComptes(value: string): void {
+    this.searchComptes.set(value);
+    this.pageComptes.set(1);
+  }
+
   readonly kpi = computed(() => ({
     agences: this.agences().length,
     categories: this.categories().length,
@@ -173,7 +228,7 @@ export class ParametresComponent implements OnInit {
     'actions',
   ];
   readonly catColumns = ['famille', 'comptes', 'duree', 'taux', 'actions'];
-  readonly compteColumns = ['numero', 'libelle', 'type'];
+  readonly compteColumns = ['numero', 'libelle', 'type', 'nature', 'taux', 'active', 'actions'];
 
   readonly agenceForm = this.fb.nonNullable.group({
     code: ['', Validators.required],
@@ -185,6 +240,20 @@ export class ParametresComponent implements OnInit {
     code_swift: [BANQUE_EL_AMANA.code_swift, Validators.required],
     is_active: [true],
   });
+
+  readonly compteForm = this.fb.nonNullable.group({
+    numero: ['', [Validators.required, Validators.maxLength(20)]],
+    libelle: ['', [Validators.required, Validators.maxLength(255)]],
+    type_compte: ['immobilisation' as string, Validators.required],
+    centre_analytique: [''],
+    nature_libelle: [''],
+    duree_annees: [null as number | null],
+    compte_amortissement: [''],
+    compte_dotation: [''],
+    is_active: [true],
+  });
+
+  readonly compteTauxPreview = signal<number | null>(null);
 
   readonly categoryEdit = this.fb.group({
     duree_annees_defaut: [null as number | null],
@@ -266,16 +335,30 @@ export class ParametresComponent implements OnInit {
         done();
       },
     });
-    this.api.get<Paginated<CompteRow>>('/plan-comptable', { page: 1, size: 200 }).subscribe({
-      next: (r) => {
-        this.comptes.set(r.items);
-        done();
-      },
-      error: () => {
-        this.comptes.set([]);
-        done();
-      },
-    });
+    this.loadAllComptes(done);
+  }
+
+  /** L'API limite size à 100 : on enchaîne les pages pour charger tout le plan comptable. */
+  private loadAllComptes(done: () => void): void {
+    const acc: CompteRow[] = [];
+    const fetchPage = (page: number): void => {
+      this.api.get<Paginated<CompteRow>>('/plan-comptable', { page, size: 100 }).subscribe({
+        next: (r) => {
+          acc.push(...r.items);
+          if (acc.length < r.total && r.items.length > 0) {
+            fetchPage(page + 1);
+          } else {
+            this.comptes.set(acc);
+            done();
+          }
+        },
+        error: () => {
+          this.comptes.set(acc);
+          done();
+        },
+      });
+    };
+    fetchPage(1);
   }
 
   loadTotpStatus(): void {
@@ -407,6 +490,185 @@ export class ParametresComponent implements OnInit {
             }
             this.dialogs
               .successAction('suppression', `Agence « ${row.libelle} » désactivée.`)
+              .subscribe(() => this.reloadAll());
+          },
+          error: (err) => void this.dialogs.error(err.error?.detail ?? 'Erreur').subscribe(),
+        });
+      });
+  }
+
+  openCreateCompte(): void {
+    this.editingCompteId.set(null);
+    this.compteForm.reset({
+      numero: '',
+      libelle: '',
+      type_compte: 'immobilisation',
+      centre_analytique: '',
+      nature_libelle: '',
+      duree_annees: null,
+      compte_amortissement: '',
+      compte_dotation: '',
+      is_active: true,
+    });
+    this.compteTauxPreview.set(null);
+    this.compteForm.controls.numero.enable();
+    this.compteForm.controls.type_compte.enable();
+    this.compteFormOpen.set(true);
+  }
+
+  openEditCompte(row: CompteRow): void {
+    this.editingCompteId.set(row.id);
+    this.compteForm.reset({
+      numero: row.numero,
+      libelle: row.libelle,
+      type_compte: row.type_compte,
+      centre_analytique: row.centre_analytique ?? '',
+      nature_libelle: row.nature_libelle ?? '',
+      duree_annees: row.nature_duree_annees ?? null,
+      compte_amortissement: row.nature_compte_amortissement ?? '',
+      compte_dotation: row.nature_compte_dotation ?? '',
+      is_active: row.is_active,
+    });
+    this.compteTauxPreview.set(row.nature_taux != null ? Number(row.nature_taux) : null);
+    this.compteForm.controls.numero.disable();
+    this.compteForm.controls.type_compte.disable();
+    this.compteFormOpen.set(true);
+  }
+
+  cancelCompteForm(): void {
+    this.compteFormOpen.set(false);
+    this.editingCompteId.set(null);
+    this.compteForm.controls.numero.enable();
+    this.compteForm.controls.type_compte.enable();
+  }
+
+  onCompteNumeroOrTypeChange(): void {
+    const raw = this.compteForm.getRawValue();
+    if (raw.type_compte !== 'immobilisation' || this.editingCompteId()) {
+      return;
+    }
+    const official = pairedAccountsForImmo(raw.numero.trim());
+    if (official) {
+      this.compteForm.controls.compte_amortissement.setValue(official.amort, { emitEvent: false });
+      this.compteForm.controls.compte_dotation.setValue(official.dotation, { emitEvent: false });
+    } else {
+      const digits = raw.numero.replace(/\D/g, '');
+      if (digits.length >= 3) {
+        const suffix = digits.slice(-3);
+        if (!raw.compte_amortissement) {
+          this.compteForm.controls.compte_amortissement.setValue(`148${suffix}`, { emitEvent: false });
+        }
+        if (!raw.compte_dotation) {
+          this.compteForm.controls.compte_dotation.setValue(`681${suffix}`, { emitEvent: false });
+        }
+      }
+    }
+    if (!raw.nature_libelle && raw.libelle) {
+      this.compteForm.controls.nature_libelle.setValue(raw.libelle, { emitEvent: false });
+    }
+    this.refreshCompteTauxPreview();
+  }
+
+  refreshCompteTauxPreview(): void {
+    const duree = this.compteForm.controls.duree_annees.value;
+    this.compteTauxPreview.set(tauxLineaireFromDuree(duree));
+  }
+
+  saveCompte(): void {
+    if (this.compteForm.invalid) {
+      this.compteForm.markAllAsTouched();
+      void this.dialogs.error('Complétez les champs obligatoires', 'Validation').subscribe();
+      return;
+    }
+    const raw = this.compteForm.getRawValue();
+    const id = this.editingCompteId();
+    const isImmo = raw.type_compte === 'immobilisation';
+    if (!id && isImmo && (raw.duree_annees == null || raw.duree_annees < 1)) {
+      void this.dialogs
+        .error('Durée (années) obligatoire pour lier le compte à une nature et son taux.', 'Validation')
+        .subscribe();
+      return;
+    }
+    const action = id ? 'modification' : 'ajout';
+    const label = `${raw.numero.trim()} — ${raw.libelle.trim()}`;
+
+    this.dialogs
+      .confirmAction(action, id ? `Modifier le compte « ${label} » ?` : `Ajouter le compte « ${label} » ?`)
+      .subscribe((ok) => {
+        if (!ok) {
+          return;
+        }
+        this.saving.set(true);
+        if (id) {
+          this.api
+            .patch<CompteRow>(`/plan-comptable/${id}`, {
+              libelle: raw.libelle.trim(),
+              type_compte: raw.type_compte,
+              centre_analytique: raw.centre_analytique.trim() || null,
+              is_active: raw.is_active,
+            })
+            .subscribe({
+              next: () => {
+                this.saving.set(false);
+                this.compteFormOpen.set(false);
+                this.dialogs
+                  .successAction('modification', `Compte « ${label} » mis à jour.`)
+                  .subscribe(() => this.reloadAll());
+              },
+              error: (err) => {
+                this.saving.set(false);
+                void this.dialogs.error(err.error?.detail ?? 'Erreur').subscribe();
+              },
+            });
+          return;
+        }
+
+        this.api
+          .post<CompteRow>('/plan-comptable', {
+            numero: raw.numero.trim(),
+            libelle: raw.libelle.trim(),
+            type_compte: raw.type_compte,
+            centre_analytique: raw.centre_analytique.trim() || null,
+            nature_libelle: isImmo ? (raw.nature_libelle.trim() || raw.libelle.trim()) : null,
+            duree_annees: isImmo ? raw.duree_annees : null,
+            compte_amortissement: isImmo ? raw.compte_amortissement.trim() || null : null,
+            compte_dotation: isImmo ? raw.compte_dotation.trim() || null : null,
+          })
+          .subscribe({
+            next: () => {
+              this.saving.set(false);
+              this.compteFormOpen.set(false);
+              this.dialogs
+                .successAction(
+                  'ajout',
+                  isImmo
+                    ? `Compte « ${label} » créé avec sa nature, taux et comptes 148/681.`
+                    : `Compte « ${label} » créé.`,
+                )
+                .subscribe(() => this.reloadAll());
+            },
+            error: (err) => {
+              this.saving.set(false);
+              void this.dialogs.error(err.error?.detail ?? 'Erreur').subscribe();
+            },
+          });
+      });
+  }
+
+  deleteCompte(row: CompteRow): void {
+    this.dialogs
+      .confirmAction('suppression', `Désactiver le compte « ${row.numero} — ${row.libelle} » ?`)
+      .subscribe((ok) => {
+        if (!ok) {
+          return;
+        }
+        this.api.delete<{ message: string }>(`/plan-comptable/${row.id}`).subscribe({
+          next: () => {
+            if (this.editingCompteId() === row.id) {
+              this.cancelCompteForm();
+            }
+            this.dialogs
+              .successAction('suppression', `Compte « ${row.numero} » désactivé.`)
               .subscribe(() => this.reloadAll());
           },
           error: (err) => void this.dialogs.error(err.error?.detail ?? 'Erreur').subscribe(),

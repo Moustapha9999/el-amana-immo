@@ -63,6 +63,11 @@
   min-width: 9.5rem;
 }
 
+.ecr-field--grow {
+  flex: 1 1 14rem;
+  min-width: 12rem;
+}
+
 .ecr-field__label {
   font-size: 0.75rem;
   font-weight: 600;

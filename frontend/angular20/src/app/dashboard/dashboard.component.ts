@@ -1,4 +1,5 @@
-﻿import { Component, computed, inject, OnInit, signal } from '@angular/core';
+﻿import { DecimalPipe } from '@angular/common';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
@@ -56,11 +57,12 @@ interface ChartFilter {
   mois?: number;
 }
 
-const CHART_COLORS = ['#2874a6', '#3498db', '#5eb8f0', '#1a5278', '#21618c', '#154360', '#94a3b8', '#64748b'];
+/** Palette BEA (bleus institutionnels) */
+const CHART_COLORS = ['#2874a6', '#3498db', '#1a5278', '#5dade2', '#21618c', '#154360', '#7fb3d5', '#94a3b8'];
 
 @Component({
   selector: 'app-dashboard',
-  imports: [MontantPipe, MatIconModule, MatCardModule, MatButtonModule, PageHeaderComponent],
+  imports: [DecimalPipe, MontantPipe, MatIconModule, MatCardModule, MatButtonModule, PageHeaderComponent],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.scss',
 })
@@ -68,15 +70,31 @@ export class DashboardComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly kpi = signal<DashboardKpi | null>(null);
   readonly charts = signal<DashboardCharts | null>(null);
+  readonly loading = signal(false);
   readonly filter = signal<ChartFilter>({});
   readonly hasActiveFilters = computed(() => {
     const f = this.filter();
     return !!(f.statut || f.famille || f.mois);
   });
   readonly statutDonut = computed(() => this.buildDonut(this.charts()?.par_statut ?? []));
+  readonly statutTotal = computed(() => this.statutDonut().reduce((s, seg) => s + seg.value, 0));
+  /** Allocation type Meridian : répartition par famille */
+  readonly familleDonut = computed(() => this.buildDonut(this.charts()?.par_famille ?? []));
   readonly familleBars = computed(() => this.buildBars(this.charts()?.par_famille ?? []));
   readonly dotationBars = computed(() => this.buildBars(this.charts()?.dotations_mensuelles ?? []));
   readonly vncLine = computed(() => this.buildLine(this.charts()?.evolution_vnc ?? []));
+  readonly vncDeltaPct = computed(() => {
+    const pts = this.charts()?.evolution_vnc ?? [];
+    if (pts.length < 2) {
+      return null;
+    }
+    const first = pts[0].value;
+    const last = pts[pts.length - 1].value;
+    if (!Number.isFinite(first) || first === 0) {
+      return null;
+    }
+    return ((last - first) / Math.abs(first)) * 100;
+  });
   readonly compositionBars = computed(() => {
     const c = this.charts()?.composition;
     if (!c) {
@@ -94,8 +112,28 @@ export class DashboardComponent implements OnInit {
   }
   loadDashboard(): void {
     const params = this.buildQueryParams();
-    this.api.get<DashboardKpi>('/dashboard/kpi', params).subscribe((data) => this.kpi.set(data));
-    this.api.get<DashboardCharts>('/dashboard/charts', params).subscribe((data) => this.charts.set(data));
+    this.loading.set(true);
+    let pending = 2;
+    const done = () => {
+      pending -= 1;
+      if (pending <= 0) {
+        this.loading.set(false);
+      }
+    };
+    this.api.get<DashboardKpi>('/dashboard/kpi', params).subscribe({
+      next: (data) => {
+        this.kpi.set(data);
+        done();
+      },
+      error: () => done(),
+    });
+    this.api.get<DashboardCharts>('/dashboard/charts', params).subscribe({
+      next: (data) => {
+        this.charts.set(data);
+        done();
+      },
+      error: () => done(),
+    });
   }
   resetFilters(): void {
     this.filter.set({});
@@ -205,22 +243,36 @@ export class DashboardComponent implements OnInit {
       return seg;
     });
   }
-  private buildLine(points: ChartPoint[]): { polyline: string; dots: LinePoint[] } {
+  private buildLine(points: ChartPoint[]): {
+    polyline: string;
+    area: string;
+    dots: LinePoint[];
+    min: number;
+    max: number;
+  } {
     if (!points.length) {
-      return { polyline: '', dots: [] };
+      return { polyline: '', area: '', dots: [], min: 0, max: 0 };
     }
-    const max = Math.max(...points.map((p) => p.value), 1);
+    const values = points.map((p) => p.value);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    // Échelle min–max : rend la variation visible même quand les valeurs
+    // sont grandes et proches (sinon la courbe paraît plate)
+    const range = max - min;
     const padX = 4;
-    const padY = 8;
+    const padY = 10;
     const w = 100 - padX * 2;
     const h = 100 - padY * 2;
     const step = points.length > 1 ? w / (points.length - 1) : 0;
     const dots: LinePoint[] = points.map((p, i) => {
       const x = padX + i * step;
-      const y = padY + h - (p.value / max) * h;
+      const ratio = range > 0 ? (p.value - min) / range : 0.5;
+      const y = padY + h - ratio * h;
       return { label: p.label, value: p.value, key: p.key, x, y };
     });
     const polyline = dots.map((d) => `${d.x},${d.y}`).join(' ');
-    return { polyline, dots };
+    const baseline = 100 - padY;
+    const area = `${polyline} ${dots[dots.length - 1].x},${baseline} ${dots[0].x},${baseline}`;
+    return { polyline, area, dots, min, max };
   }
 }

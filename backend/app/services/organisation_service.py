@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Agence, CentreCout, Departement, Direction, Fournisseur, Journal, ComptePlanComptable
-from app.schemas.comptabilite import ComptePlanCreate, JournalCreate
+from app.schemas.comptabilite import ComptePlanCreate, ComptePlanUpdate, JournalCreate
 from app.schemas.organisation import (
     AgenceCreate,
     AgenceUpdate,
@@ -58,8 +58,11 @@ class JournalService(BaseCrudService[Journal, JournalCreate, JournalCreate]):
         super().__init__(db, Journal)
 
 
-class ComptePlanService(BaseCrudService[ComptePlanComptable, ComptePlanCreate, ComptePlanCreate]):
+class ComptePlanService(BaseCrudService[ComptePlanComptable, ComptePlanCreate, ComptePlanUpdate]):
     entity_label = "Compte plan comptable"
 
     def __init__(self, db: AsyncSession):
         super().__init__(db, ComptePlanComptable)
+
+    async def list(self, page: int, size: int, search: str | None = None):
+        return await self.repo.list(page, size, search, search_columns=("numero", "libelle"))
