@@ -1,3 +1,1 @@
-# Système de Gestion des Immobilisations Bancaires (Mauritanie)
-
 Application web pour la gestion des immobilisations, amortissements, cessions, rebuts, transferts, réévaluations, écritures comptables, rapports et tableaux de bord — conforme au plan comptable bancaire mauritanien.
