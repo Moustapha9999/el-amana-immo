@@ -28,6 +28,9 @@ import { ReevaluationsComponent } from './reevaluations/reevaluations.component'
 import { ReevaluationDetailComponent } from './reevaluations/reevaluation-detail.component';
 import { ParametresComponent } from './parametres/parametres.component';
 import { NotificationsComponent } from './notifications/notifications.component';
+import { ArchivesComponent } from './archives/archives.component';
+import { ArchiveDetailComponent } from './archives/archive-detail.component';
+import { ArchiveNatureComponent } from './archives/archive-nature.component';
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent, canActivate: [guestGuard] },
@@ -51,6 +54,9 @@ export const routes: Routes = [
       { path: 'recap-amortissement', component: RecapAmortissementComponent },
       { path: 'comptes/soldes-148-68', component: Soldes14868Component },
       { path: 'comptes', component: ComptesComponent },
+      { path: 'archives', component: ArchivesComponent },
+      { path: 'archives/:annee', component: ArchiveDetailComponent },
+      { path: 'archives/:annee/:natureCode', component: ArchiveNatureComponent },
       { path: 'pieces-comptables', component: PiecesComptablesComponent },
       { path: 'ecritures', component: EcrituresComponent },
       { path: 'ecritures/:id', component: EcritureDetailComponent },

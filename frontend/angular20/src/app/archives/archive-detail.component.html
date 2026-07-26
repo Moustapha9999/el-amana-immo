@@ -1,0 +1,77 @@
+<div class="ard">
+  <header class="ard__hero">
+    <div>
+      <a class="ard__back" routerLink="/archives">
+        <mat-icon aria-hidden="true">arrow_back</mat-icon>
+        Archives
+      </a>
+      <h1 class="ard__title">Dossier {{ annee() }}</h1>
+      <p class="ard__lead">
+        Choisissez une nature (AAI, Logiciel, …) pour déposer et consulter les Excel / PDF
+        scannés.
+      </p>
+    </div>
+    <div class="ard__hero-actions">
+      <button mat-stroked-button type="button" (click)="reload()" [disabled]="loading()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Actualiser
+      </button>
+    </div>
+  </header>
+
+  @if (dossier(); as d) {
+    <div class="ard__kpis">
+      <div class="ard__kpi">
+        <span class="ard__kpi-label">Fichiers</span>
+        <span class="ard__kpi-value">{{ d.nb_fichiers }}</span>
+      </div>
+      <div class="ard__kpi">
+        <span class="ard__kpi-label">Lignes scannées</span>
+        <span class="ard__kpi-value">{{ d.nb_lignes }}</span>
+      </div>
+      <div class="ard__kpi">
+        <span class="ard__kpi-label">Valeur brute (toutes natures)</span>
+        <span class="ard__kpi-value">
+          {{ (acquisitions()?.totaux?.valeur_brute ?? 0) | montant: 'MRU' }}
+        </span>
+      </div>
+    </div>
+  }
+
+  <section class="ard__section">
+    <h2 class="ard__section-title">Natures {{ annee() }}</h2>
+    <p class="ard__section-hint">
+      Chaque nature contient ses propres fichiers Excel / PDF (upload, scan, téléchargement,
+      suppression).
+    </p>
+
+    @if (loading()) {
+      <p class="ard__empty">Chargement…</p>
+    } @else {
+      <div class="ard__natures" role="list">
+        @for (n of natureFolders(); track n.code) {
+          <a
+            class="ard__nature"
+            role="listitem"
+            [routerLink]="['/archives', annee(), n.code]"
+            [class.ard__nature--empty]="!n.has_data"
+          >
+            <div class="ard__nature-main">
+              <mat-icon aria-hidden="true">folder</mat-icon>
+              <div>
+                <div class="ard__nature-title">{{ natureTitle(n) }}</div>
+                <div class="ard__nature-meta">
+                  {{ n.code }} · {{ n.nb_fichiers }} fichier(s) · {{ n.nb_lignes }} ligne(s)
+                  @if (n.has_data) {
+                    · VB {{ n.valeur_brute | montant: 'MRU' }}
+                  }
+                </div>
+              </div>
+            </div>
+            <mat-icon aria-hidden="true">chevron_right</mat-icon>
+          </a>
+        }
+      </div>
+    }
+  </section>
+</div>

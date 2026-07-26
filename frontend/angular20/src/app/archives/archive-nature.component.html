@@ -1,0 +1,254 @@
+<div class="arn">
+  <header class="arn__hero">
+    <div>
+      <a class="arn__back" [routerLink]="['/archives', annee()]">
+        <mat-icon aria-hidden="true">arrow_back</mat-icon>
+        Dossier {{ annee() }}
+      </a>
+      <h1 class="arn__title">{{ natureTitle() }}</h1>
+      <p class="arn__lead">
+        Fichiers Excel / PDF de la nature {{ natureLibelle() }} ({{ natureCode() }}) — upload,
+        scan, téléchargement et suppression.
+      </p>
+    </div>
+    <div class="arn__hero-actions">
+      <button mat-stroked-button type="button" (click)="reload()" [disabled]="loading()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Actualiser
+      </button>
+    </div>
+  </header>
+
+  <section class="arn__section">
+    <h2 class="arn__section-title">Fichiers {{ natureTitle() }}</h2>
+    <div class="arn__upload">
+      <div class="arn-field">
+        <label class="arn-field__label" for="arn-file">Excel ou PDF</label>
+        <input
+          id="arn-file"
+          class="arn-field__control arn-field__control--file"
+          type="file"
+          accept=".xls,.xlsx,.pdf,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          (change)="onFileSelected($event)"
+        />
+      </div>
+      <button
+        mat-flat-button
+        color="primary"
+        type="button"
+        (click)="upload()"
+        [disabled]="uploading()"
+      >
+        {{ uploading() ? 'Scan…' : 'Déposer & scanner' }}
+      </button>
+    </div>
+
+    @if (loading() && !dossier()) {
+      <p class="arn__empty">Chargement…</p>
+    } @else if (fichiers().length === 0) {
+      <p class="arn__empty">
+        Aucun fichier pour {{ natureTitle() }}. Déposez l’Excel ou le PDF banque de cette nature.
+      </p>
+    } @else {
+      <div class="arn__files">
+        @for (f of fichiers(); track f.id) {
+          <div class="arn__file" [class.arn__file--error]="f.parse_status === 'error'">
+            <div class="arn__file-main">
+              <mat-icon aria-hidden="true">{{
+                f.kind === 'pdf_banque' ? 'picture_as_pdf' : 'table_view'
+              }}</mat-icon>
+              <div>
+                <div class="arn__file-name">{{ f.filename }}</div>
+                <div class="arn__file-meta">
+                  {{ f.kind === 'pdf_banque' ? 'PDF' : 'Excel' }}
+                  · {{ statusLabel(f.parse_status) }}
+                  · {{ f.lines_count }} ligne(s)
+                </div>
+                @if (f.parse_error) {
+                  <div class="arn__file-error">{{ f.parse_error }}</div>
+                }
+              </div>
+            </div>
+            <div class="arn__file-actions">
+              <button
+                mat-stroked-button
+                type="button"
+                (click)="download(f)"
+                aria-label="Télécharger le fichier"
+                title="Télécharger"
+              >
+                <mat-icon aria-hidden="true">download</mat-icon>
+              </button>
+              <button
+                mat-stroked-button
+                type="button"
+                (click)="rescan(f)"
+                [disabled]="busyId() === f.id"
+                aria-label="Rescanner le fichier"
+                title="Rescanner"
+              >
+                <mat-icon aria-hidden="true">document_scanner</mat-icon>
+              </button>
+              <button
+                mat-stroked-button
+                type="button"
+                (click)="remove(f)"
+                [disabled]="busyId() === f.id"
+                aria-label="Supprimer le fichier"
+                title="Supprimer"
+              >
+                <mat-icon aria-hidden="true">delete</mat-icon>
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+    }
+  </section>
+
+  <section class="arn__section">
+    <h2 class="arn__section-title">Lignes {{ natureTitle() }}</h2>
+    <p class="arn__section-hint">
+      Inclut le REPORT historique et les acquisitions du tableau banque pour cette nature.
+    </p>
+
+    <div class="arn__filters">
+      <div class="arn-field arn-field--grow">
+        <label class="arn-field__label" for="arn-q">Recherche</label>
+        <input
+          id="arn-q"
+          class="arn-field__control"
+          type="search"
+          placeholder="Désignation…"
+          [value]="search()"
+          (input)="onSearch($event)"
+        />
+      </div>
+    </div>
+
+    @if (groupe(); as g) {
+      <div class="arn__kpis">
+        <div class="arn__kpi">
+          <span class="arn__kpi-label">Valeur brute</span>
+          <span class="arn__kpi-value">{{ g.totaux.valeur_brute | montant: 'MRU' }}</span>
+        </div>
+        <div class="arn__kpi">
+          <span class="arn__kpi-label">Dotation</span>
+          <span class="arn__kpi-value">{{ g.totaux.dotation | montant: 'MRU' }}</span>
+        </div>
+        <div class="arn__kpi">
+          <span class="arn__kpi-label">VNC</span>
+          <span class="arn__kpi-value">{{ g.totaux.vnc | montant: 'MRU' }}</span>
+          <span class="arn__kpi-hint">{{ g.totaux.nb_lignes }} ligne(s)</span>
+        </div>
+      </div>
+
+      @if (lignesFiltrees().length === 0) {
+        <p class="arn__empty">Aucune ligne à afficher.</p>
+      } @else {
+        <div class="arn__table-wrap app-table-scroll">
+          <table mat-table [dataSource]="lignesFiltrees()" class="app-table arn__table">
+            <ng-container matColumnDef="date">
+              <th mat-header-cell *matHeaderCellDef>Date</th>
+              <td mat-cell *matCellDef="let row" class="arn__cell-date">
+                {{ row.date_acquisition ? (row.date_acquisition | date: 'dd/MM/yyyy') : '—' }}
+              </td>
+              <td mat-footer-cell *matFooterCellDef class="arn__foot-label">Total</td>
+            </ng-container>
+            <ng-container matColumnDef="designation">
+              <th mat-header-cell *matHeaderCellDef>Désignation</th>
+              <td
+                mat-cell
+                *matCellDef="let row"
+                class="arn__cell-des"
+                [class.arn__cell-des--report]="row.is_report"
+                [title]="row.designation"
+              >
+                @if (row.is_report) {
+                  <span class="arn__badge-report">REPORT</span>
+                }
+                {{ row.designation }}
+              </td>
+              <td mat-footer-cell *matFooterCellDef class="arn__foot-meta">
+                {{ g.totaux.nb_lignes }} ligne(s)
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="qte">
+              <th mat-header-cell *matHeaderCellDef>Qté</th>
+              <td mat-cell *matCellDef="let row" class="arn__cell-qte">{{ row.quantite }}</td>
+              <td mat-footer-cell *matFooterCellDef></td>
+            </ng-container>
+            <ng-container matColumnDef="vb">
+              <th mat-header-cell *matHeaderCellDef>VB</th>
+              <td mat-cell *matCellDef="let row" class="arn__num">
+                {{ row.valeur_brute | montant: 'MRU' }}
+              </td>
+              <td mat-footer-cell *matFooterCellDef class="arn__num arn__foot">
+                {{ g.totaux.valeur_brute | montant: 'MRU' }}
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="taux">
+              <th mat-header-cell *matHeaderCellDef>Taux</th>
+              <td mat-cell *matCellDef="let row" class="arn__cell-taux">
+                {{ formatTaux(row.taux) }}
+              </td>
+              <td mat-footer-cell *matFooterCellDef></td>
+            </ng-container>
+            <ng-container matColumnDef="amt_n1">
+              <th mat-header-cell *matHeaderCellDef>Amt N-1</th>
+              <td mat-cell *matCellDef="let row" class="arn__num">
+                {{ row.amt_n1 | montant: 'MRU' }}
+              </td>
+              <td mat-footer-cell *matFooterCellDef class="arn__num arn__foot">
+                {{ g.totaux.amt_n1 | montant: 'MRU' }}
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="dotation">
+              <th mat-header-cell *matHeaderCellDef>Dotation</th>
+              <td mat-cell *matCellDef="let row" class="arn__num">
+                {{ row.dotation | montant: 'MRU' }}
+              </td>
+              <td mat-footer-cell *matFooterCellDef class="arn__num arn__foot">
+                {{ g.totaux.dotation | montant: 'MRU' }}
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="amt_fin">
+              <th mat-header-cell *matHeaderCellDef>Amt fin</th>
+              <td mat-cell *matCellDef="let row" class="arn__num">
+                {{ row.amt_fin | montant: 'MRU' }}
+              </td>
+              <td mat-footer-cell *matFooterCellDef class="arn__num arn__foot">
+                {{ g.totaux.amt_fin | montant: 'MRU' }}
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="vnc">
+              <th mat-header-cell *matHeaderCellDef>VNC</th>
+              <td mat-cell *matCellDef="let row" class="arn__num">
+                {{ row.vnc | montant: 'MRU' }}
+              </td>
+              <td mat-footer-cell *matFooterCellDef class="arn__num arn__foot">
+                {{ g.totaux.vnc | montant: 'MRU' }}
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="agence">
+              <th mat-header-cell *matHeaderCellDef>Agence</th>
+              <td mat-cell *matCellDef="let row" class="arn__cell-agence">
+                {{ row.agence_label || '—' }}
+              </td>
+              <td mat-footer-cell *matFooterCellDef></td>
+            </ng-container>
+            <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
+            <tr
+              mat-row
+              *matRowDef="let row; columns: columns"
+              [class.arn__row--report]="row.is_report"
+            ></tr>
+            <tr mat-footer-row *matFooterRowDef="columns; sticky: true"></tr>
+          </table>
+        </div>
+      }
+    } @else if (!loading()) {
+      <p class="arn__empty">Aucune ligne scannée pour cette nature.</p>
+    }
+  </section>
+</div>

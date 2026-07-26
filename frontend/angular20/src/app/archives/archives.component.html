@@ -1,0 +1,87 @@
+<div class="arc">
+  <header class="arc__hero">
+    <div>
+      <h1 class="arc__title">Archives</h1>
+      <p class="arc__lead">
+        Dossiers par année → natures (AAI, Logiciel…) → fichiers Excel / PDF scannés — consultation
+        seule, sans impact sur le parc actif
+      </p>
+    </div>
+    <div class="arc__hero-actions">
+      <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Actualiser
+      </button>
+    </div>
+  </header>
+
+  <section class="arc__section">
+    <h2 class="arc__section-title">Nouveau dossier année</h2>
+    <form [formGroup]="createForm" (ngSubmit)="create()" class="arc__create">
+      <div class="arc-field">
+        <label class="arc-field__label" for="arc-annee">Année</label>
+        <input
+          id="arc-annee"
+          class="arc-field__control"
+          type="number"
+          formControlName="annee"
+          min="1990"
+          max="2100"
+          step="1"
+        />
+      </div>
+      <div class="arc-field arc-field--grow">
+        <label class="arc-field__label" for="arc-libelle">Libellé (optionnel)</label>
+        <input
+          id="arc-libelle"
+          class="arc-field__control"
+          type="text"
+          formControlName="libelle"
+          placeholder="Ex. Dossier 2007"
+        />
+      </div>
+      <button mat-flat-button color="primary" type="submit" [disabled]="creating()">
+        Créer
+      </button>
+    </form>
+  </section>
+
+  <section class="arc__section">
+    <h2 class="arc__section-title">Dossiers</h2>
+    @if (loading()) {
+      <p class="arc__empty">Chargement…</p>
+    } @else if (dossiers().length === 0) {
+      <p class="arc__empty">Aucun dossier archive. Créez une année pour déposer les fichiers banque.</p>
+    } @else {
+      <div class="arc__list" role="list">
+        @for (d of dossiers(); track d.id) {
+          <div class="arc__item" role="listitem">
+            <a class="arc__item-link" [routerLink]="['/archives', d.annee]">
+              <span class="arc__item-year">{{ d.annee }}</span>
+              <span class="arc__item-meta">
+                Dossier {{ d.annee }}
+                · {{ d.nb_fichiers }} fichier(s)
+                · {{ d.nb_lignes }} ligne(s)
+                @if (d.natures.length) {
+                  · {{ d.natures.length }} nature(s)
+                }
+              </span>
+              <mat-icon aria-hidden="true">chevron_right</mat-icon>
+            </a>
+            <button
+              mat-stroked-button
+              type="button"
+              class="arc__item-delete"
+              (click)="remove(d, $event)"
+              [disabled]="deletingAnnee() === d.annee"
+              aria-label="Supprimer le dossier"
+              title="Supprimer"
+            >
+              <mat-icon aria-hidden="true">delete</mat-icon>
+            </button>
+          </div>
+        }
+      </div>
+    }
+  </section>
+</div>

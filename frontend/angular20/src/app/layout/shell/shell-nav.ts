@@ -24,6 +24,7 @@ export const SHELL_NAV: ShellNavItem[] = [
     path: '/comptes/soldes-148-68',
     icon: 'account_balance',
   },
+  { section: 'Patrimoine', label: 'Archives', path: '/archives', icon: 'inventory_2' },
   {
     section: 'Comptabilité',
     label: 'Pièces comptables',

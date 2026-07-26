@@ -1,0 +1,384 @@
+.arn {
+  max-width: 96rem;
+  margin: 0 auto;
+  padding-bottom: 1.5rem;
+}
+
+.arn__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.arn__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  color: #2874a6;
+  text-decoration: none;
+  margin-bottom: 0.35rem;
+}
+
+.arn__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.arn__lead {
+  margin: 0.35rem 0 0;
+  font-size: 0.9375rem;
+  color: #64748b;
+  max-width: 42rem;
+}
+
+.arn__hero-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.arn__section {
+  margin-bottom: 1.5rem;
+  padding: 1.15rem 1.25rem;
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-card);
+}
+
+.arn__section-title {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  font-weight: 650;
+  color: #1a5278;
+}
+
+.arn__section-hint {
+  margin: 0 0 0.85rem;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.arn__upload,
+.arn__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.arn-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 10rem;
+}
+
+.arn-field--grow {
+  flex: 1 1 14rem;
+}
+
+.arn-field__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.arn-field__control {
+  height: 2.5rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm, 6px);
+  background: #fff;
+  font-size: 0.9375rem;
+}
+
+.arn-field__control--file {
+  padding-top: 0.45rem;
+  min-width: 16rem;
+}
+
+.arn__empty {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.9375rem;
+}
+
+.arn__files {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.arn__file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm, 6px);
+  border-left: 4px solid #2874a6;
+  background: #fff;
+}
+
+.arn__file--error {
+  border-left-color: #c0392b;
+}
+
+.arn__file-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.arn__file-main > mat-icon {
+  color: #2874a6;
+  margin-top: 0.1rem;
+}
+
+.arn__file-name {
+  font-weight: 600;
+  color: #0f172a;
+  word-break: break-word;
+}
+
+.arn__file-meta {
+  font-size: 0.8125rem;
+  color: #64748b;
+  margin-top: 0.15rem;
+}
+
+.arn__file-error {
+  font-size: 0.8125rem;
+  color: #c0392b;
+  margin-top: 0.25rem;
+}
+
+.arn__file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.arn__kpis {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+@media (min-width: 768px) {
+  .arn__kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.arn__kpi {
+  padding: 0.85rem 1rem;
+  background: #fff;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm, 6px);
+  border-left: 4px solid #2874a6;
+}
+
+.arn__kpi-label {
+  display: block;
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.arn__kpi-value {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.arn__kpi-hint {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.arn__table-wrap {
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm, 6px);
+  background: #fff;
+  max-height: min(70vh, 40rem);
+  overflow: auto;
+}
+
+.arn__table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.arn__table .mat-mdc-header-row {
+  background: #2874a6;
+  height: 2.75rem;
+}
+
+.arn__table .mat-mdc-header-cell {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: #2874a6 !important;
+  color: #fff !important;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  padding: 0.7rem 0.75rem !important;
+  border-bottom: none;
+  box-shadow: 0 1px 0 #1a5278;
+}
+
+.arn__table .mat-mdc-cell {
+  font-size: 0.8125rem;
+  padding: 0.55rem 0.75rem !important;
+  vertical-align: middle;
+  border-bottom-color: #e2e8f0;
+  line-height: 1.35;
+}
+
+.arn__table .mat-mdc-row:hover {
+  background: #f8fafc;
+}
+
+.arn__table .mat-column-date {
+  flex: 0 0 6.75rem;
+  width: 6.75rem;
+  min-width: 6.75rem;
+}
+
+.arn__table .mat-column-designation {
+  flex: 1 1 18rem;
+  width: 18rem;
+  min-width: 16rem;
+  max-width: 28rem;
+}
+
+.arn__table .mat-column-qte {
+  flex: 0 0 3.5rem;
+  width: 3.5rem;
+  min-width: 3.5rem;
+}
+
+.arn__table .mat-column-vb,
+.arn__table .mat-column-amt_n1,
+.arn__table .mat-column-dotation,
+.arn__table .mat-column-amt_fin,
+.arn__table .mat-column-vnc {
+  flex: 0 0 10.5rem;
+  width: 10.5rem;
+  min-width: 10.5rem;
+}
+
+.arn__table .mat-column-taux {
+  flex: 0 0 4.75rem;
+  width: 4.75rem;
+  min-width: 4.75rem;
+}
+
+.arn__table .mat-column-agence {
+  flex: 0 0 5.5rem;
+  width: 5.5rem;
+  min-width: 5.5rem;
+}
+
+.arn__cell-date,
+.arn__cell-qte,
+.arn__cell-taux,
+.arn__cell-agence {
+  white-space: nowrap;
+}
+
+.arn__cell-qte,
+.arn__cell-taux {
+  text-align: center;
+}
+
+.arn__cell-des {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arn__num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.arn__row--report {
+  background: #fffbeb;
+}
+
+.arn__row--report:hover {
+  background: #fef3c7 !important;
+}
+
+.arn__badge-report {
+  display: inline-block;
+  margin-right: 0.35rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  background: #f59e0b;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+.arn__cell-des--report {
+  font-weight: 650;
+}
+
+.arn__table .mat-mdc-footer-row {
+  background: #eaf2f8;
+}
+
+.arn__table .mat-mdc-footer-cell {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  background: #eaf2f8 !important;
+  border-top: 2px solid #2874a6;
+  font-weight: 700;
+  padding: 0.65rem 0.6rem !important;
+  white-space: nowrap;
+}
+
+.arn__foot-label {
+  color: #1a5278;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.75rem;
+}
+
+.arn__foot-meta {
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.arn__foot {
+  color: #0f172a;
+}

@@ -16,6 +16,7 @@ httpx==0.28.1
 certifi==2025.1.31
 openpyxl==3.1.5
 xlrd==2.0.1
+pdfplumber==0.11.5
 reportlab==4.2.5
 qrcode[pil]==8.0
 python-barcode==0.15.1

@@ -1,4 +1,5 @@
 from app.models.associations import role_permissions_table, user_roles_table
+from app.models.archive import ArchiveDossier, ArchiveFichier, ArchiveLigne
 from app.models.audit import AuditLog, Notification
 from app.models.auth import Agence, Permission, Role, User
 from app.models.comptabilite import (
@@ -56,4 +57,7 @@ __all__ = [
     "Ajustement",
     "Notification",
     "AuditLog",
+    "ArchiveDossier",
+    "ArchiveFichier",
+    "ArchiveLigne",
 ]
