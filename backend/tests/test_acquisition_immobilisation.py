@@ -73,6 +73,8 @@ def test_validate_requires_compte_immobilisation():
         date_mise_en_service=None,
         quantite=1,
         compte_immobilisation=None,
+        compte_amortissement=None,
+        compte_dotation=None,
         duree_annees=5,
         taux=Decimal("20"),
         periodicite="annuel",
@@ -90,6 +92,8 @@ def test_validate_backfills_date_comptabilisation_from_acquisition():
         date_mise_en_service=None,
         quantite=1,
         compte_immobilisation="142041",
+        compte_amortissement=None,
+        compte_dotation=None,
         duree_annees=5,
         taux=Decimal("20"),
         periodicite="annuel",
@@ -97,6 +101,8 @@ def test_validate_backfills_date_comptabilisation_from_acquisition():
     validate_immobilisation(immo, cat)
     assert immo.date_comptabilisation == date(2026, 3, 1)
     assert immo.periodicite == "trimestriel"
+    assert immo.compte_amortissement == "148041"
+    assert immo.compte_dotation == "681041"
 
 
 def test_validate_rejects_comptabilisation_before_acquisition():
@@ -108,6 +114,8 @@ def test_validate_rejects_comptabilisation_before_acquisition():
         date_mise_en_service=None,
         quantite=1,
         compte_immobilisation="142041",
+        compte_amortissement=None,
+        compte_dotation=None,
         duree_annees=5,
         taux=Decimal("20"),
         periodicite="annuel",

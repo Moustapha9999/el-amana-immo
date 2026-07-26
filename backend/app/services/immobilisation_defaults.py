@@ -85,11 +85,13 @@ def validate_immobilisation(immo: Immobilisation, categorie: CategorieImmobilisa
         raise ValidationError("Le taux annuel d'amortissement (%) est obligatoire pour une immobilisation amortissable.")
     if categorie.amortissable:
         # Comptes issus du Type (liés au plan comptable) — obligatoires pour la logique banque
-        if not immo.compte_amortissement:
+        if not getattr(immo, "compte_amortissement", None):
             immo.compte_amortissement = categorie.compte_amortissement
-        if not immo.compte_dotation:
+        if not getattr(immo, "compte_dotation", None):
             immo.compte_dotation = categorie.compte_dotation
-        if not immo.compte_amortissement or not immo.compte_dotation:
+        if not getattr(immo, "compte_amortissement", None) or not getattr(
+            immo, "compte_dotation", None
+        ):
             raise ValidationError(
                 "Le Type doit avoir un compte d'amortissement et de dotation (Plan comptable)."
             )
