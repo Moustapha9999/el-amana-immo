@@ -14,9 +14,12 @@ from app.db.session import get_db
 from app.models import ArchiveDossier, ArchiveFichier, ArchiveLigne, User
 from app.schemas.archive import (
     ArchiveAcquisitionsRead,
+    ArchiveClotureRequest,
+    ArchiveClotureResponse,
     ArchiveDossierCreate,
     ArchiveDossierDetailRead,
     ArchiveDossierRead,
+    ArchiveExerciceSectionRead,
     ArchiveFichierRead,
     ArchiveLigneRead,
     ArchiveNatureGroupeRead,
@@ -25,6 +28,7 @@ from app.schemas.archive import (
 from app.schemas.common import MessageResponse
 from app.services.archive_service import ArchiveService, dossier_summary
 from app.services.audit_helpers import record_audit
+from app.services.exercice_cloture_service import ExerciceClotureService
 from app.storage.local_storage import LocalStorageService
 
 router = APIRouter(prefix="/archives", tags=["archives"])
@@ -93,6 +97,46 @@ async def create_dossier(
             request=request,
         )
         return _dossier_detail(dossier)
+    except AppError as exc:
+        raise_http_from_app(exc)
+
+
+@router.post("/cloture", response_model=ArchiveClotureResponse, status_code=status.HTTP_201_CREATED)
+async def cloturer_exercice(
+    body: ArchiveClotureRequest,
+    request: Request,
+    user: User = Depends(require_roles("administrateur", "comptable")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Génère le dossier Archives N (natures + opérations) et seed l'ouverture N+1 (148, sans 68)."""
+    try:
+        result = await ExerciceClotureService(db).cloturer(
+            annee=body.annee, force=body.force, user=user
+        )
+        await record_audit(
+            db,
+            user=user,
+            action="cloture_exercice",
+            entity="archive_dossier",
+            entity_id=str(result.dossier_id),
+            after={
+                "annee": result.annee,
+                "natures_creees": result.natures_creees,
+                "lignes": result.lignes,
+                "ouvertures_seed": result.ouvertures_seed,
+                "force": body.force,
+            },
+            request=request,
+        )
+        return ArchiveClotureResponse(
+            annee=result.annee,
+            natures_creees=result.natures_creees,
+            lignes=result.lignes,
+            ouvertures_seed=result.ouvertures_seed,
+            dossier_id=result.dossier_id,
+            message=result.message,
+            annee_ouverture=result.annee + 1,
+        )
     except AppError as exc:
         raise_http_from_app(exc)
 
@@ -266,6 +310,16 @@ async def list_acquisitions(
                     nature_code=g["nature_code"],
                     nature_label=g["nature_label"],
                     lignes=[_ligne_to_read(l) for l in g["lignes"]],
+                    sections=[
+                        ArchiveExerciceSectionRead(
+                            annee=s["annee"],
+                            label=s["label"],
+                            ouverture=_totaux_read(s["ouverture"]) if s["ouverture"] else None,
+                            lignes=[_ligne_to_read(l) for l in s["lignes"]],
+                            totaux=_totaux_read(s["totaux"]),
+                        )
+                        for s in g.get("sections", [])
+                    ],
                     totaux=_totaux_read(g["totaux"]),
                 )
                 for g in groupes

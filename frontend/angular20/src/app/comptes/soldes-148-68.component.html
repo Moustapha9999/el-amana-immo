@@ -27,7 +27,7 @@
       <div class="s68__kpi">
         <span class="s68__kpi-label">Total 148 (amort. cumulés)</span>
         <span class="s68__kpi-value">{{ d.total_148 | montant: 'MRU' }}</span>
-        <span class="s68__kpi-hint">N-1 : {{ d.total_148_n1 | montant: 'MRU' }}</span>
+        <span class="s68__kpi-hint">148-{{ d.annee - 1 }} : {{ d.total_148_n1 | montant: 'MRU' }}</span>
       </div>
       <div class="s68__kpi s68__kpi--dotation">
         <span class="s68__kpi-label">Total 68 global (dotations {{ d.annee }})</span>
@@ -99,8 +99,18 @@
                 <td mat-footer-cell *matFooterCellDef></td>
               </ng-container>
 
+              <ng-container matColumnDef="vb">
+                <th mat-header-cell *matHeaderCellDef>Valeur brute</th>
+                <td mat-cell *matCellDef="let row" class="s68__num">
+                  {{ row.valeur_brute | montant }}
+                </td>
+                <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot">
+                  {{ d.total_valeur_brute | montant }}
+                </td>
+              </ng-container>
+
               <ng-container matColumnDef="solde_148_n1">
-                <th mat-header-cell *matHeaderCellDef>Solde 148 N-1</th>
+                <th mat-header-cell *matHeaderCellDef>Solde 148-{{ d.annee - 1 }}</th>
                 <td mat-cell *matCellDef="let row" class="s68__num">
                   {{ row.solde_148_n1 | montant }}
                 </td>
@@ -138,16 +148,6 @@
                 </td>
                 <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot s68__foot--dotation">
                   {{ d.total_68 | montant }}
-                </td>
-              </ng-container>
-
-              <ng-container matColumnDef="vb">
-                <th mat-header-cell *matHeaderCellDef>Valeur brute</th>
-                <td mat-cell *matCellDef="let row" class="s68__num">
-                  {{ row.valeur_brute | montant }}
-                </td>
-                <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot">
-                  {{ d.total_valeur_brute | montant }}
                 </td>
               </ng-container>
 

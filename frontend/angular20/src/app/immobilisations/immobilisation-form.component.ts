@@ -34,6 +34,7 @@ interface PieceComptable {
   date_journee: string;
   reference: string | null;
   libelle: string | null;
+  montant: number | string | null;
 }
 
 interface Paginated<T> {
@@ -227,15 +228,6 @@ export class ImmobilisationFormComponent implements OnInit {
   /** True si un plan existe mais aucune ligne pour l'exercice courant. */
   readonly planHorsExercice = signal(false);
   readonly pieces = signal<PieceComptable[]>([]);
-  readonly piecesBusy = signal(false);
-  selectedPieceFile: File | null = null;
-
-  readonly pieceForm = this.fb.nonNullable.group({
-    type_piece: ['facture'],
-    date_journee: [new Date().toISOString().slice(0, 10)],
-    reference: [''],
-    libelle: [''],
-  });
 
   /** Admin / comptable peuvent surcharger le taux issu de la catégorie. */
   readonly canOverrideTaux = computed(() => {
@@ -364,6 +356,13 @@ export class ImmobilisationFormComponent implements OnInit {
         }
       }
     });
+    // Recharge les pièces à chaque visite de l'onglet (retour depuis Pièces comptables)
+    effect(() => {
+      const immoId = this.id();
+      if (this.showPieces() && immoId) {
+        this.loadPieces(immoId);
+      }
+    });
   }
 
   ngOnInit(): void {
@@ -400,13 +399,6 @@ export class ImmobilisationFormComponent implements OnInit {
         this.patchFromDto(row);
         this.loadSituationComptable(immoId);
         this.loadQrCode(immoId);
-        const journee = row.date_comptabilisation || row.date_acquisition;
-        if (journee) {
-          this.pieceForm.controls.date_journee.setValue(journee.slice(0, 10));
-        }
-        if (row.numero_facture) {
-          this.pieceForm.controls.reference.setValue(row.numero_facture);
-        }
       });
       this.loadAmortissements(immoId);
       this.loadReevaluations(immoId);
@@ -585,46 +577,6 @@ export class ImmobilisationFormComponent implements OnInit {
     });
   }
 
-  onPieceFileSelected(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const files = input.files;
-    this.selectedPieceFile = files && files.length > 0 ? files[0] : null;
-  }
-
-  uploadPiece(): void {
-    const immoId = this.id();
-    if (!immoId) {
-      return;
-    }
-    if (!this.selectedPieceFile) {
-      void this.dialogs.error('Sélectionnez un fichier PDF ou image').subscribe();
-      return;
-    }
-    const raw = this.pieceForm.getRawValue();
-    this.piecesBusy.set(true);
-    this.api
-      .upload<PieceComptable>(`/immobilisations/${immoId}/pieces`, this.selectedPieceFile, {
-        type_piece: raw.type_piece,
-        date_journee: raw.date_journee,
-        reference: raw.reference,
-        libelle: raw.libelle,
-      })
-      .subscribe({
-        next: () => {
-          this.piecesBusy.set(false);
-          this.selectedPieceFile = null;
-          this.loadPieces(immoId);
-          void this.dialogs.successAction('enregistrement', 'Pièce archivée.').subscribe();
-        },
-        error: (err) => {
-          this.piecesBusy.set(false);
-          void this.dialogs
-            .error(typeof err.error?.detail === 'string' ? err.error.detail : 'Upload impossible')
-            .subscribe();
-        },
-      });
-  }
-
   downloadPiece(row: PieceComptable): void {
     this.api.download(`/pieces/${row.id}/download`).subscribe({
       next: (blob) => {
@@ -638,19 +590,27 @@ export class ImmobilisationFormComponent implements OnInit {
     });
   }
 
-  deletePiece(row: PieceComptable): void {
-    const immoId = this.id();
-    if (!immoId) {
-      return;
-    }
+  removePiece(row: PieceComptable): void {
+    const label = row.reference || row.filename;
     this.dialogs
-      .confirmAction('suppression', `Supprimer « ${row.filename} » ?`)
+      .confirmAction(
+        'suppression',
+        `Supprimer l’association de la pièce « ${label} » ? La pièce sera retirée de cette immobilisation.`,
+      )
       .subscribe((ok) => {
         if (!ok) {
           return;
         }
+        const immoId = this.id();
         this.api.delete(`/pieces/${row.id}`).subscribe({
-          next: () => this.loadPieces(immoId),
+          next: () => {
+            if (immoId) {
+              this.loadPieces(immoId);
+            }
+            void this.dialogs
+              .successAction('suppression', 'Association de la pièce supprimée.')
+              .subscribe();
+          },
           error: () => void this.dialogs.error('Suppression impossible').subscribe(),
         });
       });

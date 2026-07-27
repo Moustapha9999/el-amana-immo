@@ -382,3 +382,40 @@
 .arn__foot {
   color: #0f172a;
 }
+
+.arn__row--header {
+  background: #d6eaf8;
+}
+
+.arn__row--header:hover {
+  background: #d6eaf8 !important;
+}
+
+.arn__cell-des--header {
+  font-weight: 750;
+  color: #1a5278;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 0.78rem;
+}
+
+.arn__row--st {
+  background: #eef6fb;
+}
+
+.arn__row--st:hover {
+  background: #e0eef8 !important;
+}
+
+.arn__badge-st {
+  display: inline-block;
+  margin-right: 0.35rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  background: #2874a6;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}

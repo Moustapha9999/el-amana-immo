@@ -1,6 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { tap } from 'rxjs/operators';
+import { Observable, of, throwError } from 'rxjs';
+import { catchError, finalize, shareReplay, tap } from 'rxjs/operators';
 import { ApiService } from './api.service';
 
 export interface TokenPair {
@@ -27,30 +28,80 @@ export class AuthService {
 
   readonly user = signal<UserProfile | null>(null);
 
+  /** Évite les refresh concurrents (plusieurs 401 en parallèle). */
+  private refreshInFlight$: Observable<TokenPair> | null = null;
+
   get accessToken(): string | null {
     return localStorage.getItem(ACCESS_KEY);
+  }
+
+  get refreshToken(): string | null {
+    return localStorage.getItem(REFRESH_KEY);
+  }
+
+  private storeTokens(tokens: TokenPair): void {
+    localStorage.setItem(ACCESS_KEY, tokens.access_token);
+    localStorage.setItem(REFRESH_KEY, tokens.refresh_token);
+  }
+
+  clearLocalSession(): void {
+    localStorage.removeItem(ACCESS_KEY);
+    localStorage.removeItem(REFRESH_KEY);
+    this.user.set(null);
+    this.refreshInFlight$ = null;
   }
 
   login(email: string, password: string, totpCode?: string) {
     return this.api
       .post<TokenPair>('/auth/login', { email, password, totp_code: totpCode ?? null })
-      .pipe(
-      tap((tokens) => {
-        localStorage.setItem(ACCESS_KEY, tokens.access_token);
-        localStorage.setItem(REFRESH_KEY, tokens.refresh_token);
-      }),
-    );
+      .pipe(tap((tokens) => this.storeTokens(tokens)));
   }
 
   loadProfile() {
     return this.api.get<UserProfile>('/auth/me').pipe(tap((profile) => this.user.set(profile)));
   }
 
-  logout(): void {
-    localStorage.removeItem(ACCESS_KEY);
-    localStorage.removeItem(REFRESH_KEY);
-    this.user.set(null);
-    void this.router.navigate(['/login']);
+  /** Renouvelle la paire JWT via refresh token. */
+  refreshTokens(): Observable<TokenPair> {
+    const refresh = this.refreshToken;
+    if (!refresh) {
+      return throwError(() => new Error('Aucun refresh token'));
+    }
+    if (!this.refreshInFlight$) {
+      this.refreshInFlight$ = this.api.post<TokenPair>('/auth/refresh', { refresh_token: refresh }).pipe(
+        tap((tokens) => this.storeTokens(tokens)),
+        finalize(() => {
+          this.refreshInFlight$ = null;
+        }),
+        shareReplay(1),
+      );
+    }
+    return this.refreshInFlight$;
+  }
+
+  /**
+   * Déconnexion : révoque la session côté serveur puis purge locale.
+   * @param reason `idle` = inactivité 5 min
+   */
+  logout(options?: { reason?: 'idle' | 'manual' | 'session' }): void {
+    const refresh = this.refreshToken;
+    const hadSession = !!(this.accessToken || refresh);
+
+    if (hadSession) {
+      this.api
+        .post<{ message: string }>('/auth/logout', { refresh_token: refresh })
+        .pipe(catchError(() => of(null)))
+        .subscribe();
+    }
+
+    this.clearLocalSession();
+    const queryParams =
+      options?.reason === 'idle'
+        ? { reason: 'idle' }
+        : options?.reason === 'session'
+          ? { reason: 'session' }
+          : undefined;
+    void this.router.navigate(['/login'], queryParams ? { queryParams } : undefined);
   }
 
   isAuthenticated(): boolean {

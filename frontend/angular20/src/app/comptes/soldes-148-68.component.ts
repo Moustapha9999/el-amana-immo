@@ -61,11 +61,11 @@ export class Soldes14868Component implements OnInit {
     'nature',
     'compte_immo',
     'compte_148',
+    'vb',
     'solde_148_n1',
+    'solde_68',
     'solde_148',
     'compte_68',
-    'solde_68',
-    'vb',
     'vnc',
     'nb',
   ];

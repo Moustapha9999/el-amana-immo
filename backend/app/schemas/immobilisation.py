@@ -188,6 +188,7 @@ class PieceJointeRead(ORMModel):
     date_journee: date
     reference: str | None = None
     libelle: str | None = None
+    montant: Decimal | None = None
     created_at: datetime | None = None
     code_inventaire: str | None = None
     designation: str | None = None

@@ -135,8 +135,12 @@
             <ng-container matColumnDef="actions">
               <th mat-header-cell *matHeaderCellDef>Actions</th>
               <td mat-cell *matCellDef="let row" class="ecr__actions-cell">
-                <a mat-stroked-button class="ecr__voir" [routerLink]="['/ecritures', row.id]">
-                  Voir détails
+                <a
+                  mat-stroked-button
+                  class="ecr__voir app-btn-pill"
+                  [routerLink]="['/ecritures', row.id]"
+                >
+                  Consulter
                 </a>
               </td>
             </ng-container>

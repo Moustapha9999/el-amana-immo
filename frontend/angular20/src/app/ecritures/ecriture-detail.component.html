@@ -115,8 +115,12 @@
             </div>
           </dl>
           @if (d.immobilisation_id) {
-            <a class="ecd__link" [routerLink]="['/immobilisations', d.immobilisation_id]">
-              Ouvrir la fiche immobilisation
+            <a
+              mat-stroked-button
+              class="app-btn-pill ecd__link"
+              [routerLink]="['/immobilisations', d.immobilisation_id]"
+            >
+              Consulter la fiche immobilisation
             </a>
           }
         </section>

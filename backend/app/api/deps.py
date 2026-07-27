@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.core.security import decode_token
 from app.db.session import get_db
 from app.models import User
+from app.services.auth_session_service import AuthSessionService
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -29,8 +30,16 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalide")
 
     user_id = payload.get("sub")
-    if not user_id:
+    sid_raw = payload.get("sid")
+    if not user_id or not sid_raw:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalide")
+
+    session = await AuthSessionService(db).get_active_session(UUID(str(sid_raw)))
+    if session is None or str(session.user_id) != str(user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expirée ou révoquée",
+        )
 
     result = await db.execute(
         select(User).options(selectinload(User.roles)).where(User.id == UUID(user_id), User.is_active.is_(True))

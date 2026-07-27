@@ -120,6 +120,7 @@ class PieceJointe(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     date_journee: Mapped[date] = mapped_column(Date, index=True)
     reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
     libelle: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    montant: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     uploaded_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )

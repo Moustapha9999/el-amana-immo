@@ -74,14 +74,40 @@ class ArchiveTotauxRead(BaseModel):
     nb_lignes: int = 0
 
 
+class ArchiveExerciceSectionRead(BaseModel):
+    """Bloc année comme le tableau banque (ouvertures + S/T cumulatif)."""
+
+    annee: int
+    label: str
+    ouverture: ArchiveTotauxRead | None = None
+    lignes: list[ArchiveLigneRead] = Field(default_factory=list)
+    totaux: ArchiveTotauxRead  # S/T cumulatif fin d'année
+
+
 class ArchiveNatureGroupeRead(BaseModel):
     nature_code: str
     nature_label: str
     lignes: list[ArchiveLigneRead]
-    totaux: ArchiveTotauxRead
+    sections: list[ArchiveExerciceSectionRead] = Field(default_factory=list)
+    totaux: ArchiveTotauxRead  # total général (somme des lignes actives)
 
 
 class ArchiveAcquisitionsRead(BaseModel):
     annee: int
     groupes: list[ArchiveNatureGroupeRead]
     totaux: ArchiveTotauxRead
+
+
+class ArchiveClotureRequest(BaseModel):
+    annee: int = Field(ge=1990, le=2100)
+    force: bool = False
+
+
+class ArchiveClotureResponse(BaseModel):
+    annee: int
+    natures_creees: int
+    lignes: int
+    ouvertures_seed: int
+    dossier_id: UUID
+    message: str
+    annee_ouverture: int

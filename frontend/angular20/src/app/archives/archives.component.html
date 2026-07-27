@@ -16,6 +16,41 @@
   </header>
 
   <section class="arc__section">
+    <h2 class="arc__section-title">Clôturer un exercice</h2>
+    <p class="arc__hint">
+      Génère le dossier Archives au 31/12/N (natures + opérations du parc), puis reporte les soldes
+      142/148 pour démarrer N+1 — sans reporter les charges 68.
+    </p>
+    <form [formGroup]="clotureForm" (ngSubmit)="cloturer()" class="arc__create">
+      <div class="arc-field">
+        <label class="arc-field__label" for="arc-cloture-annee">Année à clôturer</label>
+        <input
+          id="arc-cloture-annee"
+          class="arc-field__control"
+          type="number"
+          formControlName="annee"
+          min="1990"
+          max="2100"
+          step="1"
+        />
+      </div>
+      <div class="arc-field arc-field--check">
+        <label class="arc-field__label" for="arc-cloture-force">Régénérer si déjà clôturé</label>
+        <input
+          id="arc-cloture-force"
+          class="arc-field__check"
+          type="checkbox"
+          formControlName="force"
+        />
+      </div>
+      <button mat-flat-button color="primary" type="submit" [disabled]="cloturing()">
+        <mat-icon aria-hidden="true">folder_special</mat-icon>
+        {{ cloturing() ? 'Génération…' : 'Générer le dossier 31/12/' + clotureForm.controls.annee.value }}
+      </button>
+    </form>
+  </section>
+
+  <section class="arc__section">
     <h2 class="arc__section-title">Nouveau dossier année</h2>
     <form [formGroup]="createForm" (ngSubmit)="create()" class="arc__create">
       <div class="arc-field">

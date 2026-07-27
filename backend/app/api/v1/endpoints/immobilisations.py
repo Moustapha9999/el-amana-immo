@@ -55,6 +55,7 @@ def _piece_to_read(row: PieceJointe) -> PieceJointeRead:
         date_journee=row.date_journee,
         reference=row.reference,
         libelle=row.libelle,
+        montant=row.montant,
         created_at=row.created_at,
         code_inventaire=immo.code_inventaire if immo else None,
         designation=immo.designation if immo else None,
@@ -364,6 +365,7 @@ async def upload_piece(
     date_journee: date | None = Form(None),
     reference: str | None = Form(None),
     libelle: str | None = Form(None),
+    montant: str | None = Form(None),
     is_photo: bool = Form(False),
     user: User = Depends(require_roles("administrateur", "comptable")),
     db: AsyncSession = Depends(get_db),
@@ -376,6 +378,7 @@ async def upload_piece(
             date_journee=date_journee,
             reference=reference,
             libelle=libelle,
+            montant=montant,
             user=user,
             is_photo=is_photo,
         )

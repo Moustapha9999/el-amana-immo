@@ -48,6 +48,12 @@ export class LoginComponent implements OnInit {
     } else if (reset === 'ok') {
       this.info.set('Mot de passe mis à jour. Vous pouvez vous connecter.');
     }
+    const reason = this.route.snapshot.queryParamMap.get('reason');
+    if (reason === 'idle') {
+      this.info.set('Session terminée pour inactivité (5 minutes). Reconnectez-vous.');
+    } else if (reason === 'session') {
+      this.info.set('Session expirée ou révoquée. Reconnectez-vous.');
+    }
   }
 
   submit(): void {

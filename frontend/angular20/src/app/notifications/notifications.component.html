@@ -1,53 +1,101 @@
-<app-page-header title="Notifications" subtitle="Fin d'amortissement et écarts inventaire.">
-  <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()">
-    <mat-icon aria-hidden="true">refresh</mat-icon>
-    Actualiser
-  </button>
-  @if (unread() > 0) {
-    <button mat-stroked-button type="button" (click)="markAllRead()">Tout marquer comme lu</button>
-  }
-</app-page-header>
-
-<p class="text-sm text-slate-600 mb-4 -mt-2">
-  Consultez aussi
-  <a routerLink="/inventaire" class="app-link">Inventaire</a>
-  et
-  <a routerLink="/amortissements" class="app-link">Amortissements</a>.
-</p>
-
-<div class="app-panel">
-  <table mat-table [dataSource]="rows()" class="w-full app-table">
-    <ng-container matColumnDef="created_at">
-      <th mat-header-cell *matHeaderCellDef>Date</th>
-      <td mat-cell *matCellDef="let row">{{ row.created_at | date: 'dd/MM/yyyy HH:mm' }}</td>
-    </ng-container>
-    <ng-container matColumnDef="type">
-      <th mat-header-cell *matHeaderCellDef>Type</th>
-      <td mat-cell *matCellDef="let row">{{ row.type_notification }}</td>
-    </ng-container>
-    <ng-container matColumnDef="titre">
-      <th mat-header-cell *matHeaderCellDef>Titre</th>
-      <td mat-cell *matCellDef="let row">{{ row.titre }}</td>
-    </ng-container>
-    <ng-container matColumnDef="message">
-      <th mat-header-cell *matHeaderCellDef>Message</th>
-      <td mat-cell *matCellDef="let row">{{ row.message }}</td>
-    </ng-container>
-    <ng-container matColumnDef="actions">
-      <th mat-header-cell *matHeaderCellDef></th>
-      <td mat-cell *matCellDef="let row">
-        @if (!row.lu) {
-          <button mat-button type="button" (click)="markRead(row)">Marquer lu</button>
+<div class="ntf">
+  <header class="ntf__hero">
+    <div>
+      <h1 class="ntf__title">Notifications</h1>
+      <p class="ntf__lead">
+        @if (unread() > 0) {
+          {{ unread() }} non lue(s) — fin d’amortissement et écarts inventaire.
         } @else {
-          <span class="text-slate-400 text-xs">Lu</span>
+          Fin d’amortissement et écarts inventaire.
         }
-      </td>
-    </ng-container>
-    <tr mat-header-row *matHeaderRowDef="columns"></tr>
-    <tr mat-row *matRowDef="let row; columns: columns" [class.row-unread]="!row.lu"></tr>
-  </table>
-</div>
+        Consultez aussi
+        <a routerLink="/inventaire" class="app-link">Inventaire</a>
+        et
+        <a routerLink="/amortissements" class="app-link">Amortissements</a>.
+      </p>
+    </div>
+    <div class="ntf__hero-actions">
+      <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Actualiser
+      </button>
+      @if (unread() > 0) {
+        <button mat-flat-button color="primary" type="button" (click)="markAllRead()">
+          <mat-icon aria-hidden="true">done_all</mat-icon>
+          Tout marquer comme lu
+        </button>
+      }
+    </div>
+  </header>
 
-@if (!rows().length) {
-  <p class="text-sm text-slate-500 mt-4">Aucune notification.</p>
-}
+  <section class="ntf__section">
+    @if (loading()) {
+      <p class="ntf__empty">Chargement…</p>
+    } @else if (rows().length === 0) {
+      <p class="ntf__empty">Aucune notification.</p>
+    } @else {
+      <div class="ntf__table-wrap">
+        <table mat-table [dataSource]="rows()" class="w-full app-table">
+          <ng-container matColumnDef="consulter">
+            <th mat-header-cell *matHeaderCellDef>Action</th>
+            <td mat-cell *matCellDef="let row">
+              <button
+                mat-stroked-button
+                type="button"
+                class="app-btn-pill"
+                (click)="consulter(row)"
+                aria-label="Consulter"
+              >
+                <mat-icon aria-hidden="true">visibility</mat-icon>
+              </button>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="created_at">
+            <th mat-header-cell *matHeaderCellDef>Date</th>
+            <td mat-cell *matCellDef="let row" class="ntf__date">
+              {{ row.created_at | date: 'dd/MM/yyyy HH:mm' }}
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="type">
+            <th mat-header-cell *matHeaderCellDef>Type</th>
+            <td mat-cell *matCellDef="let row">{{ typeLabel(row.type_notification) }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="titre">
+            <th mat-header-cell *matHeaderCellDef>Titre</th>
+            <td mat-cell *matCellDef="let row" [class.ntf__titre--unread]="!row.lu">
+              {{ row.titre }}
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="message">
+            <th mat-header-cell *matHeaderCellDef>Message</th>
+            <td mat-cell *matCellDef="let row" class="ntf__msg" [title]="row.message">
+              {{ row.message }}
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef>Statut</th>
+            <td mat-cell *matCellDef="let row">
+              @if (!row.lu) {
+                <button mat-button type="button" (click)="markRead(row)">Marquer lu</button>
+              } @else {
+                <span class="ntf__lu">Lu</span>
+              }
+            </td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="columns"></tr>
+          <tr
+            mat-row
+            *matRowDef="let row; columns: columns"
+            [class.row-unread]="!row.lu"
+          ></tr>
+        </table>
+      </div>
+    }
+  </section>
+</div>

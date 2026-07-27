@@ -21,6 +21,7 @@ from app.storage.local_storage import LocalStorageService
 
 KIND_EXCEL = "excel_banque"
 KIND_PDF = "pdf_banque"
+KIND_CLOTURE = "cloture_systeme"
 EXCEL_EXTS = {".xls", ".xlsx"}
 PDF_EXTS = {".pdf"}
 
@@ -278,6 +279,20 @@ class ArchiveService:
         result = await self.db.execute(stmt)
         lignes = list(result.scalars().all())
 
+        # Si une clôture système existe pour une nature, elle prime sur les
+        # uploads Excel/PDF (évite le double comptage après clôture).
+        has_cloture: set[str] = set()
+        for ligne in lignes:
+            if (ligne.source_kind or "") == KIND_CLOTURE:
+                has_cloture.add(ligne.categorie_code)
+        if has_cloture:
+            lignes = [
+                l
+                for l in lignes
+                if l.categorie_code not in has_cloture
+                or (l.source_kind or "") == KIND_CLOTURE
+            ]
+
         by_nature: dict[str, list[ArchiveLigne]] = defaultdict(list)
         for ligne in lignes:
             by_nature[ligne.categorie_code].append(ligne)
@@ -293,6 +308,7 @@ class ArchiveService:
                     "nature_code": code,
                     "nature_label": nature_label(code),
                     "lignes": items,
+                    "sections": _sections_par_exercice(items),
                     "totaux": tot,
                 }
             )
@@ -346,6 +362,69 @@ def _totaux(lignes: list[ArchiveLigne]) -> dict:
         t["vnc"] += l.vnc or Decimal("0")
         t["nb_lignes"] += 1
     return t
+
+
+def _copy_totaux(t: dict) -> dict:
+    return {
+        "valeur_brute": t["valeur_brute"],
+        "amt_n1": t["amt_n1"],
+        "dotation": t["dotation"],
+        "amt_fin": t["amt_fin"],
+        "vnc": t["vnc"],
+        "nb_lignes": t["nb_lignes"],
+    }
+
+
+def _sections_par_exercice(lignes: list[ArchiveLigne]) -> list[dict]:
+    """Découpe les lignes en blocs annuels (S/T cumulatifs) comme le tableau banque.
+
+    Les S/T / Report exercice du fichier Excel ne sont pas stockés : on les
+    reconstruit ici pour l'affichage. ``totaux`` de chaque section = cumul
+    jusqu'à fin d'année ; ``ouverture`` = cumul de l'année précédente.
+
+    Un REPORT / S/T d'ouverture daté N-1 (ex. 31/12/2005) est rattaché à la
+    première année d'acquisitions (ex. 2006), comme sur la feuille banque.
+    """
+    by_year: dict[int, list[ArchiveLigne]] = defaultdict(list)
+    for ligne in lignes:
+        year = ligne.date_acquisition.year if ligne.date_acquisition else 0
+        by_year[year].append(ligne)
+
+    # Rattacher les années « REPORT seul » à la prochaine année avec acquisitions
+    years = sorted(by_year.keys())
+    merged: dict[int, list[ArchiveLigne]] = defaultdict(list)
+    i = 0
+    while i < len(years):
+        y = years[i]
+        y_lines = by_year[y]
+        only_reports = bool(y_lines) and all(getattr(l, "is_report", False) for l in y_lines)
+        if only_reports and i + 1 < len(years):
+            next_y = years[i + 1]
+            merged[next_y].extend(y_lines)
+            i += 1
+            continue
+        merged[y].extend(y_lines)
+        i += 1
+
+    sections: list[dict] = []
+    cumulative: list[ArchiveLigne] = []
+    prev_totaux: dict | None = None
+    for year in sorted(merged.keys()):
+        year_lines = merged[year]
+        ouverture = _copy_totaux(prev_totaux) if prev_totaux is not None else None
+        cumulative.extend(year_lines)
+        tot = _totaux(cumulative)
+        sections.append(
+            {
+                "annee": year,
+                "label": f"Exercice {year}" if year else "Sans date",
+                "ouverture": ouverture,
+                "lignes": year_lines,
+                "totaux": tot,
+            }
+        )
+        prev_totaux = tot
+    return sections
 
 
 def _add_totaux(dst: dict, src: dict) -> None:

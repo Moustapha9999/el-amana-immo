@@ -128,8 +128,12 @@
             <ng-container matColumnDef="actions">
               <th mat-header-cell *matHeaderCellDef>Actions</th>
               <td mat-cell *matCellDef="let row" class="ces__actions-cell">
-                <a mat-stroked-button class="ces__voir" [routerLink]="['/cessions', row.id]">
-                  Voir fiche
+                <a
+                  mat-stroked-button
+                  class="ces__voir app-btn-pill"
+                  [routerLink]="['/cessions', row.id]"
+                >
+                  Consulter
                 </a>
               </td>
             </ng-container>

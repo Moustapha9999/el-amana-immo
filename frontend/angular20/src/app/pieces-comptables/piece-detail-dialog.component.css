@@ -1,0 +1,158 @@
+.pcd {
+  display: flex;
+  flex-direction: column;
+  max-height: min(88vh, 42rem);
+}
+
+.pcd__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1.15rem 1.25rem 0.85rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef6fc 100%);
+}
+
+.pcd__eyebrow {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.pcd__title {
+  margin: 0.2rem 0 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.25;
+}
+
+.pcd__lead {
+  margin: 0.3rem 0 0;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.pcd__body {
+  padding: 1rem 1.25rem !important;
+  overflow: auto;
+}
+
+.pcd__block {
+  margin-bottom: 1.15rem;
+}
+
+.pcd__block:last-child {
+  margin-bottom: 0;
+}
+
+.pcd__block-title {
+  margin: 0 0 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #1e3a5f;
+}
+
+.pcd__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem 1rem;
+  margin: 0;
+}
+
+.pcd__grid > div {
+  min-width: 0;
+}
+
+.pcd__span-2 {
+  grid-column: 1 / -1;
+}
+
+.pcd__grid dt {
+  margin: 0 0 0.15rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.pcd__grid dd {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #0f172a;
+  word-break: break-word;
+}
+
+.pcd__mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+}
+
+.pcd__montant {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.pcd__file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pcd__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: #e8f1f8;
+  color: #1a5278;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.pcd__badge--statut {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.pcd__hint {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.pcd__hint--error {
+  color: #b91c1c;
+  margin-bottom: 0.4rem;
+}
+
+.pcd__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.25rem 1.1rem !important;
+  border-top: 1px solid #e2e8f0;
+  margin: 0 !important;
+}
+
+.pcd__spacer {
+  flex: 1 1 auto;
+}
+
+@media (max-width: 560px) {
+  .pcd__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pcd__span-2 {
+    grid-column: auto;
+  }
+}

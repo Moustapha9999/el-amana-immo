@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from fastapi import UploadFile
@@ -15,8 +16,45 @@ from app.models import Immobilisation, PieceJointe, User
 from app.models.enums import TypePieceComptable
 from app.storage.local_storage import LocalStorageService
 
-ALLOWED_MIME_PREFIXES = ("image/", "application/pdf")
-ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
+
+def _parse_montant(value: str | None, fallback: Decimal | None) -> Decimal | None:
+    raw = (value or "").strip().replace(" ", "").replace(",", ".")
+    if not raw:
+        return fallback
+    try:
+        return Decimal(raw).quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError) as exc:
+        raise ValidationError("Montant de pièce invalide.") from exc
+
+ALLOWED_MIME_PREFIXES = ("image/",)
+ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    # Excel
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel.sheet.macroenabled.12",
+    # Word
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-word.document.macroenabled.12",
+}
+ALLOWED_EXTENSIONS = {
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".tif",
+    ".tiff",
+    ".gif",
+    ".bmp",
+    ".xls",
+    ".xlsx",
+    ".xlsm",
+    ".doc",
+    ".docx",
+    ".docm",
+}
 
 TYPE_LABELS = {
     TypePieceComptable.FACTURE: "Facture",
@@ -49,9 +87,13 @@ class PiecesComptablesService:
         ext = "." + name.rsplit(".", 1)[-1] if "." in name else ""
         mime = (file.content_type or "").lower()
         ok_ext = ext in ALLOWED_EXTENSIONS
-        ok_mime = any(mime.startswith(p) for p in ALLOWED_MIME_PREFIXES) if mime else False
+        ok_mime = bool(mime) and (
+            mime in ALLOWED_MIME_TYPES or any(mime.startswith(p) for p in ALLOWED_MIME_PREFIXES)
+        )
         if not ok_ext and not ok_mime:
-            raise ValidationError("Formats acceptés : PDF, PNG, JPG, WEBP, TIFF.")
+            raise ValidationError(
+                "Formats acceptés : PDF, Excel (.xls, .xlsx), Word (.doc, .docx), images."
+            )
 
     async def upload(
         self,
@@ -62,7 +104,8 @@ class PiecesComptablesService:
         date_journee: date | None,
         reference: str | None,
         libelle: str | None,
-        user: User | None,
+        montant: str | None = None,
+        user: User | None = None,
         is_photo: bool = False,
     ) -> PieceJointe:
         immo = await self.db.get(Immobilisation, immobilisation_id)
@@ -72,6 +115,7 @@ class PiecesComptablesService:
         self._validate_file(file)
         tp = parse_type_piece(type_piece)
         journee = date_journee or immo.date_comptabilisation or immo.date_acquisition or date.today()
+        montant_val = _parse_montant(montant, immo.valeur_brute)
 
         relative, size = await self.storage.save(
             file,
@@ -88,6 +132,7 @@ class PiecesComptablesService:
             date_journee=journee,
             reference=(reference or immo.numero_facture or "").strip() or None,
             libelle=(libelle or "").strip() or None,
+            montant=montant_val,
             uploaded_by_id=user.id if user else None,
         )
         self.db.add(row)

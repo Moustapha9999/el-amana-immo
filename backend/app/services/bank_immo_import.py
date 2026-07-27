@@ -33,13 +33,18 @@ SHEET_CATEGORY_MAP: dict[str, str] = {
 }
 
 SKIP_DESIGNATION_RE = re.compile(
-    r"^(solde\b|s/t\b|total\b|sous[- ]?total\b|désignation|designation|date\b|report\s+de\s+solde|"
-    r"report\s+exercice|report\s+de\s+l[' ]|report\s+\d{1,2}[/.\-])",
+    r"^(solde\b|s/t\b|total\b|sous[- ]?total\b|désignation|designation|date\b|"
+    r"(?:report|rapport)s?\s+de\s+solde|"
+    r"(?:report|rapport)s?\s+exercice|"
+    r"(?:report|rapport)s?\s+d[eé]cembre|"
+    r"(?:report|rapport)\s+de\s+l[' ]|"
+    r"(?:report|rapport)s?\s+\d{1,2}[/.\-])",
     re.IGNORECASE,
 )
-# Report historique initial (ex. REPORT 2003) — pas les reports de solde annuels
-REPORT_HISTORIQUE_RE = re.compile(r"^report\s+(19|20)\d{2}\s*$", re.IGNORECASE)
-REPORT_RE = re.compile(r"^report\b", re.IGNORECASE)
+OPENING_STOCK_RE = re.compile(r"^(s/t\b|solde\b|total\b)", re.IGNORECASE)
+# Report historique initial (ex. REPORT 2003) — pas les reports/rapports de solde annuels
+REPORT_HISTORIQUE_RE = re.compile(r"^(?:report|rapport)\s+(19|20)\d{2}\s*$", re.IGNORECASE)
+REPORT_RE = re.compile(r"^(?:report|rapport)\b", re.IGNORECASE)
 AGENCE_ALIASES: dict[str, str] = {
     "SIEGE CENTRAL": "00001",
     "SIÈGE CENTRAL": "00001",
@@ -47,6 +52,10 @@ AGENCE_ALIASES: dict[str, str] = {
     "AGENCE CENTRALE PARTICULIERS": "00001",
 }
 
+# Stock Excel clôturé (ex. Solde 12/12/2025) :
+#   2024-12 = colonne « Amt cumulés fin ex. préc. » (amt_n1)
+#   2025-12 = colonne « Montant amt fin exercice » (amt_fin) + dotation Excel
+PERIODE_STOCK_N1 = "2024-12"
 PERIODE_OUVERTURE = "2025-12"
 PERIODE_ARRETE = "2026-06"
 # Feuilles sans colonnes Dotation / Fin exercice (ex. Logiciel 147530) :
@@ -54,6 +63,8 @@ PERIODE_ARRETE = "2026-06"
 # acquisitions 2026 → prorata jusqu'au trimestre comptabilisé (30/06/2026).
 PERIODE_ARRETE_ANNUELLE = "2026-12"
 EXERCICE_CALCUL = 2026
+# Année des colonnes Dotation / Fin du tableau Excel importé en stock_ouverture
+EXERCICE_STOCK_EXCEL = int(PERIODE_OUVERTURE[:4])
 # Arrêté prorata Excel DAYS360(..., 30/06/2026)
 DATE_ARRETE_PRORATA = date(2026, 6, 30)
 # Alias historique (évite de casser les imports de scripts)
@@ -272,10 +283,10 @@ def parse_date(value: Any, *, datemode: int = 0) -> date | None:
         year = int(year_s)
         if len(year_s) == 2:
             year = 2000 + year if year < 70 else 1900 + year
-        elif year > 2100:
-            # 20120 → 2020, 20121 → 2021
-            year = int(year_s[-2:])
-            year = 2000 + year if year < 70 else 1900 + year
+        elif len(year_s) == 3 or year > 2100:
+            # 212 → 2012 ; 20120 → 2020
+            yy = int(year_s[-2:])
+            year = 2000 + yy if yy < 70 else 1900 + yy
         try:
             return date(year, month, day)
         except ValueError:
@@ -381,6 +392,27 @@ def _cell(row: list[Any], idx: int) -> Any:
     return row[idx]
 
 
+def _skip_row_label(raw: list[Any], cols: dict[str, Any]) -> str | None:
+    """Libellé Solde / Total / Report à ignorer, même s'il est hors colonne Désignation.
+
+    Sur certaines feuilles frais (ex. FRIAS emmission EMPRT), le report de solde
+    a le texte dans la colonne Qté et une désignation vide — sinon il devient
+    « Ligne sans libellé » et double-compte la VB.
+    """
+    for key in ("designation", "qte", "date"):
+        val = _cell(raw, cols[key])
+        if val is None:
+            continue
+        s = str(val).strip()
+        if not s:
+            continue
+        if SKIP_DESIGNATION_RE.search(s):
+            return s
+        if REPORT_RE.search(s) and not REPORT_HISTORIQUE_RE.search(s):
+            return s
+    return None
+
+
 def parse_bank_workbook(content: bytes, filename: str = "import.xls") -> list[ParsedBankRow]:
     """Parse le classeur banque (.xls ou .xlsx) en lignes exploitables."""
     name_l = (filename or "").lower()
@@ -455,15 +487,18 @@ def _parse_sheet_grid(
     anon = 0
     # Dernière ligne "Solde ..." de la feuille = totaux de référence du tableau
     last_solde: tuple[Decimal, Decimal, Decimal | None] | None = None
-    # Un seul REPORT YYYY par feuille (ex. REPORT 2003) — les suivants (REPORT 2006…)
-    # sont des reports de solde et doubleraient la VB.
-    report_historique_pris = False
     for h_idx, header_row in enumerate(header_indices):
         cols = _detect_columns(list(grid[header_row]))
         if cols is None:
             continue
         calc_mode = cols["has_dotation"] == 0
         end = header_indices[h_idx + 1] if h_idx + 1 < len(header_indices) else len(grid)
+        # Un seul REPORT YYYY par bloc d'en-tête (ex. REPORT 2003).
+        # MatexHisto a souvent 2 tableaux (comptes 1420970002 & 1420970015) :
+        # chaque bloc a son propre stock d'ouverture — ne pas bloquer le 2e.
+        # Dans un même bloc, les REPORT suivants (REPORT 2006…) restent ignorés.
+        report_historique_pris = False
+        block_has_rows = False
         for r in range(header_row + 1, end):
             raw = list(grid[r]) if grid[r] else []
             if not raw or all(c is None or str(c).strip() == "" for c in raw):
@@ -476,10 +511,47 @@ def _parse_sheet_grid(
             if not des and vb is None:
                 continue
 
-            # Reports de solde / exercice / date → ignorer (évite le double comptage)
-            if des and SKIP_DESIGNATION_RE.search(des):
-                des_l = des.lower()
-                if (des_l.startswith("solde") or des_l.startswith("total")) and vb is not None:
+            # Reports de solde / exercice / date → ignorer (évite le double comptage).
+            # Exception : premier S/T / Solde / Total du bloc = stock d'ouverture
+            # (ex. matinfo 31/12/05 S/T avant les acquisitions 2006).
+            skip_label = _skip_row_label(raw, cols)
+            opening_stock = False
+            if skip_label:
+                if (
+                    not report_historique_pris
+                    and not block_has_rows
+                    and vb is not None
+                    and OPENING_STOCK_RE.search(skip_label)
+                ):
+                    opening_stock = True
+                    des = skip_label
+                else:
+                    des_l = skip_label.lower()
+                    if (
+                        des_l.startswith("solde")
+                        or des_l.startswith("total")
+                        or des_l.startswith("s/t")
+                    ) and vb is not None:
+                        s_n1 = parse_amount(_cell(raw, cols["n1"]))
+                        s_fin = parse_amount(_cell(raw, cols["fin"]))
+                        if s_n1 is not None and (s_fin is not None or calc_mode):
+                            last_solde = (
+                                _q(vb),
+                                _q(s_n1),
+                                _q(s_fin) if s_fin is not None else None,
+                            )
+                    continue
+
+            is_report = bool(
+                opening_stock or (des and REPORT_HISTORIQUE_RE.search(des))
+            )
+            if is_report:
+                if report_historique_pris:
+                    continue
+                report_historique_pris = True
+            # Total de fin d'année sans libellé (ex. 31/12/08 montant seul)
+            if not des and vb is not None:
+                if block_has_rows and parse_taux(_cell(raw, cols["taux"])) is None:
                     s_n1 = parse_amount(_cell(raw, cols["n1"]))
                     s_fin = parse_amount(_cell(raw, cols["fin"]))
                     if s_n1 is not None and (s_fin is not None or calc_mode):
@@ -488,17 +560,7 @@ def _parse_sheet_grid(
                             _q(s_n1),
                             _q(s_fin) if s_fin is not None else None,
                         )
-                continue
-            # "Report 01/01/2010", "Report 31/12/2015" non couverts par le pattern ci-dessus
-            if des and REPORT_RE.search(des) and not REPORT_HISTORIQUE_RE.search(des):
-                continue
-
-            is_report = bool(des and REPORT_HISTORIQUE_RE.search(des))
-            if is_report:
-                if report_historique_pris:
                     continue
-                report_historique_pris = True
-            if not des and vb is not None:
                 anon += 1
                 des = f"Ligne sans libellé {anon}"
             if not des or vb is None:
@@ -514,6 +576,18 @@ def _parse_sheet_grid(
                     d_acq = date(2006, 1, 1)
                 else:
                     continue
+
+            # REPORT 2003 daté 01/01/15 (saisie banque) : ancrer sur l'année du libellé
+            # pour l'afficher en tête d'historique, pas au milieu de 2015.
+            if is_report and not opening_stock:
+                m_rep = re.search(r"(?:report|rapport)\s+((?:19|20)\d{2})\s*$", des, re.I)
+                if m_rep:
+                    report_year = int(m_rep.group(1))
+                    if d_acq.year != report_year:
+                        d_acq = date(report_year, 1, 1)
+
+            if opening_stock:
+                des = f"REPORT {d_acq.year}"
 
             qte_val = parse_amount(_cell(raw, cols["qte"]))
             quantite = int(qte_val) if qte_val is not None and qte_val > 0 else 1
@@ -534,9 +608,8 @@ def _parse_sheet_grid(
                 if ag_raw is not None and str(ag_raw).strip():
                     agence_label = str(ag_raw).strip()
 
-            if is_report:
-                # Normalise le libellé
-                des = des if des.lower().startswith("report") else f"Report historique — {des}"
+            if is_report and not des.upper().startswith("REPORT"):
+                des = f"Report historique — {des}"
 
             out.append(
                 ParsedBankRow(
@@ -558,6 +631,7 @@ def _parse_sheet_grid(
                     calc_dotation=calc_mode,
                 )
             )
+            block_has_rows = True
     _reconcile_with_solde(out, last_solde)
     return out
 
@@ -798,6 +872,13 @@ class BankImmoImportService:
                 row.amt_fin = _q(row.amt_n1 + row.dotation)
                 row.vnc = _q(row.valeur_brute - row.amt_fin)
 
+            # Tableau déjà à l'arrêté N (ex. 30/06/2026) s'il contient des acq. N.
+            # Sinon : stock historique clôturé → amt_fin = ouverture N.
+            arrete_courant = any(
+                r.date_acquisition.year >= EXERCICE_CALCUL for r in parsed
+            )
+            seed_mode = "arrete_courant" if arrete_courant else "stock_ouverture"
+
             try:
                 immo = Immobilisation(
                     code_inventaire=code,
@@ -823,6 +904,7 @@ class BankImmoImportService:
                             "dotation": str(row.dotation),
                             "amt_fin": str(row.amt_fin),
                             "vnc": str(row.vnc),
+                            "seed_mode": seed_mode,
                         },
                     },
                 )
@@ -849,43 +931,32 @@ class BankImmoImportService:
                 await self.db.flush()
 
                 # Seed amortissements banque.
-                # montant = amt_n1 pour que SUM(montant) = cumul à l'arrêté
-                # (le batch lit SUM(montant), pas seulement .cumul).
-                vnc_n1 = _q(row.valeur_brute - row.amt_n1)
-                self.db.add(
-                    Amortissement(
-                        immobilisation_id=immo.id,
-                        periode=PERIODE_OUVERTURE,
-                        montant=row.amt_n1,
-                        cumul=row.amt_n1,
-                        vnc=vnc_n1,
-                        valide=True,
-                        annule=False,
-                        simule=False,
-                    )
-                )
-                amort_created += 1
-
-                # Période de la dotation : 31/12/2026 (12 mois) si feuille sans
-                # colonnes Dotation et acquisition < 2026 ; sinon arrêté 30/06/2026.
-                if row.calc_dotation and row.date_acquisition.year < EXERCICE_CALCUL:
-                    periode_arrete = PERIODE_ARRETE_ANNUELLE
-                else:
-                    periode_arrete = PERIODE_ARRETE
-
-                # Conserver la colonne « Exer. En C » pour le Total 68 (sinon
-                # Fin − N-1 décale de quelques centimes vs le solde Excel).
-                # Feuilles sans cette colonne : on retombe sur Fin − N-1.
-                if row.calc_dotation:
-                    dotation_arrete = _q(row.amt_fin - row.amt_n1)
-                else:
-                    dotation_arrete = _q(row.dotation)
-                if dotation_arrete != 0 or row.dotation != 0:
+                # stock_ouverture : conserver l'exercice Excel (N-1 + dotation → fin),
+                #   puis ouverture N+1 = amt_fin (PERIODE_OUVERTURE).
+                # arrete_courant : cumul ouverture = amt_n1, + période d'arrêté N.
+                if seed_mode == "stock_ouverture":
+                    if row.calc_dotation:
+                        dotation_excel = _q(row.amt_fin - row.amt_n1)
+                    else:
+                        dotation_excel = _q(row.dotation)
                     self.db.add(
                         Amortissement(
                             immobilisation_id=immo.id,
-                            periode=periode_arrete,
-                            montant=dotation_arrete,
+                            periode=PERIODE_STOCK_N1,
+                            montant=Decimal("0.00"),
+                            cumul=row.amt_n1,
+                            vnc=_q(row.valeur_brute - row.amt_n1),
+                            valide=True,
+                            annule=False,
+                            simule=False,
+                        )
+                    )
+                    amort_created += 1
+                    self.db.add(
+                        Amortissement(
+                            immobilisation_id=immo.id,
+                            periode=PERIODE_OUVERTURE,
+                            montant=dotation_excel,
                             cumul=row.amt_fin,
                             vnc=row.vnc,
                             valide=True,
@@ -894,6 +965,47 @@ class BankImmoImportService:
                         )
                     )
                     amort_created += 1
+                else:
+                    self.db.add(
+                        Amortissement(
+                            immobilisation_id=immo.id,
+                            periode=PERIODE_OUVERTURE,
+                            montant=Decimal("0.00"),
+                            cumul=row.amt_n1,
+                            vnc=_q(row.valeur_brute - row.amt_n1),
+                            valide=True,
+                            annule=False,
+                            simule=False,
+                        )
+                    )
+                    amort_created += 1
+
+                    # Période de la dotation : 31/12/2026 (12 mois) si feuille sans
+                    # colonnes Dotation et acquisition < 2026 ; sinon arrêté 30/06/2026.
+                    if row.calc_dotation and row.date_acquisition.year < EXERCICE_CALCUL:
+                        periode_arrete = PERIODE_ARRETE_ANNUELLE
+                    else:
+                        periode_arrete = PERIODE_ARRETE
+
+                    # Conserver la colonne « Exer. En C » pour le Total 68.
+                    if row.calc_dotation:
+                        dotation_arrete = _q(row.amt_fin - row.amt_n1)
+                    else:
+                        dotation_arrete = _q(row.dotation)
+                    if dotation_arrete != 0 or row.dotation != 0:
+                        self.db.add(
+                            Amortissement(
+                                immobilisation_id=immo.id,
+                                periode=periode_arrete,
+                                montant=dotation_arrete,
+                                cumul=row.amt_fin,
+                                vnc=row.vnc,
+                                valide=True,
+                                annule=False,
+                                simule=False,
+                            )
+                        )
+                        amort_created += 1
 
                 created += 1
                 if row.is_report:
@@ -925,3 +1037,116 @@ class BankImmoImportService:
             reports_created=reports_created,
             negatives=negatives,
         )
+
+
+async def repair_stock_ouverture_amorts(db: AsyncSession) -> dict[str, int]:
+    """Répare les imports stock : 2024-12 = amt_n1, 2025-12 = amt_fin + dotation Excel.
+
+    Ancien seed : uniquement 2025-12 avec cumul=amt_fin et montant=0 → Comptes 2025
+    affichait Amt N-1 = amt_fin (ex. 9 000 au lieu de 8 325, écart 675).
+    """
+    result = await db.execute(
+        select(Immobilisation).where(
+            Immobilisation.deleted_at.is_(None),
+            Immobilisation.metadata_json.contains({"source": "import_banque"}),
+        )
+    )
+    immos = list(result.scalars().all())
+    inserted = 0
+    updated = 0
+    skipped = 0
+
+    for immo in immos:
+        meta = immo.metadata_json if isinstance(immo.metadata_json, dict) else {}
+        bank = meta.get("bank") if isinstance(meta, dict) else None
+        if not isinstance(bank, dict):
+            skipped += 1
+            continue
+        if str(bank.get("seed_mode") or "stock_ouverture") == "arrete_courant":
+            skipped += 1
+            continue
+        try:
+            amt_n1 = _q(Decimal(str(bank.get("amt_n1") or "0")))
+            amt_fin = _q(Decimal(str(bank.get("amt_fin") or "0")))
+            if bank.get("dotation") is not None:
+                dotation = _q(Decimal(str(bank.get("dotation"))))
+            else:
+                dotation = _q(amt_fin - amt_n1)
+            vb = _q(Decimal(immo.valeur_brute or 0))
+            vnc_n1 = _q(vb - amt_n1)
+            vnc_fin = _q(vb - amt_fin)
+            if bank.get("vnc") is not None:
+                vnc_fin = _q(Decimal(str(bank.get("vnc"))))
+        except Exception:  # noqa: BLE001
+            skipped += 1
+            continue
+
+        am_rows = (
+            await db.execute(
+                select(Amortissement).where(
+                    Amortissement.immobilisation_id == immo.id,
+                    Amortissement.annule.is_(False),
+                )
+            )
+        ).scalars().all()
+        by_per = {str(a.periode): a for a in am_rows}
+
+        # Ne pas toucher un import déjà en mode arrêté (période 2026-06 / 2026-12 seed).
+        if PERIODE_ARRETE in by_per or PERIODE_ARRETE_ANNUELLE in by_per:
+            skipped += 1
+            continue
+
+        n1_row = by_per.get(PERIODE_STOCK_N1)
+        if n1_row is None:
+            db.add(
+                Amortissement(
+                    immobilisation_id=immo.id,
+                    periode=PERIODE_STOCK_N1,
+                    montant=Decimal("0.00"),
+                    cumul=amt_n1,
+                    vnc=vnc_n1,
+                    valide=True,
+                    annule=False,
+                    simule=False,
+                )
+            )
+            inserted += 1
+        else:
+            if n1_row.cumul != amt_n1 or n1_row.montant != 0:
+                n1_row.montant = Decimal("0.00")
+                n1_row.cumul = amt_n1
+                n1_row.vnc = vnc_n1
+                n1_row.valide = True
+                updated += 1
+
+        ouv = by_per.get(PERIODE_OUVERTURE)
+        if ouv is None:
+            db.add(
+                Amortissement(
+                    immobilisation_id=immo.id,
+                    periode=PERIODE_OUVERTURE,
+                    montant=dotation,
+                    cumul=amt_fin,
+                    vnc=vnc_fin,
+                    valide=True,
+                    annule=False,
+                    simule=False,
+                )
+            )
+            inserted += 1
+        else:
+            if ouv.cumul != amt_fin or ouv.montant != dotation:
+                ouv.montant = dotation
+                ouv.cumul = amt_fin
+                ouv.vnc = vnc_fin
+                ouv.valide = True
+                updated += 1
+
+        # Persister seed_mode pour les prochains traitements
+        if not bank.get("seed_mode"):
+            bank["seed_mode"] = "stock_ouverture"
+            meta["bank"] = bank
+            immo.metadata_json = dict(meta)
+
+    await db.flush()
+    return {"inserted": inserted, "updated": updated, "skipped": skipped, "immos": len(immos)}

@@ -16,7 +16,19 @@
 
   <section class="pcs__section">
     <div class="pcs__toolbar">
-      <h2 class="pcs__subtitle">Scanner / déposer une pièce</h2>
+      <h2 class="pcs__subtitle">
+        @if (linkedImmoId()) {
+          Associer une pièce comptable à l’immobilisation
+        } @else {
+          Scanner / déposer une pièce
+        }
+      </h2>
+      @if (linkedImmoId(); as immoId) {
+        <p class="pcs__link-hint">
+          Immobilisation pré-sélectionnée —
+          <a [routerLink]="['/immobilisations', immoId, 'pieces']">retour à l’onglet Pièces</a>
+        </p>
+      }
       <form [formGroup]="uploadForm" class="pcs__upload" (ngSubmit)="upload()">
         <div class="pcs-field pcs-field--wide">
           <label class="pcs-field__label" for="pcs-immo">Immobilisation</label>
@@ -47,13 +59,24 @@
           />
         </div>
         <div class="pcs-field">
-          <label class="pcs-field__label" for="pcs-ref">Référence</label>
+          <label class="pcs-field__label" for="pcs-ref">N° pièce / Référence</label>
           <input
             id="pcs-ref"
             class="pcs-field__control"
             type="text"
             formControlName="reference"
             placeholder="N° facture / PV"
+          />
+        </div>
+        <div class="pcs-field">
+          <label class="pcs-field__label" for="pcs-montant">Montant</label>
+          <input
+            id="pcs-montant"
+            class="pcs-field__control"
+            type="text"
+            formControlName="montant"
+            placeholder="Optionnel (défaut = VB immo)"
+            inputmode="decimal"
           />
         </div>
         <div class="pcs-field pcs-field--wide">
@@ -67,19 +90,21 @@
           />
         </div>
         <div class="pcs-field pcs-field--wide">
-          <label class="pcs-field__label" for="pcs-file">Fichier (PDF / image / scan)</label>
+          <label class="pcs-field__label" for="pcs-file">
+            Fichier (Excel / PDF / image / Word)
+          </label>
           <input
             id="pcs-file"
             class="pcs-field__control pcs-field__file"
             type="file"
-            accept=".pdf,image/*,.tif,.tiff"
+            accept=".pdf,.xls,.xlsx,.xlsm,.doc,.docx,.docm,image/*,.tif,.tiff,.gif,.bmp"
             (change)="onFileSelected($event)"
           />
         </div>
         <div class="pcs__actions">
           <button mat-flat-button color="primary" type="submit" [disabled]="uploading()">
-            <mat-icon aria-hidden="true">document_scanner</mat-icon>
-            {{ uploading() ? 'Envoi…' : 'Archiver la pièce' }}
+            <mat-icon aria-hidden="true">link</mat-icon>
+            {{ uploading() ? 'Envoi…' : 'Associer / archiver la pièce' }}
           </button>
         </div>
       </form>
@@ -137,42 +162,70 @@
           <table class="w-full app-table pcs__table">
             <thead>
               <tr>
-                <th>Journée</th>
-                <th>Type</th>
-                <th>Immobilisation</th>
-                <th>Référence</th>
-                <th>Fichier</th>
-                <th>Taille</th>
-                <th>Actions</th>
+                <th class="pcs__col-date">Journée</th>
+                <th class="pcs__col-type">Type</th>
+                <th class="pcs__col-immo">Immobilisation</th>
+                <th class="pcs__col-ref">N° pièce</th>
+                <th class="pcs__col-lib">Libellé</th>
+                <th class="pcs__col-montant">Montant</th>
+                <th class="pcs__col-file">Fichier</th>
+                <th class="pcs__col-actions">Actions</th>
               </tr>
             </thead>
             <tbody>
               @for (row of pieces(); track row.id) {
                 <tr>
-                  <td>{{ row.date_journee | date: 'dd/MM/yyyy' }}</td>
-                  <td>{{ typeLabel(row.type_piece) }}</td>
-                  <td>
-                    <a class="pcs__link" [routerLink]="['/immobilisations', row.immobilisation_id, 'pieces']">
+                  <td class="pcs__col-date">{{ row.date_journee | date: 'dd/MM/yyyy' }}</td>
+                  <td class="pcs__col-type">
+                    <span class="pcs__badge">{{ typeLabel(row.type_piece) }}</span>
+                  </td>
+                  <td class="pcs__col-immo">
+                    <a class="pcs__link" [routerLink]="['/immobilisations', row.immobilisation_id]">
                       {{ row.code_inventaire || '—' }}
                     </a>
-                    <span class="pcs__sub">{{ row.designation || row.libelle || '' }}</span>
+                    @if (row.designation) {
+                      <span class="pcs__sub" [title]="row.designation">{{ row.designation }}</span>
+                    }
                   </td>
-                  <td>{{ row.reference || '—' }}</td>
-                  <td>{{ row.filename }}</td>
-                  <td>{{ formatSize(row.size_bytes) }}</td>
-                  <td class="pcs__row-actions">
+                  <td class="pcs__col-ref pcs__mono">{{ row.reference || '—' }}</td>
+                  <td class="pcs__col-lib" [title]="row.libelle || ''">{{ row.libelle || '—' }}</td>
+                  <td class="pcs__col-montant">
+                    @if (row.montant != null) {
+                      {{ row.montant | montant: 'MRU' }}
+                    } @else {
+                      —
+                    }
+                  </td>
+                  <td class="pcs__col-file" [title]="row.filename">
+                    <span class="pcs__filename">{{ row.filename }}</span>
+                    <span class="pcs__filesize">{{ formatSize(row.size_bytes) }}</span>
+                  </td>
+                  <td class="pcs__col-actions pcs__row-actions">
                     <button
                       mat-stroked-button
+                      class="app-btn-pill"
                       type="button"
-                      (click)="download(row)"
-                      aria-label="Ouvrir la pièce"
-                      title="Ouvrir"
+                      (click)="openDetail(row)"
+                      aria-label="Consulter la pièce"
+                      title="Consulter"
                     >
-                      <mat-icon aria-hidden="true">download</mat-icon>
-                      Ouvrir
+                      <mat-icon aria-hidden="true">visibility</mat-icon>
+                      Consulter
                     </button>
                     <button
                       mat-stroked-button
+                      class="app-btn-pill"
+                      type="button"
+                      (click)="download(row)"
+                      aria-label="Télécharger la pièce"
+                      title="Télécharger"
+                    >
+                      <mat-icon aria-hidden="true">download</mat-icon>
+                      Télécharger
+                    </button>
+                    <button
+                      mat-stroked-button
+                      class="app-btn-pill"
                       type="button"
                       color="warn"
                       (click)="remove(row)"

@@ -2,19 +2,24 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import AppError, ValidationError
 from app.models import Amortissement, CategorieImmobilisation, Immobilisation
 from app.models.enums import StatutImmobilisation
-from app.services.amortissement_engine import calcul_dotation_periode, period_bounds
+from app.services.amortissement_engine import (
+    calcul_dotation_periode,
+    parse_period_end,
+    period_bounds,
+)
 from app.services.amortissement_service import AmortissementService
 
 
@@ -94,16 +99,18 @@ class AmortissementBatchService:
         )
 
         immobiles = await self._load_immobilisations(categorie_ids)
+        amorts_by_immo = await self._prefetch_amortissements([i.id for i in immobiles])
         amort_svc = AmortissementService(self.db)
 
         for immo in immobiles:
-            cumul = await self._cumul_valide(immo.id)
+            rows = amorts_by_immo.get(immo.id, [])
+            cumul = self._cumul_avant_periode(rows, date_debut)
             vb = immo.valeur_brute.quantize(Decimal("0.01"))
             vnc_avant = (vb - cumul).quantize(Decimal("0.01"))
             if vnc_avant < 0:
                 vnc_avant = Decimal("0.00")
 
-            existing = await self._existing_periode(immo.id, periode)
+            existing = self._existing_periode(rows, periode)
             if existing is not None and existing.valide:
                 ligne = self._ligne(
                     immo,
@@ -117,6 +124,21 @@ class AmortissementBatchService:
                 )
                 result.deja_comptabilises.append(ligne)
                 result.nb_deja_comptabilises += 1
+                continue
+
+            if immo.date_acquisition is not None and immo.date_acquisition > date_arrete:
+                ligne = self._ligne(
+                    immo,
+                    statut="ignore_vnc",
+                    vnc_avant=vnc_avant,
+                    dotation=Decimal("0.00"),
+                    vnc_apres=vnc_avant,
+                    cumul_avant=cumul,
+                    cumul_apres=cumul,
+                    message=f"Acquisition postérieure à l'arrêté {date_arrete.strftime('%d/%m/%Y')}",
+                )
+                result.ignores.append(ligne)
+                result.nb_ignores_vnc += 1
                 continue
 
             if not immo.compte_dotation or not immo.compte_amortissement:
@@ -238,34 +260,78 @@ class AmortissementBatchService:
         result = await self.db.execute(stmt)
         return list(result.scalars().unique().all())
 
-    async def _cumul_valide(self, immobilisation_id: UUID) -> Decimal:
-        """Cumul validé = max(SUM(montant), MAX(cumul)) pour rester aligné
-        avec l'import banque (cumul N-1) et les campagnes (montants période)."""
+    async def _prefetch_amortissements(
+        self, immobilisation_ids: list[UUID]
+    ) -> dict[UUID, list[Amortissement]]:
+        if not immobilisation_ids:
+            return {}
         result = await self.db.execute(
-            select(
-                func.coalesce(func.sum(Amortissement.montant), 0),
-                func.coalesce(func.max(Amortissement.cumul), 0),
-            ).where(
-                Amortissement.immobilisation_id == immobilisation_id,
-                Amortissement.valide.is_(True),
+            select(Amortissement).where(
+                Amortissement.immobilisation_id.in_(immobilisation_ids),
                 Amortissement.annule.is_(False),
                 Amortissement.simule.is_(False),
             )
         )
-        sum_m, max_c = result.one()
-        cumul = max(Decimal(str(sum_m)), Decimal(str(max_c)))
-        return cumul.quantize(Decimal("0.01"))
+        by_immo: dict[UUID, list[Amortissement]] = defaultdict(list)
+        for row in result.scalars().all():
+            by_immo[row.immobilisation_id].append(row)
+        return by_immo
 
-    async def _existing_periode(self, immobilisation_id: UUID, periode: str) -> Amortissement | None:
+    @staticmethod
+    def _cumul_avant_periode(rows: list[Amortissement], date_debut: date) -> Decimal:
+        """Cumul 148 strictement avant le début de la période à calculer.
+
+        Inclut l'ouverture (ex. 2025-12, montant=0, cumul=stock) et les
+        trimestres validés antérieurs — ignore les périodes futures du plan.
+        """
+        zero = Decimal("0.00")
+        best_cumul = zero
+        sum_montant = zero
+        for row in rows:
+            if not row.valide:
+                continue
+            fin = parse_period_end(str(row.periode or ""))
+            if fin is None or fin >= date_debut:
+                continue
+            montant = Decimal(row.montant or 0).quantize(Decimal("0.01"))
+            cumul = Decimal(row.cumul or 0).quantize(Decimal("0.01"))
+            sum_montant = (sum_montant + montant).quantize(Decimal("0.01"))
+            if cumul > best_cumul:
+                best_cumul = cumul
+        return max(sum_montant, best_cumul)
+
+    @staticmethod
+    def _existing_periode(rows: list[Amortissement], periode: str) -> Amortissement | None:
+        for row in rows:
+            if str(row.periode) == periode:
+                return row
+        return None
+
+    # Compat tests unitaires qui mockent encore ces helpers
+    async def _cumul_valide(self, immobilisation_id: UUID, date_debut: date | None = None) -> Decimal:
         result = await self.db.execute(
             select(Amortissement).where(
                 Amortissement.immobilisation_id == immobilisation_id,
-                Amortissement.periode == periode,
                 Amortissement.annule.is_(False),
                 Amortissement.simule.is_(False),
             )
         )
-        return result.scalar_one_or_none()
+        rows = list(result.scalars().all())
+        if date_debut is None:
+            date_debut = date(1900, 1, 1)
+            # Sans borne : comportement historique max(sum, max cumul) validés
+            zero = Decimal("0.00")
+            best = zero
+            total = zero
+            for row in rows:
+                if not row.valide:
+                    continue
+                total = (total + Decimal(row.montant or 0)).quantize(Decimal("0.01"))
+                cumul = Decimal(row.cumul or 0).quantize(Decimal("0.01"))
+                if cumul > best:
+                    best = cumul
+            return max(total, best)
+        return self._cumul_avant_periode(rows, date_debut)
 
     async def _persist_and_comptabiliser(
         self,

@@ -130,9 +130,13 @@
       </section>
 
       <div class="rfd__footer">
-        <a mat-stroked-button [routerLink]="['/immobilisations', d.immobilisation_id]">
+        <a
+          mat-stroked-button
+          class="app-btn-pill"
+          [routerLink]="['/immobilisations', d.immobilisation_id]"
+        >
           <mat-icon aria-hidden="true">inventory_2</mat-icon>
-          Voir l’immobilisation
+          Consulter l’immobilisation
         </a>
       </div>
     </article>

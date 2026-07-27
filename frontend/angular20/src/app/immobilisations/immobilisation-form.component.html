@@ -670,120 +670,110 @@
     }
 
     @if (showPieces()) {
-      <section class="immo-form__section">
+      <section class="immo-form__section immo-pieces">
         <div class="immo-form__section-head">
           <mat-icon aria-hidden="true">document_scanner</mat-icon>
           <div>
             <h2>Pièces comptables</h2>
-            <p>Factures, PV et documents archivés par journée comptable</p>
-          </div>
-        </div>
-
-        <div class="immo-form__grid" [formGroup]="pieceForm">
-          <div class="immo-field">
-            <label class="immo-field__label" for="piece-type">Type</label>
-            <select id="piece-type" class="immo-field__control" formControlName="type_piece">
-              <option value="facture">Facture</option>
-              <option value="pv">PV</option>
-              <option value="bon_commande">Bon de commande</option>
-              <option value="bon_livraison">Bon de livraison</option>
-              <option value="contrat">Contrat</option>
-              <option value="protocole_accord">Protocole d'accord</option>
-              <option value="autre">Autre</option>
-            </select>
-          </div>
-          <div class="immo-field">
-            <label class="immo-field__label" for="piece-journee">Journée comptable</label>
-            <input
-              id="piece-journee"
-              class="immo-field__control"
-              type="date"
-              formControlName="date_journee"
-            />
-          </div>
-          <div class="immo-field">
-            <label class="immo-field__label" for="piece-ref">Référence</label>
-            <input
-              id="piece-ref"
-              class="immo-field__control"
-              type="text"
-              formControlName="reference"
-              placeholder="N° facture / PV"
-            />
-          </div>
-          <div class="immo-field">
-            <label class="immo-field__label" for="piece-lib">Libellé</label>
-            <input id="piece-lib" class="immo-field__control" type="text" formControlName="libelle" />
-          </div>
-          <div class="immo-field immo-field--full">
-            <label class="immo-field__label" for="piece-file">Fichier (PDF / scan / image)</label>
-            <input
-              id="piece-file"
-              class="immo-field__control"
-              type="file"
-              accept=".pdf,image/*,.tif,.tiff"
-              (change)="onPieceFileSelected($event)"
-            />
-          </div>
-          <div class="immo-field immo-field--full">
-            <button
-              mat-flat-button
-              color="primary"
-              type="button"
-              (click)="uploadPiece()"
-              [disabled]="piecesBusy()"
-            >
-              <mat-icon aria-hidden="true">upload_file</mat-icon>
-              {{ piecesBusy() ? 'Envoi…' : 'Archiver la pièce' }}
-            </button>
+            <p>Pièces comptables liées à cette immobilisation</p>
           </div>
         </div>
 
         @if (pieces().length === 0) {
-          <p class="immo-field__help">Aucune pièce archivée pour cette immobilisation.</p>
+          <div class="immo-pieces__empty-state">
+            <p class="immo-pieces__empty-msg">
+              Aucune pièce comptable associée à cette immobilisation.
+            </p>
+            <a
+              mat-flat-button
+              color="primary"
+              [routerLink]="['/pieces-comptables']"
+              [queryParams]="{ immobilisation_id: id() }"
+            >
+              <mat-icon aria-hidden="true">link</mat-icon>
+              Associer une pièce comptable
+            </a>
+          </div>
         } @else {
-          <table class="w-full app-table immo-pieces-table">
-            <thead>
-              <tr>
-                <th>Journée</th>
-                <th>Type</th>
-                <th>Référence</th>
-                <th>Fichier</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (row of pieces(); track row.id) {
-                <tr>
-                  <td>{{ row.date_journee | date: 'dd/MM/yyyy' }}</td>
-                  <td>{{ pieceTypeLabel(row.type_piece) }}</td>
-                  <td>{{ row.reference || '—' }}</td>
-                  <td>{{ row.filename }}</td>
-                  <td class="immo-pieces-actions">
-                    <button
-                      mat-stroked-button
-                      type="button"
-                      (click)="downloadPiece(row)"
-                      aria-label="Ouvrir la pièce"
-                      title="Ouvrir"
-                    >
-                      Ouvrir
-                    </button>
-                    <button
-                      mat-stroked-button
-                      type="button"
-                      color="warn"
-                      (click)="deletePiece(row)"
-                      aria-label="Supprimer la pièce"
-                      title="Supprimer"
-                    >
-                      Supprimer
-                    </button>
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
+          <div class="immo-pieces__list">
+            <div class="immo-pieces__list-head">
+              <h3 class="immo-pieces__subtitle">Pièces associées</h3>
+              <div class="immo-pieces__list-actions">
+                <span class="immo-pieces__count">{{ pieces().length }} pièce(s)</span>
+                <a
+                  mat-stroked-button
+                  [routerLink]="['/pieces-comptables']"
+                  [queryParams]="{ immobilisation_id: id() }"
+                >
+                  <mat-icon aria-hidden="true">add_link</mat-icon>
+                  Associer une autre pièce comptable
+                </a>
+              </div>
+            </div>
+
+            <div class="immo-pieces__table-wrap">
+              <table class="immo-pieces__table">
+                <thead>
+                  <tr>
+                    <th>N° pièce</th>
+                    <th>Date</th>
+                    <th>Libellé</th>
+                    <th>Montant</th>
+                    <th>Type</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of pieces(); track row.id) {
+                    <tr>
+                      <td class="immo-pieces__cell-ref">{{ row.reference || '—' }}</td>
+                      <td class="immo-pieces__cell-date">
+                        {{ row.date_journee | date: 'dd/MM/yyyy' }}
+                      </td>
+                      <td class="immo-pieces__cell-lib" [title]="row.libelle || row.filename">
+                        {{ row.libelle || row.filename || '—' }}
+                      </td>
+                      <td class="immo-pieces__cell-montant">
+                        @if (row.montant != null) {
+                          {{ row.montant | montant: 'MRU' }}
+                        } @else {
+                          —
+                        }
+                      </td>
+                      <td>
+                        <span class="immo-pieces__badge">{{ pieceTypeLabel(row.type_piece) }}</span>
+                      </td>
+                      <td class="immo-pieces__actions">
+                        <button
+                          mat-stroked-button
+                          class="app-btn-pill"
+                          type="button"
+                          (click)="downloadPiece(row)"
+                          aria-label="Consulter la pièce"
+                          title="Consulter"
+                        >
+                          <mat-icon aria-hidden="true">visibility</mat-icon>
+                          Consulter
+                        </button>
+                        <button
+                          mat-stroked-button
+                          class="app-btn-pill"
+                          type="button"
+                          color="warn"
+                          (click)="removePiece(row)"
+                          aria-label="Supprimer l’association de la pièce"
+                          title="Supprimer l’association"
+                        >
+                          <mat-icon aria-hidden="true">link_off</mat-icon>
+                          Supprimer
+                        </button>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
         }
       </section>
     }

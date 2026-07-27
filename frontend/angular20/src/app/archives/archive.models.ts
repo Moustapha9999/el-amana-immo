@@ -53,10 +53,19 @@ export interface ArchiveTotaux {
   nb_lignes: number;
 }
 
+export interface ArchiveExerciceSection {
+  annee: number;
+  label: string;
+  ouverture: ArchiveTotaux | null;
+  lignes: ArchiveLigne[];
+  totaux: ArchiveTotaux;
+}
+
 export interface ArchiveNatureGroupe {
   nature_code: string;
   nature_label: string;
   lignes: ArchiveLigne[];
+  sections?: ArchiveExerciceSection[];
   totaux: ArchiveTotaux;
 }
 

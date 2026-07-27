@@ -109,7 +109,8 @@
   <section class="arn__section">
     <h2 class="arn__section-title">Lignes {{ natureTitle() }}</h2>
     <p class="arn__section-hint">
-      Inclut le REPORT historique et les acquisitions du tableau banque pour cette nature.
+      Blocs par exercice comme le tableau banque : report d’ouverture, acquisitions, S/T cumulatif
+      en fin d’année, puis total général en bas.
     </p>
 
     <div class="arn__filters">
@@ -143,17 +144,21 @@
         </div>
       </div>
 
-      @if (lignesFiltrees().length === 0) {
+      @if (lignesAffichees().length === 0) {
         <p class="arn__empty">Aucune ligne à afficher.</p>
       } @else {
         <div class="arn__table-wrap app-table-scroll">
-          <table mat-table [dataSource]="lignesFiltrees()" class="app-table arn__table">
+          <table mat-table [dataSource]="lignesAffichees()" class="app-table arn__table">
             <ng-container matColumnDef="date">
               <th mat-header-cell *matHeaderCellDef>Date</th>
               <td mat-cell *matCellDef="let row" class="arn__cell-date">
-                {{ row.date_acquisition ? (row.date_acquisition | date: 'dd/MM/yyyy') : '—' }}
+                @if (row.kind === 'header') {
+                  —
+                } @else {
+                  {{ row.date_acquisition ? (row.date_acquisition | date: 'dd/MM/yyyy') : '—' }}
+                }
               </td>
-              <td mat-footer-cell *matFooterCellDef class="arn__foot-label">Total</td>
+              <td mat-footer-cell *matFooterCellDef class="arn__foot-label">Total général</td>
             </ng-container>
             <ng-container matColumnDef="designation">
               <th mat-header-cell *matHeaderCellDef>Désignation</th>
@@ -161,13 +166,20 @@
                 mat-cell
                 *matCellDef="let row"
                 class="arn__cell-des"
-                [class.arn__cell-des--report]="row.is_report"
+                [class.arn__cell-des--report]="row.kind !== 'line' || row.is_report"
+                [class.arn__cell-des--header]="row.kind === 'header'"
                 [title]="row.designation"
               >
-                @if (row.is_report) {
-                  <span class="arn__badge-report">REPORT</span>
+                @if (row.kind === 'header') {
+                  {{ row.designation }}
+                } @else {
+                  @if (row.kind === 'ouverture' || row.is_report) {
+                    <span class="arn__badge-report">REPORT</span>
+                  } @else if (row.kind === 'sous_total') {
+                    <span class="arn__badge-st">S/T</span>
+                  }
+                  {{ row.designation }}
                 }
-                {{ row.designation }}
               </td>
               <td mat-footer-cell *matFooterCellDef class="arn__foot-meta">
                 {{ g.totaux.nb_lignes }} ligne(s)
@@ -175,13 +187,19 @@
             </ng-container>
             <ng-container matColumnDef="qte">
               <th mat-header-cell *matHeaderCellDef>Qté</th>
-              <td mat-cell *matCellDef="let row" class="arn__cell-qte">{{ row.quantite }}</td>
+              <td mat-cell *matCellDef="let row" class="arn__cell-qte">
+                {{ row.kind === 'line' && row.quantite != null ? row.quantite : '—' }}
+              </td>
               <td mat-footer-cell *matFooterCellDef></td>
             </ng-container>
             <ng-container matColumnDef="vb">
               <th mat-header-cell *matHeaderCellDef>VB</th>
               <td mat-cell *matCellDef="let row" class="arn__num">
-                {{ row.valeur_brute | montant: 'MRU' }}
+                @if (row.valeur_brute != null) {
+                  {{ row.valeur_brute | montant: 'MRU' }}
+                } @else {
+                  —
+                }
               </td>
               <td mat-footer-cell *matFooterCellDef class="arn__num arn__foot">
                 {{ g.totaux.valeur_brute | montant: 'MRU' }}
@@ -197,7 +215,11 @@
             <ng-container matColumnDef="amt_n1">
               <th mat-header-cell *matHeaderCellDef>Amt N-1</th>
               <td mat-cell *matCellDef="let row" class="arn__num">
-                {{ row.amt_n1 | montant: 'MRU' }}
+                @if (row.amt_n1 != null) {
+                  {{ row.amt_n1 | montant: 'MRU' }}
+                } @else {
+                  —
+                }
               </td>
               <td mat-footer-cell *matFooterCellDef class="arn__num arn__foot">
                 {{ g.totaux.amt_n1 | montant: 'MRU' }}
@@ -206,7 +228,11 @@
             <ng-container matColumnDef="dotation">
               <th mat-header-cell *matHeaderCellDef>Dotation</th>
               <td mat-cell *matCellDef="let row" class="arn__num">
-                {{ row.dotation | montant: 'MRU' }}
+                @if (row.dotation != null) {
+                  {{ row.dotation | montant: 'MRU' }}
+                } @else {
+                  —
+                }
               </td>
               <td mat-footer-cell *matFooterCellDef class="arn__num arn__foot">
                 {{ g.totaux.dotation | montant: 'MRU' }}
@@ -215,7 +241,11 @@
             <ng-container matColumnDef="amt_fin">
               <th mat-header-cell *matHeaderCellDef>Amt fin</th>
               <td mat-cell *matCellDef="let row" class="arn__num">
-                {{ row.amt_fin | montant: 'MRU' }}
+                @if (row.amt_fin != null) {
+                  {{ row.amt_fin | montant: 'MRU' }}
+                } @else {
+                  —
+                }
               </td>
               <td mat-footer-cell *matFooterCellDef class="arn__num arn__foot">
                 {{ g.totaux.amt_fin | montant: 'MRU' }}
@@ -224,7 +254,11 @@
             <ng-container matColumnDef="vnc">
               <th mat-header-cell *matHeaderCellDef>VNC</th>
               <td mat-cell *matCellDef="let row" class="arn__num">
-                {{ row.vnc | montant: 'MRU' }}
+                @if (row.vnc != null) {
+                  {{ row.vnc | montant: 'MRU' }}
+                } @else {
+                  —
+                }
               </td>
               <td mat-footer-cell *matFooterCellDef class="arn__num arn__foot">
                 {{ g.totaux.vnc | montant: 'MRU' }}
@@ -241,7 +275,9 @@
             <tr
               mat-row
               *matRowDef="let row; columns: columns"
-              [class.arn__row--report]="row.is_report"
+              [class.arn__row--header]="row.kind === 'header'"
+              [class.arn__row--report]="row.kind === 'ouverture' || row.is_report"
+              [class.arn__row--st]="row.kind === 'sous_total'"
             ></tr>
             <tr mat-footer-row *matFooterRowDef="columns; sticky: true"></tr>
           </table>

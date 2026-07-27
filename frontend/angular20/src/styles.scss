@@ -264,3 +264,23 @@ input[appMontantInput],
 input[appMontantInput] {
   text-align: right;
 }
+
+/* Boutons d’action « Consulter » / actions de ligne — forme en pilule (cercle) */
+.app-btn-pill.mat-mdc-outlined-button,
+.app-btn-pill.mat-mdc-button,
+a.app-btn-pill.mat-mdc-outlined-button,
+button.app-btn-pill.mat-mdc-outlined-button,
+button.app-btn-pill.mat-mdc-button {
+  border-radius: 999px !important;
+  min-height: 2.25rem;
+  padding-inline: 0.95rem !important;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.app-btn-pill .mat-icon {
+  font-size: 1.1rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-right: 0.2rem;
+}

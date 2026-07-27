@@ -113,14 +113,18 @@
       </section>
 
       <div class="bfd__footer">
-        <a mat-stroked-button [routerLink]="['/immobilisations', d.immobilisation_id]">
+        <a
+          mat-stroked-button
+          class="app-btn-pill"
+          [routerLink]="['/immobilisations', d.immobilisation_id]"
+        >
           <mat-icon aria-hidden="true">inventory_2</mat-icon>
-          Voir l’immobilisation
+          Consulter l’immobilisation
         </a>
         @if (d.ecriture_id) {
-          <a mat-stroked-button [routerLink]="['/ecritures', d.ecriture_id]">
+          <a mat-stroked-button class="app-btn-pill" [routerLink]="['/ecritures', d.ecriture_id]">
             <mat-icon aria-hidden="true">receipt_long</mat-icon>
-            Voir l’écriture
+            Consulter l’écriture
           </a>
         }
       </div>

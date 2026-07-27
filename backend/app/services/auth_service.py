@@ -5,9 +5,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.security import create_access_token, create_refresh_token, get_password_hash, verify_password
+from app.core.security import get_password_hash, verify_password
 from app.models import Role, User
-from app.schemas.auth import TokenPair, UserCreate, UserUpdate
+from app.schemas.auth import UserCreate, UserUpdate
+from app.services.auth_session_service import AuthSessionService
 
 
 class AuthService:
@@ -24,14 +25,6 @@ class AuthService:
         user.last_login_at = datetime.now(UTC)
         await self.db.flush()
         return user
-
-    def build_tokens(self, user: User) -> TokenPair:
-        role_codes = [r.code for r in user.roles]
-        claims = {"roles": role_codes, "is_superuser": user.is_superuser}
-        return TokenPair(
-            access_token=create_access_token(user.id, claims),
-            refresh_token=create_refresh_token(user.id),
-        )
 
     async def list_roles(self) -> list[Role]:
         result = await self.db.execute(select(Role).order_by(Role.label.asc()))
@@ -89,6 +82,8 @@ class AuthService:
             user.agence_id = data["agence_id"]
         if "is_active" in data and data["is_active"] is not None:
             user.is_active = data["is_active"]
+            if data["is_active"] is False:
+                await AuthSessionService(self.db).revoke_all_for_user(user_id)
         if "is_superuser" in data and data["is_superuser"] is not None:
             user.is_superuser = data["is_superuser"]
         if "password" in data and data["password"]:
@@ -107,6 +102,7 @@ class AuthService:
             raise ValueError("Utilisateur introuvable")
         user.is_active = False
         user.deleted_at = datetime.now(UTC)
+        await AuthSessionService(self.db).revoke_all_for_user(user_id)
         await self.db.flush()
 
     async def get_by_id(self, user_id: UUID) -> User | None:
@@ -133,6 +129,8 @@ class AuthService:
         if user is None:
             raise ValueError("Utilisateur introuvable")
         user.hashed_password = get_password_hash(new_password)
+        # Invalide toutes les sessions après reset mot de passe
+        await AuthSessionService(self.db).revoke_all_for_user(user.id)
         await self.db.flush()
 
     async def find_active_by_email(self, email: str) -> User | None:

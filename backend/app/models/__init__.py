@@ -1,7 +1,7 @@
 from app.models.associations import role_permissions_table, user_roles_table
 from app.models.archive import ArchiveDossier, ArchiveFichier, ArchiveLigne
 from app.models.audit import AuditLog, Notification
-from app.models.auth import Agence, Permission, Role, User
+from app.models.auth import Agence, AuthSession, Permission, Role, User
 from app.models.comptabilite import (
     Amortissement,
     ComptePlanComptable,
@@ -37,6 +37,7 @@ __all__ = [
     "Role",
     "Agence",
     "User",
+    "AuthSession",
     "Direction",
     "Departement",
     "CentreCout",

@@ -21,8 +21,9 @@ class Settings(BaseSettings):
     api_v1_prefix: str = Field(default="/api/v1", alias="API_V1_PREFIX")
 
     secret_key: str = Field(default="change-me", alias="SECRET_KEY")
-    access_token_expire_minutes: int = Field(default=30, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
-    refresh_token_expire_days: int = Field(default=7, alias="REFRESH_TOKEN_EXPIRE_DAYS")
+    # Access court + refresh pour session active ; idle timeout UI = 2 min (frontend)
+    access_token_expire_minutes: int = Field(default=15, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
+    refresh_token_expire_days: int = Field(default=1, alias="REFRESH_TOKEN_EXPIRE_DAYS")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
 
     database_url: str = Field(

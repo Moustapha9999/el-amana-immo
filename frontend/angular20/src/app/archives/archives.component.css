@@ -68,6 +68,26 @@
   flex: 1 1 14rem;
 }
 
+.arc__hint {
+  margin: -0.35rem 0 0.85rem;
+  font-size: 0.8125rem;
+  color: #64748b;
+  max-width: 44rem;
+  line-height: 1.45;
+}
+
+.arc-field--check {
+  min-width: 10rem;
+  justify-content: flex-end;
+}
+
+.arc-field__check {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-top: 0.55rem;
+  accent-color: #1e3a5f;
+}
+
 .arc-field__label {
   font-size: 0.75rem;
   font-weight: 600;

@@ -22,6 +22,10 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class LogoutRequest(BaseModel):
+    refresh_token: str | None = None
+
+
 class RoleRead(ORMModel):
     id: UUID
     code: str

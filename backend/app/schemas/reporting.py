@@ -13,6 +13,8 @@ class NotificationRead(ORMModel):
     titre: str
     message: str
     lu: bool
+    entity: str | None = None
+    entity_id: str | None = None
     created_at: datetime
 
 

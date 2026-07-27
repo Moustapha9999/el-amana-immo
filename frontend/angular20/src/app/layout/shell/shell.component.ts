@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -7,6 +7,7 @@ import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { AuthService, UserProfile } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
+import { IdleSessionService } from '../../core/services/idle-session.service';
 import { SHELL_NAV, shellNavSections } from './shell-nav';
 
 @Component({
@@ -24,15 +25,26 @@ import { SHELL_NAV, shellNavSections } from './shell-nav';
   templateUrl: './shell.component.html',
   styleUrl: './shell.component.scss',
 })
-export class ShellComponent implements OnInit {
+export class ShellComponent implements OnInit, OnDestroy {
   readonly auth = inject(AuthService);
   private readonly api = inject(ApiService);
+  private readonly idle = inject(IdleSessionService);
 
   readonly navSections = shellNavSections(SHELL_NAV);
   readonly notificationUnread = signal(0);
 
   ngOnInit(): void {
+    this.idle.start();
     this.loadNotificationCount();
+  }
+
+  ngOnDestroy(): void {
+    this.idle.stop();
+  }
+
+  logout(): void {
+    this.idle.stop();
+    this.auth.logout({ reason: 'manual' });
   }
 
   loadNotificationCount(): void {

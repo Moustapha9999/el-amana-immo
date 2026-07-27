@@ -416,12 +416,141 @@
   background: #fff;
 }
 
-.immo-pieces-table {
-  margin-top: 1rem;
+.immo-pieces__subtitle {
+  margin: 0 0 0.75rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #0f172a;
 }
 
-.immo-pieces-actions {
+.immo-pieces__empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-top: 0.35rem;
+  padding: 1.35rem 1.25rem;
+  border: 1px dashed #cbd5e1;
+  border-radius: 0.65rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef6fc 100%);
+}
+
+.immo-pieces__empty-msg {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.immo-pieces__list {
+  margin-top: 0.35rem;
+}
+
+.immo-pieces__list-head {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.immo-pieces__list-head .immo-pieces__subtitle {
+  margin: 0;
+}
+
+.immo-pieces__list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.immo-pieces__count {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.immo-pieces__table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--app-border, #e2e8f0);
+  border-radius: 0.55rem;
+  background: #fff;
+}
+
+.immo-pieces__table {
+  width: 100%;
+  min-width: 44rem;
+  border-collapse: collapse;
+}
+
+.immo-pieces__table th {
+  background: #1e3a5f;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.7rem 0.65rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.immo-pieces__table td {
+  padding: 0.7rem 0.65rem;
+  font-size: 0.8125rem;
+  border-top: 1px solid #e2e8f0;
+  vertical-align: middle;
+  color: #0f172a;
+}
+
+.immo-pieces__table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.immo-pieces__table tbody tr:hover {
+  background: #eef6fc;
+}
+
+.immo-pieces__cell-date,
+.immo-pieces__cell-ref,
+.immo-pieces__cell-montant {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.immo-pieces__cell-montant {
+  text-align: right;
+  font-weight: 600;
+}
+
+.immo-pieces__cell-lib {
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.immo-pieces__badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: #e0eef8;
+  color: #1a5278;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.immo-pieces__actions {
+  display: flex;
+  flex-wrap: nowrap;
   gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.immo-pieces__actions .mat-mdc-outlined-button {
+  min-width: 0;
 }

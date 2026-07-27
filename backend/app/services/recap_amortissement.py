@@ -181,6 +181,42 @@ def _is_import_banque(immo: Immobilisation) -> bool:
     return isinstance(meta, dict) and meta.get("source") == "import_banque"
 
 
+def _bank_excel_stock_mouvements(
+    immo: Immobilisation, annee: int, *, vb: Decimal, detenue_fin_n: bool
+) -> dict[str, Decimal] | None:
+    """Pour l'année du Solde Excel (stock_ouverture), coller amt_n1 / dotation / amt_fin."""
+    from app.services.bank_immo_import import EXERCICE_STOCK_EXCEL
+
+    if annee != EXERCICE_STOCK_EXCEL:
+        return None
+    meta = getattr(immo, "metadata_json", None) or {}
+    if not isinstance(meta, dict):
+        return None
+    bank = meta.get("bank")
+    if not isinstance(bank, dict):
+        return None
+    if str(bank.get("seed_mode") or "stock_ouverture") == "arrete_courant":
+        return None
+    try:
+        amt_n1 = _q(Decimal(str(bank.get("amt_n1") or "0")))
+        dotation = _q(Decimal(str(bank.get("dotation") or "0")))
+        amt_fin = _q(Decimal(str(bank.get("amt_fin") or "0")))
+        if bank.get("vnc") is not None:
+            vnc = _q(Decimal(str(bank.get("vnc"))))
+        else:
+            vnc = _q(Decimal(immo.valeur_brute or 0) - amt_fin)
+    except Exception:  # noqa: BLE001
+        return None
+    return {
+        "valeur_brute": vb,
+        "amorts_cumules_n1": amt_n1,
+        "cessions_annee": _zero(),
+        "dotations_annee": dotation,
+        "amorts_cumules_n": amt_fin,
+        "vnc": vnc if detenue_fin_n else _zero(),
+    }
+
+
 def _mouvements_immo(
     immo: Immobilisation,
     annee: int,
@@ -213,6 +249,14 @@ def _mouvements_immo(
     vb = _q(immo.valeur_brute) if detenue_fin_n else _zero()
     use_bank = _is_import_banque(immo)
 
+    # Stock Excel : année du Solde (ex. 2025) = colonnes Amt N-1 / Dotation / Fin.
+    if use_bank and not sorti_en_n:
+        excel = _bank_excel_stock_mouvements(immo, annee, vb=vb, detenue_fin_n=detenue_fin_n)
+        if excel is not None:
+            return excel
+
+    # Ouverture N : cumul validé des périodes < N (ex. 2025-12 après clôture),
+    # ou théorique si pas d'historique.
     if use_bank and cumul_n1_db is not None:
         cumul_n1 = _q(cumul_n1_db)
     elif immo.date_acquisition <= date_n1 and (date_fin is None or date_fin > date_n1):
@@ -222,7 +266,7 @@ def _mouvements_immo(
 
     if sorti_en_n:
         assert date_fin is not None
-        if use_bank and cumul_fin_n_db is not None:
+        if use_bank and cumul_fin_n_db is not None and not montants_dotation_db:
             cession = _q(cumul_fin_n_db)
         else:
             cession = cumul_amortissement_a_date(immo, date_fin)
@@ -247,16 +291,14 @@ def _mouvements_immo(
     if not use_bank and dotation < 0:
         dotation = _zero()
 
-    if use_bank and detenue_fin_n and cumul_fin_n_db is not None:
-        cumul_n = _q(cumul_fin_n_db)
-    else:
-        cumul_n = _q(cumul_n1 - cession + dotation)
-        if not use_bank and cumul_n < 0:
-            cumul_n = _zero()
+    # Toujours : Fin N = N-1 − cessions + dotations comptabilisées de N.
+    # (Ne plus forcer le cumul_fin banque qui figeait l'arrêté importé et
+    # ignorait les campagnes T1…T4 validées ensuite.)
+    cumul_n = _q(cumul_n1 - cession + dotation)
+    if not use_bank and cumul_n < 0:
+        cumul_n = _zero()
 
-    if use_bank and detenue_fin_n and vnc_fin_n_db is not None:
-        vnc = _q(vnc_fin_n_db)
-    elif detenue_fin_n:
+    if detenue_fin_n:
         vnc = _q(vb - cumul_n)
         if not use_bank and vnc < 0:
             vnc = _zero()

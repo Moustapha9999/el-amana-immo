@@ -2,26 +2,16 @@ import { DatePipe } from '@angular/common';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
+import { MatDialog } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
+import { MontantPipe } from '../shared/montant.pipe';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
+import { PieceComptable } from './piece-comptable.model';
+import { PieceDetailDialogComponent } from './piece-detail-dialog.component';
 
-export interface PieceComptable {
-  id: string;
-  immobilisation_id: string;
-  filename: string;
-  mime_type: string | null;
-  size_bytes: number;
-  is_photo: boolean;
-  type_piece: string;
-  date_journee: string;
-  reference: string | null;
-  libelle: string | null;
-  created_at: string | null;
-  code_inventaire: string | null;
-  designation: string | null;
-}
+export type { PieceComptable } from './piece-comptable.model';
 
 interface PieceType {
   value: string;
@@ -41,14 +31,16 @@ interface ImmoOption {
 
 @Component({
   selector: 'app-pieces-comptables',
-  imports: [ReactiveFormsModule, DatePipe, MatButtonModule, MatIconModule, RouterLink],
+  imports: [ReactiveFormsModule, DatePipe, MontantPipe, MatButtonModule, MatIconModule, RouterLink],
   templateUrl: './pieces-comptables.component.html',
   styleUrl: './pieces-comptables.component.css',
 })
 export class PiecesComptablesComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly dialogs = inject(UiDialogService);
+  private readonly dialog = inject(MatDialog);
   private readonly fb = inject(FormBuilder);
+  private readonly route = inject(ActivatedRoute);
 
   readonly pieces = signal<PieceComptable[]>([]);
   readonly total = signal(0);
@@ -56,6 +48,8 @@ export class PiecesComptablesComponent implements OnInit {
   readonly uploading = signal(false);
   readonly types = signal<PieceType[]>([]);
   readonly immobilisations = signal<ImmoOption[]>([]);
+  /** Pré-sélection depuis l'onglet Pièces d'une immobilisation. */
+  readonly linkedImmoId = signal<string | null>(null);
 
   readonly filterForm = this.fb.nonNullable.group({
     date_journee: [new Date().toISOString().slice(0, 10)],
@@ -69,6 +63,7 @@ export class PiecesComptablesComponent implements OnInit {
     date_journee: [new Date().toISOString().slice(0, 10)],
     reference: [''],
     libelle: [''],
+    montant: [''],
   });
 
   selectedFile: File | null = null;
@@ -95,6 +90,11 @@ export class PiecesComptablesComponent implements OnInit {
 
   ngOnInit(): void {
     this.types.set(this.defaultTypes);
+    const linked = (this.route.snapshot.queryParamMap.get('immobilisation_id') || '').trim();
+    if (linked) {
+      this.linkedImmoId.set(linked);
+      this.uploadForm.controls.immobilisation_id.setValue(linked);
+    }
     this.api.get<PieceType[]>('/archives/pieces-comptables/types').subscribe({
       next: (rows) => {
         if (rows.length) {
@@ -176,7 +176,9 @@ export class PiecesComptablesComponent implements OnInit {
       return;
     }
     if (!this.selectedFile) {
-      void this.dialogs.error('Sélectionnez un fichier (PDF ou image)').subscribe();
+      void this.dialogs
+        .error('Sélectionnez un fichier (Excel, PDF, image ou Word)')
+        .subscribe();
       return;
     }
     this.uploading.set(true);
@@ -186,23 +188,45 @@ export class PiecesComptablesComponent implements OnInit {
         date_journee: raw.date_journee,
         reference: raw.reference,
         libelle: raw.libelle,
+        montant: raw.montant,
       })
       .subscribe({
         next: () => {
           this.uploading.set(false);
           this.selectedFile = null;
-          this.uploadForm.patchValue({ reference: '', libelle: '' });
+          const fileInput = document.getElementById('pcs-file') as HTMLInputElement | null;
+          if (fileInput) {
+            fileInput.value = '';
+          }
+          this.uploadForm.patchValue({ reference: '', libelle: '', montant: '' });
           if (this.filterForm.controls.date_journee.value !== raw.date_journee) {
             this.filterForm.controls.date_journee.setValue(raw.date_journee);
           }
           this.load();
-          void this.dialogs.successAction('enregistrement', 'Pièce archivée pour la journée comptable.').subscribe();
+          void this.dialogs
+            .successAction(
+              'enregistrement',
+              'Pièce associée à l’immobilisation et archivée pour la journée comptable.',
+            )
+            .subscribe();
         },
         error: (err) => {
           this.uploading.set(false);
           void this.dialogs.error(this.apiErrorMessage(err, 'Upload impossible')).subscribe();
         },
       });
+  }
+
+  openDetail(row: PieceComptable): void {
+    this.dialog.open(PieceDetailDialogComponent, {
+      data: {
+        piece: row,
+        typeLabel: this.typeLabel(row.type_piece),
+      },
+      width: '40rem',
+      maxWidth: '94vw',
+      autoFocus: 'first-tabbable',
+    });
   }
 
   download(row: PieceComptable): void {

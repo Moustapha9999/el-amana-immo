@@ -1,0 +1,154 @@
+<div class="pcd">
+  <header class="pcd__head">
+    <div>
+      <p class="pcd__eyebrow">Pièce comptable</p>
+      <h2 class="pcd__title" mat-dialog-title>
+        {{ piece.reference || piece.filename }}
+      </h2>
+      <p class="pcd__lead">{{ typeLabel }} — {{ piece.date_journee | date: 'dd/MM/yyyy' }}</p>
+    </div>
+    <button mat-icon-button type="button" (click)="close()" aria-label="Fermer">
+      <mat-icon>close</mat-icon>
+    </button>
+  </header>
+
+  <div mat-dialog-content class="pcd__body">
+    <section class="pcd__block">
+      <h3 class="pcd__block-title">Détails de la pièce</h3>
+      <dl class="pcd__grid">
+        <div>
+          <dt>Type</dt>
+          <dd><span class="pcd__badge">{{ typeLabel }}</span></dd>
+        </div>
+        <div>
+          <dt>Journée comptable</dt>
+          <dd>{{ piece.date_journee | date: 'dd/MM/yyyy' }}</dd>
+        </div>
+        <div>
+          <dt>N° pièce / Référence</dt>
+          <dd class="pcd__mono">{{ piece.reference || '—' }}</dd>
+        </div>
+        <div>
+          <dt>Montant</dt>
+          <dd class="pcd__montant">
+            @if (piece.montant != null) {
+              {{ piece.montant | montant: 'MRU' }}
+            } @else {
+              —
+            }
+          </dd>
+        </div>
+        <div class="pcd__span-2">
+          <dt>Libellé</dt>
+          <dd>{{ piece.libelle || '—' }}</dd>
+        </div>
+        <div>
+          <dt>Fichier</dt>
+          <dd class="pcd__file" [title]="piece.filename">{{ piece.filename }}</dd>
+        </div>
+        <div>
+          <dt>Taille</dt>
+          <dd>{{ formatSize(piece.size_bytes) }}</dd>
+        </div>
+        <div>
+          <dt>Format</dt>
+          <dd>{{ piece.mime_type || '—' }}</dd>
+        </div>
+        <div>
+          <dt>Archivée le</dt>
+          <dd>
+            @if (piece.created_at) {
+              {{ piece.created_at | date: 'dd/MM/yyyy HH:mm' }}
+            } @else {
+              —
+            }
+          </dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="pcd__block">
+      <h3 class="pcd__block-title">Immobilisation associée</h3>
+      @if (loadingImmo()) {
+        <p class="pcd__hint">Chargement de la fiche immobilisation…</p>
+      } @else if (loadError(); as err) {
+        <p class="pcd__hint pcd__hint--error">{{ err }}</p>
+        <p class="pcd__hint">
+          {{ piece.code_inventaire || '—' }}
+          @if (piece.designation) {
+            — {{ piece.designation }}
+          }
+        </p>
+      } @else if (immo(); as i) {
+        <dl class="pcd__grid">
+          <div>
+            <dt>Code inventaire</dt>
+            <dd class="pcd__mono">{{ i.code_inventaire }}</dd>
+          </div>
+          <div>
+            <dt>Statut</dt>
+            <dd><span class="pcd__badge pcd__badge--statut">{{ statutLabel(i.statut) }}</span></dd>
+          </div>
+          <div class="pcd__span-2">
+            <dt>Désignation</dt>
+            <dd>{{ i.designation }}</dd>
+          </div>
+          <div>
+            <dt>Valeur brute</dt>
+            <dd class="pcd__montant">{{ i.valeur_brute | montant: 'MRU' }}</dd>
+          </div>
+          <div>
+            <dt>Date d’acquisition</dt>
+            <dd>{{ i.date_acquisition | date: 'dd/MM/yyyy' }}</dd>
+          </div>
+          <div>
+            <dt>Mise en service</dt>
+            <dd>
+              @if (i.date_mise_en_service) {
+                {{ i.date_mise_en_service | date: 'dd/MM/yyyy' }}
+              } @else {
+                —
+              }
+            </dd>
+          </div>
+          <div>
+            <dt>Compte immobilisation</dt>
+            <dd class="pcd__mono">{{ i.compte_immobilisation || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Catégorie</dt>
+            <dd>{{ i.categorie?.libelle || i.categorie?.code || '—' }}</dd>
+          </div>
+          <div>
+            <dt>N° facture immo</dt>
+            <dd class="pcd__mono">{{ i.numero_facture || '—' }}</dd>
+          </div>
+          <div class="pcd__span-2">
+            <dt>Localisation</dt>
+            <dd>{{ i.localisation || '—' }}</dd>
+          </div>
+        </dl>
+      }
+    </section>
+  </div>
+
+  <div mat-dialog-actions class="pcd__actions">
+    <button mat-stroked-button class="app-btn-pill" type="button" (click)="download()" [disabled]="downloading()">
+      <mat-icon aria-hidden="true">download</mat-icon>
+      {{ downloading() ? 'Téléchargement…' : 'Télécharger' }}
+    </button>
+    <a
+      mat-stroked-button
+      class="app-btn-pill"
+      [routerLink]="['/immobilisations', piece.immobilisation_id, 'pieces']"
+      (click)="close()"
+    >
+      <mat-icon aria-hidden="true">inventory_2</mat-icon>
+      Consulter l’immobilisation
+    </a>
+    <span class="pcd__spacer"></span>
+    <button mat-flat-button color="primary" class="app-btn-pill" type="button" (click)="close()">
+      Fermer
+    </button>
+  </div>
+</div>
