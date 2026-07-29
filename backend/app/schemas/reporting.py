@@ -160,3 +160,42 @@ class Soldes14868Read(BaseModel):
     total_valeur_brute: float
     total_vnc: float
     nb_biens: int
+
+
+class VentilationAmortAgenceLigneRead(BaseModel):
+    immobilisation_id: str
+    code_inventaire: str
+    designation: str
+    date_acquisition: str | None = None
+    valeur_brute: float
+    taux: float | None = None
+    amortissement_cumule: float
+    dotation_periode: float
+    vnc: float
+    agence_id: str | None = None
+    agence_code: str | None = None
+    agence_libelle: str
+
+
+class VentilationAmortAgenceGroupeRead(BaseModel):
+    agence_id: str | None = None
+    agence_code: str | None = None
+    agence_libelle: str
+    total_dotations: float
+    nb_immobilisations: int
+    lignes: list[VentilationAmortAgenceLigneRead]
+
+
+class VentilationAmortissementsAgenceRead(BaseModel):
+    annee: int
+    periodicite: str
+    periode_index: int | None = None
+    periode_label: str
+    date_arrete: str
+    agence_filtre_id: str | None = None
+    categorie_filtre_id: str | None = None
+    total_compte_68: float
+    nb_immobilisations: int
+    total_dotations: float
+    groupes: list[VentilationAmortAgenceGroupeRead]
+    exercices_disponibles: list[int] = []

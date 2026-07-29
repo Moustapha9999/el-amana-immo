@@ -9,6 +9,7 @@ from app.models import Cession, Immobilisation, Rebut, StatutImmobilisation
 from app.schemas.operations import CessionCreate, RebutCreate
 from app.services.cession_amortissement import preparer_amortissements_cession
 from app.services.ecriture_sortie import enregistrer_ecritures_sortie, plan_ecritures_cession, plan_ecritures_rebut
+from app.services.exercice_guard import ensure_exercice_ouvert_pour_date
 from app.services.immobilisation_vnc import compute_situation_a_date, compute_situation_comptable
 
 _STATUTS_SORTIE_OK = {
@@ -61,6 +62,9 @@ class CessionService:
         }
 
     async def create(self, payload: CessionCreate) -> tuple[Cession, list[UUID]]:
+        await ensure_exercice_ouvert_pour_date(
+            self.db, payload.date_cession, contexte="Cession"
+        )
         immo = await self._load_immo(payload.immobilisation_id)
         if immo.statut not in _STATUTS_SORTIE_OK:
             raise ValidationError("Seules les immobilisations en service (ou suspendues) peuvent être cédées.")
@@ -138,6 +142,9 @@ class RebutService:
         return immo
 
     async def create(self, payload: RebutCreate) -> tuple[Rebut, list[UUID]]:
+        await ensure_exercice_ouvert_pour_date(
+            self.db, payload.date_rebut, contexte="Mise au rebut"
+        )
         immo = await self._load_immo(payload.immobilisation_id)
         if immo.statut not in _STATUTS_SORTIE_OK:
             raise ValidationError("Seules les immobilisations en service (ou suspendues) peuvent être mises au rebut.")

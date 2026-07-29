@@ -14,6 +14,15 @@ from app.services.amortissement_batch import AmortissementBatchService
 from app.services.amortissement_engine import calcul_dotation_periode, period_bounds
 
 
+def _mock_db() -> MagicMock:
+    """DB mock compatible avec le garde d'exercice (await db.execute)."""
+    db = MagicMock()
+    empty = MagicMock()
+    empty.scalar_one_or_none.return_value = None
+    db.execute = AsyncMock(return_value=empty)
+    return db
+
+
 class FakeImmo:
     id = uuid4()
     code_inventaire = "IMMO-001"
@@ -47,7 +56,7 @@ async def test_batch_mode_invalide():
 
 @pytest.mark.asyncio
 async def test_batch_periodicite_invalide():
-    svc = AmortissementBatchService(MagicMock())
+    svc = AmortissementBatchService(_mock_db())
     with pytest.raises(ValidationError, match="Périodicité"):
         await svc.calculer(
             periodicite="hebdo",
@@ -60,12 +69,13 @@ async def test_batch_periodicite_invalide():
 @pytest.mark.asyncio
 async def test_batch_simulation_ne_persiste_pas():
     """En simulation, aucune écriture / ligne n'est créée (pas d'appel persist)."""
-    db = MagicMock()
+    db = _mock_db()
     svc = AmortissementBatchService(db)
     immo = FakeImmo()
 
     svc._load_immobilisations = AsyncMock(return_value=[immo])
     svc._prefetch_amortissements = AsyncMock(return_value={})
+    svc._prefetch_ouvertures = AsyncMock(return_value={})
     svc._persist_and_comptabiliser = AsyncMock()
 
     result = await svc.calculer(
@@ -83,7 +93,7 @@ async def test_batch_simulation_ne_persiste_pas():
 
 @pytest.mark.asyncio
 async def test_batch_ignore_vnc_zero():
-    db = MagicMock()
+    db = _mock_db()
     svc = AmortissementBatchService(db)
     immo = FakeImmo()
     opening = SimpleNamespace(
@@ -96,6 +106,7 @@ async def test_batch_ignore_vnc_zero():
 
     svc._load_immobilisations = AsyncMock(return_value=[immo])
     svc._prefetch_amortissements = AsyncMock(return_value={immo.id: [opening]})
+    svc._prefetch_ouvertures = AsyncMock(return_value={})
     svc._persist_and_comptabiliser = AsyncMock()
 
     result = await svc.calculer(
@@ -113,7 +124,7 @@ async def test_batch_ignore_vnc_zero():
 
 @pytest.mark.asyncio
 async def test_batch_skip_deja_comptabilise():
-    db = MagicMock()
+    db = _mock_db()
     svc = AmortissementBatchService(db)
     immo = FakeImmo()
     existing = SimpleNamespace(
@@ -126,13 +137,14 @@ async def test_batch_skip_deja_comptabilise():
 
     svc._load_immobilisations = AsyncMock(return_value=[immo])
     svc._prefetch_amortissements = AsyncMock(return_value={immo.id: [existing]})
+    svc._prefetch_ouvertures = AsyncMock(return_value={})
     svc._persist_and_comptabiliser = AsyncMock()
 
     result = await svc.calculer(
         periodicite="trimestriel",
         annee=2026,
         periode_index=1,
-        mode="validation",
+        mode="simulation",
     )
 
     assert result.nb_deja_comptabilises == 1
@@ -143,7 +155,7 @@ async def test_batch_skip_deja_comptabilise():
 @pytest.mark.asyncio
 async def test_batch_t2_part_du_cumul_t1_pas_du_plan_futur():
     """T2 doit partir du cumul T1 validé, sans prendre en compte Q3/Q4 du plan."""
-    db = MagicMock()
+    db = _mock_db()
     svc = AmortissementBatchService(db)
     immo = FakeImmo()
     immo.date_acquisition = date(2025, 6, 1)
@@ -175,6 +187,7 @@ async def test_batch_t2_part_du_cumul_t1_pas_du_plan_futur():
 
     svc._load_immobilisations = AsyncMock(return_value=[immo])
     svc._prefetch_amortissements = AsyncMock(return_value={immo.id: rows})
+    svc._prefetch_ouvertures = AsyncMock(return_value={})
     svc._persist_and_comptabiliser = AsyncMock()
 
     result = await svc.calculer(
@@ -192,13 +205,14 @@ async def test_batch_t2_part_du_cumul_t1_pas_du_plan_futur():
 
 @pytest.mark.asyncio
 async def test_batch_ignore_acquisition_apres_arrete():
-    db = MagicMock()
+    db = _mock_db()
     svc = AmortissementBatchService(db)
     immo = FakeImmo()
     immo.date_acquisition = date(2026, 4, 6)  # après T1
 
     svc._load_immobilisations = AsyncMock(return_value=[immo])
     svc._prefetch_amortissements = AsyncMock(return_value={})
+    svc._prefetch_ouvertures = AsyncMock(return_value={})
     svc._persist_and_comptabiliser = AsyncMock()
 
     result = await svc.calculer(

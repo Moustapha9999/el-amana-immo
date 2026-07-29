@@ -13,12 +13,15 @@ from app.models.comptabilite import (
 from app.models.enums import (
     ModeAmortissement,
     PeriodiciteAmortissement,
+    StatutExercice,
+    StatutPeriodeAmortissement,
     StatutImmobilisation,
     TypeAjustement,
     TypeComptePlan,
     TypeImmobilisation,
     TypeNotification,
 )
+from app.models.exercice import ExerciceComptable, PeriodeAmortissement, SoldeOuvertureImmobilisation
 from app.models.immobilisation import CategorieImmobilisation, Immobilisation, InventaireScan, PieceJointe
 from app.models.operations import Ajustement, Cession, Rebut, Reevaluation
 from app.models.organisation import CentreCout, Departement, Direction, Fournisseur
@@ -30,6 +33,8 @@ __all__ = [
     "ModeAmortissement",
     "PeriodiciteAmortissement",
     "StatutImmobilisation",
+    "StatutExercice",
+    "StatutPeriodeAmortissement",
     "TypeComptePlan",
     "TypeAjustement",
     "TypeNotification",
@@ -61,4 +66,7 @@ __all__ = [
     "ArchiveDossier",
     "ArchiveFichier",
     "ArchiveLigne",
+    "ExerciceComptable",
+    "PeriodeAmortissement",
+    "SoldeOuvertureImmobilisation",
 ]

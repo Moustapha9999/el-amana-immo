@@ -249,6 +249,47 @@ table.mat-mdc-table.app-table {
   border-bottom: none;
 }
 
+/* Détail des lignes : gras (lisibilité comptable) */
+.app-table .mat-mdc-cell,
+table.app-table tbody td {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+/* Totaux en bas — style unique (Récap / Soldes / Comptes / Amort. agence) */
+.app-table .mat-mdc-footer-row,
+table.app-table tfoot tr {
+  background: #eef6fc;
+}
+
+.app-table .mat-mdc-footer-cell,
+table.app-table tfoot td {
+  font-weight: 700;
+  color: #1a4571;
+  border-top: 1px solid #cbd5e1;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+.app-table-foot-label,
+.app-table .mat-mdc-footer-cell.app-table-foot-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.8125rem;
+  color: #1a4571;
+}
+
+.app-table-foot-total,
+.app-table .mat-mdc-footer-cell.app-table-foot-total,
+table.app-table tfoot td.app-table-foot-total,
+.app-table .mat-mdc-footer-cell.rca__foot,
+.app-table .mat-mdc-footer-cell.s68__foot,
+.app-table .mat-mdc-footer-cell.cpt__num {
+  color: #9b1c1c;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* Montants : lisibilité (séparateur de milliers via pipe / saisie FR) */
 input[appMontantInput],
 .iml__montant,

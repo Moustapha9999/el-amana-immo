@@ -6,6 +6,7 @@ from app.core.exceptions import NotFoundError, ValidationError
 from app.models import Ajustement, Immobilisation
 from app.models.enums import TypeAjustement
 from app.schemas.operations import TransfertCreate
+from app.services.exercice_guard import ensure_exercice_ouvert_pour_date
 
 
 class TransfertService:
@@ -15,6 +16,9 @@ class TransfertService:
     async def transfer(self, immobilisation_id: UUID, payload: TransfertCreate) -> Ajustement:
         from decimal import Decimal
 
+        await ensure_exercice_ouvert_pour_date(
+            self.db, payload.date_transfert, contexte="Transfert inter-agences"
+        )
         immo = await self.db.get(Immobilisation, immobilisation_id)
         if immo is None or immo.deleted_at is not None:
             raise NotFoundError("Immobilisation", str(immobilisation_id))

@@ -1,0 +1,285 @@
+<div class="vaa">
+  <header class="vaa__hero">
+    <div>
+      <h1 class="vaa__title">Ventilation des amortissements par agence</h1>
+      <p class="vaa__lead">
+        @if (data(); as d) {
+          Compte 68 — {{ d.periode_label }}
+        } @else {
+          Dotations d’amortissement ventilées par agence de rattachement
+        }
+      </p>
+    </div>
+    <div class="vaa__hero-actions">
+      <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Actualiser
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('xlsx')"
+        [disabled]="!data() || exporting() !== null || loading()"
+      >
+        <mat-icon aria-hidden="true">table_view</mat-icon>
+        {{ exporting() === 'xlsx' ? 'Excel…' : 'Export Excel' }}
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('pdf')"
+        [disabled]="!data() || exporting() !== null || loading()"
+      >
+        <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
+        {{ exporting() === 'pdf' ? 'PDF…' : 'Export PDF' }}
+      </button>
+    </div>
+  </header>
+
+  <section class="vaa__section">
+    <div class="vaa__toolbar">
+      <form [formGroup]="filterForm" (ngSubmit)="load()" class="vaa__filters">
+        <div class="vaa-field vaa-field--agence">
+          <label class="vaa-field__label" for="vaa-agence">Agence</label>
+          <select id="vaa-agence" class="vaa-field__control" formControlName="agence_id">
+            <option value="">Toutes les agences</option>
+            @for (a of agences(); track a.id) {
+              <option [value]="a.id">{{ a.libelle }} ({{ a.code }})</option>
+            }
+          </select>
+        </div>
+
+        <div class="vaa-field">
+          <label class="vaa-field__label" for="vaa-annee">Exercice</label>
+          <select id="vaa-annee" class="vaa-field__control" formControlName="annee">
+            @for (y of exercices(); track y) {
+              <option [ngValue]="y">{{ y }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="vaa-field">
+          <label class="vaa-field__label" for="vaa-per">Période</label>
+          <select
+            id="vaa-per"
+            class="vaa-field__control"
+            formControlName="periodicite"
+            (change)="onPeriodiciteChange()"
+          >
+            <option value="mensuel">Mensuel</option>
+            <option value="trimestriel">Trimestriel</option>
+            <option value="annuel">Annuel</option>
+          </select>
+        </div>
+
+        @if (filterForm.controls.periodicite.value !== 'annuel') {
+          <div class="vaa-field">
+            <label class="vaa-field__label" for="vaa-idx">
+              {{ filterForm.controls.periodicite.value === 'mensuel' ? 'Mois' : 'Trimestre' }}
+            </label>
+            <select id="vaa-idx" class="vaa-field__control" formControlName="periode_index">
+              @if (filterForm.controls.periodicite.value === 'mensuel') {
+                @for (m of mois; track m.value) {
+                  <option [ngValue]="m.value">{{ m.label }}</option>
+                }
+              } @else {
+                @for (t of trimestres; track t.value) {
+                  <option [ngValue]="t.value">{{ t.label }}</option>
+                }
+              }
+            </select>
+          </div>
+        }
+
+        <div class="vaa-field vaa-field--cat">
+          <label class="vaa-field__label" for="vaa-cat">Catégorie (optionnel)</label>
+          <select id="vaa-cat" class="vaa-field__control" formControlName="categorie_id">
+            <option value="">Toutes</option>
+            @for (c of categories(); track c.id) {
+              <option [value]="c.id">{{ categorieLabel(c) }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="vaa__filter-actions">
+          <button mat-flat-button color="primary" type="submit" [disabled]="loading()">
+            Afficher
+          </button>
+          <button mat-stroked-button type="button" (click)="resetFilters()" [disabled]="loading()">
+            Réinitialiser
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="vaa__body">
+      @if (loading()) {
+        <p class="vaa__empty">Chargement du rapport…</p>
+      } @else if (data(); as d) {
+        <div class="vaa__kpis">
+          <div class="vaa__kpi">
+            <span class="vaa__kpi-label">68 — {{ vueGlobale() ? 'Toutes agences' : 'Agence' }}</span>
+            <span class="vaa__kpi-value">{{ d.total_compte_68 | montant: 'MRU' }}</span>
+          </div>
+          <div class="vaa__kpi">
+            <span class="vaa__kpi-label">Immobilisations amorties</span>
+            <span class="vaa__kpi-value">{{ d.nb_immobilisations }}</span>
+          </div>
+          <div class="vaa__kpi">
+            <span class="vaa__kpi-label">Total dotations période</span>
+            <span class="vaa__kpi-value">{{ d.total_dotations | montant: 'MRU' }}</span>
+          </div>
+        </div>
+
+        @if (d.groupes.length === 0) {
+          <p class="vaa__empty">
+            Aucune dotation comptabilisée pour ces critères. Vérifiez le calcul / la
+            comptabilisation des amortissements.
+          </p>
+        } @else if (vueGlobale()) {
+          <div class="vaa__synth">
+            <h2 class="vaa__subtitle">Synthèse par agence (compte 68)</h2>
+            <div class="vaa__agence-list" role="list">
+              @for (g of d.groupes; track g.agence_id ?? g.agence_libelle) {
+                <div class="vaa__agence-row" role="listitem">
+                  <span>68 — {{ g.agence_libelle }}</span>
+                  <strong>{{ g.total_dotations | montant: 'MRU' }}</strong>
+                  <em>{{ g.nb_immobilisations }} bien(s)</em>
+                </div>
+              }
+              <div class="vaa__agence-row vaa__agence-list-total" role="listitem">
+                <span>68 — Toutes agences</span>
+                <strong>{{ d.total_compte_68 | montant: 'MRU' }}</strong>
+              </div>
+            </div>
+          </div>
+
+          <h2 class="vaa__subtitle">Détail de toutes les immobilisations</h2>
+          <div class="vaa__table-wrap app-table-scroll">
+            <table class="w-full app-table vaa__table">
+              <colgroup>
+                <col class="vaa__col-desig" />
+                <col class="vaa__col-date" />
+                <col class="vaa__col-num" />
+                <col class="vaa__col-taux" />
+                <col class="vaa__col-num" />
+                <col class="vaa__col-num" />
+                <col class="vaa__col-num" />
+                <col class="vaa__col-agence" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Désignation</th>
+                  <th>Date d’acquisition</th>
+                  <th class="vaa__num">Valeur brute</th>
+                  <th class="vaa__num">Taux %</th>
+                  <th class="vaa__num">Amort. cumulé</th>
+                  <th class="vaa__num">Dotation période</th>
+                  <th class="vaa__num">VNC</th>
+                  <th>Agence</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of flatLignes(); track row.immobilisation_id) {
+                  <tr>
+                    <td>
+                      <div class="vaa__desig">{{ row.designation }}</div>
+                      <div class="vaa__code">{{ row.code_inventaire }}</div>
+                    </td>
+                    <td>{{ formatDate(row.date_acquisition) }}</td>
+                    <td class="vaa__num">{{ row.valeur_brute | montant }}</td>
+                    <td class="vaa__num">{{ row.taux != null ? row.taux : '—' }}</td>
+                    <td class="vaa__num">{{ row.amortissement_cumule | montant }}</td>
+                    <td class="vaa__num">{{ row.dotation_periode | montant }}</td>
+                    <td class="vaa__num">{{ row.vnc | montant }}</td>
+                    <td>{{ row.agence_libelle }}</td>
+                  </tr>
+                }
+              </tbody>
+              <tfoot>
+                <tr class="vaa__total-row">
+                  <td class="vaa__foot-label">Total</td>
+                  <td></td>
+                  <td class="vaa__num vaa__foot-montant">
+                    {{ totauxGlobaux().valeur_brute | montant }}
+                  </td>
+                  <td class="vaa__num vaa__foot-montant">—</td>
+                  <td class="vaa__num vaa__foot-montant">
+                    {{ totauxGlobaux().amortissement_cumule | montant }}
+                  </td>
+                  <td class="vaa__num vaa__foot-montant">
+                    {{ totauxGlobaux().dotation_periode | montant }}
+                  </td>
+                  <td class="vaa__num vaa__foot-montant">
+                    {{ totauxGlobaux().vnc | montant }}
+                  </td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        } @else {
+          @for (g of d.groupes; track g.agence_id ?? g.agence_libelle) {
+            @let t = sumLignes(g.lignes);
+            <div class="vaa__agence-block">
+              <div class="vaa__agence-head">
+                <h2 class="vaa__agence-title">68 — {{ g.agence_libelle }}</h2>
+              </div>
+              <div class="vaa__table-wrap app-table-scroll">
+                <table class="w-full app-table vaa__table">
+                  <colgroup>
+                    <col class="vaa__col-desig" />
+                    <col class="vaa__col-date" />
+                    <col class="vaa__col-num" />
+                    <col class="vaa__col-taux" />
+                    <col class="vaa__col-num" />
+                    <col class="vaa__col-num" />
+                    <col class="vaa__col-num" />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>Désignation</th>
+                      <th>Date d’acquisition</th>
+                      <th class="vaa__num">Valeur brute</th>
+                      <th class="vaa__num">Taux %</th>
+                      <th class="vaa__num">Amort. cumulé</th>
+                      <th class="vaa__num">Dotation période</th>
+                      <th class="vaa__num">VNC</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of g.lignes; track row.immobilisation_id) {
+                      <tr>
+                        <td>
+                          <div class="vaa__desig">{{ row.designation }}</div>
+                          <div class="vaa__code">{{ row.code_inventaire }}</div>
+                        </td>
+                        <td>{{ formatDate(row.date_acquisition) }}</td>
+                        <td class="vaa__num">{{ row.valeur_brute | montant }}</td>
+                        <td class="vaa__num">{{ row.taux != null ? row.taux : '—' }}</td>
+                        <td class="vaa__num">{{ row.amortissement_cumule | montant }}</td>
+                        <td class="vaa__num">{{ row.dotation_periode | montant }}</td>
+                        <td class="vaa__num">{{ row.vnc | montant }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                  <tfoot>
+                    <tr class="vaa__total-row">
+                      <td class="vaa__foot-label">Total</td>
+                      <td></td>
+                      <td class="vaa__num vaa__foot-montant">{{ t.valeur_brute | montant }}</td>
+                      <td class="vaa__num vaa__foot-montant">—</td>
+                      <td class="vaa__num vaa__foot-montant">{{ t.amortissement_cumule | montant }}</td>
+                      <td class="vaa__num vaa__foot-montant">{{ t.dotation_periode | montant }}</td>
+                      <td class="vaa__num vaa__foot-montant">{{ t.vnc | montant }}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          }
+        }
+      }
+    </div>
+  </section>
+</div>

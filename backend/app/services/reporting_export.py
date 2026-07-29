@@ -1132,3 +1132,129 @@ def comptes_par_nature_to_pdf(payload: dict[str, Any]) -> bytes:
             "left",
         ],
     )
+
+
+def ventilation_amortissements_agence_to_excel(payload: dict[str, Any]) -> bytes:
+    """Ventilation compte 68 — dotations par agence (détail + sous-totaux)."""
+    headers = [
+        "Agence",
+        "Désignation",
+        "Code",
+        "Date acquisition",
+        "Valeur brute",
+        "Taux %",
+        "Amort. cumulé",
+        "Dotation période",
+        "VNC",
+    ]
+    rows: list[list[Any]] = []
+    for groupe in payload.get("groupes") or []:
+        agence = groupe.get("agence_libelle") or "Sans agence"
+        for line in groupe.get("lignes") or []:
+            rows.append(
+                [
+                    agence,
+                    line.get("designation") or "",
+                    line.get("code_inventaire") or "",
+                    line.get("date_acquisition_fmt") or "",
+                    line.get("valeur_brute"),
+                    line.get("taux"),
+                    line.get("amortissement_cumule"),
+                    line.get("dotation_periode"),
+                    line.get("vnc"),
+                ]
+            )
+        rows.append(
+            [
+                f"Sous-total 68 — {agence}",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                groupe.get("total_dotations"),
+                "",
+            ]
+        )
+    rows.append(
+        [
+            "TOTAL 68 — Toutes agences",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            payload.get("total_dotations"),
+            "",
+        ]
+    )
+    return build_styled_workbook(
+        sheet_title="Amort. par agence",
+        report_title="Ventilation des amortissements par agence (compte 68)",
+        headers=headers,
+        rows=rows,
+        subtitle=payload.get("subtitle"),
+    )
+
+
+def ventilation_amortissements_agence_to_pdf(payload: dict[str, Any]) -> bytes:
+    headers = [
+        "Agence",
+        "Désignation",
+        "Date acq.",
+        "VB",
+        "Taux",
+        "Cumul",
+        "Dotation",
+        "VNC",
+    ]
+    rows: list[list[Any]] = []
+    for groupe in payload.get("groupes") or []:
+        agence = groupe.get("agence_libelle") or "Sans agence"
+        for line in groupe.get("lignes") or []:
+            rows.append(
+                [
+                    agence,
+                    line.get("designation") or "",
+                    line.get("date_acquisition_fmt") or "",
+                    line.get("valeur_brute"),
+                    line.get("taux"),
+                    line.get("amortissement_cumule"),
+                    line.get("dotation_periode"),
+                    line.get("vnc"),
+                ]
+            )
+        rows.append(
+            [
+                f"Sous-total — {agence}",
+                "",
+                "",
+                "",
+                "",
+                "",
+                groupe.get("total_dotations"),
+                "",
+            ]
+        )
+    rows.append(
+        [
+            "TOTAL 68",
+            "",
+            "",
+            "",
+            "",
+            "",
+            payload.get("total_dotations"),
+            "",
+        ]
+    )
+    return build_styled_pdf(
+        report_title="Ventilation des amortissements par agence (compte 68)",
+        headers=headers,
+        rows=rows,
+        subtitle=payload.get("subtitle"),
+        landscape_mode=True,
+        col_aligns=["left", "left", "left", "right", "right", "right", "right", "right"],
+    )

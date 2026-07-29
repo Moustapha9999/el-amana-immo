@@ -43,6 +43,72 @@
   box-shadow: var(--app-shadow-card);
 }
 
+.arc__section--open {
+  border-left: 4px solid #15803d;
+}
+
+.arc__kpis {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+@media (min-width: 768px) {
+  .arc__kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.arc__kpi {
+  padding: 0.85rem 1rem;
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  border-left: 4px solid #1a5278;
+}
+
+.arc__kpi-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.arc__kpi-value {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.arc__badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.arc__badge--cloture {
+  background: #fef2f2;
+  color: #9b1c1c;
+}
+
+.arc__badge--ouvert {
+  background: #ecfdf5;
+  color: #15803d;
+}
+
+.arc__hint--ok {
+  margin-top: 0.75rem;
+  color: #15803d;
+}
+
 .arc__section-title {
   margin: 0 0 0.85rem;
   font-size: 1rem;
@@ -164,3 +230,8 @@
 .arc__item-link mat-icon {
   color: #94a3b8;
 }
+
+.arc__hint--opening {
+  margin-bottom: 1.25rem;
+}
+

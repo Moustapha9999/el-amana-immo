@@ -149,6 +149,13 @@ class ArchiveService:
         nature_code: str | None,
         user: User | None,
     ) -> ArchiveFichier:
+        from app.services.exercice_guard import annee_est_cloturee
+
+        if await annee_est_cloturee(self.db, annee):
+            raise ValidationError(
+                f"L'exercice {annee} est clôturé définitivement : "
+                "aucun fichier archive ne peut être ajouté."
+            )
         dossier = await self.get_dossier_by_annee(annee)
         filename = file.filename or "fichier"
         kind = detect_kind(filename, file.content_type)
@@ -186,6 +193,12 @@ class ArchiveService:
         return row
 
     async def rescan(self, *, annee: int, fichier_id: UUID) -> ArchiveFichier:
+        from app.services.exercice_guard import annee_est_cloturee
+
+        if await annee_est_cloturee(self.db, annee):
+            raise ValidationError(
+                f"L'exercice {annee} est clôturé définitivement : rescan interdit."
+            )
         fichier = await self.get_fichier(fichier_id)
         if fichier.dossier.annee != annee:
             raise NotFoundError("Fichier archive", str(fichier_id))
@@ -193,6 +206,12 @@ class ArchiveService:
         return await self.get_fichier(fichier_id)
 
     async def delete_fichier(self, *, annee: int, fichier_id: UUID) -> None:
+        from app.services.exercice_guard import annee_est_cloturee
+
+        if await annee_est_cloturee(self.db, annee):
+            raise ValidationError(
+                f"L'exercice {annee} est clôturé définitivement : suppression de fichier interdite."
+            )
         fichier = await self.get_fichier(fichier_id)
         if fichier.dossier.annee != annee:
             raise NotFoundError("Fichier archive", str(fichier_id))

@@ -1,6 +1,7 @@
 from datetime import date
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,13 +23,14 @@ from app.schemas.reporting import (
     RecapAmortissementRead,
     SoldeNatureLigneRead,
     Soldes14868Read,
+    VentilationAmortAgenceGroupeRead,
+    VentilationAmortAgenceLigneRead,
+    VentilationAmortissementsAgenceRead,
 )
 from app.services.audit_query import list_audit_for_export
 from app.services.audit_service import AuditService
-from app.services.comptes_par_nature import build_comptes_par_nature
 from app.services.immobilisation_service import DashboardService
-from app.services.recap_amortissement import build_recap_amortissement
-from app.services.soldes_148_68 import build_soldes_148_68
+from app.services.reporting_snapshot import resolve_comptes, resolve_recap, resolve_soldes
 from app.services.reporting_export import (
     audit_logs_to_excel,
     comptes_par_nature_to_excel,
@@ -41,8 +43,11 @@ from app.services.reporting_export import (
     recap_amortissement_detail_to_pdf,
     recap_amortissement_to_excel,
     recap_amortissement_to_pdf,
+    ventilation_amortissements_agence_to_excel,
+    ventilation_amortissements_agence_to_pdf,
 )
 from app.services.reporting_service import list_ecritures_for_export, list_immobilisations_for_export
+from app.services.ventilation_amortissements_agence import build_ventilation_amortissements_agence
 
 router = APIRouter(tags=["reporting"])
 
@@ -219,7 +224,7 @@ async def get_recap_amortissement(
     _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await build_recap_amortissement(db, annee)
+    result = await resolve_recap(db, annee)
     return RecapAmortissementRead(
         annee=result.annee,
         date_arrete=result.date_arrete.isoformat(),
@@ -237,7 +242,7 @@ async def export_recap_amortissement(
     _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await build_recap_amortissement(db, annee)
+    result = await resolve_recap(db, annee)
     if vue == "detail":
         payload = {
             "annee": result.annee,
@@ -387,7 +392,7 @@ async def get_comptes_par_nature(
     _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await build_comptes_par_nature(db, annee, compte=compte)
+    result = await resolve_comptes(db, annee, compte=compte)
     return ComptesParNatureRead(
         annee=result.annee,
         date_arrete=result.date_arrete.isoformat(),
@@ -416,7 +421,7 @@ async def export_comptes_par_nature(
     _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await build_comptes_par_nature(db, annee, compte=compte)
+    result = await resolve_comptes(db, annee, compte=compte)
     payload = _comptes_par_nature_payload(result)
     suffix = f"-{result.compte_filtre}" if result.compte_filtre else ""
     if format == "pdf":
@@ -441,7 +446,7 @@ async def get_soldes_148_68(
     db: AsyncSession = Depends(get_db),
 ):
     """Soldes des comptes 148 (amort.) et 68 (dotations) par nature d'immobilisation."""
-    result = await build_soldes_148_68(db, annee)
+    result = await resolve_soldes(db, annee)
     return Soldes14868Read(
         annee=result.annee,
         date_arrete=result.date_arrete.isoformat(),
@@ -469,4 +474,180 @@ async def get_soldes_148_68(
         total_valeur_brute=float(result.total_valeur_brute),
         total_vnc=float(result.total_vnc),
         nb_biens=result.nb_biens,
+    )
+
+
+def _ventilation_ligne_read(line) -> VentilationAmortAgenceLigneRead:
+    return VentilationAmortAgenceLigneRead(
+        immobilisation_id=line.immobilisation_id,
+        code_inventaire=line.code_inventaire,
+        designation=line.designation,
+        date_acquisition=line.date_acquisition.isoformat() if line.date_acquisition else None,
+        valeur_brute=float(line.valeur_brute),
+        taux=float(line.taux) if line.taux is not None else None,
+        amortissement_cumule=float(line.amortissement_cumule),
+        dotation_periode=float(line.dotation_periode),
+        vnc=float(line.vnc),
+        agence_id=line.agence_id,
+        agence_code=line.agence_code,
+        agence_libelle=line.agence_libelle,
+    )
+
+
+def _ventilation_to_read(result) -> VentilationAmortissementsAgenceRead:
+    return VentilationAmortissementsAgenceRead(
+        annee=result.annee,
+        periodicite=result.periodicite,
+        periode_index=result.periode_index,
+        periode_label=result.periode_label,
+        date_arrete=result.date_arrete.isoformat(),
+        agence_filtre_id=result.agence_filtre_id,
+        categorie_filtre_id=result.categorie_filtre_id,
+        total_compte_68=float(result.total_compte_68),
+        nb_immobilisations=result.nb_immobilisations,
+        total_dotations=float(result.total_dotations),
+        groupes=[
+            VentilationAmortAgenceGroupeRead(
+                agence_id=g.agence_id,
+                agence_code=g.agence_code,
+                agence_libelle=g.agence_libelle,
+                total_dotations=float(g.total_dotations),
+                nb_immobilisations=g.nb_immobilisations,
+                lignes=[_ventilation_ligne_read(ligne) for ligne in g.lignes],
+            )
+            for g in result.groupes
+        ],
+        exercices_disponibles=result.exercices_disponibles,
+    )
+
+
+def _ventilation_export_payload(result) -> dict:
+    return {
+        "annee": result.annee,
+        "subtitle": (
+            f"{result.periode_label} — Compte 68 ventilé par agence "
+            f"(total {float(result.total_compte_68):,.2f} MRU)".replace(",", " ")
+        ),
+        "total_compte_68": float(result.total_compte_68),
+        "nb_immobilisations": result.nb_immobilisations,
+        "total_dotations": float(result.total_dotations),
+        "groupes": [
+            {
+                "agence_libelle": g.agence_libelle,
+                "agence_code": g.agence_code,
+                "total_dotations": float(g.total_dotations),
+                "nb_immobilisations": g.nb_immobilisations,
+                "lignes": [
+                    {
+                        "designation": ligne.designation,
+                        "code_inventaire": ligne.code_inventaire,
+                        "date_acquisition_fmt": ligne.date_acquisition.strftime("%d/%m/%Y")
+                        if ligne.date_acquisition
+                        else "",
+                        "valeur_brute": float(ligne.valeur_brute),
+                        "taux": float(ligne.taux) if ligne.taux is not None else None,
+                        "amortissement_cumule": float(ligne.amortissement_cumule),
+                        "dotation_periode": float(ligne.dotation_periode),
+                        "vnc": float(ligne.vnc),
+                        "agence": ligne.agence_libelle,
+                    }
+                    for ligne in g.lignes
+                ],
+            }
+            for g in result.groupes
+        ],
+    }
+
+
+async def _build_ventilation(
+    db: AsyncSession,
+    *,
+    annee: int,
+    periodicite: str,
+    periode_index: int | None,
+    agence_id: UUID | None,
+    categorie_id: UUID | None,
+):
+    try:
+        return await build_ventilation_amortissements_agence(
+            db,
+            annee=annee,
+            periodicite=periodicite,
+            periode_index=periode_index,
+            agence_id=agence_id,
+            categorie_id=categorie_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/reporting/amortissements-agence",
+    response_model=VentilationAmortissementsAgenceRead,
+)
+@router.get(
+    "/rapports/amortissements-agence",
+    response_model=VentilationAmortissementsAgenceRead,
+    include_in_schema=False,
+)
+async def get_amortissements_agence(
+    annee: int = Query(..., ge=2000, le=2100),
+    periodicite: str = Query("trimestriel", pattern="^(mensuel|trimestriel|annuel)$"),
+    periode_index: int | None = Query(
+        None,
+        ge=1,
+        le=12,
+        description="1–4 (trimestriel) ou 1–12 (mensuel). Ignoré si annuel.",
+    ),
+    agence_id: UUID | None = Query(None, description="Filtrer une agence (vide = toutes)"),
+    categorie_id: UUID | None = Query(None, description="Filtrer une catégorie (optionnel)"),
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ventilation des dotations (compte 68) par agence."""
+    result = await _build_ventilation(
+        db,
+        annee=annee,
+        periodicite=periodicite,
+        periode_index=periode_index,
+        agence_id=agence_id,
+        categorie_id=categorie_id,
+    )
+    return _ventilation_to_read(result)
+
+
+@router.get("/reporting/amortissements-agence/export")
+@router.get("/rapports/amortissements-agence/export", include_in_schema=False)
+async def export_amortissements_agence(
+    annee: int = Query(..., ge=2000, le=2100),
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    periodicite: str = Query("trimestriel", pattern="^(mensuel|trimestriel|annuel)$"),
+    periode_index: int | None = Query(None, ge=1, le=12),
+    agence_id: UUID | None = Query(None),
+    categorie_id: UUID | None = Query(None),
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await _build_ventilation(
+        db,
+        annee=annee,
+        periodicite=periodicite,
+        periode_index=periode_index,
+        agence_id=agence_id,
+        categorie_id=categorie_id,
+    )
+    payload = _ventilation_export_payload(result)
+    suffix = f"-{result.agence_filtre_id[:8]}" if result.agence_filtre_id else ""
+    if format == "pdf":
+        content = ventilation_amortissements_agence_to_pdf(payload)
+        media = "application/pdf"
+        filename = f"amortissements-agence-{annee}{suffix}.pdf"
+    else:
+        content = ventilation_amortissements_agence_to_excel(payload)
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = f"amortissements-agence-{annee}{suffix}.xlsx"
+    return Response(
+        content=content,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

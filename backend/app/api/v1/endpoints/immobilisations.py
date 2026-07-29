@@ -351,7 +351,7 @@ async def delete_immobilisation(
             entity_id=str(item_id),
             request=request,
         )
-        return MessageResponse(message="Suppression logique effectuée")
+        return MessageResponse(message="Immobilisation supprimée de la base")
     except AppError as exc:
         raise_http_from_app(exc)
 

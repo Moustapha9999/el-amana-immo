@@ -1,35 +1,31 @@
-"""Calcul des amortissements — note fonctionnelle Banque El Amana (§2).
+"""Moteur d'amortissement — norme bancaire base 360 jours.
 
-Principe
---------
-Les amortissements sont calculés automatiquement à chaque arrêté des états
-financiers. Dates d'arrêté :
-  • 31 mars
-  • 30 juin
-  • 30 septembre
-  • 31 décembre
+Arrêtés trimestriels
+--------------------
+  T1 : 31/03   T2 : 30/06   T3 : 30/09   T4 : 31/12
 
-Durée (prorata temporis)
-------------------------
-Nombre de jours (base commerciale 30/360) entre :
-  • la date d'acquisition (fait générateur), et
-  • la date d'établissement des états financiers (arrêté),
-pour la portion de période concernée (aucune dotation avant l'acquisition).
+Typologie & durée YTD (exercice N)
+----------------------------------
+  A. Acquisition dans N (D_acq ≥ 01/01/N) :
+       Point de départ = D_acq
+       Durée jusqu'à l'arrêté = DAYS360(D_acq, D_arrete + 1 j)
+         → ex. 06/01 → 30/06 = 175 j ; 01/01 → 30/06 = 180 j
+
+  B. Stock antérieur (D_acq < 01/01/N) :
+       Point de départ = 01/01/N
+       Durée = 90 / 180 / 270 / 360 selon T1 / T2 / T3 / T4
 
 Formule
 -------
-  Amortissement = VB × Taux × Durée
-
-où :
-  • VB   = valeur brute
-  • Taux = taux annuel (exprimé en décimal, ex. 20 % → 0,20)
-  • Durée = jours_360 / 360  (fraction d'année commerciale)
+  Dotation_YTD = VB × Taux × (Durée_YTD / 360)
+  Dotation_période = Dotation_YTD(arrêté) − Dotation_YTD(arrêté précédent)
+  (plafond = VNC disponible ; jamais de VNC négative)
 
 Résultats par arrêté
 --------------------
-  • Amortissement de la période
-  • Cumul des amortissements
-  • VNC = VB − amortissements cumulés
+  • Dotation de la période (68)
+  • Cumul des amortissements (148)
+  • VNC = VB − cumul
 """
 
 from __future__ import annotations
@@ -42,11 +38,8 @@ from app.models import Immobilisation
 
 PERIODICITES = frozenset({"mensuel", "trimestriel", "annuel"})
 
-# Base commerciale banque (année = 360 j, mois = 30 j)
 JOURS_AN_COMMERCIAL = Decimal("360")
 JOURS_MOIS_COMMERCIAL = 30
-
-# Dates d'arrêté des états financiers (fin de trimestre)
 MOIS_ARRETE = (3, 6, 9, 12)
 
 
@@ -73,7 +66,6 @@ def quarter_end(d: date) -> date:
 
 
 def date_arrete_for(d: date) -> date:
-    """Prochaine (ou courante) date d'arrêté des états financiers."""
     return quarter_end(d)
 
 
@@ -83,11 +75,7 @@ def period_key(period_end: date) -> str:
 
 
 def days_360(start: date, end_exclusive: date) -> int:
-    """Jours en base 30/360 entre ``start`` (inclus) et ``end_exclusive`` (exclu).
-
-    Ex. 01/01 → 01/04 = 90 jours (trimestre plein).
-    Ex. DAYS360 Excel 26/06 → 30/06 = ``days_360(26/06, 30/06)`` = 4 jours.
-    """
+    """Jours base 30/360 type Excel ``DAYS360(start, end_exclusive)``."""
     if end_exclusive <= start:
         return 0
     d1 = min(start.day, JOURS_MOIS_COMMERCIAL)
@@ -99,42 +87,59 @@ def days_360(start: date, end_exclusive: date) -> int:
     )
 
 
-def jours_commerciaux_periode(debut: date, period_start: date, period_end: date) -> int:
-    """Jours 30/360 à amortir sur une période d'arrêté (aligné Excel banque).
+def point_depart_exercice(date_acquisition: date, annee: int) -> date:
+    """Départ de la durée YTD pour l'exercice ``annee``.
 
-    - Période pleine (``debut == period_start``) : borne exclusive = lendemain
-      de l'arrêté → trimestre = 90 j, mois = 30 j.
-    - Acquisition en cours de période : ``DAYS360(debut, period_end)`` Excel
-      → ex. 26/06/2026 → 30/06/2026 = 4 j (dotation construction 2 847,01).
+    - Acquisition dans N → date d'acquisition
+    - Stock antérieur → 01/01/N
     """
+    debut_annee = date(annee, 1, 1)
+    if date_acquisition >= debut_annee:
+        return date_acquisition
+    return debut_annee
+
+
+def duree_jours_360(debut: date, date_arrete: date) -> int:
+    """Durée banque jusqu'à l'arrêté : ``DAYS360(debut, arrêté + 1 jour)``.
+
+    Donne la matrice stock : T1=90, T2=180, T3=270, T4=360
+    et les proratas Excel (ex. 06/01→30/06 = 175 j).
+    """
+    if date_arrete < debut:
+        return 0
+    return days_360(debut, date_arrete + timedelta(days=1))
+
+
+def jours_entre(debut: date, date_arrete: date) -> int:
+    """Alias spécification : durée 360 entre départ et arrêté."""
+    return duree_jours_360(debut, date_arrete)
+
+
+def jours_commerciaux_periode(debut: date, period_start: date, period_end: date) -> int:
+    """Jours de la période = YTD(fin) − YTD(arrêté précédent)."""
     if debut > period_end:
         return 0
     debut_eff = max(debut, period_start)
     if debut_eff > period_end:
         return 0
+    ytd_fin = duree_jours_360(debut_eff, period_end)
     if debut_eff > period_start:
-        return days_360(debut_eff, period_end)
-    return days_360(debut_eff, period_end + timedelta(days=1))
-
-
-def jours_entre(debut: date, date_arrete: date) -> int:
-    """Jours 30/360 type Excel DAYS360(debut, date_arrete)."""
-    return days_360(debut, date_arrete)
+        # Acquisition en cours de période : pas d'arrêté précédent dans la période
+        return ytd_fin
+    # Période pleine : YTD jusqu'à fin − YTD jusqu'à arrêté précédent
+    prev_arrete = period_start - timedelta(days=1)
+    ytd_avant = duree_jours_360(debut_eff, prev_arrete) if prev_arrete >= debut_eff else 0
+    return max(0, ytd_fin - ytd_avant)
 
 
 def duree_prorata(debut: date, date_arrete: date) -> Decimal:
-    """Durée proratisée = DAYS360(debut, arrêté) / 360."""
-    jours = jours_entre(debut, date_arrete)
+    jours = duree_jours_360(debut, date_arrete)
     if jours <= 0:
         return Decimal("0")
     return (Decimal(jours) / JOURS_AN_COMMERCIAL).quantize(Decimal("0.0000001"))
 
 
 def _annual_rate_fraction(immo: Immobilisation) -> Decimal:
-    """Taux annuel en fraction (20 % → 0.20).
-
-    Ordre : taux immo → taux Type (catégorie) → référentiel banque par durée → 1/n.
-    """
     if immo.taux is not None and immo.taux > 0:
         return (Decimal(immo.taux) / Decimal("100")).quantize(Decimal("0.0000001"))
     cat = getattr(immo, "categorie", None)
@@ -153,7 +158,7 @@ def _annual_rate_fraction(immo: Immobilisation) -> Decimal:
 
 
 def calcul_amortissement(vb: Decimal, taux_fraction: Decimal, duree: Decimal) -> Decimal:
-    """Amortissement = VB × Taux × Durée (arrondi au centime)."""
+    """Dotation = VB × Taux × (jours/360)."""
     if vb <= 0 or taux_fraction <= 0 or duree <= 0:
         return Decimal("0.00")
     return (vb * taux_fraction * duree).quantize(Decimal("0.01"))
@@ -167,14 +172,20 @@ def _max_end_date(immo: Immobilisation, start: date) -> date:
     return add_months(start, 12 * 50)
 
 
-def build_amortissement_schedule(immo: Immobilisation) -> list[tuple[str, Decimal]]:
-    """Plan d'amortissement aux dates d'arrêté (prorata temporis automatique).
+def _dotation_ytd(
+    vb: Decimal,
+    taux: Decimal,
+    debut_exo: date,
+    date_arrete: date,
+) -> Decimal:
+    jours = duree_jours_360(debut_exo, date_arrete)
+    if jours <= 0:
+        return Decimal("0.00")
+    return calcul_amortissement(vb, taux, Decimal(jours) / JOURS_AN_COMMERCIAL)
 
-    Pour chaque arrêté :
-      Durée = jours (acquisition→arrêté pour le 1er, sinon trimestre plein) / 360
-      Amortissement période = VB × Taux × Durée
-    Cumul et VNC sont dérivés à la génération du plan (service).
-    """
+
+def build_amortissement_schedule(immo: Immobilisation) -> list[tuple[str, Decimal]]:
+    """Plan trimestriel : chaque ligne = incrément YTD (spécification banque)."""
     vb = immo.valeur_brute.quantize(Decimal("0.01"))
     residuelle = (immo.valeur_residuelle or Decimal("0")).quantize(Decimal("0.01"))
     base_max = (vb - residuelle).quantize(Decimal("0.01"))
@@ -198,27 +209,31 @@ def build_amortissement_schedule(immo: Immobilisation) -> list[tuple[str, Decima
     while cumul < base_max and cursor < max_end and safety < 500:
         safety += 1
         q_start = quarter_start(cursor)
-        q_end = quarter_end(cursor)  # date d'arrêté
-        next_q = add_months(q_start, 3)  # début trimestre suivant = borne exclusive
+        q_end = quarter_end(cursor)
+        next_q = add_months(q_start, 3)
 
-        # Début de la durée : max(acquisition, début de trimestre) — pas avant le fait générateur
-        debut = max(start, q_start)
-        if debut >= max_end:
-            break
-
-        if next_q <= max_end:
-            # Trimestre d'arrêté normal (Excel DAYS360 si acquisition en cours)
-            jours = jours_commerciaux_periode(debut, q_start, q_end)
-        else:
-            # Fin de vie avant l'arrêté : borne exclusive historique max_end
-            jours = days_360(debut, max_end)
-
-        if jours <= 0:
+        annee = q_end.year
+        debut_exo = point_depart_exercice(start, annee)
+        if debut_exo > q_end or debut_exo >= max_end:
             cursor = next_q
             continue
 
-        duree = Decimal(jours) / JOURS_AN_COMMERCIAL
-        montant = calcul_amortissement(vb, taux, duree)
+        arrete_eff = min(q_end, max_end - timedelta(days=1)) if max_end <= q_end else q_end
+        if arrete_eff < debut_exo:
+            cursor = next_q
+            continue
+
+        ytd_fin = _dotation_ytd(vb, taux, debut_exo, arrete_eff)
+        if debut_exo > q_start:
+            ytd_avant = Decimal("0.00")
+        else:
+            prev = q_start - timedelta(days=1)
+            ytd_avant = _dotation_ytd(vb, taux, debut_exo, prev) if prev >= debut_exo else Decimal("0.00")
+
+        montant = (ytd_fin - ytd_avant).quantize(Decimal("0.01"))
+        if montant < 0:
+            montant = Decimal("0.00")
+
         restant = (base_max - cumul).quantize(Decimal("0.01"))
         if montant > restant:
             montant = restant
@@ -226,9 +241,10 @@ def build_amortissement_schedule(immo: Immobilisation) -> list[tuple[str, Decima
             schedule.append((period_key(q_end), montant))
             cumul = (cumul + montant).quantize(Decimal("0.01"))
 
+        if max_end <= q_end:
+            break
         cursor = next_q
 
-    # Soldage final (arrondis / 1 j Excel sur 1re période) → cumul = base amortissable
     if schedule and cumul < base_max:
         rest = (base_max - cumul).quantize(Decimal("0.01"))
         if rest > 0:
@@ -239,7 +255,6 @@ def build_amortissement_schedule(immo: Immobilisation) -> list[tuple[str, Decima
 
 
 def parse_period_end(periode: str) -> date | None:
-    """Convertit une clé période (`2026-Q2`, `2026-03`, `2026`) en date de fin."""
     raw = periode.strip()
     if raw.isdigit() and len(raw) == 4:
         return date(int(raw), 12, 31)
@@ -259,12 +274,6 @@ def parse_period_end(periode: str) -> date | None:
 
 
 def period_bounds(periodicite: str, annee: int, index: int) -> tuple[date, date, str]:
-    """Bornes d'une campagne : ``(date_debut, date_fin_arrete, period_key)``.
-
-    - mensuel : index = mois 1..12 → clé ``YYYY-MM``
-    - trimestriel : index = trimestre 1..4 → clé ``YYYY-Qn``
-    - annuel : index = 1 → clé ``YYYY`` (arrêté 31/12)
-    """
     per = (periodicite or "").strip().lower()
     if per not in PERIODICITES:
         raise ValueError(f"Périodicité invalide : {periodicite}")
@@ -286,7 +295,6 @@ def period_bounds(periodicite: str, annee: int, index: int) -> tuple[date, date,
         fin = date(annee, end_month, monthrange(annee, end_month)[1])
         return debut, fin, f"{annee}-Q{index}"
 
-    # annuel
     if index != 1:
         raise ValueError("Pour un calcul annuel, periode_index doit être égal à 1.")
     return date(annee, 1, 1), date(annee, 12, 31), f"{annee}"
@@ -298,14 +306,10 @@ def calcul_dotation_periode(
     date_fin: date,
     cumul_valide: Decimal,
 ) -> tuple[Decimal, Decimal, Decimal] | None:
-    """Calcule la dotation d'une période à partir du cumul déjà validé.
+    """Dotation d'une période selon la spécification banque (YTD / 360 + plafond VNC).
 
-    Règles banque :
-      • VNC ≤ 0 → aucune dotation (``None``)
-      • sinon dotation = VB × taux × (jours_360 / 360), prorata acquisition
-      • plafond = VNC − valeur résiduelle (VNC jamais négative)
-
-    Retourne ``(montant, cumul_apres, vnc_apres)`` ou ``None`` si ignoré.
+    Retourne ``(montant, cumul_apres, vnc_apres)`` ou ``None`` si VNC nulle /
+    acquisition postérieure à l'arrêté.
     """
     vb = immo.valeur_brute.quantize(Decimal("0.01"))
     residuelle = (immo.valeur_residuelle or Decimal("0")).quantize(Decimal("0.01"))
@@ -313,11 +317,13 @@ def calcul_dotation_periode(
     if cumul < 0:
         cumul = Decimal("0.00")
 
-    vnc_avant = (vb - cumul).quantize(Decimal("0.01"))
-    if vnc_avant <= 0:
+    # a. VNC disponible
+    vnc_disponible = (vb - cumul).quantize(Decimal("0.01"))
+    # b. Totalement amortie
+    if vnc_disponible <= 0:
         return None
 
-    restant = (vnc_avant - residuelle).quantize(Decimal("0.01"))
+    restant = (vnc_disponible - residuelle).quantize(Decimal("0.01"))
     if restant <= 0:
         return None
 
@@ -325,22 +331,38 @@ def calcul_dotation_periode(
     if taux <= 0 or vb <= 0:
         return None
 
-    start = immo.date_acquisition
-    if start is None or start > date_fin:
+    acq = immo.date_acquisition
+    if acq is None or acq > date_fin:
         return None
 
-    debut = max(date_debut, start)
-    jours = jours_commerciaux_periode(debut, date_debut, date_fin)
-    if jours <= 0:
+    # c.i Point de départ selon typologie
+    annee = date_fin.year
+    debut_exo = point_depart_exercice(acq, annee)
+    if debut_exo > date_fin:
         return None
 
-    duree = Decimal(jours) / JOURS_AN_COMMERCIAL
-    montant = calcul_amortissement(vb, taux, duree)
-    if montant > restant:
+    # c.ii Dotation YTD à l'arrêté − YTD à l'arrêté précédent (= incrément période)
+    ytd_fin = _dotation_ytd(vb, taux, debut_exo, date_fin)
+    if date_debut <= debut_exo:
+        ytd_avant = Decimal("0.00")
+    else:
+        prev_arrete = date_debut - timedelta(days=1)
+        ytd_avant = _dotation_ytd(vb, taux, debut_exo, prev_arrete)
+
+    dotation_theorique = (ytd_fin - ytd_avant).quantize(Decimal("0.01"))
+    if dotation_theorique < 0:
+        dotation_theorique = Decimal("0.00")
+
+    # c.iii Plafonnement VNC
+    if restant - dotation_theorique >= 0:
+        montant = dotation_theorique
+    else:
         montant = restant
+
     if montant <= 0:
         return None
 
+    # d. Compteurs
     cumul_apres = (cumul + montant).quantize(Decimal("0.01"))
     vnc_apres = (vb - cumul_apres).quantize(Decimal("0.01"))
     if vnc_apres < 0:
@@ -349,11 +371,7 @@ def calcul_dotation_periode(
 
 
 def cumul_amortissement_a_date(immo: Immobilisation, date_limite: date) -> Decimal:
-    """Cumul des amortissements jusqu'à ``date_limite`` (prorata inclus).
-
-    Note banque cession : avant la sortie, calculer les amortissements jusqu'à
-    la date de cession pour déterminer la VNC.
-    """
+    """Cumul jusqu'à ``date_limite`` (prorata inclus)."""
     if immo.date_acquisition is None or date_limite < immo.date_acquisition:
         return Decimal("0.00")
 
@@ -365,35 +383,42 @@ def cumul_amortissement_a_date(immo: Immobilisation, date_limite: date) -> Decim
         return Decimal("0.00")
 
     start = immo.date_acquisition
-    max_end = min(_max_end_date(immo, start), date_limite)
+    max_end = min(_max_end_date(immo, start), date_limite + timedelta(days=1))
 
     cumul = Decimal("0")
     cursor = start
     safety = 0
-    while cumul < base_max and cursor <= max_end and safety < 500:
+    while cumul < base_max and cursor < max_end and safety < 500:
         safety += 1
         q_start = quarter_start(cursor)
         q_end = quarter_end(cursor)
         next_q = add_months(q_start, 3)
 
-        debut = max(start, q_start)
-        if debut > max_end:
-            break
-
-        arrete = min(q_end, max_end)
-        jours = jours_commerciaux_periode(debut, q_start, arrete)
-        if jours <= 0:
+        annee = q_end.year
+        debut_exo = point_depart_exercice(start, annee)
+        arrete = min(q_end, date_limite)
+        if debut_exo > arrete:
             cursor = next_q
             continue
 
-        duree = Decimal(jours) / JOURS_AN_COMMERCIAL
-        montant = calcul_amortissement(vb, taux, duree)
+        ytd_fin = _dotation_ytd(vb, taux, debut_exo, arrete)
+        if debut_exo > q_start:
+            ytd_avant = Decimal("0.00")
+        else:
+            prev = q_start - timedelta(days=1)
+            ytd_avant = (
+                _dotation_ytd(vb, taux, debut_exo, prev) if prev >= debut_exo else Decimal("0.00")
+            )
+
+        montant = (ytd_fin - ytd_avant).quantize(Decimal("0.01"))
+        if montant < 0:
+            montant = Decimal("0.00")
         restant = (base_max - cumul).quantize(Decimal("0.01"))
         if montant > restant:
             montant = restant
         cumul = (cumul + montant).quantize(Decimal("0.01"))
 
-        if max_end <= q_end:
+        if date_limite <= q_end:
             break
         cursor = next_q
 
@@ -401,15 +426,12 @@ def cumul_amortissement_a_date(immo: Immobilisation, date_limite: date) -> Decim
 
 
 def vnc_a_date(immo: Immobilisation, date_limite: date) -> tuple[Decimal, Decimal]:
-    """Retourne (cumul_amortissement, vnc) à ``date_limite``."""
     cumul = cumul_amortissement_a_date(immo, date_limite)
     vnc = (immo.valeur_brute - cumul).quantize(Decimal("0.01"))
     if vnc < 0:
         vnc = Decimal("0.00")
     return cumul, vnc
 
-
-# --- Compatibilité API historique -------------------------------------------------
 
 def months_in_period(periodicite: str) -> int:
     return {"mensuel": 1, "trimestriel": 3, "annuel": 12}.get(periodicite, 3)

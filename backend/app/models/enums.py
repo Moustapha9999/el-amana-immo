@@ -80,3 +80,20 @@ class TypeNotification(str, enum.Enum):
     ASSURANCE = "assurance"
     INVENTAIRE = "inventaire"
     SYSTEME = "systeme"
+
+
+class StatutExercice(str, enum.Enum):
+    """Cycle de vie d'un exercice comptable."""
+
+    OUVERT = "ouvert"
+    CLOTURE = "cloture"
+
+
+class StatutPeriodeAmortissement(str, enum.Enum):
+    """Cycle d'une période trimestrielle d'amortissement."""
+
+    EN_ATTENTE = "en_attente"
+    OUVERTE = "ouverte"
+    CALCULEE = "calculee"
+    VALIDEE = "validee"
+    CLOTUREE = "cloturee"

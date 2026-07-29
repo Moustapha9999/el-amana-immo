@@ -310,6 +310,7 @@ async def calculer_amortissements(
             mode=payload.mode,
             categorie_ids=payload.categorie_ids,
             date_ecriture=payload.date_ecriture,
+            user=user,
         )
         if result.mode == "validation" and result.nb_calcules > 0:
             await record_audit(
@@ -335,6 +336,7 @@ async def calculer_amortissements(
             date_arrete=result.date_arrete,
             date_ecriture=result.date_ecriture,
             mode=result.mode,
+            periode_statut=result.periode_statut,
             nb_calcules=result.nb_calcules,
             nb_ignores_vnc=result.nb_ignores_vnc,
             nb_deja_comptabilises=result.nb_deja_comptabilises,
@@ -498,6 +500,15 @@ async def export_ecriture_fiche(
 
 @router.post("/ecritures", response_model=EcritureRead, status_code=status.HTTP_201_CREATED)
 async def create_ecriture(payload: EcritureCreate, _: User = Depends(require_roles("administrateur", "comptable")), db: AsyncSession = Depends(get_db)):
+    from app.core.exceptions import AppError, raise_http_from_app
+    from app.services.exercice_guard import ensure_exercice_ouvert_pour_date
+
+    try:
+        await ensure_exercice_ouvert_pour_date(
+            db, payload.date_ecriture, contexte="Écriture comptable"
+        )
+    except AppError as exc:
+        raise_http_from_app(exc)
     row = EcritureComptable(**payload.model_dump(), generee_auto=False)
     db.add(row)
     await db.flush()

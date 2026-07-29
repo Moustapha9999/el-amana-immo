@@ -4,6 +4,7 @@ from app.api.v1.endpoints import (
     archives,
     auth,
     comptabilite,
+    exercices,
     immobilisations,
     notifications,
     operations,
@@ -23,3 +24,4 @@ api_router.include_router(operations.router)
 api_router.include_router(notifications.router)
 api_router.include_router(reporting.router)
 api_router.include_router(archives.router)
+api_router.include_router(exercices.router)

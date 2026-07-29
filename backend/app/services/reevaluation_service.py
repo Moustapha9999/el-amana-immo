@@ -10,6 +10,7 @@ from app.models import Amortissement, Ajustement, Immobilisation, Reevaluation
 from app.models.enums import StatutImmobilisation, TypeAjustement
 from app.schemas.operations import AjustementCreate, ReevaluationCreate
 from app.services.amortissement_service import AmortissementService
+from app.services.exercice_guard import ensure_exercice_ouvert_pour_date
 from app.services.immobilisation_vnc import compute_situation_comptable
 
 
@@ -37,6 +38,9 @@ class ReevaluationService:
         return immo
 
     async def create(self, payload: ReevaluationCreate) -> tuple[Reevaluation, bool, list]:
+        await ensure_exercice_ouvert_pour_date(
+            self.db, payload.date_reevaluation, contexte="Réévaluation"
+        )
         immo = await self._load_immo(payload.immobilisation_id)
         if immo.statut in _SORTIE_STATUTS:
             raise ValidationError("Réévaluation impossible sur une immobilisation sortie.")

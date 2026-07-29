@@ -47,6 +47,17 @@ interface CalculLigne {
   message: string | null;
 }
 
+interface PeriodeComptable {
+  id: string;
+  annee: number;
+  trimestre: number;
+  code: string;
+  date_arrete: string;
+  statut: 'en_attente' | 'ouverte' | 'calculee' | 'validee' | 'cloturee';
+  total_dotation: string | number;
+  nb_dotations: number;
+}
+
 interface CalculResponse {
   periodicite: string;
   annee: number;
@@ -56,6 +67,7 @@ interface CalculResponse {
   date_arrete: string;
   date_ecriture: string;
   mode: string;
+  periode_statut: string | null;
   nb_calcules: number;
   nb_ignores_vnc: number;
   nb_deja_comptabilises: number;
@@ -127,9 +139,11 @@ export class CalculAmortissementsComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
 
   readonly categories = signal<Categorie[]>([]);
+  readonly periodes = signal<PeriodeComptable[]>([]);
   readonly loading = signal(false);
   readonly result = signal<CalculResponse | null>(null);
   readonly periodicite = signal<Periodicite>('trimestriel');
+  readonly periodeIndex = signal(Math.ceil((new Date().getMonth() + 1) / 3));
   readonly page = signal(1);
   readonly pageSize = 50;
   readonly listFilter = signal({ search: '', statut: '' });
@@ -153,6 +167,22 @@ export class CalculAmortissementsComponent implements OnInit {
   readonly filterForm = this.fb.nonNullable.group({
     search: [''],
     statut: [''],
+  });
+
+  readonly canValiderPeriode = computed(() => {
+    if (this.periodicite() !== 'trimestriel') {
+      return false;
+    }
+    const index = this.periodeIndex();
+    const current = this.periodes().find((p) => p.trimestre === index);
+    if (!current || current.statut === 'validee' || current.statut === 'cloturee') {
+      return false;
+    }
+    if (index === 1) {
+      return true;
+    }
+    const previous = this.periodes().find((p) => p.trimestre === index - 1);
+    return previous?.statut === 'validee' || previous?.statut === 'cloturee';
   });
 
   readonly periodOptions = computed(() => {
@@ -229,6 +259,7 @@ export class CalculAmortissementsComponent implements OnInit {
   });
 
   ngOnInit(): void {
+    this.loadPeriodes();
     this.api.get<Paginated<Categorie>>('/categories', { page: 1, size: 100 }).subscribe({
       next: (res) => {
         const amort = (res.items ?? []).filter((c) => c.amortissable);
@@ -252,8 +283,37 @@ export class CalculAmortissementsComponent implements OnInit {
       this.result.set(null);
     });
 
-    this.form.controls.annee.valueChanges.subscribe(() => this.syncDateEcriture());
-    this.form.controls.periode_index.valueChanges.subscribe(() => this.syncDateEcriture());
+    this.form.controls.annee.valueChanges.subscribe(() => {
+      this.syncDateEcriture();
+      this.loadPeriodes();
+    });
+    this.form.controls.periode_index.valueChanges.subscribe((index) => {
+      this.periodeIndex.set(Number(index));
+      this.syncDateEcriture();
+    });
+  }
+
+  private loadPeriodes(): void {
+    const annee = Number(this.form.controls.annee.value);
+    if (!annee) {
+      this.periodes.set([]);
+      return;
+    }
+    this.api.get<PeriodeComptable[]>(`/exercices/${annee}/periodes`).subscribe({
+      next: (rows) => this.periodes.set(rows),
+      error: () => this.periodes.set([]),
+    });
+  }
+
+  periodeStatutLabel(statut: PeriodeComptable['statut']): string {
+    const labels: Record<PeriodeComptable['statut'], string> = {
+      en_attente: 'En attente',
+      ouverte: 'Ouverte',
+      calculee: 'Calculée',
+      validee: 'Validée',
+      cloturee: 'Clôturée',
+    };
+    return labels[statut];
   }
 
   private syncDateEcriture(): void {
@@ -290,17 +350,25 @@ export class CalculAmortissementsComponent implements OnInit {
 
   valider(): void {
     const r = this.result();
-    if (!r || r.nb_calcules === 0) {
+    if (!r) {
+      void this.dialogs.error('Commencez par lancer une simulation.').subscribe();
+      return;
+    }
+    if (!this.canValiderPeriode()) {
       void this.dialogs
-        .error('Aucune dotation à comptabiliser. Lancez d’abord une simulation.')
+        .error('Cette période ne peut pas encore être comptabilisée. Validez la période précédente.')
         .subscribe();
       return;
     }
     const dateEcr = this.form.controls.date_ecriture.value;
+    const action =
+      r.nb_calcules > 0
+        ? `Comptabiliser ${r.nb_calcules} dotation(s)`
+        : 'Valider la période sans dotation';
     this.dialogs
       .confirmAction(
         'comptabilisation',
-        `Comptabiliser ${r.nb_calcules} dotation(s) pour ${formatPeriodeAmortissement(r.periode)} ` +
+        `${action} pour ${formatPeriodeAmortissement(r.periode)} ` +
           `au ${dateEcr} (total ${r.total_dotations}) ? Les écritures 681 → 148 seront générées.`,
       )
       .subscribe((ok) => {
@@ -339,10 +407,14 @@ export class CalculAmortissementsComponent implements OnInit {
         this.page.set(1);
         this.loading.set(false);
         if (mode === 'validation') {
+          this.loadPeriodes();
+          const statutMessage = res.periode_statut === 'validee'
+            ? ' La période est validée ; la suivante est maintenant ouverte.'
+            : ' La période reste calculée tant que toutes les catégories ne sont pas comptabilisées.';
           void this.dialogs
             .successAction(
               'comptabilisation',
-              `${res.nb_calcules} dotation(s) comptabilisée(s) — total ${res.total_dotations}.`,
+              `${res.nb_calcules} dotation(s) comptabilisée(s) — total ${res.total_dotations}.${statutMessage}`,
             )
             .subscribe();
         }

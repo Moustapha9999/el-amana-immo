@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import AppError, ValidationError
-from app.models import Amortissement, CategorieImmobilisation, Immobilisation
+from app.models import Amortissement, CategorieImmobilisation, Immobilisation, User
 from app.models.enums import StatutImmobilisation
 from app.services.amortissement_engine import (
     calcul_dotation_periode,
@@ -21,6 +21,9 @@ from app.services.amortissement_engine import (
     period_bounds,
 )
 from app.services.amortissement_service import AmortissementService
+from app.services.exercice_guard import ensure_exercice_ouvert
+from app.services.exercice_ouverture_service import cumul_ouverture_pour
+from app.services.periode_amortissement_service import PeriodeAmortissementService
 
 
 @dataclass
@@ -52,6 +55,7 @@ class CalculAmortResult:
     date_arrete: date
     date_ecriture: date
     mode: str
+    periode_statut: str | None = None
     nb_calcules: int = 0
     nb_ignores_vnc: int = 0
     nb_deja_comptabilises: int = 0
@@ -76,15 +80,31 @@ class AmortissementBatchService:
         mode: str,
         categorie_ids: list[UUID] | None = None,
         date_ecriture: date | None = None,
+        user: User | None = None,
     ) -> CalculAmortResult:
         mode_norm = (mode or "").strip().lower()
         if mode_norm not in {"simulation", "validation"}:
             raise ValidationError("Le mode doit être « simulation » ou « validation ».")
 
+        await ensure_exercice_ouvert(
+            self.db, annee, contexte="Calcul des amortissements"
+        )
+
         try:
             date_debut, date_arrete, periode = period_bounds(periodicite, annee, periode_index)
         except ValueError as exc:
             raise ValidationError(str(exc)) from exc
+
+        periode_comptable = None
+        if mode_norm == "validation":
+            if periodicite.strip().lower() != "trimestriel":
+                raise ValidationError(
+                    "La comptabilisation est organisée par arrêtés trimestriels T1 à T4. "
+                    "Les périodicités mensuelle et annuelle restent disponibles en simulation."
+                )
+            periode_comptable = await PeriodeAmortissementService(
+                self.db
+            ).assert_validation_autorisee(annee, periode_index)
 
         date_ecr = date_ecriture or date_arrete
         result = CalculAmortResult(
@@ -96,15 +116,22 @@ class AmortissementBatchService:
             date_arrete=date_arrete,
             date_ecriture=date_ecr,
             mode=mode_norm,
+            periode_statut=(
+                periode_comptable.statut.value if periode_comptable is not None else None
+            ),
         )
 
         immobiles = await self._load_immobilisations(categorie_ids)
         amorts_by_immo = await self._prefetch_amortissements([i.id for i in immobiles])
         amort_svc = AmortissementService(self.db)
+        ouverture_by_immo = await self._prefetch_ouvertures([i.id for i in immobiles], annee)
 
         for immo in immobiles:
             rows = amorts_by_immo.get(immo.id, [])
             cumul = self._cumul_avant_periode(rows, date_debut)
+            ouv = ouverture_by_immo.get(immo.id)
+            if ouv is not None and ouv > cumul:
+                cumul = ouv
             vb = immo.valeur_brute.quantize(Decimal("0.01"))
             vnc_avant = (vb - cumul).quantize(Decimal("0.01"))
             if vnc_avant < 0:
@@ -206,6 +233,23 @@ class AmortissementBatchService:
             result.nb_calcules += 1
             result.total_dotations = (result.total_dotations + montant).quantize(Decimal("0.01"))
 
+        if mode_norm == "validation":
+            if result.nb_erreurs > 0:
+                raise ValidationError(
+                    f"La période {periode} n'a pas été validée : "
+                    f"{result.nb_erreurs} erreur(s) doivent être corrigées."
+                )
+            assert periode_comptable is not None
+            complete = categorie_ids is None
+            await PeriodeAmortissementService(self.db).enregistrer_validation(
+                periode=periode_comptable,
+                complete=complete,
+                total_dotation=result.total_dotations,
+                nb_dotations=result.nb_calcules,
+                user=user,
+            )
+            result.periode_statut = periode_comptable.statut.value
+
         return result
 
     def _ligne(
@@ -276,6 +320,17 @@ class AmortissementBatchService:
         for row in result.scalars().all():
             by_immo[row.immobilisation_id].append(row)
         return by_immo
+
+    async def _prefetch_ouvertures(
+        self, immobilisation_ids: list[UUID], annee: int
+    ) -> dict[UUID, Decimal]:
+        """Soldes 148 d'ouverture (reprise N-1) pour l'exercice ``annee``."""
+        out: dict[UUID, Decimal] = {}
+        for iid in immobilisation_ids:
+            cumul = await cumul_ouverture_pour(self.db, iid, annee)
+            if cumul is not None:
+                out[iid] = cumul
+        return out
 
     @staticmethod
     def _cumul_avant_periode(rows: list[Amortissement], date_debut: date) -> Decimal:

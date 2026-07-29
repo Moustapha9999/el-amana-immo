@@ -165,6 +165,7 @@ class AmortissementCalculerResponse(BaseModel):
     date_arrete: date
     date_ecriture: date
     mode: str
+    periode_statut: str | None = None
     nb_calcules: int
     nb_ignores_vnc: int
     nb_deja_comptabilises: int

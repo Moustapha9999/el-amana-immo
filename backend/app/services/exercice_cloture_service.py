@@ -1,16 +1,17 @@
-"""Clôture d'exercice — snapshot Archives N + ouverture N+1 (soldes 142/148, sans 68)."""
+"""Clôture définitive d'exercice — snapshot Archives N (sans ouverture N+1)."""
 
 from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
+from hashlib import sha256
 from io import BytesIO
 from uuid import UUID
 
 from openpyxl import Workbook
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,15 +19,16 @@ from app.core.exceptions import ValidationError
 from app.data.el_amana_referentiel import NATURE_IMMO_CODES_OFFICIELS, TYPES_IMMOBILISATION_EL_AMANA
 from app.models import (
     Agence,
-    Amortissement,
     ArchiveDossier,
     ArchiveFichier,
     ArchiveLigne,
+    ExerciceComptable,
     Immobilisation,
     User,
 )
+from app.models.enums import StatutExercice
 from app.services.archive_service import KIND_CLOTURE, nature_label
-from app.services.bank_immo_import import PERIODE_ARRETE, PERIODE_ARRETE_ANNUELLE
+from app.services.periode_amortissement_service import PeriodeAmortissementService
 from app.services.recap_amortissement import (
     _dotations_par_immo,
     _historique_banque_par_immo,
@@ -37,7 +39,6 @@ from app.services.recap_amortissement import (
 )
 from app.storage.local_storage import LocalStorageService
 
-# Réexport pour les tests / API qui importaient depuis ce module
 __all__ = ["KIND_CLOTURE", "ExerciceClotureService", "build_cloture_xlsx", "periode_ouverture"]
 
 NATURE_BY_CODE: dict[str, dict] = {str(t["code"]): t for t in TYPES_IMMOBILISATION_EL_AMANA}
@@ -51,10 +52,15 @@ class ClotureResult:
     ouvertures_seed: int
     message: str
     dossier_id: UUID
+    total_valeur_brute: Decimal = Decimal("0")
+    total_amortissement: Decimal = Decimal("0")
+    total_vnc: Decimal = Decimal("0")
+    total_dotation_68: Decimal = Decimal("0")
+    nb_immobilisations: int = 0
 
 
 def periode_ouverture(annee_cloture: int) -> str:
-    """Période de report 148 fin N → ouverture N+1 (ex. 2026-12)."""
+    """Période legacy de report 148 (compatibilité tests / anciens imports)."""
     return f"{annee_cloture}-12"
 
 
@@ -71,12 +77,7 @@ def _is_report_immo(immo: Immobilisation) -> bool:
 
 
 def _bank_snapshot_amounts(immo: Immobilisation) -> dict[str, Decimal] | None:
-    """Montants Excel (Fin Exr.Précé / Dotation / Fin) stockés à l'import banque.
-
-    Snapshot archives : colonnes Excel telles quelles.
-    Ouverture N+1 (148) : cumul = ``amt_fin`` (fin d'exercice du tableau importé),
-    car un import « stock historique » (ex. AAI clôturé) a amt_fin = solde 01/01/N+1.
-    """
+    """Montants Excel (Fin Exr.Précé / Dotation / Fin) stockés à l'import banque."""
     if not _is_import_banque(immo):
         return None
     meta = getattr(immo, "metadata_json", None) or {}
@@ -97,8 +98,6 @@ def _bank_snapshot_amounts(immo: Immobilisation) -> dict[str, Decimal] | None:
         return None
     vb = _q(Decimal(immo.valeur_brute or 0))
     seed_mode = str(bank.get("seed_mode") or "")
-    # stock_ouverture / défaut : amt_fin = cumul fin N → ouverture N+1
-    # arrete_courant : amt_n1 = déjà le cumul d'ouverture N+1
     if seed_mode == "arrete_courant":
         cumul_ouv = amt_n1
     else:
@@ -184,14 +183,27 @@ class ExerciceClotureService:
         if annee < 1990 or annee > 2100:
             raise ValidationError("Année invalide")
 
+        exo_res = await self.db.execute(
+            select(ExerciceComptable).where(ExerciceComptable.annee == annee)
+        )
+        exo = exo_res.scalar_one_or_none()
+        if exo is not None and exo.statut == StatutExercice.CLOTURE:
+            raise ValidationError(
+                f"L'exercice {annee} est déjà clôturé définitivement. "
+                "Aucune régénération n'est autorisée."
+            )
+
+        if exo is not None and exo.statut == StatutExercice.OUVERT:
+            await PeriodeAmortissementService(self.db).assert_cloture_autorisee(annee)
+
         dossier = await self._get_or_create_dossier(annee=annee, user=user)
         await self._ensure_can_generate(dossier, force=force)
 
-        # Snapshot montants exercice N
         lines_by_nature, held_for_opening = await self._collect_snapshot_lines(annee)
 
         natures_creees = 0
         total_lignes = 0
+        digest = sha256()
         for nature_code in NATURE_IMMO_CODES_OFFICIELS:
             rows = lines_by_nature.get(nature_code) or []
             if not rows:
@@ -205,6 +217,10 @@ class ExerciceClotureService:
             )
             natures_creees += 1
             total_lignes += len(rows)
+            for row in rows:
+                digest.update(
+                    f"{nature_code}|{row.get('code_inventaire')}|{row.get('amt_fin')}|{row.get('vnc')}".encode()
+                )
 
         if total_lignes == 0:
             raise ValidationError(
@@ -212,19 +228,49 @@ class ExerciceClotureService:
                 "(vérifiez le parc et les amortissements comptabilisés)."
             )
 
-        ouvertures = await self._seed_ouvertures_n1(annee, held_for_opening)
+        total_vb = _zero()
+        total_148 = _zero()
+        total_vnc = _zero()
+        total_68 = _zero()
+        for _immo, mvts in held_for_opening:
+            total_vb = _q(total_vb + Decimal(mvts.get("valeur_brute") or 0))
+            total_148 = _q(total_148 + Decimal(mvts.get("amorts_cumules_n") or 0))
+            total_vnc = _q(total_vnc + Decimal(mvts.get("vnc") or 0))
+            total_68 = _q(total_68 + Decimal(mvts.get("dotations_annee") or 0))
+
+        if exo is None:
+            exo = ExerciceComptable(annee=annee)
+            self.db.add(exo)
+
+        exo.statut = StatutExercice.CLOTURE
+        exo.archive_dossier_id = dossier.id
+        exo.cloture_at = datetime.now(timezone.utc)
+        exo.cloture_by_id = user.id if user else None
+        exo.total_valeur_brute = total_vb
+        exo.total_amortissement = total_148
+        exo.total_vnc = total_vnc
+        exo.total_dotation_68 = total_68
+        exo.nb_immobilisations = len(held_for_opening)
+        exo.snapshot_hash = digest.hexdigest()[:64]
+        await PeriodeAmortissementService(self.db).cloturer_periodes(annee)
+        exo.message = (
+            f"Clôture définitive 31/12/{annee} : {natures_creees} nature(s), "
+            f"{total_lignes} ligne(s). Utilisez « Ouvrir un exercice » pour {annee + 1}."
+        )
 
         await self.db.flush()
         return ClotureResult(
             annee=annee,
             natures_creees=natures_creees,
             lignes=total_lignes,
-            ouvertures_seed=ouvertures,
+            ouvertures_seed=0,
             dossier_id=dossier.id,
-            message=(
-                f"Clôture 31/12/{annee} générée : {natures_creees} nature(s), "
-                f"{total_lignes} ligne(s), {ouvertures} ouverture(s) 148 pour {annee + 1}."
-            ),
+            message=exo.message or "",
+            total_valeur_brute=total_vb,
+            total_amortissement=total_148,
+            total_vnc=total_vnc,
+            total_dotation_68=total_68,
+            nb_immobilisations=len(held_for_opening),
         )
 
     async def _get_or_create_dossier(self, *, annee: int, user: User | None) -> ArchiveDossier:
@@ -235,6 +281,8 @@ class ExerciceClotureService:
         )
         dossier = result.scalar_one_or_none()
         if dossier is not None:
+            if not dossier.libelle:
+                dossier.libelle = f"Clôture 31/12/{annee}"
             return dossier
         dossier = ArchiveDossier(
             annee=annee,
@@ -244,7 +292,6 @@ class ExerciceClotureService:
         self.db.add(dossier)
         await self.db.flush()
         await self.db.refresh(dossier)
-        # recharge avec fichiers
         result = await self.db.execute(
             select(ArchiveDossier)
             .where(ArchiveDossier.id == dossier.id)
@@ -256,23 +303,16 @@ class ExerciceClotureService:
         existing = [f for f in (dossier.fichiers or []) if f.kind == KIND_CLOTURE]
         if not existing:
             return
-        if not force:
-            raise ValidationError(
-                f"Une clôture système existe déjà pour {dossier.annee}. "
-                "Relancez avec force=true pour la régénérer."
-            )
-        for f in existing:
-            path = self.storage.absolute_path(f.stored_path)
-            await self.db.delete(f)
-            if path.exists():
-                path.unlink(missing_ok=True)
-        await self.db.flush()
-        dossier.fichiers = [f for f in (dossier.fichiers or []) if f.kind != KIND_CLOTURE]
+        # Clôture définitive : pas de régénération même avec force.
+        raise ValidationError(
+            f"Une clôture système existe déjà pour {dossier.annee}. "
+            "Elle est définitive et ne peut pas être régénérée."
+        )
 
     async def _collect_snapshot_lines(
         self, annee: int
     ) -> tuple[dict[str, list[dict]], list[tuple[Immobilisation, dict[str, Decimal]]]]:
-        """Retourne lignes archive par nature + immos détenues fin N (pour seed 148)."""
+        """Retourne lignes archive par nature + immos détenues fin N (pour ouverture)."""
         dotations_db = await _dotations_par_immo(self.db, annee)
         hist_banque = await _historique_banque_par_immo(self.db, annee)
 
@@ -298,7 +338,6 @@ class ExerciceClotureService:
         for immo in immos:
             bank_mvts = _bank_snapshot_amounts(immo)
             if bank_mvts is not None:
-                # Hors périmètre si acquis après l'exercice clôturé
                 if immo.date_acquisition is None or immo.date_acquisition > date_n:
                     continue
                 if immo.date_fin is not None and immo.date_fin < date(annee, 1, 1):
@@ -319,7 +358,6 @@ class ExerciceClotureService:
 
             nature_code = (immo.categorie.code if immo.categorie else None) or ""
             if nature_code not in NATURE_IMMO_CODES_OFFICIELS:
-                # fallback via compte → nature officielle
                 nature_code = self._nature_from_compte(immo.compte_immobilisation) or nature_code
             if nature_code not in NATURE_IMMO_CODES_OFFICIELS:
                 continue
@@ -338,6 +376,7 @@ class ExerciceClotureService:
                 "agence_label": agence_map.get(immo.agence_id) if immo.agence_id else None,
                 "is_report": _is_report_immo(immo),
                 "code_inventaire": immo.code_inventaire,
+                "immobilisation_id": str(immo.id),
             }
             by_nature[nature_code].append(row)
 
@@ -408,75 +447,11 @@ class ExerciceClotureService:
                     source_kind=KIND_CLOTURE,
                     raw_json={
                         "code_inventaire": row.get("code_inventaire"),
+                        "immobilisation_id": row.get("immobilisation_id"),
                         "cloture_annee": annee,
+                        "definitive": True,
                     },
                 )
             )
         await self.db.flush()
         return fichier
-
-    async def _seed_ouvertures_n1(
-        self,
-        annee: int,
-        held: list[tuple[Immobilisation, dict[str, Decimal]]],
-    ) -> int:
-        """Report solde 148 fin N → période {N}-12 (montant 0 pour ne pas gonfler le 68).
-
-        Pour un import « stock historique », on retire aussi les fausses périodes
-        d'arrêté N+1 (ex. 2026-06) qui reprenaient la dotation de l'exercice
-        clôturé — afin que le calcul T1/T2 de N+1 reconstitue le solde 30/06.
-        """
-        periode = periode_ouverture(annee)
-        seeded = 0
-        for immo, mvts in held:
-            if "cumul_ouverture_n1" in mvts:
-                cumul = _q(mvts["cumul_ouverture_n1"])
-                vnc = _q(mvts["vnc_ouverture_n1"])
-            else:
-                cumul = _q(mvts["amorts_cumules_n"])
-                vnc = _q(mvts["vnc"])
-            result = await self.db.execute(
-                select(Amortissement).where(
-                    Amortissement.immobilisation_id == immo.id,
-                    Amortissement.periode == periode,
-                )
-            )
-            existing = result.scalar_one_or_none()
-            if existing is not None:
-                existing.montant = _zero()
-                existing.cumul = cumul
-                existing.vnc = vnc
-                existing.valide = True
-                existing.annule = False
-                existing.simule = False
-            else:
-                self.db.add(
-                    Amortissement(
-                        immobilisation_id=immo.id,
-                        periode=periode,
-                        montant=_zero(),
-                        cumul=cumul,
-                        vnc=vnc,
-                        valide=True,
-                        annule=False,
-                        simule=False,
-                    )
-                )
-
-            seed_mode = str(mvts.get("seed_mode") or "")
-            # Ancien import sans seed_mode + acquis avant N+1 → traité comme stock
-            acq = getattr(immo, "date_acquisition", None)
-            is_stock = seed_mode in ("", "stock_ouverture") and (
-                acq is None or getattr(acq, "year", annee + 1) <= annee
-            )
-            if is_stock and _is_import_banque(immo):
-                await self.db.execute(
-                    delete(Amortissement).where(
-                        Amortissement.immobilisation_id == immo.id,
-                        Amortissement.periode.in_(
-                            [PERIODE_ARRETE, PERIODE_ARRETE_ANNUELLE]
-                        ),
-                    )
-                )
-            seeded += 1
-        return seeded

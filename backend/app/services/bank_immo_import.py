@@ -798,11 +798,20 @@ class BankImmoImportService:
         return len(ids)
 
     async def import_from_bytes(self, content: bytes, filename: str = "import.xls") -> BankImportResult:
+        from app.services.exercice_guard import annee_est_cloturee
+
         parsed = parse_bank_workbook(content, filename)
         if not parsed:
             raise ValidationError(
                 "Aucune feuille de détail reconnue (aai, logiciel, matinfo, …)."
             )
+
+        years = {row.date_acquisition.year for row in parsed}
+        for year in sorted(years):
+            if await annee_est_cloturee(self.db, year):
+                raise ValidationError(
+                    f"Import banque impossible : l'exercice {year} est clôturé définitivement."
+                )
 
         categories = {
             c.code: c

@@ -1,6 +1,7 @@
 ﻿import { MontantPipe } from '../shared/montant.pipe';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
@@ -52,7 +53,15 @@ function matchesText(haystack: unknown, needle: string): boolean {
 
 @Component({
   selector: 'app-recap-amortissement',
-  imports: [ReactiveFormsModule, MontantPipe, MatButtonModule, MatIconModule, MatTableModule, PaginationComponent],
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    MontantPipe,
+    MatButtonModule,
+    MatIconModule,
+    MatTableModule,
+    PaginationComponent,
+  ],
   templateUrl: './recap-amortissement.component.html',
   styleUrl: './recap-amortissement.component.css',
 })

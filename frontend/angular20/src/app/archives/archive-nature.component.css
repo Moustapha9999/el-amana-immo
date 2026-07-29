@@ -367,7 +367,7 @@
 }
 
 .arn__foot-label {
-  color: #1a5278;
+  color: #1e3a5f;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   font-size: 0.75rem;
@@ -380,7 +380,8 @@
 }
 
 .arn__foot {
-  color: #0f172a;
+  color: #9b1c1c;
+  font-weight: 700;
 }
 
 .arn__row--header {

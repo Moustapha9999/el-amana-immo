@@ -10,6 +10,7 @@ from app.core.exceptions import NotFoundError, ValidationError
 from app.models import Amortissement, EcritureComptable, Immobilisation, ParametrageEcriture
 from app.models.enums import StatutImmobilisation
 from app.services.amortissement_engine import build_amortissement_schedule
+from app.services.exercice_guard import ensure_exercice_ouvert_pour_date
 
 
 class AmortissementService:
@@ -66,11 +67,22 @@ class AmortissementService:
         if not immo.compte_dotation or not immo.compte_amortissement:
             raise ValidationError("Comptes de dotation et d'amortissement requis.")
 
+        existing_result = await self.db.execute(
+            select(Amortissement).where(
+                Amortissement.immobilisation_id == immobilisation_id,
+            )
+        )
+        existing_rows = list(existing_result.scalars().all())
+        # Une période comptabilisée est une pièce d'historique : elle ne doit
+        # jamais être supprimée ni recréée. La contrainte unique porte sur
+        # (immobilisation_id, periode), donc ces périodes seront ignorées lors
+        # de la génération des nouvelles lignes.
+        validated_by_period = {row.periode: row for row in existing_rows if row.valide}
+
         await self.db.execute(
             delete(Amortissement).where(
                 Amortissement.immobilisation_id == immobilisation_id,
                 Amortissement.valide.is_(False),
-                Amortissement.simule.is_(False),
             )
         )
 
@@ -81,6 +93,14 @@ class AmortissementService:
         cumul = Decimal("0")
         rows: list[Amortissement] = []
         for periode, montant in schedule:
+            validated = validated_by_period.get(periode)
+            if validated is not None:
+                # Repartir du cumul réellement comptabilisé avant de recalculer
+                # les périodes futures.
+                cumul = Decimal(validated.cumul).quantize(Decimal("0.01"))
+                rows.append(validated)
+                continue
+
             cumul = (cumul + montant).quantize(Decimal("0.01"))
             vnc = (immo.valeur_brute - cumul).quantize(Decimal("0.01"))
             row = Amortissement(
@@ -94,6 +114,12 @@ class AmortissementService:
             )
             self.db.add(row)
             rows.append(row)
+
+        # Conserver aussi une éventuelle période comptabilisée qui n'appartient
+        # plus au plan théorique courant (changement de paramétrage ultérieur).
+        generated_periods = {row.periode for row in rows}
+        rows.extend(row for periode, row in validated_by_period.items() if periode not in generated_periods)
+        rows.sort(key=lambda row: row.periode)
         await self.db.flush()
         return rows
 
@@ -103,6 +129,9 @@ class AmortissementService:
         periode: str,
         date_ecriture: date,
     ) -> tuple[Amortissement, EcritureComptable]:
+        await ensure_exercice_ouvert_pour_date(
+            self.db, date_ecriture, contexte="Comptabilisation d'amortissement"
+        )
         immo = await self._load_immobilisation(immobilisation_id)
         if immo.statut != StatutImmobilisation.EN_SERVICE:
             raise ValidationError("Comptabilisation réservée aux immobilisations en service.")

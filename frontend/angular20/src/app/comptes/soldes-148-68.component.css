@@ -198,25 +198,34 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  font-weight: 600;
 }
 
 .s68__foot-label {
   font-weight: 700;
-  color: #0f172a;
+  color: #1a4571;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.8125rem;
 }
 
 .s68__foot {
   font-weight: 700;
-  background: #f1f5f9;
+  color: #9b1c1c;
+  background: #eef6fc;
 }
 
 .s68__foot--dotation {
   color: #9b1c1c;
-  background: #fef2f2;
+  background: #eef6fc;
 }
 
-.s68__table .mat-mdc-footer-row {
-  background: #f8fafc;
+.s68__table .mat-mdc-footer-row,
+.s68__table .mat-mdc-footer-cell {
+  background: #eef6fc;
+  border-top: 1px solid #cbd5e1;
+  color: #1a4571;
+  font-weight: 700;
 }
 
 .s68__note {

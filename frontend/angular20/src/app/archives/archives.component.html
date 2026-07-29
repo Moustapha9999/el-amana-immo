@@ -3,8 +3,8 @@
     <div>
       <h1 class="arc__title">Archives</h1>
       <p class="arc__lead">
-        Dossiers par année → natures (AAI, Logiciel…) → fichiers Excel / PDF scannés — consultation
-        seule, sans impact sur le parc actif
+        Clôture définitive des exercices, ouverture automatique N+1, et consultation des dossiers
+        archivés (natures, Excel / PDF).
       </p>
     </div>
     <div class="arc__hero-actions">
@@ -15,78 +15,98 @@
     </div>
   </header>
 
-  <section class="arc__section">
-    <h2 class="arc__section-title">Clôturer un exercice</h2>
-    <p class="arc__hint">
-      Génère le dossier Archives au 31/12/N (natures + opérations du parc), puis reporte les soldes
-      142/148 pour démarrer N+1 — sans reporter les charges 68.
-    </p>
-    <form [formGroup]="clotureForm" (ngSubmit)="cloturer()" class="arc__create">
-      <div class="arc-field">
-        <label class="arc-field__label" for="arc-cloture-annee">Année à clôturer</label>
-        <input
-          id="arc-cloture-annee"
-          class="arc-field__control"
-          type="number"
-          formControlName="annee"
-          min="1990"
-          max="2100"
-          step="1"
-        />
+  @if (situation(); as s) {
+    <div class="arc__kpis">
+      <div class="arc__kpi">
+        <span class="arc__kpi-label">Dernier exercice clôturé</span>
+        <span class="arc__kpi-value">{{ s.dernier_cloture ?? '—' }}</span>
       </div>
-      <div class="arc-field arc-field--check">
-        <label class="arc-field__label" for="arc-cloture-force">Régénérer si déjà clôturé</label>
-        <input
-          id="arc-cloture-force"
-          class="arc-field__check"
-          type="checkbox"
-          formControlName="force"
-        />
+      <div class="arc__kpi">
+        <span class="arc__kpi-label">Exercice ouvert</span>
+        <span class="arc__kpi-value">{{ s.exercice_ouvert ?? '—' }}</span>
       </div>
-      <button mat-flat-button color="primary" type="submit" [disabled]="cloturing()">
-        <mat-icon aria-hidden="true">folder_special</mat-icon>
-        {{ cloturing() ? 'Génération…' : 'Générer le dossier 31/12/' + clotureForm.controls.annee.value }}
-      </button>
-    </form>
-  </section>
+      <div class="arc__kpi">
+        <span class="arc__kpi-label">Ouverture proposée</span>
+        <span class="arc__kpi-value">{{ s.annee_ouverture_proposee ?? '—' }}</span>
+      </div>
+    </div>
+  }
 
-  <section class="arc__section">
-    <h2 class="arc__section-title">Nouveau dossier année</h2>
-    <form [formGroup]="createForm" (ngSubmit)="create()" class="arc__create">
-      <div class="arc-field">
-        <label class="arc-field__label" for="arc-annee">Année</label>
-        <input
-          id="arc-annee"
-          class="arc-field__control"
-          type="number"
-          formControlName="annee"
-          min="1990"
-          max="2100"
-          step="1"
-        />
-      </div>
-      <div class="arc-field arc-field--grow">
-        <label class="arc-field__label" for="arc-libelle">Libellé (optionnel)</label>
-        <input
-          id="arc-libelle"
-          class="arc-field__control"
-          type="text"
-          formControlName="libelle"
-          placeholder="Ex. Dossier 2007"
-        />
-      </div>
-      <button mat-flat-button color="primary" type="submit" [disabled]="creating()">
-        Créer
-      </button>
-    </form>
-  </section>
+  @if (canManageExercices()) {
+    <section class="arc__section">
+      <h2 class="arc__section-title">Clôturer un exercice</h2>
+      <p class="arc__hint">
+        Clôture <strong>définitive</strong> de l’exercice N : création du dossier Archives, snapshot
+        des immobilisations / amortissements. Aucune régénération ni réouverture n’est autorisée.
+        L’ouverture de N+1 se fait ensuite via le bouton dédié.
+      </p>
+      <form [formGroup]="clotureForm" (ngSubmit)="cloturer()" class="arc__create">
+        <div class="arc-field">
+          <label class="arc-field__label" for="arc-cloture-annee">Année à clôturer</label>
+          <input
+            id="arc-cloture-annee"
+            class="arc-field__control"
+            type="number"
+            formControlName="annee"
+            min="1990"
+            max="2100"
+            step="1"
+          />
+        </div>
+        <button mat-flat-button color="primary" type="submit" [disabled]="cloturing()">
+          <mat-icon aria-hidden="true">lock</mat-icon>
+          {{
+            cloturing()
+              ? 'Clôture…'
+              : 'Clôturer définitivement ' + clotureForm.controls.annee.value
+          }}
+        </button>
+      </form>
+    </section>
+
+    <section class="arc__section arc__section--open">
+      <h2 class="arc__section-title">Ouvrir un exercice</h2>
+      @if (dernierCloture(); as n) {
+        <p class="arc__hint arc__hint--opening">
+          Dernier exercice clôturé : <strong>{{ n }}</strong> — le système propose automatiquement
+          l’ouverture de <strong>{{ anneeOuvertureProposee() }}</strong> avec reprise des soldes 142
+          / 148 et VNC, compte 68 remis à 0. Aucune saisie d’année requise.
+        </p>
+        <button
+          mat-flat-button
+          color="primary"
+          type="button"
+          (click)="ouvrirSuivant()"
+          [disabled]="opening() || !peutOuvrir()"
+        >
+          <mat-icon aria-hidden="true">lock_open</mat-icon>
+          {{
+            opening()
+              ? 'Ouverture…'
+              : 'Ouvrir l’exercice ' + anneeOuvertureProposee()
+          }}
+        </button>
+        @if (!peutOuvrir()) {
+          <p class="arc__hint arc__hint--ok">
+            L’exercice {{ anneeOuvertureProposee() }} est déjà ouvert (soldes d’ouverture présents).
+          </p>
+        }
+      } @else {
+        <p class="arc__hint">
+          Aucun exercice clôturé pour le moment. Clôturez d’abord un exercice pour pouvoir ouvrir le
+          suivant.
+        </p>
+      }
+    </section>
+
+  }
 
   <section class="arc__section">
     <h2 class="arc__section-title">Dossiers</h2>
     @if (loading()) {
       <p class="arc__empty">Chargement…</p>
     } @else if (dossiers().length === 0) {
-      <p class="arc__empty">Aucun dossier archive. Créez une année pour déposer les fichiers banque.</p>
+      <p class="arc__empty">Aucun dossier archive.</p>
     } @else {
       <div class="arc__list" role="list">
         @for (d of dossiers(); track d.id) {
@@ -95,6 +115,16 @@
               <span class="arc__item-year">{{ d.annee }}</span>
               <span class="arc__item-meta">
                 Dossier {{ d.annee }}
+                @if (statutExercice(d.annee); as st) {
+                  ·
+                  <span
+                    class="arc__badge"
+                    [class.arc__badge--cloture]="st === 'cloture'"
+                    [class.arc__badge--ouvert]="st === 'ouvert'"
+                  >
+                    {{ st === 'cloture' ? 'Clôturé' : 'Ouvert' }}
+                  </span>
+                }
                 · {{ d.nb_fichiers }} fichier(s)
                 · {{ d.nb_lignes }} ligne(s)
                 @if (d.natures.length) {
@@ -103,20 +133,23 @@
               </span>
               <mat-icon aria-hidden="true">chevron_right</mat-icon>
             </a>
-            <button
-              mat-stroked-button
-              type="button"
-              class="arc__item-delete"
-              (click)="remove(d, $event)"
-              [disabled]="deletingAnnee() === d.annee"
-              aria-label="Supprimer le dossier"
-              title="Supprimer"
-            >
-              <mat-icon aria-hidden="true">delete</mat-icon>
-            </button>
+            @if (canManageExercices() && statutExercice(d.annee) !== 'cloture') {
+              <button
+                mat-stroked-button
+                type="button"
+                class="arc__item-delete"
+                (click)="remove(d, $event)"
+                [disabled]="deletingAnnee() === d.annee"
+                aria-label="Supprimer le dossier"
+                title="Supprimer"
+              >
+                <mat-icon aria-hidden="true">delete</mat-icon>
+              </button>
+            }
           </div>
         }
       </div>
     }
   </section>
 </div>
+

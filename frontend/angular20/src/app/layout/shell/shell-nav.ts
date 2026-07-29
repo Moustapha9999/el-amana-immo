@@ -17,13 +17,19 @@ export const SHELL_NAV: ShellNavItem[] = [
     path: '/recap-amortissement',
     icon: 'table_chart',
   },
-  { section: 'Patrimoine', label: 'Comptes', path: '/comptes', icon: 'account_balance_wallet' },
   {
     section: 'Patrimoine',
     label: 'Soldes 148 / 68',
     path: '/comptes/soldes-148-68',
     icon: 'account_balance',
   },
+  {
+    section: 'Patrimoine',
+    label: 'Amort. par agence',
+    path: '/amortissements-agence',
+    icon: 'domain',
+  },
+  { section: 'Patrimoine', label: 'Comptes', path: '/comptes', icon: 'account_balance_wallet' },
   { section: 'Patrimoine', label: 'Archives', path: '/archives', icon: 'inventory_2' },
   {
     section: 'Comptabilité',

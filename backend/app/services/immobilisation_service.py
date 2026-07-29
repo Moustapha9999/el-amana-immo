@@ -1,17 +1,10 @@
 from datetime import date
 from decimal import Decimal
-
 from uuid import UUID
 
-
-
-from sqlalchemy import func, select
-
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from sqlalchemy.orm import selectinload
-
-
 
 from app.core.exceptions import NotFoundError, ValidationError
 from app.models import Amortissement, CategorieImmobilisation, Immobilisation, ParametrageAmortissement
@@ -28,6 +21,7 @@ from app.services.immobilisation_defaults import (
 )
 from app.services.amortissement_engine import parse_period_end
 from app.services.amortissement_service import AmortissementService
+from app.services.exercice_guard import ensure_exercice_ouvert_pour_date
 
 __all__ = ["AmortissementCalculator", "AmortissementService", "DashboardService", "ImmobilisationService", "ParametrageService"]
 
@@ -158,6 +152,10 @@ class ImmobilisationService:
 
     async def create(self, payload: ImmobilisationCreate) -> Immobilisation:
 
+        await ensure_exercice_ouvert_pour_date(
+            self.db, payload.date_acquisition, contexte="Création d'immobilisation"
+        )
+
         categorie = await load_categorie(self.db, payload.categorie_id)
 
         assert categorie is not None
@@ -205,6 +203,13 @@ class ImmobilisationService:
     async def update(self, item_id: UUID, payload: ImmobilisationUpdate) -> Immobilisation:
 
         item = await self.get(item_id)
+        await ensure_exercice_ouvert_pour_date(
+            self.db, item.date_acquisition, contexte="Modification d'immobilisation"
+        )
+        if payload.date_acquisition is not None:
+            await ensure_exercice_ouvert_pour_date(
+                self.db, payload.date_acquisition, contexte="Modification d'immobilisation"
+            )
 
         categorie = item.categorie
 
@@ -251,10 +256,32 @@ class ImmobilisationService:
 
 
     async def soft_delete(self, item_id: UUID) -> None:
-
+        """Suppression définitive : enlève l'immobilisation et ses dépendances en base."""
         item = await self.get(item_id)
+        await ensure_exercice_ouvert_pour_date(
+            self.db, item.date_acquisition, contexte="Suppression d'immobilisation"
+        )
+        await self._hard_delete(item)
 
-        await self.repo.delete_soft(item)
+    async def _hard_delete(self, item: Immobilisation) -> None:
+        immo_id = item.id
+        # Ordre : enfants qui référencent évent. les écritures, puis écritures, puis immo
+        for table in (
+            "cessions",
+            "rebuts",
+            "reevaluations",
+            "ajustements",
+            "inventaire_scans",
+            "pieces_jointes",
+            "amortissements",
+            "ecritures_comptables",
+        ):
+            await self.db.execute(
+                text(f"DELETE FROM {table} WHERE immobilisation_id = :id"),
+                {"id": immo_id},
+            )
+        await self.db.execute(delete(Immobilisation).where(Immobilisation.id == immo_id))
+        await self.db.flush()
 
 
 

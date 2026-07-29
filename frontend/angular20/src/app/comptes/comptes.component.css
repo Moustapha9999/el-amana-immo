@@ -240,17 +240,18 @@
 }
 
 .cpt__table tfoot td {
-  background: #eef6fc;
-  font-weight: 600;
-  border-top: 2px solid #cbd5e1;
+  background: #eff6ff;
+  font-weight: 700;
+  border-top: 2px solid #2874a6;
   vertical-align: middle;
+  color: #1e3a5f;
 }
 
 .cpt__foot-label {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   font-size: 0.75rem;
-  color: #334155;
+  color: #1e3a5f;
   white-space: nowrap;
 }
 

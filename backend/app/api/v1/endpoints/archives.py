@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_roles
-from app.core.exceptions import AppError, NotFoundError, raise_http_from_app
+from app.core.exceptions import AppError, NotFoundError, ValidationError, raise_http_from_app
 from app.db.session import get_db
 from app.models import ArchiveDossier, ArchiveFichier, ArchiveLigne, User
 from app.schemas.archive import (
@@ -105,13 +105,13 @@ async def create_dossier(
 async def cloturer_exercice(
     body: ArchiveClotureRequest,
     request: Request,
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_roles("administrateur")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Génère le dossier Archives N (natures + opérations) et seed l'ouverture N+1 (148, sans 68)."""
+    """Clôture définitive N (archives). L'ouverture N+1 se fait via POST /exercices/ouvrir-suivant."""
     try:
         result = await ExerciceClotureService(db).cloturer(
-            annee=body.annee, force=body.force, user=user
+            annee=body.annee, force=False, user=user
         )
         await record_audit(
             db,
@@ -123,8 +123,8 @@ async def cloturer_exercice(
                 "annee": result.annee,
                 "natures_creees": result.natures_creees,
                 "lignes": result.lignes,
-                "ouvertures_seed": result.ouvertures_seed,
-                "force": body.force,
+                "ouvertures_seed": 0,
+                "force": False,
             },
             request=request,
         )
@@ -132,7 +132,7 @@ async def cloturer_exercice(
             annee=result.annee,
             natures_creees=result.natures_creees,
             lignes=result.lignes,
-            ouvertures_seed=result.ouvertures_seed,
+            ouvertures_seed=0,
             dossier_id=result.dossier_id,
             message=result.message,
             annee_ouverture=result.annee + 1,
@@ -162,6 +162,12 @@ async def delete_dossier(
     db: AsyncSession = Depends(get_db),
 ):
     try:
+        from app.services.exercice_guard import annee_est_cloturee
+
+        if await annee_est_cloturee(db, annee):
+            raise ValidationError(
+                f"Le dossier {annee} est lié à une clôture définitive et ne peut pas être supprimé."
+            )
         await ArchiveService(db).delete_dossier(annee)
         await record_audit(
             db,

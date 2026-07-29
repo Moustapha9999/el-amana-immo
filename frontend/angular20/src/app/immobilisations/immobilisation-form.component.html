@@ -1,4 +1,4 @@
-﻿<div class="immo-form">
+<div class="immo-form">
   <header class="immo-form__hero">
     <a routerLink="/immobilisations" class="immo-form__back">
       <mat-icon aria-hidden="true">arrow_back</mat-icon>
@@ -269,7 +269,7 @@
           <mat-icon aria-hidden="true">trending_down</mat-icon>
           <div>
             <h2>Amortissement</h2>
-            <p>Amortissement = VB × Taux × Durée — prorata jusqu’à chaque arrêté (31/03, 30/06, 30/09, 31/12)</p>
+            <p>Dotation = VB × Taux × (jours 360 / 360) — YTD depuis acquisition (N) ou 01/01 (stock), à chaque arrêté T1→T4</p>
           </div>
         </div>
         <div class="immo-form__section-body">
@@ -323,7 +323,7 @@
                   <option [value]="p.value">{{ p.label }}</option>
                 }
               </select>
-              <p class="immo-field__help">Dates d’arrêté des états financiers : 31/03, 30/06, 30/09, 31/12 — durée = jours (base 360) entre acquisition et arrêté.</p>
+              <p class="immo-field__help">Base 360 : stock = 90/180/270/360 j depuis le 01/01 ; acquisitions N = DAYS360(acq, arrêté). Plafond = VNC.</p>
             </div>
           </div>
         </div>
@@ -398,8 +398,8 @@
           <div>
             <h2>Amortissement & comptabilisation</h2>
             <p>
-              Exercice {{ anneeExerciceAmort() }} — calcul auto à chaque arrêté :
-              amortissement période, cumul, VNC = VB − cumul
+              Exercice {{ anneeExerciceAmort() }} — base 360 (YTD) à chaque arrêté T1→T4 :
+              dotation période, cumul, VNC = VB − cumul (plafond VNC)
             </p>
           </div>
         </div>

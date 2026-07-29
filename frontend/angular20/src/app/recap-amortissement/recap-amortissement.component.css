@@ -175,20 +175,23 @@
 
 .rca__table .mat-mdc-footer-row,
 .rca__table .mat-mdc-footer-cell {
-  background: #f8fafc;
+  background: #eef6fc;
   font-weight: 700;
-  border-top: 1px solid var(--app-border);
+  border-top: 1px solid #cbd5e1;
+  color: #1a4571;
 }
 
 .rca__foot-label {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
+  color: #1a4571;
 }
 
 .rca__foot {
   font-weight: 700;
+  color: #9b1c1c;
 }
 
 .rca__note {

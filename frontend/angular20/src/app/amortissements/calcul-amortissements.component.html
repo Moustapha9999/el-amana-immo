@@ -6,14 +6,30 @@
       </p>
       <h1 class="calc__title">Calculer les amortissements</h1>
       <p class="calc__lead">
-        Campagne par périodicité (T1→T4) : simuler le stock antérieur et les acquisitions de
-        l’année jusqu’à l’arrêté, puis valider pour comptabiliser (681 → 148). Les montants
-        alimentent Récap amortissement, Comptes et Soldes 148 / 68.
+        Arrêtés T1→T4 (base 360) : dotation YTD = VB × taux × (jours / 360), depuis la date
+        d’acquisition (nouvelles entrées) ou depuis le 01/01 (stock), plafonnée à la VNC.
+        Valider pour comptabiliser (681 → 148).
       </p>
     </div>
   </header>
 
   <section class="calc__section">
+    @if (periodicite() === 'trimestriel' && periodes().length > 0) {
+      <div class="calc__periods" aria-label="Statut des périodes comptables">
+        @for (p of periodes(); track p.id) {
+          <article
+            class="calc__period"
+            [attr.data-statut]="p.statut"
+            [class.calc__period--selected]="p.trimestre === periodeIndex()"
+          >
+            <span class="calc__period-code">T{{ p.trimestre }}</span>
+            <span class="calc__period-date">{{ p.date_arrete }}</span>
+            <span class="calc__period-status">{{ periodeStatutLabel(p.statut) }}</span>
+          </article>
+        }
+      </div>
+    }
+
     <form [formGroup]="form" class="calc__form" (ngSubmit)="simuler()">
       <div class="calc__fields">
         <div class="calc-field">
@@ -92,7 +108,7 @@
           color="primary"
           type="button"
           (click)="valider()"
-          [disabled]="loading() || !result() || result()!.nb_calcules === 0"
+          [disabled]="loading() || !result() || !canValiderPeriode()"
         >
           <mat-icon>done_all</mat-icon>
           Valider et comptabiliser
