@@ -22,6 +22,7 @@ from app.schemas.reporting import (
     RecapAmortissementLigneRead,
     RecapAmortissementRead,
     SoldeNatureLigneRead,
+    Soldes14868DetailLigneRead,
     Soldes14868Read,
     VentilationAmortAgenceGroupeRead,
     VentilationAmortAgenceLigneRead,
@@ -30,7 +31,13 @@ from app.schemas.reporting import (
 from app.services.audit_query import list_audit_for_export
 from app.services.audit_service import AuditService
 from app.services.immobilisation_service import DashboardService
-from app.services.reporting_snapshot import resolve_comptes, resolve_recap, resolve_soldes
+from app.services.reporting_snapshot import (
+    resolve_comptes,
+    resolve_consultation_soldes,
+    resolve_recap,
+    resolve_soldes,
+)
+from app.models.enums import StatutImmobilisation
 from app.services.reporting_export import (
     audit_logs_to_excel,
     comptes_par_nature_to_excel,
@@ -39,10 +46,13 @@ from app.services.reporting_export import (
     ecritures_to_pdf,
     format_period_label,
     immobilisations_to_excel,
+    immobilisations_to_pdf,
     recap_amortissement_detail_to_excel,
     recap_amortissement_detail_to_pdf,
     recap_amortissement_to_excel,
     recap_amortissement_to_pdf,
+    soldes_148_68_to_excel,
+    soldes_148_68_to_pdf,
     ventilation_amortissements_agence_to_excel,
     ventilation_amortissements_agence_to_pdf,
 )
@@ -164,17 +174,116 @@ async def export_ecritures(
     )
 
 
+def _parse_statuts_param(statuts: str | None) -> list[StatutImmobilisation] | None:
+    if not statuts:
+        return None
+    try:
+        return [StatutImmobilisation(s.strip()) for s in statuts.split(",") if s.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Statut invalide dans le paramètre 'statuts'.")
+
+
+def _immo_export_subtitle(
+    *,
+    base: str,
+    search: str | None,
+    famille: str | None,
+    statut_list: list[StatutImmobilisation] | None,
+) -> str:
+    filter_bits: list[str] = [base]
+    if search and search.strip():
+        filter_bits.append(f"Recherche : {search.strip()}")
+    if famille and famille.strip():
+        filter_bits.append(f"Type : {famille.strip()}")
+    if statut_list:
+        filter_bits.append(f"Statut : {', '.join(s.value for s in statut_list)}")
+    return " — ".join(filter_bits)
+
+
 @router.get("/reporting/immobilisations/export")
 async def export_immobilisations(
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    search: str | None = Query(None),
+    statuts: str | None = Query(None, description="Statuts séparés par des virgules"),
+    famille: str | None = Query(None, description="Filtre sur le type / famille de catégorie"),
     _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = await list_immobilisations_for_export(db)
-    content = immobilisations_to_excel(rows, subtitle="Parc actif (hors biens supprimés)")
+    statut_list = _parse_statuts_param(statuts)
+    rows = await list_immobilisations_for_export(
+        db,
+        search=search,
+        statuts=statut_list,
+        famille=famille,
+    )
+    subtitle = _immo_export_subtitle(
+        base="Parc actif (hors biens supprimés)",
+        search=search,
+        famille=famille,
+        statut_list=statut_list,
+    )
+
+    if format == "pdf":
+        content = immobilisations_to_pdf(rows, subtitle=subtitle)
+        media = "application/pdf"
+        filename = "immobilisations-el-amana.pdf"
+    else:
+        content = immobilisations_to_excel(rows, subtitle=subtitle)
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = "immobilisations-el-amana.xlsx"
     return Response(
         content=content,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="immobilisations-el-amana.xlsx"'},
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/reporting/amortissements/export")
+async def export_amortissements_liste(
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    search: str | None = Query(None),
+    statuts: str | None = Query(
+        "en_service,suspendue,en_cours",
+        description="Statuts séparés par des virgules (périmètre amortissements)",
+    ),
+    famille: str | None = Query(None, description="Filtre sur le type / famille de catégorie"),
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Liste des immobilisations amortissables (écran Amortissements)."""
+    statut_list = _parse_statuts_param(statuts)
+    rows = await list_immobilisations_for_export(
+        db,
+        search=search,
+        statuts=statut_list,
+        famille=famille,
+        amortissable=True,
+    )
+    subtitle = _immo_export_subtitle(
+        base="Immobilisations amortissables — suivi par exercice",
+        search=search,
+        famille=famille,
+        statut_list=statut_list,
+    )
+    report_title = "Liste des immobilisations amortissables"
+
+    if format == "pdf":
+        content = immobilisations_to_pdf(rows, subtitle=subtitle, report_title=report_title)
+        media = "application/pdf"
+        filename = "amortissements-el-amana.pdf"
+    else:
+        content = immobilisations_to_excel(
+            rows,
+            subtitle=subtitle,
+            report_title=report_title,
+            sheet_title="Amortissements",
+        )
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = "amortissements-el-amana.xlsx"
+    return Response(
+        content=content,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -439,41 +548,202 @@ async def export_comptes_par_nature(
     )
 
 
-@router.get("/reporting/soldes-148-68", response_model=Soldes14868Read)
-async def get_soldes_148_68(
-    annee: int = Query(..., ge=2000, le=2100),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
-    db: AsyncSession = Depends(get_db),
-):
-    """Soldes des comptes 148 (amort.) et 68 (dotations) par nature d'immobilisation."""
-    result = await resolve_soldes(db, annee)
+def _soldes_nature_ligne_read(ligne) -> SoldeNatureLigneRead:
+    return SoldeNatureLigneRead(
+        nature_code=ligne.nature_code,
+        nature=ligne.nature,
+        compte_immobilisation=ligne.compte_immobilisation,
+        compte_amortissement=ligne.compte_amortissement,
+        libelle_amortissement=ligne.libelle_amortissement,
+        solde_148=float(ligne.solde_148),
+        solde_148_n1=float(ligne.solde_148_n1),
+        compte_dotation=ligne.compte_dotation,
+        libelle_dotation=ligne.libelle_dotation,
+        solde_68=float(ligne.solde_68),
+        valeur_brute=float(ligne.valeur_brute),
+        vnc=float(ligne.vnc),
+        nb_biens=ligne.nb_biens,
+    )
+
+
+def _soldes_detail_ligne_read(ligne) -> Soldes14868DetailLigneRead:
+    return Soldes14868DetailLigneRead(
+        immobilisation_id=ligne.immobilisation_id,
+        date=ligne.date_mvt.isoformat() if ligne.date_mvt else None,
+        reference=ligne.reference,
+        designation=ligne.designation,
+        categorie=ligne.categorie,
+        valeur_brute=float(ligne.valeur_brute),
+        dotation=float(ligne.dotation),
+        amortissement_cumule=float(ligne.amortissement_cumule),
+        amortissement_cumule_n1=float(ligne.amortissement_cumule_n1),
+        vnc=float(ligne.vnc),
+        agence_code=ligne.agence_code,
+        agence_libelle=ligne.agence_libelle,
+        exercice=ligne.exercice,
+        compte_immobilisation=ligne.compte_immobilisation,
+        compte_amortissement=ligne.compte_amortissement,
+        compte_dotation=ligne.compte_dotation,
+    )
+
+
+def _consultation_to_read(result) -> Soldes14868Read:
     return Soldes14868Read(
+        famille_compte=result.famille_compte,
+        compte_numero=result.compte_numero,
+        compte_intitule=result.compte_intitule,
         annee=result.annee,
         date_arrete=result.date_arrete.isoformat(),
-        lignes=[
-            SoldeNatureLigneRead(
-                nature_code=ligne.nature_code,
-                nature=ligne.nature,
-                compte_immobilisation=ligne.compte_immobilisation,
-                compte_amortissement=ligne.compte_amortissement,
-                libelle_amortissement=ligne.libelle_amortissement,
-                solde_148=float(ligne.solde_148),
-                solde_148_n1=float(ligne.solde_148_n1),
-                compte_dotation=ligne.compte_dotation,
-                libelle_dotation=ligne.libelle_dotation,
-                solde_68=float(ligne.solde_68),
-                valeur_brute=float(ligne.valeur_brute),
-                vnc=float(ligne.vnc),
-                nb_biens=ligne.nb_biens,
-            )
-            for ligne in result.lignes
-        ],
+        date_debut=result.date_debut.isoformat() if result.date_debut else None,
+        date_fin=result.date_fin.isoformat() if result.date_fin else None,
+        periode_label=result.periode_label,
+        solde_total=float(result.solde_total),
+        nb_immobilisations=result.nb_immobilisations,
+        nb_mouvements=result.nb_mouvements,
+        total_valeur_brute=float(result.total_valeur_brute),
+        total_dotation=float(result.total_dotation),
+        total_amortissement_cumule=float(result.total_amortissement_cumule),
+        total_amortissement_cumule_n1=float(result.total_amortissement_cumule_n1),
+        total_vnc=float(result.total_vnc),
+        lignes=[_soldes_nature_ligne_read(ligne) for ligne in result.lignes],
+        detail=[_soldes_detail_ligne_read(ligne) for ligne in result.detail],
+        exercices_disponibles=result.exercices_disponibles,
         total_148=float(result.total_148),
         total_148_n1=float(result.total_148_n1),
         total_68=float(result.total_68),
-        total_valeur_brute=float(result.total_valeur_brute),
-        total_vnc=float(result.total_vnc),
         nb_biens=result.nb_biens,
+    )
+
+
+def _soldes_148_68_payload(result) -> dict:
+    return {
+        "famille_compte": result.famille_compte,
+        "compte_numero": result.compte_numero,
+        "compte_intitule": result.compte_intitule,
+        "annee": result.annee,
+        "subtitle": (
+            f"Compte {result.compte_numero} — {result.compte_intitule} — {result.periode_label}"
+        ),
+        "periode_label": result.periode_label,
+        "solde_total": float(result.solde_total),
+        "nb_immobilisations": result.nb_immobilisations,
+        "nb_mouvements": result.nb_mouvements,
+        "lignes": [
+            {
+                "nature_code": ligne.nature_code,
+                "nature": ligne.nature,
+                "compte_immobilisation": ligne.compte_immobilisation,
+                "compte_amortissement": ligne.compte_amortissement,
+                "solde_148": float(ligne.solde_148),
+                "solde_148_n1": float(ligne.solde_148_n1),
+                "compte_dotation": ligne.compte_dotation,
+                "solde_68": float(ligne.solde_68),
+                "valeur_brute": float(ligne.valeur_brute),
+                "vnc": float(ligne.vnc),
+                "nb_biens": ligne.nb_biens,
+            }
+            for ligne in result.lignes
+        ],
+        "detail": [
+            {
+                "date": ligne.date_mvt.strftime("%d/%m/%Y") if ligne.date_mvt else "",
+                "reference": ligne.reference,
+                "designation": ligne.designation,
+                "categorie": ligne.categorie or "",
+                "valeur_brute": float(ligne.valeur_brute),
+                "dotation": float(ligne.dotation),
+                "amortissement_cumule": float(ligne.amortissement_cumule),
+                "vnc": float(ligne.vnc),
+                "agence": ligne.agence_libelle or ligne.agence_code or "",
+                "exercice": ligne.exercice,
+            }
+            for ligne in result.detail
+        ],
+        "totaux": {
+            "solde_148": float(result.total_148),
+            "solde_148_n1": float(result.total_148_n1),
+            "solde_68": float(result.total_68),
+            "valeur_brute": float(result.total_valeur_brute),
+            "vnc": float(result.total_vnc),
+            "nb_biens": result.nb_biens,
+            "dotation": float(result.total_dotation),
+            "amortissement_cumule": float(result.total_amortissement_cumule),
+        },
+    }
+
+
+@router.get("/reporting/soldes-148-68", response_model=Soldes14868Read)
+async def get_soldes_148_68(
+    annee: int = Query(..., ge=2000, le=2100),
+    famille_compte: str = Query("148", pattern="^(142|148|68)$"),
+    agence_id: UUID | None = Query(None),
+    categorie_id: UUID | None = Query(None),
+    date_debut: date | None = Query(None),
+    date_fin: date | None = Query(None),
+    search: str | None = Query(None),
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Consultation des comptes 142 / 148 / 68 — synthèse et détail filtrables."""
+    try:
+        result = await resolve_consultation_soldes(
+            db,
+            annee=annee,
+            famille_compte=famille_compte,
+            agence_id=agence_id,
+            categorie_id=categorie_id,
+            date_debut=date_debut,
+            date_fin=date_fin,
+            search=search,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _consultation_to_read(result)
+
+
+@router.get("/reporting/soldes-148-68/export")
+async def export_soldes_148_68(
+    annee: int = Query(..., ge=2000, le=2100),
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    famille_compte: str = Query("148", pattern="^(142|148|68)$"),
+    agence_id: UUID | None = Query(None),
+    categorie_id: UUID | None = Query(None),
+    date_debut: date | None = Query(None),
+    date_fin: date | None = Query(None),
+    search: str | None = Query(None),
+    vue: str = Query("detail", pattern="^(detail|synthese)$"),
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await resolve_consultation_soldes(
+            db,
+            annee=annee,
+            famille_compte=famille_compte,
+            agence_id=agence_id,
+            categorie_id=categorie_id,
+            date_debut=date_debut,
+            date_fin=date_fin,
+            search=search,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    payload = _soldes_148_68_payload(result)
+    payload["vue"] = vue
+    suffix = f"{famille_compte}-{annee}"
+    if format == "pdf":
+        content = soldes_148_68_to_pdf(payload)
+        media = "application/pdf"
+        filename = f"soldes-{suffix}.pdf"
+    else:
+        content = soldes_148_68_to_excel(payload)
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = f"soldes-{suffix}.xlsx"
+    return Response(
+        content=content,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

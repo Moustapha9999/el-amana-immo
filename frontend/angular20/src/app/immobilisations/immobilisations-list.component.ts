@@ -49,6 +49,7 @@ export class ImmobilisationsListComponent implements OnInit {
 
   readonly rows = signal<ImmobilisationRow[]>([]);
   readonly loading = signal(true);
+  readonly exporting = signal<'xlsx' | 'pdf' | null>(null);
   readonly page = signal(1);
   readonly total = signal(0);
   readonly pageSize = 50;
@@ -119,6 +120,35 @@ export class ImmobilisationsListComponent implements OnInit {
   goToPage(page: number): void {
     this.page.set(page);
     this.load();
+  }
+
+  export(format: 'xlsx' | 'pdf'): void {
+    const f = this.filterForm.getRawValue();
+    const params: Record<string, string> = { format };
+    if (f.search.trim()) {
+      params['search'] = f.search.trim();
+    }
+    if (f.statut) {
+      params['statuts'] = f.statut;
+    }
+    if (f.famille) {
+      params['famille'] = f.famille;
+    }
+    this.exporting.set(format);
+    this.api.download('/reporting/immobilisations/export', params).subscribe({
+      next: (blob) => {
+        this.exporting.set(null);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `immobilisations-el-amana.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      },
+      error: () => {
+        this.exporting.set(null);
+        void this.dialogs.error('Export impossible').subscribe();
+      },
+    });
   }
 
   remove(row: ImmobilisationRow): void {

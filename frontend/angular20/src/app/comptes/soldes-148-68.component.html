@@ -1,12 +1,12 @@
 <div class="s68">
   <header class="s68__hero">
     <div>
-      <h1 class="s68__title">Soldes 148 / 68</h1>
+      <h1 class="s68__title">Soldes 142 / 148 / 68</h1>
       <p class="s68__lead">
         @if (data(); as d) {
-          Arrêté au 31/12/{{ d.annee }} — amortissements (148) et dotations (68) par nature
+          Compte {{ d.compte_numero }} — {{ d.compte_intitule }} · {{ d.periode_label }}
         } @else {
-          Soldes des comptes d’amortissement et de dotation par nature d’immobilisation
+          Consultation et analyse des comptes liés aux immobilisations
         }
       </p>
     </div>
@@ -15,175 +15,346 @@
         <mat-icon aria-hidden="true">refresh</mat-icon>
         Actualiser
       </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('xlsx')"
+        [disabled]="!data() || exporting() !== null || loading()"
+      >
+        <mat-icon aria-hidden="true">table_view</mat-icon>
+        {{ exporting() === 'xlsx' ? 'Excel…' : 'Excel' }}
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('pdf')"
+        [disabled]="!data() || exporting() !== null || loading()"
+      >
+        <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
+        {{ exporting() === 'pdf' ? 'PDF…' : 'PDF' }}
+      </button>
       <a mat-stroked-button routerLink="/comptes">
         <mat-icon aria-hidden="true">account_balance_wallet</mat-icon>
         Comptes par nature
       </a>
-      <a mat-stroked-button routerLink="/recap-amortissement">
-        <mat-icon aria-hidden="true">table_chart</mat-icon>
-        Récap.
-      </a>
-      <a mat-stroked-button routerLink="/amortissements-agence">
-        <mat-icon aria-hidden="true">domain</mat-icon>
-        Par agence
-      </a>
     </div>
   </header>
 
+  <section class="s68__section s68__section--filters">
+    <form [formGroup]="filterForm" (ngSubmit)="load()" class="s68__filters">
+      <div class="s68-field s68-field--compte">
+        <label class="s68-field__label" for="s68-compte">Compte</label>
+        <select id="s68-compte" class="s68-field__control" formControlName="famille_compte">
+          @for (opt of familleOptions; track opt.value) {
+            <option [value]="opt.value">{{ opt.label }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="s68-field">
+        <label class="s68-field__label" for="s68-annee">Exercice</label>
+        <select id="s68-annee" class="s68-field__control" formControlName="annee">
+          @for (y of exercices(); track y) {
+            <option [ngValue]="y">{{ y }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="s68-field s68-field--agence">
+        <label class="s68-field__label" for="s68-agence">Agence</label>
+        <select id="s68-agence" class="s68-field__control" formControlName="agence_id">
+          <option value="">Toutes les agences</option>
+          @for (a of agences(); track a.id) {
+            <option [value]="a.id">{{ a.libelle }} ({{ a.code }})</option>
+          }
+        </select>
+      </div>
+
+      <div class="s68-field s68-field--cat">
+        <label class="s68-field__label" for="s68-cat">Catégorie</label>
+        <select id="s68-cat" class="s68-field__control" formControlName="categorie_id">
+          <option value="">Toutes</option>
+          @for (c of categories(); track c.id) {
+            <option [value]="c.id">{{ categorieLabel(c) }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="s68-field">
+        <label class="s68-field__label" for="s68-debut">Date début</label>
+        <input id="s68-debut" class="s68-field__control" type="date" formControlName="date_debut" />
+      </div>
+
+      <div class="s68-field">
+        <label class="s68-field__label" for="s68-fin">Date fin</label>
+        <input id="s68-fin" class="s68-field__control" type="date" formControlName="date_fin" />
+      </div>
+
+      <div class="s68-field s68-field--grow">
+        <label class="s68-field__label" for="s68-search">Désignation / référence</label>
+        <input
+          id="s68-search"
+          class="s68-field__control"
+          type="search"
+          formControlName="search"
+          placeholder="Code inventaire, désignation, compte…"
+          autocomplete="off"
+        />
+      </div>
+
+      <div class="s68__filter-actions">
+        <button mat-flat-button color="primary" type="submit" [disabled]="loading()">Afficher</button>
+        <button mat-stroked-button type="button" (click)="resetFilters()" [disabled]="loading()">
+          Réinitialiser
+        </button>
+      </div>
+    </form>
+  </section>
+
   @if (data(); as d) {
     <div class="s68__kpis">
-      <div class="s68__kpi">
-        <span class="s68__kpi-label">Total 148 (amort. cumulés)</span>
-        <span class="s68__kpi-value">{{ d.total_148 | montant: 'MRU' }}</span>
-        <span class="s68__kpi-hint">148-{{ d.annee - 1 }} : {{ d.total_148_n1 | montant: 'MRU' }}</span>
-      </div>
-      <div class="s68__kpi s68__kpi--dotation">
-        <span class="s68__kpi-label">Total 68 global (dotations {{ d.annee }})</span>
-        <span class="s68__kpi-value">{{ d.total_68 | montant: 'MRU' }}</span>
-        <span class="s68__kpi-hint">{{ d.nb_biens }} bien(s)</span>
+      <div class="s68__kpi s68__kpi--primary">
+        <span class="s68__kpi-label">{{ soldeLabel() }}</span>
+        <span class="s68__kpi-value">{{ d.solde_total | montant: 'MRU' }}</span>
+        <span class="s68__kpi-hint">{{ d.compte_numero }} — {{ d.compte_intitule }}</span>
       </div>
       <div class="s68__kpi">
-        <span class="s68__kpi-label">Valeur brute</span>
-        <span class="s68__kpi-value">{{ d.total_valeur_brute | montant: 'MRU' }}</span>
-        <span class="s68__kpi-hint">VNC : {{ d.total_vnc | montant: 'MRU' }}</span>
+        <span class="s68__kpi-label">Immobilisations</span>
+        <span class="s68__kpi-value">{{ d.nb_immobilisations }}</span>
+        <span class="s68__kpi-hint">biens concernés</span>
+      </div>
+      <div class="s68__kpi">
+        <span class="s68__kpi-label">Mouvements</span>
+        <span class="s68__kpi-value">{{ d.nb_mouvements }}</span>
+        <span class="s68__kpi-hint">écritures / périodes</span>
+      </div>
+      <div class="s68__kpi">
+        <span class="s68__kpi-label">Période consultée</span>
+        <span class="s68__kpi-value s68__kpi-value--sm">{{ d.periode_label }}</span>
+        <span class="s68__kpi-hint">Exercice {{ d.annee }}</span>
       </div>
     </div>
   }
 
   <section class="s68__section">
     <div class="s68__toolbar">
-      <form [formGroup]="filterForm" (ngSubmit)="load()" class="s68__filters">
-        <div class="s68-field">
-          <label class="s68-field__label" for="s68-annee">Année (arrêté 31/12)</label>
-          <input
-            id="s68-annee"
-            class="s68-field__control"
-            type="number"
-            formControlName="annee"
-            min="2000"
-            max="2100"
-            step="1"
-            aria-label="Année"
-          />
-        </div>
-        <div class="s68__filter-actions">
-          <button mat-flat-button color="primary" type="submit" [disabled]="loading()">
-            Afficher
-          </button>
-        </div>
-      </form>
+      <div class="s68__tabs">
+        <button
+          type="button"
+          class="s68__tab"
+          [class.s68__tab--active]="viewMode() === 'detail'"
+          (click)="setView('detail')"
+        >
+          Vue détaillée
+        </button>
+        <button
+          type="button"
+          class="s68__tab"
+          [class.s68__tab--active]="viewMode() === 'synthese'"
+          (click)="setView('synthese')"
+        >
+          Synthèse par nature
+        </button>
+      </div>
     </div>
 
     <div class="s68__body">
       @if (loading()) {
-        <p class="s68__empty">Chargement des soldes…</p>
+        <p class="s68__empty">Chargement de la consultation…</p>
       } @else if (data(); as d) {
-        @if (d.lignes.length === 0) {
-          <p class="s68__empty">Aucune nature amortissable pour {{ d.annee }}.</p>
+        @if (viewMode() === 'detail') {
+          @if (d.detail.length === 0) {
+            <p class="s68__empty">Aucune immobilisation pour ces critères.</p>
+          } @else {
+            <div class="s68__table-wrap app-table-scroll">
+              <table mat-table [dataSource]="pagedDetail()" class="w-full app-table s68__table">
+                <ng-container matColumnDef="date">
+                  <th mat-header-cell *matHeaderCellDef>Date</th>
+                  <td mat-cell *matCellDef="let row">
+                    {{ row.date ? (row.date | date: 'dd/MM/yyyy') : '—' }}
+                  </td>
+                  <td mat-footer-cell *matFooterCellDef class="s68__foot-label">Total</td>
+                </ng-container>
+
+                <ng-container matColumnDef="reference">
+                  <th mat-header-cell *matHeaderCellDef>Référence</th>
+                  <td mat-cell *matCellDef="let row" class="s68__mono">{{ row.reference }}</td>
+                  <td mat-footer-cell *matFooterCellDef></td>
+                </ng-container>
+
+                <ng-container matColumnDef="designation">
+                  <th mat-header-cell *matHeaderCellDef>Désignation</th>
+                  <td mat-cell *matCellDef="let row">{{ row.designation }}</td>
+                  <td mat-footer-cell *matFooterCellDef></td>
+                </ng-container>
+
+                <ng-container matColumnDef="categorie">
+                  <th mat-header-cell *matHeaderCellDef>Catégorie</th>
+                  <td mat-cell *matCellDef="let row">{{ row.categorie || '—' }}</td>
+                  <td mat-footer-cell *matFooterCellDef></td>
+                </ng-container>
+
+                <ng-container matColumnDef="vb">
+                  <th mat-header-cell *matHeaderCellDef>Valeur brute</th>
+                  <td mat-cell *matCellDef="let row" class="s68__num">{{ row.valeur_brute | montant }}</td>
+                  <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot">
+                    {{ d.total_valeur_brute | montant }}
+                  </td>
+                </ng-container>
+
+                <ng-container matColumnDef="dotation">
+                  <th mat-header-cell *matHeaderCellDef>Dotation</th>
+                  <td mat-cell *matCellDef="let row" class="s68__num">{{ row.dotation | montant }}</td>
+                  <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot s68__foot--dotation">
+                    {{ d.total_dotation | montant }}
+                  </td>
+                </ng-container>
+
+                <ng-container matColumnDef="amt">
+                  <th mat-header-cell *matHeaderCellDef>Amort. cumulé</th>
+                  <td mat-cell *matCellDef="let row" class="s68__num">
+                    {{ row.amortissement_cumule | montant }}
+                  </td>
+                  <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot">
+                    {{ d.total_amortissement_cumule | montant }}
+                  </td>
+                </ng-container>
+
+                <ng-container matColumnDef="vnc">
+                  <th mat-header-cell *matHeaderCellDef>VNC</th>
+                  <td mat-cell *matCellDef="let row" class="s68__num">{{ row.vnc | montant }}</td>
+                  <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot">
+                    {{ d.total_vnc | montant }}
+                  </td>
+                </ng-container>
+
+                <ng-container matColumnDef="agence">
+                  <th mat-header-cell *matHeaderCellDef>Agence</th>
+                  <td mat-cell *matCellDef="let row">
+                    {{ row.agence_libelle || row.agence_code || '—' }}
+                  </td>
+                  <td mat-footer-cell *matFooterCellDef></td>
+                </ng-container>
+
+                <ng-container matColumnDef="exercice">
+                  <th mat-header-cell *matHeaderCellDef>Exercice</th>
+                  <td mat-cell *matCellDef="let row" class="s68__num">{{ row.exercice }}</td>
+                  <td mat-footer-cell *matFooterCellDef></td>
+                </ng-container>
+
+                <tr mat-header-row *matHeaderRowDef="detailColumns(); sticky: true"></tr>
+                <tr mat-row *matRowDef="let row; columns: detailColumns()"></tr>
+                <tr mat-footer-row *matFooterRowDef="detailColumns()"></tr>
+              </table>
+            </div>
+            <app-pagination
+              [page]="page()"
+              [total]="d.detail.length"
+              [pageSize]="pageSize"
+              label="ligne(s)"
+              (pageChange)="goToPage($event)"
+            />
+          }
         } @else {
-          <div class="s68__table-wrap app-table-scroll">
-            <table mat-table [dataSource]="d.lignes" class="w-full app-table s68__table">
-              <ng-container matColumnDef="nature">
-                <th mat-header-cell *matHeaderCellDef>Nature</th>
-                <td mat-cell *matCellDef="let row">{{ row.nature }}</td>
-                <td mat-footer-cell *matFooterCellDef class="s68__foot-label">Total</td>
-              </ng-container>
+          @if (d.lignes.length === 0) {
+            <p class="s68__empty">Aucune nature pour ces critères.</p>
+          } @else {
+            <div class="s68__table-wrap app-table-scroll">
+              <table mat-table [dataSource]="d.lignes" class="w-full app-table s68__table">
+                <ng-container matColumnDef="nature">
+                  <th mat-header-cell *matHeaderCellDef>Nature</th>
+                  <td mat-cell *matCellDef="let row">{{ row.nature }}</td>
+                  <td mat-footer-cell *matFooterCellDef class="s68__foot-label">Total</td>
+                </ng-container>
 
-              <ng-container matColumnDef="compte_immo">
-                <th mat-header-cell *matHeaderCellDef>Compte immo</th>
-                <td mat-cell *matCellDef="let row" class="s68__mono">{{ row.compte_immobilisation }}</td>
-                <td mat-footer-cell *matFooterCellDef></td>
-              </ng-container>
+                <ng-container matColumnDef="compte_immo">
+                  <th mat-header-cell *matHeaderCellDef>Compte immo</th>
+                  <td mat-cell *matCellDef="let row" class="s68__mono">{{ row.compte_immobilisation }}</td>
+                  <td mat-footer-cell *matFooterCellDef></td>
+                </ng-container>
 
-              <ng-container matColumnDef="compte_148">
-                <th mat-header-cell *matHeaderCellDef>Compte 148</th>
-                <td mat-cell *matCellDef="let row">
-                  @if (row.compte_amortissement) {
-                    <span class="s68__mono">{{ row.compte_amortissement }}</span>
-                  } @else {
-                    —
-                  }
-                </td>
-                <td mat-footer-cell *matFooterCellDef></td>
-              </ng-container>
+                <ng-container matColumnDef="compte_148">
+                  <th mat-header-cell *matHeaderCellDef>Compte 148</th>
+                  <td mat-cell *matCellDef="let row">
+                    @if (row.compte_amortissement) {
+                      <span class="s68__mono">{{ row.compte_amortissement }}</span>
+                    } @else {
+                      —
+                    }
+                  </td>
+                  <td mat-footer-cell *matFooterCellDef></td>
+                </ng-container>
 
-              <ng-container matColumnDef="vb">
-                <th mat-header-cell *matHeaderCellDef>Valeur brute</th>
-                <td mat-cell *matCellDef="let row" class="s68__num">
-                  {{ row.valeur_brute | montant }}
-                </td>
-                <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot">
-                  {{ d.total_valeur_brute | montant }}
-                </td>
-              </ng-container>
+                <ng-container matColumnDef="vb">
+                  <th mat-header-cell *matHeaderCellDef>Valeur brute</th>
+                  <td mat-cell *matCellDef="let row" class="s68__num">{{ row.valeur_brute | montant }}</td>
+                  <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot">
+                    {{ d.total_valeur_brute | montant }}
+                  </td>
+                </ng-container>
 
-              <ng-container matColumnDef="solde_148_n1">
-                <th mat-header-cell *matHeaderCellDef>Solde 148-{{ d.annee - 1 }}</th>
-                <td mat-cell *matCellDef="let row" class="s68__num">
-                  {{ row.solde_148_n1 | montant }}
-                </td>
-                <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot">
-                  {{ d.total_148_n1 | montant }}
-                </td>
-              </ng-container>
+                <ng-container matColumnDef="solde_148_n1">
+                  <th mat-header-cell *matHeaderCellDef>Solde 148-{{ d.annee - 1 }}</th>
+                  <td mat-cell *matCellDef="let row" class="s68__num">{{ row.solde_148_n1 | montant }}</td>
+                  <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot">
+                    {{ d.total_amortissement_cumule_n1 | montant }}
+                  </td>
+                </ng-container>
 
-              <ng-container matColumnDef="solde_148">
-                <th mat-header-cell *matHeaderCellDef>Solde 148 fin {{ d.annee }}</th>
-                <td mat-cell *matCellDef="let row" class="s68__num">
-                  {{ row.solde_148 | montant }}
-                </td>
-                <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot">
-                  {{ d.total_148 | montant }}
-                </td>
-              </ng-container>
+                <ng-container matColumnDef="solde_68">
+                  <th mat-header-cell *matHeaderCellDef>Dotation 68 {{ d.annee }}</th>
+                  <td mat-cell *matCellDef="let row" class="s68__num">{{ row.solde_68 | montant }}</td>
+                  <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot s68__foot--dotation">
+                    {{ d.total_dotation | montant }}
+                  </td>
+                </ng-container>
 
-              <ng-container matColumnDef="compte_68">
-                <th mat-header-cell *matHeaderCellDef>Compte 68</th>
-                <td mat-cell *matCellDef="let row">
-                  @if (row.compte_dotation) {
-                    <span class="s68__mono">{{ row.compte_dotation }}</span>
-                  } @else {
-                    —
-                  }
-                </td>
-                <td mat-footer-cell *matFooterCellDef class="s68__foot-label">68 global</td>
-              </ng-container>
+                <ng-container matColumnDef="solde_148">
+                  <th mat-header-cell *matHeaderCellDef>Solde 148 fin {{ d.annee }}</th>
+                  <td mat-cell *matCellDef="let row" class="s68__num">{{ row.solde_148 | montant }}</td>
+                  <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot">
+                    {{ d.total_amortissement_cumule | montant }}
+                  </td>
+                </ng-container>
 
-              <ng-container matColumnDef="solde_68">
-                <th mat-header-cell *matHeaderCellDef>Dotation 68 {{ d.annee }}</th>
-                <td mat-cell *matCellDef="let row" class="s68__num">
-                  {{ row.solde_68 | montant }}
-                </td>
-                <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot s68__foot--dotation">
-                  {{ d.total_68 | montant }}
-                </td>
-              </ng-container>
+                <ng-container matColumnDef="compte_68">
+                  <th mat-header-cell *matHeaderCellDef>Compte 68</th>
+                  <td mat-cell *matCellDef="let row">
+                    @if (row.compte_dotation) {
+                      <span class="s68__mono">{{ row.compte_dotation }}</span>
+                    } @else {
+                      —
+                    }
+                  </td>
+                  <td mat-footer-cell *matFooterCellDef class="s68__foot-label">68 global</td>
+                </ng-container>
 
-              <ng-container matColumnDef="vnc">
-                <th mat-header-cell *matHeaderCellDef>VNC</th>
-                <td mat-cell *matCellDef="let row" class="s68__num">{{ row.vnc | montant }}</td>
-                <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot">
-                  {{ d.total_vnc | montant }}
-                </td>
-              </ng-container>
+                <ng-container matColumnDef="vnc">
+                  <th mat-header-cell *matHeaderCellDef>VNC</th>
+                  <td mat-cell *matCellDef="let row" class="s68__num">{{ row.vnc | montant }}</td>
+                  <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot">
+                    {{ d.total_vnc | montant }}
+                  </td>
+                </ng-container>
 
-              <ng-container matColumnDef="nb">
-                <th mat-header-cell *matHeaderCellDef>Biens</th>
-                <td mat-cell *matCellDef="let row" class="s68__num">{{ row.nb_biens }}</td>
-                <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot">{{ d.nb_biens }}</td>
-              </ng-container>
+                <ng-container matColumnDef="nb">
+                  <th mat-header-cell *matHeaderCellDef>Biens</th>
+                  <td mat-cell *matCellDef="let row" class="s68__num">{{ row.nb_biens }}</td>
+                  <td mat-footer-cell *matFooterCellDef class="s68__num s68__foot">{{ d.nb_biens }}</td>
+                </ng-container>
 
-              <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
-              <tr mat-row *matRowDef="let row; columns: columns"></tr>
-              <tr mat-footer-row *matFooterRowDef="columns"></tr>
-            </table>
-          </div>
-          <p class="s68__note app-explain">
-            Solde 148 = amortissements cumulés au 31/12/{{ d.annee }}. Dotation 68 = somme des
-            dotations <strong>comptabilisées</strong> de l’exercice. Le total 68 global regroupe
-            toutes les natures.
-          </p>
+                <tr mat-header-row *matHeaderRowDef="natureColumns; sticky: true"></tr>
+                <tr mat-row *matRowDef="let row; columns: natureColumns"></tr>
+                <tr mat-footer-row *matFooterRowDef="natureColumns"></tr>
+              </table>
+            </div>
+          }
         }
+        <p class="s68__note app-explain">
+          Solde du compte sélectionné calculé à partir des immobilisations du périmètre. Pour le
+          compte 68, la période filtre les dotations comptabilisées ; pour 142 / 148, elle filtre
+          sur la date d’acquisition. L’export reprend la vue active (détail ou synthèse).
+        </p>
       } @else {
         <p class="s68__empty">Aucune donnée à afficher.</p>
       }

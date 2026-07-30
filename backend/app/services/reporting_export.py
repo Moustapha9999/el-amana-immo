@@ -494,32 +494,91 @@ def audit_logs_to_excel(rows: list, *, subtitle: str | None = None) -> bytes:
     )
 
 
-def immobilisations_to_excel(rows: list[Immobilisation], *, subtitle: str | None = None) -> bytes:
+_STATUT_IMMO_LABELS = {
+    "brouillon": "Brouillon",
+    "en_cours_acquisition": "En cours d'acquisition",
+    "en_service": "En service",
+    "suspendue": "Suspendue",
+    "cedee": "Cédée",
+    "mise_au_rebut": "Mise au rebut",
+    "transferee": "Transférée",
+    "reclassee": "Reclassée",
+    "archivee": "Archivée",
+    "cession": "Cession",
+    "rebut": "Rebut",
+    "en_cours": "En cours",
+    "sortie": "Sortie",
+}
+
+
+def _immobilisation_statut_label(statut: Any) -> str:
+    code = statut.value if hasattr(statut, "value") else str(statut or "")
+    return _STATUT_IMMO_LABELS.get(code, code or "—")
+
+
+def _immobilisation_export_row(row: Immobilisation) -> list[Any]:
+    categorie = getattr(row, "categorie", None)
+    famille = getattr(categorie, "famille", None) if categorie is not None else None
+    return [
+        row.code_inventaire or "",
+        row.designation or "",
+        famille or "—",
+        float(row.valeur_brute),
+        _immobilisation_statut_label(row.statut),
+        row.compte_immobilisation or "",
+        row.date_acquisition.strftime("%d/%m/%Y") if row.date_acquisition else "",
+    ]
+
+
+def immobilisations_to_excel(
+    rows: list[Immobilisation],
+    *,
+    subtitle: str | None = None,
+    report_title: str = "Inventaire des immobilisations",
+    sheet_title: str = "Immobilisations",
+) -> bytes:
     headers = [
         "Code inventaire",
         "Désignation",
-        "Statut",
+        "Type",
         "Valeur brute",
+        "Statut",
         "Compte immo",
         "Date acquisition",
     ]
-    data = [
-        [
-            row.code_inventaire,
-            row.designation,
-            row.statut.value if hasattr(row.statut, "value") else str(row.statut),
-            float(row.valeur_brute),
-            row.compte_immobilisation or "",
-            row.date_acquisition.strftime("%d/%m/%Y"),
-        ]
-        for row in rows
-    ]
+    data = [_immobilisation_export_row(row) for row in rows]
     return build_styled_workbook(
-        sheet_title="Immobilisations",
-        report_title="Inventaire des immobilisations",
+        sheet_title=sheet_title,
+        report_title=report_title,
         headers=headers,
         rows=data,
         subtitle=subtitle,
+    )
+
+
+def immobilisations_to_pdf(
+    rows: list[Immobilisation],
+    *,
+    subtitle: str | None = None,
+    report_title: str = "Inventaire des immobilisations",
+) -> bytes:
+    headers = [
+        "Code inventaire",
+        "Désignation",
+        "Type",
+        "Valeur brute",
+        "Statut",
+        "Compte immo",
+        "Date acq.",
+    ]
+    data = [_immobilisation_export_row(row) for row in rows]
+    return build_styled_pdf(
+        report_title=report_title,
+        headers=headers,
+        rows=data,
+        subtitle=subtitle,
+        landscape_mode=True,
+        col_aligns=["left", "left", "left", "right", "left", "left", "center"],
     )
 
 
@@ -1257,4 +1316,241 @@ def ventilation_amortissements_agence_to_pdf(payload: dict[str, Any]) -> bytes:
         subtitle=payload.get("subtitle"),
         landscape_mode=True,
         col_aligns=["left", "left", "left", "right", "right", "right", "right", "right"],
+    )
+
+
+def _soldes_148_68_headers(annee: int) -> list[str]:
+    return [
+        "Nature",
+        "Compte immo",
+        "Compte 148",
+        "Valeur brute",
+        f"Solde 148-{annee - 1}",
+        f"Dotation 68 {annee}",
+        f"Solde 148 fin {annee}",
+        "Compte 68",
+        "VNC",
+        "Biens",
+    ]
+
+
+def _soldes_148_68_row(line: dict[str, Any]) -> list[Any]:
+    return [
+        line.get("nature") or "",
+        line.get("compte_immobilisation") or "",
+        line.get("compte_amortissement") or "—",
+        line.get("valeur_brute"),
+        line.get("solde_148_n1"),
+        line.get("solde_68"),
+        line.get("solde_148"),
+        line.get("compte_dotation") or "—",
+        line.get("vnc"),
+        line.get("nb_biens"),
+    ]
+
+
+def soldes_148_68_to_excel(payload: dict[str, Any]) -> bytes:
+    """Consultation comptes 142/148/68 — synthèse par nature ou détail."""
+    annee = int(payload.get("annee"))
+    famille = str(payload.get("famille_compte") or "148")
+    numero = str(payload.get("compte_numero") or famille)
+    intitule = str(payload.get("compte_intitule") or "")
+    report_title = f"Compte {numero} — {intitule}" if intitule else "Soldes 142 / 148 / 68"
+    vue = str(payload.get("vue") or "detail")
+    totaux = payload.get("totaux") or {}
+
+    if vue == "synthese":
+        headers = _soldes_148_68_headers(annee)
+        rows: list[list[Any]] = [_soldes_148_68_row(line) for line in payload.get("lignes") or []]
+        rows.append(
+            [
+                "TOTAL",
+                "",
+                "",
+                totaux.get("valeur_brute"),
+                totaux.get("solde_148_n1"),
+                totaux.get("solde_68"),
+                totaux.get("solde_148"),
+                "68 global",
+                totaux.get("vnc"),
+                totaux.get("nb_biens"),
+            ]
+        )
+        return build_styled_workbook(
+            sheet_title=f"Soldes {numero}",
+            report_title=report_title,
+            headers=headers,
+            rows=rows,
+            subtitle=payload.get("subtitle"),
+        )
+
+    headers = [
+        "Date",
+        "Référence",
+        "Désignation",
+        "Catégorie",
+        "Valeur brute",
+        "Dotation",
+        "Amort. cumulé",
+        "VNC",
+        "Agence",
+        "Exercice",
+    ]
+    rows = []
+    for line in payload.get("detail") or []:
+        rows.append(
+            [
+                line.get("date") or "",
+                line.get("reference") or "",
+                line.get("designation") or "",
+                line.get("categorie") or "",
+                line.get("valeur_brute"),
+                line.get("dotation"),
+                line.get("amortissement_cumule"),
+                line.get("vnc"),
+                line.get("agence") or "",
+                line.get("exercice"),
+            ]
+        )
+    rows.append(
+        [
+            "TOTAL",
+            "",
+            "",
+            "",
+            totaux.get("valeur_brute"),
+            totaux.get("dotation"),
+            totaux.get("amortissement_cumule"),
+            totaux.get("vnc"),
+            "",
+            "",
+        ]
+    )
+    return build_styled_workbook(
+        sheet_title=f"Détail {numero}",
+        report_title=report_title,
+        headers=headers,
+        rows=rows,
+        subtitle=payload.get("subtitle"),
+    )
+
+
+def soldes_148_68_to_pdf(payload: dict[str, Any]) -> bytes:
+    """Consultation comptes 142/148/68 — PDF."""
+    annee = int(payload.get("annee"))
+    famille = str(payload.get("famille_compte") or "148")
+    numero = str(payload.get("compte_numero") or famille)
+    intitule = str(payload.get("compte_intitule") or "")
+    report_title = f"Compte {numero} — {intitule}" if intitule else "Soldes 142 / 148 / 68"
+    vue = str(payload.get("vue") or "detail")
+    totaux = payload.get("totaux") or {}
+
+    if vue == "synthese":
+        headers = [
+            "Nature",
+            "Cpt immo",
+            "Cpt 148",
+            "VB",
+            f"148-{annee - 1}",
+            f"68 {annee}",
+            f"148 fin {annee}",
+            "Cpt 68",
+            "VNC",
+            "Biens",
+        ]
+        rows: list[list[Any]] = [_soldes_148_68_row(line) for line in payload.get("lignes") or []]
+        rows.append(
+            [
+                "TOTAL",
+                "",
+                "",
+                totaux.get("valeur_brute"),
+                totaux.get("solde_148_n1"),
+                totaux.get("solde_68"),
+                totaux.get("solde_148"),
+                "68 global",
+                totaux.get("vnc"),
+                totaux.get("nb_biens"),
+            ]
+        )
+        return build_styled_pdf(
+            report_title=report_title,
+            headers=headers,
+            rows=rows,
+            subtitle=payload.get("subtitle"),
+            landscape_mode=True,
+            col_aligns=[
+                "left",
+                "left",
+                "left",
+                "right",
+                "right",
+                "right",
+                "right",
+                "left",
+                "right",
+                "center",
+            ],
+        )
+
+    headers = [
+        "Date",
+        "Réf.",
+        "Désignation",
+        "Catégorie",
+        "VB",
+        "Dotation",
+        "Amt cumulé",
+        "VNC",
+        "Agence",
+        "Exercice",
+    ]
+    rows = []
+    for line in payload.get("detail") or []:
+        rows.append(
+            [
+                line.get("date") or "",
+                line.get("reference") or "",
+                line.get("designation") or "",
+                line.get("categorie") or "",
+                line.get("valeur_brute"),
+                line.get("dotation"),
+                line.get("amortissement_cumule"),
+                line.get("vnc"),
+                line.get("agence") or "",
+                line.get("exercice"),
+            ]
+        )
+    rows.append(
+        [
+            "TOTAL",
+            "",
+            "",
+            "",
+            totaux.get("valeur_brute"),
+            totaux.get("dotation"),
+            totaux.get("amortissement_cumule"),
+            totaux.get("vnc"),
+            "",
+            "",
+        ]
+    )
+    return build_styled_pdf(
+        report_title=report_title,
+        headers=headers,
+        rows=rows,
+        subtitle=payload.get("subtitle"),
+        landscape_mode=True,
+        col_aligns=[
+            "center",
+            "left",
+            "left",
+            "left",
+            "right",
+            "right",
+            "right",
+            "right",
+            "left",
+            "center",
+        ],
     )

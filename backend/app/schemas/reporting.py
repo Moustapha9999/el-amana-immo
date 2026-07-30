@@ -150,15 +150,48 @@ class SoldeNatureLigneRead(BaseModel):
     nb_biens: int
 
 
+class Soldes14868DetailLigneRead(BaseModel):
+    immobilisation_id: str
+    date: str | None = None
+    reference: str
+    designation: str
+    categorie: str | None = None
+    valeur_brute: float
+    dotation: float
+    amortissement_cumule: float
+    amortissement_cumule_n1: float = 0
+    vnc: float
+    agence_code: str | None = None
+    agence_libelle: str | None = None
+    exercice: int
+    compte_immobilisation: str | None = None
+    compte_amortissement: str | None = None
+    compte_dotation: str | None = None
+
+
 class Soldes14868Read(BaseModel):
+    famille_compte: str = "148"
+    compte_numero: str = "148"
+    compte_intitule: str = "Amortissements cumulés"
     annee: int
     date_arrete: str
+    date_debut: str | None = None
+    date_fin: str | None = None
+    periode_label: str = ""
+    solde_total: float = 0
+    nb_immobilisations: int = 0
+    nb_mouvements: int = 0
+    total_valeur_brute: float = 0
+    total_dotation: float = 0
+    total_amortissement_cumule: float = 0
+    total_amortissement_cumule_n1: float = 0
+    total_vnc: float = 0
     lignes: list[SoldeNatureLigneRead]
+    detail: list[Soldes14868DetailLigneRead] = []
+    exercices_disponibles: list[int] = []
     total_148: float
     total_148_n1: float
     total_68: float
-    total_valeur_brute: float
-    total_vnc: float
     nb_biens: int
 
 

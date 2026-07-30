@@ -19,7 +19,7 @@ export const SHELL_NAV: ShellNavItem[] = [
   },
   {
     section: 'Patrimoine',
-    label: 'Soldes 148 / 68',
+    label: 'Soldes 142 / 148 / 68',
     path: '/comptes/soldes-148-68',
     icon: 'account_balance',
   },

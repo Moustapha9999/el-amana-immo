@@ -9,6 +9,24 @@
         <mat-icon aria-hidden="true">refresh</mat-icon>
         Actualiser
       </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('xlsx')"
+        [disabled]="total() === 0 || exporting() !== null || loading()"
+      >
+        <mat-icon aria-hidden="true">table_view</mat-icon>
+        {{ exporting() === 'xlsx' ? 'Excel…' : 'Excel' }}
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('pdf')"
+        [disabled]="total() === 0 || exporting() !== null || loading()"
+      >
+        <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
+        {{ exporting() === 'pdf' ? 'PDF…' : 'PDF' }}
+      </button>
       <a mat-flat-button color="primary" routerLink="/immobilisations/nouveau">
         <mat-icon aria-hidden="true">add</mat-icon>
         Nouvelle Saisie

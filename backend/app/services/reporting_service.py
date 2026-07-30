@@ -21,8 +21,22 @@ async def list_ecritures_for_export(
     return list(result.scalars().all())
 
 
-async def list_immobilisations_for_export(db: AsyncSession) -> list[Immobilisation]:
-    result = await db.execute(
-        select(Immobilisation).where(Immobilisation.deleted_at.is_(None)).order_by(Immobilisation.code_inventaire.asc())
+async def list_immobilisations_for_export(
+    db: AsyncSession,
+    *,
+    search: str | None = None,
+    statuts: list | None = None,
+    famille: str | None = None,
+    amortissable: bool | None = None,
+) -> list[Immobilisation]:
+    from app.services.immobilisation_service import ImmobilisationService
+
+    items, _total = await ImmobilisationService(db).list(
+        1,
+        100_000,
+        search,
+        amortissable=amortissable,
+        statuts=statuts,
+        famille=famille,
     )
-    return list(result.scalars().all())
+    return items

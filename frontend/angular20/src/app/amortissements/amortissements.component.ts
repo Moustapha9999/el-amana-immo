@@ -50,6 +50,7 @@ export class AmortissementsComponent implements OnInit {
 
   readonly rows = signal<ImmoRow[]>([]);
   readonly loading = signal(true);
+  readonly exporting = signal<'xlsx' | 'pdf' | null>(null);
   readonly page = signal(1);
   readonly total = signal(0);
   readonly pageSize = 50;
@@ -122,6 +123,35 @@ export class AmortissementsComponent implements OnInit {
   goToPage(page: number): void {
     this.page.set(page);
     this.load();
+  }
+
+  export(format: 'xlsx' | 'pdf'): void {
+    const f = this.filterForm.getRawValue();
+    const params: Record<string, string> = {
+      format,
+      statuts: f.statut || DEFAULT_STATUTS,
+    };
+    if (f.search.trim()) {
+      params['search'] = f.search.trim();
+    }
+    if (f.famille) {
+      params['famille'] = f.famille;
+    }
+    this.exporting.set(format);
+    this.api.download('/reporting/amortissements/export', params).subscribe({
+      next: (blob) => {
+        this.exporting.set(null);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `amortissements-el-amana.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      },
+      error: () => {
+        this.exporting.set(null);
+        void this.dialogs.error('Export impossible').subscribe();
+      },
+    });
   }
 
   remove(row: ImmoRow): void {

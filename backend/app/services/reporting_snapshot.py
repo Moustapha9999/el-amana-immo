@@ -309,6 +309,31 @@ async def resolve_soldes(db: AsyncSession, annee: int) -> Soldes14868Result:
     return await build_soldes_148_68(db, annee)
 
 
+async def resolve_consultation_soldes(
+    db: AsyncSession,
+    *,
+    annee: int,
+    famille_compte: str = "148",
+    agence_id=None,
+    categorie_id=None,
+    date_debut=None,
+    date_fin=None,
+    search: str | None = None,
+):
+    from app.services.soldes_148_68 import build_consultation_compte
+
+    return await build_consultation_compte(
+        db,
+        annee=annee,
+        famille_compte=famille_compte,
+        agence_id=agence_id,
+        categorie_id=categorie_id,
+        date_debut=date_debut,
+        date_fin=date_fin,
+        search=search,
+    )
+
+
 async def resolve_comptes(
     db: AsyncSession, annee: int, *, compte: str | None = None
 ) -> ComptesParNatureResult:
