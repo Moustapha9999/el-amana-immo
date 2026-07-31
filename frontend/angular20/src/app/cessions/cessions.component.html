@@ -5,6 +5,24 @@
       <p class="ces__lead">{{ total() }} cession(s)</p>
     </div>
     <div class="ces__hero-actions">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('xlsx')"
+        [disabled]="loading() || exporting() !== null"
+      >
+        <mat-icon aria-hidden="true">table_view</mat-icon>
+        {{ exporting() === 'xlsx' ? 'Excel…' : 'Excel' }}
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('pdf')"
+        [disabled]="loading() || exporting() !== null"
+      >
+        <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
+        {{ exporting() === 'pdf' ? 'PDF…' : 'PDF' }}
+      </button>
       <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()">
         <mat-icon aria-hidden="true">refresh</mat-icon>
         Actualiser

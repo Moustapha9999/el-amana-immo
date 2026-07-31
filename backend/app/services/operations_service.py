@@ -10,7 +10,7 @@ from app.schemas.operations import CessionCreate, RebutCreate
 from app.services.cession_amortissement import preparer_amortissements_cession
 from app.services.ecriture_sortie import enregistrer_ecritures_sortie, plan_ecritures_cession, plan_ecritures_rebut
 from app.services.exercice_guard import ensure_exercice_ouvert_pour_date
-from app.services.immobilisation_vnc import compute_situation_a_date, compute_situation_comptable
+from app.services.immobilisation_vnc import compute_situation_cession, compute_situation_comptable
 
 _STATUTS_SORTIE_OK = {
     StatutImmobilisation.EN_SERVICE,
@@ -49,7 +49,7 @@ class CessionService:
             raise ValidationError("La date de cession ne peut pas être antérieure à la date d'acquisition.")
         if prix_cession < 0:
             raise ValidationError("Le prix de cession doit être positif ou nul.")
-        cumul, vnc = compute_situation_a_date(immo, date_cession)
+        cumul, vnc = await compute_situation_cession(self.db, immo, date_cession)
         resultat, plus_value, moins_value, cas = _resultat_cession(prix_cession, vnc)
         return {
             "cumul_amortissement": cumul,

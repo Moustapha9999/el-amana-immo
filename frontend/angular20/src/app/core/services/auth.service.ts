@@ -81,9 +81,8 @@ export class AuthService {
 
   /**
    * Déconnexion : révoque la session côté serveur puis purge locale.
-   * @param reason `idle` = inactivité 5 min
    */
-  logout(options?: { reason?: 'idle' | 'manual' | 'session' }): void {
+  logout(options?: { reason?: 'manual' | 'session' }): void {
     const refresh = this.refreshToken;
     const hadSession = !!(this.accessToken || refresh);
 
@@ -96,11 +95,7 @@ export class AuthService {
 
     this.clearLocalSession();
     const queryParams =
-      options?.reason === 'idle'
-        ? { reason: 'idle' }
-        : options?.reason === 'session'
-          ? { reason: 'session' }
-          : undefined;
+      options?.reason === 'session' ? { reason: 'session' } : undefined;
     void this.router.navigate(['/login'], queryParams ? { queryParams } : undefined);
   }
 

@@ -49,3 +49,24 @@ def test_styled_pdf_bytes():
 def test_format_helpers():
     assert "à" in format_export_datetime()
     assert format_period_label(date(2026, 1, 1), date(2026, 1, 31)).startswith("Période")
+
+
+def test_cessions_list_export_empty():
+    from app.services.reporting_export import cessions_to_excel, cessions_to_pdf
+
+    assert cessions_to_excel([])[:2] == b"PK"
+    assert cessions_to_pdf([])[:4] == b"%PDF"
+
+
+def test_rebuts_list_export_empty():
+    from app.services.reporting_export import rebuts_to_excel, rebuts_to_pdf
+
+    assert rebuts_to_excel([])[:2] == b"PK"
+    assert rebuts_to_pdf([])[:4] == b"%PDF"
+
+
+def test_reevaluations_list_export_empty():
+    from app.services.reporting_export import reevaluations_to_excel, reevaluations_to_pdf
+
+    assert reevaluations_to_excel([])[:2] == b"PK"
+    assert reevaluations_to_pdf([])[:4] == b"%PDF"

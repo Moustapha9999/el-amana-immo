@@ -638,6 +638,87 @@ def cession_fiche_to_pdf(detail: dict[str, Any]) -> bytes:
     )
 
 
+def _cession_list_rows(rows: list[tuple[Any, Any]]) -> list[list[Any]]:
+    data: list[list[Any]] = []
+    for cession, immo in rows:
+        plus = cession.plus_value or 0
+        moins = cession.moins_value or 0
+        if plus and float(plus) > 0:
+            resultat = float(plus)
+        elif moins and float(moins) > 0:
+            resultat = -float(moins)
+        else:
+            resultat = 0.0
+        data.append(
+            [
+                cession.date_cession.strftime("%d/%m/%Y") if cession.date_cession else "",
+                immo.code_inventaire if immo else "",
+                cession.reference or "",
+                immo.designation if immo else "",
+                float(cession.prix_cession or 0),
+                float(cession.vnc or 0),
+                resultat,
+                float(plus or 0),
+                float(moins or 0),
+            ]
+        )
+    return data
+
+
+def cessions_to_excel(
+    rows: list[tuple[Any, Any]],
+    *,
+    subtitle: str | None = None,
+) -> bytes:
+    headers = [
+        "Date",
+        "Code inventaire",
+        "Référence",
+        "Désignation",
+        "Prix de cession",
+        "VNC",
+        "Résultat",
+        "Plus-value",
+        "Moins-value",
+    ]
+    return build_styled_workbook(
+        sheet_title="Cessions",
+        report_title="Liste des cessions",
+        headers=headers,
+        rows=_cession_list_rows(rows),
+        subtitle=subtitle,
+    )
+
+
+def cessions_to_pdf(
+    rows: list[tuple[Any, Any]],
+    *,
+    subtitle: str | None = None,
+) -> bytes:
+    headers = ["Date", "Code", "Référence", "Désignation", "Prix", "VNC", "Résultat"]
+    data = []
+    for row in _cession_list_rows(rows):
+        data.append(
+            [
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                format_montant(row[4]),
+                format_montant(row[5]),
+                format_montant(row[6]),
+            ]
+        )
+    return build_styled_pdf(
+        report_title="Liste des cessions",
+        headers=headers,
+        rows=data,
+        subtitle=subtitle,
+        landscape_mode=True,
+        col_aligns=["center", "left", "left", "left", "right", "right", "right"],
+    )
+
+
 def rebut_fiche_to_excel(detail: dict[str, Any]) -> bytes:
     """Fiche mise au rebut — Excel (libellé / valeur)."""
     rows = [
@@ -683,6 +764,55 @@ def rebut_fiche_to_pdf(detail: dict[str, Any]) -> bytes:
         landscape_mode=False,
         col_widths=None,
         col_aligns=["left", "left"],
+    )
+
+
+def _rebut_list_rows(rows: list[tuple[Any, Any]]) -> list[list[Any]]:
+    data: list[list[Any]] = []
+    for rebut, immo in rows:
+        data.append(
+            [
+                rebut.date_rebut.strftime("%d/%m/%Y") if rebut.date_rebut else "",
+                immo.code_inventaire if immo else "",
+                immo.designation if immo else "",
+                float(rebut.vnc or 0),
+                rebut.motif or "",
+            ]
+        )
+    return data
+
+
+def rebuts_to_excel(
+    rows: list[tuple[Any, Any]],
+    *,
+    subtitle: str | None = None,
+) -> bytes:
+    headers = ["Date", "Code inventaire", "Désignation", "VNC sortie", "Motif"]
+    return build_styled_workbook(
+        sheet_title="Rebuts",
+        report_title="Liste des mises au rebut",
+        headers=headers,
+        rows=_rebut_list_rows(rows),
+        subtitle=subtitle,
+    )
+
+
+def rebuts_to_pdf(
+    rows: list[tuple[Any, Any]],
+    *,
+    subtitle: str | None = None,
+) -> bytes:
+    headers = ["Date", "Code", "Désignation", "VNC sortie", "Motif"]
+    data = []
+    for row in _rebut_list_rows(rows):
+        data.append([row[0], row[1], row[2], format_montant(row[3]), row[4]])
+    return build_styled_pdf(
+        report_title="Liste des mises au rebut",
+        headers=headers,
+        rows=data,
+        subtitle=subtitle,
+        landscape_mode=True,
+        col_aligns=["center", "left", "left", "right", "left"],
     )
 
 
@@ -735,6 +865,77 @@ def reevaluation_fiche_to_pdf(detail: dict[str, Any]) -> bytes:
         landscape_mode=False,
         col_widths=None,
         col_aligns=["left", "left"],
+    )
+
+
+def _reevaluation_list_rows(rows: list[tuple[Any, Any]]) -> list[list[Any]]:
+    data: list[list[Any]] = []
+    for reev, immo in rows:
+        ancienne = float(reev.ancienne_valeur or 0)
+        nouvelle = float(reev.nouvelle_valeur or 0)
+        data.append(
+            [
+                reev.date_reevaluation.strftime("%d/%m/%Y") if reev.date_reevaluation else "",
+                immo.code_inventaire if immo else "",
+                immo.designation if immo else "",
+                ancienne,
+                nouvelle,
+                nouvelle - ancienne,
+                reev.justificatif or "",
+            ]
+        )
+    return data
+
+
+def reevaluations_to_excel(
+    rows: list[tuple[Any, Any]],
+    *,
+    subtitle: str | None = None,
+) -> bytes:
+    headers = [
+        "Date",
+        "Code inventaire",
+        "Désignation",
+        "Ancienne valeur",
+        "Nouvelle valeur",
+        "Écart",
+        "Justificatif",
+    ]
+    return build_styled_workbook(
+        sheet_title="Réévaluations",
+        report_title="Liste des réévaluations",
+        headers=headers,
+        rows=_reevaluation_list_rows(rows),
+        subtitle=subtitle,
+    )
+
+
+def reevaluations_to_pdf(
+    rows: list[tuple[Any, Any]],
+    *,
+    subtitle: str | None = None,
+) -> bytes:
+    headers = ["Date", "Code", "Désignation", "Ancienne", "Nouvelle", "Écart", "Justificatif"]
+    data = []
+    for row in _reevaluation_list_rows(rows):
+        data.append(
+            [
+                row[0],
+                row[1],
+                row[2],
+                format_montant(row[3]),
+                format_montant(row[4]),
+                format_montant(row[5]),
+                row[6],
+            ]
+        )
+    return build_styled_pdf(
+        report_title="Liste des réévaluations",
+        headers=headers,
+        rows=data,
+        subtitle=subtitle,
+        landscape_mode=True,
+        col_aligns=["center", "left", "left", "right", "right", "right", "left"],
     )
 
 

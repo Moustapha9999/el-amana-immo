@@ -40,6 +40,8 @@ from app.services.reporting_snapshot import (
 from app.models.enums import StatutImmobilisation
 from app.services.reporting_export import (
     audit_logs_to_excel,
+    cessions_to_excel,
+    cessions_to_pdf,
     comptes_par_nature_to_excel,
     comptes_par_nature_to_pdf,
     ecritures_to_excel,
@@ -47,14 +49,23 @@ from app.services.reporting_export import (
     format_period_label,
     immobilisations_to_excel,
     immobilisations_to_pdf,
+    rebuts_to_excel,
+    rebuts_to_pdf,
     recap_amortissement_detail_to_excel,
     recap_amortissement_detail_to_pdf,
     recap_amortissement_to_excel,
     recap_amortissement_to_pdf,
+    reevaluations_to_excel,
+    reevaluations_to_pdf,
     soldes_148_68_to_excel,
     soldes_148_68_to_pdf,
     ventilation_amortissements_agence_to_excel,
     ventilation_amortissements_agence_to_pdf,
+)
+from app.services.operations_query import (
+    list_cessions_for_export,
+    list_rebuts_for_export,
+    list_reevaluations_for_export,
 )
 from app.services.reporting_service import list_ecritures_for_export, list_immobilisations_for_export
 from app.services.ventilation_amortissements_agence import build_ventilation_amortissements_agence
@@ -167,6 +178,104 @@ async def export_ecritures(
         content = ecritures_to_excel(rows, subtitle=subtitle)
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         filename = "ecritures-el-amana.xlsx"
+    return Response(
+        content=content,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _ops_export_subtitle(
+    date_debut: date | None,
+    date_fin: date | None,
+    search: str | None,
+) -> str | None:
+    bits: list[str] = []
+    period = format_period_label(date_debut, date_fin)
+    if period:
+        bits.append(period)
+    if search and search.strip():
+        bits.append(f"Recherche : {search.strip()}")
+    return " — ".join(bits) if bits else None
+
+
+@router.get("/reporting/cessions/export")
+async def export_cessions(
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    search: str | None = None,
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = await list_cessions_for_export(
+        db, date_debut=date_debut, date_fin=date_fin, search=search
+    )
+    subtitle = _ops_export_subtitle(date_debut, date_fin, search)
+    if format == "pdf":
+        content = cessions_to_pdf(rows, subtitle=subtitle)
+        media = "application/pdf"
+        filename = "cessions-el-amana.pdf"
+    else:
+        content = cessions_to_excel(rows, subtitle=subtitle)
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = "cessions-el-amana.xlsx"
+    return Response(
+        content=content,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/reporting/rebuts/export")
+async def export_rebuts(
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    search: str | None = None,
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = await list_rebuts_for_export(
+        db, date_debut=date_debut, date_fin=date_fin, search=search
+    )
+    subtitle = _ops_export_subtitle(date_debut, date_fin, search)
+    if format == "pdf":
+        content = rebuts_to_pdf(rows, subtitle=subtitle)
+        media = "application/pdf"
+        filename = "rebuts-el-amana.pdf"
+    else:
+        content = rebuts_to_excel(rows, subtitle=subtitle)
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = "rebuts-el-amana.xlsx"
+    return Response(
+        content=content,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/reporting/reevaluations/export")
+async def export_reevaluations(
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    search: str | None = None,
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = await list_reevaluations_for_export(
+        db, date_debut=date_debut, date_fin=date_fin, search=search
+    )
+    subtitle = _ops_export_subtitle(date_debut, date_fin, search)
+    if format == "pdf":
+        content = reevaluations_to_pdf(rows, subtitle=subtitle)
+        media = "application/pdf"
+        filename = "reevaluations-el-amana.pdf"
+    else:
+        content = reevaluations_to_excel(rows, subtitle=subtitle)
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = "reevaluations-el-amana.xlsx"
     return Response(
         content=content,
         media_type=media,

@@ -58,15 +58,12 @@ async def get_rebut(
     return row[0], row[1]
 
 
-async def list_cessions(
-    db: AsyncSession,
-    page: int,
-    size: int,
+def _cession_filters(
     *,
     date_debut: date | None = None,
     date_fin: date | None = None,
     search: str | None = None,
-) -> tuple[list[tuple[Cession, Immobilisation | None]], int]:
+) -> list:
     filters = []
     if date_debut is not None:
         filters.append(Cession.date_cession >= date_debut)
@@ -87,6 +84,19 @@ async def list_cessions(
                 cast(Cession.vnc, String).ilike(pattern),
             )
         )
+    return filters
+
+
+async def list_cessions(
+    db: AsyncSession,
+    page: int,
+    size: int,
+    *,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    search: str | None = None,
+) -> tuple[list[tuple[Cession, Immobilisation | None]], int]:
+    filters = _cession_filters(date_debut=date_debut, date_fin=date_fin, search=search)
 
     base = select(Cession, Immobilisation).join(
         Immobilisation, Cession.immobilisation_id == Immobilisation.id, isouter=True
@@ -107,15 +117,29 @@ async def list_cessions(
     return [(c, immo) for c, immo in result.all()], total
 
 
-async def list_rebuts(
+async def list_cessions_for_export(
     db: AsyncSession,
-    page: int,
-    size: int,
     *,
     date_debut: date | None = None,
     date_fin: date | None = None,
     search: str | None = None,
-) -> tuple[list[tuple[Rebut, Immobilisation | None]], int]:
+) -> list[tuple[Cession, Immobilisation | None]]:
+    filters = _cession_filters(date_debut=date_debut, date_fin=date_fin, search=search)
+    base = select(Cession, Immobilisation).join(
+        Immobilisation, Cession.immobilisation_id == Immobilisation.id, isouter=True
+    )
+    if filters:
+        base = base.where(*filters)
+    result = await db.execute(base.order_by(Cession.date_cession.desc()))
+    return [(c, immo) for c, immo in result.all()]
+
+
+def _rebut_filters(
+    *,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    search: str | None = None,
+) -> list:
     filters = []
     if date_debut is not None:
         filters.append(Rebut.date_rebut >= date_debut)
@@ -133,6 +157,19 @@ async def list_rebuts(
                 cast(Rebut.vnc, String).ilike(pattern),
             )
         )
+    return filters
+
+
+async def list_rebuts(
+    db: AsyncSession,
+    page: int,
+    size: int,
+    *,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    search: str | None = None,
+) -> tuple[list[tuple[Rebut, Immobilisation | None]], int]:
+    filters = _rebut_filters(date_debut=date_debut, date_fin=date_fin, search=search)
 
     base = select(Rebut, Immobilisation).join(
         Immobilisation, Rebut.immobilisation_id == Immobilisation.id, isouter=True
@@ -153,15 +190,29 @@ async def list_rebuts(
     return [(r, immo) for r, immo in result.all()], total
 
 
-async def list_reevaluations(
+async def list_rebuts_for_export(
     db: AsyncSession,
-    page: int,
-    size: int,
     *,
     date_debut: date | None = None,
     date_fin: date | None = None,
     search: str | None = None,
-) -> tuple[list[tuple[Reevaluation, Immobilisation | None]], int]:
+) -> list[tuple[Rebut, Immobilisation | None]]:
+    filters = _rebut_filters(date_debut=date_debut, date_fin=date_fin, search=search)
+    base = select(Rebut, Immobilisation).join(
+        Immobilisation, Rebut.immobilisation_id == Immobilisation.id, isouter=True
+    )
+    if filters:
+        base = base.where(*filters)
+    result = await db.execute(base.order_by(Rebut.date_rebut.desc()))
+    return [(r, immo) for r, immo in result.all()]
+
+
+def _reevaluation_filters(
+    *,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    search: str | None = None,
+) -> list:
     filters = []
     if date_debut is not None:
         filters.append(Reevaluation.date_reevaluation >= date_debut)
@@ -180,6 +231,19 @@ async def list_reevaluations(
                 cast(Reevaluation.nouvelle_valeur, String).ilike(pattern),
             )
         )
+    return filters
+
+
+async def list_reevaluations(
+    db: AsyncSession,
+    page: int,
+    size: int,
+    *,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    search: str | None = None,
+) -> tuple[list[tuple[Reevaluation, Immobilisation | None]], int]:
+    filters = _reevaluation_filters(date_debut=date_debut, date_fin=date_fin, search=search)
 
     base = select(Reevaluation, Immobilisation).join(
         Immobilisation, Reevaluation.immobilisation_id == Immobilisation.id, isouter=True
@@ -200,6 +264,23 @@ async def list_reevaluations(
         .limit(size)
     )
     return [(r, immo) for r, immo in result.all()], total
+
+
+async def list_reevaluations_for_export(
+    db: AsyncSession,
+    *,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    search: str | None = None,
+) -> list[tuple[Reevaluation, Immobilisation | None]]:
+    filters = _reevaluation_filters(date_debut=date_debut, date_fin=date_fin, search=search)
+    base = select(Reevaluation, Immobilisation).join(
+        Immobilisation, Reevaluation.immobilisation_id == Immobilisation.id, isouter=True
+    )
+    if filters:
+        base = base.where(*filters)
+    result = await db.execute(base.order_by(Reevaluation.date_reevaluation.desc()))
+    return [(r, immo) for r, immo in result.all()]
 
 
 async def list_ajustements(

@@ -57,6 +57,7 @@ export class CessionsComponent implements OnInit {
   readonly page = signal(1);
   readonly pageSize = 50;
   readonly loading = signal(false);
+  readonly exporting = signal<'xlsx' | 'pdf' | null>(null);
   readonly columns = ['date', 'code', 'reference', 'designation', 'prix', 'vnc', 'resultat', 'actions'];
 
   readonly filterForm = this.fb.nonNullable.group({
@@ -122,6 +123,40 @@ export class CessionsComponent implements OnInit {
     this.filterForm.reset({ date_debut: '', date_fin: '', search: '' });
     this.page.set(1);
     this.load();
+  }
+
+  export(format: 'xlsx' | 'pdf'): void {
+    const f = this.filterForm.getRawValue();
+    const params: Record<string, string> = { format };
+    if (f.date_debut) {
+      params['date_debut'] = f.date_debut;
+    }
+    if (f.date_fin) {
+      params['date_fin'] = f.date_fin;
+    }
+    if (f.search.trim()) {
+      params['search'] = f.search.trim();
+    }
+    this.exporting.set(format);
+    this.api.download('/reporting/cessions/export', params).subscribe({
+      next: (blob) => {
+        this.exporting.set(null);
+        this.saveBlob(blob, `cessions-el-amana.${format === 'pdf' ? 'pdf' : 'xlsx'}`);
+      },
+      error: () => {
+        this.exporting.set(null);
+        void this.dialogs.error('Export impossible').subscribe();
+      },
+    });
+  }
+
+  private saveBlob(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   resultatLabel(row: CessionRow): string {

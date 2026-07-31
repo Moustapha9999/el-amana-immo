@@ -93,6 +93,14 @@
 
         }
 
+        <div class="app-shell__clock" title="Date et heure système">
+          <mat-icon class="app-shell__clock-icon" aria-hidden="true">schedule</mat-icon>
+          <div class="app-shell__clock-meta">
+            <span class="app-shell__clock-date">{{ clock.dateDisplay() }}</span>
+            <span class="app-shell__clock-time">{{ clock.timeDisplay() }}</span>
+          </div>
+        </div>
+
         <button mat-stroked-button type="button" class="app-shell__logout" (click)="logout()">
 
           <mat-icon>logout</mat-icon>
