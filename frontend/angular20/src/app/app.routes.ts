@@ -21,6 +21,7 @@ import { AmortissementsComponent } from './amortissements/amortissements.compone
 import { CalculAmortissementsComponent } from './amortissements/calcul-amortissements.component';
 import { AmortissementDetailComponent } from './amortissements/amortissement-detail.component';
 import { RecapAmortissementComponent } from './recap-amortissement/recap-amortissement.component';
+import { RecapImmobilisationsComponent } from './recap-immobilisations/recap-immobilisations.component';
 import { AmortissementsAgenceComponent } from './amortissements-agence/amortissements-agence.component';
 import { ComptesComponent } from './comptes/comptes.component';
 import { Soldes14868Component } from './comptes/soldes-148-68.component';
@@ -53,6 +54,7 @@ export const routes: Routes = [
       { path: 'amortissements/calculer', component: CalculAmortissementsComponent },
       { path: 'amortissements/:id', component: AmortissementDetailComponent },
       { path: 'recap-amortissement', component: RecapAmortissementComponent },
+      { path: 'recap-immobilisations', component: RecapImmobilisationsComponent },
       { path: 'amortissements-agence', component: AmortissementsAgenceComponent },
       { path: 'comptes/soldes-148-68', component: Soldes14868Component },
       { path: 'comptes', component: ComptesComponent },

@@ -1,0 +1,192 @@
+<div class="rim">
+  <header class="rim__hero">
+    <div>
+      <h1 class="rim__title">Tableau récapitulatif des immobilisations</h1>
+      <p class="rim__lead">
+        @if (data(); as d) {
+          Valeurs brutes par compte de nature — ouverture 31/12/{{ d.annee_ouverture }}, mouvements {{ d.annee }}
+        } @else {
+          Variation des valeurs brutes regroupées par compte d’immobilisation (142000–147530)
+        }
+      </p>
+    </div>
+    <div class="rim__hero-actions">
+      <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Actualiser
+      </button>
+      <a mat-stroked-button routerLink="/recap-amortissement">
+        <mat-icon aria-hidden="true">table_chart</mat-icon>
+        Récap. amortissement
+      </a>
+      <a mat-stroked-button routerLink="/comptes">
+        <mat-icon aria-hidden="true">account_balance_wallet</mat-icon>
+        Comptes par nature
+      </a>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('xlsx')"
+        [disabled]="!data() || exporting() !== null || loading()"
+      >
+        <mat-icon aria-hidden="true">table_view</mat-icon>
+        {{ exporting() === 'xlsx' ? 'Excel…' : 'Excel' }}
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('pdf')"
+        [disabled]="!data() || exporting() !== null || loading()"
+      >
+        <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
+        {{ exporting() === 'pdf' ? 'PDF…' : 'PDF' }}
+      </button>
+    </div>
+  </header>
+
+  @if (data(); as d) {
+    @if (!loading()) {
+      <div class="rim__kpis">
+        <div class="rim__kpi">
+          <span class="rim__kpi-label">Valeurs au 31/12/{{ d.annee_ouverture }}</span>
+          <span class="rim__kpi-value">{{ d.totaux.valeurs_ouverture | montant }}</span>
+        </div>
+        <div class="rim__kpi rim__kpi--acq">
+          <span class="rim__kpi-label">Acquisitions {{ d.annee }}</span>
+          <span class="rim__kpi-value">{{ d.totaux.acquisitions | montant }}</span>
+        </div>
+        <div class="rim__kpi rim__kpi--ces">
+          <span class="rim__kpi-label">Cessions {{ d.annee }}</span>
+          <span class="rim__kpi-value">{{ d.totaux.cessions | montant }}</span>
+        </div>
+        <div class="rim__kpi rim__kpi--cloture">
+          <span class="rim__kpi-label">Valeurs au 31/12/{{ d.annee }}</span>
+          <span class="rim__kpi-value">{{ d.totaux.valeurs_cloture | montant }}</span>
+        </div>
+      </div>
+    }
+  }
+
+  <section class="rim__section">
+    <div class="rim__toolbar">
+      <form [formGroup]="filterForm" (ngSubmit)="load(); applyLocalFilters()" class="rim__filters">
+        <div class="rim-field">
+          <label class="rim-field__label" for="rim-annee">Exercice des mouvements</label>
+          <input
+            id="rim-annee"
+            class="rim-field__control"
+            type="number"
+            formControlName="annee"
+            min="2001"
+            max="2100"
+            step="1"
+            aria-label="Année exercice"
+          />
+        </div>
+        <div class="rim-field rim-field--grow">
+          <label class="rim-field__label" for="rim-search">Recherche</label>
+          <input
+            id="rim-search"
+            class="rim-field__control"
+            formControlName="search"
+            autocomplete="off"
+            placeholder="Compte, intitulé, montants…"
+            aria-label="Recherche"
+          />
+        </div>
+        <div class="rim__filter-actions">
+          <button mat-flat-button color="primary" type="submit" [disabled]="loading()">
+            Afficher
+          </button>
+          <button mat-stroked-button type="button" (click)="applyLocalFilters()" [disabled]="loading()">
+            Filtrer
+          </button>
+          <button mat-stroked-button type="button" (click)="resetFilters()" [disabled]="loading()">
+            Réinitialiser
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="rim__body">
+      @if (loading()) {
+        <p class="rim__empty">Calcul du tableau récapitulatif…</p>
+      } @else if (data(); as d) {
+        @if (d.lignes.length === 0) {
+          <p class="rim__empty">Aucune immobilisation sur les comptes 142000–147530 pour {{ d.annee }}.</p>
+        } @else if (lignesFiltrees().length === 0) {
+          <p class="rim__empty">Aucun résultat pour ces critères de recherche.</p>
+        } @else {
+          <div class="rim__table-wrap app-table-scroll">
+            <table mat-table [dataSource]="lignesFiltrees()" class="w-full app-table rim__table">
+              <ng-container matColumnDef="compte">
+                <th mat-header-cell *matHeaderCellDef>Compte</th>
+                <td mat-cell *matCellDef="let row" class="rim__mono">{{ row.compte }}</td>
+                <td mat-footer-cell *matFooterCellDef class="rim__foot-label">Total</td>
+              </ng-container>
+
+              <ng-container matColumnDef="intitule">
+                <th mat-header-cell *matHeaderCellDef>Intitulé</th>
+                <td mat-cell *matCellDef="let row">{{ row.intitule }}</td>
+                <td mat-footer-cell *matFooterCellDef></td>
+              </ng-container>
+
+              <ng-container matColumnDef="ouverture">
+                <th mat-header-cell *matHeaderCellDef>Valeurs 31/12/{{ d.annee_ouverture }}</th>
+                <td mat-cell *matCellDef="let row" class="rim__num">
+                  {{ row.valeurs_ouverture | montant }}
+                </td>
+                <td mat-footer-cell *matFooterCellDef class="rim__num rim__foot">
+                  {{ d.totaux.valeurs_ouverture | montant }}
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="acquisitions">
+                <th mat-header-cell *matHeaderCellDef>Acquisitions {{ d.annee }}</th>
+                <td mat-cell *matCellDef="let row" class="rim__num">
+                  {{ row.acquisitions | montant }}
+                </td>
+                <td mat-footer-cell *matFooterCellDef class="rim__num rim__foot rim__foot--pos">
+                  {{ d.totaux.acquisitions | montant }}
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="cessions">
+                <th mat-header-cell *matHeaderCellDef>Cessions {{ d.annee }}</th>
+                <td mat-cell *matCellDef="let row" class="rim__num">
+                  {{ row.cessions | montant }}
+                </td>
+                <td mat-footer-cell *matFooterCellDef class="rim__num rim__foot rim__foot--neg">
+                  {{ d.totaux.cessions | montant }}
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="cloture">
+                <th mat-header-cell *matHeaderCellDef>Valeurs 31/12/{{ d.annee }}</th>
+                <td mat-cell *matCellDef="let row" class="rim__num">
+                  {{ row.valeurs_cloture | montant }}
+                </td>
+                <td mat-footer-cell *matFooterCellDef class="rim__num rim__foot">
+                  {{ d.totaux.valeurs_cloture | montant }}
+                </td>
+              </ng-container>
+
+              <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
+              <tr mat-row *matRowDef="let row; columns: columns"></tr>
+              <tr mat-footer-row *matFooterRowDef="columns"></tr>
+            </table>
+          </div>
+          <p class="rim__note app-explain">
+            <strong>{{ lignesFiltrees().length }}</strong> compte(s) affiché(s) sur {{ d.lignes.length }}.
+            Valeurs au 31/12/{{ d.annee_ouverture }} = somme des VB des biens détenus à cette date.
+            Acquisitions {{ d.annee }} = VB des biens acquis durant l’exercice.
+            Cessions {{ d.annee }} = VB des biens cédés durant l’exercice.
+            Valeurs au 31/12/{{ d.annee }} = ouverture + acquisitions − cessions.
+          </p>
+        }
+      } @else {
+        <p class="rim__empty">Sélectionnez un exercice et cliquez sur Afficher.</p>
+      }
+    </div>
+  </section>
+</div>

@@ -13,6 +13,12 @@ export const SHELL_NAV: ShellNavItem[] = [
   { section: 'Patrimoine', label: 'Amortissements', path: '/amortissements', icon: 'timeline' },
   {
     section: 'Patrimoine',
+    label: 'Récap. immobilisations',
+    path: '/recap-immobilisations',
+    icon: 'summarize',
+  },
+  {
+    section: 'Patrimoine',
     label: 'Récap. amortissement',
     path: '/recap-amortissement',
     icon: 'table_chart',

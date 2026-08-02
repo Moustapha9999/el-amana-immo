@@ -1755,3 +1755,91 @@ def soldes_148_68_to_pdf(payload: dict[str, Any]) -> bytes:
             "center",
         ],
     )
+
+
+def recap_immobilisations_to_excel(payload: dict[str, Any]) -> bytes:
+    """Tableau récapitulatif des immobilisations — variation VB par compte."""
+    annee = int(payload.get("annee") or 0)
+    annee_ouv = int(payload.get("annee_ouverture") or annee - 1)
+    headers = [
+        "Compte",
+        "Intitulé",
+        f"Valeurs au 31/12/{annee_ouv}",
+        f"Acquisitions {annee}",
+        f"Cessions {annee}",
+        f"Valeurs au 31/12/{annee}",
+    ]
+    rows: list[list[Any]] = []
+    for line in payload.get("lignes") or []:
+        rows.append(
+            [
+                line.get("compte") or "",
+                line.get("intitule") or "",
+                line.get("valeurs_ouverture"),
+                line.get("acquisitions"),
+                line.get("cessions"),
+                line.get("valeurs_cloture"),
+            ]
+        )
+    totaux = payload.get("totaux") or {}
+    rows.append(
+        [
+            "",
+            "TOTAL",
+            totaux.get("valeurs_ouverture"),
+            totaux.get("acquisitions"),
+            totaux.get("cessions"),
+            totaux.get("valeurs_cloture"),
+        ]
+    )
+    return build_styled_workbook(
+        sheet_title="Récap immobilisations",
+        report_title="Tableau récapitulatif des immobilisations",
+        headers=headers,
+        rows=rows,
+        subtitle=payload.get("subtitle"),
+    )
+
+
+def recap_immobilisations_to_pdf(payload: dict[str, Any]) -> bytes:
+    annee = int(payload.get("annee") or 0)
+    annee_ouv = int(payload.get("annee_ouverture") or annee - 1)
+    headers = [
+        "Compte",
+        "Intitulé",
+        f"VB 31/12/{annee_ouv}",
+        f"Acq. {annee}",
+        f"Cess. {annee}",
+        f"VB 31/12/{annee}",
+    ]
+    rows: list[list[Any]] = []
+    for line in payload.get("lignes") or []:
+        rows.append(
+            [
+                line.get("compte") or "",
+                line.get("intitule") or "",
+                line.get("valeurs_ouverture"),
+                line.get("acquisitions"),
+                line.get("cessions"),
+                line.get("valeurs_cloture"),
+            ]
+        )
+    totaux = payload.get("totaux") or {}
+    rows.append(
+        [
+            "",
+            "TOTAL",
+            totaux.get("valeurs_ouverture"),
+            totaux.get("acquisitions"),
+            totaux.get("cessions"),
+            totaux.get("valeurs_cloture"),
+        ]
+    )
+    return build_styled_pdf(
+        report_title="Tableau récapitulatif des immobilisations",
+        headers=headers,
+        rows=rows,
+        subtitle=payload.get("subtitle"),
+        landscape_mode=True,
+        col_aligns=["left", "left", "right", "right", "right", "right"],
+    )

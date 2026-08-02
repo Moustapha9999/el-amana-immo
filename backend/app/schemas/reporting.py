@@ -97,6 +97,24 @@ class RecapAmortissementRead(BaseModel):
     totaux: RecapAmortissementLigneRead
 
 
+class RecapImmobilisationsLigneRead(BaseModel):
+    compte: str
+    intitule: str
+    valeurs_ouverture: float
+    acquisitions: float
+    cessions: float
+    valeurs_cloture: float
+
+
+class RecapImmobilisationsRead(BaseModel):
+    annee: int
+    annee_ouverture: int
+    date_ouverture: str
+    date_cloture: str
+    lignes: list[RecapImmobilisationsLigneRead]
+    totaux: RecapImmobilisationsLigneRead
+
+
 class CompteNatureLigneRead(BaseModel):
     immobilisation_id: str
     code_inventaire: str

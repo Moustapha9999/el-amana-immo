@@ -21,6 +21,8 @@ from app.schemas.reporting import (
     RecapAmortissementDetailRead,
     RecapAmortissementLigneRead,
     RecapAmortissementRead,
+    RecapImmobilisationsLigneRead,
+    RecapImmobilisationsRead,
     SoldeNatureLigneRead,
     Soldes14868DetailLigneRead,
     Soldes14868Read,
@@ -55,6 +57,8 @@ from app.services.reporting_export import (
     recap_amortissement_detail_to_pdf,
     recap_amortissement_to_excel,
     recap_amortissement_to_pdf,
+    recap_immobilisations_to_excel,
+    recap_immobilisations_to_pdf,
     reevaluations_to_excel,
     reevaluations_to_pdf,
     soldes_148_68_to_excel,
@@ -68,6 +72,7 @@ from app.services.operations_query import (
     list_reevaluations_for_export,
 )
 from app.services.reporting_service import list_ecritures_for_export, list_immobilisations_for_export
+from app.services.recap_immobilisations import build_recap_immobilisations
 from app.services.ventilation_amortissements_agence import build_ventilation_amortissements_agence
 
 router = APIRouter(tags=["reporting"])
@@ -525,6 +530,93 @@ async def export_recap_amortissement(
             content = recap_amortissement_to_excel(payload)
             media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             filename = f"recap-amortissement-{annee}.xlsx"
+    return Response(
+        content=content,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _recap_immo_ligne_read(line) -> RecapImmobilisationsLigneRead:
+    return RecapImmobilisationsLigneRead(
+        compte=line.compte,
+        intitule=line.intitule,
+        valeurs_ouverture=float(line.valeurs_ouverture),
+        acquisitions=float(line.acquisitions),
+        cessions=float(line.cessions),
+        valeurs_cloture=float(line.valeurs_cloture),
+    )
+
+
+def _recap_immo_payload(result) -> dict:
+    return {
+        "annee": result.annee,
+        "annee_ouverture": result.annee_ouverture,
+        "subtitle": (
+            f"Valeurs brutes par compte de nature — "
+            f"ouverture 31/12/{result.annee_ouverture}, mouvements {result.annee}"
+        ),
+        "lignes": [
+            {
+                "compte": l.compte,
+                "intitule": l.intitule,
+                "valeurs_ouverture": float(l.valeurs_ouverture),
+                "acquisitions": float(l.acquisitions),
+                "cessions": float(l.cessions),
+                "valeurs_cloture": float(l.valeurs_cloture),
+            }
+            for l in result.lignes
+        ],
+        "totaux": {
+            "valeurs_ouverture": float(result.totaux.valeurs_ouverture),
+            "acquisitions": float(result.totaux.acquisitions),
+            "cessions": float(result.totaux.cessions),
+            "valeurs_cloture": float(result.totaux.valeurs_cloture),
+        },
+    }
+
+
+@router.get("/reporting/recap-immobilisations", response_model=RecapImmobilisationsRead)
+async def get_recap_immobilisations(
+    annee: int = Query(..., ge=2001, le=2100, description="Exercice des mouvements (ex. 2026)"),
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tableau récapitulatif VB : ouverture N-1, acquisitions/cessions N, clôture N."""
+    try:
+        result = await build_recap_immobilisations(db, annee)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RecapImmobilisationsRead(
+        annee=result.annee,
+        annee_ouverture=result.annee_ouverture,
+        date_ouverture=result.date_ouverture.isoformat(),
+        date_cloture=result.date_cloture.isoformat(),
+        lignes=[_recap_immo_ligne_read(l) for l in result.lignes],
+        totaux=_recap_immo_ligne_read(result.totaux),
+    )
+
+
+@router.get("/reporting/recap-immobilisations/export")
+async def export_recap_immobilisations(
+    annee: int = Query(..., ge=2001, le=2100),
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await build_recap_immobilisations(db, annee)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    payload = _recap_immo_payload(result)
+    if format == "pdf":
+        content = recap_immobilisations_to_pdf(payload)
+        media = "application/pdf"
+        filename = f"recap-immobilisations-{annee}.pdf"
+    else:
+        content = recap_immobilisations_to_excel(payload)
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = f"recap-immobilisations-{annee}.xlsx"
     return Response(
         content=content,
         media_type=media,
