@@ -1,87 +1,92 @@
+# Instance locale (machine du comptable).
+# Démarrage : copier .env.docker.example → .env.docker, puis docker compose up -d
+#
+# Ne jamais lancer : docker compose down -v
+# (le -v supprime le volume PostgreSQL)
+
 services:
   postgres:
     image: postgres:17-alpine
+    pull_policy: missing
     container_name: immo-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-immobilisations}
       POSTGRES_USER: ${POSTGRES_USER:-immo_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-immo_pass}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env.docker}
+    # Loopback seulement — pas d'accès LAN
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init:/docker-entrypoint-initdb.d:ro
+      - ./backups:/backups
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-immo_user} -d ${POSTGRES_DB:-immobilisations}"]
       interval: 5s
       timeout: 5s
-      retries: 10
-
-  redis:
-    image: redis:7-alpine
-    container_name: immo-redis
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
+      retries: 12
+    networks:
+      - immo_internal
 
   backend:
+    image: el-amana-immo-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
+    pull_policy: missing
     container_name: immo-backend
+    restart: unless-stopped
     env_file:
-      - .env
+      - .env.docker
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-immo_user}:${POSTGRES_PASSWORD:-immo_pass}@postgres:5432/${POSTGRES_DB:-immobilisations}
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/1
-      CELERY_RESULT_BACKEND: redis://redis:6379/2
-    ports:
-      - "8000:8000"
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-immo_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-immobilisations}
+      DATABASE_SSL: "false"
+      CORS_ORIGINS: http://localhost,http://127.0.0.1,http://localhost:80,http://127.0.0.1:80
     volumes:
-      - ./backend:/app
-      - backend_uploads:/app/storage/uploads
+      - ./storage/uploads:/app/storage/uploads
+      - ./backups:/backups
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-
-  worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: immo-worker
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-immo_user}:${POSTGRES_PASSWORD:-immo_pass}@postgres:5432/${POSTGRES_DB:-immobilisations}
-      CELERY_BROKER_URL: redis://redis:6379/1
-      CELERY_RESULT_BACKEND: redis://redis:6379/2
-    volumes:
-      - ./backend:/app
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    command: celery -A app.workers.celery_app worker --loglevel=info
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - immo_internal
 
   frontend:
+    image: el-amana-immo-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    pull_policy: missing
     container_name: immo-frontend
+    restart: unless-stopped
     ports:
-      - "4200:80"
+      - "127.0.0.1:80:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    networks:
+      - immo_internal
 
 volumes:
   postgres_data:
-  backend_uploads:
+    name: immo_postgres_data
+
+networks:
+  immo_internal:
+    name: immo_internal
+    driver: bridge

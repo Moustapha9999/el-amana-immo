@@ -1,0 +1,8 @@
+node_modules
+angular20/node_modules
+angular20/dist
+angular20/.angular
+angular20/out-tsc
+**/*.log
+.git
+.gitignore
