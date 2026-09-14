@@ -23,6 +23,10 @@ from app.services.amortissement_engine import (
 from app.services.amortissement_service import AmortissementService
 from app.services.exercice_guard import ensure_exercice_ouvert
 from app.services.exercice_ouverture_service import cumul_ouverture_pour
+from app.services.nature_immo_referentiel import (
+    COMPTES_NON_AMORTISSABLES_EL_AMANA,
+    is_immobilisation_amortissable,
+)
 from app.services.periode_amortissement_service import PeriodeAmortissementService
 
 
@@ -127,6 +131,8 @@ class AmortissementBatchService:
         ouverture_by_immo = await self._prefetch_ouvertures([i.id for i in immobiles], annee)
 
         for immo in immobiles:
+            if not is_immobilisation_amortissable(immo, immo.categorie):
+                continue
             rows = amorts_by_immo.get(immo.id, [])
             cumul = self._cumul_avant_periode(rows, date_debut)
             ouv = ouverture_by_immo.get(immo.id)
@@ -296,6 +302,7 @@ class AmortissementBatchService:
                 Immobilisation.statut == StatutImmobilisation.EN_SERVICE,
                 CategorieImmobilisation.amortissable.is_(True),
                 CategorieImmobilisation.deleted_at.is_(None),
+                Immobilisation.compte_immobilisation.notin_(COMPTES_NON_AMORTISSABLES_EL_AMANA),
             )
             .order_by(Immobilisation.code_inventaire.asc())
         )

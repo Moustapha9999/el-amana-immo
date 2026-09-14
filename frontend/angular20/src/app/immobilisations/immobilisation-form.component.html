@@ -269,10 +269,21 @@
           <mat-icon aria-hidden="true">trending_down</mat-icon>
           <div>
             <h2>Amortissement</h2>
-            <p>Dotation = VB × Taux × (jours 360 / 360) — YTD depuis acquisition (N) ou 01/01 (stock), à chaque arrêté T1→T4</p>
+            <p>
+              @if (isNonAmortissable()) {
+                Catégorie non amortissable — aucune dotation ne sera calculée
+              } @else {
+                Dotation = VB × Taux × (jours 360 / 360) — YTD depuis acquisition (N) ou 01/01 (stock), à chaque arrêté T1→T4
+              }
+            </p>
           </div>
         </div>
         <div class="immo-form__section-body">
+          @if (isNonAmortissable()) {
+            <p class="immo-form__hint immo-form__hint--warn" role="status">
+              {{ messageNonAmortissable }}
+            </p>
+          } @else {
           <div class="immo-form__grid">
             <div class="immo-field">
               <label class="immo-field__label" for="immo-duree">Durée (années)</label>
@@ -326,6 +337,7 @@
               <p class="immo-field__help">Base 360 : stock = 90/180/270/360 j depuis le 01/01 ; acquisitions N = DAYS360(acq, arrêté). Plafond = VNC.</p>
             </div>
           </div>
+          }
         </div>
       </section>
     </div>
@@ -355,7 +367,9 @@
         </div>
         @if (selectedCategory(); as cat) {
           <p class="immo-form__hint">
-            @if (cat.amortissable) {
+            @if (isNonAmortissable()) {
+              {{ messageNonAmortissable }}
+            } @else if (cat.amortissable) {
               Type amortissable — paramètres par défaut Banque El Amana.
             } @else {
               Type non amortissable — pas de dotation.
@@ -404,6 +418,11 @@
           </div>
         </div>
         <div class="immo-form__section-body">
+          @if (isNonAmortissable()) {
+            <p class="immo-form__hint immo-form__hint--warn" role="status">
+              {{ messageNonAmortissable }}
+            </p>
+          } @else {
           <div class="immo-form__workflow-head">
             <div>
               @if (dateComptabilisation()) {
@@ -478,6 +497,7 @@
                 <tr mat-row *matRowDef="let row; columns: amortissementColumns"></tr>
               </table>
             </div>
+          }
           }
         </div>
       </section>

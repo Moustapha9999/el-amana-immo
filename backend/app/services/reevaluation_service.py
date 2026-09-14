@@ -12,6 +12,7 @@ from app.schemas.operations import AjustementCreate, ReevaluationCreate
 from app.services.amortissement_service import AmortissementService
 from app.services.exercice_guard import ensure_exercice_ouvert_pour_date
 from app.services.immobilisation_vnc import compute_situation_comptable
+from app.services.nature_immo_referentiel import is_immobilisation_amortissable
 
 
 _SORTIE_STATUTS = {
@@ -82,11 +83,8 @@ class ReevaluationService:
             ecriture_ids = [e.id for e in ecritures]
 
         plan_regenere = False
-        categorie = immo.categorie
-        if (
-            immo.statut == StatutImmobilisation.EN_SERVICE
-            and categorie is not None
-            and categorie.amortissable
+        if immo.statut == StatutImmobilisation.EN_SERVICE and is_immobilisation_amortissable(
+            immo, immo.categorie
         ):
             count = await self.db.execute(
                 select(func.count()).select_from(Amortissement).where(

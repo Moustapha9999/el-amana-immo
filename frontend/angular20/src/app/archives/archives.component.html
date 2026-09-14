@@ -51,6 +51,9 @@
             min="1990"
             max="2100"
             step="1"
+            aria-label="Année à clôturer"
+            title="Année à clôturer"
+            placeholder="Ex. 2025"
           />
         </div>
         <button mat-flat-button color="primary" type="submit" [disabled]="cloturing()">
@@ -69,27 +72,79 @@
       @if (dernierCloture(); as n) {
         <p class="arc__hint arc__hint--opening">
           Dernier exercice clôturé : <strong>{{ n }}</strong> — le système propose automatiquement
-          l’ouverture de <strong>{{ anneeOuvertureProposee() }}</strong> avec reprise des soldes 142
-          / 148 et VNC, compte 68 remis à 0. Aucune saisie d’année requise.
+          l’ouverture de <strong>{{ anneeOuvertureProposee() }}</strong> avec reprise des soldes
+          <strong>142</strong> / <strong>148</strong> et VNC, compte <strong>68</strong> remis à 0.
+          Les natures non amortissables (Titres 140000, Terrain 142000, Immo en cours 145300)
+          sont reprises via le solde Orion saisi une seule fois ci-dessous.
         </p>
-        <button
-          mat-flat-button
-          color="primary"
-          type="button"
-          (click)="ouvrirSuivant()"
-          [disabled]="opening() || !peutOuvrir()"
-        >
-          <mat-icon aria-hidden="true">lock_open</mat-icon>
-          {{
-            opening()
-              ? 'Ouverture…'
-              : 'Ouvrir l’exercice ' + anneeOuvertureProposee()
-          }}
-        </button>
-        @if (!peutOuvrir()) {
-          <p class="arc__hint arc__hint--ok">
-            L’exercice {{ anneeOuvertureProposee() }} est déjà ouvert (soldes d’ouverture présents).
-          </p>
+        <div class="arc__open-actions">
+          <button
+            mat-flat-button
+            color="primary"
+            type="button"
+            (click)="ouvrirSuivant()"
+            [disabled]="opening() || !peutOuvrir()"
+          >
+            <mat-icon aria-hidden="true">lock_open</mat-icon>
+            {{
+              opening()
+                ? 'Ouverture…'
+                : 'Ouvrir l’exercice ' + anneeOuvertureProposee()
+            }}
+          </button>
+          @if (!peutOuvrir()) {
+            <p class="arc__status-ok">
+              L’exercice {{ anneeOuvertureProposee() }} est déjà ouvert (soldes d’ouverture présents).
+            </p>
+          }
+        </div>
+
+        @if (anneeOrion(); as anneeOrion) {
+          @if (!orionVerrouille()) {
+            <div class="arc__orion" [formGroup]="orionForm">
+              <h3 class="arc__orion-title">Soldes Orion — exercice {{ anneeOrion }} (saisie unique)</h3>
+              <p class="arc__hint">
+                Montants agrégés Banque El Amana (sans détail inventaire). Après enregistrement,
+                cette zone disparaît définitivement ; Soldes 142 les conserve avec les acquisitions.
+              </p>
+              <div class="arc__orion-grid">
+                @for (compte of orionComptes; track compte) {
+                  <div class="arc-field">
+                    <label class="arc-field__label" [attr.for]="'arc-orion-' + compte">
+                      {{ orionLibelle(compte) }} ({{ compte }})
+                    </label>
+                    <input
+                      [id]="'arc-orion-' + compte"
+                      class="arc-field__control"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      [formControlName]="compte"
+                      [attr.aria-label]="orionLibelle(compte) + ' (' + compte + ')'"
+                      [attr.title]="orionLibelle(compte) + ' (' + compte + ')'"
+                      placeholder="0"
+                    />
+                  </div>
+                }
+              </div>
+              <button
+                mat-flat-button
+                color="primary"
+                type="button"
+                class="arc__orion-save"
+                (click)="saveOrion()"
+                [disabled]="savingOrion()"
+              >
+                <mat-icon aria-hidden="true">lock</mat-icon>
+                {{ savingOrion() ? 'Enregistrement…' : 'Enregistrer et verrouiller les soldes Orion' }}
+              </button>
+            </div>
+          } @else {
+            <p class="arc__hint arc__hint--ok">
+              Soldes Orion de l’exercice {{ anneeOrion }} enregistrés et verrouillés (pris en compte
+              dans Soldes 142).
+            </p>
+          }
         }
       } @else {
         <p class="arc__hint">

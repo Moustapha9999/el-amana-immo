@@ -21,7 +21,12 @@ from app.models.enums import (
     TypeImmobilisation,
     TypeNotification,
 )
-from app.models.exercice import ExerciceComptable, PeriodeAmortissement, SoldeOuvertureImmobilisation
+from app.models.exercice import (
+    ExerciceComptable,
+    PeriodeAmortissement,
+    SoldeCompteOrion,
+    SoldeOuvertureImmobilisation,
+)
 from app.models.immobilisation import CategorieImmobilisation, Immobilisation, InventaireScan, PieceJointe
 from app.models.operations import Ajustement, Cession, Rebut, Reevaluation
 from app.models.organisation import CentreCout, Departement, Direction, Fournisseur
@@ -69,4 +74,5 @@ __all__ = [
     "ExerciceComptable",
     "PeriodeAmortissement",
     "SoldeOuvertureImmobilisation",
+    "SoldeCompteOrion",
 ]

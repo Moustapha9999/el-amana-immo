@@ -213,6 +213,31 @@ class Soldes14868Read(BaseModel):
     nb_biens: int
 
 
+class SoldeCompteOrionLigneRead(BaseModel):
+    annee: int
+    compte_immobilisation: str
+    nature_code: str
+    libelle: str
+    valeur_brute: float
+    source: str = "orion"
+
+
+class SoldeCompteOrionLigneWrite(BaseModel):
+    compte_immobilisation: str
+    valeur_brute: float
+
+
+class SoldeCompteOrionUpsertRequest(BaseModel):
+    annee: int
+    lignes: list[SoldeCompteOrionLigneWrite]
+
+
+class SoldeCompteOrionListRead(BaseModel):
+    annee: int
+    verrouille: bool = False
+    lignes: list[SoldeCompteOrionLigneRead]
+
+
 class VentilationAmortAgenceLigneRead(BaseModel):
     immobilisation_id: str
     code_inventaire: str

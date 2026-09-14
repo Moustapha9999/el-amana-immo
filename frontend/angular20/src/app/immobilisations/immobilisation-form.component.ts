@@ -20,6 +20,8 @@ import {
   natureImmoOptionLabel,
   statutLabel,
   STATUT_IMMOBILISATION_LABELS,
+  MESSAGE_NON_AMORTISSABLE_EL_AMANA,
+  isCompteNonAmortissable,
 } from './immobilisation.constants';
 
 type ImmoSection = 'fiche' | 'modifier' | 'amortissement' | 'reevaluation' | 'sortie' | 'pieces';
@@ -452,9 +454,22 @@ export class ImmobilisationFormComponent implements OnInit {
     return this.categories().find((c) => c.id === this.form.controls.categorie_id.value);
   }
 
+  /** True si la nature / le compte est non amortissable (Banque El Amana). */
+  isNonAmortissable(): boolean {
+    const cat = this.selectedCategory();
+    const compte =
+      this.form.controls.compte_immobilisation.value || cat?.compte_immobilisation || '';
+    if (isCompteNonAmortissable(compte)) {
+      return true;
+    }
+    return cat != null && !cat.amortissable;
+  }
+
+  readonly messageNonAmortissable = MESSAGE_NON_AMORTISSABLE_EL_AMANA;
+
   canRegenererPlan(): boolean {
     const cat = this.selectedCategory();
-    return this.statutActuel() === 'en_service' && !!cat?.amortissable;
+    return this.statutActuel() === 'en_service' && !!cat?.amortissable && !this.isNonAmortissable();
   }
 
   statutBadgeLabel(): string {
@@ -931,7 +946,12 @@ export class ImmobilisationFormComponent implements OnInit {
             this.loadAmortissements(immoId);
             this.loadSituationComptable(immoId);
             void this.dialogs
-              .successAction('ouverture', 'Immobilisation mise en service — plan d’amortissement généré.')
+              .successAction(
+                'ouverture',
+                this.isNonAmortissable()
+                  ? 'Immobilisation mise en service (catégorie non amortissable — aucune dotation générée).'
+                  : 'Immobilisation mise en service — plan d’amortissement généré.',
+              )
               .subscribe();
           },
           error: (err) => {

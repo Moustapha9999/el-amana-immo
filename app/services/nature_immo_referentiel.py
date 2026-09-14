@@ -3,8 +3,26 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
-from app.data.el_amana_referentiel import TYPES_IMMOBILISATION_EL_AMANA
+from app.data.el_amana_referentiel import (
+    COMPTES_NON_AMORTISSABLES_EL_AMANA,
+    MESSAGE_NON_AMORTISSABLE_EL_AMANA,
+    TYPES_IMMOBILISATION_EL_AMANA,
+)
+
+# Réexport pour les services d'amortissement
+__all__ = [
+    "COMPTES_NON_AMORTISSABLES_EL_AMANA",
+    "MESSAGE_NON_AMORTISSABLE_EL_AMANA",
+    "bank_taux_for_code",
+    "bank_taux_for_duree",
+    "is_compte_non_amortissable",
+    "is_immobilisation_amortissable",
+    "normalize_taux_for_categorie",
+    "paired_accounts_for_immo",
+    "suggest_paired_accounts",
+]
 
 # Taux banque figés (ne pas recalculer via 100/durée pour les natures officielles)
 BANK_TAUX_BY_CODE: dict[str, Decimal] = {
@@ -28,6 +46,34 @@ PAIRS_BY_COMPTE_IMMO: dict[str, tuple[str, str]] = {
 }
 
 FRAIS_CATEGORY_CODES = frozenset({"TY-147050", "TY-147030"})
+
+
+def is_compte_non_amortissable(compte: str | None) -> bool:
+    """True si le compte immobilisation est non amortissable (Banque El Amana)."""
+    if not compte:
+        return False
+    return compte.strip() in COMPTES_NON_AMORTISSABLES_EL_AMANA
+
+
+def is_immobilisation_amortissable(
+    immo: Any,
+    categorie: Any | None = None,
+) -> bool:
+    """Une immobilisation est amortissable sauf comptes 140000 / 142000 / 145300.
+
+    La détection par compte prime sur le flag catégorie (sécurité métier).
+    """
+    cat = categorie if categorie is not None else getattr(immo, "categorie", None)
+    compte = getattr(immo, "compte_immobilisation", None)
+    if not compte and cat is not None:
+        compte = getattr(cat, "compte_immobilisation", None)
+    if is_compte_non_amortissable(compte):
+        return False
+    if cat is not None and not bool(getattr(cat, "amortissable", False)):
+        return False
+    if cat is None:
+        return False
+    return True
 
 
 def bank_taux_for_code(categorie_code: str | None) -> Decimal | None:

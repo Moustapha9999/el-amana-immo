@@ -82,6 +82,30 @@ class SoldeOuvertureImmobilisation(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     code_inventaire: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
 
+class SoldeCompteOrion(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """Solde Orion agrégé par compte immobilisation (natures non amortissables).
+
+    Reprise de stock Banque El Amana sans détail inventaire.
+    Visible uniquement en Soldes famille 142 ; les acquisitions ultérieures
+    s'ajoutent à ce montant.
+    """
+
+    __tablename__ = "soldes_compte_orion"
+    __table_args__ = (
+        UniqueConstraint("annee", "compte_immobilisation", name="uq_solde_compte_orion_annee_compte"),
+    )
+
+    annee: Mapped[int] = mapped_column(Integer, index=True)
+    compte_immobilisation: Mapped[str] = mapped_column(String(20), index=True)
+    valeur_brute: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    source: Mapped[str] = mapped_column(String(40), default="orion")
+    libelle: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    verrouille_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
+
 class PeriodeAmortissement(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """Période comptable trimestrielle verrouillant l'ordre T1 → T4."""
 

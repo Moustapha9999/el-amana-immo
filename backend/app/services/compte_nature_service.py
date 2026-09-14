@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ValidationError
-from app.data.el_amana_referentiel import LIBELLE_ECRITURE_MODELE
+from app.data.el_amana_referentiel import COMPTES_NON_AMORTISSABLES_EL_AMANA, LIBELLE_ECRITURE_MODELE
 from app.models import CategorieImmobilisation, ComptePlanComptable, ParametrageEcriture
 from app.models.enums import ModeAmortissement, TypeComptePlan, TypeImmobilisation
 from app.schemas.comptabilite import ComptePlanCreate, ComptePlanCreateLinked, ComptePlanRead
@@ -83,41 +83,45 @@ class CompteNatureService:
             return ComptePlanRead.model_validate(row)
 
         duree = payload.duree_annees
-        if duree is None or duree < 1:
-            raise ValidationError(
-                "Pour un compte immobilisation, indiquez la durée (années) de la nature."
-            )
+        has_duree = duree is not None and duree >= 1
+        # Sans durée → nature non amortissable (ex. Terrain / Titres / Immo en cours)
+        amortissable = has_duree and numero not in COMPTES_NON_AMORTISSABLES_EL_AMANA
 
-        amort_num = (payload.compte_amortissement or "").strip()
-        dot_num = (payload.compte_dotation or "").strip()
-        if not amort_num or not dot_num:
-            sug_a, sug_d = suggest_paired_accounts(numero)
-            amort_num = amort_num or sug_a
-            dot_num = dot_num or sug_d
+        amort_num = (payload.compte_amortissement or "").strip() or None
+        dot_num = (payload.compte_dotation or "").strip() or None
+        taux: Decimal | None = None
 
-        taux = payload.taux_lineaire
-        if taux is None:
-            taux = taux_lineaire_from_duree_annees(duree)
-        if taux is None:
-            raise ValidationError("Impossible de calculer le taux à partir de la durée.")
+        if amortissable:
+            if not amort_num or not dot_num:
+                sug_a, sug_d = suggest_paired_accounts(numero)
+                amort_num = amort_num or sug_a
+                dot_num = dot_num or sug_d
+            taux = payload.taux_lineaire
+            if taux is None:
+                taux = taux_lineaire_from_duree_annees(duree)
+            if taux is None:
+                raise ValidationError("Impossible de calculer le taux à partir de la durée.")
+            taux = Decimal(taux).quantize(Decimal("0.0001"))
 
         # Compte immo
         immo = await _ensure_compte(
             self.db, numero, libelle, TypeComptePlan.IMMOBILISATION
         )
         immo.centre_analytique = payload.centre_analytique
-        await _ensure_compte(
-            self.db,
-            amort_num,
-            f"Amortissements {libelle}",
-            TypeComptePlan.AMORTISSEMENT,
-        )
-        await _ensure_compte(
-            self.db,
-            dot_num,
-            f"Dotations amortissements {libelle}",
-            TypeComptePlan.DOTATION,
-        )
+
+        if amortissable and amort_num and dot_num:
+            await _ensure_compte(
+                self.db,
+                amort_num,
+                f"Amortissements {libelle}",
+                TypeComptePlan.AMORTISSEMENT,
+            )
+            await _ensure_compte(
+                self.db,
+                dot_num,
+                f"Dotations amortissements {libelle}",
+                TypeComptePlan.DOTATION,
+            )
 
         code = (payload.nature_code or f"TY-{numero}").strip().upper()
         famille = (payload.nature_libelle or libelle).strip()
@@ -154,11 +158,11 @@ class CompteNatureService:
             famille=famille,
             type_immobilisation=TypeImmobilisation.AUTRES,
             compte_immobilisation=numero,
-            compte_amortissement=amort_num,
-            compte_dotation=dot_num,
-            amortissable=True,
-            duree_annees_defaut=duree,
-            taux_lineaire_defaut=Decimal(taux).quantize(Decimal("0.0001")),
+            compte_amortissement=amort_num if amortissable else None,
+            compte_dotation=dot_num if amortissable else None,
+            amortissable=amortissable,
+            duree_annees_defaut=duree if amortissable else None,
+            taux_lineaire_defaut=taux if amortissable else None,
             mode_amortissement_defaut=ModeAmortissement.LINEAIRE,
             periodicite_defaut="trimestriel",
             prorata_temporis=True,
@@ -167,16 +171,17 @@ class CompteNatureService:
         self.db.add(categorie)
         await self.db.flush()
 
-        self.db.add(
-            ParametrageEcriture(
-                categorie_id=categorie.id,
-                journal_code="OD",
-                compte_debit=dot_num,
-                compte_credit=amort_num,
-                libelle_modele=LIBELLE_ECRITURE_MODELE,
+        if amortissable and amort_num and dot_num:
+            self.db.add(
+                ParametrageEcriture(
+                    categorie_id=categorie.id,
+                    journal_code="OD",
+                    compte_debit=dot_num,
+                    compte_credit=amort_num,
+                    libelle_modele=LIBELLE_ECRITURE_MODELE,
+                )
             )
-        )
-        await self.db.flush()
+            await self.db.flush()
         return ComptePlanRead.model_validate(immo)
 
     async def create_simple(self, payload: ComptePlanCreate) -> ComptePlanRead:

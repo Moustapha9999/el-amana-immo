@@ -47,6 +47,20 @@ PLAN_COMPTABLE_EL_AMANA: list[dict] = [
     {"numero": "681000", "libelle": "Dotations aux amortissements (générique)", "type_compte": TypeComptePlan.DOTATION},
 ]
 
+# Comptes El Amana non amortissables (détection métier par n° de compte).
+COMPTES_NON_AMORTISSABLES_EL_AMANA: frozenset[str] = frozenset(
+    {
+        "140000",  # Titres de participations
+        "142000",  # Terrain
+        "145300",  # Immo en cours
+    }
+)
+
+MESSAGE_NON_AMORTISSABLE_EL_AMANA = (
+    "Cette immobilisation appartient à une catégorie non amortissable pour Banque El Amana. "
+    "Aucune dotation aux amortissements ne peut être calculée."
+)
+
 # Natures d'immobilisation officielles Banque El Amana (liste métier — formulaire Nature IMMO)
 NATURE_IMMO_CODES_OFFICIELS: tuple[str, ...] = (
     "TY-142010",
@@ -60,6 +74,9 @@ NATURE_IMMO_CODES_OFFICIELS: tuple[str, ...] = (
     "TY-142097",
     "TY-142080",
     "TY-142160",
+    "TY-140000",
+    "TY-142000",
+    "TY-145300",
 )
 
 # Types d'immobilisation — taux métier Banque El Amana (durée = 100 ÷ taux)
@@ -207,6 +224,45 @@ TYPES_IMMOBILISATION_EL_AMANA: list[dict] = [
         "amortissable": True,
         "duree_annees_defaut": 10,
         "taux_lineaire_defaut": Decimal("10.0000"),
+        "mode_amortissement_defaut": ModeAmortissement.LINEAIRE,
+        "periodicite_defaut": "trimestriel",
+    },
+    {
+        "code": "TY-140000",
+        "famille": "Titres de participations",
+        "type_immobilisation": TypeImmobilisation.TITRES,
+        "compte_immobilisation": "140000",
+        "compte_amortissement": None,
+        "compte_dotation": None,
+        "amortissable": False,
+        "duree_annees_defaut": None,
+        "taux_lineaire_defaut": None,
+        "mode_amortissement_defaut": ModeAmortissement.LINEAIRE,
+        "periodicite_defaut": "trimestriel",
+    },
+    {
+        "code": "TY-142000",
+        "famille": "Terrain",
+        "type_immobilisation": TypeImmobilisation.TERRAIN,
+        "compte_immobilisation": "142000",
+        "compte_amortissement": None,
+        "compte_dotation": None,
+        "amortissable": False,
+        "duree_annees_defaut": None,
+        "taux_lineaire_defaut": None,
+        "mode_amortissement_defaut": ModeAmortissement.LINEAIRE,
+        "periodicite_defaut": "trimestriel",
+    },
+    {
+        "code": "TY-145300",
+        "famille": "Immo en cours",
+        "type_immobilisation": TypeImmobilisation.EN_COURS,
+        "compte_immobilisation": "145300",
+        "compte_amortissement": None,
+        "compte_dotation": None,
+        "amortissable": False,
+        "duree_annees_defaut": None,
+        "taux_lineaire_defaut": None,
         "mode_amortissement_defaut": ModeAmortissement.LINEAIRE,
         "periodicite_defaut": "trimestriel",
     },

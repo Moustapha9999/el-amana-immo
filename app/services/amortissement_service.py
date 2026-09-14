@@ -11,11 +11,19 @@ from app.models import Amortissement, EcritureComptable, Immobilisation, Paramet
 from app.models.enums import StatutImmobilisation
 from app.services.amortissement_engine import build_amortissement_schedule
 from app.services.exercice_guard import ensure_exercice_ouvert_pour_date
+from app.services.nature_immo_referentiel import (
+    MESSAGE_NON_AMORTISSABLE_EL_AMANA,
+    is_immobilisation_amortissable,
+)
 
 
 class AmortissementService:
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    def _ensure_amortissable(self, immo: Immobilisation) -> None:
+        if not is_immobilisation_amortissable(immo, immo.categorie):
+            raise ValidationError(MESSAGE_NON_AMORTISSABLE_EL_AMANA)
 
     async def _load_immobilisation(self, immobilisation_id: UUID) -> Immobilisation:
         result = await self.db.execute(
@@ -39,6 +47,7 @@ class AmortissementService:
     async def simulate(self, immobilisation_id: UUID, periode: str) -> Amortissement:
         """Conservé pour compatibilité API — une ligne simulée sur la 1ère période du plan."""
         immo = await self._load_immobilisation(immobilisation_id)
+        self._ensure_amortissable(immo)
         schedule = build_amortissement_schedule(immo)
         if not schedule:
             raise ValidationError("Impossible de simuler : immobilisation non amortissable ou durée nulle.")
@@ -61,9 +70,7 @@ class AmortissementService:
         immo = await self._load_immobilisation(immobilisation_id)
         if immo.statut != StatutImmobilisation.EN_SERVICE:
             raise ValidationError("Le plan d'amortissement ne peut être généré que pour une immobilisation en service.")
-        categorie = immo.categorie
-        if categorie is None or not categorie.amortissable:
-            raise ValidationError("Cette immobilisation n'est pas amortissable.")
+        self._ensure_amortissable(immo)
         if not immo.compte_dotation or not immo.compte_amortissement:
             raise ValidationError("Comptes de dotation et d'amortissement requis.")
 
@@ -135,6 +142,7 @@ class AmortissementService:
         immo = await self._load_immobilisation(immobilisation_id)
         if immo.statut != StatutImmobilisation.EN_SERVICE:
             raise ValidationError("Comptabilisation réservée aux immobilisations en service.")
+        self._ensure_amortissable(immo)
 
         result = await self.db.execute(
             select(Amortissement).where(
@@ -236,8 +244,7 @@ class AmortissementService:
         immo.statut = StatutImmobilisation.EN_SERVICE
         await self.db.flush()
 
-        categorie = immo.categorie
-        if categorie and categorie.amortissable:
+        if is_immobilisation_amortissable(immo, immo.categorie):
             existing = await self.db.execute(
                 select(func.count())
                 .select_from(Amortissement)

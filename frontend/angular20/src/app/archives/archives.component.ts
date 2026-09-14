@@ -57,6 +57,21 @@ interface OuvertureResponse {
   message: string;
 }
 
+interface SoldeOrionLigne {
+  annee: number;
+  compte_immobilisation: string;
+  nature_code: string;
+  libelle: string;
+  valeur_brute: number;
+  source: string;
+}
+
+interface SoldeOrionResponse {
+  annee: number;
+  verrouille: boolean;
+  lignes: SoldeOrionLigne[];
+}
+
 @Component({
   selector: 'app-archives',
   imports: [ReactiveFormsModule, RouterLink, MatButtonModule, MatIconModule],
@@ -75,7 +90,12 @@ export class ArchivesComponent implements OnInit {
   readonly loading = signal(false);
   readonly cloturing = signal(false);
   readonly opening = signal(false);
+  readonly savingOrion = signal(false);
   readonly deletingAnnee = signal<number | null>(null);
+  readonly orionLignes = signal<SoldeOrionLigne[]>([]);
+  readonly orionVerrouille = signal(false);
+
+  readonly orionComptes = ['140000', '142000', '145300'] as const;
 
   readonly canManageExercices = computed(() => {
     const u = this.auth.user();
@@ -93,9 +113,19 @@ export class ArchivesComponent implements OnInit {
   );
   readonly dernierCloture = computed(() => this.situation()?.dernier_cloture ?? null);
   readonly peutOuvrir = computed(() => !!this.situation()?.peut_ouvrir);
+  /** Année cible des soldes Orion = exercice ouvert, sinon ouverture proposée. */
+  readonly anneeOrion = computed(
+    () => this.situation()?.exercice_ouvert ?? this.situation()?.annee_ouverture_proposee ?? null,
+  );
 
   readonly clotureForm = this.fb.nonNullable.group({
     annee: [new Date().getFullYear() - 1],
+  });
+
+  readonly orionForm = this.fb.nonNullable.group({
+    '140000': [0 as number],
+    '142000': [0 as number],
+    '145300': [0 as number],
   });
 
   ngOnInit(): void {
@@ -118,9 +148,100 @@ export class ArchivesComponent implements OnInit {
       },
     });
     this.api.get<ExerciceSituation>('/exercices/situation').subscribe({
-      next: (s) => this.situation.set(s),
+      next: (s) => {
+        this.situation.set(s);
+        this.loadOrion(s.exercice_ouvert ?? s.annee_ouverture_proposee);
+      },
       error: () => this.situation.set(null),
     });
+  }
+
+  loadOrion(annee: number | null | undefined): void {
+    if (!annee || annee < 2000 || annee > 2100) {
+      this.orionVerrouille.set(false);
+      this.orionLignes.set([]);
+      return;
+    }
+    this.api.get<SoldeOrionResponse>('/reporting/soldes-orion', { annee }).subscribe({
+      next: (res) => {
+        this.orionVerrouille.set(!!res.verrouille);
+        this.orionLignes.set(res.lignes ?? []);
+        const patch: Record<string, number> = {
+          '140000': 0,
+          '142000': 0,
+          '145300': 0,
+        };
+        for (const row of res.lignes ?? []) {
+          if (row.compte_immobilisation in patch) {
+            patch[row.compte_immobilisation] = Number(row.valeur_brute) || 0;
+          }
+        }
+        this.orionForm.patchValue(patch, { emitEvent: false });
+      },
+      error: () => {
+        this.orionVerrouille.set(false);
+        this.orionLignes.set([]);
+      },
+    });
+  }
+
+  orionLibelle(compte: string): string {
+    const row = this.orionLignes().find((l) => l.compte_immobilisation === compte);
+    if (row?.libelle) {
+      return row.libelle;
+    }
+    if (compte === '140000') return 'Titres de participations';
+    if (compte === '142000') return 'Terrain';
+    if (compte === '145300') return 'Immo en cours';
+    return compte;
+  }
+
+  saveOrion(): void {
+    if (!this.canManageExercices()) {
+      void this.dialogs.error('Seuls les administrateurs peuvent saisir les soldes Orion.').subscribe();
+      return;
+    }
+    const annee = this.anneeOrion();
+    if (!annee) {
+      void this.dialogs.error('Aucun exercice ouvert pour rattacher les soldes Orion.').subscribe();
+      return;
+    }
+    this.dialogs
+      .confirmAction(
+        'validation',
+        `Enregistrer définitivement les soldes Orion pour ${annee} ?\n\nAprès validation, ils ne pourront plus être modifiés.`,
+      )
+      .subscribe((ok) => {
+        if (!ok) {
+          return;
+        }
+        const raw = this.orionForm.getRawValue();
+        const lignes = this.orionComptes.map((compte) => ({
+          compte_immobilisation: compte,
+          valeur_brute: Number(raw[compte]) || 0,
+        }));
+        this.savingOrion.set(true);
+        this.api.put<SoldeOrionResponse>('/reporting/soldes-orion', { annee, lignes }).subscribe({
+          next: (res) => {
+            this.savingOrion.set(false);
+            this.orionVerrouille.set(true);
+            this.orionLignes.set(res.lignes ?? []);
+            void this.dialogs
+              .successAction(
+                'validation',
+                `Soldes Orion ${annee} verrouillés — pris en compte dans Soldes 142.`,
+              )
+              .subscribe();
+          },
+          error: (err: { error?: { detail?: unknown } }) => {
+            this.savingOrion.set(false);
+            const detail = err.error?.detail;
+            void this.dialogs
+              .error(typeof detail === 'string' ? detail : 'Enregistrement Orion impossible')
+              .subscribe();
+          },
+        });
+      });
   }
 
   statutExercice(annee: number): string | null {
@@ -181,7 +302,7 @@ export class ArchivesComponent implements OnInit {
     const msg =
       `Ouvrir automatiquement l’exercice ${n1} ?\n\n` +
       `Dernier exercice clôturé : ${n}\n` +
-      `• Reprise des soldes 142 (immobilisations)\n` +
+      `• Reprise des soldes 142 (immobilisations + stock Orion Titres/Terrain/Immo en cours)\n` +
       `• Reprise des soldes 148 (amortissements cumulés)\n` +
       `• Conservation de la VNC\n` +
       `• Compte 68 remis à 0`;

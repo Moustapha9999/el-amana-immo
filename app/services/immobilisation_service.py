@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import and_, delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,6 +22,7 @@ from app.services.immobilisation_defaults import (
 from app.services.amortissement_engine import parse_period_end
 from app.services.amortissement_service import AmortissementService
 from app.services.exercice_guard import ensure_exercice_ouvert_pour_date
+from app.services.nature_immo_referentiel import COMPTES_NON_AMORTISSABLES_EL_AMANA
 
 __all__ = ["AmortissementCalculator", "AmortissementService", "DashboardService", "ImmobilisationService", "ParametrageService"]
 
@@ -116,7 +117,19 @@ class ImmobilisationService:
                 stmt = stmt.outerjoin(CategorieImmobilisation, join_on)
                 count_stmt = count_stmt.outerjoin(CategorieImmobilisation, join_on)
         if amortissable is not None:
-            amort_filter = CategorieImmobilisation.amortissable.is_(amortissable)
+            if amortissable:
+                amort_filter = and_(
+                    CategorieImmobilisation.amortissable.is_(True),
+                    or_(
+                        Immobilisation.compte_immobilisation.is_(None),
+                        Immobilisation.compte_immobilisation.notin_(COMPTES_NON_AMORTISSABLES_EL_AMANA),
+                    ),
+                )
+            else:
+                amort_filter = or_(
+                    CategorieImmobilisation.amortissable.is_(False),
+                    Immobilisation.compte_immobilisation.in_(COMPTES_NON_AMORTISSABLES_EL_AMANA),
+                )
             stmt = stmt.where(amort_filter)
             count_stmt = count_stmt.where(amort_filter)
         stmt = stmt.where(*filters)

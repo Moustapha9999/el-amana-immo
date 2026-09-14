@@ -27,8 +27,8 @@ def test_compte_scope():
     assert compte_immo_in_scope("142000")
     assert compte_immo_in_scope("147030")
     assert compte_immo_in_scope("145300")
+    assert compte_immo_in_scope("140000")
     assert not compte_immo_in_scope("148240")
-    assert not compte_immo_in_scope("140000")
 
 
 def test_dotation_exercice_sum_of_year_periods():

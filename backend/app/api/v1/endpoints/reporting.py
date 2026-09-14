@@ -23,6 +23,9 @@ from app.schemas.reporting import (
     RecapAmortissementRead,
     RecapImmobilisationsLigneRead,
     RecapImmobilisationsRead,
+    SoldeCompteOrionListRead,
+    SoldeCompteOrionLigneRead,
+    SoldeCompteOrionUpsertRequest,
     SoldeNatureLigneRead,
     Soldes14868DetailLigneRead,
     Soldes14868Read,
@@ -900,6 +903,75 @@ async def get_soldes_148_68(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _consultation_to_read(result)
+
+
+@router.get("/reporting/soldes-orion", response_model=SoldeCompteOrionListRead)
+async def get_soldes_orion(
+    annee: int = Query(..., ge=2000, le=2100),
+    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Soldes Orion agrégés (Titres / Terrain / Immo en cours) pour Soldes 142."""
+    from app.core.exceptions import AppError, raise_http_from_app
+    from app.services.solde_compte_orion import list_soldes_orion
+
+    try:
+        payload = await list_soldes_orion(db, annee)
+    except AppError as exc:
+        raise_http_from_app(exc)
+    return SoldeCompteOrionListRead(
+        annee=int(payload["annee"]),
+        verrouille=bool(payload["verrouille"]),
+        lignes=[
+            SoldeCompteOrionLigneRead(
+                annee=int(row["annee"]),
+                compte_immobilisation=str(row["compte_immobilisation"]),
+                nature_code=str(row["nature_code"]),
+                libelle=str(row["libelle"]),
+                valeur_brute=float(row["valeur_brute"]),
+                source=str(row.get("source") or "orion"),
+            )
+            for row in payload["lignes"]
+        ],
+    )
+
+
+@router.put("/reporting/soldes-orion", response_model=SoldeCompteOrionListRead)
+async def put_soldes_orion(
+    payload: SoldeCompteOrionUpsertRequest,
+    user: User = Depends(require_roles("administrateur", "comptable")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Enregistre une seule fois les soldes Orion — puis verrouillage définitif."""
+    from app.core.exceptions import AppError, raise_http_from_app
+    from app.services.solde_compte_orion import upsert_soldes_orion
+
+    try:
+        result = await upsert_soldes_orion(
+            db,
+            annee=payload.annee,
+            lignes=[ligne.model_dump() for ligne in payload.lignes],
+            user_id=user.id,
+        )
+        await db.commit()
+    except AppError as exc:
+        await db.rollback()
+        raise_http_from_app(exc)
+    return SoldeCompteOrionListRead(
+        annee=int(result["annee"]),
+        verrouille=bool(result["verrouille"]),
+        lignes=[
+            SoldeCompteOrionLigneRead(
+                annee=int(row["annee"]),
+                compte_immobilisation=str(row["compte_immobilisation"]),
+                nature_code=str(row["nature_code"]),
+                libelle=str(row["libelle"]),
+                valeur_brute=float(row["valeur_brute"]),
+                source=str(row.get("source") or "orion"),
+            )
+            for row in result["lignes"]
+        ],
+    )
 
 
 @router.get("/reporting/soldes-148-68/export")

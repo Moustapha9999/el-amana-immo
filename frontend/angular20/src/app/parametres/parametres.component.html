@@ -493,13 +493,14 @@
                   />
                 </div>
                 <div class="par-field">
-                  <label class="par-field__label" for="par-cpt-duree">Durée (années) <span class="par__req">*</span></label>
+                  <label class="par-field__label" for="par-cpt-duree">Durée (années)</label>
                   <input
                     id="par-cpt-duree"
                     class="par-field__control"
                     type="number"
                     min="1"
                     formControlName="duree_annees"
+                    placeholder="Optionnel"
                     aria-label="Durée années"
                     (input)="refreshCompteTauxPreview()"
                   />
@@ -513,6 +514,7 @@
                     [value]="compteTauxPreview() != null ? (compteTauxPreview() | montant: 4) : '—'"
                     aria-label="Taux calculé"
                   />
+                  <p class="par-field__help">Optionnel — dérivé automatiquement de la durée si renseignée.</p>
                 </div>
                 <div class="par-field">
                   <label class="par-field__label" for="par-cpt-amort">Compte amortissement</label>
@@ -544,7 +546,8 @@
             </div>
             @if (!editingCompteId() && compteForm.controls.type_compte.value === 'immobilisation') {
               <p class="par__hint">
-                Un compte immobilisation crée aussi la nature (taux/durée) et les comptes 148 / 681 liés.
+                Un compte immobilisation crée aussi la nature liée. Durée / taux et comptes 148 / 681
+                sont optionnels (ex. natures non amortissables).
               </p>
             }
             <div class="par__form-actions">

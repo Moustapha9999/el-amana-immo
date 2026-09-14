@@ -90,6 +90,9 @@
 
       <section class="amd__block amd__block--result">
         <h3 class="amd__block-title">Situation comptable</h3>
+        @if (isNonAmortissable()) {
+          <p class="amd__hint amd__hint--warn" role="status">{{ messageNonAmortissable }}</p>
+        }
         <div class="amd__result-grid">
           <div class="amd__result-card">
             <span class="amd__result-label">Valeur brute</span>
@@ -113,7 +116,9 @@
 
       <section class="amd__block">
         <h3 class="amd__block-title">Plan exercice {{ anneeExercice() }}</h3>
-        @if (lignes().length === 0) {
+        @if (isNonAmortissable()) {
+          <p class="amd__hint amd__hint--warn" role="status">{{ messageNonAmortissable }}</p>
+        } @else if (lignes().length === 0) {
           <p class="amd__hint">
             Aucune période pour {{ anneeExercice() }}. Mettez l’actif en service ou régénérez le plan.
           </p>

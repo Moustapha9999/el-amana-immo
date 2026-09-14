@@ -143,6 +143,23 @@ Redémarrage des conteneurs (sans perte) : redémarrer Docker Desktop ou le PC. 
 6. Valider avec la comptabilité et la DSI.
 7. Ouvrir la saisie sur le serveur. Conserver le PC local jusqu'à validation définitive.
 
+## Mise à jour du logiciel (PC déjà installé)
+
+Voir `docs/MISE_A_JOUR_COMPTABLE.md`.
+
+Sur la machine de développement :
+
+```powershell
+docker compose --env-file .env.docker build frontend backend
+.\scripts\export-kit-comptable.ps1 -UpdateOnly
+```
+
+Sur le PC comptable (après copie USB) :
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\update-on-comptable.ps1
+```
+
 ## Développement (cette machine, pas le comptable)
 
 Uvicorn + base cloud restent pilotés par `.env`.

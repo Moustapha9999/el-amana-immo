@@ -6,7 +6,11 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
-import { statutLabel } from '../immobilisations/immobilisation.constants';
+import {
+  isCompteNonAmortissable,
+  MESSAGE_NON_AMORTISSABLE_EL_AMANA,
+  statutLabel,
+} from '../immobilisations/immobilisation.constants';
 import {
   formatPeriodeAmortissement,
   formatTauxPercent,
@@ -62,7 +66,19 @@ export class AmortissementDetailComponent implements OnInit {
   readonly formatPeriode = formatPeriodeAmortissement;
   readonly formatTaux = formatTauxPercent;
   readonly statutLabel = statutLabel;
+  readonly messageNonAmortissable = MESSAGE_NON_AMORTISSABLE_EL_AMANA;
   readonly columns = ['periode', 'montant', 'cumul', 'vnc', 'statut'];
+
+  isNonAmortissable(): boolean {
+    const i = this.immo();
+    if (!i) {
+      return false;
+    }
+    if (isCompteNonAmortissable(i.compte_immobilisation)) {
+      return true;
+    }
+    return i.categorie != null && !i.categorie.amortissable;
+  }
 
   ngOnInit(): void {
     this.load();

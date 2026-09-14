@@ -583,12 +583,6 @@ export class ParametresComponent implements OnInit {
     const raw = this.compteForm.getRawValue();
     const id = this.editingCompteId();
     const isImmo = raw.type_compte === 'immobilisation';
-    if (!id && isImmo && (raw.duree_annees == null || raw.duree_annees < 1)) {
-      void this.dialogs
-        .error('Durée (années) obligatoire pour lier le compte à une nature et son taux.', 'Validation')
-        .subscribe();
-      return;
-    }
     const action = id ? 'modification' : 'ajout';
     const label = `${raw.numero.trim()} — ${raw.libelle.trim()}`;
 
@@ -642,7 +636,7 @@ export class ParametresComponent implements OnInit {
                 .successAction(
                   'ajout',
                   isImmo
-                    ? `Compte « ${label} » créé avec sa nature, taux et comptes 148/681.`
+                    ? `Compte « ${label} » créé avec sa nature liée.`
                     : `Compte « ${label} » créé.`,
                 )
                 .subscribe(() => this.reloadAll());

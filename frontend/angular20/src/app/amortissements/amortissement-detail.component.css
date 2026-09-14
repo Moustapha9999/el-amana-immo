@@ -62,6 +62,15 @@
   font-size: 0.875rem;
 }
 
+.amd__hint--warn {
+  color: #9a3412;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
 .amd__sheet {
   background: var(--app-surface-elevated);
   border: 1px solid var(--app-border);

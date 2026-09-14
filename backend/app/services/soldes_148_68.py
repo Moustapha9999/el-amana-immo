@@ -17,7 +17,11 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.data.el_amana_referentiel import PLAN_COMPTABLE_EL_AMANA, TYPES_IMMOBILISATION_EL_AMANA
+from app.data.el_amana_referentiel import (
+    COMPTES_NON_AMORTISSABLES_EL_AMANA,
+    PLAN_COMPTABLE_EL_AMANA,
+    TYPES_IMMOBILISATION_EL_AMANA,
+)
 from app.models import Agence, Amortissement, EcritureComptable, Immobilisation
 from app.services.amortissement_engine import parse_period_end
 from app.services.recap_amortissement import (
@@ -28,6 +32,10 @@ from app.services.recap_amortissement import (
     _periode_appartient_exercice,
     _q,
     _zero,
+)
+from app.services.solde_compte_orion import (
+    COMPTES_ORION_142,
+    map_soldes_orion_par_compte,
 )
 from app.services.ventilation_amortissements_agence import list_exercices_disponibles
 
@@ -53,8 +61,11 @@ def _compte_matches_famille(compte: str | None, famille: str) -> bool:
     if not digits:
         return False
     if famille == "142":
-        # Périmètre immobilisations El Amana : 142xxx à 147xxx
-        return digits.startswith("142") or digits.startswith("147")
+        # Périmètre immobilisations El Amana : 142xxx–147xxx + natures Orion (140/145)
+        raw = (compte or "").strip()
+        if raw in COMPTES_NON_AMORTISSABLES_EL_AMANA:
+            return True
+        return digits.startswith("142") or digits.startswith("147") or digits.startswith(("140", "145"))
     if famille == "148":
         return digits.startswith("148")
     if famille == "68":
@@ -205,9 +216,13 @@ async def _count_ecritures_mouvements(
     if famille == "142":
         filters.append(
             or_(
+                EcritureComptable.compte_debit.like("140%"),
                 EcritureComptable.compte_debit.like("142%"),
+                EcritureComptable.compte_debit.like("145%"),
                 EcritureComptable.compte_debit.like("147%"),
+                EcritureComptable.compte_credit.like("140%"),
                 EcritureComptable.compte_credit.like("142%"),
+                EcritureComptable.compte_credit.like("145%"),
                 EcritureComptable.compte_credit.like("147%"),
             )
         )
@@ -230,11 +245,14 @@ async def _count_ecritures_mouvements(
     return len(result.all())
 
 
-def _empty_nature_buckets(libelles: dict[str, str]) -> dict[str, dict]:
+def _empty_nature_buckets(libelles: dict[str, str], *, include_orion: bool = False) -> dict[str, dict]:
     natures = [
         t
         for t in TYPES_IMMOBILISATION_EL_AMANA
-        if t.get("amortissable") and (t.get("compte_amortissement") or t.get("compte_dotation"))
+        if (
+            (t.get("amortissable") and (t.get("compte_amortissement") or t.get("compte_dotation")))
+            or (include_orion and str(t.get("compte_immobilisation")) in COMPTES_NON_AMORTISSABLES_EL_AMANA)
+        )
     ]
     buckets: dict[str, dict] = {}
     for t in natures:
@@ -343,8 +361,12 @@ async def build_consultation_compte(
         ag_rows = await db.execute(select(Agence).where(Agence.id.in_(agence_ids)))
         agences_map = {a.id: a for a in ag_rows.scalars().all()}
 
-    buckets = _empty_nature_buckets(libelles)
+    buckets = _empty_nature_buckets(libelles, include_orion=(famille == "142"))
     order_keys = list(buckets.keys())
+    # Orion natures en tête de synthèse 142
+    if famille == "142":
+        orion_first = [c for c in COMPTES_ORION_142 if c in buckets]
+        order_keys = orion_first + [c for c in order_keys if c not in orion_first]
     detail: list[ConsultationDetailLigne] = []
     total_vb = _zero()
     total_dot = _zero()
@@ -353,6 +375,15 @@ async def build_consultation_compte(
     total_vnc = _zero()
     nb_mvt_amort = 0
     kept_ids: list[UUID] = []
+
+    # Compte catégorie filtrée (pour n'injecter Orion que sur la nature concernée)
+    categorie_compte: str | None = None
+    if categorie_id is not None:
+        from app.models import CategorieImmobilisation
+
+        cat_row = await db.get(CategorieImmobilisation, categorie_id)
+        if cat_row is not None:
+            categorie_compte = (cat_row.compte_immobilisation or "").strip() or None
 
     for immo in immos:
         if not _immo_in_famille(immo, famille):
@@ -472,6 +503,65 @@ async def build_consultation_compte(
         total_amt_n1 = _q(total_amt_n1 + mvts["amorts_cumules_n1"])
         total_vnc = _q(total_vnc + mvts["vnc"])
 
+    # Soldes Orion (stock Banque) — famille 142 uniquement ; acquisitions s'ajoutent dessus
+    if famille == "142" and agence_id is None:
+        orion_map = await map_soldes_orion_par_compte(db, annee)
+        for compte in COMPTES_ORION_142:
+            vb_orion = orion_map.get(compte)
+            if vb_orion is None or vb_orion <= 0:
+                continue
+            if categorie_compte and categorie_compte != compte:
+                continue
+            if search and search.strip():
+                q = search.strip().lower()
+                b_meta = buckets.get(compte) or {}
+                hay = f"{compte} {b_meta.get('nature', '')} orion".lower()
+                if q not in hay:
+                    continue
+            if compte not in buckets:
+                buckets[compte] = {
+                    "nature_code": f"TY-{compte}",
+                    "nature": libelles.get(compte) or compte,
+                    "compte_immobilisation": compte,
+                    "compte_amortissement": None,
+                    "libelle_amortissement": None,
+                    "compte_dotation": None,
+                    "libelle_dotation": None,
+                    "solde_148": _zero(),
+                    "solde_148_n1": _zero(),
+                    "solde_68": _zero(),
+                    "valeur_brute": _zero(),
+                    "vnc": _zero(),
+                    "nb_biens": 0,
+                }
+            b = buckets[compte]
+            b["valeur_brute"] = _q(b["valeur_brute"] + vb_orion)
+            b["vnc"] = _q(b["vnc"] + vb_orion)
+            total_vb = _q(total_vb + vb_orion)
+            total_vnc = _q(total_vnc + vb_orion)
+            nature_label = str(b.get("nature") or libelles.get(compte) or compte)
+            detail.insert(
+                0,
+                ConsultationDetailLigne(
+                    immobilisation_id=f"orion-{compte}",
+                    date_mvt=date(annee, 1, 1),
+                    reference=f"ORION-{compte}",
+                    designation=f"Solde Orion — {nature_label}",
+                    categorie=nature_label,
+                    valeur_brute=_q(vb_orion),
+                    dotation=_zero(),
+                    amortissement_cumule=_zero(),
+                    amortissement_cumule_n1=_zero(),
+                    vnc=_q(vb_orion),
+                    agence_code=None,
+                    agence_libelle=None,
+                    exercice=annee,
+                    compte_immobilisation=compte,
+                    compte_amortissement=None,
+                    compte_dotation=None,
+                ),
+            )
+
     if famille == "142":
         solde_total = total_vb
     elif famille == "148":
@@ -483,10 +573,11 @@ async def build_consultation_compte(
     lignes: list[SoldeNatureLigne] = []
     for key in order_keys + extra:
         b = buckets[key]
-        if b["nb_biens"] == 0 and key not in order_keys:
+        empty = int(b["nb_biens"]) == 0 and b["valeur_brute"] == 0
+        if empty and key not in order_keys:
             continue
-        # En mode filtré, masquer les natures vides du référentiel
-        if b["nb_biens"] == 0 and (
+        # En mode filtré, masquer les natures vides (Orion avec VB reste visible)
+        if empty and (
             agence_id or categorie_id or (search and search.strip()) or period_filter_active
         ):
             continue

@@ -24,7 +24,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.data.el_amana_referentiel import PLAN_COMPTABLE_EL_AMANA, TYPES_IMMOBILISATION_EL_AMANA
+from app.data.el_amana_referentiel import (
+    COMPTES_NON_AMORTISSABLES_EL_AMANA,
+    PLAN_COMPTABLE_EL_AMANA,
+    TYPES_IMMOBILISATION_EL_AMANA,
+)
 from app.models import Amortissement, Immobilisation
 from app.models.enums import TypeComptePlan
 from app.services.amortissement_engine import (
@@ -51,6 +55,9 @@ def _compte_num(compte: str | None) -> int | None:
 
 
 def compte_immo_in_scope(compte: str | None) -> bool:
+    raw = (compte or "").strip()
+    if raw in COMPTES_NON_AMORTISSABLES_EL_AMANA:
+        return True
     n = _compte_num(compte)
     return n is not None and COMPTE_IMMO_MIN <= n <= COMPTE_IMMO_MAX
 

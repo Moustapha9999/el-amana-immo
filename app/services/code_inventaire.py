@@ -24,6 +24,9 @@ PREFIX_BY_CATEGORIE: dict[str, str] = {
     "TY-142097": "MatExp",
     "TY-142080": "Autres",
     "TY-142160": "AutCorp",
+    "TY-140000": "Titres",
+    "TY-142000": "Terrain",
+    "TY-145300": "ImmoCours",
 }
 
 _CODE_RE = re.compile(r"^([A-Za-z][A-Za-z0-9]*)-(\d{4})-(\d+)$")

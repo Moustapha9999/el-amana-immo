@@ -47,6 +47,23 @@
   border-left: 4px solid #15803d;
 }
 
+.arc__open-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin: 0 0 0.35rem;
+}
+
+.arc__status-ok {
+  margin: 0;
+  padding: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: #15803d;
+  max-width: 44rem;
+}
+
 .arc__kpis {
   display: grid;
   gap: 0.75rem;
@@ -105,8 +122,34 @@
 }
 
 .arc__hint--ok {
-  margin-top: 0.75rem;
+  margin: 0.85rem 0 0;
   color: #15803d;
+}
+
+.arc__orion {
+  margin-top: 1.15rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.arc__orion-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #1a4571;
+}
+
+.arc__orion-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  margin: 0.85rem 0 1rem;
+}
+
+.arc__orion-save {
+  margin-top: 0.15rem;
 }
 
 .arc__section-title {
