@@ -147,18 +147,20 @@ Redémarrage des conteneurs (sans perte) : redémarrer Docker Desktop ou le PC. 
 
 Voir `docs/MISE_A_JOUR_COMPTABLE.md`.
 
-Sur la machine de développement :
+Sur la machine de développement (kit USB unique) :
 
 ```powershell
-docker compose --env-file .env.docker build frontend backend
-.\scripts\export-kit-comptable.ps1 -UpdateOnly
+.\scripts\export-kit-comptable.ps1
 ```
+
+Résultat : `dist\kit-comptable\` — à copier sur clé USB puis vers `C:\immo`.
 
 Sur le PC comptable (après copie USB) :
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\update-on-comptable.ps1
-```
+- Déjà installé → double-clic **`MettreAJour.cmd`**
+- Première install → double-clic **`Installer.cmd`**
+
+Lanceurs quotidiens : `Demarrer.cmd`, `Arreter.cmd`, `Sauvegarder.cmd`, `Verifier.cmd`.
 
 ## Développement (cette machine, pas le comptable)
 

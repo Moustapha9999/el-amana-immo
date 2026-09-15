@@ -17,14 +17,14 @@ if (-not (Test-Path -LiteralPath $tar)) {
 }
 
 if (-not (Test-Path -LiteralPath ".env.docker")) {
-    throw ".env.docker introuvable. Ce script est pour une instance deja installee (pas une 1re install)."
+    throw ".env.docker introuvable. Ce script est pour une instance deja installee. Utilisez Installer.cmd pour une 1re install."
 }
 
-Write-Host "1/4 Sauvegarde locale avant mise a jour..."
+Write-Host "1/4 Sauvegarde locale avant mise a jour (nouvelles saisies preservees dans backups\)..."
 & (Join-Path "scripts" "backup-local.ps1")
 
 Write-Host ""
-Write-Host "2/4 Chargement des nouvelles images..."
+Write-Host "2/4 Chargement des nouvelles images (backend + frontend)..."
 docker load -i $tar
 
 Write-Host ""
@@ -57,4 +57,4 @@ Write-Host "4/4 OK - mise a jour terminee."
 Write-Host "Ouvrir : http://localhost  (Ctrl+F5 pour vider le cache navigateur)"
 Write-Host ""
 Write-Host "INTERDIT : docker compose down -v"
-Write-Host "Les donnees du comptable sont conservees (volume immo_postgres_data)."
+Write-Host "Les saisies du comptable sont conservees (volume immo_postgres_data)."

@@ -1,54 +1,53 @@
-# Mise à jour du PC comptable (code du jour)
+# Kit USB unique — PC comptable
 
-Kit à utiliser quand l’instance Docker tourne déjà sur le PC banque et contient des saisies.
-
-## Sur la machine de développement (aujourd’hui)
+## Sur cette machine (développement)
 
 ```powershell
-# 1. Construire les images à jour
-docker compose --env-file .env.docker build frontend backend
-docker compose --env-file .env.docker up -d frontend backend
-
-# 2. Exporter le kit de MISE À JOUR (pas le dump de cette machine)
-.\scripts\export-kit-comptable.ps1 -UpdateOnly
+.\scripts\export-kit-comptable.ps1
 ```
 
-Résultat : `dist\kit-maj-comptable\` (images + scripts + compose).
+Résultat : `dist\kit-comptable\` (images backend+frontend, scripts, `.cmd`, dump local s’il existe).
 
-Copier ce dossier sur clé USB.
+## Sur le PC comptable
 
-## Sur le PC comptable (demain)
+### Emplacement
 
-1. Sauvegarder d’abord (optionnel si le script le fait déjà) : dans `C:\immo`  
-   `.\scripts\backup-local.ps1`
-2. Copier le contenu du kit **par-dessus** `C:\immo` (surtout `images\` et `scripts\`).  
-   **Ne pas** supprimer `.env.docker`.
-3. Lancer :
+Copier **tout** le dossier USB vers :
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\update-on-comptable.ps1
+```text
+C:\immo
 ```
 
-4. Ouvrir http://localhost puis **Ctrl+F5**.
+### Déjà installé (saisies à conserver)
 
-## Ce que fait la mise à jour
+1. Copier le contenu du kit **par-dessus** `C:\immo` (surtout `images\`, `scripts\`, `*.cmd`).
+2. **Ne pas** supprimer `.env.docker`.
+3. Double-cliquer **`MettreAJour.cmd`**.
+4. Ouvrir http://localhost puis Ctrl+F5.
 
-| Élément | Effet |
+### Première installation
+
+1. Docker Desktop installé et Running.
+2. Dossier collé dans `C:\immo`.
+3. Double-cliquer **`Installer.cmd`**.
+
+## Lanceurs (double-clic à la racine de `C:\immo`)
+
+| Fichier | Action |
 |---------|--------|
-| Images backend / frontend | Remplacées (nouvelles fonctionnalités) |
-| Migrations Alembic | Appliquées au démarrage du backend |
-| Volume Postgres | **Conservé** (opérations du comptable intactes) |
-| Dump de la machine dev | **Non utilisé** |
+| `Demarrer.cmd` | Démarre la plateforme |
+| `Arreter.cmd` | Arrête les conteneurs (données conservées) |
+| `Sauvegarder.cmd` | Dump PostgreSQL + documents → `backups\` |
+| `Verifier.cmd` | Santé conteneurs + comptages + `/health` |
+| `MettreAJour.cmd` | Nouveau logiciel **sans** perdre les saisies |
+| `Installer.cmd` | Première installation seulement |
 
-## Interdit
+## Règles données
 
-- `docker compose down -v` (efface la base)
-- Relancer `install-on-comptable.ps1` sur une base déjà remplie (restaure un dump et peut écraser)
+- `MettreAJour.cmd` : backup automatique puis nouvelles images ; volume Postgres **intact**.
+- `Installer.cmd` : restaure un dump **uniquement** si la base est vide.
+- **Interdit** : `docker compose down -v`.
 
-## Contrôles après mise à jour
+## Si vous avez un backup du PC comptable
 
-- Connexion OK
-- Paramètres → Nouveau compte : durée / taux optionnels
-- Archives → Ouvrir un exercice : zone Soldes Orion
-- Soldes 142 : plus de zone de saisie Orion ; totaux cohérents
-- Inventaire / amortissements : natures non amortissables (140000, 142000, 145300)
+Placez le fichier `.dump` dans `C:\immo\backups\` **avant** une install sur base vide, ou conservez-le après `Sauvegarder.cmd` pour migration serveur.

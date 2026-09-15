@@ -1,14 +1,16 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Installe l'instance sur le PC du comptable à partir du kit USB.
-  Charge les images, démarre Docker, restaure le dump.
+  Installe l'instance sur le PC du comptable a partir du kit USB.
+  Charge les images, demarre Docker.
+  Si la base contient deja des saisies : NE PAS restaurer (conservation).
+  Sinon : restaure le dump le plus recent dans backups\.
 #>
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    throw "Docker n'est pas disponible. Installez Docker Desktop, démarrez-le, puis relancez."
+    throw "Docker n'est pas disponible. Installez Docker Desktop, demarrez-le, puis relancez."
 }
 
 $tar = Join-Path "images" "immo-stack.tar"
@@ -16,7 +18,7 @@ if (-not (Test-Path -LiteralPath $tar)) {
     throw "images\immo-stack.tar introuvable. Copiez le kit complet (dossier images inclus)."
 }
 
-Write-Host "Chargement des images Docker (quelques minutes)..."
+Write-Host "1/4 Chargement des images Docker (quelques minutes)..."
 docker load -i $tar
 
 if (-not (Test-Path -LiteralPath ".env.docker")) {
@@ -30,13 +32,14 @@ if (-not (Test-Path -LiteralPath ".env.docker")) {
         -replace "REMPLACER_PAR_UN_MOT_DE_PASSE_FORT", $password
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
     [System.IO.File]::WriteAllText((Join-Path (Get-Location) ".env.docker"), $content, $utf8NoBom)
-    Write-Host "Fichier .env.docker créé."
+    Write-Host "Fichier .env.docker cree."
 }
 
-Write-Host "Démarrage de PostgreSQL..."
+Write-Host "2/4 Demarrage de PostgreSQL..."
 docker compose --env-file .env.docker up -d --no-build --pull never postgres
 
 $deadline = (Get-Date).AddMinutes(3)
+$pg = $null
 do {
     Start-Sleep -Seconds 3
     $pg = docker inspect --format "{{.State.Health.Status}}" immo-postgres 2>$null
@@ -45,18 +48,50 @@ do {
 
 if ($pg -ne "healthy") {
     docker compose --env-file .env.docker ps
-    throw "PostgreSQL n'est pas prêt. Vérifiez Docker Desktop puis relancez."
+    throw "PostgreSQL n'est pas pret. Verifiez Docker Desktop puis relancez."
 }
 
-$dump = Get-ChildItem "backups\*.dump" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if ($dump) {
-    Write-Host "Restauration de $($dump.Name)..."
-    & (Join-Path "scripts" "restore-local.ps1") -DumpFile $dump.FullName
-} else {
-    Write-Host "Aucun dump dans backups\ — base vide. Restaurez un dump plus tard."
+# Detect existing business data (preserve accountant saisies)
+$existingCount = $null
+try {
+    $existingCount = (
+        docker compose --env-file .env.docker exec -T postgres `
+            psql -U immo_user -d immobilisations -tAc "SELECT count(*) FROM immobilisations;" 2>$null
+    ).Trim()
+} catch {
+    $existingCount = $null
 }
+
+$hasData = $false
+if ($existingCount -match '^\d+$' -and [int]$existingCount -gt 0) {
+    $hasData = $true
+}
+
+if ($hasData) {
+    Write-Host "3/4 Base deja peuplee ($existingCount immobilisations) - restauration IGNOREES."
+    Write-Host "    Les saisies du PC comptable sont conservees."
+} else {
+    $dump = Get-ChildItem "backups\*.dump" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($dump) {
+        Write-Host "3/4 Restauration de $($dump.Name) (base vide)..."
+        & (Join-Path "scripts" "restore-local.ps1") -DumpFile $dump.FullName
+    } else {
+        Write-Host "3/4 Aucun dump dans backups\ et base vide - demarrage a vide."
+    }
+}
+
+Write-Host "4/4 Demarrage backend + frontend..."
+docker compose --env-file .env.docker up -d --no-build --pull never
+
+$deadline2 = (Get-Date).AddMinutes(4)
+do {
+    Start-Sleep -Seconds 4
+    $st = docker inspect --format "{{.State.Health.Status}}" immo-backend 2>$null
+    if ($st -eq "healthy") { break }
+} while ((Get-Date) -lt $deadline2)
 
 Write-Host ""
-Write-Host "Installation terminée."
+Write-Host "Installation terminee."
 Write-Host "Ouvrir : http://localhost"
-Write-Host "Ne jamais exécuter : docker compose down -v"
+Write-Host "INTERDIT : docker compose down -v"
+Write-Host "Usage quotidien : Demarrer.cmd / Arreter.cmd / Sauvegarder.cmd / Verifier.cmd"
