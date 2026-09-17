@@ -21,9 +21,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-immobilisations}
       POSTGRES_USER: ${POSTGRES_USER:-immo_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env.docker}
-    # Loopback seulement — pas d'accès LAN
+    # Accès hôte : localhost:5432 (Docker exige une IP, pas le nom « localhost »).
     ports:
-      - "127.0.0.1:5432:5432"
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init:/docker-entrypoint-initdb.d:ro
@@ -51,7 +51,7 @@ services:
       APP_DEBUG: "false"
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-immo_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-immobilisations}
       DATABASE_SSL: "false"
-      CORS_ORIGINS: http://localhost,http://127.0.0.1,http://localhost:80,http://127.0.0.1:80
+      CORS_ORIGINS: http://localhost,http://localhost:80
       SKIP_MIGRATIONS: ${SKIP_MIGRATIONS:-1}
     volumes:
       - ./storage/uploads:/app/storage/uploads
@@ -65,7 +65,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)",
         ]
       interval: 10s
       timeout: 5s
@@ -82,8 +82,9 @@ services:
     pull_policy: missing
     container_name: immo-frontend
     restart: unless-stopped
+    # Ouvrir l'application : http://localhost
     ports:
-      - "127.0.0.1:80:80"
+      - "80:80"
     depends_on:
       backend:
         condition: service_healthy

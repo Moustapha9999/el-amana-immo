@@ -24,7 +24,7 @@ foreach ($q in $queries) {
 
 Write-Host "Health API :"
 try {
-    $h = Invoke-WebRequest -Uri "http://127.0.0.1/health" -UseBasicParsing -TimeoutSec 5
+    $h = Invoke-WebRequest -Uri "http://localhost/health" -UseBasicParsing -TimeoutSec 5
     Write-Host "  $($h.StatusCode) $($h.Content)"
 } catch {
     Write-Host "  http://localhost injoignable pour l'instant."

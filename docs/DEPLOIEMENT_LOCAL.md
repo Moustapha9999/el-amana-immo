@@ -12,7 +12,7 @@ La migration vers le serveur banque se fera par dump PostgreSQL + copie des docu
 - Ne **jamais** lancer `docker compose down -v` (le `-v` efface PostgreSQL).
 - Ne **pas** recalculer l'exercice 2025 ni modifier l'archive 2025.
 - Les secrets sont dans `.env.docker` (non versionné), jamais dans le code.
-- PostgreSQL n'écoute que sur `127.0.0.1`.
+- PostgreSQL n'écoute que sur `localhost`.
 - L'utilisateur ouvre uniquement **http://localhost**.
 
 ## Stack réelle du projet

@@ -34,7 +34,7 @@ remplacement d’ORION.
 ## Base de données
 
 - Une seule `DATABASE_URL` vers le service `postgres` du compose racine.
-- Loopback Postgres : `127.0.0.1:…`.
+- Loopback Postgres : `localhost:5432`.
 - Volume nommé unique (`immo_postgres_data`). **Jamais** `docker compose down -v`.
 - `SKIP_MIGRATIONS=1` par défaut jusqu’au restore du dump Supabase.
   Alembic sur base vide = schéma faux (1ʳᵉ révision = `ALTER` de tables déjà

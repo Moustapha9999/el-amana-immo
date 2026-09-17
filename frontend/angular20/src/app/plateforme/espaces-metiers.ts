@@ -99,7 +99,15 @@ export const ESPACES_METIERS: EspaceMetier[] = [
   },
 ];
 
-export const ESPACE_COMPTABILITE = ESPACES_METIERS.find((e) => e.id === 'comptabilite')!;
+function espaceComptabilite(): EspaceMetier {
+  const espace = ESPACES_METIERS.find((item) => item.id === 'comptabilite');
+  if (!espace) {
+    throw new Error('Catalogue BEA DIGITAL : espace Comptabilité manquant.');
+  }
+  return espace;
+}
+
+export const ESPACE_COMPTABILITE: EspaceMetier = espaceComptabilite();
 
 export interface PageModuleImmo {
   prefix: string;

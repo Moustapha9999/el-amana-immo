@@ -13,7 +13,7 @@ copy .env.docker.example .env.docker
 docker compose --env-file .env.docker up -d
 ```
 
-- Postgres healthy, écoute `127.0.0.1:5432`.
+- Postgres healthy, écoute `localhost:5432`.
 - Backend healthy avec **`SKIP_MIGRATIONS=1`** (défaut compose / `.env.docker.example`).
 - Front : **http://localhost** (nginx proxifie `/api/` vers le backend).
 
@@ -51,7 +51,7 @@ Deux terminaux, **une** Postgres (compose `postgres` suffit) :
 # Terminal A — API (répertoire backend/)
 cd backend
 $env:PYTHONPATH = "."
-$env:DATABASE_URL = "postgresql+asyncpg://immo_user:MOT_DE_PASSE@127.0.0.1:5432/immobilisations"
+$env:DATABASE_URL = "postgresql+asyncpg://immo_user:MOT_DE_PASSE@localhost:5432/immobilisations"
 .\.venv\Scripts\uvicorn app.main:app --reload --port 8000
 
 # Terminal B — Angular
@@ -74,7 +74,7 @@ Ce n’est **pas** le chemin prod / Comptabilité :
 ```powershell
 cd backend
 $env:PYTHONPATH = "."
-$env:DATABASE_URL = "postgresql+asyncpg://immo_user:MOT_DE_PASSE@127.0.0.1:5432/immobilisations"
+$env:DATABASE_URL = "postgresql+asyncpg://immo_user:MOT_DE_PASSE@localhost:5432/immobilisations"
 python scripts/init_db.py
 python scripts/seed_data.py
 ```

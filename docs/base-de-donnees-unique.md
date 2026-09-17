@@ -20,7 +20,7 @@ travail interne (saisies, contrôles, GED, reporting immo).
 |---------|--------|
 | Service | `postgres` dans `docker-compose.yml` |
 | Image locale | `postgres:17-alpine` (ne **pas** poser `LANG=fr_FR.utf8`) |
-| Écoute | `127.0.0.1:5432` uniquement (loopback) |
+| Écoute | `localhost:5432` uniquement |
 | Volume | `immo_postgres_data` — **une** instance, **jamais** `docker compose down -v` |
 | Init | `database/init/01-extensions.sql` (`pgcrypto`) |
 | Backend | une seule `DATABASE_URL` vers `postgres:5432` (hôte Docker) |
