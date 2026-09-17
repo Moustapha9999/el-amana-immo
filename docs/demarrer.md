@@ -68,7 +68,18 @@ Amortissements / Archives ; fil d’Ariane ; retour Accueil.
 
 La prod / la vraie base = `pg_restore` du dump Supabase, **jamais** Alembic à vide.
 
-## 4. Build front (CI / vérif)
+## 4. Tests backend
+
+Suite unique : `backend/tests/` (ne pas relancer une suite à la racine du dépôt).
+
+```powershell
+cd backend
+pytest -q
+```
+
+Depuis la racine : `pytest -q` (le `pytest.ini` pointe déjà vers `backend/tests`).
+
+## 5. Build front (CI / vérif)
 
 ```powershell
 cd frontend\angular20
