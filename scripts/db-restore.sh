@@ -25,7 +25,7 @@ dotenv_val() {
 }
 
 DB_USER="$(dotenv_val POSTGRES_USER immo_user)"
-DB_NAME="$(dotenv_val POSTGRES_DB immobilisations)"
+DB_NAME="$(dotenv_val POSTGRES_DB bea_digital)"
 
 DUMP_ARG="${1:-}"
 UPLOADS_ARG="${2:-}"

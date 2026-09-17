@@ -27,6 +27,8 @@ backend/app/
 - `scripts/init_db.py` — création des tables
 - `scripts/seed_data.py` — admin, agence, rôles (+ plan El Amana à la première installation)
 - `scripts/seed_plan_comptable_el_amana.py` — plan 140/142/147/148/681 et 14 types (idempotent)
+- `scripts/bea_digital_ops.py` — contrôles catalogue / totaux (Supabase ou Docker)
+- Pack SQL : `scripts/supabase/` (racine dépôt) + `scripts/bea-supabase.ps1`
 
 Migration Alembic (base existante Supabase) :
 
@@ -43,9 +45,11 @@ Référentiel métier : `app/data/el_amana_referentiel.py`.
 
 ```powershell
 cd backend
-$env:DATABASE_URL="postgresql+asyncpg://immo_user:immo_pass@localhost:5432/immobilisations"
+$env:DATABASE_URL="postgresql+asyncpg://immo_user:immo_pass@localhost:5432/bea_digital"
 python scripts/seed_data.py
 uvicorn app.main:app --reload
 ```
 
 Documentation API : http://localhost:8000/docs
+
+Socle Login 1 / Login 2 / permissions : [docs/socle-bea-digital.md](socle-bea-digital.md).

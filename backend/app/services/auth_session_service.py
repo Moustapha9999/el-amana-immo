@@ -1,4 +1,4 @@
-"""Sessions JWT révocables — multi-utilisateurs / multi-onglets indépendants."""
+"""Sessions JWT révocables — Login 1 (plateforme) et Login 2 (module) indépendants."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from app.core.security import (
     new_jti,
 )
 from app.models import AuthSession, User
+from app.models.auth import SESSION_KIND_MODULE, SESSION_KIND_PLATFORM
 from app.schemas.auth import TokenPair
 
 
@@ -23,7 +24,43 @@ class AuthSessionService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    def _role_claims(self, user: User) -> dict:
+        return {"roles": [r.code for r in user.roles], "is_superuser": user.is_superuser}
+
+    def _pair_for(self, user: User, session: AuthSession, refresh_jti: str) -> TokenPair:
+        settings = get_settings()
+        extra = {
+            **self._role_claims(user),
+            "kind": session.kind,
+        }
+        refresh_extra = {"kind": session.kind}
+        expire_delta = timedelta(days=settings.refresh_token_expire_days)
+        if session.kind == SESSION_KIND_MODULE:
+            extra["module"] = session.module_code
+            extra["parent_sid"] = str(session.parent_session_id) if session.parent_session_id else None
+            refresh_extra["module"] = session.module_code
+            expire_delta = timedelta(minutes=settings.module_refresh_token_expire_minutes)
+        return TokenPair(
+            access_token=create_access_token(user.id, sid=session.id, extra_claims=extra),
+            refresh_token=create_refresh_token(
+                user.id,
+                sid=session.id,
+                refresh_jti=refresh_jti,
+                extra_claims=refresh_extra,
+                expire_delta=expire_delta,
+            ),
+        )
+
     async def issue_tokens(
+        self,
+        user: User,
+        *,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> TokenPair:
+        return await self.issue_platform_tokens(user, ip_address=ip_address, user_agent=user_agent)
+
+    async def issue_platform_tokens(
         self,
         user: User,
         *,
@@ -39,16 +76,40 @@ class AuthSessionService:
             expires_at=expires_at,
             ip_address=ip_address[:64] if ip_address else None,
             user_agent=user_agent[:255] if user_agent else None,
+            kind=SESSION_KIND_PLATFORM,
+            module_code=None,
+            parent_session_id=None,
         )
         self.db.add(session)
         await self.db.flush()
+        return self._pair_for(user, session, refresh_jti)
 
-        role_codes = [r.code for r in user.roles]
-        claims = {"roles": role_codes, "is_superuser": user.is_superuser}
-        return TokenPair(
-            access_token=create_access_token(user.id, sid=session.id, extra_claims=claims),
-            refresh_token=create_refresh_token(user.id, sid=session.id, refresh_jti=refresh_jti),
+    async def issue_module_tokens(
+        self,
+        user: User,
+        *,
+        module_code: str,
+        parent_session_id: UUID,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> TokenPair:
+        await self.revoke_module_sessions(user.id, module_code)
+        settings = get_settings()
+        refresh_jti = new_jti()
+        expires_at = datetime.now(UTC) + timedelta(minutes=settings.module_refresh_token_expire_minutes)
+        session = AuthSession(
+            user_id=user.id,
+            refresh_jti=refresh_jti,
+            expires_at=expires_at,
+            ip_address=ip_address[:64] if ip_address else None,
+            user_agent=user_agent[:255] if user_agent else None,
+            kind=SESSION_KIND_MODULE,
+            module_code=module_code,
+            parent_session_id=parent_session_id,
         )
+        self.db.add(session)
+        await self.db.flush()
+        return self._pair_for(user, session, refresh_jti)
 
     async def get_active_session(self, sid: UUID) -> AuthSession | None:
         result = await self.db.execute(select(AuthSession).where(AuthSession.id == sid))
@@ -62,9 +123,17 @@ class AuthSessionService:
             return None
         return session
 
-    async def rotate_refresh(self, refresh_token: str, user: User) -> TokenPair:
+    async def rotate_refresh(
+        self,
+        refresh_token: str,
+        user: User,
+        *,
+        expected_kind: str = SESSION_KIND_PLATFORM,
+    ) -> TokenPair:
         payload = decode_token(refresh_token)
         if payload.get("type") != "refresh":
+            raise ValueError("Refresh token invalide")
+        if payload.get("kind", SESSION_KIND_PLATFORM) != expected_kind:
             raise ValueError("Refresh token invalide")
         sid_raw = payload.get("sid")
         jti = payload.get("jti")
@@ -76,41 +145,49 @@ class AuthSessionService:
             raise ValueError("Session invalide ou révoquée")
         if session.user_id != user.id:
             raise ValueError("Session invalide")
+        if (session.kind or SESSION_KIND_PLATFORM) != expected_kind:
+            raise ValueError("Session invalide")
+
+        if expected_kind == SESSION_KIND_MODULE:
+            if session.parent_session_id is None:
+                raise ValueError("Session invalide")
+            parent = await self.get_active_session(session.parent_session_id)
+            if parent is None or parent.kind != SESSION_KIND_PLATFORM:
+                raise ValueError("Session plateforme expirée ou révoquée")
 
         new_refresh_jti = new_jti()
         settings = get_settings()
         session.refresh_jti = new_refresh_jti
-        session.expires_at = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
+        if session.kind == SESSION_KIND_MODULE:
+            session.expires_at = datetime.now(UTC) + timedelta(
+                minutes=settings.module_refresh_token_expire_minutes
+            )
+        else:
+            session.expires_at = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
         await self.db.flush()
+        return self._pair_for(user, session, new_refresh_jti)
 
-        role_codes = [r.code for r in user.roles]
-        claims = {"roles": role_codes, "is_superuser": user.is_superuser}
-        return TokenPair(
-            access_token=create_access_token(user.id, sid=session.id, extra_claims=claims),
-            refresh_token=create_refresh_token(
-                user.id, sid=session.id, refresh_jti=new_refresh_jti
-            ),
-        )
-
-    async def revoke_by_token(self, token: str) -> None:
+    def _decode_unverified(self, token: str) -> dict | None:
         try:
-            payload = decode_token(token)
+            return decode_token(token)
         except ValueError:
-            # Token expiré : tenter de lire sans vérif d'exp pour révoquer la session
             from jose import jwt
-            from app.core.config import get_settings
 
             settings = get_settings()
             try:
-                payload = jwt.decode(
+                return jwt.decode(
                     token,
                     settings.secret_key,
                     algorithms=[settings.jwt_algorithm],
                     options={"verify_exp": False},
                 )
             except Exception:
-                return
+                return None
 
+    async def revoke_by_token(self, token: str) -> None:
+        payload = self._decode_unverified(token)
+        if not payload:
+            return
         sid_raw = payload.get("sid")
         if not sid_raw:
             return
@@ -121,6 +198,25 @@ class AuthSessionService:
         await self.db.execute(
             update(AuthSession)
             .where(AuthSession.id == sid, AuthSession.revoked_at.is_(None))
+            .values(revoked_at=now)
+        )
+        await self.db.execute(
+            update(AuthSession)
+            .where(AuthSession.parent_session_id == sid, AuthSession.revoked_at.is_(None))
+            .values(revoked_at=now)
+        )
+        await self.db.flush()
+
+    async def revoke_module_sessions(self, user_id: UUID, module_code: str) -> None:
+        now = datetime.now(UTC)
+        await self.db.execute(
+            update(AuthSession)
+            .where(
+                AuthSession.user_id == user_id,
+                AuthSession.kind == SESSION_KIND_MODULE,
+                AuthSession.module_code == module_code,
+                AuthSession.revoked_at.is_(None),
+            )
             .values(revoked_at=now)
         )
         await self.db.flush()

@@ -19,3 +19,19 @@ export const guestGuard: CanActivateFn = () => {
   }
   return router.createUrlTree(['/accueil']);
 };
+
+export function moduleGuard(moduleCode: string): CanActivateFn {
+  return (route, state) => {
+    const auth = inject(AuthService);
+    const router = inject(Router);
+    if (!auth.isAuthenticated()) {
+      return router.createUrlTree(['/login']);
+    }
+    if (auth.hasModuleSession(moduleCode)) {
+      return true;
+    }
+    return router.createUrlTree(['/modules', moduleCode, 'acces'], {
+      queryParams: { returnUrl: state.url },
+    });
+  };
+}

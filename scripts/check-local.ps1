@@ -7,6 +7,20 @@ if (-not (Test-Path -LiteralPath $envFile)) {
     throw ".env.docker introuvable."
 }
 
+function Get-EnvValue([string]$path, [string]$key, [string]$default) {
+    foreach ($line in Get-Content -LiteralPath $path) {
+        $trim = $line.Trim()
+        if ($trim.StartsWith("#") -or $trim -eq "") { continue }
+        if ($trim -match "^$key=(.*)$") {
+            return $Matches[1].Trim().Trim('"').Trim("'")
+        }
+    }
+    return $default
+}
+
+$pgUser = Get-EnvValue $envFile "POSTGRES_USER" "immo_user"
+$pgDb = Get-EnvValue $envFile "POSTGRES_DB" "bea_digital"
+
 Write-Host "Santé des conteneurs :"
 docker compose --env-file $envFile ps
 Write-Host ""
@@ -19,7 +33,7 @@ $queries = @(
     "SELECT annee, statut FROM exercices_comptables ORDER BY annee;"
 )
 foreach ($q in $queries) {
-    docker compose --env-file $envFile exec -T postgres psql -U immo_user -d immobilisations -c $q
+    docker compose --env-file $envFile exec -T postgres psql -U $pgUser -d $pgDb -c $q
 }
 
 Write-Host "Health API :"

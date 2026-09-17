@@ -1,4 +1,4 @@
-"""Exports Excel / PDF avec en-tête Banque El Amana et horodatage."""
+"""Exports Excel / PDF BEA DIGITAL (en-tête banque + horodatage)."""
 
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ def format_period_label(date_debut: date | None, date_fin: date | None) -> str |
 
 def _bank_line() -> str:
     return (
-        f"{BANQUE_EL_AMANA['raison_sociale']} ({BANQUE_EL_AMANA['sigle']}) — "
+        f"BEA DIGITAL — {BANQUE_EL_AMANA['raison_sociale']} ({BANQUE_EL_AMANA['sigle']}) — "
         f"Code banque {BANQUE_EL_AMANA['code_banque']} — SWIFT {BANQUE_EL_AMANA['code_swift']}"
     )
 
@@ -281,7 +281,7 @@ def _pdf_footer(canvas, doc, *, exported_label: str, report_title: str) -> None:
     canvas.rect(0, canvas._pagesize[1] - 8 * mm, page_w, 8 * mm, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
     canvas.setFont("Helvetica-Bold", 8)
-    canvas.drawString(12 * mm, canvas._pagesize[1] - 5.2 * mm, "Banque El Amana — Immobilisations")
+    canvas.drawString(12 * mm, canvas._pagesize[1] - 5.2 * mm, "BEA DIGITAL — Comptabilité")
     canvas.drawRightString(page_w - 12 * mm, canvas._pagesize[1] - 5.2 * mm, report_title[:48])
     canvas.restoreState()
 

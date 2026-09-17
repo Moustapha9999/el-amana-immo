@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_permission
 from app.api.v1.endpoints.helpers import to_paginated
 from app.core.exceptions import AppError, raise_http_from_app
 from app.db.session import get_db
@@ -81,7 +81,7 @@ async def list_categories(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     search: str | None = None,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     from pydantic import ValidationError
@@ -103,7 +103,7 @@ async def list_categories(
 async def create_category(
     payload: CategorieCreate,
     request: Request,
-    user: User = Depends(require_roles("administrateur")),
+    user: User = Depends(require_permission("immobilisations.admin")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.categorie_audit import categorie_audit_snapshot
@@ -124,7 +124,7 @@ async def create_category(
 @router.get("/categories/{categorie_id}", response_model=CategorieRead)
 async def get_category(
     categorie_id: UUID,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     row = await db.get(CategorieImmobilisation, categorie_id)
@@ -138,7 +138,7 @@ async def update_category(
     categorie_id: UUID,
     payload: CategorieUpdate,
     request: Request,
-    user: User = Depends(require_roles("administrateur")),
+    user: User = Depends(require_permission("immobilisations.admin")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.categorie_audit import categorie_audit_snapshot
@@ -168,7 +168,7 @@ async def update_category(
 async def next_code_inventaire(
     categorie_id: UUID = Query(..., description="Nature IMMO"),
     annee: int = Query(..., ge=2000, le=2100, description="Année du N° (souvent année d'acquisition)"),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Prochain N° immobilisation pour une nature : ``AAI-2026-001``, ``Log-2026-001``, …"""
@@ -191,7 +191,7 @@ async def list_immobilisations(
     amortissable: bool | None = Query(None),
     statuts: str | None = Query(None, description="Statuts séparés par des virgules"),
     famille: str | None = Query(None, description="Filtre sur le type / famille de catégorie"),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.models.enums import StatutImmobilisation
@@ -221,7 +221,7 @@ async def list_immobilisations(
 async def create_immobilisation(
     payload: ImmobilisationCreate,
     request: Request,
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.create")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -241,7 +241,7 @@ async def create_immobilisation(
 
 
 @router.get("/immobilisations/{item_id}", response_model=ImmobilisationRead)
-async def get_immobilisation(item_id: UUID, _: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def get_immobilisation(item_id: UUID, _: User = Depends(require_permission("immobilisations.read")), db: AsyncSession = Depends(get_db)):
     try:
         return await ImmobilisationService(db).get(item_id)
     except AppError as exc:
@@ -253,7 +253,7 @@ async def update_immobilisation(
     item_id: UUID,
     payload: ImmobilisationUpdate,
     request: Request,
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.update")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -273,7 +273,7 @@ async def update_immobilisation(
 
 
 @router.get("/immobilisations/{item_id}/situation-comptable", response_model=SituationComptableRead)
-async def get_situation_comptable(item_id: UUID, _: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def get_situation_comptable(item_id: UUID, _: User = Depends(require_permission("immobilisations.read")), db: AsyncSession = Depends(get_db)):
     try:
         immo, cumul, vnc = await compute_situation_comptable(db, item_id)
         return SituationComptableRead(
@@ -290,7 +290,7 @@ async def get_situation_comptable(item_id: UUID, _: User = Depends(get_current_u
 async def mettre_en_service_immobilisation(
     item_id: UUID,
     request: Request,
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.validate")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -315,7 +315,7 @@ async def transfert_immobilisation(
     item_id: UUID,
     payload: TransfertCreate,
     request: Request,
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.update")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -338,7 +338,7 @@ async def transfert_immobilisation(
 async def delete_immobilisation(
     item_id: UUID,
     request: Request,
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.delete")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -367,7 +367,7 @@ async def upload_piece(
     libelle: str | None = Form(None),
     montant: str | None = Form(None),
     is_photo: bool = Form(False),
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.update")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -405,7 +405,7 @@ async def upload_piece(
 @router.get("/immobilisations/{item_id}/pieces", response_model=list[PieceJointeRead])
 async def list_pieces(
     item_id: UUID,
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -418,7 +418,7 @@ async def list_pieces(
 @router.get("/pieces/{piece_id}/download")
 async def download_piece(
     piece_id: UUID,
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -439,7 +439,7 @@ async def download_piece(
 async def delete_piece(
     piece_id: UUID,
     request: Request,
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.update")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -468,7 +468,7 @@ async def archive_pieces_comptables(
     search: str | None = Query(None),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -487,7 +487,7 @@ async def archive_pieces_comptables(
 
 @router.get("/archives/pieces-comptables/types")
 async def list_types_pieces(
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
 ):
     return [{"value": t.value, "label": TYPE_LABELS[t]} for t in TYPE_LABELS]
 
@@ -495,7 +495,7 @@ async def list_types_pieces(
 @router.post("/immobilisations/import", response_model=ImmobilisationImportResponse)
 async def import_immobilisations(
     file: UploadFile = File(...),
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.create")),
     db: AsyncSession = Depends(get_db),
 ):
     if not file.filename or not file.filename.lower().endswith((".xlsx", ".xls")):
@@ -511,7 +511,7 @@ async def import_immobilisations(
 @router.post("/immobilisations/import-banque", response_model=BankImmoImportResponse)
 async def import_immobilisations_banque(
     file: UploadFile = File(...),
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.create")),
     db: AsyncSession = Depends(get_db),
 ):
     """Import du tableau d'amortissement banque (classeur multi-feuilles IMMO)."""
@@ -550,7 +550,7 @@ async def import_immobilisations_banque(
 
 @router.get("/immobilisations/import-banque/count")
 async def count_import_banque(
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Nombre de biens encore présents issus de l'import tableau banque."""
@@ -560,7 +560,7 @@ async def count_import_banque(
 
 @router.post("/immobilisations/import-banque/purge", response_model=BankImmoPurgeResponse)
 async def purge_import_banque(
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.admin")),
     db: AsyncSession = Depends(get_db),
 ):
     """Annule l'import banque : supprime tous les biens marqués import_banque."""
@@ -587,7 +587,7 @@ async def purge_import_banque(
 async def create_scan(
     payload: InventaireScanCreate,
     request: Request,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission("immobilisations.update")),
     db: AsyncSession = Depends(get_db),
 ):
     row = await InventaireService(db).create_scan(
@@ -615,6 +615,8 @@ async def create_scan(
             message=f"Code scanné inconnu : {row.code_scanne}",
             entity="inventaire_scan",
             entity_id=str(row.id),
+            espace_code="comptabilite",
+            module_code="immobilisations",
         )
     return _scan_to_read(row)
 
@@ -623,7 +625,7 @@ async def create_scan(
 async def list_scans(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     items, total = await InventaireService(db).list_scans(page, size)
@@ -633,7 +635,7 @@ async def list_scans(
 @router.get("/immobilisations/{item_id}/qr-code", response_model=QrCodeResponse)
 async def get_immobilisation_qr(
     item_id: UUID,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:

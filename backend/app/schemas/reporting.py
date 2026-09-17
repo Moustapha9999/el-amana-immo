@@ -15,6 +15,8 @@ class NotificationRead(ORMModel):
     lu: bool
     entity: str | None = None
     entity_id: str | None = None
+    espace_code: str | None = None
+    module_code: str | None = None
     created_at: datetime
 
 
@@ -26,6 +28,9 @@ class AuditLogRead(ORMModel):
     entity: str
     entity_id: str | None
     ip_address: str | None
+    espace_code: str | None = None
+    module_code: str | None = None
+    session_id: UUID | None = None
     created_at: datetime
 
 

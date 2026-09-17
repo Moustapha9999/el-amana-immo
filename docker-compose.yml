@@ -2,6 +2,7 @@
 # Démarrage : copier .env.docker.example → .env.docker, puis
 #   docker compose --env-file .env.docker up -d
 #
+# Application : http://localhost
 # Ne jamais lancer : docker compose down -v
 # (le -v supprime le volume PostgreSQL = perte de la base unique)
 #
@@ -15,13 +16,12 @@ services:
     # TEST/PROD banque : image Debian postgres:17, collation alignée sur le dump.
     image: postgres:17-alpine
     pull_policy: missing
-    container_name: immo-postgres
+    container_name: bea-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-immobilisations}
+      POSTGRES_DB: ${POSTGRES_DB:-bea_digital}
       POSTGRES_USER: ${POSTGRES_USER:-immo_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env.docker}
-    # Accès hôte : localhost:5432 (Docker exige une IP, pas le nom « localhost »).
     ports:
       - "5432:5432"
     volumes:
@@ -29,27 +29,27 @@ services:
       - ./database/init:/docker-entrypoint-initdb.d:ro
       - ./backups:/backups
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-immo_user} -d ${POSTGRES_DB:-immobilisations}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-immo_user} -d ${POSTGRES_DB:-bea_digital}"]
       interval: 5s
       timeout: 5s
       retries: 12
     networks:
-      - immo_internal
+      - bea_internal
 
   backend:
-    image: el-amana-immo-backend:latest
+    image: bea-digital-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
     pull_policy: missing
-    container_name: immo-backend
+    container_name: bea-backend
     restart: unless-stopped
     env_file:
       - .env.docker
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-immo_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-immobilisations}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-immo_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-bea_digital}
       DATABASE_SSL: "false"
       CORS_ORIGINS: http://localhost,http://localhost:80
       SKIP_MIGRATIONS: ${SKIP_MIGRATIONS:-1}
@@ -72,15 +72,15 @@ services:
       retries: 12
       start_period: 20s
     networks:
-      - immo_internal
+      - bea_internal
 
   frontend:
-    image: el-amana-immo-frontend:latest
+    image: bea-digital-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile
     pull_policy: missing
-    container_name: immo-frontend
+    container_name: bea-frontend
     restart: unless-stopped
     # Ouvrir l'application : http://localhost
     ports:
@@ -89,14 +89,14 @@ services:
       backend:
         condition: service_healthy
     networks:
-      - immo_internal
+      - bea_internal
 
 volumes:
   postgres_data:
-    # Volume unique BEA DIGITAL = base immo. Ne pas en créer un second.
-    name: immo_postgres_data
+    # Volume unique BEA DIGITAL. Ne pas en créer un second.
+    name: bea_postgres_data
 
 networks:
-  immo_internal:
-    name: immo_internal
+  bea_internal:
+    name: bea_internal
     driver: bridge

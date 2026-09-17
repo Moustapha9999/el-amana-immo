@@ -24,6 +24,8 @@ class Notification(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     lu: Mapped[bool] = mapped_column(Boolean, default=False)
     entity: Mapped[str | None] = mapped_column(String(80), nullable=True)
     entity_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    espace_code: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    module_code: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
 
 
 class AuditLog(Base, UUIDPrimaryKeyMixin):
@@ -36,6 +38,9 @@ class AuditLog(Base, UUIDPrimaryKeyMixin):
     before_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     after_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    espace_code: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    module_code: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    session_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User | None"] = relationship(foreign_keys=[user_id])

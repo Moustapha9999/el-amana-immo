@@ -45,21 +45,25 @@ def create_refresh_token(
     *,
     sid: str | UUID,
     refresh_jti: str,
+    extra_claims: dict[str, Any] | None = None,
+    expire_delta: timedelta | None = None,
 ) -> str:
     settings = get_settings()
-    expire = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
-    payload = {
+    expire = datetime.now(UTC) + (expire_delta or timedelta(days=settings.refresh_token_expire_days))
+    payload: dict[str, Any] = {
         "sub": str(subject),
         "exp": expire,
         "type": "refresh",
         "sid": str(sid),
         "jti": refresh_jti,
     }
+    if extra_claims:
+        payload.update(extra_claims)
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
 
-# Lien de réinitialisation court (sécurité + UX locale)
-PASSWORD_RESET_EXPIRE_SECONDS = 45
+# Lien de réinitialisation Login 1 : 15 minutes.
+PASSWORD_RESET_EXPIRE_SECONDS = 900
 
 
 def create_password_reset_token(subject: str | UUID) -> str:

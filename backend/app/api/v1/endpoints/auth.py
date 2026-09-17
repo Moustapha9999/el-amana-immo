@@ -4,10 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import bearer_scheme, get_current_user
+from app.api.deps import bearer_scheme, get_platform_user
 from app.core.security import decode_token, verify_password
 from app.db.session import get_db
 from app.models import User
+from app.models.auth import SESSION_KIND_MODULE, SESSION_KIND_PLATFORM
 from app.schemas.auth import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
@@ -27,6 +28,8 @@ from app.services.auth_service import AuthService
 from app.services.auth_session_service import AuthSessionService
 from app.services.audit_helpers import record_audit
 from app.services.inventaire_service import build_qr_png_base64
+from app.services.login_attempt_service import LoginAttemptService
+from app.services.plateforme_access_service import PlateformeAccessService
 from app.services.totp_service import generate_secret, provisioning_uri, verify_code
 
 router = APIRouter(tags=["auth"])
@@ -43,9 +46,30 @@ def _client_meta(request: Request) -> tuple[str | None, str | None]:
 
 @router.post("/auth/login", response_model=TokenPair)
 async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    ip, ua = _client_meta(request)
+    attempts = LoginAttemptService(db)
+    await attempts.assert_not_locked(
+        email=payload.email, ip_address=ip, login_kind=SESSION_KIND_PLATFORM
+    )
+
     service = AuthService(db)
+    access = PlateformeAccessService(db)
+    await access.ensure_catalogue()
     user = await service.authenticate(payload.email, payload.password)
     if user is None:
+        await attempts.record(
+            email=payload.email, ip_address=ip, login_kind=SESSION_KIND_PLATFORM, success=False
+        )
+        await record_audit(
+            db,
+            user=None,
+            action="login_failed",
+            entity="user",
+            entity_id=None,
+            request=request,
+            after={"kind": SESSION_KIND_PLATFORM, "email": payload.email},
+        )
+        await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Identifiants invalides")
 
     if user.totp_enabled:
@@ -55,18 +79,33 @@ async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depe
                 detail={"code": "TOTP_REQUIRED", "message": "Code authenticator requis"},
             )
         if not verify_code(user.totp_secret, payload.totp_code):
+            await attempts.record(
+                email=payload.email, ip_address=ip, login_kind=SESSION_KIND_PLATFORM, success=False
+            )
+            await record_audit(
+                db,
+                user=user,
+                action="login_failed",
+                entity="user",
+                entity_id=str(user.id),
+                request=request,
+                after={"kind": SESSION_KIND_PLATFORM, "reason": "totp"},
+            )
+            await db.commit()
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Code 2FA invalide")
 
+    await attempts.record(
+        email=payload.email, ip_address=ip, login_kind=SESSION_KIND_PLATFORM, success=True
+    )
     await record_audit(
         db,
         user=user,
-        action="login",
+        action="login_platform",
         entity="user",
         entity_id=str(user.id),
         request=request,
     )
-    ip, ua = _client_meta(request)
-    return await AuthSessionService(db).issue_tokens(user, ip_address=ip, user_agent=ua)
+    return await AuthSessionService(db).issue_platform_tokens(user, ip_address=ip, user_agent=ua)
 
 
 @router.post("/auth/refresh", response_model=TokenPair)
@@ -85,7 +124,9 @@ async def refresh(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Utilisateur introuvable")
 
     try:
-        return await AuthSessionService(db).rotate_refresh(payload.refresh_token, user)
+        return await AuthSessionService(db).rotate_refresh(
+            payload.refresh_token, user, expected_kind=SESSION_KIND_PLATFORM
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
@@ -107,7 +148,7 @@ async def logout(
     await record_audit(
         db,
         user=None,
-        action="logout",
+        action="logout_platform",
         entity="user",
         entity_id=None,
         request=request,
@@ -117,18 +158,18 @@ async def logout(
 
 
 @router.get("/auth/me", response_model=UserRead)
-async def me(user: User = Depends(get_current_user)):
+async def me(user: User = Depends(get_platform_user)):
     return user
 
 
 @router.get("/auth/2fa/status", response_model=TotpStatusResponse)
-async def totp_status(user: User = Depends(get_current_user)):
+async def totp_status(user: User = Depends(get_platform_user)):
     pending = bool(user.totp_secret and not user.totp_enabled)
     return TotpStatusResponse(enabled=user.totp_enabled, pending_setup=pending)
 
 
 @router.post("/auth/2fa/setup", response_model=TotpSetupResponse)
-async def totp_setup(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def totp_setup(user: User = Depends(get_platform_user), db: AsyncSession = Depends(get_db)):
     if user.totp_enabled:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="2FA déjà activée")
     secret = generate_secret()
@@ -147,7 +188,7 @@ async def totp_setup(user: User = Depends(get_current_user), db: AsyncSession = 
 async def totp_enable(
     payload: TotpEnableRequest,
     request: Request,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_platform_user),
     db: AsyncSession = Depends(get_db),
 ):
     if not user.totp_secret:
@@ -171,7 +212,7 @@ async def totp_enable(
 async def totp_disable(
     payload: TotpDisableRequest,
     request: Request,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_platform_user),
     db: AsyncSession = Depends(get_db),
 ):
     if not user.totp_enabled:
@@ -220,7 +261,7 @@ async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Dep
     if user is not None:
         reset_token = create_password_reset_token(user.id)
         expires_in = PASSWORD_RESET_EXPIRE_SECONDS
-        logging.getLogger("el_amana.auth").info(
+        logging.getLogger("bea.auth").info(
             "Password reset token generated for %s (dev_mode=%s, ttl=%ss)",
             user.email,
             dev_mode,
@@ -232,7 +273,7 @@ async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Dep
         else:
             message = (
                 f"Compte trouvé — cliquez sur le lien ci-dessous pour choisir un nouveau mot de passe "
-                f"(valide {PASSWORD_RESET_EXPIRE_SECONDS} s)."
+                f"(valide {PASSWORD_RESET_EXPIRE_SECONDS // 60} min)."
             )
     elif dev_mode:
         message = (
@@ -257,3 +298,160 @@ async def reset_password(payload: ResetPasswordRequest, db: AsyncSession = Depen
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return MessageResponse(message="Mot de passe mis à jour")
+
+
+@router.post("/auth/modules/{module_code}/login", response_model=TokenPair)
+async def module_login(
+    module_code: str,
+    payload: LoginRequest,
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    user: User = Depends(get_platform_user),
+    db: AsyncSession = Depends(get_db),
+):
+    ip, ua = _client_meta(request)
+    attempts = LoginAttemptService(db)
+    await attempts.assert_not_locked(
+        email=payload.email,
+        ip_address=ip,
+        login_kind=SESSION_KIND_MODULE,
+        module_code=module_code,
+    )
+
+    async def _fail(reason: str = "credentials") -> None:
+        await attempts.record(
+            email=payload.email,
+            ip_address=ip,
+            login_kind=SESSION_KIND_MODULE,
+            success=False,
+            module_code=module_code,
+        )
+        await record_audit(
+            db,
+            user=user,
+            action="login_module_failed",
+            entity="module",
+            entity_id=module_code,
+            request=request,
+            module_code=module_code,
+            after={"reason": reason, "email": payload.email},
+        )
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Identifiants invalides")
+
+    if payload.email.strip().lower() != user.email.lower():
+        await _fail("email_mismatch")
+    if not verify_password(payload.password, user.hashed_password):
+        await _fail("password")
+
+    access = PlateformeAccessService(db)
+    await access.ensure_catalogue()
+    module = await access.get_module(module_code)
+    if module is None or not module.is_active or module.statut != "actif":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Module introuvable")
+    if not await access.user_has_module(user, module_code):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "MODULE_FORBIDDEN", "message": "Module non autorisé", "module": module_code},
+        )
+
+    if credentials is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Non authentifié")
+    try:
+        token_payload = decode_token(credentials.credentials)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalide") from exc
+    parent_sid = token_payload.get("sid")
+    if not parent_sid:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalide")
+
+    await attempts.record(
+        email=payload.email,
+        ip_address=ip,
+        login_kind=SESSION_KIND_MODULE,
+        success=True,
+        module_code=module_code,
+    )
+    await record_audit(
+        db,
+        user=user,
+        action="login_module",
+        entity="module",
+        entity_id=module_code,
+        request=request,
+        espace_code=module.espace.code if module.espace else None,
+        module_code=module_code,
+    )
+    return await AuthSessionService(db).issue_module_tokens(
+        user,
+        module_code=module_code,
+        parent_session_id=UUID(str(parent_sid)),
+        ip_address=ip,
+        user_agent=ua,
+    )
+
+
+@router.post("/auth/modules/refresh", response_model=TokenPair)
+async def module_refresh(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
+    try:
+        token_payload = decode_token(payload.refresh_token)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token invalide") from exc
+
+    if token_payload.get("type") != "refresh":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token invalide")
+
+    service = AuthService(db)
+    user = await service.get_by_id(UUID(token_payload["sub"]))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Utilisateur introuvable")
+
+    try:
+        return await AuthSessionService(db).rotate_refresh(
+            payload.refresh_token, user, expected_kind=SESSION_KIND_MODULE
+        )
+    except ValueError as exc:
+        message = str(exc)
+        code = (
+            "PLATFORM_SESSION_EXPIRED"
+            if "plateforme" in message.lower()
+            else "MODULE_SESSION_EXPIRED"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": code, "message": message},
+        ) from exc
+
+
+@router.post("/auth/modules/logout", response_model=MessageResponse)
+async def module_logout(
+    request: Request,
+    payload: LogoutRequest | None = None,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+):
+    sessions = AuthSessionService(db)
+    if credentials and credentials.credentials:
+        decoded = sessions._decode_unverified(credentials.credentials)
+        if decoded and decoded.get("kind") == SESSION_KIND_MODULE:
+            await sessions.revoke_by_token(credentials.credentials)
+        elif decoded and decoded.get("sid"):
+            # jeton module sans claim kind (ne devrait pas arriver) : révoquer uniquement si kind module en base
+            session = await sessions.get_active_session(UUID(str(decoded["sid"])))
+            if session is not None and session.kind == SESSION_KIND_MODULE:
+                await sessions.revoke_session(session.id)
+    if payload and payload.refresh_token:
+        decoded = sessions._decode_unverified(payload.refresh_token)
+        if decoded and decoded.get("kind") == SESSION_KIND_MODULE:
+            await sessions.revoke_by_token(payload.refresh_token)
+
+    await record_audit(
+        db,
+        user=None,
+        action="logout_module",
+        entity="module",
+        entity_id=None,
+        request=request,
+        after={"revoked": True},
+    )
+    return MessageResponse(message="Déconnexion du module effectuée")

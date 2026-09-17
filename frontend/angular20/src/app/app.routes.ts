@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { authGuard, guestGuard } from './core/guards/auth.guard';
+import { authGuard, guestGuard, moduleGuard } from './core/guards/auth.guard';
 import { LoginComponent } from './auth/login/login.component';
 import { ForgotPasswordComponent } from './auth/forgot-password/forgot-password.component';
 import { ResetPasswordComponent } from './auth/reset-password/reset-password.component';
@@ -44,7 +44,7 @@ export const routes: Routes = [
   {
     path: '',
     component: ShellComponent,
-    canActivate: [authGuard],
+    canActivate: [authGuard, moduleGuard('immobilisations')],
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
       { path: 'dashboard', component: DashboardComponent },

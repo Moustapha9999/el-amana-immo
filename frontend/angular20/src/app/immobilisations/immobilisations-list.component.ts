@@ -140,7 +140,7 @@ export class ImmobilisationsListComponent implements OnInit {
         this.exporting.set(null);
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `immobilisations-el-amana.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
+        a.download = `immobilisations-bea-digital.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
         a.click();
         URL.revokeObjectURL(a.href);
       },

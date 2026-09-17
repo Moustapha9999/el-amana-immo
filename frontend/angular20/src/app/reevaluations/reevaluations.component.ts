@@ -138,7 +138,7 @@ export class ReevaluationsComponent implements OnInit {
     this.api.download('/reporting/reevaluations/export', params).subscribe({
       next: (blob) => {
         this.exporting.set(null);
-        this.saveBlob(blob, `reevaluations-el-amana.${format === 'pdf' ? 'pdf' : 'xlsx'}`);
+        this.saveBlob(blob, `reevaluations-bea-digital.${format === 'pdf' ? 'pdf' : 'xlsx'}`);
       },
       error: () => {
         this.exporting.set(null);

@@ -141,7 +141,7 @@ export class CessionsComponent implements OnInit {
     this.api.download('/reporting/cessions/export', params).subscribe({
       next: (blob) => {
         this.exporting.set(null);
-        this.saveBlob(blob, `cessions-el-amana.${format === 'pdf' ? 'pdf' : 'xlsx'}`);
+        this.saveBlob(blob, `cessions-bea-digital.${format === 'pdf' ? 'pdf' : 'xlsx'}`);
       },
       error: () => {
         this.exporting.set(null);

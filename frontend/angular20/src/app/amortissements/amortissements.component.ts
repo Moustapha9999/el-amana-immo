@@ -143,7 +143,7 @@ export class AmortissementsComponent implements OnInit {
         this.exporting.set(null);
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `amortissements-el-amana.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
+        a.download = `amortissements-bea-digital.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
         a.click();
         URL.revokeObjectURL(a.href);
       },

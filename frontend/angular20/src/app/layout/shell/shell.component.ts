@@ -36,11 +36,14 @@ export class ShellComponent implements OnInit {
   readonly notificationUnread = signal(0);
 
   ngOnInit(): void {
+    if (this.auth.isAuthenticated() && !this.auth.user()) {
+      this.auth.loadProfile().subscribe({ error: () => undefined });
+    }
     this.loadNotificationCount();
   }
 
   logout(): void {
-    this.auth.logout({ reason: 'manual' });
+    this.auth.logoutModule();
   }
 
   loadNotificationCount(): void {

@@ -42,7 +42,7 @@ if (-not (Test-Path -LiteralPath $envFile)) {
 }
 
 $dbUser = Get-DotEnvValue $envFile "POSTGRES_USER" "immo_user"
-$dbName = Get-DotEnvValue $envFile "POSTGRES_DB" "immobilisations"
+$dbName = Get-DotEnvValue $envFile "POSTGRES_DB" "bea_digital"
 
 $dumpPath = $DumpFile
 if (-not (Test-Path -LiteralPath $dumpPath)) {

@@ -122,7 +122,7 @@ if ($uploadsBackup) {
 }
 
 Write-Host "Verification des images Docker..."
-$needed = @("postgres:17-alpine", "el-amana-immo-backend:latest", "el-amana-immo-frontend:latest")
+$needed = @("postgres:17-alpine", "bea-digital-backend:latest", "bea-digital-frontend:latest")
 foreach ($img in $needed) {
     $id = docker images -q $img
     if (-not $id) {
@@ -131,30 +131,30 @@ foreach ($img in $needed) {
 }
 
 Write-Host "Export des images Docker (quelques minutes)..."
-$tar = Join-Path $imagesDir "immo-stack.tar"
-docker save -o $tar postgres:17-alpine el-amana-immo-backend:latest el-amana-immo-frontend:latest
+$tar = Join-Path $imagesDir "bea-digital-stack.tar"
+docker save -o $tar postgres:17-alpine bea-digital-backend:latest bea-digital-frontend:latest
 if (-not (Test-Path -LiteralPath $tar) -or (Get-Item $tar).Length -lt 1MB) {
     throw "Echec de docker save : $tar"
 }
 
 $lireMoi = @(
-    "KIT EL AMANA IMMO - PC COMPTABLE",
+    "KIT BEA DIGITAL - PC COMPTABLE",
     "================================",
     "",
     "OU METTRE CE DOSSIER",
     "--------------------",
     "Copier TOUT ce dossier sur le PC comptable, par exemple :",
-    "  C:\immo",
+    "  C:\\bea-digital",
     "",
-    "Si C:\immo existe deja (avec des saisies) :",
+    "Si C:\\bea-digital existe deja (avec des saisies) :",
     "  - Copier PAR-DESSUS (images\, scripts\, *.cmd, docker-compose.yml)",
     "  - NE PAS supprimer .env.docker",
     "  - NE PAS faire docker compose down -v",
     "  - Double-cliquer : MettreAJour.cmd",
     "",
-    "Si premiere installation (aucun C:\immo) :",
+    "Si premiere installation (aucun C:\\bea-digital) :",
     "  1. Installer Docker Desktop, attendre Running",
-    "  2. Copier ce dossier vers C:\immo",
+    "  2. Copier ce dossier vers C:\\bea-digital",
     "  3. Double-cliquer : Installer.cmd",
     "",
     "LANCEURS (double-clic)",
@@ -187,7 +187,7 @@ Write-Host "  Images : $tarSize Mo"
 if ($dump) { Write-Host "  Dump   : $($dump.Name)" }
 Write-Host "========================================"
 Write-Host "1. Copier ce dossier sur une cle USB"
-Write-Host "2. Sur le PC comptable : coller dans C:\immo"
+Write-Host "2. Sur le PC comptable : coller dans C:\bea-digital"
 Write-Host "3. Si deja installe -> MettreAJour.cmd"
 Write-Host "   Si premier install  -> Installer.cmd"
 Write-Host "Ne copiez PAS le fichier .env de developpement."

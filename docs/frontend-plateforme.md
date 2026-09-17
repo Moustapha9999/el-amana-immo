@@ -16,7 +16,7 @@ Dossier : `frontend/angular20/src/app/plateforme/`
 | `accueil/accueil.component.ts` | Cartes des espaces métiers |
 | `comptabilite/comptabilite.component.ts` | Carte Immobilisations & Amortissements → `/dashboard` |
 | `plateforme.routes.ts` | Routes `accueil` et `comptabilite` |
-| `plateforme-ui.css` | Jetons (vert banque, or accent) |
+| `plateforme-ui.css` | Jetons (bleus institutionnels des graphiques immo) |
 
 Standalone Angular 20, `OnPush`, sans Material / Tailwind / police d’icônes
 supplémentaires dans ce dossier.

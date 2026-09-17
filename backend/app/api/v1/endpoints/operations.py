@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_permission
 
 from app.core.exceptions import AppError, raise_http_from_app
 
@@ -298,7 +298,7 @@ async def list_cessions_endpoint(
     date_debut: date | None = None,
     date_fin: date | None = None,
     search: str | None = None,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     rows, total = await list_cessions(
@@ -316,7 +316,7 @@ async def list_cessions_endpoint(
 @router.get("/cessions/{cession_id}", response_model=CessionDetailRead)
 async def get_cession_endpoint(
     cession_id: UUID,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -330,7 +330,7 @@ async def get_cession_endpoint(
 async def export_cession_fiche(
     cession_id: UUID,
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     from fastapi.responses import Response
@@ -365,7 +365,7 @@ async def list_rebuts_endpoint(
     date_debut: date | None = None,
     date_fin: date | None = None,
     search: str | None = None,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     rows, total = await list_rebuts(
@@ -383,7 +383,7 @@ async def list_rebuts_endpoint(
 @router.get("/rebuts/{rebut_id}", response_model=RebutDetailRead)
 async def get_rebut_endpoint(
     rebut_id: UUID,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -397,7 +397,7 @@ async def get_rebut_endpoint(
 async def export_rebut_fiche(
     rebut_id: UUID,
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     from fastapi.responses import Response
@@ -435,7 +435,7 @@ async def list_reevaluations_endpoint(
     date_debut: date | None = None,
     date_fin: date | None = None,
     search: str | None = None,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     rows, total = await list_reevaluations(
@@ -461,7 +461,7 @@ async def list_ajustements_endpoint(
 
     size: int = Query(20, ge=1, le=100),
 
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
 
     db: AsyncSession = Depends(get_db),
 
@@ -480,7 +480,7 @@ async def list_ajustements_endpoint(
 @router.post("/cessions/preview", response_model=CessionPreviewResponse)
 async def preview_cession(
     payload: CessionPreviewRequest,
-    _: User = Depends(require_roles("administrateur", "comptable")),
+    _: User = Depends(require_permission("immobilisations.cession")),
     db: AsyncSession = Depends(get_db),
 ):
     """Calcule VNC à la date de cession et le résultat (PV / MV / équilibre) sans enregistrer."""
@@ -503,7 +503,7 @@ async def create_cession(
 
     request: Request,
 
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.cession")),
 
     db: AsyncSession = Depends(get_db),
 
@@ -549,7 +549,7 @@ async def create_rebut(
 
     request: Request,
 
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.rebut")),
 
     db: AsyncSession = Depends(get_db),
 
@@ -595,7 +595,7 @@ async def create_reevaluation(
 
     request: Request,
 
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.reevaluation")),
 
     db: AsyncSession = Depends(get_db),
 
@@ -659,7 +659,7 @@ async def create_ajustement(
 
     request: Request,
 
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.update")),
 
     db: AsyncSession = Depends(get_db),
 
@@ -711,7 +711,7 @@ async def list_reevaluations_for_immo(
 
     immobilisation_id: UUID,
 
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
 
     db: AsyncSession = Depends(get_db),
 
@@ -733,7 +733,7 @@ async def list_reevaluations_for_immo(
 @router.get("/reevaluations/{reevaluation_id}", response_model=ReevaluationDetailRead)
 async def get_reevaluation_endpoint(
     reevaluation_id: UUID,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -747,7 +747,7 @@ async def get_reevaluation_endpoint(
 async def export_reevaluation_fiche(
     reevaluation_id: UUID,
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     from fastapi.responses import Response

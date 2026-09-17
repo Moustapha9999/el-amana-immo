@@ -15,7 +15,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = Field(default="Banque El Amana — Immobilisations", alias="APP_NAME")
+    app_name: str = Field(default="Gestion Immobilisations Bancaires", alias="APP_NAME")
     app_env: str = Field(default="development", alias="APP_ENV")
     app_debug: bool = Field(default=True, alias="APP_DEBUG")
     api_v1_prefix: str = Field(default="/api/v1", alias="API_V1_PREFIX")
@@ -24,10 +24,15 @@ class Settings(BaseSettings):
     # Access court + refresh pour session active ; idle timeout UI = 2 min (frontend)
     access_token_expire_minutes: int = Field(default=15, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
     refresh_token_expire_days: int = Field(default=1, alias="REFRESH_TOKEN_EXPIRE_DAYS")
+    module_refresh_token_expire_minutes: int = Field(
+        default=45, alias="MODULE_REFRESH_TOKEN_EXPIRE_MINUTES"
+    )
+    login_lockout_window_minutes: int = Field(default=15, alias="LOGIN_LOCKOUT_WINDOW_MINUTES")
+    login_lockout_max_failures: int = Field(default=5, alias="LOGIN_LOCKOUT_MAX_FAILURES")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
 
     database_url: str = Field(
-        default="postgresql+asyncpg://immo_user:immo_pass@localhost:5432/immobilisations",
+        default="postgresql+asyncpg://immo_user:immo_pass@localhost:5432/bea_digital",
         alias="DATABASE_URL",
     )
     database_ssl: bool = Field(default=False, alias="DATABASE_SSL")
@@ -51,7 +56,7 @@ class Settings(BaseSettings):
     celery_broker_url: str = Field(default="redis://localhost:6379/1", alias="CELERY_BROKER_URL")
     celery_result_backend: str = Field(default="redis://localhost:6379/2", alias="CELERY_RESULT_BACKEND")
 
-    cors_origins: str = Field(default="http://localhost:4200", alias="CORS_ORIGINS")
+    cors_origins: str = Field(default="http://localhost", alias="CORS_ORIGINS")
 
     upload_dir: str = "storage/uploads"
 

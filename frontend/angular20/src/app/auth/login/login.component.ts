@@ -18,7 +18,8 @@ export class LoginComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
 
-  private static readonly REMEMBER_KEY = 'el_amana_login_email';
+  private static readonly REMEMBER_KEY = 'bea_login_email';
+  private static readonly LEGACY_REMEMBER_KEY = 'el_amana_login_email';
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
@@ -38,9 +39,13 @@ export class LoginComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    const saved = localStorage.getItem(LoginComponent.REMEMBER_KEY);
+    const saved =
+      localStorage.getItem(LoginComponent.REMEMBER_KEY) ??
+      localStorage.getItem(LoginComponent.LEGACY_REMEMBER_KEY);
     if (saved) {
       this.form.patchValue({ email: saved, remember_me: true });
+      localStorage.setItem(LoginComponent.REMEMBER_KEY, saved);
+      localStorage.removeItem(LoginComponent.LEGACY_REMEMBER_KEY);
     }
     const reset = this.route.snapshot.queryParamMap.get('reset');
     if (reset === 'expired') {
@@ -64,8 +69,10 @@ export class LoginComponent implements OnInit {
     const totp = totp_code.trim() || undefined;
     if (remember_me) {
       localStorage.setItem(LoginComponent.REMEMBER_KEY, email);
+      localStorage.removeItem(LoginComponent.LEGACY_REMEMBER_KEY);
     } else {
       localStorage.removeItem(LoginComponent.REMEMBER_KEY);
+      localStorage.removeItem(LoginComponent.LEGACY_REMEMBER_KEY);
     }
     this.auth.login(email, password, totp).subscribe({
       next: () => {
@@ -85,6 +92,13 @@ export class LoginComponent implements OnInit {
         if (err instanceof HttpErrorResponse) {
           if (err.status === 0) {
             this.error.set('API inaccessible — vérifiez que le backend tourne sur le port 8000');
+            } else if (err.status === 429) {
+            const detail = err.error?.detail;
+            this.error.set(
+              typeof detail === 'object' && detail?.message
+                ? detail.message
+                : 'Trop de tentatives. Réessayez dans quelques minutes.',
+            );
           } else if (err.status === 401) {
             const detail = err.error?.detail;
             if (typeof detail === 'object' && detail?.code === 'TOTP_REQUIRED') {
@@ -97,7 +111,8 @@ export class LoginComponent implements OnInit {
               this.error.set(typeof detail === 'string' ? detail : 'Identifiants invalides');
             }
           } else {
-            this.error.set(err.error?.detail ?? 'Erreur de connexion');
+            const message = typeof err.error?.detail === 'string' ? err.error.detail : 'Erreur de connexion';
+            this.error.set(message);
           }
         } else {
           this.error.set('Identifiants invalides');

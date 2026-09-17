@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_permission, require_roles
 from app.api.v1.endpoints.helpers import to_paginated
 from app.core.exceptions import AppError, NotFoundError, raise_http_from_app
 from app.core.pagination import page_offset
@@ -243,7 +243,7 @@ async def export_amortissement_fiche(
 
 
 @router.post("/amortissements/simuler", response_model=AmortissementRead, status_code=status.HTTP_201_CREATED)
-async def simuler_amortissement(payload: AmortissementSimulateRequest, _: User = Depends(require_roles("administrateur", "comptable")), db: AsyncSession = Depends(get_db)):
+async def simuler_amortissement(payload: AmortissementSimulateRequest, _: User = Depends(require_permission("immobilisations.amortissement")), db: AsyncSession = Depends(get_db)):
     try:
         row = await AmortissementService(db).simulate(payload.immobilisation_id, payload.periode)
         return row
@@ -254,7 +254,7 @@ async def simuler_amortissement(payload: AmortissementSimulateRequest, _: User =
 @router.post("/amortissements/generer-plan", response_model=list[AmortissementRead], status_code=status.HTTP_201_CREATED)
 async def generer_plan_amortissement(
     payload: AmortissementGenererPlanRequest,
-    _: User = Depends(require_roles("administrateur", "comptable")),
+    _: User = Depends(require_permission("immobilisations.amortissement")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -268,7 +268,7 @@ async def generer_plan_amortissement(
 async def comptabiliser_amortissement(
     payload: AmortissementComptabiliserRequest,
     request: Request,
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.amortissement")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -298,7 +298,7 @@ async def comptabiliser_amortissement(
 async def calculer_amortissements(
     payload: AmortissementCalculerRequest,
     request: Request,
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.amortissement")),
     db: AsyncSession = Depends(get_db),
 ):
     """Campagne batch : simulation (aperçu) ou validation (écritures de dotation)."""

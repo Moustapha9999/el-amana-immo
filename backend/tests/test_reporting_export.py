@@ -17,6 +17,7 @@ def test_ecritures_excel_empty():
     assert data[:2] == b"PK"
     wb = load_workbook(BytesIO(data))
     ws = wb.active
+    assert "BEA DIGITAL" in str(ws["A1"].value)
     assert "Banque El Amana" in str(ws["A1"].value)
     assert "Exporté le" in str(ws["A3"].value)
 
