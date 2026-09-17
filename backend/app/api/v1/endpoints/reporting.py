@@ -90,6 +90,9 @@ def _audit_to_read(row: AuditLog) -> AuditLogRead:
         entity=row.entity,
         entity_id=row.entity_id,
         ip_address=row.ip_address,
+        espace_code=row.espace_code,
+        module_code=row.module_code,
+        session_id=row.session_id,
         created_at=row.created_at,
     )
 
@@ -164,7 +167,7 @@ async def export_audit(
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="audit-el-amana.xlsx"'},
+        headers={"Content-Disposition": 'attachment; filename="audit-bea-digital.xlsx"'},
     )
 
 
@@ -181,11 +184,11 @@ async def export_ecritures(
     if format == "pdf":
         content = ecritures_to_pdf(rows, subtitle=subtitle)
         media = "application/pdf"
-        filename = "ecritures-el-amana.pdf"
+        filename = "ecritures-bea-digital.pdf"
     else:
         content = ecritures_to_excel(rows, subtitle=subtitle)
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        filename = "ecritures-el-amana.xlsx"
+        filename = "ecritures-bea-digital.xlsx"
     return Response(
         content=content,
         media_type=media,
@@ -223,11 +226,11 @@ async def export_cessions(
     if format == "pdf":
         content = cessions_to_pdf(rows, subtitle=subtitle)
         media = "application/pdf"
-        filename = "cessions-el-amana.pdf"
+        filename = "cessions-bea-digital.pdf"
     else:
         content = cessions_to_excel(rows, subtitle=subtitle)
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        filename = "cessions-el-amana.xlsx"
+        filename = "cessions-bea-digital.xlsx"
     return Response(
         content=content,
         media_type=media,
@@ -251,11 +254,11 @@ async def export_rebuts(
     if format == "pdf":
         content = rebuts_to_pdf(rows, subtitle=subtitle)
         media = "application/pdf"
-        filename = "rebuts-el-amana.pdf"
+        filename = "rebuts-bea-digital.pdf"
     else:
         content = rebuts_to_excel(rows, subtitle=subtitle)
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        filename = "rebuts-el-amana.xlsx"
+        filename = "rebuts-bea-digital.xlsx"
     return Response(
         content=content,
         media_type=media,
@@ -279,11 +282,11 @@ async def export_reevaluations(
     if format == "pdf":
         content = reevaluations_to_pdf(rows, subtitle=subtitle)
         media = "application/pdf"
-        filename = "reevaluations-el-amana.pdf"
+        filename = "reevaluations-bea-digital.pdf"
     else:
         content = reevaluations_to_excel(rows, subtitle=subtitle)
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        filename = "reevaluations-el-amana.xlsx"
+        filename = "reevaluations-bea-digital.xlsx"
     return Response(
         content=content,
         media_type=media,
@@ -343,11 +346,11 @@ async def export_immobilisations(
     if format == "pdf":
         content = immobilisations_to_pdf(rows, subtitle=subtitle)
         media = "application/pdf"
-        filename = "immobilisations-el-amana.pdf"
+        filename = "immobilisations-bea-digital.pdf"
     else:
         content = immobilisations_to_excel(rows, subtitle=subtitle)
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        filename = "immobilisations-el-amana.xlsx"
+        filename = "immobilisations-bea-digital.xlsx"
     return Response(
         content=content,
         media_type=media,
@@ -387,7 +390,7 @@ async def export_amortissements_liste(
     if format == "pdf":
         content = immobilisations_to_pdf(rows, subtitle=subtitle, report_title=report_title)
         media = "application/pdf"
-        filename = "amortissements-el-amana.pdf"
+        filename = "amortissements-bea-digital.pdf"
     else:
         content = immobilisations_to_excel(
             rows,
@@ -396,7 +399,7 @@ async def export_amortissements_liste(
             sheet_title="Amortissements",
         )
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        filename = "amortissements-el-amana.xlsx"
+        filename = "amortissements-bea-digital.xlsx"
     return Response(
         content=content,
         media_type=media,

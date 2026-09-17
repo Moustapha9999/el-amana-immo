@@ -20,13 +20,14 @@ travail interne (saisies, contrôles, GED, reporting immo).
 |---------|--------|
 | Service | `postgres` dans `docker-compose.yml` |
 | Image locale | `postgres:17-alpine` (ne **pas** poser `LANG=fr_FR.utf8`) |
-| Écoute | `localhost:5432` uniquement |
-| Volume | `immo_postgres_data` — **une** instance, **jamais** `docker compose down -v` |
+| Écoute | port hôte 5432 (outils) ; l’app passe par **http://localhost** |
+| Volume | `bea_postgres_data` — **une** instance, **jamais** `docker compose down -v` |
 | Init | `database/init/01-extensions.sql` (`pgcrypto`) |
+| Base locale | `bea_digital` (tables `immobilisations`, … inchangées) |
 | Backend | une seule `DATABASE_URL` vers `postgres:5432` (hôte Docker) |
 
-Le volume historique `immo_postgres_data` **est** le volume BEA DIGITAL. Ne pas
-en créer un second (`bea_digital_postgres_data` en parallèle).
+Le volume `bea_postgres_data` **est** le volume BEA DIGITAL. L’ancien nom
+`immo_postgres_data` a été copié une fois ; ne pas faire tourner les deux.
 
 ## Interdiction : Alembic sur une base vide
 
@@ -77,3 +78,19 @@ restore réel — hors de ce dépôt, credentials banque).
 
 Les fichiers `.dump` / `.backup` / dumps SQL **ne partent pas dans git**
 (voir `.gitignore`, dossier `backups/`).
+
+## Pack opérateur Supabase (BEA DIGITAL)
+
+Fichiers : `scripts/supabase/` + `scripts/bea-supabase.ps1`.
+
+```powershell
+.\scripts\bea-supabase.ps1 backup    # dump hors git
+.\scripts\bea-supabase.ps1 migrate   # alembic upgrade head (cible .env)
+.\scripts\bea-supabase.ps1 verify
+```
+
+SQL Editor (ordre) : `01_upgrade.sql` → `02_catalogue.sql` → `03_comments.sql`
+→ `06_stamp.sql` (uniquement sans Alembic) → `04_verify.sql`.
+
+Inchangé : nom physique cloud Supabase (`postgres`), tables
+immo, e-mails `@el-amana.mr`, RLS public = 0. Volume Docker : `bea_postgres_data`.

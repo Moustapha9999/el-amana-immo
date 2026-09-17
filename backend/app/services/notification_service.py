@@ -22,6 +22,8 @@ class NotificationService:
         message: str,
         entity: str | None = None,
         entity_id: str | None = None,
+        espace_code: str | None = None,
+        module_code: str | None = None,
     ) -> Notification:
         row = Notification(
             user_id=user_id,
@@ -30,6 +32,8 @@ class NotificationService:
             message=message,
             entity=entity,
             entity_id=entity_id,
+            espace_code=espace_code,
+            module_code=module_code,
             lu=False,
         )
         self.db.add(row)
@@ -45,6 +49,8 @@ class NotificationService:
         message: str,
         entity: str | None = None,
         entity_id: str | None = None,
+        espace_code: str | None = None,
+        module_code: str | None = None,
     ) -> int:
         result = await self.db.execute(
             select(User).options(selectinload(User.roles)).where(User.is_active.is_(True), User.deleted_at.is_(None))
@@ -59,6 +65,8 @@ class NotificationService:
                     message=message,
                     entity=entity,
                     entity_id=entity_id,
+                    espace_code=espace_code,
+                    module_code=module_code,
                 )
                 count += 1
         return count

@@ -17,14 +17,12 @@ Document de référence aligné sur la spécification métier fournie (immobilis
 
 ## Architecture backend
 
-- **Presentation** : `app/api/v1`
-- **Application** : `app/services`
-- **Domain** : règles dans services + modèles (`app/models`)
-- **Infrastructure** : `app/db`, Redis, Celery, stockage fichiers
+Source canonique : `backend/`.
 
-## Prochaines implémentations
+- **Presentation** : `backend/app/api/v1`
+- **Application** : `backend/app/services`
+- **Domain** : règles dans services + modèles (`backend/app/models`)
+- **Infrastructure** : `backend/app/db`, Redis, Celery, stockage fichiers
 
-- Tables `cessions`, `rebuts`, `reevaluations`, `ajustements`, `notifications`
-- Workers Celery pour calculs de masse et exports
-- Middleware audit sur toutes les mutations
-- Intégration plan comptable bancaire El Amana : voir `app/data/el_amana_referentiel.py`, migration `20260723_el_amana`, script `scripts/seed_plan_comptable_el_amana.py`
+Référentiel plan comptable : `backend/app/data/el_amana_referentiel.py`.
+Socle Login 1 / Login 2 : [socle-bea-digital.md](socle-bea-digital.md).

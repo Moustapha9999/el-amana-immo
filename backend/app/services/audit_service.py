@@ -1,4 +1,5 @@
 from datetime import date
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +20,9 @@ class AuditService:
         before: dict | None = None,
         after: dict | None = None,
         ip_address: str | None = None,
+        espace_code: str | None = None,
+        module_code: str | None = None,
+        session_id: UUID | None = None,
     ) -> AuditLog:
         entry = AuditLog(
             user_id=user.id if user else None,
@@ -28,6 +32,9 @@ class AuditService:
             before_data=before,
             after_data=after,
             ip_address=ip_address,
+            espace_code=espace_code,
+            module_code=module_code,
+            session_id=session_id,
         )
         self.db.add(entry)
         await self.db.flush()

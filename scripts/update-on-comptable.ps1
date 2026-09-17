@@ -11,10 +11,15 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     throw "Docker n'est pas disponible. Installez / demarrez Docker Desktop, puis relancez."
 }
 
-$tar = Join-Path "images" "immo-stack.tar"
-if (-not (Test-Path -LiteralPath $tar)) {
-    throw "images\immo-stack.tar introuvable. Copiez le kit de mise a jour complet."
+function Get-StackTar {
+    foreach ($name in @("bea-digital-stack.tar", "immo-stack.tar")) {
+        $p = Join-Path "images" $name
+        if (Test-Path -LiteralPath $p) { return $p }
+    }
+    throw "images\bea-digital-stack.tar introuvable. Copiez le kit de mise a jour complet."
 }
+
+$tar = Get-StackTar
 
 if (-not (Test-Path -LiteralPath ".env.docker")) {
     throw ".env.docker introuvable. Ce script est pour une instance deja installee. Utilisez Installer.cmd pour une 1re install."
@@ -36,7 +41,8 @@ $deadline = (Get-Date).AddMinutes(4)
 $healthy = $false
 do {
     Start-Sleep -Seconds 4
-    $st = docker inspect --format "{{.State.Health.Status}}" immo-backend 2>$null
+    $cid = docker compose --env-file .env.docker ps -q backend
+    $st = docker inspect --format "{{.State.Health.Status}}" $cid 2>$null
     if ($st -eq "healthy") {
         $healthy = $true
         break
@@ -57,4 +63,4 @@ Write-Host "4/4 OK - mise a jour terminee."
 Write-Host "Ouvrir : http://localhost  (Ctrl+F5 pour vider le cache navigateur)"
 Write-Host ""
 Write-Host "INTERDIT : docker compose down -v"
-Write-Host "Les saisies du comptable sont conservees (volume immo_postgres_data)."
+Write-Host "Les saisies du comptable sont conservees (volume bea_postgres_data)."

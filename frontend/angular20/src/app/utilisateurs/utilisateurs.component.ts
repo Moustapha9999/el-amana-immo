@@ -30,6 +30,15 @@ interface UserRow {
   totp_enabled: boolean;
   last_login_at: string | null;
   roles: RoleOption[];
+  espace_codes?: string[];
+  module_codes?: string[];
+}
+
+interface CatalogueEspace {
+  id: string;
+  titre: string;
+  statut: string;
+  modules: { id: string; titre: string; statut: string }[];
 }
 
 interface Paginated<T> {
@@ -51,6 +60,7 @@ export class UtilisateursComponent implements OnInit {
 
   readonly rows = signal<UserRow[]>([]);
   readonly roles = signal<RoleOption[]>([]);
+  readonly catalogue = signal<CatalogueEspace[]>([]);
   readonly total = signal(0);
   readonly loading = signal(true);
   readonly saving = signal(false);
@@ -58,6 +68,8 @@ export class UtilisateursComponent implements OnInit {
   readonly formOpen = signal(false);
   readonly editingId = signal<string | null>(null);
   readonly selectedRoles = signal<string[]>([]);
+  readonly selectedEspaces = signal<string[]>([]);
+  readonly selectedModules = signal<string[]>([]);
 
   readonly columns = ['full_name', 'email', 'roles', 'flags', 'actions'];
 
@@ -87,7 +99,15 @@ export class UtilisateursComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadRoles();
+    this.loadCatalogue();
     this.load();
+  }
+
+  loadCatalogue(): void {
+    this.api.get<CatalogueEspace[]>('/plateforme/catalogue').subscribe({
+      next: (items) => this.catalogue.set(items),
+      error: () => this.catalogue.set([]),
+    });
   }
 
   loadRoles(): void {
@@ -128,6 +148,8 @@ export class UtilisateursComponent implements OnInit {
   openCreate(): void {
     this.editingId.set(null);
     this.selectedRoles.set([]);
+    this.selectedEspaces.set(['comptabilite']);
+    this.selectedModules.set(['immobilisations']);
     this.userForm.reset({
       full_name: '',
       email: '',
@@ -142,6 +164,8 @@ export class UtilisateursComponent implements OnInit {
   openEdit(row: UserRow): void {
     this.editingId.set(row.id);
     this.selectedRoles.set(row.roles.map((r) => r.code));
+    this.selectedEspaces.set(row.espace_codes ?? []);
+    this.selectedModules.set(row.module_codes ?? []);
     this.userForm.reset({
       full_name: row.full_name,
       email: row.email,
@@ -170,6 +194,34 @@ export class UtilisateursComponent implements OnInit {
 
   isRoleSelected(code: string): boolean {
     return this.selectedRoles().includes(code);
+  }
+
+  isModuleSelected(code: string): boolean {
+    return this.selectedModules().includes(code);
+  }
+
+  toggleEspace(code: string, checked: boolean): void {
+    const current = new Set(this.selectedEspaces());
+    if (checked) {
+      current.add(code);
+    } else {
+      current.delete(code);
+    }
+    this.selectedEspaces.set([...current]);
+  }
+
+  toggleModule(code: string, checked: boolean): void {
+    const current = new Set(this.selectedModules());
+    if (checked) {
+      current.add(code);
+    } else {
+      current.delete(code);
+    }
+    this.selectedModules.set([...current]);
+  }
+
+  isEspaceSelected(code: string): boolean {
+    return this.selectedEspaces().includes(code);
   }
 
   roleLabel(role: { code: string; label: string }): string {
@@ -201,6 +253,8 @@ export class UtilisateursComponent implements OnInit {
             email: v.email.trim(),
             is_superuser: v.is_superuser,
             role_codes: this.selectedRoles(),
+            espace_codes: this.selectedEspaces(),
+            module_codes: this.selectedModules(),
           };
           if (v.password.trim()) {
             body['password'] = v.password;
@@ -228,6 +282,8 @@ export class UtilisateursComponent implements OnInit {
             password: v.password,
             role_codes: this.selectedRoles(),
             is_superuser: v.is_superuser,
+            espace_codes: this.selectedEspaces(),
+            module_codes: this.selectedModules(),
           })
           .subscribe({
             next: () => {

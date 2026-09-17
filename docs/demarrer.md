@@ -13,9 +13,9 @@ copy .env.docker.example .env.docker
 docker compose --env-file .env.docker up -d
 ```
 
-- Postgres healthy, écoute `localhost:5432`.
+- Postgres healthy, base physique locale `bea_digital` (tables métier inchangées).
 - Backend healthy avec **`SKIP_MIGRATIONS=1`** (défaut compose / `.env.docker.example`).
-- Front : **http://localhost** (nginx proxifie `/api/` vers le backend).
+- Front : **http://localhost** (nginx proxifie `/api/` vers le backend). Pas de `:4200`.
 
 Sans dump : la base est vide (extensions seulement). Ne **pas** retirer
 `SKIP_MIGRATIONS` pour « créer » le schéma.
@@ -43,29 +43,13 @@ Kit comptable historique (recréation agressive de la base) :
 `.\scripts\restore-local.ps1` — ne pas confondre avec `db-restore`, qui est
 non destructif.
 
-## 2. Développement (hors images)
+## 2. Hors Docker (exception)
 
-Deux terminaux, **une** Postgres (compose `postgres` suffit) :
+Le quotidien est **Docker → http://localhost**. `ng serve` (:4200) et uvicorn
+(:8000) ne sont plus le chemin BEA DIGITAL.
 
-```powershell
-# Terminal A — API (répertoire backend/)
-cd backend
-$env:PYTHONPATH = "."
-$env:DATABASE_URL = "postgresql+asyncpg://immo_user:MOT_DE_PASSE@localhost:5432/immobilisations"
-.\.venv\Scripts\uvicorn app.main:app --reload --port 8000
-
-# Terminal B — Angular
-cd frontend\angular20
-npm install
-npm start
-```
-
-Front dév : **http://localhost:4200** (API `http://localhost:8000/api/v1`).
-
-`docker-compose.dev.yml` (hot-reload + Redis/Celery) est optionnel ; il utilise
-**la même** logique « un Postgres », volume séparé `postgres_data_dev` pour ne
-pas mélanger avec l’instance comptable. Toujours une seule DB **par**
-environnement, jamais une DB « plateforme » en plus.
+Pour un smoke test jetable uniquement, voir `backend/scripts/seed_data.py` —
+jamais sur la base Comptabilité.
 
 ## 3. Smoke test login (base jetable UNIQUEMENT)
 
@@ -74,7 +58,7 @@ Ce n’est **pas** le chemin prod / Comptabilité :
 ```powershell
 cd backend
 $env:PYTHONPATH = "."
-$env:DATABASE_URL = "postgresql+asyncpg://immo_user:MOT_DE_PASSE@localhost:5432/immobilisations"
+$env:DATABASE_URL = "postgresql+asyncpg://immo_user:MOT_DE_PASSE@localhost:5432/bea_digital"
 python scripts/init_db.py
 python scripts/seed_data.py
 ```
@@ -84,7 +68,18 @@ Amortissements / Archives ; fil d’Ariane ; retour Accueil.
 
 La prod / la vraie base = `pg_restore` du dump Supabase, **jamais** Alembic à vide.
 
-## 4. Build front (CI / vérif)
+## 4. Tests backend
+
+Suite unique : `backend/tests/` (ne pas relancer une suite à la racine du dépôt).
+
+```powershell
+cd backend
+pytest -q
+```
+
+Depuis la racine : `pytest -q` (le `pytest.ini` pointe déjà vers `backend/tests`).
+
+## 5. Build front (CI / vérif)
 
 ```powershell
 cd frontend\angular20

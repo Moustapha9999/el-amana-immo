@@ -129,7 +129,7 @@ export class RebutsComponent implements OnInit {
     this.api.download('/reporting/rebuts/export', params).subscribe({
       next: (blob) => {
         this.exporting.set(null);
-        this.saveBlob(blob, `rebuts-el-amana.${format === 'pdf' ? 'pdf' : 'xlsx'}`);
+        this.saveBlob(blob, `rebuts-bea-digital.${format === 'pdf' ? 'pdf' : 'xlsx'}`);
       },
       error: () => {
         this.exporting.set(null);

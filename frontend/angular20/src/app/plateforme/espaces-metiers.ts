@@ -6,6 +6,8 @@ export interface ModuleMetier {
   description: string;
   route: string | null;
   statut: StatutEspace;
+  accessible?: boolean;
+  entry_path?: string | null;
 }
 
 export interface EspaceMetier {
@@ -15,6 +17,7 @@ export interface EspaceMetier {
   route: string | null;
   statut: StatutEspace;
   modules: ModuleMetier[];
+  accessible?: boolean;
 }
 
 /** Catalogue des espaces BEA DIGITAL. Un seul espace actif : Comptabilité. */
@@ -32,7 +35,7 @@ export const ESPACES_METIERS: EspaceMetier[] = [
         titre: 'Immobilisations & Amortissements',
         description:
           'Parc, dotations, cessions, rebuts, réévaluations, inventaire, écritures, archives et rapports.',
-        route: '/dashboard',
+        route: '/modules/immobilisations/acces',
         statut: 'actif',
       },
       {

@@ -34,25 +34,39 @@ if ($dumpAbs.ToLowerInvariant().StartsWith($backupsAbs.ToLowerInvariant()) -eq $
     Copy-Item -LiteralPath $dumpAbs -Destination (Join-Path "backups" $dumpName) -Force
 }
 
+function Get-EnvValue([string]$path, [string]$key, [string]$default) {
+    foreach ($line in Get-Content -LiteralPath $path) {
+        $trim = $line.Trim()
+        if ($trim.StartsWith("#") -or $trim -eq "") { continue }
+        if ($trim -match "^$key=(.*)$") {
+            return $Matches[1].Trim().Trim('"').Trim("'")
+        }
+    }
+    return $default
+}
+
+$pgUser = Get-EnvValue $envFile "POSTGRES_USER" "immo_user"
+$pgDb = Get-EnvValue $envFile "POSTGRES_DB" "bea_digital"
+
 Write-Host "Restauration de $dumpName dans PostgreSQL local..."
 docker compose --env-file $envFile stop backend frontend
 
 docker compose --env-file $envFile exec -T postgres `
-    psql -U immo_user -d postgres -v ON_ERROR_STOP=1 -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'immobilisations' AND pid <> pg_backend_pid();"
+    psql -U $pgUser -d postgres -v ON_ERROR_STOP=1 -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$pgDb' AND pid <> pg_backend_pid();"
 
-docker compose --env-file $envFile exec -T postgres dropdb --if-exists -U immo_user immobilisations
-docker compose --env-file $envFile exec -T postgres createdb -U immo_user immobilisations
+docker compose --env-file $envFile exec -T postgres dropdb --if-exists -U $pgUser $pgDb
+docker compose --env-file $envFile exec -T postgres createdb -U $pgUser $pgDb
 docker compose --env-file $envFile exec -T postgres `
-    psql -U immo_user -d immobilisations -v ON_ERROR_STOP=1 -c "DROP SCHEMA IF EXISTS public CASCADE;"
+    psql -U $pgUser -d $pgDb -v ON_ERROR_STOP=1 -c "DROP SCHEMA IF EXISTS public CASCADE;"
 
 docker compose --env-file $envFile exec -T postgres `
-    pg_restore -U immo_user -d immobilisations --no-owner --no-acl "/backups/$dumpName"
+    pg_restore -U $pgUser -d $pgDb --no-owner --no-acl "/backups/$dumpName"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "pg_restore a renvoyé le code $LASTEXITCODE — contrôle des tables..."
 }
 
 $tableCheck = docker compose --env-file $envFile exec -T postgres `
-    psql -U immo_user -d immobilisations -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';"
+    psql -U $pgUser -d $pgDb -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';"
 if ([int]$tableCheck.Trim() -lt 5) {
     throw "Restauration incomplète : seulement $tableCheck table(s) dans public."
 }

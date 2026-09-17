@@ -1,13 +1,27 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.associations import role_permissions_table, user_roles_table
+from app.models.associations import (
+    role_permissions_table,
+    user_espace_acces_table,
+    user_module_acces_table,
+    user_roles_table,
+)
 from app.models.mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
+
+SESSION_KIND_PLATFORM = "platform"
+SESSION_KIND_MODULE = "module"
+
+if TYPE_CHECKING:
+    from app.models.plateforme import PlateformeEspace, PlateformeModule
 
 
 class Permission(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -60,10 +74,24 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
 
     roles: Mapped[list[Role]] = relationship(secondary=user_roles_table)
     sessions: Mapped[list["AuthSession"]] = relationship(back_populates="user")
+    espaces: Mapped[list["PlateformeEspace"]] = relationship(
+        secondary=user_espace_acces_table, back_populates="users"
+    )
+    modules: Mapped[list["PlateformeModule"]] = relationship(
+        secondary=user_module_acces_table, back_populates="users"
+    )
+
+    @property
+    def espace_codes(self) -> list[str]:
+        return [e.code for e in self.espaces]
+
+    @property
+    def module_codes(self) -> list[str]:
+        return [m.code for m in self.modules]
 
 
 class AuthSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
-    """Session JWT révocable — un login = une session (multi-utilisateurs OK)."""
+    """Session JWT révocable — Login 1 (platform) ou Login 2 (module)."""
 
     __tablename__ = "auth_sessions"
 
@@ -75,5 +103,25 @@ class AuthSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    kind: Mapped[str] = mapped_column(String(20), default=SESSION_KIND_PLATFORM, index=True)
+    module_code: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    parent_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("auth_sessions.id"), nullable=True, index=True
+    )
 
     user: Mapped[User] = relationship(back_populates="sessions")
+
+
+class AuthLoginAttempt(Base, UUIDPrimaryKeyMixin):
+    """Journal des tentatives Login 1 / Login 2 (succès, échec, lockout)."""
+
+    __tablename__ = "auth_login_attempts"
+
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    login_kind: Mapped[str] = mapped_column(String(20), index=True)
+    module_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

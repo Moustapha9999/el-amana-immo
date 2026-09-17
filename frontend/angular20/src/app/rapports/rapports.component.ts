@@ -119,11 +119,11 @@ export class RapportsComponent implements OnInit {
     }
     const key: BusyKey = format === 'pdf' ? 'ecritures-pdf' : 'ecritures-xlsx';
     const ext = format === 'pdf' ? 'pdf' : 'xlsx';
-    this.runDownload(key, '/reporting/ecritures/export', `ecritures-el-amana.${ext}`, params);
+    this.runDownload(key, '/reporting/ecritures/export', `ecritures-bea-digital.${ext}`, params);
   }
 
   exportImmobilisations(): void {
-    this.runDownload('immo', '/reporting/immobilisations/export', 'immobilisations-el-amana.xlsx');
+    this.runDownload('immo', '/reporting/immobilisations/export', 'immobilisations-bea-digital.xlsx');
   }
 
   downloadImportTemplate(): void {
@@ -135,7 +135,7 @@ export class RapportsComponent implements OnInit {
   }
 
   exportAudit(): void {
-    this.runDownload('audit', '/reporting/audit/export', 'audit-el-amana.xlsx');
+    this.runDownload('audit', '/reporting/audit/export', 'audit-bea-digital.xlsx');
   }
 
   onImportFile(event: Event): void {

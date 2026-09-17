@@ -124,7 +124,7 @@ export class EcrituresComponent implements OnInit {
     this.api.download('/reporting/ecritures/export', params).subscribe({
       next: (blob) => {
         const ext = format === 'pdf' ? 'pdf' : 'xlsx';
-        this.saveBlob(blob, `ecritures-el-amana.${ext}`);
+        this.saveBlob(blob, `ecritures-bea-digital.${ext}`);
       },
       error: () => {
         void this.dialogs.error('Export impossible').subscribe();

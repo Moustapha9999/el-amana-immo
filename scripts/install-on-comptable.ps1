@@ -13,10 +13,15 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     throw "Docker n'est pas disponible. Installez Docker Desktop, demarrez-le, puis relancez."
 }
 
-$tar = Join-Path "images" "immo-stack.tar"
-if (-not (Test-Path -LiteralPath $tar)) {
-    throw "images\immo-stack.tar introuvable. Copiez le kit complet (dossier images inclus)."
+function Get-StackTar {
+    foreach ($name in @("bea-digital-stack.tar", "immo-stack.tar")) {
+        $p = Join-Path "images" $name
+        if (Test-Path -LiteralPath $p) { return $p }
+    }
+    throw "images\bea-digital-stack.tar introuvable. Copiez le kit complet (dossier images inclus)."
 }
+
+$tar = Get-StackTar
 
 Write-Host "1/4 Chargement des images Docker (quelques minutes)..."
 docker load -i $tar
@@ -42,7 +47,8 @@ $deadline = (Get-Date).AddMinutes(3)
 $pg = $null
 do {
     Start-Sleep -Seconds 3
-    $pg = docker inspect --format "{{.State.Health.Status}}" immo-postgres 2>$null
+    $cid = docker compose --env-file .env.docker ps -q postgres
+    $pg = docker inspect --format "{{.State.Health.Status}}" $cid 2>$null
     if ($pg -eq "healthy") { break }
 } while ((Get-Date) -lt $deadline)
 
@@ -54,9 +60,18 @@ if ($pg -ne "healthy") {
 # Detect existing business data (preserve accountant saisies)
 $existingCount = $null
 try {
+    $pgUser = "immo_user"
+    $pgDb = "bea_digital"
+    if (Test-Path -LiteralPath ".env.docker") {
+        foreach ($line in Get-Content ".env.docker") {
+            $trim = $line.Trim()
+            if ($trim -match "^POSTGRES_USER=(.*)$") { $pgUser = $Matches[1].Trim().Trim('"').Trim("'") }
+            if ($trim -match "^POSTGRES_DB=(.*)$") { $pgDb = $Matches[1].Trim().Trim('"').Trim("'") }
+        }
+    }
     $existingCount = (
         docker compose --env-file .env.docker exec -T postgres `
-            psql -U immo_user -d immobilisations -tAc "SELECT count(*) FROM immobilisations;" 2>$null
+            psql -U $pgUser -d $pgDb -tAc "SELECT count(*) FROM immobilisations;" 2>$null
     ).Trim()
 } catch {
     $existingCount = $null
@@ -86,7 +101,8 @@ docker compose --env-file .env.docker up -d --no-build --pull never
 $deadline2 = (Get-Date).AddMinutes(4)
 do {
     Start-Sleep -Seconds 4
-    $st = docker inspect --format "{{.State.Health.Status}}" immo-backend 2>$null
+    $cid = docker compose --env-file .env.docker ps -q backend
+    $st = docker inspect --format "{{.State.Health.Status}}" $cid 2>$null
     if ($st -eq "healthy") { break }
 } while ((Get-Date) -lt $deadline2)
 

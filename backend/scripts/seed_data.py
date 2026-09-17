@@ -18,14 +18,20 @@ from app.models import (
 from app.models import entities  # noqa: F401
 from app.services.agences_seed import seed_agences_el_amana
 from app.services.plan_comptable_seed import seed_plan_comptable_el_amana
+from app.services.plateforme_access_service import PlateformeAccessService
 
 
 async def seed() -> None:
     settings = get_settings()
     async with AsyncSessionLocal() as session:
+        access = PlateformeAccessService(session)
+        await access.ensure_catalogue()
+
         existing = await session.execute(select(User.id).where(User.email == "admin@el-amana.mr"))
         if existing.scalar_one_or_none() is not None:
-            print("Seed déjà appliqué — admin@el-amana.mr existe.")
+            await access.grant_defaults_to_users_without_access()
+            await session.commit()
+            print("Seed déjà appliqué — admin@el-amana.mr existe. Catalogue plateforme à jour.")
             return
 
         direction = Direction(code="DIR001", libelle="Direction Générale")
@@ -72,6 +78,9 @@ async def seed() -> None:
             roles=[admin_role, comptable_role, auditeur_role, lecture_role],
         )
         session.add(admin)
+        await session.flush()
+        await access.grant_defaults_if_missing(admin)
+        await access.ensure_catalogue()
         await session.commit()
         print(f"Seed OK — admin: admin@el-amana.mr / Admin@2026 ({settings.app_env})")
         print(f"Agences El Amana: {agence_stats}")

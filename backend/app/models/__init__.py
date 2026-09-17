@@ -1,7 +1,13 @@
-from app.models.associations import role_permissions_table, user_roles_table
+from app.models.associations import (
+    role_permissions_table,
+    user_espace_acces_table,
+    user_module_acces_table,
+    user_roles_table,
+)
 from app.models.archive import ArchiveDossier, ArchiveFichier, ArchiveLigne
 from app.models.audit import AuditLog, Notification
-from app.models.auth import Agence, AuthSession, Permission, Role, User
+from app.models.auth import Agence, AuthLoginAttempt, AuthSession, Permission, Role, User
+from app.models.plateforme import PlateformeEspace, PlateformeModule
 from app.models.comptabilite import (
     Amortissement,
     ComptePlanComptable,
@@ -34,6 +40,8 @@ from app.models.organisation import CentreCout, Departement, Direction, Fourniss
 __all__ = [
     "user_roles_table",
     "role_permissions_table",
+    "user_espace_acces_table",
+    "user_module_acces_table",
     "TypeImmobilisation",
     "ModeAmortissement",
     "PeriodiciteAmortissement",
@@ -48,6 +56,9 @@ __all__ = [
     "Agence",
     "User",
     "AuthSession",
+    "AuthLoginAttempt",
+    "PlateformeEspace",
+    "PlateformeModule",
     "Direction",
     "Departement",
     "CentreCout",

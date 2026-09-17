@@ -225,6 +225,8 @@ class AmortissementService:
             message=f"L'immobilisation {immo.designation} est entièrement amortie (VNC {last_row.vnc}).",
             entity="immobilisation",
             entity_id=str(immo.id),
+            espace_code="comptabilite",
+            module_code="immobilisations",
         )
 
     async def mettre_en_service(self, immobilisation_id: UUID) -> Immobilisation:

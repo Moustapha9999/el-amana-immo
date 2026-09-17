@@ -1,33 +1,31 @@
-# Développement uniquement (hot-reload, Redis/Celery, frontend :4200).
+# Développement uniquement (hot-reload, Redis/Celery).
 # Usage : docker compose -f docker-compose.dev.yml up
 #
-# Toujours UNE PostgreSQL par environnement — pas de 2e DB « plateforme ».
-# Volume séparé (postgres_data_dev) pour ne pas toucher immo_postgres_data.
-# Ne PAS forcer LANG=fr_FR.utf8 sur postgres:17-alpine (collation réelle = C).
-# L'instance comptable utilise docker-compose.yml (sans ce fichier).
+# L'instance officielle BEA DIGITAL est docker-compose.yml → http://localhost
+# Ce fichier est optionnel et utilise un volume séparé.
 
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: immo-postgres-dev
+    container_name: bea-postgres-dev
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-immobilisations}
+      POSTGRES_DB: ${POSTGRES_DB:-bea_digital}
       POSTGRES_USER: ${POSTGRES_USER:-immo_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-immo_pass}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data_dev:/var/lib/postgresql/data
       - ./database/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-immo_user} -d ${POSTGRES_DB:-immobilisations}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-immo_user} -d ${POSTGRES_DB:-bea_digital}"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   redis:
     image: redis:7-alpine
-    container_name: immo-redis-dev
+    container_name: bea-redis-dev
     ports:
       - "6379:6379"
     healthcheck:
@@ -37,14 +35,15 @@ services:
       retries: 10
 
   backend:
+    image: bea-digital-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: immo-backend-dev
+    container_name: bea-backend-dev
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-immo_user}:${POSTGRES_PASSWORD:-immo_pass}@postgres:5432/${POSTGRES_DB:-immobilisations}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-immo_user}:${POSTGRES_PASSWORD:-immo_pass}@postgres:5432/${POSTGRES_DB:-bea_digital}
       DATABASE_SSL: "false"
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
@@ -63,14 +62,15 @@ services:
     command: ["app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
   worker:
+    image: bea-digital-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: immo-worker-dev
+    container_name: bea-worker-dev
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-immo_user}:${POSTGRES_PASSWORD:-immo_pass}@postgres:5432/${POSTGRES_DB:-immobilisations}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-immo_user}:${POSTGRES_PASSWORD:-immo_pass}@postgres:5432/${POSTGRES_DB:-bea_digital}
       DATABASE_SSL: "false"
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
@@ -85,14 +85,16 @@ services:
     command: ["-A", "app.workers.celery_app", "worker", "--loglevel=info"]
 
   frontend:
+    image: bea-digital-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: immo-frontend-dev
+    container_name: bea-frontend-dev
     ports:
-      - "4200:80"
+      - "8080:80"
     depends_on:
       - backend
 
 volumes:
   postgres_data_dev:
+    name: bea_postgres_data_dev

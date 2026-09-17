@@ -6,9 +6,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.security import get_password_hash, verify_password
+from app.data.plateforme_catalogue import DEFAULT_ESPACE_CODE, DEFAULT_MODULE_CODE
 from app.models import Role, User
 from app.schemas.auth import UserCreate, UserUpdate
 from app.services.auth_session_service import AuthSessionService
+from app.services.plateforme_access_service import PlateformeAccessService
+
+_USER_OPTIONS = (
+    selectinload(User.roles).selectinload(Role.permissions),
+    selectinload(User.espaces),
+    selectinload(User.modules),
+)
 
 
 class AuthService:
@@ -16,8 +24,11 @@ class AuthService:
         self.db = db
 
     async def authenticate(self, email: str, password: str) -> User | None:
+        normalized = email.strip().lower()
         result = await self.db.execute(
-            select(User).options(selectinload(User.roles)).where(User.email == email, User.is_active.is_(True))
+            select(User)
+            .options(*_USER_OPTIONS)
+            .where(func.lower(User.email) == normalized, User.is_active.is_(True), User.deleted_at.is_(None))
         )
         user = result.scalar_one_or_none()
         if user is None or not verify_password(password, user.hashed_password):
@@ -58,6 +69,14 @@ class AuthService:
 
         self.db.add(user)
         await self.db.flush()
+        access = PlateformeAccessService(self.db)
+        await access.ensure_catalogue()
+        espace_codes = payload.espace_codes
+        module_codes = payload.module_codes
+        if espace_codes is None and module_codes is None:
+            espace_codes = [DEFAULT_ESPACE_CODE]
+            module_codes = [DEFAULT_MODULE_CODE]
+        await access.set_user_access(user, espace_codes or [], module_codes or [])
         return await self.get_by_id(user.id)  # type: ignore[return-value]
 
     async def update_user(self, user_id: UUID, payload: UserUpdate) -> User:
@@ -90,6 +109,16 @@ class AuthService:
             user.hashed_password = get_password_hash(data["password"])
         if "role_codes" in data and data["role_codes"] is not None:
             user.roles = await self._roles_by_codes(data["role_codes"])
+        if "espace_codes" in data or "module_codes" in data:
+            access = PlateformeAccessService(self.db)
+            await access.ensure_catalogue()
+            current_e = list(user.espace_codes)
+            current_m = list(user.module_codes)
+            await access.set_user_access(
+                user,
+                data["espace_codes"] if "espace_codes" in data and data["espace_codes"] is not None else current_e,
+                data["module_codes"] if "module_codes" in data and data["module_codes"] is not None else current_m,
+            )
 
         await self.db.flush()
         return await self.get_by_id(user.id)  # type: ignore[return-value]
@@ -108,7 +137,7 @@ class AuthService:
     async def get_by_id(self, user_id: UUID) -> User | None:
         result = await self.db.execute(
             select(User)
-            .options(selectinload(User.roles))
+            .options(*_USER_OPTIONS)
             .where(User.id == user_id, User.is_active.is_(True), User.deleted_at.is_(None))
         )
         return result.scalar_one_or_none()
@@ -160,7 +189,7 @@ class AuthService:
         total = int(count.scalar_one())
         result = await self.db.execute(
             select(User)
-            .options(selectinload(User.roles))
+            .options(*_USER_OPTIONS)
             .where(*filters)
             .order_by(User.full_name.asc())
             .offset(page_offset(page, size))

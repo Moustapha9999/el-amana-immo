@@ -30,12 +30,18 @@ remplacement d’ORION.
    Ne pas préfixer sous `/comptabilite/immobilisations/` : ~60 liens absolus
    + liens de notification produits par le backend et ouverts via
    `router.navigateByUrl(link)`.
+7. **Socle auth figé** : Login 1 (plateforme) ≠ Login 2 (module).
+   Déconnexion module → `/comptabilite`, jamais Login 1.
+   Permissions immobilisations contrôlées **backend**
+   (`docs/socle-bea-digital.md`).
 
 ## Base de données
 
 - Une seule `DATABASE_URL` vers le service `postgres` du compose racine.
-- Loopback Postgres : `localhost:5432`.
-- Volume nommé unique (`immo_postgres_data`). **Jamais** `docker compose down -v`.
+- Application unique : **http://localhost** (nginx Docker proxifie `/api/` et `/health`).
+- Volume nommé unique (`bea_postgres_data`). **Jamais** `docker compose down -v`.
+  L’ancien nom `immo_postgres_data` a été copié une fois ; ne pas faire tourner
+  les deux volumes en parallèle.
 - `SKIP_MIGRATIONS=1` par défaut jusqu’au restore du dump Supabase.
   Alembic sur base vide = schéma faux (1ʳᵉ révision = `ALTER` de tables déjà
   présentes).

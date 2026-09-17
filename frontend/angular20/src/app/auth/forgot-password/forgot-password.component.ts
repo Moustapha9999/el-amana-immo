@@ -53,7 +53,7 @@ export class ForgotPasswordComponent implements OnDestroy {
         this.accountFound.set(res.account_found ?? null);
         if (res.reset_token) {
           this.devToken.set(res.reset_token);
-          this.startCountdown(res.expires_in_seconds ?? 45);
+          this.startCountdown(res.expires_in_seconds ?? 900);
         }
       },
       error: (err) => {

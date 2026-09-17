@@ -1,5 +1,7 @@
 FROM node:22-alpine AS build
 WORKDIR /app
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
 COPY angular20/package*.json ./
 RUN npm ci
 COPY angular20/ .

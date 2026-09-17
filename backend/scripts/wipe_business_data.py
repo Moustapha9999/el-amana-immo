@@ -42,6 +42,12 @@ TABLES = [
     "roles",
     "permissions",
     "agences",
+    "auth_sessions",
+    "auth_login_attempts",
+    "user_espace_acces",
+    "user_module_acces",
+    "plateforme_modules",
+    "plateforme_espaces",
 ]
 
 

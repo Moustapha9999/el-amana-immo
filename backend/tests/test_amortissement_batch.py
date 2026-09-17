@@ -23,6 +23,13 @@ def _mock_db() -> MagicMock:
     return db
 
 
+class FakeCategorie:
+    amortissable = True
+    compte_immobilisation = "142010"
+    famille = "AAI"
+    libelle = "Agencements"
+
+
 class FakeImmo:
     id = uuid4()
     code_inventaire = "IMMO-001"
@@ -37,9 +44,10 @@ class FakeImmo:
     prorata_temporis = True
     mode_amortissement = ModeAmortissement.LINEAIRE
     taux = Decimal("10")
+    compte_immobilisation = "142010"
     compte_dotation = "681211"
     compte_amortissement = "148211"
-    categorie = None
+    categorie = FakeCategorie()
 
 
 @pytest.mark.asyncio

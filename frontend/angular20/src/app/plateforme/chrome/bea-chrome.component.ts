@@ -23,9 +23,39 @@ import { AuthService } from '../../core/services/auth.service';
       </a>
       <div class="bea-chrome__actions">
         @if (auth.user(); as u) {
-          <span class="bea-chrome__user">{{ u.full_name }}</span>
+          <div class="bea-chrome__userchip">
+            <span class="bea-chrome__avatar" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="1.7" />
+                <path
+                  d="M5.5 18.5c1.2-3.2 3.6-4.8 6.5-4.8s5.3 1.6 6.5 4.8"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </span>
+            <span class="bea-chrome__user">{{ u.full_name }}</span>
+          </div>
         }
-        <button type="button" class="bea-chrome__logout" (click)="logout()">Déconnexion</button>
+        <button type="button" class="bea-chrome__logout" (click)="logout()">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M10 7V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1v-2"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+            />
+            <path
+              d="M4 12h10M11 8l4 4-4 4"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Déconnexion
+        </button>
       </div>
     </header>
   `,
@@ -40,6 +70,6 @@ export class BeaChromeComponent implements OnInit {
   }
 
   logout(): void {
-    this.auth.logout({ reason: 'manual' });
+    this.auth.logoutPlatform({ reason: 'manual' });
   }
 }

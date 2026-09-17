@@ -110,6 +110,38 @@
                 }
               </div>
             </div>
+            <div class="usr__roles">
+              <span class="usr-field__label">Espaces BEA DIGITAL</span>
+              <div class="usr__roles-list">
+                @for (espace of catalogue(); track espace.id) {
+                  <label class="usr__role">
+                    <input
+                      type="checkbox"
+                      [checked]="isEspaceSelected(espace.id)"
+                      (change)="toggleEspace(espace.id, $any($event.target).checked)"
+                    />
+                    {{ espace.titre }}
+                  </label>
+                }
+              </div>
+            </div>
+            <div class="usr__roles">
+              <span class="usr-field__label">Modules</span>
+              <div class="usr__roles-list">
+                @for (espace of catalogue(); track espace.id) {
+                  @for (mod of espace.modules; track mod.id) {
+                    <label class="usr__role">
+                      <input
+                        type="checkbox"
+                        [checked]="isModuleSelected(mod.id)"
+                        (change)="toggleModule(mod.id, $any($event.target).checked)"
+                      />
+                      {{ mod.titre }}
+                    </label>
+                  }
+                }
+              </div>
+            </div>
             <div class="usr__checks">
               <label class="usr__role">
                 <input type="checkbox" formControlName="is_superuser" />

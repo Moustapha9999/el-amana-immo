@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 from app.schemas.common import ORMModel
 
@@ -49,6 +50,34 @@ class UserRead(ORMModel):
     agence_id: UUID | None = None
     last_login_at: datetime | None = None
     totp_enabled: bool = False
+    espace_codes: list[str] = Field(default_factory=list)
+    module_codes: list[str] = Field(default_factory=list)
+    permission_codes: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_access_codes(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            return data
+        espaces = getattr(data, "espaces", None) or []
+        modules = getattr(data, "modules", None) or []
+        from app.services.permission_service import permission_codes_from_user
+
+        perms = sorted(c for c in permission_codes_from_user(data) if c != "*")
+        return {
+            "id": data.id,
+            "email": data.email,
+            "full_name": data.full_name,
+            "is_superuser": data.is_superuser,
+            "is_active": data.is_active,
+            "roles": data.roles,
+            "agence_id": data.agence_id,
+            "last_login_at": data.last_login_at,
+            "totp_enabled": bool(data.totp_enabled),
+            "espace_codes": [e.code for e in espaces],
+            "module_codes": [m.code for m in modules],
+            "permission_codes": perms,
+        }
 
 
 class TotpSetupResponse(BaseModel):
@@ -78,6 +107,8 @@ class UserCreate(BaseModel):
     role_codes: list[str] = Field(default_factory=list)
     is_superuser: bool = False
     agence_id: UUID | None = None
+    espace_codes: list[str] | None = None
+    module_codes: list[str] | None = None
 
 
 class UserUpdate(BaseModel):
@@ -89,6 +120,8 @@ class UserUpdate(BaseModel):
     is_superuser: bool | None = None
     role_codes: list[str] | None = None
     agence_id: UUID | None = None
+    espace_codes: list[str] | None = None
+    module_codes: list[str] | None = None
 
 
 class ImmobilisationImportResponse(BaseModel):

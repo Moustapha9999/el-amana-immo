@@ -21,7 +21,7 @@ La migration vers le serveur banque se fera par dump PostgreSQL + copie des docu
 |-----------|-------------|----------|
 | Frontend | Angular 20 + nginx | `http://localhost` proxifie `/api/` vers le backend |
 | Backend | FastAPI (Python 3.13) | Auth JWT interne + 2FA TOTP |
-| Base | PostgreSQL 17 | Volume Docker `immo_postgres_data` |
+| Base | PostgreSQL 17 | Volume Docker `bea_postgres_data`, base `bea_digital` |
 | Documents | fichiers locaux | `storage/uploads` (bind mount) |
 | Auth cloud | **non utilisé** | Pas de Supabase Auth |
 | Storage cloud | **non utilisé** | Pas de Supabase Storage |
@@ -60,7 +60,7 @@ Copier **tout** ce dossier sur une clé USB, **sans** le fichier `.env` de déve
 ### Sur le PC du comptable
 
 1. Installer **Docker Desktop**, le démarrer, attendre l'état Running.
-2. Copier le kit vers `C:\immo` (chemin sans espace de préférence).
+2. Copier le kit vers `C:\bea-digital` (chemin sans espace de préférence).
 3. PowerShell dans ce dossier :
 
 ```powershell
@@ -69,7 +69,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-on-comptable.ps1
 
 4. Ouvrir **http://localhost**
 
-Internet n'est pas nécessaire après l'installation de Docker Desktop : les images sont chargées depuis `images\immo-stack.tar`.
+Internet n'est pas nécessaire après l'installation de Docker Desktop : les images sont chargées depuis `images\bea-digital-stack.tar`.
 
 Usage quotidien : `.\scripts\start-local.ps1` (pas `-Build`).  
 Sauvegarde : `.\scripts\backup-local.ps1`.  
