@@ -171,6 +171,10 @@ bea-fil-ariane {
   padding: 1.75rem 1.5rem 2.5rem;
 }
 
+.bea-plateforme__body--wide {
+  max-width: 90rem;
+}
+
 .bea-plateforme__kicker {
   margin: 0 0 0.35rem;
   font-size: 0.75rem;
@@ -294,6 +298,55 @@ bea-fil-ariane {
   font-size: 0.8125rem;
   color: var(--bea-ink-muted);
   line-height: 1.45;
+}
+
+.bea-accueil-parc {
+  margin-top: 2.25rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--bea-line);
+}
+
+.bea-accueil-parc__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.bea-accueil-parc__title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.bea-accueil-parc__lead {
+  margin: 0.35rem 0 0;
+  max-width: 38rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--bea-ink-muted);
+}
+
+.bea-accueil-parc__link {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #1a5278;
+  text-decoration: none;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid #3498db;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.bea-accueil-parc__link:hover {
+  background: #dbeafe;
+  color: #1a5278;
 }
 
 @media (max-width: 720px) {
