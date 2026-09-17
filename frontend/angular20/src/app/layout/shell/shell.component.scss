@@ -25,6 +25,8 @@
   padding: 1.15rem 1rem 1rem;
   border-bottom: 1px solid rgb(255 255 255 / 0.08);
   text-align: center;
+  text-decoration: none;
+  color: inherit;
 }
 
 .app-shell__brand-logo {
@@ -264,7 +266,7 @@
 
 .app-shell__main {
   padding: 1.5rem;
-  min-height: calc(100vh - 4rem);
+  min-height: calc(100vh - 4rem - 2.5rem);
   max-width: 90rem;
   margin: 0 auto;
 }

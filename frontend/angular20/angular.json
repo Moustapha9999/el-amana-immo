@@ -54,6 +54,7 @@
             "styles": [
               "src/tailwind.css",
               "node_modules/@angular/material/prebuilt-themes/azure-blue.css",
+              "src/app/plateforme/plateforme-ui.css",
               "src/styles.scss"
             ]
           },
@@ -117,6 +118,7 @@
             "styles": [
               "src/tailwind.css",
               "node_modules/@angular/material/prebuilt-themes/azure-blue.css",
+              "src/app/plateforme/plateforme-ui.css",
               "src/styles.scss"
             ]
           }

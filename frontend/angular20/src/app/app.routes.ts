@@ -33,11 +33,14 @@ import { NotificationsComponent } from './notifications/notifications.component'
 import { ArchivesComponent } from './archives/archives.component';
 import { ArchiveDetailComponent } from './archives/archive-detail.component';
 import { ArchiveNatureComponent } from './archives/archive-nature.component';
+import { PLATEFORME_ROUTES } from './plateforme/plateforme.routes';
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent, canActivate: [guestGuard] },
   { path: 'forgot-password', component: ForgotPasswordComponent, canActivate: [guestGuard] },
   { path: 'reset-password', component: ResetPasswordComponent, canActivate: [guestGuard] },
+  { path: '', pathMatch: 'full', redirectTo: 'accueil' },
+  ...PLATEFORME_ROUTES,
   {
     path: '',
     component: ShellComponent,
@@ -77,5 +80,5 @@ export const routes: Routes = [
       { path: 'parametres', component: ParametresComponent },
     ],
   },
-  { path: '**', redirectTo: 'dashboard' },
+  { path: '**', redirectTo: 'accueil' },
 ];

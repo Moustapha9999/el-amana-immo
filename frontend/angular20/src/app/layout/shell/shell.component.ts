@@ -9,6 +9,7 @@ import { AuthService, UserProfile } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { SystemClockService } from '../../core/services/system-clock.service';
 import { SHELL_NAV, shellNavSections } from './shell-nav';
+import { FilArianeComponent } from '../../plateforme/fil-ariane/fil-ariane.component';
 
 @Component({
   selector: 'app-shell',
@@ -21,6 +22,7 @@ import { SHELL_NAV, shellNavSections } from './shell-nav';
     MatListModule,
     MatIconModule,
     MatButtonModule,
+    FilArianeComponent,
   ],
   templateUrl: './shell.component.html',
   styleUrl: './shell.component.scss',

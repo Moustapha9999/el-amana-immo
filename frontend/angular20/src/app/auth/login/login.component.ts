@@ -72,7 +72,7 @@ export class LoginComponent implements OnInit {
         this.auth.loadProfile().subscribe({
           next: () => {
             this.loading.set(false);
-            void this.router.navigate(['/dashboard']);
+            void this.router.navigate(['/accueil']);
           },
           error: () => {
             this.loading.set(false);

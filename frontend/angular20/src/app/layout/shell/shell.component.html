@@ -2,7 +2,7 @@
 
   <mat-sidenav mode="side" opened class="app-shell__sidenav">
 
-    <div class="app-shell__brand">
+    <a routerLink="/accueil" class="app-shell__brand" title="Accueil BEA DIGITAL">
       <img
         class="app-shell__brand-logo"
         src="/brand/icon-bea-white.png"
@@ -11,9 +11,9 @@
         alt="Banque El Amana"
       />
       <div class="app-shell__brand-text">
-        <div class="app-shell__brand-sub">Gestion du parc immobilier</div>
+        <div class="app-shell__brand-sub">BEA DIGITAL — Comptabilité</div>
       </div>
-    </div>
+    </a>
 
 
 
@@ -59,7 +59,7 @@
 
     <div class="app-shell__footer">
 
-      <span class="app-shell__footer-text">Banque El Amana — plan comptable immobilisations</span>
+          <span class="app-shell__footer-text">BEA DIGITAL — Banque El Amana</span>
 
     </div>
 
@@ -71,7 +71,7 @@
 
     <header class="app-shell__topbar">
 
-      <div class="app-shell__topbar-title">Gestion des immobilisations BEA</div>
+      <div class="app-shell__topbar-title">Immobilisations &amp; Amortissements</div>
 
       <div class="app-shell__topbar-actions">
 
@@ -112,6 +112,8 @@
       </div>
 
     </header>
+
+    <bea-fil-ariane />
 
     <main class="app-shell__main">
 
