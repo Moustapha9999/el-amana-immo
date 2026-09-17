@@ -1,11 +1,18 @@
-# Instance locale (machine du comptable).
-# Démarrage : copier .env.docker.example → .env.docker, puis docker compose up -d
+# BEA DIGITAL — instance locale (une seule PostgreSQL 17).
+# Démarrage : copier .env.docker.example → .env.docker, puis
+#   docker compose --env-file .env.docker up -d
 #
 # Ne jamais lancer : docker compose down -v
-# (le -v supprime le volume PostgreSQL)
+# (le -v supprime le volume PostgreSQL = perte de la base unique)
+#
+# SKIP_MIGRATIONS=1 par défaut jusqu'au restore du dump Supabase.
+# Alembic sur base vide = schéma faux (1re révision = ALTER de tables déjà présentes).
 
 services:
   postgres:
+    # Alpine OK en local. Ne PAS forcer LANG=fr_FR.utf8 :
+    # musl accepte le nom de locale mais la collation réelle reste C.
+    # TEST/PROD banque : image Debian postgres:17, collation alignée sur le dump.
     image: postgres:17-alpine
     pull_policy: missing
     container_name: immo-postgres
@@ -45,6 +52,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-immo_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-immobilisations}
       DATABASE_SSL: "false"
       CORS_ORIGINS: http://localhost,http://127.0.0.1,http://localhost:80,http://127.0.0.1:80
+      SKIP_MIGRATIONS: ${SKIP_MIGRATIONS:-1}
     volumes:
       - ./storage/uploads:/app/storage/uploads
       - ./backups:/backups
@@ -84,6 +92,7 @@ services:
 
 volumes:
   postgres_data:
+    # Volume unique BEA DIGITAL = base immo. Ne pas en créer un second.
     name: immo_postgres_data
 
 networks:

@@ -1,6 +1,9 @@
 # Développement uniquement (hot-reload, Redis/Celery, frontend :4200).
 # Usage : docker compose -f docker-compose.dev.yml up
 #
+# Toujours UNE PostgreSQL par environnement — pas de 2e DB « plateforme ».
+# Volume séparé (postgres_data_dev) pour ne pas toucher immo_postgres_data.
+# Ne PAS forcer LANG=fr_FR.utf8 sur postgres:17-alpine (collation réelle = C).
 # L'instance comptable utilise docker-compose.yml (sans ce fichier).
 
 services:
@@ -12,7 +15,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-immo_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-immo_pass}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data_dev:/var/lib/postgresql/data
       - ./database/init:/docker-entrypoint-initdb.d:ro
