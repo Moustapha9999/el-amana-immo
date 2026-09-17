@@ -1,6 +1,10 @@
-# Environment
+# Environment / secrets — jamais commiter
 .env
 .env.local
+.env.docker
+.env.*
+!.env.example
+!.env.docker.example
 *.pem
 
 # Python
@@ -31,20 +35,22 @@ npm-debug.log*
 !.vscode/extensions.json
 *.swp
 
-# Docker / DB
-.env.docker
+# Docker / DB — dumps hors git
 database/backup/*.sql
 database/backup/*.dump
 !database/backup/.gitkeep
 backups/*
 !backups/.gitkeep
 !backups/README.md
+*.dump
+*.backup
+*.sql.gz
 
 # OS
 Thumbs.db
 .Desktop.ini
 
-# Uploads
+# Uploads / GED
 backend/storage/uploads/*
 !backend/storage/uploads/.gitkeep
 storage/uploads/**

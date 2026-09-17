@@ -1,5 +1,9 @@
 # Déploiement local Docker (machine du comptable)
 
+Produit : **BEA DIGITAL** — premier module Immobilisations & Amortissements.
+Démarrage générique et restore non destructif : [demarrer.md](demarrer.md),
+[base-de-donnees-unique.md](base-de-donnees-unique.md).
+
 Instance temporaire pour la saisie des acquisitions 2026, en attendant le serveur DSI.
 La migration vers le serveur banque se fera par dump PostgreSQL + copie des documents, avec rapprochement.
 

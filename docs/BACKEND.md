@@ -1,5 +1,10 @@
 # Backend — structure
 
+Source **canonique** : `backend/` (Dockerfile compose). `app/` et `alembic/`
+à la racine du dépôt = dette, ne pas y coder ni déployer.
+
+Ne pas modifier `backend/app/services/amortissement_engine.py` (règle VNC).
+
 ```
 backend/app/
 ├── api/
