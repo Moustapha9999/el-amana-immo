@@ -124,7 +124,31 @@ PLATEFORME_MODULES: list[ModuleDef] = [
     },
 ]
 
+# Permissions CORE (tous les départements). `{module}.admin` couvre `{module}.*`.
+CORE_PERMISSIONS: list[tuple[str, str, str]] = [
+    ("plateforme.users.read", "Consultation des utilisateurs", "plateforme"),
+    ("plateforme.users.admin", "Administration des utilisateurs et des accès", "plateforme"),
+    ("plateforme.audit.read", "Consultation de l'audit plateforme", "plateforme"),
+    ("ged.read", "Consultation GED (réservée)", "ged"),
+]
+
+# CORE ADMIN — catalogue seulement. Ne pas lier au rôle immo `administrateur`.
+CORE_ADMIN_PERMISSIONS: list[tuple[str, str, str]] = [
+    ("core.admin.access", "Accès BEA DIGITAL CORE ADMIN", "core"),
+    ("core.admin.users", "Administration des utilisateurs (CORE ADMIN)", "core"),
+    ("core.admin.roles", "Administration des rôles (CORE ADMIN)", "core"),
+    ("core.admin.permissions", "Administration des permissions (CORE ADMIN)", "core"),
+    ("core.admin.departments", "Administration des départements (CORE ADMIN)", "core"),
+    ("core.admin.modules", "Administration des modules (CORE ADMIN)", "core"),
+    ("core.admin.sessions", "Administration des sessions (CORE ADMIN)", "core"),
+    ("core.admin.audit", "Consultation de l'audit (CORE ADMIN)", "core"),
+    ("core.admin.security", "Supervision sécurité (CORE ADMIN)", "core"),
+    ("core.admin.settings", "Paramètres plateforme (CORE ADMIN)", "core"),
+]
+
 FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
+    *CORE_PERMISSIONS,
+    *CORE_ADMIN_PERMISSIONS,
     ("immobilisations.read", "Consultation immobilisations", "immobilisations"),
     ("immobilisations.create", "Création immobilisations", "immobilisations"),
     ("immobilisations.update", "Modification immobilisations", "immobilisations"),
@@ -148,10 +172,18 @@ RBAC_ROLES: list[tuple[str, str, str]] = [
     ("validation", "Validation", "Validation / mise en service"),
     ("comptable", "Comptable", "Opérations courantes du module"),
     ("auditeur", "Auditeur", "Consultation et reporting"),
-    ("administrateur", "Administration", "Toutes les permissions du module"),
+    ("administrateur", "Administration", "Permissions immobilisations + utilisateurs plateforme"),
 ]
 
-_IMMO_ALL = tuple(code for code, _label, _module in FUNCTIONAL_PERMISSIONS)
+_IMMO_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "immobilisations"
+)
+_CORE_ADMIN = (
+    "plateforme.users.read",
+    "plateforme.users.admin",
+    "plateforme.audit.read",
+    "ged.read",
+)
 
 ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "consultation": ("immobilisations.read",),
@@ -159,7 +191,7 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "creation": ("immobilisations.read", "immobilisations.create"),
     "modification": ("immobilisations.read", "immobilisations.update"),
     "validation": ("immobilisations.read", "immobilisations.validate"),
-    "auditeur": ("immobilisations.read", "immobilisations.reporting"),
+    "auditeur": ("immobilisations.read", "immobilisations.reporting", "plateforme.audit.read"),
     "comptable": (
         "immobilisations.read",
         "immobilisations.create",
@@ -170,7 +202,7 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "immobilisations.amortissement",
         "immobilisations.reporting",
     ),
-    "administrateur": _IMMO_ALL,
+    "administrateur": _IMMO_ALL + _CORE_ADMIN,
 }
 
 

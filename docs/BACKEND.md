@@ -54,3 +54,4 @@ uvicorn app.main:app --reload
 Documentation API : http://localhost:8000/docs
 
 Socle Login 1 / Login 2 / permissions : [docs/socle-bea-digital.md](socle-bea-digital.md).
+CORE commun (users, espaces, modules, audit, GED prévue) : [docs/core-bea-digital.md](core-bea-digital.md).

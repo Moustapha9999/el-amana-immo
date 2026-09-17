@@ -36,7 +36,8 @@ SELECT
   (SELECT COUNT(*) FROM user_espace_acces) AS grants_espace,
   (SELECT COUNT(*) FROM user_module_acces) AS grants_module,
   (SELECT COUNT(*) FROM auth_sessions WHERE kind = 'platform') AS sessions_platform,
-  (SELECT COUNT(*) FROM auth_sessions WHERE kind = 'module') AS sessions_module;
+  (SELECT COUNT(*) FROM auth_sessions WHERE kind = 'module') AS sessions_module,
+  (SELECT COUNT(*) FROM ged_documents) AS ged_documents;
 
 -- Utilisateurs actifs sans accès module Immobilisations (doit tendre vers 0)
 SELECT u.email, u.full_name

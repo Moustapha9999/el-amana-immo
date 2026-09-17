@@ -44,11 +44,13 @@ class UserRead(ORMModel):
     id: UUID
     email: EmailStr
     full_name: str
+    phone: str | None = None
     is_superuser: bool
     is_active: bool
     roles: list[RoleRead] = []
     agence_id: UUID | None = None
     last_login_at: datetime | None = None
+    created_at: datetime | None = None
     totp_enabled: bool = False
     espace_codes: list[str] = Field(default_factory=list)
     module_codes: list[str] = Field(default_factory=list)
@@ -68,11 +70,13 @@ class UserRead(ORMModel):
             "id": data.id,
             "email": data.email,
             "full_name": data.full_name,
+            "phone": getattr(data, "phone", None),
             "is_superuser": data.is_superuser,
             "is_active": data.is_active,
             "roles": data.roles,
             "agence_id": data.agence_id,
             "last_login_at": data.last_login_at,
+            "created_at": getattr(data, "created_at", None),
             "totp_enabled": bool(data.totp_enabled),
             "espace_codes": [e.code for e in espaces],
             "module_codes": [m.code for m in modules],
@@ -104,6 +108,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     full_name: str
     password: str = Field(min_length=8)
+    phone: str | None = Field(default=None, max_length=40)
     role_codes: list[str] = Field(default_factory=list)
     is_superuser: bool = False
     agence_id: UUID | None = None

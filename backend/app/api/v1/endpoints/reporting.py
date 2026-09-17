@@ -130,6 +130,8 @@ async def list_audit(
     search: str | None = None,
     date_debut: date | None = None,
     date_fin: date | None = None,
+    espace_code: str | None = None,
+    module_code: str | None = None,
     _: User = Depends(require_roles("administrateur", "auditeur")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -141,6 +143,8 @@ async def list_audit(
         search=search,
         date_debut=date_debut,
         date_fin=date_fin,
+        espace_code=espace_code,
+        module_code=module_code,
     )
     return to_paginated(items, total, page, size, _audit_to_read)
 
@@ -152,6 +156,8 @@ async def export_audit(
     search: str | None = None,
     date_debut: date | None = None,
     date_fin: date | None = None,
+    espace_code: str | None = None,
+    module_code: str | None = None,
     _: User = Depends(require_roles("administrateur", "auditeur")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -162,6 +168,8 @@ async def export_audit(
         search=search,
         date_debut=date_debut,
         date_fin=date_fin,
+        espace_code=espace_code,
+        module_code=module_code,
     )
     content = audit_logs_to_excel(rows, subtitle=format_period_label(date_debut, date_fin))
     return Response(

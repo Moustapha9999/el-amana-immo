@@ -1,0 +1,69 @@
+# CORE BEA DIGITAL — commun à tous les départements
+
+Le CORE n’est pas le module Immobilisations. C’est ce que **Crédit, RH, IT,
+Achats** réutiliseront sans recopier l’auth, l’audit ou les fichiers.
+
+ORION reste le core banking. BEA DIGITAL reste la plateforme interne
+(Excel, contrôles, workflows, reporting, GED).
+
+## Chaîne (figée)
+
+```text
+Utilisateur
+    → Département / espace autorisé ?
+    → Module autorisé ?
+    → Permission autorisée ?
+    → ACCÈS
+```
+
+Login 1 ouvre la plateforme. Login 2 ouvre un module, seulement si Login 1
+est encore valide. Détail auth : [socle-bea-digital.md](socle-bea-digital.md).
+
+## Cartographie A–J
+
+| | Brique | Table / service | Notes |
+|---|--------|-----------------|-------|
+| A | Utilisateurs | `users` | Email unique, bcrypt, `is_active`, soft-delete |
+| B | Rôles | `roles` + `user_roles` | Profils immo actuels (`comptable`, …). Les modules suivants préfixeront (`credit.…`) |
+| C | Permissions | `permissions` + `role_permissions` | `{module}.{action}` ; `{module}.admin` couvre `{module}.*` |
+| D | Départements | `plateforme_espaces` | Comptabilité, Crédit, RH, … **≠** `departements` (org immo / centres de coût) |
+| E | Modules | `plateforme_modules` | Premier actif : `immobilisations` |
+| F | Accès | `user_espace_acces`, `user_module_acces` | User → département, User → module |
+| G | Audit | `audit_logs` | Qui, quoi, quand, espace, module, action, session |
+| H | Notifications | `notifications` | Filtrables par `espace_code` / `module_code` |
+| I | Sessions | `auth_sessions` | `kind=platform` (BEA DIGITAL) et `kind=module` |
+| J | GED | `ged_documents` | **Réservée.** Pas encore branchée. `pieces_jointes` et `archive_*` restent immo |
+
+CORE ADMIN (pilotage Login 1) : [core-admin.md](core-admin.md).
+
+## APIs CORE (hors lock Immobilisations)
+
+Ces URLs restent `/api/v1/...` (pas de préfixe `/comptabilite/`).
+
+| Besoin | Route | Session |
+|--------|-------|---------|
+| Login 1 / 2, `/auth/me` | `/api/v1/auth/*` | selon la route |
+| Catalogue + manifeste CORE | `/api/v1/plateforme/*` | Login 1 |
+| Dashboard CORE ADMIN | `/api/v1/plateforme/admin/dashboard` | Login 1 + `core.admin.access` |
+| Utilisateurs CORE ADMIN | `/api/v1/plateforme/admin/users*` | Login 1 + `core.admin.users` |
+| Utilisateurs / rôles / grants | `/api/v1/users` | Login 1 **ou** Login 2 (rôle `administrateur`) |
+| Notifications | `/api/v1/notifications` | Login 1 ou Login 2 |
+| Audit (écran immo actuel) | `/api/v1/audit` | Login 2 immo, auditeur / admin |
+
+Le métier immo (`/immobilisations`, `/amortissements`, écritures, …) exige
+toujours Login 2 `immobilisations`.
+
+## GED (prévue, pas livrée)
+
+- Table `ged_documents` : fichier + `espace_code` + `module_code` + `entity` / `entity_id`.
+- Stockage : `storage/ged/{module}/{entity}/{id}/`.
+- Les pièces comptables immo (`pieces_jointes`) et les archives Excel/PDF
+  **ne migrent pas** dans cette table pour l’instant. Un module futur
+  (Crédit, RH, …) écrira ici via `GedService`.
+
+## Ce que le CORE n’est pas
+
+- Le référentiel org `directions` / `departements` / `centres_cout` / `agences`
+  (utilisé par le parc immo).
+- Le moteur VNC / `amortissement_engine.py`.
+- Un second front ou une seconde base.

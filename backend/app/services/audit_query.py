@@ -26,6 +26,8 @@ def _audit_filters(
     search: str | None = None,
     date_debut: date | None = None,
     date_fin: date | None = None,
+    espace_code: str | None = None,
+    module_code: str | None = None,
 ) -> list:
     filters = []
     if entity:
@@ -36,6 +38,10 @@ def _audit_filters(
         filters.append(AuditLog.created_at >= _day_start(date_debut))
     if date_fin:
         filters.append(AuditLog.created_at <= _day_end(date_fin))
+    if espace_code and espace_code.strip():
+        filters.append(AuditLog.espace_code == espace_code.strip())
+    if module_code and module_code.strip():
+        filters.append(AuditLog.module_code == module_code.strip())
     if search and search.strip():
         term = f"%{search.strip().lower()}%"
         filters.append(
@@ -59,6 +65,8 @@ async def list_audit_logs(
     search: str | None = None,
     date_debut: date | None = None,
     date_fin: date | None = None,
+    espace_code: str | None = None,
+    module_code: str | None = None,
 ) -> tuple[list[AuditLog], int]:
     filters = _audit_filters(
         entity=entity,
@@ -66,6 +74,8 @@ async def list_audit_logs(
         search=search,
         date_debut=date_debut,
         date_fin=date_fin,
+        espace_code=espace_code,
+        module_code=module_code,
     )
     join_user = bool(search and search.strip())
 
@@ -98,6 +108,8 @@ async def list_audit_for_export(
     search: str | None = None,
     date_debut: date | None = None,
     date_fin: date | None = None,
+    espace_code: str | None = None,
+    module_code: str | None = None,
 ) -> list[AuditLog]:
     filters = _audit_filters(
         entity=entity,
@@ -105,6 +117,8 @@ async def list_audit_for_export(
         search=search,
         date_debut=date_debut,
         date_fin=date_fin,
+        espace_code=espace_code,
+        module_code=module_code,
     )
     stmt = (
         select(AuditLog)

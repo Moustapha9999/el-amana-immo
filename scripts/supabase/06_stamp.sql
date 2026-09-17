@@ -13,15 +13,16 @@ BEGIN
   END IF;
 
   UPDATE alembic_version
-  SET version_num = '20260917_bea_comments'
+  SET version_num = '20260917_ged_documents'
   WHERE version_num IN (
     '20260914_orion_lock',
     '20260917_dual_auth',
-    '20260917_audit_context'
+    '20260917_audit_context',
+    '20260917_bea_comments'
   );
 
   INSERT INTO alembic_version (version_num)
-  SELECT '20260917_bea_comments'
+  SELECT '20260917_ged_documents'
   WHERE NOT EXISTS (SELECT 1 FROM alembic_version);
 END $$;
 

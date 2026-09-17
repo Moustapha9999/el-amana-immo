@@ -91,5 +91,7 @@ npm run build
 
 - [base-de-donnees-unique.md](base-de-donnees-unique.md)
 - [frontend-plateforme.md](frontend-plateforme.md)
+- [socle-bea-digital.md](socle-bea-digital.md) — Login 1 / Login 2
+- [core-bea-digital.md](core-bea-digital.md) — CORE commun à tous les départements
 - [DEPLOIEMENT_LOCAL.md](DEPLOIEMENT_LOCAL.md) — kit USB machine comptable
 - [AGENTS.md](../AGENTS.md) — invariants

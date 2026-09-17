@@ -1,10 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_platform_user
+from app.api.deps import get_platform_user, require_platform_permission
+from app.core.config import get_settings
+from app.data.plateforme_catalogue import FUNCTIONAL_PERMISSIONS, RBAC_ROLES, ROLE_PERMISSIONS
 from app.db.session import get_db
 from app.models import User
-from app.schemas.plateforme import PlateformeEspaceRead, PlateformeModuleRead
+from app.schemas.plateforme import (
+    CoreAdminDashboardRead,
+    CoreManifestRead,
+    PlateformeEspaceRead,
+    PlateformeModuleRead,
+)
+from app.services.core_admin_service import CoreAdminService
 from app.services.plateforme_access_service import PlateformeAccessService
 
 router = APIRouter(prefix="/plateforme", tags=["plateforme"])
@@ -70,3 +78,71 @@ async def catalogue(
             }
         )
     return items
+
+
+@router.get("/core", response_model=CoreManifestRead)
+async def core_manifest(
+    _user: User = Depends(get_platform_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Inventaire du CORE (départements, modules, permissions, GED prévue)."""
+    service = PlateformeAccessService(db)
+    await service.ensure_catalogue()
+    espaces = await service.list_espaces()
+    catalogue = []
+    for espace in espaces:
+        catalogue.append(
+            {
+                "id": espace.code,
+                "titre": espace.label,
+                "description": espace.description,
+                "route": espace.route,
+                "statut": espace.statut,
+                "accessible": True,
+                "modules": [
+                    {
+                        "id": mod.code,
+                        "titre": mod.label,
+                        "description": mod.description,
+                        "route": f"/modules/{mod.code}/acces" if mod.statut == "actif" else None,
+                        "entry_path": mod.entry_path,
+                        "statut": mod.statut,
+                        "accessible": True,
+                    }
+                    for mod in sorted(espace.modules, key=lambda m: (m.sort_order, m.label))
+                    if mod.is_active
+                ],
+            }
+        )
+    return {
+        "chain": "utilisateur → département → module → permission",
+        "espaces": catalogue,
+        "permissions": [
+            {"code": code, "label": label, "module": module}
+            for code, label, module in FUNCTIONAL_PERMISSIONS
+        ],
+        "roles": [
+            {
+                "code": code,
+                "label": label,
+                "description": description,
+                "permission_codes": list(ROLE_PERMISSIONS.get(code, ())),
+            }
+            for code, label, description in RBAC_ROLES
+        ],
+        "ged": {
+            "statut": "reserve",
+            "table": "ged_documents",
+            "storage": get_settings().ged_dir,
+        },
+    }
+
+
+@router.get("/admin/dashboard", response_model=CoreAdminDashboardRead)
+async def core_admin_dashboard(
+    _user: User = Depends(require_platform_permission("core.admin.access")),
+    db: AsyncSession = Depends(get_db),
+):
+    access = PlateformeAccessService(db)
+    await access.ensure_catalogue()
+    return await CoreAdminService(db).dashboard()

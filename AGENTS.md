@@ -34,6 +34,13 @@ remplacement d’ORION.
    Déconnexion module → `/comptabilite`, jamais Login 1.
    Permissions immobilisations contrôlées **backend**
    (`docs/socle-bea-digital.md`).
+8. **CORE commun** à tous les départements : users, rôles, permissions,
+   espaces (`plateforme_espaces` = départements BEA DIGITAL), modules,
+   grants, audit, notifications, sessions. GED prévue (`ged_documents`),
+   pas encore branchée. ≠ table org `departements`.
+   Voir `docs/core-bea-digital.md`. CORE ADMIN (`/admin`, Login 1,
+   `core.admin.access`) : `docs/core-admin.md` — pas le rôle immo
+   `administrateur`.
 
 ## Base de données
 

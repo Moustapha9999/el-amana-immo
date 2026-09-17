@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
+from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
-from app.db.session import engine
+from app.core.security import get_password_hash
+from app.db.session import AsyncSessionLocal, engine
 from app.main import app
+from app.models import User
 
 
 async def _db_ready() -> bool:
@@ -145,3 +149,93 @@ async def test_module_token_rejected_on_other_code(client: AsyncClient):
         json={"refresh_token": module_login.json()["refresh_token"]},
     )
     assert bad.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_core_users_and_manifest_accept_platform_session(client: AsyncClient):
+    login = await _login_platform(client)
+    if login.status_code != 200:
+        pytest.skip("Compte admin seed indisponible")
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    manifest = await client.get("/api/v1/plateforme/core", headers=headers)
+    assert manifest.status_code == 200, manifest.text
+    body = manifest.json()
+    assert body["ged"]["table"] == "ged_documents"
+    assert body["ged"]["statut"] == "reserve"
+    codes = {row["code"] for row in body["permissions"]}
+    assert "plateforme.users.admin" in codes
+    assert "immobilisations.read" in codes
+    assert "core.admin.access" in codes
+    espaces = {row["id"] for row in body["espaces"]}
+    assert "comptabilite" in espaces
+
+    users = await client.get("/api/v1/users?page=1&size=5", headers=headers)
+    assert users.status_code == 200, users.text
+
+
+@pytest.mark.asyncio
+async def test_core_admin_dashboard_platform_only(client: AsyncClient):
+    login = await _login_platform(client)
+    if login.status_code != 200:
+        pytest.skip("Compte admin seed indisponible")
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    dash = await client.get("/api/v1/plateforme/admin/dashboard", headers=headers)
+    assert dash.status_code == 200, dash.text
+    body = dash.json()
+    assert body["kpis"]["utilisateurs"] >= 1
+    assert body["kpis"]["departements"] >= 1
+    assert "etat" in body
+    assert body["etat"]["api"]["ok"] is True
+    assert isinstance(body["activite"], list)
+
+    module_login = await client.post(
+        "/api/v1/auth/modules/immobilisations/login",
+        json={"email": "admin@el-amana.mr", "password": _admin_secret()},
+        headers=headers,
+    )
+    if module_login.status_code != 200:
+        pytest.skip("Login module indisponible (catalogue / grants)")
+    blocked = await client.get(
+        "/api/v1/plateforme/admin/dashboard",
+        headers={"Authorization": f"Bearer {module_login.json()['access_token']}"},
+    )
+    assert blocked.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_core_admin_dashboard_forbidden_without_permission(client: AsyncClient):
+    email = f"core-admin-deny-{uuid4().hex[:8]}@el-amana.mr"
+    password = "TestDeny@2026"
+    user_id = None
+    async with AsyncSessionLocal() as session:
+        user = User(
+            email=email,
+            full_name="Test sans CORE ADMIN",
+            hashed_password=get_password_hash(password),
+            is_superuser=False,
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        user_id = user.id
+    try:
+        denied_login = await _login_platform(client, email=email, password=password)
+        assert denied_login.status_code == 200, denied_login.text
+        dash = await client.get(
+            "/api/v1/plateforme/admin/dashboard",
+            headers={"Authorization": f"Bearer {denied_login.json()['access_token']}"},
+        )
+        assert dash.status_code == 403
+        detail = dash.json().get("detail")
+        if isinstance(detail, dict):
+            assert detail.get("code") == "PERMISSION_DENIED"
+    finally:
+        if user_id is not None:
+            async with AsyncSessionLocal() as session:
+                row = await session.get(User, user_id)
+                if row is not None:
+                    row.is_active = False
+                    row.deleted_at = datetime.now(timezone.utc)
+                    await session.commit()

@@ -30,6 +30,8 @@ def test_administrateur_has_all_immo_permissions():
     assert "immobilisations.admin" in codes
     assert "immobilisations.validate" in codes
     assert "immobilisations.delete" in codes
+    assert "plateforme.users.admin" in codes
+    assert "core.admin.access" not in codes
 
 
 def test_immo_admin_permission_covers_module_actions():
@@ -37,6 +39,12 @@ def test_immo_admin_permission_covers_module_actions():
     assert user_has_permission_codes(have, "immobilisations.read")
     assert user_has_permission_codes(have, "immobilisations.create")
     assert not user_has_permission_codes({"immobilisations.read"}, "immobilisations.create")
+
+
+def test_module_admin_is_generic_not_immo_only():
+    have = {"credit.admin"}
+    assert user_has_permission_codes(have, "credit.read")
+    assert not user_has_permission_codes(have, "immobilisations.read")
 
 
 def test_superuser_exposes_wildcard():

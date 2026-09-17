@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     cors_origins: str = Field(default="http://localhost", alias="CORS_ORIGINS")
 
     upload_dir: str = "storage/uploads"
+    ged_dir: str = "storage/ged"
 
     @property
     def cors_origin_list(self) -> list[str]:

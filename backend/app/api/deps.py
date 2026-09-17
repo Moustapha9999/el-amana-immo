@@ -71,15 +71,32 @@ async def _load_user_and_session(
     return user, session, payload
 
 
+def _bind_request_session(
+    request: Request,
+    session: object,
+    *,
+    module_code: str | None = None,
+    espace_code: str | None = None,
+) -> None:
+    request.state.bea_session_id = getattr(session, "id", None)
+    request.state.bea_module_code = module_code
+    request.state.bea_espace_code = espace_code
+
+
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    user, _, _ = await _load_user_and_session(credentials, db)
+    user, session, _ = await _load_user_and_session(credentials, db)
+    kind = getattr(session, "kind", None) or SESSION_KIND_PLATFORM
+    module_code = getattr(session, "module_code", None) if kind == SESSION_KIND_MODULE else None
+    _bind_request_session(request, session, module_code=module_code)
     return user
 
 
 async def get_platform_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
@@ -91,6 +108,7 @@ async def get_platform_user(
             "PLATFORM_SESSION_EXPIRED",
             "Session BEA DIGITAL requise",
         )
+    _bind_request_session(request, session)
     return user
 
 
@@ -155,6 +173,26 @@ def require_roles(*role_codes: str):
 def require_permission(*permission_codes: str):
     async def _checker(
         user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> User:
+        have = await load_user_permission_codes(db, user)
+        if user_has_permission_codes(have, *permission_codes):
+            return user
+        raise auth_http_error(
+            status.HTTP_403_FORBIDDEN,
+            "PERMISSION_DENIED",
+            "Permission refusée",
+            required=list(permission_codes),
+        )
+
+    return _checker
+
+
+def require_platform_permission(*permission_codes: str):
+    """Login 1 uniquement (ex. CORE ADMIN)."""
+
+    async def _checker(
+        user: User = Depends(get_platform_user),
         db: AsyncSession = Depends(get_db),
     ) -> User:
         have = await load_user_permission_codes(db, user)

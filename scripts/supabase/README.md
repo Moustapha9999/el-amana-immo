@@ -13,6 +13,8 @@ Le module Immobilisations (tables, VNC, URLs `/api/v1/...`, `/dashboard`, `/immo
 - Recréer `departments` / `modules` / `user_departments` (le catalogue = `plateforme_espaces` / `plateforme_modules`)
 - Pointer Alembic sur une base **vide**
 
+CORE : [docs/core-bea-digital.md](../../docs/core-bea-digital.md). GED = table `ged_documents` (réservée).
+
 ## Chemin recommandé (Alembic)
 
 Depuis la **racine du dépôt** (`el-amana-immo\`, pas `backend\`). Le venv n’est pas requis pour `backup`.

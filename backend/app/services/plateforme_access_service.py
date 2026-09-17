@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from sqlalchemy import insert, select
+from sqlalchemy import insert, inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -251,6 +251,9 @@ class PlateformeAccessService:
         missing_e = [c for c in wanted_espaces if c not in by_e]
         if missing_e:
             raise ValueError(f"Espace(s) inconnu(s) : {', '.join(missing_e)}")
+
+        if sa_inspect(user).persistent:
+            await self.db.refresh(user, attribute_names=["espaces", "modules"])
 
         user.espaces = [by_e[c] for c in sorted(wanted_espaces)]
         user.modules = [by_m[c] for c in sorted(wanted_modules)]

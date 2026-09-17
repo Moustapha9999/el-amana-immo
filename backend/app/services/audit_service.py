@@ -50,6 +50,8 @@ class AuditService:
         search: str | None = None,
         date_debut: date | None = None,
         date_fin: date | None = None,
+        espace_code: str | None = None,
+        module_code: str | None = None,
     ) -> tuple[list[AuditLog], int]:
         from app.services.audit_query import list_audit_logs
 
@@ -62,4 +64,6 @@ class AuditService:
             search=search,
             date_debut=date_debut,
             date_fin=date_fin,
+            espace_code=espace_code,
+            module_code=module_code,
         )

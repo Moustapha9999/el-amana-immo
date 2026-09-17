@@ -1,13 +1,14 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.security import get_password_hash, verify_password
 from app.data.plateforme_catalogue import DEFAULT_ESPACE_CODE, DEFAULT_MODULE_CODE
 from app.models import Role, User
+from app.models.plateforme import PlateformeEspace, PlateformeModule
 from app.schemas.auth import UserCreate, UserUpdate
 from app.services.auth_session_service import AuthSessionService
 from app.services.plateforme_access_service import PlateformeAccessService
@@ -53,7 +54,8 @@ class AuthService:
         return roles
 
     async def create_user(self, payload: UserCreate) -> User:
-        existing = await self.db.execute(select(User).where(User.email == payload.email))
+        normalized = payload.email.strip().lower()
+        existing = await self.db.execute(select(User).where(func.lower(User.email) == normalized))
         if existing.scalar_one_or_none():
             raise ValueError("Email déjà utilisé")
 
@@ -63,6 +65,7 @@ class AuthService:
             hashed_password=get_password_hash(payload.password),
             is_superuser=payload.is_superuser,
             agence_id=payload.agence_id,
+            phone=payload.phone,
         )
         if payload.role_codes:
             user.roles = await self._roles_by_codes(payload.role_codes)
@@ -79,8 +82,10 @@ class AuthService:
         await access.set_user_access(user, espace_codes or [], module_codes or [])
         return await self.get_by_id(user.id)  # type: ignore[return-value]
 
-    async def update_user(self, user_id: UUID, payload: UserUpdate) -> User:
-        user = await self.get_by_id(user_id)
+    async def update_user(
+        self, user_id: UUID, payload: UserUpdate, *, include_inactive: bool = False
+    ) -> User:
+        user = await self.get_by_id(user_id, include_inactive=include_inactive)
         if user is None:
             raise ValueError("Utilisateur introuvable")
 
@@ -107,6 +112,7 @@ class AuthService:
             user.is_superuser = data["is_superuser"]
         if "password" in data and data["password"]:
             user.hashed_password = get_password_hash(data["password"])
+            await AuthSessionService(self.db).revoke_all_for_user(user_id)
         if "role_codes" in data and data["role_codes"] is not None:
             user.roles = await self._roles_by_codes(data["role_codes"])
         if "espace_codes" in data or "module_codes" in data:
@@ -121,7 +127,10 @@ class AuthService:
             )
 
         await self.db.flush()
-        return await self.get_by_id(user.id)  # type: ignore[return-value]
+        refreshed = await self.get_by_id(user.id, include_inactive=True)
+        if refreshed is None:
+            raise ValueError("Utilisateur introuvable")
+        return refreshed
 
     async def soft_delete_user(self, user_id: UUID, *, actor_id: UUID) -> None:
         if user_id == actor_id:
@@ -134,12 +143,11 @@ class AuthService:
         await AuthSessionService(self.db).revoke_all_for_user(user_id)
         await self.db.flush()
 
-    async def get_by_id(self, user_id: UUID) -> User | None:
-        result = await self.db.execute(
-            select(User)
-            .options(*_USER_OPTIONS)
-            .where(User.id == user_id, User.is_active.is_(True), User.deleted_at.is_(None))
-        )
+    async def get_by_id(self, user_id: UUID, *, include_inactive: bool = False) -> User | None:
+        filters = [User.id == user_id, User.deleted_at.is_(None)]
+        if not include_inactive:
+            filters.append(User.is_active.is_(True))
+        result = await self.db.execute(select(User).options(*_USER_OPTIONS).where(*filters))
         return result.scalar_one_or_none()
 
     async def count_users(self) -> int:
@@ -174,15 +182,75 @@ class AuthService:
         return result.scalar_one_or_none()
 
     async def list_users(
-        self, page: int, size: int, *, search: str | None = None
+        self,
+        page: int,
+        size: int,
+        *,
+        search: str | None = None,
+        statut: str = "actif",
+        role_code: str | None = None,
+        espace_code: str | None = None,
+        module_code: str | None = None,
+        profil: str = "tous",
+        totp: str = "tous",
+        connexion: str = "tous",
     ) -> tuple[list[User], int]:
         from app.core.pagination import page_offset
 
-        filters = [User.is_active.is_(True), User.deleted_at.is_(None)]
+        filters = [User.deleted_at.is_(None)]
+        if statut == "actif":
+            filters.append(User.is_active.is_(True))
+        elif statut == "inactif":
+            filters.append(User.is_active.is_(False))
+        elif statut != "tous":
+            raise ValueError("Statut invalide")
+        if role_code and role_code.strip() and role_code != "tous":
+            filters.append(User.roles.any(Role.code == role_code.strip()))
+        if espace_code and espace_code.strip() and espace_code != "tous":
+            filters.append(User.espaces.any(PlateformeEspace.code == espace_code.strip()))
+        if module_code and module_code.strip() and module_code != "tous":
+            filters.append(User.modules.any(PlateformeModule.code == module_code.strip()))
+        if profil == "superuser":
+            filters.append(User.is_superuser.is_(True))
+        elif profil == "standard":
+            filters.append(User.is_superuser.is_(False))
+        elif profil != "tous":
+            raise ValueError("Profil invalide")
+        if totp == "oui":
+            filters.append(User.totp_enabled.is_(True))
+        elif totp == "non":
+            filters.append(User.totp_enabled.is_(False))
+        elif totp != "tous":
+            raise ValueError("Filtre 2FA invalide")
+        if connexion == "jamais":
+            filters.append(User.last_login_at.is_(None))
+        elif connexion == "connecte":
+            filters.append(User.last_login_at.is_not(None))
+        elif connexion != "tous":
+            raise ValueError("Filtre connexion invalide")
         if search and search.strip():
             term = f"%{search.strip().lower()}%"
             filters.append(
-                func.lower(User.full_name).like(term) | func.lower(User.email).like(term)
+                or_(
+                    func.lower(User.full_name).like(term),
+                    func.lower(User.email).like(term),
+                    func.lower(func.coalesce(User.phone, "")).like(term),
+                    User.roles.any(
+                        or_(func.lower(Role.code).like(term), func.lower(Role.label).like(term))
+                    ),
+                    User.espaces.any(
+                        or_(
+                            func.lower(PlateformeEspace.code).like(term),
+                            func.lower(PlateformeEspace.label).like(term),
+                        )
+                    ),
+                    User.modules.any(
+                        or_(
+                            func.lower(PlateformeModule.code).like(term),
+                            func.lower(PlateformeModule.label).like(term),
+                        )
+                    ),
+                )
             )
 
         count = await self.db.execute(select(func.count()).select_from(User).where(*filters))

@@ -84,6 +84,10 @@ Déconnexion module  →  révocation session module seulement  →  /comptabili
 
 Le catalogue rôles / permissions est synchronisé au Login 1 (`ensure_catalogue`).
 
+Le CORE commun (users, espaces, modules, audit, GED prévue) :
+[core-bea-digital.md](core-bea-digital.md).
+CORE ADMIN : [core-admin.md](core-admin.md).
+
 ## Où c’est contrôlé
 
 1. **Espace / module** — `PlateformeAccessService` + `require_module_access`
