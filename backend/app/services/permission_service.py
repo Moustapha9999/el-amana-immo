@@ -11,16 +11,17 @@ from app.models.associations import role_permissions_table, user_roles_table
 
 
 def permission_codes_from_user(user: User) -> set[str]:
-    """Codes déjà chargés sur user.roles.permissions (plus is_superuser / admin)."""
+    """Codes déjà chargés sur user.roles.permissions (plus is_superuser)."""
     if user.is_superuser:
         return {code for code, _label, _module in FUNCTIONAL_PERMISSIONS} | {"*"}
     codes: set[str] = set()
     for role in user.roles or []:
-        codes.update(permissions_for_role(role.code))
         loaded = role.__dict__.get("permissions", None)
-        if loaded:
+        if loaded is not None:
             for perm in loaded:
                 codes.add(perm.code)
+        else:
+            codes.update(permissions_for_role(role.code))
     return codes
 
 
@@ -55,10 +56,6 @@ async def load_user_permission_codes(db: AsyncSession, user: User) -> set[str]:
         .where(user_roles_table.c.user_id == user.id)
     )
     codes: set[str] = set()
-    role_codes: set[str] = {r.code for r in user.roles or []}
-    for perm_code, role_code in result.all():
+    for perm_code, _role_code in result.all():
         codes.add(perm_code)
-        role_codes.add(role_code)
-    for role_code in role_codes:
-        codes.update(permissions_for_role(role_code))
     return codes

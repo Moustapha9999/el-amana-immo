@@ -32,7 +32,7 @@ est encore valide. Détail auth : [socle-bea-digital.md](socle-bea-digital.md).
 | G | Audit | `audit_logs` | Qui, quoi, quand, espace, module, action, session |
 | H | Notifications | `notifications` | Filtrables par `espace_code` / `module_code` |
 | I | Sessions | `auth_sessions` | `kind=platform` (BEA DIGITAL) et `kind=module` |
-| J | GED | `ged_documents` | **Réservée.** Pas encore branchée. `pieces_jointes` et `archive_*` restent immo |
+| J | GED | `ged_documents` | Table + lecture CORE ADMIN. Upload métier pas encore branché. `pieces_jointes` / `archive_*` restent immo |
 
 CORE ADMIN (pilotage Login 1) : [core-admin.md](core-admin.md).
 
@@ -46,6 +46,14 @@ Ces URLs restent `/api/v1/...` (pas de préfixe `/comptabilite/`).
 | Catalogue + manifeste CORE | `/api/v1/plateforme/*` | Login 1 |
 | Dashboard CORE ADMIN | `/api/v1/plateforme/admin/dashboard` | Login 1 + `core.admin.access` |
 | Utilisateurs CORE ADMIN | `/api/v1/plateforme/admin/users*` | Login 1 + `core.admin.users` |
+| Départements CORE ADMIN | `/api/v1/plateforme/admin/departments*` | Login 1 + `core.admin.departments` |
+| Modules CORE ADMIN | `/api/v1/plateforme/admin/modules*` | Login 1 + `core.admin.modules` |
+| Rôles CORE ADMIN | `/api/v1/plateforme/admin/roles*` | Login 1 + `core.admin.roles` |
+| Permissions CORE ADMIN | `/api/v1/plateforme/admin/permissions*` | Login 1 + `core.admin.permissions` |
+| Matrice d’accès | `/api/v1/plateforme/admin/matrix` | Login 1 + `core.admin.roles` |
+| Sessions CORE ADMIN | `/api/v1/plateforme/admin/sessions*` | Login 1 + `core.admin.sessions` |
+| Audit CORE ADMIN | `/api/v1/plateforme/admin/audit` | Login 1 + `core.admin.audit` |
+| Activité / Alertes / Notif / GED / Settings | `/api/v1/plateforme/admin/{activity,alerts,notifications,ged,settings/*}` | Login 1 + audit / security / settings |
 | Utilisateurs / rôles / grants | `/api/v1/users` | Login 1 **ou** Login 2 (rôle `administrateur`) |
 | Notifications | `/api/v1/notifications` | Login 1 ou Login 2 |
 | Audit (écran immo actuel) | `/api/v1/audit` | Login 2 immo, auditeur / admin |
@@ -53,13 +61,15 @@ Ces URLs restent `/api/v1/...` (pas de préfixe `/comptabilite/`).
 Le métier immo (`/immobilisations`, `/amortissements`, écritures, …) exige
 toujours Login 2 `immobilisations`.
 
-## GED (prévue, pas livrée)
+## GED (table prête, upload métier à venir)
 
 - Table `ged_documents` : fichier + `espace_code` + `module_code` + `entity` / `entity_id`.
-- Stockage : `storage/ged/{module}/{entity}/{id}/`.
+- Lecture CORE ADMIN : `GET /api/v1/plateforme/admin/ged` (`core.admin.settings`).
+- Stockage prévu : `storage/ged/{module}/{entity}/{id}/`.
 - Les pièces comptables immo (`pieces_jointes`) et les archives Excel/PDF
   **ne migrent pas** dans cette table pour l’instant. Un module futur
   (Crédit, RH, …) écrira ici via `GedService`.
+- Schéma idempotent : `scripts/supabase/01_upgrade.sql` (cible docker ou Supabase).
 
 ## Ce que le CORE n’est pas
 

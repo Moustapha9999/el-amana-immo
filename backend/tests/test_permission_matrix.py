@@ -52,3 +52,17 @@ def test_superuser_exposes_wildcard():
     codes = permission_codes_from_user(user)
     assert "*" in codes
     assert user_has_permission_codes(codes, "immobilisations.delete")
+
+
+def test_loaded_db_grants_are_source_of_truth():
+    role = SimpleNamespace(code="consultation", permissions=[SimpleNamespace(code="immobilisations.create")])
+    user = SimpleNamespace(is_superuser=False, roles=[role])
+    codes = permission_codes_from_user(user)
+    assert codes == {"immobilisations.create"}
+    assert "immobilisations.read" not in codes
+
+
+def test_unloaded_role_permissions_fall_back_to_catalogue():
+    role = SimpleNamespace(code="consultation")
+    user = SimpleNamespace(is_superuser=False, roles=[role])
+    assert "immobilisations.read" in permission_codes_from_user(user)

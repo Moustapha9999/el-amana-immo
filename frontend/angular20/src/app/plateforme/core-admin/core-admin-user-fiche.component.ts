@@ -190,72 +190,78 @@ import {
           }
         </section>
 
-        <div class="bea-admin-panels">
-          <section class="bea-admin-panel">
+        <div class="bea-admin-panels bea-admin-panels--equal">
+          <section class="bea-admin-panel bea-admin-panel--list">
             <h2>Sessions</h2>
             @if (fiche()?.sessions?.length) {
-              <table class="bea-admin-table">
-                <thead>
-                  <tr>
-                    <th>Type</th>
-                    <th>Module</th>
-                    <th>IP</th>
-                    <th>Début</th>
-                    <th>État</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of fiche()!.sessions; track row.id) {
+              <div class="bea-admin-panel__scroll">
+                <table class="bea-admin-table">
+                  <thead>
                     <tr>
-                      <td>{{ row.kind === 'module' ? 'Module' : 'BEA DIGITAL' }}</td>
-                      <td>{{ row.module_code || '—' }}</td>
-                      <td>{{ row.ip_address || '—' }}</td>
-                      <td>
-                        @if (row.created_at) {
-                          {{ row.created_at | date: 'dd/MM/yyyy HH:mm' : 'Africa/Nouakchott' }}
-                        } @else {
-                          —
-                        }
-                      </td>
-                      <td>{{ row.active ? 'Active' : 'Révoquée / expirée' }}</td>
+                      <th>Type</th>
+                      <th>Module</th>
+                      <th>IP</th>
+                      <th>Début</th>
+                      <th>État</th>
                     </tr>
-                  }
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    @for (row of fiche()!.sessions; track row.id) {
+                      <tr>
+                        <td>{{ row.kind === 'module' ? 'Module' : 'BEA DIGITAL' }}</td>
+                        <td>{{ row.module_code || '—' }}</td>
+                        <td>{{ row.ip_address || '—' }}</td>
+                        <td>
+                          @if (row.created_at) {
+                            {{ row.created_at | date: 'dd/MM/yyyy HH:mm' : 'Africa/Nouakchott' }}
+                          } @else {
+                            —
+                          }
+                        </td>
+                        <td>{{ row.active ? 'Active' : 'Révoquée / expirée' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
             } @else {
               <p class="bea-admin-panel__empty">Aucune session enregistrée.</p>
             }
           </section>
 
-          <section class="bea-admin-panel">
+          <section class="bea-admin-panel bea-admin-panel--list">
             <h2>Activité</h2>
             @if (fiche()?.activite?.length) {
-              <table class="bea-admin-table">
-                <thead>
-                  <tr>
-                    <th>Action</th>
-                    <th>Entité</th>
-                    <th>Module</th>
-                    <th>Quand</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of fiche()!.activite; track row.id) {
+              <div class="bea-admin-panel__scroll">
+                <table class="bea-admin-table">
+                  <thead>
                     <tr>
-                      <td>{{ row.action }}</td>
-                      <td>{{ row.entity }}{{ row.entity_id ? ' · ' + row.entity_id : '' }}</td>
-                      <td>{{ row.module || '—' }}</td>
-                      <td>
-                        @if (row.created_at) {
-                          {{ row.created_at | date: 'dd/MM/yyyy HH:mm' : 'Africa/Nouakchott' }}
-                        } @else {
-                          —
-                        }
-                      </td>
+                      <th>Action</th>
+                      <th>Entité</th>
+                      <th>Module</th>
+                      <th>Quand</th>
                     </tr>
-                  }
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    @for (row of fiche()!.activite; track row.id) {
+                      <tr>
+                        <td>{{ row.action }}</td>
+                        <td class="bea-admin-table__clip" [title]="row.entity + (row.entity_id ? ' · ' + row.entity_id : '')">
+                          {{ row.entity }}{{ row.entity_id ? ' · ' + row.entity_id : '' }}
+                        </td>
+                        <td>{{ row.module || '—' }}</td>
+                        <td>
+                          @if (row.created_at) {
+                            {{ row.created_at | date: 'dd/MM/yyyy HH:mm' : 'Africa/Nouakchott' }}
+                          } @else {
+                            —
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
             } @else {
               <p class="bea-admin-panel__empty">Aucune action journalisée pour ce compte.</p>
             }

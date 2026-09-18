@@ -8,6 +8,7 @@ from app.data.plateforme_catalogue import (
     FUNCTIONAL_PERMISSIONS,
     permissions_for_role,
 )
+from app.services.core_admin_catalogue_service import normalize_code, normalize_path
 from app.services.core_admin_service import (
     day_bounds_nouakchott,
     platform_health,
@@ -36,6 +37,22 @@ def test_immo_and_plateforme_admin_do_not_cover_core_admin_access():
     assert user_has_permission_codes({"*"}, "core.admin.access")
     assert user_has_permission_codes({"core.admin.users"}, "core.admin.users")
     assert not user_has_permission_codes({"core.admin.access"}, "core.admin.users")
+
+
+def test_normalize_catalogue_code_and_path():
+    assert normalize_code("Credit") == "credit"
+    try:
+        normalize_code("Crédit")
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+    assert normalize_path(" /dashboard ") == "/dashboard"
+    assert normalize_path("  ") is None
+    try:
+        normalize_path("dashboard")
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
 
 
 def test_day_bounds_nouakchott_is_local_calendar_day():

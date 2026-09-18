@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { BeaAdminDialogService } from './core-admin-dialog.service';
+import { CoreAdminIconComponent } from './core-admin-icon.component';
 import {
   CoreAdminCatalogueEspace,
   CoreAdminRole,
@@ -17,7 +18,7 @@ import {
 @Component({
   selector: 'bea-core-admin-users',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, ReactiveFormsModule, RouterLink],
+  imports: [DatePipe, ReactiveFormsModule, RouterLink, CoreAdminIconComponent],
   template: `
     <section class="bea-admin-dash">
       <header class="bea-admin-dash__head bea-admin-users__head">
@@ -30,18 +31,23 @@ import {
 
       @if (kpis(); as k) {
         <div class="bea-admin-kpis">
-          @for (card of kpiCards(k); track card.key) {
+          @for (card of kpiCards(k); track card.key; let i = $index) {
             <button
               type="button"
               class="bea-admin-kpi bea-admin-kpi--link"
+              [attr.data-tone]="card.tone"
               [class.bea-admin-kpi--on]="card.on"
+              [style.animation-delay]="i * 60 + 'ms'"
               (click)="applyKpi(card.key)"
             >
-              <p class="bea-admin-kpi__label">{{ card.label }}</p>
-              <p class="bea-admin-kpi__value">{{ card.value }}</p>
-              @if (card.hint) {
-                <p class="bea-admin-kpi__hint">{{ card.hint }}</p>
-              }
+              <span class="bea-admin-kpi__icon"><bea-admin-icon [name]="card.icon" /></span>
+              <div class="bea-admin-kpi__copy">
+                <p class="bea-admin-kpi__label">{{ card.label }}</p>
+                <p class="bea-admin-kpi__value">{{ card.value }}</p>
+                @if (card.hint) {
+                  <p class="bea-admin-kpi__hint">{{ card.hint }}</p>
+                }
+              </div>
             </button>
           }
         </div>
@@ -186,29 +192,57 @@ import {
                           —
                         }
                       </td>
-                      <td>
+                      <td class="bea-admin-table__actions">
                         <div class="bea-admin-row-actions">
-                          <a class="bea-admin-btn bea-admin-btn--tiny bea-admin-btn--ghost" [routerLink]="['/admin/users', row.id]">
-                            Voir
+                          <a
+                            class="bea-admin-icon-btn"
+                            [routerLink]="['/admin/users', row.id]"
+                            title="Voir"
+                            aria-label="Voir"
+                          >
+                            <bea-admin-icon name="visibility" />
                           </a>
                           <a
-                            class="bea-admin-btn bea-admin-btn--tiny bea-admin-btn--ghost"
+                            class="bea-admin-icon-btn"
                             [routerLink]="['/admin/users', row.id, 'modifier']"
+                            title="Éditer"
+                            aria-label="Éditer"
                           >
-                            Éditer
+                            <bea-admin-icon name="edit" />
                           </a>
                           @if (!isSelf(row)) {
                             @if (row.is_active) {
-                              <button type="button" class="bea-admin-btn bea-admin-btn--tiny bea-admin-btn--ghost" [disabled]="saving()" (click)="setActive(row, false)">
-                                Désactiver
+                              <button
+                                type="button"
+                                class="bea-admin-icon-btn"
+                                [disabled]="saving()"
+                                (click)="setActive(row, false)"
+                                title="Désactiver"
+                                aria-label="Désactiver"
+                              >
+                                <bea-admin-icon name="block" />
                               </button>
                             } @else {
-                              <button type="button" class="bea-admin-btn bea-admin-btn--tiny" [disabled]="saving()" (click)="setActive(row, true)">
-                                Réactiver
+                              <button
+                                type="button"
+                                class="bea-admin-icon-btn bea-admin-icon-btn--ok"
+                                [disabled]="saving()"
+                                (click)="setActive(row, true)"
+                                title="Réactiver"
+                                aria-label="Réactiver"
+                              >
+                                <bea-admin-icon name="check_circle" />
                               </button>
                             }
-                            <button type="button" class="bea-admin-btn bea-admin-btn--tiny bea-admin-btn--danger" [disabled]="saving()" (click)="askDelete(row)">
-                              Supprimer
+                            <button
+                              type="button"
+                              class="bea-admin-icon-btn bea-admin-icon-btn--danger"
+                              [disabled]="saving()"
+                              (click)="askDelete(row)"
+                              title="Supprimer"
+                              aria-label="Supprimer"
+                            >
+                              <bea-admin-icon name="delete" />
                             </button>
                           }
                         </div>
@@ -278,15 +312,33 @@ export class CoreAdminUsersComponent implements OnInit {
     this.load();
   }
 
-  kpiCards(k: CoreAdminUserKpis): { key: string; label: string; value: string; hint?: string; on: boolean }[] {
+  kpiCards(
+    k: CoreAdminUserKpis,
+  ): { key: string; label: string; value: string; hint?: string; on: boolean; icon: string; tone: string }[] {
     const f = this.filters.getRawValue();
     return [
-      { key: 'tous', label: 'Total', value: this.fmt(k.total), hint: 'Tous les comptes', on: f.statut === 'tous' && f.profil === 'tous' && f.totp === 'tous' && f.connexion === 'tous' && f.role_code === 'tous' && f.espace_code === 'tous' && f.module_code === 'tous' && !f.search.trim() },
-      { key: 'actif', label: 'Actifs', value: this.fmt(k.actifs), on: f.statut === 'actif' },
-      { key: 'inactif', label: 'Inactifs', value: this.fmt(k.inactifs), on: f.statut === 'inactif' },
-      { key: 'superuser', label: 'Superusers', value: this.fmt(k.superusers), on: f.profil === 'superuser' },
-      { key: 'totp', label: '2FA', value: this.fmt(k.totp), hint: 'Double authentification', on: f.totp === 'oui' },
-      { key: 'jamais', label: 'Jamais connectés', value: this.fmt(k.jamais_connectes), on: f.connexion === 'jamais' },
+      {
+        key: 'tous',
+        label: 'Total',
+        value: this.fmt(k.total),
+        hint: 'Tous les comptes',
+        icon: 'group',
+        tone: 'users',
+        on:
+          f.statut === 'tous' &&
+          f.profil === 'tous' &&
+          f.totp === 'tous' &&
+          f.connexion === 'tous' &&
+          f.role_code === 'tous' &&
+          f.espace_code === 'tous' &&
+          f.module_code === 'tous' &&
+          !f.search.trim(),
+      },
+      { key: 'actif', label: 'Actifs', value: this.fmt(k.actifs), icon: 'bolt', tone: 'actions', on: f.statut === 'actif' },
+      { key: 'inactif', label: 'Inactifs', value: this.fmt(k.inactifs), icon: 'history', tone: 'sessions', on: f.statut === 'inactif' },
+      { key: 'superuser', label: 'Superusers', value: this.fmt(k.superusers), icon: 'security', tone: 'modules', on: f.profil === 'superuser' },
+      { key: 'totp', label: '2FA', value: this.fmt(k.totp), hint: 'Double authentification', icon: 'vpn_key', tone: 'org', on: f.totp === 'oui' },
+      { key: 'jamais', label: 'Jamais connectés', value: this.fmt(k.jamais_connectes), icon: 'devices', tone: 'alert', on: f.connexion === 'jamais' },
     ];
   }
 

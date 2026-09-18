@@ -205,6 +205,11 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "administrateur": _IMMO_ALL + _CORE_ADMIN,
 }
 
+SYSTEM_ROLE_CODES = frozenset(code for code, _label, _desc in RBAC_ROLES)
+SYSTEM_PERMISSION_CODES = frozenset(code for code, _label, _module in FUNCTIONAL_PERMISSIONS)
+CORE_ADMIN_PERMISSION_CODES = frozenset(code for code, _label, _module in CORE_ADMIN_PERMISSIONS)
+IMMO_ADMIN_ROLE_CODE = "administrateur"
+
 
 def permissions_for_role(role_code: str) -> tuple[str, ...]:
     return ROLE_PERMISSIONS.get(role_code, ())

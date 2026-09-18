@@ -186,9 +186,17 @@ async def test_core_admin_dashboard_platform_only(client: AsyncClient):
     body = dash.json()
     assert body["kpis"]["utilisateurs"] >= 1
     assert body["kpis"]["departements"] >= 1
+    assert "notifications_non_lues" in body["kpis"]
+    assert "documents_ged" in body["kpis"]
     assert "etat" in body
     assert body["etat"]["api"]["ok"] is True
     assert isinstance(body["activite"], list)
+    charts = body["charts"]
+    assert len(charts["activite_7j"]) == 7
+    assert {p["key"] for p in charts["sessions"]} >= {"platform", "module"}
+    assert {p["key"] for p in charts["connexions"]} >= {"ok", "ko"}
+    assert isinstance(charts["modules"], list)
+    assert body.get("app_name")
 
     module_login = await client.post(
         "/api/v1/auth/modules/immobilisations/login",

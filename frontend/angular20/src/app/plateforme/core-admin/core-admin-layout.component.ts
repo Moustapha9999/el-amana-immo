@@ -3,38 +3,29 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { CoreAdminDialogComponent } from './core-admin-dialog.component';
 import { BeaAdminDialogService } from './core-admin-dialog.service';
+import { CoreAdminIconComponent } from './core-admin-icon.component';
 import { CORE_ADMIN_NAV } from './core-admin-nav';
 
 @Component({
   selector: 'bea-core-admin-layout',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, RouterLinkActive, RouterOutlet, CoreAdminDialogComponent],
+  imports: [RouterLink, RouterLinkActive, RouterOutlet, CoreAdminDialogComponent, CoreAdminIconComponent],
   template: `
     <div class="bea-admin">
-      <header class="bea-admin__top">
-        <a routerLink="/admin" class="bea-admin__brand">
+      <aside class="bea-admin__side" aria-label="Navigation CORE ADMIN">
+        <a routerLink="/admin" class="bea-admin__brand" title="Dashboard CORE ADMIN">
           <img
             class="bea-admin__logo"
             src="/brand/icon-bea-white.png"
-            width="36"
-            height="36"
+            width="100"
+            height="100"
             alt=""
           />
-          <div>
-            <div class="bea-admin__name">BEA DIGITAL CORE ADMIN</div>
-            <div class="bea-admin__sub">Banque El Amana · pilotage plateforme</div>
+          <div class="bea-admin__brand-text">
+            <div class="bea-admin__brand-sub">BEA DIGITAL — CORE ADMIN</div>
           </div>
         </a>
-        <div class="bea-admin__top-actions">
-          <a routerLink="/accueil" class="bea-admin__home">Accueil</a>
-          @if (auth.user(); as u) {
-            <span class="bea-admin__user">{{ u.full_name }}</span>
-          }
-          <button type="button" class="bea-admin__logout" (click)="logout()">Déconnexion</button>
-        </div>
-      </header>
-      <div class="bea-admin__frame">
-        <aside class="bea-admin__side" aria-label="Navigation CORE ADMIN">
+        <nav class="bea-admin__nav">
           @for (group of nav; track group.label ?? 'dashboard') {
             <div class="bea-admin__group">
               @if (group.label) {
@@ -48,12 +39,15 @@ import { CORE_ADMIN_NAV } from './core-admin-nav';
                         class="bea-admin__link"
                         [routerLink]="item.path"
                         routerLinkActive="bea-admin__link--on"
+                        [routerLinkActiveOptions]="{ exact: item.path === '/admin/dashboard' }"
                       >
-                        {{ item.label }}
+                        <bea-admin-icon class="bea-admin__link-icon" [name]="item.icon" />
+                        <span class="bea-admin__link-label">{{ item.label }}</span>
                       </a>
                     } @else {
                       <span class="bea-admin__soon">
-                        {{ item.label }}
+                        <bea-admin-icon class="bea-admin__link-icon" [name]="item.icon" />
+                        <span class="bea-admin__link-label">{{ item.label }}</span>
                         <span class="bea-badge bea-badge--bientot">Bientôt</span>
                       </span>
                     }
@@ -62,7 +56,25 @@ import { CORE_ADMIN_NAV } from './core-admin-nav';
               </ul>
             </div>
           }
-        </aside>
+        </nav>
+        <div class="bea-admin__footer">
+          <span>BEA DIGITAL — Banque El Amana</span>
+        </div>
+      </aside>
+      <div class="bea-admin__content">
+        <header class="bea-admin__top">
+          <div class="bea-admin__top-title">Pilotage plateforme</div>
+          <div class="bea-admin__top-actions">
+            @if (auth.user(); as u) {
+              <div class="bea-admin__userchip">
+                <span class="bea-admin__avatar" aria-hidden="true">{{ u.full_name.charAt(0) }}</span>
+                <span class="bea-admin__user">{{ u.full_name }}</span>
+              </div>
+            }
+            <a routerLink="/accueil" class="bea-admin__home">Accueil</a>
+            <button type="button" class="bea-admin__logout" (click)="logout()">Déconnexion</button>
+          </div>
+        </header>
         <main class="bea-admin__main">
           <router-outlet />
         </main>

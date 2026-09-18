@@ -11,8 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
-from app.models.audit import AuditLog
-from app.models.auth import AuthLoginAttempt, AuthSession, User
+from app.models.audit import AuditLog, Notification
+from app.models.auth import (
+    SESSION_KIND_MODULE,
+    SESSION_KIND_PLATFORM,
+    AuthLoginAttempt,
+    AuthSession,
+    User,
+)
+from app.models.ged import GedDocument
 from app.models.plateforme import PlateformeEspace, PlateformeModule
 from app.schemas.auth import UserCreate, UserRead, UserUpdate
 from app.services.auth_service import AuthService
@@ -20,6 +27,12 @@ from app.services.auth_session_service import AuthSessionService
 
 NOUAKCHOTT = ZoneInfo("Africa/Nouakchott")
 FUSEAU = "Africa/Nouakchott"
+_JOURS_FR = ("lun", "mar", "mer", "jeu", "ven", "sam", "dim")
+_STATUT_MODULE_LABEL = {
+    "actif": "Actifs",
+    "bientot": "Bientôt",
+    "inactif": "Inactifs",
+}
 
 
 def day_bounds_nouakchott(now: datetime | None = None) -> tuple[datetime, datetime]:
@@ -112,6 +125,76 @@ class CoreAdminService:
             .select_from(AuditLog)
             .where(AuditLog.created_at >= start, AuditLog.created_at < end)
         )
+        notifs_non_lues = await self._count(
+            select(func.count())
+            .select_from(Notification)
+            .where(Notification.lu.is_(False))
+        )
+        documents_ged = await self._safe_ged_count()
+
+        sessions_platform = await self._count(
+            select(func.count())
+            .select_from(AuthSession)
+            .where(
+                AuthSession.revoked_at.is_(None),
+                AuthSession.expires_at > now,
+                AuthSession.kind == SESSION_KIND_PLATFORM,
+            )
+        )
+        sessions_module = await self._count(
+            select(func.count())
+            .select_from(AuthSession)
+            .where(
+                AuthSession.revoked_at.is_(None),
+                AuthSession.expires_at > now,
+                AuthSession.kind == SESSION_KIND_MODULE,
+            )
+        )
+        connexions_ok = await self._count(
+            select(func.count())
+            .select_from(AuthLoginAttempt)
+            .where(
+                AuthLoginAttempt.success.is_(True),
+                AuthLoginAttempt.created_at >= lockout_from,
+            )
+        )
+        connexions_ko = alertes
+
+        activite_7j: list[dict] = []
+        local = now.astimezone(NOUAKCHOTT)
+        for offset in range(6, -1, -1):
+            day = local.date() - timedelta(days=offset)
+            day_start = datetime.combine(day, time.min, tzinfo=NOUAKCHOTT)
+            day_end = day_start + timedelta(days=1)
+            day_count = await self._count(
+                select(func.count())
+                .select_from(AuditLog)
+                .where(AuditLog.created_at >= day_start, AuditLog.created_at < day_end)
+            )
+            activite_7j.append(
+                {
+                    "label": _JOURS_FR[day.weekday()],
+                    "key": day.isoformat(),
+                    "value": day_count,
+                }
+            )
+
+        modules_by_statut: list[dict] = []
+        statut_rows = await self.db.execute(
+            select(PlateformeModule.statut, func.count())
+            .where(PlateformeModule.is_active.is_(True))
+            .group_by(PlateformeModule.statut)
+            .order_by(PlateformeModule.statut)
+        )
+        for statut, count in statut_rows.all():
+            key = str(statut or "autre")
+            modules_by_statut.append(
+                {
+                    "label": _STATUT_MODULE_LABEL.get(key, key.capitalize()),
+                    "key": key,
+                    "value": int(count or 0),
+                }
+            )
 
         db_ok = True
         try:
@@ -137,11 +220,45 @@ class CoreAdminService:
                 "sessions_actives": sessions,
                 "alertes_securite": alertes,
                 "actions_aujourd_hui": actions,
+                "notifications_non_lues": notifs_non_lues,
+                "documents_ged": documents_ged,
+            },
+            "charts": {
+                "activite_7j": activite_7j,
+                "sessions": [
+                    {
+                        "label": "Plateforme",
+                        "key": SESSION_KIND_PLATFORM,
+                        "value": sessions_platform,
+                    },
+                    {
+                        "label": "Module",
+                        "key": SESSION_KIND_MODULE,
+                        "value": sessions_module,
+                    },
+                ],
+                "connexions": [
+                    {"label": "Succès", "key": "ok", "value": connexions_ok},
+                    {"label": "Échecs", "key": "ko", "value": connexions_ko},
+                ],
+                "modules": modules_by_statut,
             },
             "activite": [serialize_activity(row) for row in logs],
             "etat": platform_health(db_ok=db_ok, modules_actifs=modules_actifs),
             "fuseau": FUSEAU,
+            "app_name": settings.app_name,
         }
+
+    async def _safe_ged_count(self) -> int:
+        try:
+            return await self._count(
+                select(func.count())
+                .select_from(GedDocument)
+                .where(GedDocument.deleted_at.is_(None))
+            )
+        except Exception:
+            await self.db.rollback()
+            return 0
 
     async def users_kpis(self) -> dict:
         base = User.deleted_at.is_(None)

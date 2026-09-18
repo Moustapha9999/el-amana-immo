@@ -126,7 +126,7 @@ ALTER TABLE notifications ADD COLUMN IF NOT EXISTS module_code varchar(80);
 CREATE INDEX IF NOT EXISTS ix_notifications_espace_code ON notifications (espace_code);
 CREATE INDEX IF NOT EXISTS ix_notifications_module_code ON notifications (module_code);
 
--- GED CORE (réservée, pas encore branchée aux modules)
+-- GED CORE (lecture CORE ADMIN ; upload métier pas encore branché)
 CREATE TABLE IF NOT EXISTS ged_documents (
   id uuid PRIMARY KEY,
   espace_code varchar(80) NOT NULL,
