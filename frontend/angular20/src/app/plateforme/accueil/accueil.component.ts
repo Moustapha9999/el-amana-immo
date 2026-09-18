@@ -2,6 +2,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { BeaChromeComponent } from '../chrome/bea-chrome.component';
 import { ESPACES_METIERS, EspaceMetier } from '../espaces-metiers';
 
@@ -37,10 +38,81 @@ function withCatalogueText(items: EspaceAccueil[]): EspaceAccueil[] {
       <main class="bea-plateforme__body">
         <p class="bea-plateforme__kicker">Banque El Amana</p>
         <h1 class="bea-plateforme__title">Espaces métiers</h1>
-        <p class="bea-plateforme__lead">
-          BEA DIGITAL digitalise les processus internes de la Banque El Amana. Ouvrez un espace
-          pour accéder à ses modules.
+        <p class="bea-bandeau">
+          BEA DIGITAL est la plateforme interne de la Banque El Amana : un espace unique pour
+          piloter les métiers, les contrôles, les workflows, le reporting et la GED.
         </p>
+        @if (canAdmin()) {
+          <a class="bea-espace bea-espace--actif bea-espace--admin" routerLink="/admin">
+            <div class="bea-espace__top">
+              <span class="bea-espace__icon" aria-hidden="true">
+                <svg viewBox="0 0 48 48" fill="none">
+                  <path
+                    d="M24 6 10 12v12c0 10 6.2 16.8 14 20 7.8-3.2 14-10 14-20V12L24 6Z"
+                    fill="currentColor"
+                    opacity=".18"
+                  />
+                  <path
+                    d="M24 8.5 12.5 13.4V24c0 8.4 5.1 14.2 11.5 17.2C30.4 38.2 35.5 32.4 35.5 24V13.4L24 8.5Z"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linejoin="round"
+                  />
+                  <path
+                    d="M24 16v16M18 22h12"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </span>
+              <div class="bea-espace__copy">
+                <div class="bea-espace__title-row">
+                  <h2 class="bea-espace__title">Administration</h2>
+                  <span class="bea-badge bea-badge--actif">Actif</span>
+                </div>
+                <p class="bea-espace__text">
+                  BEA DIGITAL digitalise les processus internes de la Banque El Amana. Ouvrez un
+                  espace pour accéder à ses modules.
+                </p>
+              </div>
+            </div>
+            <div class="bea-espace__art" aria-hidden="true">
+              <svg class="bea-espace__scene" viewBox="0 0 360 84" fill="none">
+                <rect x="18" y="22" width="54" height="48" rx="8" fill="currentColor" opacity=".16" />
+                <rect x="28" y="32" width="34" height="6" rx="3" fill="currentColor" opacity=".35" />
+                <rect x="28" y="44" width="24" height="5" rx="2.5" fill="currentColor" opacity=".28" />
+                <rect x="92" y="18" width="70" height="52" rx="8" fill="currentColor" opacity=".2" />
+                <path
+                  d="M112 44.5 124 56.5l28-30"
+                  stroke="currentColor"
+                  stroke-width="4"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <rect x="180" y="28" width="46" height="10" rx="2" fill="currentColor" opacity=".22" />
+                <rect x="180" y="44" width="46" height="10" rx="2" fill="currentColor" opacity=".3" />
+                <rect x="180" y="60" width="46" height="10" rx="2" fill="currentColor" opacity=".4" />
+              </svg>
+              <span class="bea-espace__go">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M5 12h14M13 6l6 6-6 6"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </span>
+            </div>
+          </a>
+        } @else {
+          <p class="bea-plateforme__lead">
+            BEA DIGITAL digitalise les processus internes de la Banque El Amana. Ouvrez un espace
+            pour accéder à ses modules.
+          </p>
+        }
         <div class="bea-card-grid">
           @for (espace of espaces(); track espace.id; let i = $index) {
             @if (ouvert(espace)) {
@@ -58,19 +130,6 @@ function withCatalogueText(items: EspaceAccueil[]): EspaceAccueil[] {
             }
           }
         </div>
-        <p class="bea-note">
-          <span class="bea-note__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" />
-              <path d="M12 11v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-              <circle cx="12" cy="8" r="1.1" fill="currentColor" />
-            </svg>
-          </span>
-          <span>
-            BEA DIGITAL est la plateforme interne de la Banque El Amana : un espace unique pour
-            piloter les métiers, les contrôles, les workflows, le reporting et la GED.
-          </span>
-        </p>
       </main>
     </div>
 
@@ -282,9 +341,14 @@ function withCatalogueText(items: EspaceAccueil[]): EspaceAccueil[] {
 })
 export class AccueilComponent implements OnInit {
   private readonly api = inject(ApiService);
+  readonly auth = inject(AuthService);
+  readonly canAdmin = this.auth.canAccessCoreAdmin;
   readonly espaces = signal<EspaceAccueil[]>(ESPACES_METIERS);
 
   ngOnInit(): void {
+    if (this.auth.isAuthenticated() && !this.auth.user()) {
+      this.auth.loadProfile().subscribe({ error: () => undefined });
+    }
     this.api.get<EspaceAccueil[]>('/plateforme/espaces').subscribe({
       next: (items) => this.espaces.set(withCatalogueText(items)),
       error: () => undefined,

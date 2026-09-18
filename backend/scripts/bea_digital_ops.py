@@ -41,6 +41,9 @@ _QUERIES: list[tuple[str, str]] = [
 
 async def _verify() -> int:
     rows: list[tuple[str, object]] = []
+    espaces: list = []
+    sans_immo: list = []
+    ged_ok = None
     try:
         async with engine.connect() as conn:
             for label, sql in _QUERIES:
@@ -71,6 +74,16 @@ async def _verify() -> int:
                     )
                 )
             ).scalars().all()
+            ged_ok = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT 1 FROM information_schema.tables
+                        WHERE table_schema = 'public' AND table_name = 'ged_documents'
+                        """
+                    )
+                )
+            ).scalar()
     except Exception as exc:
         print(f"ERREUR connexion: {exc}", file=sys.stderr)
         return 1
@@ -89,13 +102,16 @@ async def _verify() -> int:
             print(f"    - {email}")
     else:
         print("  users sans module immobilisations: 0")
+    print(f"  {'ged_documents':24} {'oui' if ged_ok else 'non'}")
 
     checks = {k: v for k, v in rows}
     errors: list[str] = []
     head = str(checks.get("alembic") or "")
-    if head == "20260917_audit_context":
-        print("  note: alembic upgrade head pour poser les commentaires BEA DIGITAL")
-    elif head != "20260917_bea_comments":
+    if head == "20260917_bea_comments":
+        print("  note: alembic upgrade head pour poser ged_documents")
+    elif head == "20260917_audit_context":
+        print("  note: alembic upgrade head pour commentaires + ged_documents")
+    elif head != "20260917_ged_documents":
         errors.append(f"alembic_version inattendue: {head or '(vide)'}")
     if int(checks.get("rls_policies_public") or 0) != 0:
         errors.append("RLS public inattendu (doit rester 0)")
@@ -103,6 +119,8 @@ async def _verify() -> int:
         errors.append("catalogue espaces incomplet")
     if int(checks.get("modules") or 0) < 5:
         errors.append("catalogue modules incomplet")
+    if not ged_ok:
+        errors.append("table ged_documents absente")
     if errors:
         print("ALERTE:")
         for err in errors:

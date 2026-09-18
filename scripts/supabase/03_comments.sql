@@ -55,3 +55,9 @@ COMMENT ON TABLE departements IS
   'Organigramme banque (directions / départements). N’est PAS le catalogue des espaces plateforme.';
 COMMENT ON TABLE permissions IS
   'Permissions fonctionnelles (ex. immobilisations.read). Module = code métier, pas plateforme_modules.id.';
+COMMENT ON TABLE ged_documents IS
+  'GED CORE — documents transverses (espace + module + entité). Non branchée ; pieces_jointes / archive_* restent immo.';
+COMMENT ON COLUMN ged_documents.espace_code IS 'Département BEA DIGITAL (plateforme_espaces.code).';
+COMMENT ON COLUMN ged_documents.module_code IS 'Module métier (plateforme_modules.code).';
+COMMENT ON COLUMN ged_documents.entity IS 'Type d’objet métier (ex. immobilisation, dossier-credit).';
+COMMENT ON COLUMN ged_documents.entity_id IS 'Identifiant de l’objet métier (UUID ou code).';

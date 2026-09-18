@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from sqlalchemy import insert, select
+from sqlalchemy import insert, inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -36,6 +36,8 @@ class PlateformeAccessService:
             logger.exception("Synchronisation du catalogue plateforme impossible")
 
     async def _sync_catalogue(self) -> None:
+        # Seed des lignes absentes seulement. CORE ADMIN est la source de vérité
+        # ensuite (label, statut, route) — ne pas écraser les saisies.
         existing = {
             row.code: row
             for row in (await self.db.execute(select(PlateformeEspace))).scalars().all()
@@ -54,12 +56,6 @@ class PlateformeAccessService:
                 )
                 self.db.add(row)
                 existing[item["code"]] = row
-            else:
-                row.label = item["label"]
-                row.description = item["description"]
-                row.route = item["route"]
-                row.statut = item["statut"]
-                row.sort_order = item["sort_order"]
         await self.db.flush()
 
         modules = {
@@ -82,13 +78,6 @@ class PlateformeAccessService:
                         is_active=True,
                     )
                 )
-            else:
-                row.espace_id = espace.id
-                row.label = item["label"]
-                row.description = item["description"]
-                row.entry_path = item["entry_path"]
-                row.statut = item["statut"]
-                row.sort_order = item["sort_order"]
         await self.db.flush()
         await self._ensure_permissions()
 
@@ -108,17 +97,18 @@ class PlateformeAccessService:
             row.code: row
             for row in (await self.db.execute(select(Role))).scalars().all()
         }
+        newly_created_roles: set[str] = set()
         for code, label, description in RBAC_ROLES:
             role = existing_roles.get(code)
             if role is None:
                 role = Role(code=code, label=label, description=description)
                 self.db.add(role)
                 existing_roles[code] = role
-            else:
-                role.label = label
-                if description and not role.description:
-                    role.description = description
+                newly_created_roles.add(code)
         await self.db.flush()
+
+        if not newly_created_roles:
+            return
 
         existing_links = {
             (role_id, perm_id)
@@ -132,11 +122,11 @@ class PlateformeAccessService:
             ).all()
         }
         new_links: list[dict] = []
-        for role_code, perm_codes in ROLE_PERMISSIONS.items():
+        for role_code in newly_created_roles:
             role = existing_roles.get(role_code)
             if role is None:
                 continue
-            for perm_code in perm_codes:
+            for perm_code in ROLE_PERMISSIONS.get(role_code, ()):
                 perm = existing_perms.get(perm_code)
                 if perm is None:
                     continue
@@ -251,6 +241,9 @@ class PlateformeAccessService:
         missing_e = [c for c in wanted_espaces if c not in by_e]
         if missing_e:
             raise ValueError(f"Espace(s) inconnu(s) : {', '.join(missing_e)}")
+
+        if sa_inspect(user).persistent:
+            await self.db.refresh(user, attribute_names=["espaces", "modules"])
 
         user.espaces = [by_e[c] for c in sorted(wanted_espaces)]
         user.modules = [by_m[c] for c in sorted(wanted_modules)]

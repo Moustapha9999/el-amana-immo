@@ -53,5 +53,9 @@ Thumbs.db
 # Uploads / GED
 backend/storage/uploads/*
 !backend/storage/uploads/.gitkeep
+backend/storage/ged/*
+!backend/storage/ged/.gitkeep
 storage/uploads/**
 !storage/uploads/.gitkeep
+storage/ged/**
+!storage/ged/.gitkeep

@@ -30,6 +30,8 @@ def test_administrateur_has_all_immo_permissions():
     assert "immobilisations.admin" in codes
     assert "immobilisations.validate" in codes
     assert "immobilisations.delete" in codes
+    assert "plateforme.users.admin" in codes
+    assert "core.admin.access" not in codes
 
 
 def test_immo_admin_permission_covers_module_actions():
@@ -39,8 +41,28 @@ def test_immo_admin_permission_covers_module_actions():
     assert not user_has_permission_codes({"immobilisations.read"}, "immobilisations.create")
 
 
+def test_module_admin_is_generic_not_immo_only():
+    have = {"credit.admin"}
+    assert user_has_permission_codes(have, "credit.read")
+    assert not user_has_permission_codes(have, "immobilisations.read")
+
+
 def test_superuser_exposes_wildcard():
     user = SimpleNamespace(is_superuser=True, roles=[])
     codes = permission_codes_from_user(user)
     assert "*" in codes
     assert user_has_permission_codes(codes, "immobilisations.delete")
+
+
+def test_loaded_db_grants_are_source_of_truth():
+    role = SimpleNamespace(code="consultation", permissions=[SimpleNamespace(code="immobilisations.create")])
+    user = SimpleNamespace(is_superuser=False, roles=[role])
+    codes = permission_codes_from_user(user)
+    assert codes == {"immobilisations.create"}
+    assert "immobilisations.read" not in codes
+
+
+def test_unloaded_role_permissions_fall_back_to_catalogue():
+    role = SimpleNamespace(code="consultation")
+    user = SimpleNamespace(is_superuser=False, roles=[role])
+    assert "immobilisations.read" in permission_codes_from_user(user)

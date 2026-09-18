@@ -1,4 +1,4 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { Observable, of, throwError } from 'rxjs';
 import { catchError, finalize, shareReplay, tap } from 'rxjs/operators';
@@ -35,6 +35,17 @@ export class AuthService {
   private readonly router = inject(Router);
 
   readonly user = signal<UserProfile | null>(null);
+  readonly canAccessCoreAdmin = computed(() => {
+    const profile = this.user();
+    if (!profile) {
+      return false;
+    }
+    if (profile.is_superuser) {
+      return true;
+    }
+    const codes = profile.permission_codes ?? [];
+    return codes.includes('core.admin.access') || codes.includes('*');
+  });
 
   private platformRefreshInFlight$: Observable<TokenPair> | null = null;
   private moduleRefreshInFlight$: Observable<TokenPair> | null = null;

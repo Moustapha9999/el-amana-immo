@@ -126,4 +126,27 @@ ALTER TABLE notifications ADD COLUMN IF NOT EXISTS module_code varchar(80);
 CREATE INDEX IF NOT EXISTS ix_notifications_espace_code ON notifications (espace_code);
 CREATE INDEX IF NOT EXISTS ix_notifications_module_code ON notifications (module_code);
 
+-- GED CORE (lecture CORE ADMIN ; upload métier pas encore branché)
+CREATE TABLE IF NOT EXISTS ged_documents (
+  id uuid PRIMARY KEY,
+  espace_code varchar(80) NOT NULL,
+  module_code varchar(80) NOT NULL,
+  entity varchar(80) NOT NULL,
+  entity_id varchar(64) NOT NULL,
+  filename varchar(255) NOT NULL,
+  stored_path varchar(512) NOT NULL,
+  mime_type varchar(120),
+  size_bytes integer NOT NULL DEFAULT 0,
+  uploaded_by_id uuid REFERENCES users (id),
+  is_active boolean NOT NULL DEFAULT true,
+  deleted_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_ged_documents_espace_code ON ged_documents (espace_code);
+CREATE INDEX IF NOT EXISTS ix_ged_documents_module_code ON ged_documents (module_code);
+CREATE INDEX IF NOT EXISTS ix_ged_documents_entity ON ged_documents (entity);
+CREATE INDEX IF NOT EXISTS ix_ged_documents_entity_id ON ged_documents (entity_id);
+CREATE INDEX IF NOT EXISTS ix_ged_documents_uploaded_by_id ON ged_documents (uploaded_by_id);
+
 COMMIT;

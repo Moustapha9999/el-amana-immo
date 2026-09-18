@@ -61,6 +61,20 @@ ON CONFLICT (code) DO UPDATE SET
 INSERT INTO permissions (id, code, label, module, created_at, updated_at)
 SELECT gen_random_uuid(), v.code, v.label, v.module, now(), now()
 FROM (VALUES
+  ('plateforme.users.read', 'Consultation des utilisateurs', 'plateforme'),
+  ('plateforme.users.admin', 'Administration des utilisateurs et des accès', 'plateforme'),
+  ('plateforme.audit.read', 'Consultation de l''audit plateforme', 'plateforme'),
+  ('ged.read', 'Consultation GED (réservée)', 'ged'),
+  ('core.admin.access', 'Accès BEA DIGITAL CORE ADMIN', 'core'),
+  ('core.admin.users', 'Administration des utilisateurs (CORE ADMIN)', 'core'),
+  ('core.admin.roles', 'Administration des rôles (CORE ADMIN)', 'core'),
+  ('core.admin.permissions', 'Administration des permissions (CORE ADMIN)', 'core'),
+  ('core.admin.departments', 'Administration des départements (CORE ADMIN)', 'core'),
+  ('core.admin.modules', 'Administration des modules (CORE ADMIN)', 'core'),
+  ('core.admin.sessions', 'Administration des sessions (CORE ADMIN)', 'core'),
+  ('core.admin.audit', 'Consultation de l''audit (CORE ADMIN)', 'core'),
+  ('core.admin.security', 'Supervision sécurité (CORE ADMIN)', 'core'),
+  ('core.admin.settings', 'Paramètres plateforme (CORE ADMIN)', 'core'),
   ('immobilisations.read', 'Consultation immobilisations', 'immobilisations'),
   ('immobilisations.create', 'Création immobilisations', 'immobilisations'),
   ('immobilisations.update', 'Modification immobilisations', 'immobilisations'),

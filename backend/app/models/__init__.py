@@ -8,6 +8,7 @@ from app.models.archive import ArchiveDossier, ArchiveFichier, ArchiveLigne
 from app.models.audit import AuditLog, Notification
 from app.models.auth import Agence, AuthLoginAttempt, AuthSession, Permission, Role, User
 from app.models.plateforme import PlateformeEspace, PlateformeModule
+from app.models.ged import GedDocument
 from app.models.comptabilite import (
     Amortissement,
     ComptePlanComptable,
@@ -59,6 +60,7 @@ __all__ = [
     "AuthLoginAttempt",
     "PlateformeEspace",
     "PlateformeModule",
+    "GedDocument",
     "Direction",
     "Departement",
     "CentreCout",
