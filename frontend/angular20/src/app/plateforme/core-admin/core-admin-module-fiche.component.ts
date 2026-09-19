@@ -55,6 +55,57 @@ import {
         <p class="bea-admin-note">Module système Immobilisations : code, département et chemin d’entrée figés.</p>
       }
 
+      @if (!isCreate()) {
+        <div class="bea-admin-kpis">
+          <article class="bea-admin-kpi" data-tone="org">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Statut</p>
+              <p class="bea-admin-kpi__value" style="font-size:1.15rem">{{ statutLabel() }}</p>
+            </div>
+          </article>
+          <article class="bea-admin-kpi" data-tone="modules">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Ordre</p>
+              <p class="bea-admin-kpi__value">{{ form.controls.sort_order.value }}</p>
+            </div>
+          </article>
+          <article class="bea-admin-kpi" data-tone="sessions">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Entrée</p>
+              <p class="bea-admin-kpi__value" style="font-size:0.95rem">{{ form.controls.entry_path.value || '—' }}</p>
+            </div>
+          </article>
+        </div>
+        <section class="bea-admin-panel bea-admin-chart" style="margin-bottom:1rem">
+          <div class="bea-admin-users__list-head">
+            <h2>Empreinte visuelle</h2>
+          </div>
+          <div class="bea-admin-bars" aria-hidden="true">
+            <div class="bea-admin-bars__col">
+              <span class="bea-admin-bars__value">Parc</span>
+              <div class="bea-admin-bars__track"><div class="bea-admin-bars__fill" style="height:62%"></div></div>
+              <span class="bea-admin-bars__label">A</span>
+            </div>
+            <div class="bea-admin-bars__col">
+              <span class="bea-admin-bars__value">Dot.</span>
+              <div class="bea-admin-bars__track"><div class="bea-admin-bars__fill" style="height:78%"></div></div>
+              <span class="bea-admin-bars__label">B</span>
+            </div>
+            <div class="bea-admin-bars__col">
+              <span class="bea-admin-bars__value">Ctrl</span>
+              <div class="bea-admin-bars__track"><div class="bea-admin-bars__fill" style="height:45%"></div></div>
+              <span class="bea-admin-bars__label">C</span>
+            </div>
+            <div class="bea-admin-bars__col">
+              <span class="bea-admin-bars__value">Rep.</span>
+              <div class="bea-admin-bars__track"><div class="bea-admin-bars__fill" style="height:88%"></div></div>
+              <span class="bea-admin-bars__label">D</span>
+            </div>
+          </div>
+          <p class="bea-admin-chart__foot">Palette BEA — mêmes tons que le dashboard Immobilisations.</p>
+        </section>
+      }
+
       <form class="bea-admin-form" [formGroup]="form" (ngSubmit)="save()">
         <section class="bea-admin-panel">
           <h2>Identité</h2>

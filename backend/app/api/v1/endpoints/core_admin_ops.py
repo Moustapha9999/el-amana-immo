@@ -1,6 +1,6 @@
 """CORE ADMIN — activité, alertes, notifications, GED, configuration (Login 1)."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_platform_permission
@@ -13,15 +13,19 @@ from app.schemas.plateforme import (
     CoreAdminGeneralSettings,
     CoreAdminMaintenanceSettings,
     CoreAdminNotificationListRead,
+    CoreAdminSecurityCheckRead,
+    CoreAdminSecurityPolicyUpdate,
     CoreAdminSecuritySettings,
 )
 from app.services.core_admin_ops_service import CoreAdminOpsService
+from app.services.audit_helpers import record_audit
 
 router = APIRouter(prefix="/plateforme/admin", tags=["core-admin"])
 
 _AUDIT = require_platform_permission("core.admin.audit")
 _SECURITY = require_platform_permission("core.admin.security")
 _SETTINGS = require_platform_permission("core.admin.settings")
+CONFIRM_PHRASE = "CONFIRMER"
 
 
 @router.get("/activity", response_model=CoreAdminActivityListRead)
@@ -67,13 +71,27 @@ async def list_admin_notifications(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     search: str | None = None,
-    statut: str = Query("tous", pattern="^(tous|non_lues|lues)$"),
+    statut: str = Query("tous", pattern="^(tous|non_lues|lues|archivees)$"),
     module_code: str | None = None,
+    espace_code: str | None = None,
+    categorie: str | None = None,
+    priorite: str | None = None,
+    periode: str | None = Query(None, pattern="^(tous|aujourd_hui|7j|30j|mois)?$"),
+    user_id: str | None = None,
     _: User = Depends(_SETTINGS),
     db: AsyncSession = Depends(get_db),
 ):
     items, total, kpis = await CoreAdminOpsService(db).notifications(
-        page, size, search=search, statut=statut, module_code=module_code
+        page,
+        size,
+        search=search,
+        statut=statut,
+        module_code=module_code,
+        espace_code=espace_code,
+        categorie=categorie,
+        priorite=priorite,
+        periode=periode,
+        user_id=user_id,
     )
     return {"items": items, "total": total, "page": page, "size": size, "kpis": kpis}
 
@@ -108,6 +126,75 @@ async def settings_security(
     db: AsyncSession = Depends(get_db),
 ):
     return await CoreAdminOpsService(db).security_settings()
+
+
+@router.post("/settings/security/check", response_model=CoreAdminSecurityCheckRead)
+async def settings_security_check(
+    _: User = Depends(_SECURITY),
+    db: AsyncSession = Depends(get_db),
+):
+    """Contrôle défensif de configuration — aucune action offensive."""
+    return await CoreAdminOpsService(db).security_check()
+
+
+@router.patch("/settings/security/policy", response_model=CoreAdminSecuritySettings)
+async def settings_security_policy_update(
+    payload: CoreAdminSecurityPolicyUpdate,
+    request: Request,
+    user: User = Depends(_SECURITY),
+    db: AsyncSession = Depends(get_db),
+):
+    """Met à jour la politique sécurité (persistée dans platform_ops_flags)."""
+    if payload.confirmation_phrase.strip().upper() != CONFIRM_PHRASE:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "CONFIRMATION_REQUIRED",
+                "message": f'Tapez « {CONFIRM_PHRASE} » pour appliquer la modification.',
+            },
+        )
+    data = payload.model_dump(exclude_unset=True, exclude={"confirmation_phrase"})
+    if not data:
+        raise HTTPException(status_code=400, detail="Aucune modification fournie")
+    result = await CoreAdminOpsService(db).update_security_policy(data)
+    await record_audit(
+        db,
+        user=user,
+        action="security_policy_update",
+        entity="platform_ops_flags",
+        entity_id="security_policy",
+        request=request,
+        after={k: data[k] for k in data},
+    )
+    await db.commit()
+    return result
+
+
+@router.post("/settings/security/unlock")
+async def settings_security_unlock(
+    payload: dict,
+    request: Request,
+    user: User = Depends(_SECURITY),
+    db: AsyncSession = Depends(get_db),
+):
+    """Déverrouille un compte (efface les échecs de la fenêtre de lockout)."""
+    from app.services.login_attempt_service import LoginAttemptService
+
+    email = str(payload.get("email") or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Email invalide")
+    cleared = await LoginAttemptService(db).clear_lockout(email=email)
+    await record_audit(
+        db,
+        user=user,
+        action="unlock_login",
+        entity="user",
+        entity_id=email.lower(),
+        request=request,
+        after={"cleared_failures": cleared},
+    )
+    await db.commit()
+    return {"email": email.lower(), "cleared_failures": cleared, "unlocked": True}
 
 
 @router.get("/settings/maintenance", response_model=CoreAdminMaintenanceSettings)

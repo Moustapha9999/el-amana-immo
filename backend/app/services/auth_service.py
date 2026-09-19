@@ -5,6 +5,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.password_policy import validate_password_policy
 from app.core.security import get_password_hash, verify_password
 from app.data.plateforme_catalogue import DEFAULT_ESPACE_CODE, DEFAULT_MODULE_CODE
 from app.models import Role, User
@@ -12,6 +13,13 @@ from app.models.plateforme import PlateformeEspace, PlateformeModule
 from app.schemas.auth import UserCreate, UserUpdate
 from app.services.auth_session_service import AuthSessionService
 from app.services.plateforme_access_service import PlateformeAccessService
+
+
+def _apply_password(user: User, password: str, *, allow_same: bool = False) -> None:
+    validate_password_policy(password)
+    if not allow_same and verify_password(password, user.hashed_password):
+        raise ValueError("Le nouveau mot de passe doit être différent de l'ancien.")
+    user.hashed_password = get_password_hash(password)
 
 _USER_OPTIONS = (
     selectinload(User.roles).selectinload(Role.permissions),
@@ -59,6 +67,7 @@ class AuthService:
         if existing.scalar_one_or_none():
             raise ValueError("Email déjà utilisé")
 
+        validate_password_policy(payload.password)
         user = User(
             email=payload.email,
             full_name=payload.full_name,
@@ -111,7 +120,7 @@ class AuthService:
         if "is_superuser" in data and data["is_superuser"] is not None:
             user.is_superuser = data["is_superuser"]
         if "password" in data and data["password"]:
-            user.hashed_password = get_password_hash(data["password"])
+            _apply_password(user, data["password"])
             await AuthSessionService(self.db).revoke_all_for_user(user_id)
         if "role_codes" in data and data["role_codes"] is not None:
             user.roles = await self._roles_by_codes(data["role_codes"])
@@ -165,7 +174,7 @@ class AuthService:
         user = await self.get_by_id(UUID(payload["sub"]))
         if user is None:
             raise ValueError("Utilisateur introuvable")
-        user.hashed_password = get_password_hash(new_password)
+        _apply_password(user, new_password)
         # Invalide toutes les sessions après reset mot de passe
         await AuthSessionService(self.db).revoke_all_for_user(user.id)
         await self.db.flush()

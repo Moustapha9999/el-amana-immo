@@ -1,13 +1,27 @@
 export type StatutEspace = 'actif' | 'bientot';
 
+/** Statuts module renvoyés par l’API (catalogue + ops CORE ADMIN). */
+export type StatutModule =
+  | 'actif'
+  | 'bientot'
+  | 'inactif'
+  | 'developpement'
+  | 'mise_a_jour'
+  | 'maintenance'
+  | 'suspendu'
+  | 'bloque'
+  | 'archive';
+
 export interface ModuleMetier {
   id: string;
   titre: string;
   description: string;
   route: string | null;
-  statut: StatutEspace;
+  statut: StatutModule | StatutEspace;
   accessible?: boolean;
   entry_path?: string | null;
+  status_message?: string;
+  version?: string | null;
 }
 
 export interface EspaceMetier {
@@ -34,35 +48,35 @@ export const ESPACES_METIERS: EspaceMetier[] = [
         id: 'immobilisations',
         titre: 'Immobilisations & Amortissements',
         description:
-          'Parc, dotations, cessions, rebuts, réévaluations, inventaire, écritures, archives et rapports.',
+          'Parc, dotations, cessions, rebuts, réévaluations, inventaire, écritures et rapports.',
         route: '/modules/immobilisations/acces',
         statut: 'actif',
       },
       {
         id: 'rapprochements',
         titre: 'Rapprochements',
-        description: 'Rapprochements Excel / ORION et contrôles de cohérence.',
+        description: 'Rapprochements Excel / ORION, écarts et contrôles de cohérence.',
         route: null,
         statut: 'bientot',
       },
       {
         id: 'controles',
         titre: 'Contrôles comptables',
-        description: 'Contrôles périodiques et anomalies.',
+        description: 'Contrôles périodiques, anomalies et pistes d’audit.',
         route: null,
         statut: 'bientot',
       },
       {
         id: 'cloture',
         titre: 'Clôture comptable',
-        description: 'Préparation et suivi de clôture.',
+        description: 'Checklist de clôture, validations et suivi des échéances.',
         route: null,
         statut: 'bientot',
       },
       {
         id: 'reporting-compta',
         titre: 'Reporting comptable',
-        description: 'Tableaux de bord et exports transverses.',
+        description: 'Tableaux de bord, exports et synthèses transverses.',
         route: null,
         statut: 'bientot',
       },

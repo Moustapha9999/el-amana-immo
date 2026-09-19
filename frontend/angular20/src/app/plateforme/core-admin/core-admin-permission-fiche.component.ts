@@ -48,6 +48,23 @@ import {
         <p class="bea-admin-note">Permission catalogue : code et module figés, suppression impossible.</p>
       }
 
+      @if (!isCreate()) {
+        <div class="bea-admin-kpis">
+          <article class="bea-admin-kpi" data-tone="org">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Module</p>
+              <p class="bea-admin-kpi__value" style="font-size:1.05rem">{{ form.controls.module.value || '—' }}</p>
+            </div>
+          </article>
+          <article class="bea-admin-kpi" data-tone="actions">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Rôles porteurs</p>
+              <p class="bea-admin-kpi__value">{{ roles().length }}</p>
+            </div>
+          </article>
+        </div>
+      }
+
       <form class="bea-admin-form" [formGroup]="form" (ngSubmit)="save()">
         <section class="bea-admin-panel">
           <h2>Identité</h2>
@@ -90,13 +107,14 @@ import {
           @if (roles().length === 0) {
             <p class="bea-admin-panel__empty">Aucun rôle ne porte encore ce code.</p>
           } @else {
-            <ul class="bea-admin-perms">
+            <div class="bea-admin-tiles">
               @for (role of roles(); track role.id) {
-                <li>
-                  <a class="bea-admin-table__link" [routerLink]="['/admin/roles', role.id]">{{ role.label }}</a>
-                </li>
+                <a class="bea-admin-tile" [routerLink]="['/admin/roles', role.id]">
+                  <strong>{{ role.label }}</strong>
+                  <span>{{ role.code }}</span>
+                </a>
               }
-            </ul>
+            </div>
           }
         </section>
       }

@@ -195,14 +195,26 @@ def require_platform_permission(*permission_codes: str):
         user: User = Depends(get_platform_user),
         db: AsyncSession = Depends(get_db),
     ) -> User:
+        from app.core.config import get_settings
+        from app.services.security_policy_service import get_cached_security_policy
+
         have = await load_user_permission_codes(db, user)
-        if user_has_permission_codes(have, *permission_codes):
-            return user
-        raise auth_http_error(
-            status.HTTP_403_FORBIDDEN,
-            "PERMISSION_DENIED",
-            "Permission refusée",
-            required=list(permission_codes),
-        )
+        if not user_has_permission_codes(have, *permission_codes):
+            raise auth_http_error(
+                status.HTTP_403_FORBIDDEN,
+                "PERMISSION_DENIED",
+                "Permission refusée",
+                required=list(permission_codes),
+            )
+        pol = get_cached_security_policy()
+        if pol.get("mfa_required_for_core_admin") and not user.totp_enabled:
+            is_admin = user.is_superuser or user_has_permission_codes(have, "core.admin.access")
+            if is_admin and any(code.startswith("core.admin") for code in permission_codes):
+                raise auth_http_error(
+                    status.HTTP_403_FORBIDDEN,
+                    "MFA_REQUIRED",
+                    "Activez l’authentification à deux facteurs pour accéder à CORE ADMIN.",
+                )
+        return user
 
     return _checker

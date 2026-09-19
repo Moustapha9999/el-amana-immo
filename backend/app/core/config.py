@@ -31,6 +31,30 @@ class Settings(BaseSettings):
     login_lockout_max_failures: int = Field(default=5, alias="LOGIN_LOCKOUT_MAX_FAILURES")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
 
+    # Politique mots de passe (appliquée côté serveur)
+    password_min_length: int = Field(default=10, alias="PASSWORD_MIN_LENGTH")
+    password_require_uppercase: bool = Field(default=True, alias="PASSWORD_REQUIRE_UPPERCASE")
+    password_require_lowercase: bool = Field(default=True, alias="PASSWORD_REQUIRE_LOWERCASE")
+    password_require_digit: bool = Field(default=True, alias="PASSWORD_REQUIRE_DIGIT")
+    password_require_special: bool = Field(default=True, alias="PASSWORD_REQUIRE_SPECIAL")
+
+    # MFA obligatoire pour comptes CORE ADMIN / superuser
+    mfa_required_for_core_admin: bool = Field(default=False, alias="MFA_REQUIRED_FOR_CORE_ADMIN")
+
+    # Rate limiting (fenêtre glissante, mémoire processus)
+    rate_limit_enabled: bool = Field(default=True, alias="RATE_LIMIT_ENABLED")
+    rate_limit_login_per_minute: int = Field(default=20, alias="RATE_LIMIT_LOGIN_PER_MINUTE")
+    rate_limit_api_per_minute: int = Field(default=300, alias="RATE_LIMIT_API_PER_MINUTE")
+    rate_limit_sensitive_per_minute: int = Field(default=60, alias="RATE_LIMIT_SENSITIVE_PER_MINUTE")
+    rate_limit_password_reset_per_minute: int = Field(
+        default=10, alias="RATE_LIMIT_PASSWORD_RESET_PER_MINUTE"
+    )
+
+    # Headers de sécurité HTTP (middleware FastAPI)
+    security_headers_enabled: bool = Field(default=True, alias="SECURITY_HEADERS_ENABLED")
+    # Docs OpenAPI : désactivés hors développement si False
+    api_docs_enabled: bool | None = Field(default=None, alias="API_DOCS_ENABLED")
+
     database_url: str = Field(
         default="postgresql+asyncpg://immo_user:immo_pass@localhost:5432/bea_digital",
         alias="DATABASE_URL",
@@ -60,6 +84,7 @@ class Settings(BaseSettings):
 
     upload_dir: str = "storage/uploads"
     ged_dir: str = "storage/ged"
+    backup_dir: str = Field(default="backups", alias="BACKUP_DIR")
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -61,6 +61,41 @@ import {
         <p class="bea-admin-dash__error">{{ erreur() }}</p>
       }
 
+      @if (!isCreate()) {
+        <div class="bea-admin-kpis">
+          <article class="bea-admin-kpi" data-tone="org">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Départements</p>
+              <p class="bea-admin-kpi__value">{{ selectedEspaces().length }}</p>
+            </div>
+          </article>
+          <article class="bea-admin-kpi" data-tone="modules">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Modules</p>
+              <p class="bea-admin-kpi__value">{{ selectedModules().length }}</p>
+            </div>
+          </article>
+          <article class="bea-admin-kpi" data-tone="actions">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Rôles</p>
+              <p class="bea-admin-kpi__value">{{ selectedRoles().length }}</p>
+            </div>
+          </article>
+          <article class="bea-admin-kpi" data-tone="sessions">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Sessions actives</p>
+              <p class="bea-admin-kpi__value">{{ sessionsActives() }}</p>
+            </div>
+          </article>
+          <article class="bea-admin-kpi" data-tone="alert">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Permissions</p>
+              <p class="bea-admin-kpi__value">{{ permissions().length }}</p>
+            </div>
+          </article>
+        </div>
+      }
+
       <form class="bea-admin-form" [formGroup]="form" (ngSubmit)="save()">
         <section class="bea-admin-panel">
           <h2>Identité</h2>
@@ -88,7 +123,7 @@ import {
               </label>
             }
             @if (canGrantSuperuser()) {
-              <label class="bea-admin-check">
+              <label class="bea-admin-check" [class.bea-admin-check--on]="form.controls.is_superuser.value">
                 <input type="checkbox" formControlName="is_superuser" />
                 Superutilisateur
               </label>
@@ -100,9 +135,9 @@ import {
           <h2>Départements et modules</h2>
           <div class="bea-admin-grants">
             @for (espace of catalogue(); track espace.id) {
-              <fieldset class="bea-admin-grant">
+              <fieldset class="bea-admin-grant" [class.bea-admin-grant--on]="espaceSelected(espace.id)">
                 <legend>
-                  <label class="bea-admin-check">
+                  <label class="bea-admin-check" [class.bea-admin-check--on]="espaceSelected(espace.id)">
                     <input
                       type="checkbox"
                       [checked]="espaceSelected(espace.id)"
@@ -112,8 +147,24 @@ import {
                     {{ espace.titre }}
                   </label>
                 </legend>
+                @if (espace.modules.length) {
+                  <div class="bea-admin-grant__meter">
+                    <div class="bea-admin-grant__meter-track">
+                      <div
+                        class="bea-admin-grant__meter-fill"
+                        [style.width.%]="espaceModulePct(espace)"
+                      ></div>
+                    </div>
+                    <span class="bea-admin-grant__meter-label">
+                      {{ espaceModuleCount(espace) }}/{{ espace.modules.length }}
+                    </span>
+                  </div>
+                }
                 @for (mod of espace.modules; track mod.id) {
-                  <label class="bea-admin-check bea-admin-check--nested">
+                  <label
+                    class="bea-admin-check bea-admin-check--nested"
+                    [class.bea-admin-check--on]="moduleSelected(mod.id)"
+                  >
                     <input
                       type="checkbox"
                       [checked]="moduleSelected(mod.id)"
@@ -132,7 +183,7 @@ import {
           <h2>Rôles</h2>
           <div class="bea-admin-checks">
             @for (role of roles(); track role.id) {
-              <label class="bea-admin-check">
+              <label class="bea-admin-check" [class.bea-admin-check--on]="roleSelected(role.code)">
                 <input
                   type="checkbox"
                   [checked]="roleSelected(role.code)"
@@ -156,6 +207,24 @@ import {
       </form>
 
       @if (!isCreate()) {
+        <section class="bea-admin-panel">
+          <h2>Mot de passe</h2>
+          <div class="bea-admin-password-card">
+            <div>
+              <p class="bea-admin-panel__hint">
+                Remplacez le mot de passe du compte plateforme. Toutes les sessions actives seront
+                révoquées.
+              </p>
+              <button type="button" class="bea-admin-btn" [disabled]="saving()" (click)="resetAccess()">
+                Changer le mot de passe
+              </button>
+            </div>
+            <div class="bea-admin-password-card__viz" aria-hidden="true">
+              <span></span><span></span><span></span><span></span><span></span><span></span>
+            </div>
+          </div>
+        </section>
+
         <div class="bea-admin-actions">
           @if (isActive() && !isSelf()) {
             <button type="button" class="bea-admin-btn bea-admin-btn--danger" [disabled]="saving()" (click)="deactivate()">
@@ -172,9 +241,6 @@ import {
               Supprimer
             </button>
           }
-          <button type="button" class="bea-admin-btn bea-admin-btn--ghost" [disabled]="saving()" (click)="resetAccess()">
-            Réinitialiser l’accès
-          </button>
         </div>
 
         <section class="bea-admin-panel">
@@ -297,6 +363,9 @@ export class CoreAdminUserFicheComponent implements OnInit {
   });
   readonly canGrantSuperuser = computed(() => this.auth.user()?.is_superuser === true);
   readonly permissions = computed(() => this.fiche()?.permission_codes ?? []);
+  readonly sessionsActives = computed(
+    () => (this.fiche()?.sessions ?? []).filter((s) => s.active).length,
+  );
 
   readonly form = this.fb.nonNullable.group({
     full_name: ['', Validators.required],
@@ -330,6 +399,17 @@ export class CoreAdminUserFicheComponent implements OnInit {
     if (id) {
       this.loadFiche(id);
     }
+  }
+
+  espaceModuleCount(espace: CoreAdminCatalogueEspace): number {
+    return espace.modules.filter((mod) => this.moduleSelected(mod.id)).length;
+  }
+
+  espaceModulePct(espace: CoreAdminCatalogueEspace): number {
+    if (!espace.modules.length) {
+      return 0;
+    }
+    return Math.round((this.espaceModuleCount(espace) / espace.modules.length) * 100);
   }
 
   espaceSelected(code: string): boolean {
@@ -512,9 +592,9 @@ export class CoreAdminUserFicheComponent implements OnInit {
     }
     const fiche = this.fiche();
     const values = await this.dialogs.prompt({
-      title: 'Réinitialiser l’accès',
+      title: 'Changer le mot de passe',
       message: `Remplacer le mot de passe de ${fiche?.full_name ?? 'ce compte'} et révoquer toutes ses sessions ?`,
-      confirmLabel: 'Réinitialiser',
+      confirmLabel: 'Changer le mot de passe',
       tone: 'warn',
       fields: [
         { key: 'password', label: 'Nouveau mot de passe', type: 'password', autocomplete: 'new-password' },

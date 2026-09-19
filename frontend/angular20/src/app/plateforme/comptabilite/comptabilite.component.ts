@@ -2,65 +2,111 @@ import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@ang
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { BeaChromeComponent } from '../chrome/bea-chrome.component';
-import { FilArianeComponent } from '../fil-ariane/fil-ariane.component';
-import { ESPACE_COMPTABILITE, ESPACES_METIERS, EspaceMetier } from '../espaces-metiers';
+import {
+  ESPACE_COMPTABILITE,
+  ESPACES_METIERS,
+  EspaceMetier,
+  ModuleMetier,
+  StatutModule,
+} from '../espaces-metiers';
+
+const STATUT_BADGE: Record<string, { label: string; tone: string }> = {
+  actif: { label: 'Disponible', tone: 'actif' },
+  mise_a_jour: { label: 'Mise à jour', tone: 'warn' },
+  maintenance: { label: 'Maintenance', tone: 'warn' },
+  developpement: { label: 'En développement', tone: 'info' },
+  suspendu: { label: 'Suspendu', tone: 'warn' },
+  bloque: { label: 'Bloqué', tone: 'inactif' },
+  bientot: { label: 'Bientôt disponible', tone: 'bientot' },
+  archive: { label: 'Archivé', tone: 'inactif' },
+  inactif: { label: 'Inactif', tone: 'inactif' },
+};
+
+/** Statuts visibles et ouverts (Login 2 ou message d’indisponibilité). */
+const OPENABLE = new Set([
+  'actif',
+  'mise_a_jour',
+  'maintenance',
+  'developpement',
+  'suspendu',
+  'bloque',
+]);
 
 @Component({
   selector: 'bea-comptabilite',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, BeaChromeComponent, FilArianeComponent],
+  imports: [RouterLink, BeaChromeComponent],
   template: `
     <div class="bea-plateforme">
       <bea-chrome />
-      <bea-fil-ariane />
-      <main class="bea-plateforme__body">
-        <p class="bea-plateforme__kicker">Espace métier</p>
-        <h1 class="bea-plateforme__title">{{ espace().titre }}</h1>
-        <p class="bea-plateforme__lead">
-          Premier module intégré : Immobilisations &amp; Amortissements. Les autres briques de
-          l’espace arriveront ensuite, sur le même socle.
-        </p>
-        <div class="bea-card-grid">
-          @for (mod of espace().modules; track mod.id) {
-            @if (mod.statut === 'actif' && mod.route && mod.accessible !== false) {
-              <a class="bea-card bea-card--actif" [routerLink]="mod.route">
-                <div class="bea-card__head">
-                  <div>
-                    <p class="bea-card__kicker">Module</p>
+      <main class="bea-plateforme__body bea-hub bea-hub--dept">
+        <header class="bea-hub__welcome">
+          <div>
+            <p class="bea-plateforme__kicker">Département</p>
+            <h1 class="bea-plateforme__title">{{ espace().titre }}</h1>
+          </div>
+          <a class="bea-admin-btn bea-admin-btn--ghost" routerLink="/accueil">← BEA DIGITAL</a>
+        </header>
+
+        <section class="bea-hub__section bea-hub__section--fill">
+          <div class="bea-hub__section-head">
+            <h2>Modules</h2>
+            <p>Choisissez un module pour continuer.</p>
+          </div>
+          <div class="bea-card-grid bea-card-grid--modules">
+            @for (mod of espace().modules; track mod.id) {
+              @if (isOpenable(mod)) {
+                <a
+                  class="bea-card"
+                  [class.bea-card--actif]="mod.statut === 'actif'"
+                  [class.bea-card--restreint]="mod.statut !== 'actif'"
+                  [routerLink]="mod.route!"
+                >
+                  <div class="bea-card__head">
                     <h2 class="bea-card__title">{{ mod.titre }}</h2>
+                    <span class="bea-badge" [class]="'bea-badge--' + badgeTone(mod.statut)">
+                      {{ badgeLabel(mod.statut) }}
+                    </span>
                   </div>
-                  <span class="bea-badge bea-badge--actif">Actif</span>
-                </div>
-                <p class="bea-card__text">{{ mod.description }}</p>
-                <div class="bea-card__viz" aria-hidden="true">
-                  <div class="bea-card__bars">
-                    <span></span><span></span><span></span><span></span>
-                    <span></span><span></span><span></span><span></span>
+                  <p class="bea-card__text">{{ mod.description }}</p>
+                  @if (mod.statut !== 'actif' && mod.status_message) {
+                    <p class="bea-card__hint">{{ mod.status_message }}</p>
+                  } @else if (mod.statut === 'actif') {
+                    <p class="bea-card__meta">Accès sécurisé</p>
+                  }
+                  <p class="bea-card__cta">
+                    {{ mod.statut === 'actif' ? 'Ouvrir le module' : 'Voir le message' }}
+                  </p>
+                  <div class="bea-card__viz" aria-hidden="true">
+                    <div class="bea-card__bars">
+                      <span></span><span></span><span></span><span></span>
+                      <span></span><span></span><span></span><span></span>
+                    </div>
+                    <div class="bea-card__donut"></div>
                   </div>
-                  <div class="bea-card__donut"></div>
-                </div>
-              </a>
-            } @else {
-              <div class="bea-card bea-card--bientot">
-                <div class="bea-card__head">
-                  <div>
-                    <p class="bea-card__kicker">Module</p>
+                </a>
+              } @else {
+                <div class="bea-card bea-card--bientot">
+                  <div class="bea-card__head">
                     <h2 class="bea-card__title">{{ mod.titre }}</h2>
+                    <span class="bea-badge" [class]="'bea-badge--' + badgeTone(mod.statut)">
+                      {{ badgeLabel(mod.statut) }}
+                    </span>
                   </div>
-                  <span class="bea-badge bea-badge--bientot">Bientôt</span>
-                </div>
-                <p class="bea-card__text">{{ mod.description }}</p>
-                <div class="bea-card__viz" aria-hidden="true">
-                  <div class="bea-card__bars">
-                    <span></span><span></span><span></span><span></span>
-                    <span></span><span></span><span></span><span></span>
+                  <p class="bea-card__text">{{ mod.description }}</p>
+                  <p class="bea-card__meta">En préparation — bientôt sur BEA DIGITAL</p>
+                  <div class="bea-card__viz" aria-hidden="true">
+                    <div class="bea-card__bars">
+                      <span></span><span></span><span></span><span></span>
+                      <span></span><span></span><span></span><span></span>
+                    </div>
+                    <div class="bea-card__donut"></div>
                   </div>
-                  <div class="bea-card__donut"></div>
                 </div>
-              </div>
+              }
             }
-          }
-        </div>
+          </div>
+        </section>
       </main>
     </div>
   `,
@@ -74,14 +120,21 @@ export class ComptabiliteComponent implements OnInit {
       next: (items) => {
         const found = items.find((item) => item.id === 'comptabilite');
         if (found) {
-          const src = ESPACES_METIERS.find((item) => item.id === 'comptabilite') ?? ESPACE_COMPTABILITE;
+          const src =
+            ESPACES_METIERS.find((item) => item.id === 'comptabilite') ?? ESPACE_COMPTABILITE;
           this.espace.set({
             ...found,
             titre: src.titre,
             description: src.description,
             modules: found.modules.map((mod) => {
               const local = src.modules.find((item) => item.id === mod.id);
-              return local ? { ...mod, titre: local.titre, description: local.description } : mod;
+              return local
+                ? {
+                    ...mod,
+                    titre: local.titre,
+                    description: local.description,
+                  }
+                : mod;
             }),
           });
         }
@@ -89,5 +142,16 @@ export class ComptabiliteComponent implements OnInit {
       error: () => undefined,
     });
   }
-}
 
+  isOpenable(mod: ModuleMetier): boolean {
+    return !!mod.route && OPENABLE.has(String(mod.statut));
+  }
+
+  badgeLabel(statut: string): string {
+    return STATUT_BADGE[statut]?.label ?? statut;
+  }
+
+  badgeTone(statut: string): string {
+    return STATUT_BADGE[statut]?.tone ?? 'bientot';
+  }
+}

@@ -8,6 +8,12 @@ from app.models.archive import ArchiveDossier, ArchiveFichier, ArchiveLigne
 from app.models.audit import AuditLog, Notification
 from app.models.auth import Agence, AuthLoginAttempt, AuthSession, Permission, Role, User
 from app.models.plateforme import PlateformeEspace, PlateformeModule
+from app.models.platform_ops import (
+    PlatformBackup,
+    PlatformModuleVersion,
+    PlatformOpsFlag,
+    PlatformRestore,
+)
 from app.models.ged import GedDocument
 from app.models.comptabilite import (
     Amortissement,
@@ -60,6 +66,10 @@ __all__ = [
     "AuthLoginAttempt",
     "PlateformeEspace",
     "PlateformeModule",
+    "PlatformBackup",
+    "PlatformRestore",
+    "PlatformModuleVersion",
+    "PlatformOpsFlag",
     "GedDocument",
     "Direction",
     "Departement",

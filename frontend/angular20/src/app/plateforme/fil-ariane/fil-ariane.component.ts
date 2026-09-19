@@ -21,12 +21,6 @@ function crumbsForUrl(url: string): FilArianeCrumb[] {
   if (path === '/accueil' || path === '/') {
     return [{ label: 'Accueil', path: null }];
   }
-  if (path.startsWith('/modules/') && path.endsWith('/acces')) {
-    return [accueil, compta, { label: 'Accès sécurisé au module', path: null }];
-  }
-  if (path === '/comptabilite' || path.startsWith('/comptabilite/')) {
-    return [accueil, { label: 'Comptabilité', path: null }];
-  }
 
   const page = labelPageModuleImmo(path);
   const crumbs: FilArianeCrumb[] = [accueil, compta, immo];

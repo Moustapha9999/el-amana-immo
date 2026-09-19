@@ -386,7 +386,7 @@ export class CoreAdminDashboardComponent implements OnInit {
   readonly moduleBars = computed(() => this.buildBars(this.charts().modules));
 
   readonly raccourcis = [
-    { label: 'Utilisateurs', hint: 'Comptes Login 1', path: '/admin/users', icon: 'group' },
+    { label: 'Utilisateurs', hint: 'CRUD · mots de passe', path: '/admin/users', icon: 'group' },
     { label: 'Rôles & matrice', hint: 'Permissions effectives', path: '/admin/matrix', icon: 'grid_view' },
     { label: 'Sessions', hint: 'Révoquer un accès', path: '/admin/sessions', icon: 'devices' },
     { label: 'Audit', hint: 'Journal plateforme', path: '/admin/audit', icon: 'history' },

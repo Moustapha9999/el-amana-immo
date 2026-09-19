@@ -10,10 +10,14 @@ from app.schemas.plateforme import (
     CoreAdminDashboardRead,
     CoreManifestRead,
     PlateformeEspaceRead,
+    PlateformeHubActivityRead,
+    PlateformeHubSeriePointRead,
+    PlateformeHubSummaryRead,
     PlateformeModuleRead,
 )
 from app.services.core_admin_service import CoreAdminService
 from app.services.plateforme_access_service import PlateformeAccessService
+from app.services.plateforme_hub_service import PlateformeHubService
 
 router = APIRouter(prefix="/plateforme", tags=["plateforme"])
 
@@ -41,6 +45,43 @@ async def get_module(
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Module introuvable")
     return payload
+
+
+@router.get("/me/hub", response_model=PlateformeHubSummaryRead)
+async def me_hub(
+    user: User = Depends(get_platform_user),
+    db: AsyncSession = Depends(get_db),
+    jours: int = 7,
+):
+    """Résumé Dashboard Global — scopé par profil (admin / responsable / utilisateur)."""
+    return await PlateformeHubService(db).summary(user, jours=jours if jours in {7, 30, 90} else 7)
+
+
+@router.get("/me/usage", response_model=list[PlateformeHubSeriePointRead])
+async def me_usage(
+    user: User = Depends(get_platform_user),
+    db: AsyncSession = Depends(get_db),
+    jours: int = 7,
+):
+    """Série d'activité agrégée (7 / 30 / 90 jours), filtrée côté backend."""
+    return await PlateformeHubService(db).usage_series(
+        user, jours=jours if jours in {7, 30, 90} else 7
+    )
+
+
+@router.get("/me/activity", response_model=list[PlateformeHubActivityRead])
+async def me_activity(
+    user: User = Depends(get_platform_user),
+    db: AsyncSession = Depends(get_db),
+    limit: int = 20,
+    offset: int = 0,
+):
+    """Activité récente scopée selon le profil (audit)."""
+    return await PlateformeHubService(db).activity(
+        user,
+        limit=min(max(limit, 1), 50),
+        offset=max(offset, 0),
+    )
 
 
 @router.get("/catalogue", response_model=list[PlateformeEspaceRead])

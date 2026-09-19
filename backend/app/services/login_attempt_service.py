@@ -8,7 +8,6 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.models import AuthLoginAttempt
 
 
@@ -28,8 +27,11 @@ class LoginAttemptService:
         self.db = db
 
     def _window_start(self) -> datetime:
-        settings = get_settings()
-        return datetime.now(UTC) - timedelta(minutes=settings.login_lockout_window_minutes)
+        from app.services.security_policy_service import get_cached_security_policy
+
+        pol = get_cached_security_policy()
+        minutes = int(pol.get("login_lockout_window_minutes") or 15)
+        return datetime.now(UTC) - timedelta(minutes=minutes)
 
     async def assert_not_locked(
         self,
@@ -39,7 +41,10 @@ class LoginAttemptService:
         login_kind: str,
         module_code: str | None = None,
     ) -> None:
-        settings = get_settings()
+        from app.services.security_policy_service import get_cached_security_policy
+
+        pol = get_cached_security_policy()
+        max_failures = int(pol.get("login_lockout_max_failures") or 5)
         filters = [
             func.lower(AuthLoginAttempt.email) == email.strip().lower(),
             AuthLoginAttempt.login_kind == login_kind,
@@ -50,7 +55,7 @@ class LoginAttemptService:
             filters.append(AuthLoginAttempt.module_code == module_code)
         result = await self.db.execute(select(func.count()).select_from(AuthLoginAttempt).where(*filters))
         count = int(result.scalar_one())
-        if count >= settings.login_lockout_max_failures:
+        if count >= max_failures:
             raise LoginLockedError()
 
     async def record(
@@ -72,3 +77,18 @@ class LoginAttemptService:
             )
         )
         await self.db.flush()
+
+    async def clear_lockout(self, *, email: str) -> int:
+        """Efface les échecs récents pour lever le lockout (fenêtre courante)."""
+        from sqlalchemy import delete
+
+        normalized = email.strip().lower()
+        result = await self.db.execute(
+            delete(AuthLoginAttempt).where(
+                func.lower(AuthLoginAttempt.email) == normalized,
+                AuthLoginAttempt.success.is_(False),
+                AuthLoginAttempt.created_at >= self._window_start(),
+            )
+        )
+        await self.db.flush()
+        return int(result.rowcount or 0)

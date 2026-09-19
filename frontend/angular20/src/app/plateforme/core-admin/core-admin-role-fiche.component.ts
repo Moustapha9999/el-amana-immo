@@ -52,6 +52,30 @@ import {
         </p>
       }
 
+      @if (!isCreate()) {
+        <div class="bea-admin-kpis">
+          <article class="bea-admin-kpi" data-tone="modules">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Permissions</p>
+              <p class="bea-admin-kpi__value">{{ selected().size }}</p>
+              <p class="bea-admin-kpi__hint">sur {{ catalogue().length }}</p>
+            </div>
+          </article>
+          <article class="bea-admin-kpi" data-tone="org">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Modules couverts</p>
+              <p class="bea-admin-kpi__value">{{ modulesCouverts() }}</p>
+            </div>
+          </article>
+          <article class="bea-admin-kpi" data-tone="actions">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Couverture</p>
+              <p class="bea-admin-kpi__value">{{ couverturePct() }}%</p>
+            </div>
+          </article>
+        </div>
+      }
+
       <form class="bea-admin-form" [formGroup]="form" (ngSubmit)="save()">
         <section class="bea-admin-panel">
           <h2>Identité</h2>
@@ -78,10 +102,27 @@ import {
           } @else {
             <div class="bea-admin-grants">
               @for (group of permissionGroups(); track group.module) {
-                <fieldset class="bea-admin-grant">
+                <fieldset
+                  class="bea-admin-grant"
+                  [class.bea-admin-grant--on]="groupSelectedCount(group) > 0"
+                >
                   <legend>{{ group.module }}</legend>
+                  <div class="bea-admin-grant__meter">
+                    <div class="bea-admin-grant__meter-track">
+                      <div
+                        class="bea-admin-grant__meter-fill"
+                        [style.width.%]="groupSelectedPct(group)"
+                      ></div>
+                    </div>
+                    <span class="bea-admin-grant__meter-label">
+                      {{ groupSelectedCount(group) }}/{{ group.items.length }}
+                    </span>
+                  </div>
                   @for (perm of group.items; track perm.id) {
-                    <label class="bea-admin-check bea-admin-check--nested">
+                    <label
+                      class="bea-admin-check bea-admin-check--nested"
+                      [class.bea-admin-check--on]="selected().has(perm.code)"
+                    >
                       <input
                         type="checkbox"
                         [checked]="selected().has(perm.code)"
@@ -150,6 +191,35 @@ export class CoreAdminRoleFicheComponent implements OnInit {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([module, items]) => ({ module, items }));
   });
+
+  readonly modulesCouverts = computed(() => {
+    const mods = new Set<string>();
+    for (const perm of this.catalogue()) {
+      if (this.selected().has(perm.code)) {
+        mods.add(perm.module);
+      }
+    }
+    return mods.size;
+  });
+
+  readonly couverturePct = computed(() => {
+    const total = this.catalogue().length;
+    if (!total) {
+      return 0;
+    }
+    return Math.round((this.selected().size / total) * 100);
+  });
+
+  groupSelectedCount(group: { items: CoreAdminPermissionSummary[] }): number {
+    return group.items.filter((perm) => this.selected().has(perm.code)).length;
+  }
+
+  groupSelectedPct(group: { items: CoreAdminPermissionSummary[] }): number {
+    if (!group.items.length) {
+      return 0;
+    }
+    return Math.round((this.groupSelectedCount(group) / group.items.length) * 100);
+  }
 
   ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');

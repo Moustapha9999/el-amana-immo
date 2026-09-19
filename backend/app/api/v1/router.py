@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     comptabilite,
     core_admin_audit,
     core_admin_catalogue,
+    core_admin_control,
     core_admin_ops,
     core_admin_rbac,
     core_admin_sessions,
@@ -31,6 +32,7 @@ api_router.include_router(core_admin_rbac.router)
 api_router.include_router(core_admin_sessions.router)
 api_router.include_router(core_admin_audit.router)
 api_router.include_router(core_admin_ops.router)
+api_router.include_router(core_admin_control.router)
 api_router.include_router(users.router)
 api_router.include_router(notifications.router)
 

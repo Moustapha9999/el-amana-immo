@@ -69,6 +69,17 @@ Phases 8–10 : activité (`core.admin.audit`), alertes / sécurité
 (`core.admin.settings`).
 **Aucun n’est lié au rôle `administrateur` immo.**
 
+### Ops (Backup / Recovery / Supervision) — voir [core-admin-ops.md](core-admin-ops.md)
+
+Permissions supplémentaires : `core.admin.backup.*`, `core.admin.recovery.*`,
+`core.admin.monitoring.view`, `core.admin.maintenance.view|manage`,
+`core.admin.module_status.view|manage`, `core.admin.versions.view|manage`.
+
+Routes UI : `/admin/backups`, `/admin/recovery`, `/admin/supervision`,
+`/admin/module-states`, `/admin/versions`, `/admin/maintenance`.
+
+Appliquer la migration : `.\scripts\apply-core-admin-ops.ps1` (crée un backup
+local avant Alembic `20260918_core_admin_ops`).
 ## Phases
 
 | Phase | Contenu |
@@ -180,7 +191,7 @@ Phases 8–10 : activité (`core.admin.audit`), alertes / sécurité
 | Notifications | `/admin/notifications` | `core.admin.settings` | `notifications` |
 | GED | `/admin/ged` | `core.admin.settings` | `ged_documents` (lecture) |
 | Général | `/admin/general` | `core.admin.settings` | settings (sans secrets) |
-| Sécurité | `/admin/security` | `core.admin.security` | lockout + KPI |
+| Sécurité | `/admin/security` | `core.admin.security` | centre de contrôle (état, lockout, MFA, rate limit, contrôle défensif) |
 | Maintenance | `/admin/maintenance` | `core.admin.settings` | santé runtime |
 
 GED reste réservée (pas d’upload métier depuis CORE ADMIN).

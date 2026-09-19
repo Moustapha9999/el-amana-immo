@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
@@ -12,6 +13,11 @@ class PlateformeModuleRead(BaseModel):
     route: str | None = None
     entry_path: str | None = None
     statut: str
+    status_message: str = ""
+    version: str | None = None
+    access_allowed: bool | None = None
+    block_reason: str | None = None
+    maintenance_ends_at: str | None = None
     accessible: bool
     espace_id: str | None = None
     espace_titre: str | None = None
@@ -26,6 +32,89 @@ class PlateformeEspaceRead(BaseModel):
     statut: str
     accessible: bool
     modules: list[PlateformeModuleRead] = Field(default_factory=list)
+
+
+class PlateformeHubModuleRead(BaseModel):
+    id: str
+    titre: str
+    description: str | None = None
+    route: str | None = None
+    entry_path: str | None = None
+    statut: str
+    status_message: str = ""
+    accessible: bool | None = None
+    espace_id: str | None = None
+    espace_titre: str | None = None
+    espace_route: str | None = None
+
+
+class PlateformeHubEtatRead(BaseModel):
+    ok: bool
+    departements: int
+    modules: int
+    modules_actifs: int
+    maintenance: int
+    developpement: int
+    suspendus: int
+    par_statut: dict[str, int] = Field(default_factory=dict)
+
+
+class PlateformeHubKpiRead(BaseModel):
+    key: str
+    label: str
+    value: int
+    hint: str | None = None
+
+
+class PlateformeHubComponentEtatRead(BaseModel):
+    key: str
+    label: str
+    ok: bool | None = None
+    status: str
+    status_label: str
+
+
+class PlateformeHubEtatPlateformeRead(BaseModel):
+    ok: bool
+    verifie_at: str
+    fuseau: str = "Africa/Nouakchott"
+    components: list[PlateformeHubComponentEtatRead] = Field(default_factory=list)
+
+
+class PlateformeHubSeriePointRead(BaseModel):
+    date: str
+    label: str
+    count: int
+
+
+class PlateformeHubSummaryRead(BaseModel):
+    vue: str = "utilisateur"
+    user_full_name: str | None = None
+    departements_accessibles: int
+    departements_visibles: int
+    modules_accessibles: int
+    modules_ouverts: int
+    notifications_non_lues: int
+    sessions_actives: int = 0
+    kpis: list[PlateformeHubKpiRead] = Field(default_factory=list)
+    plateforme: PlateformeHubEtatRead
+    etat_plateforme: PlateformeHubEtatPlateformeRead | None = None
+    activite_jours: int = 7
+    activite_serie: list[PlateformeHubSeriePointRead] = Field(default_factory=list)
+    mes_modules: list[PlateformeHubModuleRead] = Field(default_factory=list)
+    modules_recents: list[PlateformeHubModuleRead] = Field(default_factory=list)
+
+
+class PlateformeHubActivityRead(BaseModel):
+    id: str
+    action: str
+    entity: str
+    entity_id: str | None = None
+    espace_code: str | None = None
+    module_code: str | None = None
+    created_at: str | None = None
+    who: str | None = None
+    label: str
 
 
 class CorePermissionRead(BaseModel):
@@ -107,6 +196,7 @@ class CoreAdminDashboardRead(BaseModel):
     etat: dict[str, CoreAdminHealthItem] = Field(default_factory=dict)
     fuseau: str = "Africa/Nouakchott"
     app_name: str = "BEA DIGITAL"
+    ops: dict | None = None
 
 
 class CoreAdminUserCreate(BaseModel):
@@ -230,13 +320,26 @@ class CoreAdminEspaceListRead(BaseModel):
     kpis: CoreAdminCatalogueKpis
 
 
+ModuleStatut = Literal[
+    "actif",
+    "bientot",
+    "inactif",
+    "developpement",
+    "mise_a_jour",
+    "maintenance",
+    "suspendu",
+    "bloque",
+    "archive",
+]
+
+
 class CoreAdminModuleWrite(BaseModel):
     code: str = Field(min_length=2, max_length=80)
     espace_id: str
     label: str = Field(min_length=1, max_length=160)
     description: str = ""
     entry_path: str | None = Field(default=None, max_length=160)
-    statut: Literal["actif", "bientot", "inactif"] = "bientot"
+    statut: ModuleStatut = "bientot"
     sort_order: int = Field(default=0, ge=0, le=9999)
 
 
@@ -245,7 +348,7 @@ class CoreAdminModuleUpdate(BaseModel):
     label: str | None = Field(default=None, min_length=1, max_length=160)
     description: str | None = None
     entry_path: str | None = Field(default=None, max_length=160)
-    statut: Literal["actif", "bientot", "inactif"] | None = None
+    statut: ModuleStatut | None = None
     sort_order: int | None = Field(default=None, ge=0, le=9999)
 
 
@@ -256,6 +359,8 @@ class CoreAdminModuleRead(BaseModel):
     description: str
     entry_path: str | None = None
     statut: str
+    status_message: str = ""
+    version: str = "1.0.0"
     sort_order: int
     is_active: bool
     locked: bool
@@ -265,6 +370,50 @@ class CoreAdminModuleRead(BaseModel):
     users_count: int = 0
     created_at: str | None = None
     updated_at: str | None = None
+
+
+class PlatformBackupCreate(BaseModel):
+    level: Literal["global", "departement", "module"]
+    backup_type: Literal[
+        "automatique",
+        "manuelle",
+        "avant_maintenance",
+        "avant_mise_a_jour",
+        "avant_migration",
+        "securite_recovery",
+    ] = "manuelle"
+    espace_code: str | None = None
+    module_code: str | None = None
+    label: str | None = None
+
+
+class PlatformRestoreRequest(BaseModel):
+    acknowledge_dependencies: bool = False
+
+
+class ModuleStatusUpdate(BaseModel):
+    statut: ModuleStatut
+    status_message: str | None = None
+    maintenance_starts_at: datetime | None = None
+    maintenance_ends_at: datetime | None = None
+    admins_bypass_maintenance: bool | None = None
+    notify: bool = True
+
+
+class GlobalMaintenanceUpdate(BaseModel):
+    enabled: bool
+    title: str = ""
+    message: str = ""
+    ends_at: str | None = None
+    admins_bypass: bool = True
+
+
+class ModuleVersionCreate(BaseModel):
+    version: str = Field(min_length=1, max_length=40)
+    notes: str = ""
+    set_current: bool = True
+    create_backup: bool = True
+    activate_maintenance: bool = False
 
 
 class CoreAdminModuleListRead(BaseModel):
@@ -530,7 +679,11 @@ class CoreAdminNotificationKpis(BaseModel):
     total: int
     non_lues: int
     lues: int
-    systeme: int
+    alertes: int = 0
+    critiques: int = 0
+    systeme: int = 0
+    categories: dict[str, str] = {}
+    priorites: dict[str, str] = {}
 
 
 class CoreAdminNotificationRead(BaseModel):
@@ -542,10 +695,21 @@ class CoreAdminNotificationRead(BaseModel):
     titre: str
     message: str
     lu: bool
+    archived: bool = False
     entity: str | None = None
     entity_id: str | None = None
     espace_code: str | None = None
     module_code: str | None = None
+    categorie: str = "systeme"
+    categorie_label: str = "Système"
+    priorite: str = "info"
+    priorite_label: str = "Info"
+    event_type: str | None = None
+    event_code: str | None = None
+    emetteur_type: str = "systeme"
+    emetteur_label: str = "Système"
+    destinataire_type: str = "utilisateur"
+    destinataire_label: str | None = None
     created_at: str | None = None
 
 
@@ -605,6 +769,68 @@ class CoreAdminSecuritySettings(BaseModel):
     jwt_algorithm: str
     alertes_fenetre: int
     sessions_actives: int
+    sessions_platform: int = 0
+    sessions_module: int = 0
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 1
+    module_refresh_token_expire_minutes: int = 45
+    password_policy: dict = Field(default_factory=dict)
+    mfa_required_for_core_admin: bool = False
+    mfa_users_enabled: int = 0
+    mfa_admins_without: int = 0
+    rate_limit_enabled: bool = True
+    rate_limit: dict = Field(default_factory=dict)
+    security_headers_enabled: bool = True
+    api_docs_enabled: bool = False
+    cors_origins: list[str] = Field(default_factory=list)
+    database_ssl: str = "non_verifie"
+    secret_key_status: str = "configure"
+    upload_dir_exists: bool = False
+    ged_dir_exists: bool = False
+    app_env: str = "development"
+    app_debug: bool = False
+    comptes_verrouilles: list[dict] = Field(default_factory=list)
+    etat: dict[str, CoreAdminHealthItem] = Field(default_factory=dict)
+    fuseau: str = "Africa/Nouakchott"
+    verifie_at: str | None = None
+    policy_source: str | None = None
+    policy_updated_at: str | None = None
+    policy_editable: bool = True
+
+
+class CoreAdminSecurityPolicyUpdate(BaseModel):
+    """PATCH politique — confirmation_phrase doit être CONFIRMER."""
+
+    confirmation_phrase: str = Field(min_length=1, max_length=40)
+    login_lockout_window_minutes: int | None = Field(default=None, ge=1, le=1440)
+    login_lockout_max_failures: int | None = Field(default=None, ge=1, le=50)
+    password_min_length: int | None = Field(default=None, ge=8, le=128)
+    password_require_uppercase: bool | None = None
+    password_require_lowercase: bool | None = None
+    password_require_digit: bool | None = None
+    password_require_special: bool | None = None
+    mfa_required_for_core_admin: bool | None = None
+    rate_limit_enabled: bool | None = None
+    rate_limit_login_per_minute: int | None = Field(default=None, ge=1, le=10000)
+    rate_limit_api_per_minute: int | None = Field(default=None, ge=1, le=10000)
+    rate_limit_sensitive_per_minute: int | None = Field(default=None, ge=1, le=10000)
+    rate_limit_password_reset_per_minute: int | None = Field(default=None, ge=1, le=10000)
+
+
+class CoreAdminSecurityCheckItem(BaseModel):
+    key: str
+    label: str
+    status: Literal["ok", "warn", "ko"]
+    detail: str
+
+
+class CoreAdminSecurityCheckRead(BaseModel):
+    items: list[CoreAdminSecurityCheckItem] = Field(default_factory=list)
+    ok_count: int = 0
+    warn_count: int = 0
+    ko_count: int = 0
+    verifie_at: str
+    fuseau: str = "Africa/Nouakchott"
 
 
 class CoreAdminMaintenanceSettings(BaseModel):

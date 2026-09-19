@@ -55,6 +55,29 @@ import {
         <p class="bea-admin-note">Département système : code et route figés, suppression et désactivation impossibles.</p>
       }
 
+      @if (!isCreate()) {
+        <div class="bea-admin-kpis">
+          <article class="bea-admin-kpi" data-tone="modules">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Modules</p>
+              <p class="bea-admin-kpi__value">{{ modules().length }}</p>
+            </div>
+          </article>
+          <article class="bea-admin-kpi" data-tone="org">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Statut</p>
+              <p class="bea-admin-kpi__value" style="font-size:1.15rem">{{ statutLabel() }}</p>
+            </div>
+          </article>
+          <article class="bea-admin-kpi" data-tone="actions">
+            <div class="bea-admin-kpi__copy">
+              <p class="bea-admin-kpi__label">Ordre</p>
+              <p class="bea-admin-kpi__value">{{ form.controls.sort_order.value }}</p>
+            </div>
+          </article>
+        </div>
+      }
+
       <form class="bea-admin-form" [formGroup]="form" (ngSubmit)="save()">
         <section class="bea-admin-panel">
           <h2>Identité</h2>
@@ -116,13 +139,14 @@ import {
           @if (modules().length === 0) {
             <p class="bea-admin-panel__empty">Aucun module dans ce département.</p>
           } @else {
-            <ul class="bea-admin-perms">
+            <div class="bea-admin-tiles">
               @for (mod of modules(); track mod.id) {
-                <li>
-                  <a class="bea-admin-table__link" [routerLink]="['/admin/modules', mod.id]">{{ mod.label }}</a>
-                </li>
+                <a class="bea-admin-tile" [routerLink]="['/admin/modules', mod.id]">
+                  <strong>{{ mod.label }}</strong>
+                  <span>{{ mod.code }}</span>
+                </a>
               }
-            </ul>
+            </div>
           }
         </section>
       }

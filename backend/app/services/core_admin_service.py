@@ -32,6 +32,12 @@ _STATUT_MODULE_LABEL = {
     "actif": "Actifs",
     "bientot": "Bientôt",
     "inactif": "Inactifs",
+    "developpement": "Développement",
+    "mise_a_jour": "Mise à jour",
+    "maintenance": "Maintenance",
+    "suspendu": "Suspendus",
+    "bloque": "Bloqués",
+    "archive": "Archivés",
 }
 
 
@@ -247,7 +253,21 @@ class CoreAdminService:
             "etat": platform_health(db_ok=db_ok, modules_actifs=modules_actifs),
             "fuseau": FUSEAU,
             "app_name": settings.app_name,
+            "ops": await self._ops_snapshot(),
         }
+
+    async def _ops_snapshot(self) -> dict:
+        try:
+            from app.services.platform_ops_service import PlatformOpsService
+
+            return await PlatformOpsService(self.db).dashboard_ops_kpis()
+        except Exception:
+            return {
+                "derniere_sauvegarde": None,
+                "derniere_sauvegarde_ok": None,
+                "derniere_manuelle": None,
+                "modules_par_statut": {},
+            }
 
     async def _safe_ged_count(self) -> int:
         try:

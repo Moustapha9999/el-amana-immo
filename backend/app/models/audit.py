@@ -26,6 +26,19 @@ class Notification(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     entity_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     espace_code: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     module_code: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    # Centre global (enrichissement ops) — distinct du journal d'audit.
+    categorie: Mapped[str] = mapped_column(String(40), default="systeme", index=True)
+    priorite: Mapped[str] = mapped_column(String(20), default="info", index=True)
+    event_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    event_code: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    emetteur_type: Mapped[str] = mapped_column(String(40), default="systeme")
+    emetteur_label: Mapped[str] = mapped_column(String(255), default="Système")
+    destinataire_type: Mapped[str] = mapped_column(String(40), default="utilisateur")
+    destinataire_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
 
 class AuditLog(Base, UUIDPrimaryKeyMixin):

@@ -5,7 +5,9 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,6 +27,13 @@ class PlateformeEspace(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     description: Mapped[str] = mapped_column(Text, default="")
     route: Mapped[str | None] = mapped_column(String(160), nullable=True)
     statut: Mapped[str] = mapped_column(String(20), default="bientot", index=True)
+    status_message: Mapped[str] = mapped_column(Text, default="")
+    maintenance_starts_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    maintenance_ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -46,6 +55,15 @@ class PlateformeModule(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     description: Mapped[str] = mapped_column(Text, default="")
     entry_path: Mapped[str | None] = mapped_column(String(160), nullable=True)
     statut: Mapped[str] = mapped_column(String(20), default="bientot", index=True)
+    status_message: Mapped[str] = mapped_column(Text, default="")
+    version: Mapped[str] = mapped_column(String(40), default="1.0.0")
+    maintenance_starts_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    maintenance_ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    admins_bypass_maintenance: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 

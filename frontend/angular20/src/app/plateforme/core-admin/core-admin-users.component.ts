@@ -24,7 +24,10 @@ import {
       <header class="bea-admin-dash__head bea-admin-users__head">
         <div>
           <h1>Utilisateurs</h1>
-          <p>Pilotage des comptes BEA DIGITAL — indépendant du module Immobilisations.</p>
+          <p>
+            Créer, modifier, désactiver ou supprimer les comptes plateforme — et changer les mots de
+            passe.
+          </p>
         </div>
         <a class="bea-admin-btn" routerLink="/admin/users/nouveau">Nouvel utilisateur</a>
       </header>

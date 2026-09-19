@@ -32,7 +32,7 @@ PLATEFORME_ESPACES: list[EspaceDef] = [
         "code": "comptabilite",
         "label": "Comptabilité",
         "description": (
-            "Immobilisations, amortissements, pièces et contrôles autour d’ORION "
+            "Immobilisations, amortissements, pièces et contrôles autour d'ORION "
             "— sans remplacer le core banking."
         ),
         "route": "/comptabilite",
@@ -144,6 +144,18 @@ CORE_ADMIN_PERMISSIONS: list[tuple[str, str, str]] = [
     ("core.admin.audit", "Consultation de l'audit (CORE ADMIN)", "core"),
     ("core.admin.security", "Supervision sécurité (CORE ADMIN)", "core"),
     ("core.admin.settings", "Paramètres plateforme (CORE ADMIN)", "core"),
+    ("core.admin.backup.view", "Consultation des sauvegardes (CORE ADMIN)", "core"),
+    ("core.admin.backup.create", "Création de sauvegardes (CORE ADMIN)", "core"),
+    ("core.admin.backup.delete", "Suppression de sauvegardes (CORE ADMIN)", "core"),
+    ("core.admin.recovery.view", "Consultation recovery (CORE ADMIN)", "core"),
+    ("core.admin.recovery.execute", "Exécution recovery (CORE ADMIN)", "core"),
+    ("core.admin.monitoring.view", "Supervision plateforme (CORE ADMIN)", "core"),
+    ("core.admin.maintenance.view", "Consultation maintenance (CORE ADMIN)", "core"),
+    ("core.admin.maintenance.manage", "Gestion maintenance (CORE ADMIN)", "core"),
+    ("core.admin.module_status.view", "Consultation état des modules (CORE ADMIN)", "core"),
+    ("core.admin.module_status.manage", "Gestion état des modules (CORE ADMIN)", "core"),
+    ("core.admin.versions.view", "Consultation versions modules (CORE ADMIN)", "core"),
+    ("core.admin.versions.manage", "Gestion versions modules (CORE ADMIN)", "core"),
 ]
 
 FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [

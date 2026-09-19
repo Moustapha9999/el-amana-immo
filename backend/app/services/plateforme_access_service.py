@@ -24,6 +24,11 @@ from app.models.associations import role_permissions_table
 logger = logging.getLogger(__name__)
 
 
+def _text_needs_utf8_repair(value: str | None) -> bool:
+    """True si un libellé a perdu ses accents (souvent remplacés par '?')."""
+    return bool(value) and "?" in value
+
+
 class PlateformeAccessService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -36,8 +41,8 @@ class PlateformeAccessService:
             logger.exception("Synchronisation du catalogue plateforme impossible")
 
     async def _sync_catalogue(self) -> None:
-        # Seed des lignes absentes seulement. CORE ADMIN est la source de vérité
-        # ensuite (label, statut, route) — ne pas écraser les saisies.
+        # Seed des lignes absentes. Répare les libellés dont les accents sont devenus « ? ».
+        # CORE ADMIN reste source de vérité pour les libellés sains (saisies admin conservées).
         existing = {
             row.code: row
             for row in (await self.db.execute(select(PlateformeEspace))).scalars().all()
@@ -56,6 +61,11 @@ class PlateformeAccessService:
                 )
                 self.db.add(row)
                 existing[item["code"]] = row
+            else:
+                if _text_needs_utf8_repair(row.label):
+                    row.label = item["label"]
+                if _text_needs_utf8_repair(row.description):
+                    row.description = item["description"]
         await self.db.flush()
 
         modules = {
@@ -78,6 +88,11 @@ class PlateformeAccessService:
                         is_active=True,
                     )
                 )
+            else:
+                if _text_needs_utf8_repair(row.label):
+                    row.label = item["label"]
+                if _text_needs_utf8_repair(row.description):
+                    row.description = item["description"]
         await self.db.flush()
         await self._ensure_permissions()
 
@@ -91,6 +106,8 @@ class PlateformeAccessService:
                 perm = Permission(code=code, label=label, module=module)
                 self.db.add(perm)
                 existing_perms[code] = perm
+            elif _text_needs_utf8_repair(existing_perms[code].label):
+                existing_perms[code].label = label
         await self.db.flush()
 
         existing_roles = {
@@ -105,6 +122,11 @@ class PlateformeAccessService:
                 self.db.add(role)
                 existing_roles[code] = role
                 newly_created_roles.add(code)
+            else:
+                if _text_needs_utf8_repair(role.label):
+                    role.label = label
+                if _text_needs_utf8_repair(role.description):
+                    role.description = description
         await self.db.flush()
 
         if not newly_created_roles:
@@ -263,18 +285,23 @@ class PlateformeAccessService:
                 if not mod.is_active:
                     continue
                 m_acc = user.is_superuser or (granted_m is not None and mod.code in granted_m)
+                # Bientôt : visible pour tous. Autres statuts : seulement si grant module.
                 m_show = mod.statut == "bientot" or m_acc
                 if not m_show:
                     continue
                 clickable = m_acc and mod.statut == "actif"
+                # Restreint (mise à jour, maintenance, …) : carte cliquable → message d’indispo.
+                openable = m_acc and mod.statut not in {"inactif", "archive"}
                 modules_out.append(
                     {
                         "id": mod.code,
                         "titre": mod.label,
                         "description": mod.description,
-                        "route": f"/modules/{mod.code}/acces" if clickable else None,
+                        "route": f"/modules/{mod.code}/acces" if openable else None,
                         "entry_path": mod.entry_path if clickable else None,
                         "statut": mod.statut,
+                        "status_message": getattr(mod, "status_message", "") or "",
+                        "version": getattr(mod, "version", None),
                         "accessible": clickable,
                     }
                 )
@@ -297,14 +324,27 @@ class PlateformeAccessService:
         if module is None or not module.is_active:
             return None
         allowed = await self.user_has_module(user, module_code)
-        clickable = allowed and module.statut == "actif"
+        from app.services.permission_service import permission_codes_from_user, user_has_permission_codes
+        from app.services.platform_ops_service import PlatformOpsService
+
+        have = permission_codes_from_user(user)
+        can_bypass = user_has_permission_codes(
+            have, "core.admin.maintenance.manage", "core.admin.module_status.manage"
+        )
+        access = PlatformOpsService.module_access_payload(module, can_bypass=can_bypass)
+        clickable = allowed and access["access_allowed"]
         return {
             "id": module.code,
             "titre": module.label,
             "description": module.description,
-            "route": f"/modules/{module.code}/acces" if clickable else None,
+            "route": f"/modules/{module.code}/acces" if allowed else None,
             "entry_path": module.entry_path if clickable else None,
             "statut": module.statut,
+            "status_message": access["status_message"],
+            "version": module.version,
+            "access_allowed": access["access_allowed"],
+            "block_reason": access["block_reason"],
+            "maintenance_ends_at": access["maintenance_ends_at"],
             "accessible": clickable,
             "espace_id": module.espace.code,
             "espace_titre": module.espace.label,

@@ -236,7 +236,11 @@ async def totp_disable(
 
 
 @router.post("/auth/forgot-password", response_model=ForgotPasswordResponse)
-async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
     """Réinitialisation : pas d'envoi SMTP pour l'instant.
 
     En mode développement (`APP_DEBUG=true`), le token est renvoyé dans la réponse
@@ -262,11 +266,21 @@ async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Dep
         reset_token = create_password_reset_token(user.id)
         expires_in = PASSWORD_RESET_EXPIRE_SECONDS
         logging.getLogger("bea.auth").info(
-            "Password reset token generated for %s (dev_mode=%s, ttl=%ss)",
-            user.email,
+            "Password reset token generated for user_id=%s (dev_mode=%s, ttl=%ss)",
+            user.id,
             dev_mode,
             PASSWORD_RESET_EXPIRE_SECONDS,
         )
+        await record_audit(
+            db,
+            user=user,
+            action="password_forgot",
+            entity="user",
+            entity_id=str(user.id),
+            request=request,
+            after={"dev_mode": dev_mode},
+        )
+        await db.commit()
         if not dev_mode:
             reset_token = None
             expires_in = None
@@ -291,12 +305,26 @@ async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Dep
 
 
 @router.post("/auth/reset-password", response_model=MessageResponse)
-async def reset_password(payload: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+async def reset_password(
+    payload: ResetPasswordRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
     service = AuthService(db)
     try:
         await service.reset_password(payload.token, payload.new_password)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await record_audit(
+        db,
+        user=None,
+        action="password_reset",
+        entity="user",
+        entity_id=None,
+        request=request,
+        after={"via": "reset_token"},
+    )
+    await db.commit()
     return MessageResponse(message="Mot de passe mis à jour")
 
 
@@ -347,12 +375,31 @@ async def module_login(
     access = PlateformeAccessService(db)
     await access.ensure_catalogue()
     module = await access.get_module(module_code)
-    if module is None or not module.is_active or module.statut != "actif":
+    if module is None or not module.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Module introuvable")
     if not await access.user_has_module(user, module_code):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "MODULE_FORBIDDEN", "message": "Module non autorisé", "module": module_code},
+        )
+
+    from app.services.permission_service import permission_codes_from_user, user_has_permission_codes
+    from app.services.platform_ops_service import PlatformOpsService
+
+    have = permission_codes_from_user(user)
+    can_bypass = user_has_permission_codes(
+        have, "core.admin.maintenance.manage", "core.admin.module_status.manage"
+    )
+    access_info = PlatformOpsService.module_access_payload(module, can_bypass=can_bypass)
+    if not access_info["access_allowed"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "MODULE_UNAVAILABLE",
+                "message": access_info["status_message"] or "Module indisponible",
+                "statut": module.statut,
+                "module": module_code,
+            },
         )
 
     if credentials is None:

@@ -5,6 +5,13 @@ import { ComptabiliteComponent } from './comptabilite/comptabilite.component';
 import { CoreAdminActivityComponent } from './core-admin/core-admin-activity.component';
 import { CoreAdminAlertsComponent } from './core-admin/core-admin-alerts.component';
 import { CoreAdminAuditComponent } from './core-admin/core-admin-audit.component';
+import {
+  CoreAdminBackupsComponent,
+  CoreAdminModuleStatesComponent,
+  CoreAdminRecoveryComponent,
+  CoreAdminSupervisionComponent,
+  CoreAdminVersionsComponent,
+} from './core-admin/core-admin-control.component';
 import { CoreAdminDashboardComponent } from './core-admin/core-admin-dashboard.component';
 import { CoreAdminDepartmentFicheComponent } from './core-admin/core-admin-department-fiche.component';
 import { CoreAdminDepartmentsComponent } from './core-admin/core-admin-departments.component';
@@ -69,6 +76,11 @@ export const PLATEFORME_ROUTES: Routes = [
       { path: 'general', component: CoreAdminGeneralComponent },
       { path: 'security', component: CoreAdminSecurityComponent },
       { path: 'maintenance', component: CoreAdminMaintenanceComponent },
+      { path: 'backups', component: CoreAdminBackupsComponent },
+      { path: 'recovery', component: CoreAdminRecoveryComponent },
+      { path: 'supervision', component: CoreAdminSupervisionComponent },
+      { path: 'module-states', component: CoreAdminModuleStatesComponent },
+      { path: 'versions', component: CoreAdminVersionsComponent },
       { path: '**', redirectTo: '/admin/dashboard' },
     ],
   },

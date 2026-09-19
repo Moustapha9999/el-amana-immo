@@ -34,4 +34,14 @@ class LocalStorageService:
         return relative, len(content)
 
     def absolute_path(self, relative_path: str) -> Path:
-        return self.root / relative_path
+        """Résout un chemin relatif sous la racine upload — refuse le path traversal."""
+        raw = (relative_path or "").replace("\\", "/").lstrip("/")
+        if not raw or ".." in Path(raw).parts:
+            raise ValueError("Chemin de fichier invalide")
+        root = self.root.resolve()
+        candidate = (root / raw).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("Chemin de fichier hors zone autorisée") from exc
+        return candidate

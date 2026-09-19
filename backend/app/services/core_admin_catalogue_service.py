@@ -15,7 +15,18 @@ from app.models.associations import user_espace_acces_table, user_module_acces_t
 from app.models.plateforme import PlateformeEspace, PlateformeModule
 
 CODE_RE = re.compile(r"^[a-z][a-z0-9-]{1,79}$")
-STATUTS = {"actif", "bientot", "inactif"}
+STATUTS = {
+    "actif",
+    "bientot",
+    "inactif",
+    "developpement",
+    "mise_a_jour",
+    "maintenance",
+    "suspendu",
+    "bloque",
+    "archive",
+}
+PROTECTED_RUNTIME_STATUTS = frozenset({"actif", "maintenance", "mise_a_jour"})
 
 
 def normalize_code(raw: str) -> str:
@@ -141,6 +152,8 @@ class CoreAdminCatalogueService:
             "description": row.description or "",
             "entry_path": row.entry_path,
             "statut": row.statut,
+            "status_message": getattr(row, "status_message", "") or "",
+            "version": getattr(row, "version", None) or "1.0.0",
             "sort_order": row.sort_order,
             "is_active": row.is_active,
             "locked": row.code == DEFAULT_MODULE_CODE,
@@ -403,12 +416,14 @@ class CoreAdminCatalogueService:
         if "sort_order" in data and data["sort_order"] is not None:
             row.sort_order = data["sort_order"]
         if "statut" in data and data["statut"] is not None:
-            if row.code == DEFAULT_MODULE_CODE and data["statut"] != "actif":
-                raise ValueError("Le module Immobilisations reste actif")
+            if row.code == DEFAULT_MODULE_CODE and data["statut"] not in PROTECTED_RUNTIME_STATUTS:
+                raise ValueError(
+                    "Le module Immobilisations accepte uniquement actif, maintenance ou mise à jour"
+                )
             row.statut = data["statut"]
             if data["statut"] == "inactif":
                 row.is_active = False
-            elif data["statut"] in {"actif", "bientot"} and not row.is_active:
+            elif data["statut"] in STATUTS - {"inactif", "archive"} and not row.is_active:
                 row.is_active = True
         if "entry_path" in data:
             path = normalize_path(data["entry_path"])
