@@ -3,16 +3,26 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import get_platform_user
 from app.api.v1.endpoints.helpers import to_paginated
+from app.core.temp_password import generate_temporary_password
 from app.db.session import get_db
 from app.models import User
-from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.auth import RoleRead, UserCreate, UserRead, UserUpdate
+from app.schemas.common import MessageResponse, PaginatedResponse
 from app.services.audit_helpers import record_audit
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+def _require_platform_admin(user: User = Depends(get_platform_user)) -> User:
+    """Users métier : session plateforme uniquement + rôle administrateur."""
+    if user.is_superuser:
+        return user
+    if not {r.code for r in user.roles}.intersection({"administrateur"}):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission refusée")
+    return user
 
 
 @router.get("", response_model=PaginatedResponse[UserRead])
@@ -20,7 +30,7 @@ async def list_users(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     search: str | None = None,
-    _: User = Depends(require_roles("administrateur")),
+    _: User = Depends(_require_platform_admin),
     db: AsyncSession = Depends(get_db),
 ):
     items, total = await AuthService(db).list_users(page, size, search=search)
@@ -29,7 +39,7 @@ async def list_users(
 
 @router.get("/roles", response_model=list[RoleRead])
 async def list_roles(
-    _: User = Depends(require_roles("administrateur")),
+    _: User = Depends(_require_platform_admin),
     db: AsyncSession = Depends(get_db),
 ):
     return await AuthService(db).list_roles()
@@ -39,12 +49,15 @@ async def list_roles(
 async def create_user(
     payload: UserCreate,
     request: Request,
-    actor: User = Depends(require_roles("administrateur")),
+    actor: User = Depends(_require_platform_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    """Création sans MDP libre : mot de passe temporaire serveur."""
+    data = payload.model_dump()
+    data["password"] = generate_temporary_password()
     service = AuthService(db)
     try:
-        user = await service.create_user(payload)
+        user = await service.create_user(UserCreate.model_validate(data))
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     await record_audit(
@@ -54,7 +67,11 @@ async def create_user(
         entity="user",
         entity_id=str(user.id),
         request=request,
-        after={"email": user.email, "module_codes": user.module_codes},
+        after={
+            "email": user.email,
+            "module_codes": user.module_codes,
+            "temporary_password_issued": True,
+        },
     )
     return user
 
@@ -62,7 +79,7 @@ async def create_user(
 @router.get("/{user_id}", response_model=UserRead)
 async def get_user(
     user_id: UUID,
-    _: User = Depends(require_roles("administrateur")),
+    _: User = Depends(_require_platform_admin),
     db: AsyncSession = Depends(get_db),
 ):
     service = AuthService(db)
@@ -77,15 +94,24 @@ async def update_user(
     user_id: UUID,
     payload: UserUpdate,
     request: Request,
-    actor: User = Depends(require_roles("administrateur")),
+    actor: User = Depends(_require_platform_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    if payload.password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La gestion des mots de passe se fait via CORE ADMIN → Sécurité",
+        )
     service = AuthService(db)
     try:
         user = await service.update_user(user_id, payload)
     except ValueError as exc:
         detail = str(exc)
-        code = status.HTTP_404_NOT_FOUND if detail == "Utilisateur introuvable" else status.HTTP_400_BAD_REQUEST
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if detail == "Utilisateur introuvable"
+            else status.HTTP_400_BAD_REQUEST
+        )
         raise HTTPException(status_code=code, detail=detail) from exc
     await record_audit(
         db,
@@ -103,7 +129,7 @@ async def update_user(
 async def delete_user(
     user_id: UUID,
     request: Request,
-    current: User = Depends(require_roles("administrateur")),
+    current: User = Depends(_require_platform_admin),
     db: AsyncSession = Depends(get_db),
 ):
     service = AuthService(db)
@@ -111,7 +137,11 @@ async def delete_user(
         await service.soft_delete_user(user_id, actor_id=current.id)
     except ValueError as exc:
         detail = str(exc)
-        code = status.HTTP_404_NOT_FOUND if detail == "Utilisateur introuvable" else status.HTTP_400_BAD_REQUEST
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if detail == "Utilisateur introuvable"
+            else status.HTTP_400_BAD_REQUEST
+        )
         raise HTTPException(status_code=code, detail=detail) from exc
     await record_audit(
         db,

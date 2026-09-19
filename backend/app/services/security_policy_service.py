@@ -21,6 +21,9 @@ _CACHE: dict[str, Any] | None = None
 def _env_defaults() -> dict[str, Any]:
     s = get_settings()
     return {
+        "access_token_expire_minutes": int(s.access_token_expire_minutes),
+        "refresh_token_expire_days": int(s.refresh_token_expire_days),
+        "module_refresh_token_expire_minutes": int(s.module_refresh_token_expire_minutes),
         "login_lockout_window_minutes": int(s.login_lockout_window_minutes),
         "login_lockout_max_failures": int(s.login_lockout_max_failures),
         "password_min_length": int(s.password_min_length),
@@ -49,6 +52,11 @@ def _merge(stored: dict | None) -> dict[str, Any]:
     out["login_lockout_window_minutes"] = max(1, min(1440, int(out["login_lockout_window_minutes"])))
     out["login_lockout_max_failures"] = max(1, min(50, int(out["login_lockout_max_failures"])))
     out["password_min_length"] = max(8, min(128, int(out["password_min_length"])))
+    out["access_token_expire_minutes"] = max(1, min(1440, int(out["access_token_expire_minutes"])))
+    out["refresh_token_expire_days"] = max(1, min(90, int(out["refresh_token_expire_days"])))
+    out["module_refresh_token_expire_minutes"] = max(
+        5, min(1440, int(out["module_refresh_token_expire_minutes"]))
+    )
     for bkey in (
         "password_require_uppercase",
         "password_require_lowercase",

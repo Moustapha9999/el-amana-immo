@@ -98,6 +98,15 @@ import { CoreAdminNotificationPage, coreAdminOpsError } from './core-admin-ops.m
           <input formControlName="espace_code" placeholder="ex. comptabilite" />
         </label>
         <div class="bea-admin-toolbar__actions">
+          <button
+            type="button"
+            class="bea-admin-btn bea-admin-btn--refresh"
+            (click)="search()"
+            [disabled]="loading()"
+          >
+            <bea-admin-icon name="refresh" />
+            Actualiser
+          </button>
           <button type="submit" class="bea-admin-btn">Filtrer</button>
           <button type="button" class="bea-admin-btn bea-admin-btn--ghost" (click)="reset()">
             Réinitialiser

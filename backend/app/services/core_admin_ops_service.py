@@ -539,12 +539,66 @@ class CoreAdminOpsService:
             docs_on = settings.app_env.lower() in {"development", "dev", "local"} or settings.app_debug
 
         etat = {
-            "auth": {"ok": True, "label": "Authentification"},
-            "sessions": {"ok": True, "label": "Sessions"},
-            "api": {"ok": True, "label": "API"},
-            "audit": {"ok": True, "label": "Audit"},
-            "db": {"ok": db_ok, "label": "Base de données"},
-            "stockage": {"ok": upload_ok and ged_ok, "label": "Stockage"},
+            "auth": {
+                "ok": True,
+                "label": "Authentification",
+                "status": "operational",
+                "detail": "Login 1 / Login 2 actifs",
+            },
+            "sessions": {
+                "ok": True,
+                "label": "Sessions",
+                "status": "protege",
+                "detail": f"{sessions} actives (révocation serveur)",
+            },
+            "autorisations": {
+                "ok": True,
+                "label": "Autorisations",
+                "status": "protege",
+                "detail": "RBAC + permissions backend",
+            },
+            "api": {
+                "ok": True,
+                "label": "API",
+                "status": "protege" if settings.security_headers_enabled else "attention",
+                "detail": "Headers + rate-limit" if settings.security_headers_enabled else "Headers désactivés",
+            },
+            "db": {
+                "ok": db_ok,
+                "label": "Base de données",
+                "status": "operational" if db_ok else "probleme",
+                "detail": ssl_status,
+            },
+            "ged": {
+                "ok": ged_ok,
+                "label": "GED",
+                "status": "a_verifier" if ged_ok else "attention",
+                "detail": "Lecture admin — upload métier non branché" if ged_ok else "Dossier absent",
+            },
+            "stockage": {
+                "ok": upload_ok,
+                "label": "Stockage",
+                "status": "operational" if upload_ok else "attention",
+                "detail": "upload_dir" + (" présent" if upload_ok else " manquant"),
+            },
+            "https": {
+                "ok": False,
+                "label": "HTTPS",
+                "status": "non_verifie",
+                "detail": "Vérifier reverse proxy / TLS amont",
+            },
+            "audit": {
+                "ok": True,
+                "label": "Audit",
+                "status": "protege",
+                "detail": "audit_logs actif",
+            },
+            "sauvegardes": {
+                "ok": False,
+                "label": "Sauvegardes",
+                "status": "non_verifie",
+                "detail": "Voir Continuité → Sauvegardes",
+            },
         }
 
         return {
@@ -555,9 +609,11 @@ class CoreAdminOpsService:
             "sessions_actives": sessions,
             "sessions_platform": sessions_platform,
             "sessions_module": sessions_module,
-            "access_token_expire_minutes": settings.access_token_expire_minutes,
-            "refresh_token_expire_days": settings.refresh_token_expire_days,
-            "module_refresh_token_expire_minutes": settings.module_refresh_token_expire_minutes,
+            "access_token_expire_minutes": int(policy["access_token_expire_minutes"]),
+            "refresh_token_expire_days": int(policy["refresh_token_expire_days"]),
+            "module_refresh_token_expire_minutes": int(
+                policy["module_refresh_token_expire_minutes"]
+            ),
             "password_policy": {
                 "min_length": int(policy["password_min_length"]),
                 "require_uppercase": bool(policy["password_require_uppercase"]),
@@ -593,6 +649,12 @@ class CoreAdminOpsService:
             "policy_source": policy.get("source"),
             "policy_updated_at": policy.get("updated_at"),
             "policy_editable": True,
+            "https_status": "non_verifie",
+            "reseau_status": "non_verifie",
+            "serveur_status": "non_verifie",
+            "dependances_status": "non_verifie",
+            "incidents_status": "non_verifie",
+            "public_password_reset_enabled": False,
         }
 
     async def update_security_policy(self, patch: dict) -> dict:
@@ -714,6 +776,19 @@ class CoreAdminOpsService:
                 "warn",
                 f"Longueur min {pol['password_min_length']} — renforcer la complexité recommandé.",
             )
+
+        add(
+            "https",
+            "HTTPS / TLS",
+            "warn",
+            "Non vérifiable depuis l’API — contrôler reverse proxy / certificat amont.",
+        )
+        add(
+            "public_reset",
+            "Reset MDP public",
+            "ok",
+            "Désactivé — reset via CORE ADMIN → Sécurité uniquement.",
+        )
 
         ok_c = sum(1 for i in items if i["status"] == "ok")
         warn_c = sum(1 for i in items if i["status"] == "warn")

@@ -25,8 +25,8 @@ import {
         <div>
           <h1>Utilisateurs</h1>
           <p>
-            Créer, modifier, désactiver ou supprimer les comptes plateforme — et changer les mots de
-            passe.
+            Créer, modifier, désactiver ou supprimer les comptes plateforme. Les mots de passe se
+            gèrent dans Sécurité.
           </p>
         </div>
         <a class="bea-admin-btn" routerLink="/admin/users/nouveau">Nouvel utilisateur</a>
@@ -125,6 +125,15 @@ import {
           </select>
         </label>
         <div class="bea-admin-toolbar__actions">
+          <button
+            type="button"
+            class="bea-admin-btn bea-admin-btn--refresh"
+            (click)="search()"
+            [disabled]="loading()"
+          >
+            <bea-admin-icon name="refresh" />
+            Actualiser
+          </button>
           <button type="submit" class="bea-admin-btn">Filtrer</button>
           <button type="button" class="bea-admin-btn bea-admin-btn--ghost" (click)="resetFilters()">
             Réinitialiser

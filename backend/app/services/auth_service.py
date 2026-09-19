@@ -8,18 +8,47 @@ from sqlalchemy.orm import selectinload
 from app.core.password_policy import validate_password_policy
 from app.core.security import get_password_hash, verify_password
 from app.data.plateforme_catalogue import DEFAULT_ESPACE_CODE, DEFAULT_MODULE_CODE
-from app.models import Role, User
+from app.models import PasswordHistory, Role, User
 from app.models.plateforme import PlateformeEspace, PlateformeModule
 from app.schemas.auth import UserCreate, UserUpdate
 from app.services.auth_session_service import AuthSessionService
 from app.services.plateforme_access_service import PlateformeAccessService
 
+PASSWORD_HISTORY_KEEP = 5
 
-def _apply_password(user: User, password: str, *, allow_same: bool = False) -> None:
+
+async def _apply_password(
+    db: AsyncSession,
+    user: User,
+    password: str,
+    *,
+    allow_same: bool = False,
+) -> None:
     validate_password_policy(password)
     if not allow_same and verify_password(password, user.hashed_password):
         raise ValueError("Le nouveau mot de passe doit être différent de l'ancien.")
+    # Historique N derniers hashes (table optionnelle jusqu’à migration)
+    try:
+        hist = await db.execute(
+            select(PasswordHistory)
+            .where(PasswordHistory.user_id == user.id)
+            .order_by(PasswordHistory.created_at.desc())
+            .limit(PASSWORD_HISTORY_KEEP)
+        )
+        for row in hist.scalars().all():
+            if verify_password(password, row.password_hash):
+                raise ValueError("Ce mot de passe a déjà été utilisé récemment.")
+    except ValueError:
+        raise
+    except Exception:
+        pass
+    old_hash = user.hashed_password
     user.hashed_password = get_password_hash(password)
+    if old_hash:
+        try:
+            db.add(PasswordHistory(user_id=user.id, password_hash=old_hash))
+        except Exception:
+            pass
 
 _USER_OPTIONS = (
     selectinload(User.roles).selectinload(Role.permissions),
@@ -62,16 +91,19 @@ class AuthService:
         return roles
 
     async def create_user(self, payload: UserCreate) -> User:
+        from app.core.temp_password import generate_temporary_password
+
         normalized = payload.email.strip().lower()
         existing = await self.db.execute(select(User).where(func.lower(User.email) == normalized))
         if existing.scalar_one_or_none():
             raise ValueError("Email déjà utilisé")
 
-        validate_password_policy(payload.password)
+        password = (payload.password or "").strip() or generate_temporary_password()
+        validate_password_policy(password)
         user = User(
             email=payload.email,
             full_name=payload.full_name,
-            hashed_password=get_password_hash(payload.password),
+            hashed_password=get_password_hash(password),
             is_superuser=payload.is_superuser,
             agence_id=payload.agence_id,
             phone=payload.phone,
@@ -120,7 +152,7 @@ class AuthService:
         if "is_superuser" in data and data["is_superuser"] is not None:
             user.is_superuser = data["is_superuser"]
         if "password" in data and data["password"]:
-            _apply_password(user, data["password"])
+            await _apply_password(self.db, user, data["password"])
             await AuthSessionService(self.db).revoke_all_for_user(user_id)
         if "role_codes" in data and data["role_codes"] is not None:
             user.roles = await self._roles_by_codes(data["role_codes"])
@@ -174,7 +206,7 @@ class AuthService:
         user = await self.get_by_id(UUID(payload["sub"]))
         if user is None:
             raise ValueError("Utilisateur introuvable")
-        _apply_password(user, new_password)
+        await _apply_password(self.db, user, new_password)
         # Invalide toutes les sessions après reset mot de passe
         await AuthSessionService(self.db).revoke_all_for_user(user.id)
         await self.db.flush()

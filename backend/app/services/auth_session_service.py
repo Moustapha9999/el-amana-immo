@@ -18,6 +18,7 @@ from app.core.security import (
 from app.models import AuthSession, User
 from app.models.auth import SESSION_KIND_MODULE, SESSION_KIND_PLATFORM
 from app.schemas.auth import TokenPair
+from app.services.security_policy_service import get_cached_security_policy
 
 
 class AuthSessionService:
@@ -27,19 +28,34 @@ class AuthSessionService:
     def _role_claims(self, user: User) -> dict:
         return {"roles": [r.code for r in user.roles], "is_superuser": user.is_superuser}
 
-    def _pair_for(self, user: User, session: AuthSession, refresh_jti: str) -> TokenPair:
+    def _ttl(self) -> tuple[int, int, int]:
         settings = get_settings()
+        policy = get_cached_security_policy()
+        access_min = int(
+            policy.get("access_token_expire_minutes") or settings.access_token_expire_minutes
+        )
+        refresh_days = int(
+            policy.get("refresh_token_expire_days") or settings.refresh_token_expire_days
+        )
+        module_min = int(
+            policy.get("module_refresh_token_expire_minutes")
+            or settings.module_refresh_token_expire_minutes
+        )
+        return max(1, access_min), max(1, refresh_days), max(5, module_min)
+
+    def _pair_for(self, user: User, session: AuthSession, refresh_jti: str) -> TokenPair:
+        _access_min, refresh_days, module_min = self._ttl()
         extra = {
             **self._role_claims(user),
             "kind": session.kind,
         }
         refresh_extra = {"kind": session.kind}
-        expire_delta = timedelta(days=settings.refresh_token_expire_days)
+        expire_delta = timedelta(days=refresh_days)
         if session.kind == SESSION_KIND_MODULE:
             extra["module"] = session.module_code
             extra["parent_sid"] = str(session.parent_session_id) if session.parent_session_id else None
             refresh_extra["module"] = session.module_code
-            expire_delta = timedelta(minutes=settings.module_refresh_token_expire_minutes)
+            expire_delta = timedelta(minutes=module_min)
         return TokenPair(
             access_token=create_access_token(user.id, sid=session.id, extra_claims=extra),
             refresh_token=create_refresh_token(
@@ -67,9 +83,9 @@ class AuthSessionService:
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> TokenPair:
-        settings = get_settings()
         refresh_jti = new_jti()
-        expires_at = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
+        _access_min, refresh_days, _module_min = self._ttl()
+        expires_at = datetime.now(UTC) + timedelta(days=refresh_days)
         session = AuthSession(
             user_id=user.id,
             refresh_jti=refresh_jti,
@@ -94,9 +110,9 @@ class AuthSessionService:
         user_agent: str | None = None,
     ) -> TokenPair:
         await self.revoke_module_sessions(user.id, module_code)
-        settings = get_settings()
         refresh_jti = new_jti()
-        expires_at = datetime.now(UTC) + timedelta(minutes=settings.module_refresh_token_expire_minutes)
+        _access_min, _refresh_days, module_min = self._ttl()
+        expires_at = datetime.now(UTC) + timedelta(minutes=module_min)
         session = AuthSession(
             user_id=user.id,
             refresh_jti=refresh_jti,
@@ -156,14 +172,12 @@ class AuthSessionService:
                 raise ValueError("Session plateforme expirée ou révoquée")
 
         new_refresh_jti = new_jti()
-        settings = get_settings()
+        _access_min, refresh_days, module_min = self._ttl()
         session.refresh_jti = new_refresh_jti
         if session.kind == SESSION_KIND_MODULE:
-            session.expires_at = datetime.now(UTC) + timedelta(
-                minutes=settings.module_refresh_token_expire_minutes
-            )
+            session.expires_at = datetime.now(UTC) + timedelta(minutes=module_min)
         else:
-            session.expires_at = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
+            session.expires_at = datetime.now(UTC) + timedelta(days=refresh_days)
         await self.db.flush()
         return self._pair_for(user, session, new_refresh_jti)
 

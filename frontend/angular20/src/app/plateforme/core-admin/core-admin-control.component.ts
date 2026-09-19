@@ -55,7 +55,7 @@ const STATUT_OPTIONS = [
 @Component({
   selector: 'bea-core-admin-backups',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, DecimalPipe, FormsModule, RouterLink],
+  imports: [DatePipe, DecimalPipe, FormsModule, RouterLink, CoreAdminIconComponent],
   template: `
     <section class="bea-admin-dash bea-admin-backups">
       <header class="bea-admin-dash__head bea-admin-users__head">
@@ -63,7 +63,18 @@ const STATUT_OPTIONS = [
           <h1>Sauvegardes</h1>
           <p>Sauvegardes globales, par département ou par module — historisées et auditées.</p>
         </div>
-        <a class="bea-admin-btn bea-admin-btn--ghost" routerLink="/admin/recovery">Recovery</a>
+        <div class="bea-admin-users__head-actions">
+          <button
+            type="button"
+            class="bea-admin-btn bea-admin-btn--refresh"
+            (click)="reload()"
+            [disabled]="loading()"
+          >
+            <bea-admin-icon name="refresh" />
+            Actualiser
+          </button>
+          <a class="bea-admin-btn bea-admin-btn--ghost" routerLink="/admin/recovery">Recovery</a>
+        </div>
       </header>
 
       @if (erreur()) {
@@ -279,7 +290,7 @@ export class CoreAdminBackupsComponent implements OnInit {
 @Component({
   selector: 'bea-core-admin-recovery',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, FormsModule, RouterLink],
+  imports: [DatePipe, FormsModule, RouterLink, CoreAdminIconComponent],
   template: `
     <section class="bea-admin-dash bea-admin-recovery">
       <header class="bea-admin-dash__head bea-admin-users__head">
@@ -290,7 +301,13 @@ export class CoreAdminBackupsComponent implements OnInit {
             recovery. La restauration globale reste manuelle (scripts).
           </p>
         </div>
-        <a class="bea-admin-btn bea-admin-btn--ghost" routerLink="/admin/backups">Sauvegardes</a>
+        <div class="bea-admin-users__head-actions">
+          <button type="button" class="bea-admin-btn bea-admin-btn--refresh" (click)="reload()">
+            <bea-admin-icon name="refresh" />
+            Actualiser
+          </button>
+          <a class="bea-admin-btn bea-admin-btn--ghost" routerLink="/admin/backups">Sauvegardes</a>
+        </div>
       </header>
       @if (erreur()) {
         <p class="bea-admin-dash__error">{{ erreur() }}</p>
@@ -479,11 +496,15 @@ export class CoreAdminRecoveryComponent implements OnInit {
   imports: [DatePipe, RouterLink, CoreAdminIconComponent],
   template: `
     <section class="bea-admin-dash bea-admin-supervis">
-      <header class="bea-admin-dash__head">
+      <header class="bea-admin-dash__head bea-admin-users__head">
         <div>
           <h1>Supervision</h1>
           <p>État opérationnel de BEA-DIGITAL — sans stack de monitoring externe.</p>
         </div>
+        <button type="button" class="bea-admin-btn bea-admin-btn--refresh" (click)="reload()">
+          <bea-admin-icon name="refresh" />
+          Actualiser
+        </button>
       </header>
       @if (erreur()) {
         <p class="bea-admin-dash__error">{{ erreur() }}</p>
@@ -616,6 +637,10 @@ export class CoreAdminSupervisionComponent implements OnInit {
   };
 
   ngOnInit(): void {
+    this.reload();
+  }
+
+  reload(): void {
     this.api.get('/plateforme/admin/supervision').subscribe({
       next: (d) => this.data.set(d),
       error: (err) => this.erreur.set(coreAdminOpsError(err, 'Supervision indisponible')),
@@ -650,7 +675,7 @@ const STATUT_LABELS: Record<string, string> = {
 @Component({
   selector: 'bea-core-admin-module-states',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, CoreAdminIconComponent],
   template: `
     <section class="bea-admin-dash bea-admin-mstates">
       <header class="bea-admin-dash__head bea-admin-users__head">
@@ -659,6 +684,10 @@ const STATUT_LABELS: Record<string, string> = {
           <p>Statut opérationnel, message utilisateur et fenêtre de maintenance.</p>
         </div>
         <div class="bea-admin-users__head-actions">
+          <button type="button" class="bea-admin-btn bea-admin-btn--refresh" (click)="reload()">
+            <bea-admin-icon name="refresh" />
+            Actualiser
+          </button>
           <a class="bea-admin-btn bea-admin-btn--ghost" routerLink="/admin/maintenance">Maintenance</a>
           <a class="bea-admin-btn bea-admin-btn--ghost" routerLink="/admin/versions">Versions</a>
         </div>
@@ -739,6 +768,10 @@ export class CoreAdminModuleStatesComponent implements OnInit {
   readonly statuts = STATUT_OPTIONS;
 
   ngOnInit(): void {
+    this.reload();
+  }
+
+  reload(): void {
     this.api.get<{ items: ModuleState[] }>('/plateforme/admin/module-states').subscribe({
       next: (res) => this.items.set(res.items),
       error: (err) => {

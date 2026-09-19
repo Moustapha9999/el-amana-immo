@@ -13,16 +13,19 @@ from app.schemas.common import MessageResponse
 from app.schemas.plateforme import (
     CoreAdminResetAccess,
     CoreAdminUserCreate,
+    CoreAdminUserCreateResult,
     CoreAdminUserFiche,
     CoreAdminUserListRead,
     CoreAdminUserUpdate,
 )
 from app.services.audit_helpers import record_audit
 from app.services.core_admin_service import CoreAdminService
+from app.core.temp_password import generate_temporary_password
 
 router = APIRouter(prefix="/plateforme/admin", tags=["core-admin"])
 
 _USERS_PERM = require_platform_permission("core.admin.users")
+_SECURITY_PERM = require_platform_permission("core.admin.security")
 
 
 def _http_from_value_error(exc: ValueError) -> HTTPException:
@@ -35,11 +38,11 @@ def _http_from_value_error(exc: ValueError) -> HTTPException:
     return HTTPException(status_code=code, detail=detail)
 
 
-def _to_create(payload: CoreAdminUserCreate) -> UserCreate:
+def _to_create(payload: CoreAdminUserCreate, *, password: str) -> UserCreate:
     return UserCreate(
         email=payload.email,
         full_name=payload.full_name,
-        password=payload.password,
+        password=password,
         phone=payload.phone,
         is_superuser=payload.is_superuser,
         role_codes=payload.role_codes,
@@ -125,7 +128,7 @@ async def list_admin_roles(
     return await CoreAdminService(db).list_roles()
 
 
-@router.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@router.post("/users", response_model=CoreAdminUserCreateResult, status_code=status.HTTP_201_CREATED)
 async def create_admin_user(
     payload: CoreAdminUserCreate,
     request: Request,
@@ -133,12 +136,48 @@ async def create_admin_user(
     db: AsyncSession = Depends(get_db),
 ):
     service = CoreAdminService(db)
+    temporary = (payload.password or "").strip() or generate_temporary_password()
     try:
-        user = await service.create_user(_to_create(payload), actor=actor)
+        user = await service.create_user(_to_create(payload, password=temporary), actor=actor)
     except ValueError as exc:
         raise _http_from_value_error(exc) from exc
-    await _audit_user(db, actor=actor, action="create", user=user, request=request)
-    return user
+    await _audit_user(
+        db,
+        actor=actor,
+        action="create",
+        user=user,
+        request=request,
+        extra={"temporary_password_issued": True},
+    )
+    return CoreAdminUserCreateResult(
+        user=UserRead.model_validate(user),
+        temporary_password=temporary,
+    )
+
+
+@router.post("/users/{user_id}/reset-access", response_model=MessageResponse)
+async def reset_admin_user_access(
+    user_id: UUID,
+    payload: CoreAdminResetAccess,
+    request: Request,
+    actor: User = Depends(_SECURITY_PERM),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reset MDP réservé à core.admin.security (centre Sécurité)."""
+    service = CoreAdminService(db)
+    try:
+        user = await service.reset_access(user_id, payload.password, actor=actor)
+    except ValueError as exc:
+        raise _http_from_value_error(exc) from exc
+    await _audit_user(
+        db,
+        actor=actor,
+        action="reset-access",
+        user=user,
+        request=request,
+        extra={"sessions_revoked": True},
+    )
+    return MessageResponse(message="Accès réinitialisé")
 
 
 @router.get("/users/{user_id}", response_model=CoreAdminUserFiche)
@@ -161,6 +200,11 @@ async def update_admin_user(
     actor: User = Depends(_USERS_PERM),
     db: AsyncSession = Depends(get_db),
 ):
+    if payload.password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La gestion des mots de passe se fait via CORE ADMIN → Sécurité",
+        )
     service = CoreAdminService(db)
     try:
         user = await service.update_user(user_id, _to_update(payload), actor=actor)
@@ -200,30 +244,6 @@ async def activate_admin_user(
         raise _http_from_value_error(exc) from exc
     await _audit_user(db, actor=actor, action="activate", user=user, request=request)
     return user
-
-
-@router.post("/users/{user_id}/reset-access", response_model=MessageResponse)
-async def reset_admin_user_access(
-    user_id: UUID,
-    payload: CoreAdminResetAccess,
-    request: Request,
-    actor: User = Depends(_USERS_PERM),
-    db: AsyncSession = Depends(get_db),
-):
-    service = CoreAdminService(db)
-    try:
-        user = await service.reset_access(user_id, payload.password, actor=actor)
-    except ValueError as exc:
-        raise _http_from_value_error(exc) from exc
-    await _audit_user(
-        db,
-        actor=actor,
-        action="reset-access",
-        user=user,
-        request=request,
-        extra={"sessions_revoked": True},
-    )
-    return MessageResponse(message="Accès réinitialisé")
 
 
 @router.delete("/users/{user_id}", response_model=MessageResponse)

@@ -164,12 +164,18 @@ export interface CoreAdminSecuritySettings {
   app_env?: string;
   app_debug?: boolean;
   comptes_verrouilles?: { email: string; echecs: number; fenetre_minutes: number }[];
-  etat?: Record<string, { ok: boolean; label: string }>;
+  etat?: Record<string, { ok: boolean; label: string; status?: string; detail?: string }>;
   fuseau?: string;
   verifie_at?: string | null;
   policy_source?: string | null;
   policy_updated_at?: string | null;
   policy_editable?: boolean;
+  https_status?: string;
+  reseau_status?: string;
+  serveur_status?: string;
+  dependances_status?: string;
+  incidents_status?: string;
+  public_password_reset_enabled?: boolean;
 }
 
 export interface CoreAdminSecurityCheckItem {

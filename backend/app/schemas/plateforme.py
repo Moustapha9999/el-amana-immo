@@ -180,6 +180,8 @@ class CoreAdminActivityItem(BaseModel):
 class CoreAdminHealthItem(BaseModel):
     ok: bool
     label: str
+    status: str | None = None  # operational|protege|a_verifier|attention|probleme|non_verifie
+    detail: str | None = None
 
 
 class CoreAdminDashboardCharts(BaseModel):
@@ -202,12 +204,22 @@ class CoreAdminDashboardRead(BaseModel):
 class CoreAdminUserCreate(BaseModel):
     email: EmailStr
     full_name: str = Field(min_length=1, max_length=255)
-    password: str = Field(min_length=8)
+    """Mot de passe optionnel : si absent, le serveur en génère un temporaire."""
+    password: str | None = Field(default=None, min_length=8)
     phone: str | None = Field(default=None, max_length=40)
     is_superuser: bool = False
     role_codes: list[str] = Field(default_factory=list)
     espace_codes: list[str] = Field(default_factory=list)
     module_codes: list[str] = Field(default_factory=list)
+
+
+class CoreAdminUserCreateResult(BaseModel):
+    user: UserRead
+    temporary_password: str
+    message: str = (
+        "Compte créé. Communiquez le mot de passe temporaire une seule fois, "
+        "puis orientez l’utilisateur vers un changement via CORE ADMIN → Sécurité."
+    )
 
 
 class CoreAdminUserUpdate(BaseModel):
@@ -796,12 +808,21 @@ class CoreAdminSecuritySettings(BaseModel):
     policy_source: str | None = None
     policy_updated_at: str | None = None
     policy_editable: bool = True
+    https_status: str = "non_verifie"
+    reseau_status: str = "non_verifie"
+    serveur_status: str = "non_verifie"
+    dependances_status: str = "non_verifie"
+    incidents_status: str = "non_verifie"
+    public_password_reset_enabled: bool = False
 
 
 class CoreAdminSecurityPolicyUpdate(BaseModel):
     """PATCH politique — confirmation_phrase doit être CONFIRMER."""
 
     confirmation_phrase: str = Field(min_length=1, max_length=40)
+    access_token_expire_minutes: int | None = Field(default=None, ge=1, le=1440)
+    refresh_token_expire_days: int | None = Field(default=None, ge=1, le=90)
+    module_refresh_token_expire_minutes: int | None = Field(default=None, ge=5, le=1440)
     login_lockout_window_minutes: int | None = Field(default=None, ge=1, le=1440)
     login_lockout_max_failures: int | None = Field(default=None, ge=1, le=50)
     password_min_length: int | None = Field(default=None, ge=8, le=128)

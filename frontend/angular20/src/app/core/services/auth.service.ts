@@ -228,18 +228,4 @@ export class AuthService {
   hasModuleSession(moduleCode: string): boolean {
     return this.moduleCode === moduleCode && !!this.moduleAccessToken;
   }
-
-  forgotPassword(email: string) {
-    return this.api.post<{
-      message: string;
-      reset_token?: string | null;
-      account_found?: boolean;
-      dev_mode?: boolean;
-      expires_in_seconds?: number | null;
-    }>('/auth/forgot-password', { email });
-  }
-
-  resetPassword(token: string, new_password: string) {
-    return this.api.post<{ message: string }>('/auth/reset-password', { token, new_password });
-  }
 }

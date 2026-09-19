@@ -30,7 +30,7 @@ from app.services.audit_helpers import record_audit
 from app.services.inventaire_service import build_qr_png_base64
 from app.services.login_attempt_service import LoginAttemptService
 from app.services.plateforme_access_service import PlateformeAccessService
-from app.services.totp_service import generate_secret, provisioning_uri, verify_code
+from app.services.totp_service import generate_secret, provisioning_uri, store_secret, verify_code
 
 router = APIRouter(tags=["auth"])
 
@@ -173,7 +173,7 @@ async def totp_setup(user: User = Depends(get_platform_user), db: AsyncSession =
     if user.totp_enabled:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="2FA déjà activée")
     secret = generate_secret()
-    user.totp_secret = secret
+    user.totp_secret = store_secret(secret)
     user.totp_enabled = False
     await db.flush()
     otpauth_url = provisioning_uri(secret, user.email)
@@ -241,66 +241,17 @@ async def forgot_password(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Réinitialisation : pas d'envoi SMTP pour l'instant.
-
-    En mode développement (`APP_DEBUG=true`), le token est renvoyé dans la réponse
-    pour permettre de réinitialiser sans boîte mail. En production, seul un message
-    générique est renvoyé (le token n'est jamais exposé).
-    """
-    import logging
-
-    from app.core.config import get_settings
-    from app.core.security import PASSWORD_RESET_EXPIRE_SECONDS, create_password_reset_token
-
-    settings = get_settings()
-    service = AuthService(db)
-    user = await service.find_active_by_email(payload.email)
-    dev_mode = bool(settings.app_debug) or settings.app_env.lower() in {"development", "dev", "local"}
-
-    message = "Si l'email existe, un lien de réinitialisation a été envoyé."
-    reset_token: str | None = None
-    account_found = user is not None
-    expires_in: int | None = None
-
-    if user is not None:
-        reset_token = create_password_reset_token(user.id)
-        expires_in = PASSWORD_RESET_EXPIRE_SECONDS
-        logging.getLogger("bea.auth").info(
-            "Password reset token generated for user_id=%s (dev_mode=%s, ttl=%ss)",
-            user.id,
-            dev_mode,
-            PASSWORD_RESET_EXPIRE_SECONDS,
-        )
-        await record_audit(
-            db,
-            user=user,
-            action="password_forgot",
-            entity="user",
-            entity_id=str(user.id),
-            request=request,
-            after={"dev_mode": dev_mode},
-        )
-        await db.commit()
-        if not dev_mode:
-            reset_token = None
-            expires_in = None
-        else:
-            message = (
-                f"Compte trouvé — cliquez sur le lien ci-dessous pour choisir un nouveau mot de passe "
-                f"(valide {PASSWORD_RESET_EXPIRE_SECONDS // 60} min)."
-            )
-    elif dev_mode:
-        message = (
-            "Aucun compte actif avec cet email. "
-            "Utilisez un email existant (ex. admin@el-amana.mr)."
-        )
-
-    return ForgotPasswordResponse(
-        message=message,
-        reset_token=reset_token if dev_mode else None,
-        account_found=account_found if dev_mode else False,
-        dev_mode=dev_mode,
-        expires_in_seconds=expires_in if dev_mode else None,
+    """Désactivé : reset MDP centralisé dans CORE ADMIN → Sécurité (pas de SMTP public)."""
+    _ = payload, request, db
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": "PASSWORD_RESET_DISABLED",
+            "message": (
+                "La réinitialisation publique est désactivée. "
+                "Contactez un administrateur CORE ADMIN (Sécurité → Mots de passe)."
+            ),
+        },
     )
 
 
@@ -310,23 +261,18 @@ async def reset_password(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    service = AuthService(db)
-    try:
-        await service.reset_password(payload.token, payload.new_password)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    await record_audit(
-        db,
-        user=None,
-        action="password_reset",
-        entity="user",
-        entity_id=None,
-        request=request,
-        after={"via": "reset_token"},
+    """Désactivé : utiliser CORE ADMIN → Sécurité."""
+    _ = payload, request, db
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": "PASSWORD_RESET_DISABLED",
+            "message": (
+                "La réinitialisation par lien public est désactivée. "
+                "Contactez un administrateur CORE ADMIN."
+            ),
+        },
     )
-    await db.commit()
-    return MessageResponse(message="Mot de passe mis à jour")
-
 
 @router.post("/auth/modules/{module_code}/login", response_model=TokenPair)
 async def module_login(

@@ -7,6 +7,7 @@ from app.models.associations import (
 from app.models.archive import ArchiveDossier, ArchiveFichier, ArchiveLigne
 from app.models.audit import AuditLog, Notification
 from app.models.auth import Agence, AuthLoginAttempt, AuthSession, Permission, Role, User
+from app.models.security_extra import PasswordHistory, PasswordResetJti, SecurityIncident
 from app.models.plateforme import PlateformeEspace, PlateformeModule
 from app.models.platform_ops import (
     PlatformBackup,
@@ -64,6 +65,9 @@ __all__ = [
     "User",
     "AuthSession",
     "AuthLoginAttempt",
+    "PasswordHistory",
+    "PasswordResetJti",
+    "SecurityIncident",
     "PlateformeEspace",
     "PlateformeModule",
     "PlatformBackup",

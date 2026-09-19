@@ -1,8 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard, guestGuard, moduleGuard } from './core/guards/auth.guard';
 import { LoginComponent } from './auth/login/login.component';
-import { ForgotPasswordComponent } from './auth/forgot-password/forgot-password.component';
-import { ResetPasswordComponent } from './auth/reset-password/reset-password.component';
 import { ShellComponent } from './layout/shell/shell.component';
 import { DashboardComponent } from './dashboard/dashboard.component';
 import { ImmobilisationsListComponent } from './immobilisations/immobilisations-list.component';
@@ -37,8 +35,8 @@ import { PLATEFORME_ROUTES } from './plateforme/plateforme.routes';
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent, canActivate: [guestGuard] },
-  { path: 'forgot-password', component: ForgotPasswordComponent, canActivate: [guestGuard] },
-  { path: 'reset-password', component: ResetPasswordComponent, canActivate: [guestGuard] },
+  { path: 'forgot-password', redirectTo: 'login', pathMatch: 'full' },
+  { path: 'reset-password', redirectTo: 'login', pathMatch: 'full' },
   { path: '', pathMatch: 'full', redirectTo: 'accueil' },
   ...PLATEFORME_ROUTES,
   {

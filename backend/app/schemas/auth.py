@@ -107,7 +107,7 @@ class TotpStatusResponse(BaseModel):
 class UserCreate(BaseModel):
     email: EmailStr
     full_name: str
-    password: str = Field(min_length=8)
+    password: str | None = Field(default=None, min_length=8)
     phone: str | None = Field(default=None, max_length=40)
     role_codes: list[str] = Field(default_factory=list)
     is_superuser: bool = False

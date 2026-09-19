@@ -113,14 +113,10 @@ import {
               <input type="tel" formControlName="phone" autocomplete="tel" />
             </label>
             @if (isCreate()) {
-              <label class="bea-admin-field">
-                <span>Mot de passe</span>
-                <input type="password" formControlName="password" autocomplete="new-password" />
-              </label>
-              <label class="bea-admin-field">
-                <span>Confirmation</span>
-                <input type="password" formControlName="password2" autocomplete="new-password" />
-              </label>
+              <p class="bea-admin-panel__hint">
+                Un mot de passe temporaire sera généré à la création. Communiquez-le une seule fois,
+                puis gérez les accès via CORE ADMIN → Sécurité → Mots de passe.
+              </p>
             }
             @if (canGrantSuperuser()) {
               <label class="bea-admin-check" [class.bea-admin-check--on]="form.controls.is_superuser.value">
@@ -160,20 +156,22 @@ import {
                     </span>
                   </div>
                 }
-                @for (mod of espace.modules; track mod.id) {
-                  <label
-                    class="bea-admin-check bea-admin-check--nested"
-                    [class.bea-admin-check--on]="moduleSelected(mod.id)"
-                  >
-                    <input
-                      type="checkbox"
-                      [checked]="moduleSelected(mod.id)"
-                      [disabled]="isView()"
-                      (change)="toggleModule(espace.id, mod.id, isChecked($event))"
-                    />
-                    {{ mod.titre }}
-                  </label>
-                }
+                <div class="bea-admin-grant__list">
+                  @for (mod of espace.modules; track mod.id) {
+                    <label
+                      class="bea-admin-check bea-admin-check--nested"
+                      [class.bea-admin-check--on]="moduleSelected(mod.id)"
+                    >
+                      <input
+                        type="checkbox"
+                        [checked]="moduleSelected(mod.id)"
+                        [disabled]="isView()"
+                        (change)="toggleModule(espace.id, mod.id, isChecked($event))"
+                      />
+                      {{ mod.titre }}
+                    </label>
+                  }
+                </div>
               </fieldset>
             }
           </div>
@@ -207,24 +205,6 @@ import {
       </form>
 
       @if (!isCreate()) {
-        <section class="bea-admin-panel">
-          <h2>Mot de passe</h2>
-          <div class="bea-admin-password-card">
-            <div>
-              <p class="bea-admin-panel__hint">
-                Remplacez le mot de passe du compte plateforme. Toutes les sessions actives seront
-                révoquées.
-              </p>
-              <button type="button" class="bea-admin-btn" [disabled]="saving()" (click)="resetAccess()">
-                Changer le mot de passe
-              </button>
-            </div>
-            <div class="bea-admin-password-card__viz" aria-hidden="true">
-              <span></span><span></span><span></span><span></span><span></span><span></span>
-            </div>
-          </div>
-        </section>
-
         <div class="bea-admin-actions">
           @if (isActive() && !isSelf()) {
             <button type="button" class="bea-admin-btn bea-admin-btn--danger" [disabled]="saving()" (click)="deactivate()">
@@ -371,8 +351,6 @@ export class CoreAdminUserFicheComponent implements OnInit {
     full_name: ['', Validators.required],
     email: ['', [Validators.required, Validators.email]],
     phone: [''],
-    password: [''],
-    password2: [''],
     is_superuser: [false],
   });
 
@@ -385,15 +363,6 @@ export class CoreAdminUserFicheComponent implements OnInit {
     if (this.isView()) {
       this.form.disable({ emitEvent: false });
     }
-    if (id) {
-      this.form.controls.password.clearValidators();
-      this.form.controls.password2.clearValidators();
-    } else {
-      this.form.controls.password.setValidators([Validators.required, Validators.minLength(8)]);
-      this.form.controls.password2.setValidators([Validators.required]);
-    }
-    this.form.controls.password.updateValueAndValidity();
-    this.form.controls.password2.updateValueAndValidity();
     this.loadRoles();
     this.loadCatalogue();
     if (id) {
@@ -477,15 +446,11 @@ export class CoreAdminUserFicheComponent implements OnInit {
       return;
     }
     const value = this.form.getRawValue();
-    if (this.isCreate() && value.password !== value.password2) {
-      await this.dialogs.error('Les mots de passe ne correspondent pas.', 'Validation');
-      return;
-    }
     const name = value.full_name.trim();
     const ok = await this.dialogs.confirm({
       title: this.isCreate() ? 'Confirmer la création' : 'Confirmer la modification',
       message: this.isCreate()
-        ? `Créer le compte ${name} (${value.email.trim()}) avec les départements, modules et rôles sélectionnés ?`
+        ? `Créer le compte ${name} (${value.email.trim()}) avec les départements, modules et rôles sélectionnés ? Un mot de passe temporaire sera généré.`
         : `Enregistrer les modifications de ${name} (${value.email.trim()}) ?`,
       confirmLabel: this.isCreate() ? 'Créer' : 'Enregistrer',
     });
@@ -505,16 +470,22 @@ export class CoreAdminUserFicheComponent implements OnInit {
       body['is_superuser'] = value.is_superuser;
     }
     if (this.isCreate()) {
-      body['password'] = value.password;
-      this.api.post<CoreAdminUserFiche>('/plateforme/admin/users', body).subscribe({
-        next: (created) => {
-          this.saving.set(false);
-          void this.dialogs
-            .success(`${created.full_name} a été ajouté.`, 'Utilisateur créé')
-            .then(() => this.router.navigate(['/admin/users', created.id]));
-        },
-        error: (err) => this.fail(err, "Impossible de créer l'utilisateur."),
-      });
+      this.api
+        .post<{ user: CoreAdminUserFiche; temporary_password: string; message?: string }>(
+          '/plateforme/admin/users',
+          body,
+        )
+        .subscribe({
+          next: async (created) => {
+            this.saving.set(false);
+            await this.dialogs.success(
+              `Mot de passe temporaire (à communiquer une seule fois) :\n${created.temporary_password}`,
+              'Utilisateur créé',
+            );
+            void this.router.navigate(['/admin/users', created.user.id]);
+          },
+          error: (err) => this.fail(err, "Impossible de créer l'utilisateur."),
+        });
       return;
     }
     const id = this.userId();
@@ -583,52 +554,6 @@ export class CoreAdminUserFicheComponent implements OnInit {
           .then(() => this.router.navigate(['/admin/users']));
       },
       error: (err) => this.fail(err, 'Suppression impossible.'),
-    });
-  }
-
-  async resetAccess(): Promise<void> {
-    if (this.saving()) {
-      return;
-    }
-    const fiche = this.fiche();
-    const values = await this.dialogs.prompt({
-      title: 'Changer le mot de passe',
-      message: `Remplacer le mot de passe de ${fiche?.full_name ?? 'ce compte'} et révoquer toutes ses sessions ?`,
-      confirmLabel: 'Changer le mot de passe',
-      tone: 'warn',
-      fields: [
-        { key: 'password', label: 'Nouveau mot de passe', type: 'password', autocomplete: 'new-password' },
-        { key: 'password2', label: 'Confirmation', type: 'password', autocomplete: 'new-password' },
-      ],
-      validate: (input) => {
-        if (!input['password'] || input['password'].length < 8) {
-          return 'Le mot de passe doit faire au moins 8 caractères.';
-        }
-        if (input['password'] !== input['password2']) {
-          return 'Les mots de passe ne correspondent pas.';
-        }
-        return null;
-      },
-    });
-    if (!values) {
-      return;
-    }
-    const id = this.userId();
-    if (!id) {
-      return;
-    }
-    this.saving.set(true);
-    this.erreur.set(null);
-    this.api.post(`/plateforme/admin/users/${id}/reset-access`, { password: values['password'] }).subscribe({
-      next: () => {
-        this.saving.set(false);
-        this.loadFiche(id);
-        void this.dialogs.success(
-          'Le mot de passe a été remplacé et toutes les sessions ont été révoquées.',
-          'Accès réinitialisé',
-        );
-      },
-      error: (err) => this.fail(err, "Impossible de réinitialiser l'accès."),
     });
   }
 

@@ -83,17 +83,9 @@
               />
             </div>
             <div class="usr-field">
-              <label class="usr-field__label" for="usr-password">
-                {{ isEdit() ? 'Nouveau mot de passe (optionnel)' : 'Mot de passe' }}
-              </label>
-              <input
-                id="usr-password"
-                class="usr-field__control"
-                type="password"
-                formControlName="password"
-                autocomplete="new-password"
-                [attr.aria-label]="isEdit() ? 'Nouveau mot de passe' : 'Mot de passe'"
-              />
+              <p class="usr-field__hint">
+                Mot de passe : généré côté serveur à la création. Gestion via CORE ADMIN → Sécurité.
+              </p>
             </div>
             <div class="usr__roles">
               <span class="usr-field__label">Rôles</span>

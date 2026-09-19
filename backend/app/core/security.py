@@ -26,8 +26,12 @@ def create_access_token(
     sid: str | UUID,
     extra_claims: dict[str, Any] | None = None,
 ) -> str:
+    from app.services.security_policy_service import get_cached_security_policy
+
     settings = get_settings()
-    expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
+    policy = get_cached_security_policy()
+    minutes = int(policy.get("access_token_expire_minutes") or settings.access_token_expire_minutes)
+    expire = datetime.now(UTC) + timedelta(minutes=max(1, minutes))
     payload: dict[str, Any] = {
         "sub": str(subject),
         "exp": expire,
@@ -48,8 +52,14 @@ def create_refresh_token(
     extra_claims: dict[str, Any] | None = None,
     expire_delta: timedelta | None = None,
 ) -> str:
+    from app.services.security_policy_service import get_cached_security_policy
+
     settings = get_settings()
-    expire = datetime.now(UTC) + (expire_delta or timedelta(days=settings.refresh_token_expire_days))
+    if expire_delta is None:
+        policy = get_cached_security_policy()
+        days = int(policy.get("refresh_token_expire_days") or settings.refresh_token_expire_days)
+        expire_delta = timedelta(days=max(1, days))
+    expire = datetime.now(UTC) + expire_delta
     payload: dict[str, Any] = {
         "sub": str(subject),
         "exp": expire,

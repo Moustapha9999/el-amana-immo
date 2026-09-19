@@ -118,20 +118,22 @@ import {
                       {{ groupSelectedCount(group) }}/{{ group.items.length }}
                     </span>
                   </div>
-                  @for (perm of group.items; track perm.id) {
-                    <label
-                      class="bea-admin-check bea-admin-check--nested"
-                      [class.bea-admin-check--on]="selected().has(perm.code)"
-                    >
-                      <input
-                        type="checkbox"
-                        [checked]="selected().has(perm.code)"
-                        [disabled]="isView()"
-                        (change)="togglePermission(perm.code, isChecked($event))"
-                      />
-                      <span><code>{{ perm.code }}</code> — {{ perm.label }}</span>
-                    </label>
-                  }
+                  <div class="bea-admin-grant__list">
+                    @for (perm of group.items; track perm.id) {
+                      <label
+                        class="bea-admin-check bea-admin-check--nested"
+                        [class.bea-admin-check--on]="selected().has(perm.code)"
+                      >
+                        <input
+                          type="checkbox"
+                          [checked]="selected().has(perm.code)"
+                          [disabled]="isView()"
+                          (change)="togglePermission(perm.code, isChecked($event))"
+                        />
+                        <span><code>{{ perm.code }}</code> — {{ perm.label }}</span>
+                      </label>
+                    }
+                  </div>
                 </fieldset>
               }
             </div>

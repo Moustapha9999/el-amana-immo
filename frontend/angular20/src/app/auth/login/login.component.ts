@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatIconModule } from '@angular/material/icon';
 import { AuthService } from '../../core/services/auth.service';
@@ -9,7 +9,7 @@ import { AuthScreenComponent } from '../auth-screen.component';
 
 @Component({
   selector: 'app-login',
-  imports: [ReactiveFormsModule, MatCheckboxModule, MatIconModule, RouterLink, AuthScreenComponent],
+  imports: [ReactiveFormsModule, MatCheckboxModule, MatIconModule, AuthScreenComponent],
   templateUrl: './login.component.html',
 })
 export class LoginComponent implements OnInit {
@@ -32,8 +32,8 @@ export class LoginComponent implements OnInit {
   }
 
   readonly form = this.fb.nonNullable.group({
-    email: ['admin@el-amana.mr', [Validators.required, Validators.email]],
-    password: ['Admin@2026', [Validators.required, Validators.minLength(8)]],
+    email: ['', [Validators.required, Validators.email]],
+    password: ['', [Validators.required, Validators.minLength(8)]],
     totp_code: [''],
     remember_me: [false],
   });
@@ -46,12 +46,6 @@ export class LoginComponent implements OnInit {
       this.form.patchValue({ email: saved, remember_me: true });
       localStorage.setItem(LoginComponent.REMEMBER_KEY, saved);
       localStorage.removeItem(LoginComponent.LEGACY_REMEMBER_KEY);
-    }
-    const reset = this.route.snapshot.queryParamMap.get('reset');
-    if (reset === 'expired') {
-      this.info.set('Lien de réinitialisation expiré — recommencez depuis Mot de passe oublié.');
-    } else if (reset === 'ok') {
-      this.info.set('Mot de passe mis à jour. Vous pouvez vous connecter.');
     }
     const reason = this.route.snapshot.queryParamMap.get('reason');
     if (reason === 'session') {

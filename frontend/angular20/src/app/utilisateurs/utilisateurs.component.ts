@@ -93,7 +93,6 @@ export class UtilisateursComponent implements OnInit {
   readonly userForm = this.fb.nonNullable.group({
     full_name: ['', Validators.required],
     email: ['', [Validators.required, Validators.email]],
-    password: ['', [Validators.minLength(8)]],
     is_superuser: [false],
   });
 
@@ -153,11 +152,8 @@ export class UtilisateursComponent implements OnInit {
     this.userForm.reset({
       full_name: '',
       email: '',
-      password: '',
       is_superuser: false,
     });
-    this.userForm.controls.password.setValidators([Validators.required, Validators.minLength(8)]);
-    this.userForm.controls.password.updateValueAndValidity();
     this.formOpen.set(true);
   }
 
@@ -169,11 +165,8 @@ export class UtilisateursComponent implements OnInit {
     this.userForm.reset({
       full_name: row.full_name,
       email: row.email,
-      password: '',
       is_superuser: row.is_superuser,
     });
-    this.userForm.controls.password.setValidators([Validators.minLength(8)]);
-    this.userForm.controls.password.updateValueAndValidity();
     this.formOpen.set(true);
   }
 
@@ -256,9 +249,6 @@ export class UtilisateursComponent implements OnInit {
             espace_codes: this.selectedEspaces(),
             module_codes: this.selectedModules(),
           };
-          if (v.password.trim()) {
-            body['password'] = v.password;
-          }
           this.api.patch<UserRow>(`/users/${id}`, body).subscribe({
             next: () => {
               this.saving.set(false);
@@ -279,7 +269,6 @@ export class UtilisateursComponent implements OnInit {
           .post<UserRow>('/users', {
             full_name: v.full_name.trim(),
             email: v.email.trim(),
-            password: v.password,
             role_codes: this.selectedRoles(),
             is_superuser: v.is_superuser,
             espace_codes: this.selectedEspaces(),
@@ -290,7 +279,10 @@ export class UtilisateursComponent implements OnInit {
               this.saving.set(false);
               this.formOpen.set(false);
               this.dialogs
-                .successAction('ajout', `« ${label} » a été créé.`)
+                .successAction(
+                  'ajout',
+                  `« ${label} » a été créé. Mot de passe temporaire généré — gérez-le via CORE ADMIN → Sécurité.`,
+                )
                 .subscribe(() => this.load());
             },
             error: (err) => {
