@@ -2,9 +2,9 @@ name: CI & Code Quality
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
     types: [opened, synchronize, reopened]
 
 jobs:
@@ -45,7 +45,8 @@ jobs:
         with:
           fetch-depth: 0
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v4
+        uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          # SonarCloud (sonar.organization) — URL publique, pas un secret
+          SONAR_HOST_URL: https://sonarcloud.io
