@@ -2,8 +2,13 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
+ARG APP_VERSION=0.0.0-dev
+ARG GIT_SHA=unknown
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    APP_VERSION=${APP_VERSION} \
+    GIT_SHA=${GIT_SHA}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \

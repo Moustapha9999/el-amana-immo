@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     app_name: str = Field(default="BEA DIGITAL", alias="APP_NAME")
     app_env: str = Field(default="development", alias="APP_ENV")
     app_debug: bool = Field(default=True, alias="APP_DEBUG")
+    app_version: str = Field(default="0.0.0-dev", alias="APP_VERSION")
+    git_sha: str = Field(default="unknown", alias="GIT_SHA")
     api_v1_prefix: str = Field(default="/api/v1", alias="API_V1_PREFIX")
 
     secret_key: str = Field(default="change-me", alias="SECRET_KEY")

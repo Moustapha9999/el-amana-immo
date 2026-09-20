@@ -31,7 +31,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title=settings.app_name,
-        version="0.1.0",
+        version=settings.app_version,
         lifespan=lifespan,
         docs_url="/docs" if docs_on else None,
         redoc_url="/redoc" if docs_on else None,
@@ -55,7 +55,21 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health():
-        return {"status": "ok", "service": settings.app_name}
+        return {
+            "status": "ok",
+            "service": settings.app_name,
+            "version": settings.app_version,
+            "git_sha": settings.git_sha,
+        }
+
+    @app.get("/version")
+    async def version():
+        return {
+            "service": settings.app_name,
+            "version": settings.app_version,
+            "git_sha": settings.git_sha,
+            "env": settings.app_env,
+        }
 
     return app
 

@@ -174,3 +174,11 @@ Compose de dev (hot-reload) :
 ```powershell
 docker compose -f docker-compose.dev.yml up
 ```
+
+## Serveur banque (cible GitLab)
+
+Le kit USB ci-dessus reste le chemin **comptable**. Pour le serveur DSI / production :
+
+- [deployment/README.md](deployment/README.md) — architecture GitLab + Runner + inventaire IT
+- [`deployment/`](../deployment/) — compose prod, scripts backup/deploy/rollback
+- [`.gitlab-ci.yml`](../.gitlab-ci.yml) — pipeline (approval manuelle)

@@ -20,6 +20,8 @@ docker compose --env-file .env.docker up -d
 Sans dump : la base est vide (extensions seulement). Ne **pas** retirer
 `SKIP_MIGRATIONS` pour « créer » le schéma.
 
+Migrations après restore : [runbook-migrations.md](runbook-migrations.md).
+
 ### Restore du dump (vraie base)
 
 Placer le dump dans `backups/` (hors git), Postgres déjà up, `public` **sans** tables :
@@ -93,5 +95,8 @@ npm run build
 - [frontend-plateforme.md](frontend-plateforme.md)
 - [socle-bea-digital.md](socle-bea-digital.md) — Login 1 / Login 2
 - [core-bea-digital.md](core-bea-digital.md) — CORE commun à tous les départements
+- [catalogue-modules-futurs.md](catalogue-modules-futurs.md) — Phase C / ateliers départements
+- [runbook-migrations.md](runbook-migrations.md) — Alembic après restore seulement
 - [DEPLOIEMENT_LOCAL.md](DEPLOIEMENT_LOCAL.md) — kit USB machine comptable
+- [deployment/README.md](deployment/README.md) — GitLab / Runner BEA / production (cible)
 - [AGENTS.md](../AGENTS.md) — invariants

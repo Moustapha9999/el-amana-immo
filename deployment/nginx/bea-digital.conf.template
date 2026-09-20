@@ -1,0 +1,42 @@
+# Template reverse proxy HTTPS — BEA DIGITAL
+# À adapter avec l'IT : domaine, chemins certificats, ports.
+# Le conteneur frontend écoute en HTTP sur 127.0.0.1:8080 (compose prod).
+
+upstream bea_frontend {
+  server 127.0.0.1:8080;
+}
+
+server {
+  listen 80;
+  server_name REMPLACER_PAR_DOMAINE_BEA;
+  return 301 https://$host$request_uri;
+}
+
+server {
+  listen 443 ssl http2;
+  server_name REMPLACER_PAR_DOMAINE_BEA;
+
+  # Chemins certificats — à renseigner par l'IT (ne pas committer les clés privées)
+  ssl_certificate     /etc/ssl/REMPLACER/fullchain.pem;
+  ssl_certificate_key /etc/ssl/REMPLACER/privkey.pem;
+  ssl_protocols       TLSv1.2 TLSv1.3;
+  ssl_prefer_server_ciphers off;
+
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header X-Frame-Options "DENY" always;
+  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+  client_max_body_size 50m;
+
+  location / {
+    proxy_pass http://bea_frontend;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 120s;
+    proxy_send_timeout 120s;
+  }
+}

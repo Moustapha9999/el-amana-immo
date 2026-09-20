@@ -5,6 +5,7 @@
 .env.*
 !.env.example
 !.env.docker.example
+!deployment/env.production.example
 *.pem
 
 # Python
