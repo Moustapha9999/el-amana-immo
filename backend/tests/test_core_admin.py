@@ -8,13 +8,19 @@ from app.data.plateforme_catalogue import (
     FUNCTIONAL_PERMISSIONS,
     permissions_for_role,
 )
-from app.services.core_admin_catalogue_service import normalize_code, normalize_path
+from app.services.core_admin_catalogue_service import (
+    assert_espace_route_allowed,
+    normalize_code,
+    normalize_path,
+)
 from app.services.core_admin_service import (
     day_bounds_nouakchott,
     platform_health,
     serialize_activity,
 )
 from app.services.permission_service import user_has_permission_codes
+from app.services.plateforme_access_service import should_insert_missing_seed
+from app.data.plateforme_catalogue import SEED_LOCKED_MODULE_CODES
 
 
 def test_core_admin_permissions_are_catalogued_not_granted_to_immo_admin():
@@ -53,6 +59,29 @@ def test_normalize_catalogue_code_and_path():
         raise AssertionError("expected ValueError")
     except ValueError:
         pass
+    assert assert_espace_route_allowed(None, code="credit") == "/credit"
+    assert assert_espace_route_allowed("/credit", code="credit") == "/credit"
+    try:
+        assert_espace_route_allowed("/dashboard", code="credit")
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+
+
+def test_seed_does_not_revive_deleted_optional_modules():
+    """Après bootstrap, une suppression CORE ADMIN ne doit pas être annulée au refresh."""
+    assert should_insert_missing_seed(
+        code="immobilisations", locked=SEED_LOCKED_MODULE_CODES, bootstrap=False
+    )
+    assert not should_insert_missing_seed(
+        code="rapprochements", locked=SEED_LOCKED_MODULE_CODES, bootstrap=False
+    )
+    assert not should_insert_missing_seed(
+        code="credit", locked=SEED_LOCKED_MODULE_CODES, bootstrap=False
+    )
+    assert should_insert_missing_seed(
+        code="rapprochements", locked=SEED_LOCKED_MODULE_CODES, bootstrap=True
+    )
 
 
 def test_day_bounds_nouakchott_is_local_calendar_day():

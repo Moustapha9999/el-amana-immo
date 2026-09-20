@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     core_admin_sessions,
     core_admin_users,
     exercices,
+    ged,
     immobilisations,
     notifications,
     operations,
@@ -35,6 +36,7 @@ api_router.include_router(core_admin_ops.router)
 api_router.include_router(core_admin_control.router)
 api_router.include_router(users.router)
 api_router.include_router(notifications.router)
+api_router.include_router(ged.router)
 
 _immo = [Depends(require_module_access("immobilisations"))]
 api_router.include_router(organisation.router, dependencies=_immo)

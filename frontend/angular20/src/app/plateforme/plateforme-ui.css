@@ -1206,6 +1206,17 @@ bea-fil-ariane {
   display: none;
 }
 
+.bea-espace__mods {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
 .bea-espace .bea-badge {
   margin-top: 0;
   display: inline-flex;
@@ -1626,16 +1637,23 @@ bea-fil-ariane {
 
 .bea-admin {
   --bea-admin-nav-active: #5eb8f0;
+  --bea-admin-side-width: 17.5rem;
   height: 100vh;
   display: grid;
-  grid-template-columns: 17.5rem minmax(0, 1fr);
+  grid-template-columns: var(--bea-admin-side-width) minmax(0, 1fr);
   background: var(--bea-surface);
   color: var(--bea-ink);
+  transition: grid-template-columns 0.22s ease;
+}
+
+.bea-admin--collapsed {
+  --bea-admin-side-width: 4.25rem;
 }
 
 .bea-admin__side {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   color-scheme: dark;
@@ -1643,12 +1661,53 @@ bea-fil-ariane {
   color: #e2e8f0;
 }
 
+.bea-admin__side-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0.45rem 0.45rem 0;
+  flex-shrink: 0;
+}
+
+.bea-admin__collapse {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 0.45rem;
+  background: rgb(255 255 255 / 0.06);
+  color: #e2e8f0;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.bea-admin__collapse:hover {
+  background: rgb(255 255 255 / 0.12);
+  border-color: rgb(255 255 255 / 0.22);
+  color: #fff;
+}
+
+.bea-admin__collapse bea-admin-icon,
+.bea-admin__collapse .material-icons {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.bea-admin--collapsed .bea-admin__side-top {
+  justify-content: center;
+  padding: 0.45rem 0.35rem 0;
+}
+
 .bea-admin__brand {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.55rem;
-  padding: 1.15rem 1rem 1rem;
+  padding: 0.75rem 1rem 1rem;
   border-bottom: 1px solid rgb(255 255 255 / 0.08);
   text-align: center;
   text-decoration: none;
@@ -1660,6 +1719,14 @@ bea-fil-ariane {
   height: auto;
   object-fit: contain;
   display: block;
+  transition: width 0.22s ease;
+}
+
+.bea-admin__brand-text {
+  overflow: hidden;
+  max-height: 3rem;
+  opacity: 1;
+  transition: opacity 0.18s ease, max-height 0.22s ease;
 }
 
 .bea-admin__brand-sub {
@@ -1690,6 +1757,9 @@ bea-fil-ariane {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: rgb(148 163 184 / 0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  transition: opacity 0.15s ease, max-height 0.22s ease, padding 0.22s ease;
 }
 
 .bea-admin__list {
@@ -1700,6 +1770,7 @@ bea-fil-ariane {
 
 .bea-admin__link,
 .bea-admin__soon {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.625rem;
@@ -1710,7 +1781,7 @@ bea-fil-ariane {
   font-weight: 500;
   color: rgb(226 232 240 / 0.88);
   text-decoration: none;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, padding 0.22s ease, gap 0.22s ease;
 }
 
 .bea-admin__link-icon {
@@ -1727,6 +1798,10 @@ bea-fil-ariane {
 .bea-admin__link-label {
   flex: 1;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity 0.15s ease;
 }
 
 .bea-admin__link:hover {
@@ -1753,6 +1828,7 @@ bea-fil-ariane {
   font-size: 0.62rem;
   background: rgb(255 255 255 / 0.1);
   color: rgb(226 232 240 / 0.78);
+  white-space: nowrap;
 }
 
 .bea-admin__footer {
@@ -1761,6 +1837,108 @@ bea-fil-ariane {
   font-size: 0.6875rem;
   color: rgb(148 163 184 / 0.7);
   line-height: 1.4;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: opacity 0.15s ease, padding 0.22s ease, max-height 0.22s ease;
+}
+
+/* --- Mode compact (icônes seules) --- */
+.bea-admin--collapsed .bea-admin__brand {
+  padding: 0.55rem 0.35rem 0.75rem;
+  gap: 0;
+}
+
+.bea-admin--collapsed .bea-admin__logo {
+  width: 2rem;
+}
+
+.bea-admin--collapsed .bea-admin__brand-text,
+.bea-admin--collapsed .bea-admin__group-label,
+.bea-admin--collapsed .bea-admin__link-label,
+.bea-admin--collapsed .bea-admin__soon .bea-badge,
+.bea-admin--collapsed .bea-admin__footer {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.bea-admin--collapsed .bea-admin__nav {
+  padding: 0.5rem 0.35rem;
+}
+
+.bea-admin--collapsed .bea-admin__group {
+  margin-bottom: 0.15rem;
+}
+
+.bea-admin--collapsed .bea-admin__link,
+.bea-admin--collapsed .bea-admin__soon {
+  justify-content: center;
+  gap: 0;
+  padding: 0.55rem 0.35rem;
+}
+
+.bea-admin--collapsed .bea-admin__link--on {
+  box-shadow: inset 3px 0 0 var(--bea-admin-nav-active);
+}
+
+.bea-admin--collapsed .bea-admin__soon {
+  pointer-events: auto;
+}
+
+.bea-admin--collapsed .bea-admin__footer {
+  border-top-width: 0;
+}
+
+.bea-admin__tooltip {
+  position: fixed;
+  z-index: 80;
+  transform: translateY(-50%);
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.4rem;
+  background: #0f172a;
+  color: #f8fafc;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgb(15 23 42 / 0.28);
+}
+
+@media (max-width: 900px) {
+  .bea-admin {
+    --bea-admin-side-width: 15.5rem;
+  }
+
+  .bea-admin--collapsed {
+    --bea-admin-side-width: 4rem;
+  }
+}
+
+@media (max-width: 720px) {
+  .bea-admin {
+    --bea-admin-side-width: 14rem;
+  }
+
+  .bea-admin--collapsed {
+    --bea-admin-side-width: 3.75rem;
+  }
+
+  .bea-admin__top-title {
+    font-size: 1rem;
+  }
+
+  .bea-admin__user {
+    display: none;
+  }
+
+  .bea-admin__main {
+    padding: 1rem;
+  }
 }
 
 .bea-admin__content {

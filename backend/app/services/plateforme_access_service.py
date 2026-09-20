@@ -17,6 +17,8 @@ from app.data.plateforme_catalogue import (
     PLATEFORME_MODULES,
     RBAC_ROLES,
     ROLE_PERMISSIONS,
+    SEED_LOCKED_ESPACE_CODES,
+    SEED_LOCKED_MODULE_CODES,
 )
 from app.models import Permission, PlateformeEspace, PlateformeModule, Role, User
 from app.models.associations import role_permissions_table
@@ -27,6 +29,11 @@ logger = logging.getLogger(__name__)
 def _text_needs_utf8_repair(value: str | None) -> bool:
     """True si un libellé a perdu ses accents (souvent remplacés par '?')."""
     return bool(value) and "?" in value
+
+
+def should_insert_missing_seed(*, code: str, locked: frozenset[str], bootstrap: bool) -> bool:
+    """Insère une ligne seed absente seulement si système verrouillé ou 1ʳᵉ install."""
+    return code in locked or bootstrap
 
 
 class PlateformeAccessService:
@@ -41,15 +48,24 @@ class PlateformeAccessService:
             logger.exception("Synchronisation du catalogue plateforme impossible")
 
     async def _sync_catalogue(self) -> None:
-        # Seed des lignes absentes. Répare les libellés dont les accents sont devenus « ? ».
-        # CORE ADMIN reste source de vérité pour les libellés sains (saisies admin conservées).
+        # Seed : Comptabilité + Immobilisations toujours présents.
+        # Autres espaces/modules du catalogue Python = 1ʳᵉ install seulement.
+        # CORE ADMIN (create / update / delete) = source de vérité ensuite ;
+        # une suppression ne doit pas être annulée au prochain GET /plateforme/espaces.
         existing = {
             row.code: row
             for row in (await self.db.execute(select(PlateformeEspace))).scalars().all()
         }
+        bootstrap = len(existing) == 0
         for item in PLATEFORME_ESPACES:
             row = existing.get(item["code"])
             if row is None:
+                if not should_insert_missing_seed(
+                    code=item["code"],
+                    locked=SEED_LOCKED_ESPACE_CODES,
+                    bootstrap=bootstrap,
+                ):
+                    continue
                 row = PlateformeEspace(
                     code=item["code"],
                     label=item["label"],
@@ -73,9 +89,17 @@ class PlateformeAccessService:
             for row in (await self.db.execute(select(PlateformeModule))).scalars().all()
         }
         for item in PLATEFORME_MODULES:
-            espace = existing[item["espace_code"]]
+            espace = existing.get(item["espace_code"])
+            if espace is None:
+                continue
             row = modules.get(item["code"])
             if row is None:
+                if not should_insert_missing_seed(
+                    code=item["code"],
+                    locked=SEED_LOCKED_MODULE_CODES,
+                    bootstrap=bootstrap,
+                ):
+                    continue
                 self.db.add(
                     PlateformeModule(
                         espace_id=espace.id,

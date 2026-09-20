@@ -156,6 +156,7 @@ async def test_core_admin_catalogue_crud_and_seed_not_overwritten(client: AsyncC
         assert created.status_code == 201, created.text
         dept_id = created.json()["id"]
         assert created.json()["code"] == dept_code
+        assert created.json()["route"] == f"/{dept_code}"
         assert created.json()["locked"] is False
 
         listed = await client.get(

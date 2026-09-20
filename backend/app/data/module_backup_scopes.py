@@ -1,4 +1,11 @@
-"""Périmètres de backup / recovery par module — tables exclusives vs dépendances partagées."""
+"""Périmètres de backup / recovery par module — tables exclusives vs dépendances partagées.
+
+Pour un nouveau module :
+1. Ajouter une entrée dans MODULE_BACKUP_SCOPES (tables exclusives + uploads_subdir).
+2. Lier le code module à son espace dans ESPACE_MODULES.
+3. Ne jamais y mettre users / roles / plateforme_* / ged_documents / audit
+   (restent dans SHARED_CORE_TABLES).
+"""
 
 from __future__ import annotations
 
@@ -14,7 +21,7 @@ class ModuleBackupScope(TypedDict):
 
 # CORE / auth / audit / notifications / GED / plateforme_* ne sont jamais
 # écrasés par un recovery MODULE ou DÉPARTEMENT.
-_SHARED = [
+SHARED_CORE_TABLES: list[str] = [
     "users",
     "roles",
     "permissions",
@@ -42,11 +49,34 @@ _SHARED = [
     "platform_ops_flags",
 ]
 
+_SHARED = SHARED_CORE_TABLES
+
+
+def make_module_scope(
+    *,
+    label: str,
+    exclusive_tables: list[str],
+    uploads_subdir: str | None = None,
+    extra_shared: list[str] | None = None,
+) -> ModuleBackupScope:
+    """Factory pour enregistrer un nouveau module sans recopier le CORE."""
+    shared = list(SHARED_CORE_TABLES)
+    for name in extra_shared or []:
+        if name not in shared:
+            shared.append(name)
+    return {
+        "label": label,
+        "uploads_subdir": uploads_subdir,
+        "exclusive_tables": list(exclusive_tables),
+        "shared_dependencies": shared,
+    }
+
+
 MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
-    "immobilisations": {
-        "label": "Immobilisations & Amortissements",
-        "uploads_subdir": "immobilisations",
-        "exclusive_tables": [
+    "immobilisations": make_module_scope(
+        label="Immobilisations & Amortissements",
+        uploads_subdir="immobilisations",
+        exclusive_tables=[
             "categories_immobilisation",
             "exercices_comptables",
             "periodes_amortissement",
@@ -67,13 +97,32 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
             "archive_fichiers",
             "archive_lignes",
         ],
-        "shared_dependencies": list(_SHARED),
-    },
+    ),
+    # Exemple futur (décommenter / compléter à l’arrivée du module) :
+    # "credit": make_module_scope(
+    #     label="Crédit",
+    #     uploads_subdir="credit",
+    #     exclusive_tables=["credit_dossiers", "credit_decisions"],
+    # ),
 }
 
 ESPACE_MODULES: dict[str, list[str]] = {
     "comptabilite": ["immobilisations"],
+    # Modules bientôt (scopes à compléter à l’activation métier) :
+    "credit": ["credit"],
+    "rh": ["rh"],
+    "informatique": ["tickets-si"],
+    "achats": ["demandes-achat"],
 }
+
+
+def register_module_scope(module_code: str, scope: ModuleBackupScope) -> None:
+    """Enregistrement dynamique (tests / plugins) — préfère MODULE_BACKUP_SCOPES en prod."""
+    MODULE_BACKUP_SCOPES[module_code] = scope
+
+
+def register_espace_modules(espace_code: str, module_codes: list[str]) -> None:
+    ESPACE_MODULES[espace_code] = list(module_codes)
 
 
 def scope_for_module(module_code: str) -> ModuleBackupScope | None:
@@ -82,6 +131,10 @@ def scope_for_module(module_code: str) -> ModuleBackupScope | None:
 
 def modules_for_espace(espace_code: str) -> list[str]:
     return list(ESPACE_MODULES.get(espace_code, []))
+
+
+def known_module_codes() -> list[str]:
+    return sorted(MODULE_BACKUP_SCOPES.keys())
 
 
 def merge_scopes(module_codes: list[str]) -> ModuleBackupScope | None:

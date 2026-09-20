@@ -573,7 +573,7 @@ class CoreAdminOpsService:
                 "ok": ged_ok,
                 "label": "GED",
                 "status": "a_verifier" if ged_ok else "attention",
-                "detail": "Lecture admin — upload métier non branché" if ged_ok else "Dossier absent",
+                "detail": "Lecture admin + API métier /api/v1/ged" if ged_ok else "Dossier absent",
             },
             "stockage": {
                 "ok": upload_ok,

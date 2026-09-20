@@ -60,8 +60,35 @@ export const MODULE_ROUTE_CONTRACTS: Readonly<Record<string, ModuleRouteContract
     espacePath: '/comptabilite',
     urlPrefix: null,
   },
-  // Exemples figés pour les futurs modules (pas encore de shell métier) :
-  // credit: { code: 'credit', strategy: 'prefixed', entryPath: '/credit', espacePath: '/credit-espace', urlPrefix: '/credit' },
+  // Futurs modules (catalogue Étape 8) — shell métier pas encore branché.
+  credit: {
+    code: 'credit',
+    strategy: 'prefixed',
+    entryPath: '/credit',
+    espacePath: '/credit',
+    urlPrefix: '/credit',
+  },
+  rh: {
+    code: 'rh',
+    strategy: 'prefixed',
+    entryPath: '/rh',
+    espacePath: '/rh',
+    urlPrefix: '/rh',
+  },
+  'tickets-si': {
+    code: 'tickets-si',
+    strategy: 'prefixed',
+    entryPath: '/tickets-si',
+    espacePath: '/informatique',
+    urlPrefix: '/tickets-si',
+  },
+  'demandes-achat': {
+    code: 'demandes-achat',
+    strategy: 'prefixed',
+    entryPath: '/demandes-achat',
+    espacePath: '/achats',
+    urlPrefix: '/demandes-achat',
+  },
 };
 
 export function getModuleRouteContract(moduleCode: string): ModuleRouteContract | null {

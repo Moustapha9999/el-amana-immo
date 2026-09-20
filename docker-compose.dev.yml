@@ -53,6 +53,7 @@ services:
     volumes:
       - ./backend:/app
       - ./storage/uploads:/app/storage/uploads
+      - ./storage/ged:/app/storage/ged
     depends_on:
       postgres:
         condition: service_healthy

@@ -48,6 +48,8 @@ Après un restore réussi, on pourra reposer `SKIP_MIGRATIONS=0` uniquement pour
 appliquer de **nouvelles** révisions incrémentales sur une base déjà réelle —
 jamais pour « créer » le schéma.
 
+Procédure détaillée : [runbook-migrations.md](runbook-migrations.md).
+
 ## Chemin prod / vraie donnée
 
 ```text

@@ -1,4 +1,9 @@
-"""Taxonomie du centre global de notifications (≠ audit_logs)."""
+"""Taxonomie du centre global de notifications (≠ audit_logs).
+
+Types Postgres (`TypeNotification`) restent les valeurs historiques immo.
+Les modules futurs passent un `event_type` libre + `module_code` / `categorie` ;
+le service mappe vers un TypeNotification connu pour la colonne enum.
+"""
 
 from __future__ import annotations
 
@@ -16,6 +21,10 @@ NOTIFICATION_CATEGORIES: dict[str, str] = {
     "comptabilite": "Comptabilité",
     "immobilisations": "Immobilisations",
     "amortissements": "Amortissements",
+    "credit": "Crédit",
+    "rh": "RH",
+    "informatique": "Informatique",
+    "achats": "Achats",
     "workflow": "Workflow",
     "rapports": "Rapports",
     "api": "API",
@@ -25,6 +34,7 @@ NOTIFICATION_CATEGORIES: dict[str, str] = {
     "administration": "Administration",
     "erreurs": "Erreurs",
     "alertes": "Alertes",
+    "ged": "GED",
 }
 
 NOTIFICATION_PRIORITIES: dict[str, str] = {
@@ -71,6 +81,29 @@ def infer_priorite(titre: str, message: str = "", *, explicit: str | None = None
 def categorie_from_type(type_code: str, *, module_code: str | None = None) -> str:
     if type_code in TYPE_TO_CATEGORIE:
         return TYPE_TO_CATEGORIE[type_code]
+    if module_code and module_code in NOTIFICATION_CATEGORIES:
+        return module_code
+    # Préfixe libre "credit.dossier_ouvert" → catégorie credit si connue
+    if "." in (type_code or ""):
+        prefix = type_code.split(".", 1)[0]
+        if prefix in NOTIFICATION_CATEGORIES:
+            return prefix
     if module_code == "immobilisations":
         return "immobilisations"
     return "systeme"
+
+
+def coerce_type_notification(value) -> object:
+    """Mappe une chaîne libre vers TypeNotification (colonne enum Postgres).
+
+    Le code sémantique original doit être conservé dans `event_type`.
+    """
+    from app.models.enums import TypeNotification
+
+    if isinstance(value, TypeNotification):
+        return value
+    raw = str(value or "").strip().lower()
+    for item in TypeNotification:
+        if item.value == raw:
+            return item
+    return TypeNotification.SYSTEME

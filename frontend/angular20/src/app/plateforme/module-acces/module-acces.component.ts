@@ -6,7 +6,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { BeaChromeComponent } from '../chrome/bea-chrome.component';
 import { PlateformeContextService } from '../plateforme-context.service';
-import { resolveEspacePathForModule } from '../module-routing.contract';
+import { LEGACY_ROOT_MODULE_CODE, resolveEspacePathForModule, resolveModuleEntryPath } from '../module-routing.contract';
 
 interface ModuleInfo {
   id: string;
@@ -51,6 +51,16 @@ interface ModuleInfo {
               </div>
             </div>
           </div>
+        } @else if (shellPending()) {
+          <section class="bea-module-acces__card">
+            <p class="bea-module-acces__kicker">{{ espaceTitre() || 'BEA DIGITAL' }}</p>
+            <h1 class="bea-module-acces__title">{{ titre() }}</h1>
+            <p class="bea-module-acces__error" style="color: inherit">
+              Connexion module réussie. Le métier n’est pas encore branché sur BEA DIGITAL
+              (ateliers départements en cours). Le catalogue et les droits sont déjà actifs.
+            </p>
+            <a class="bea-module-acces__back" [routerLink]="espaceRoute()">Retour aux modules</a>
+          </section>
         } @else {
           <section class="bea-module-acces__card">
             <p class="bea-module-acces__kicker">Accès sécurisé au module</p>
@@ -89,10 +99,11 @@ export class ModuleAccesComponent implements OnInit {
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly titre = signal('Module');
-  readonly entryPath = signal('/dashboard');
-  readonly espaceRoute = signal(resolveEspacePathForModule('immobilisations'));
-  readonly espaceTitre = signal('Comptabilité');
+  readonly entryPath = signal<string | null>(null);
+  readonly espaceRoute = signal('/accueil');
+  readonly espaceTitre = signal('BEA DIGITAL');
   readonly blocked = signal(false);
+  readonly shellPending = signal(false);
   readonly blockMessage = signal('');
   readonly statutLabel = signal('');
   readonly maintenanceEnds = signal<string | null>(null);
@@ -105,7 +116,7 @@ export class ModuleAccesComponent implements OnInit {
   ngOnInit(): void {
     const moduleCode = this.moduleCode;
     if (this.auth.hasModuleSession(moduleCode)) {
-      void this.router.navigateByUrl(this.returnUrl);
+      this.enterModuleOrPending();
       return;
     }
     const user = this.auth.user();
@@ -120,11 +131,13 @@ export class ModuleAccesComponent implements OnInit {
     this.api.get<ModuleInfo>(`/plateforme/modules/${moduleCode}`).subscribe({
       next: (info) => {
         this.titre.set(info.titre);
-        if (info.entry_path) {
-          this.entryPath.set(info.entry_path);
-        }
+        this.entryPath.set(
+          (info.entry_path || '').trim() || resolveModuleEntryPath(moduleCode),
+        );
         if (info.espace_route) {
           this.espaceRoute.set(info.espace_route);
+        } else {
+          this.espaceRoute.set(resolveEspacePathForModule(moduleCode));
         }
         if (info.espace_titre) {
           this.espaceTitre.set(info.espace_titre);
@@ -156,7 +169,7 @@ export class ModuleAccesComponent implements OnInit {
     this.auth.loginModule(this.moduleCode, email, password).subscribe({
       next: () => {
         this.loading.set(false);
-        void this.router.navigateByUrl(this.returnUrl);
+        this.enterModuleOrPending();
       },
       error: (err: unknown) => {
         this.loading.set(false);
@@ -170,6 +183,19 @@ export class ModuleAccesComponent implements OnInit {
         this.error.set('Identifiants invalides ou accès refusé.');
       },
     });
+  }
+
+  /** Shell métier branché uniquement pour Immobilisations tant que les ateliers n’ont pas abouti. */
+  private moduleHasMetierShell(code: string): boolean {
+    return code === LEGACY_ROOT_MODULE_CODE;
+  }
+
+  private enterModuleOrPending(): void {
+    if (this.moduleHasMetierShell(this.moduleCode)) {
+      void this.router.navigateByUrl(this.returnUrl);
+      return;
+    }
+    this.shellPending.set(true);
   }
 
   private applyBlock(
@@ -205,6 +231,6 @@ export class ModuleAccesComponent implements OnInit {
   }
 
   private get returnUrl(): string {
-    return this.route.snapshot.queryParamMap.get('returnUrl') || this.entryPath();
+    return this.route.snapshot.queryParamMap.get('returnUrl') || this.entryPath() || '/accueil';
   }
 }

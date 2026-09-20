@@ -128,8 +128,8 @@ import {
               <input type="text" formControlName="label" />
             </label>
             <label class="bea-admin-field">
-              <span>Chemin d’entrée</span>
-              <input type="text" formControlName="entry_path" placeholder="/dashboard" />
+              <span>Chemin d’entrée (après Login 2)</span>
+              <input type="text" formControlName="entry_path" placeholder="vide = pas encore de shell métier" />
             </label>
             <label class="bea-admin-field">
               <span>Statut</span>

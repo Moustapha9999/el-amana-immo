@@ -1,6 +1,8 @@
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink } from '@angular/router';
+import { filter } from 'rxjs/operators';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { BeaChromeComponent } from '../chrome/bea-chrome.component';
@@ -311,6 +313,15 @@ interface HubActivity {
             }
           </div>
           <p class="bea-espace__text">{{ espace.description }}</p>
+          <p class="bea-espace__mods">
+            @if (espace.modules?.length) {
+              {{ espace.modules.length }} module{{ espace.modules.length > 1 ? 's' : '' }}
+              ·
+              {{ moduleTitles(espace) }}
+            } @else {
+              Aucun module
+            }
+          </p>
         </div>
       </div>
       <span class="bea-espace__go" aria-hidden="true">
@@ -329,6 +340,8 @@ interface HubActivity {
 })
 export class AccueilComponent implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
   readonly auth = inject(AuthService);
   readonly canAdmin = this.auth.canAccessCoreAdmin;
   readonly periodes = [7, 30, 90] as const;
@@ -369,19 +382,41 @@ export class AccueilComponent implements OnInit {
     if (this.auth.isAuthenticated() && !this.auth.user()) {
       this.auth.loadProfile().subscribe({ error: () => undefined });
     }
+    this.reloadCatalogue();
+    this.reloadHub(7);
+    this.reloadActivity();
+    // Recharge après un CRUD CORE ADMIN (retour Accueil sans F5).
+    this.router.events
+      .pipe(
+        filter((e): e is NavigationEnd => e instanceof NavigationEnd),
+        filter((e) => {
+          const path = e.urlAfterRedirects.split('?')[0];
+          return path === '/accueil' || path === '/';
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe(() => {
+        this.reloadCatalogue();
+        this.reloadHub(this.jours());
+      });
+  }
+
+  private reloadCatalogue(): void {
     this.api.get<EspaceAccueil[]>('/plateforme/espaces').subscribe({
       next: (items) => this.espaces.set(items),
       error: () => undefined,
     });
-    this.api.get<HubSummary>('/plateforme/me/hub', { jours: 7 }).subscribe({
+  }
+
+  private reloadHub(jours: 7 | 30 | 90): void {
+    this.api.get<HubSummary>('/plateforme/me/hub', { jours }).subscribe({
       next: (data) => {
         this.hub.set(data);
         this.serie.set(data.activite_serie ?? []);
-        this.jours.set((data.activite_jours as 7 | 30 | 90) || 7);
+        this.jours.set((data.activite_jours as 7 | 30 | 90) || jours);
       },
       error: () => undefined,
     });
-    this.reloadActivity();
   }
 
   usageLead(): string {
@@ -466,5 +501,13 @@ export class AccueilComponent implements OnInit {
 
   ouvert(espace: EspaceAccueil): boolean {
     return espace.statut === 'actif' && !!espace.route && espace.accessible !== false;
+  }
+
+  moduleTitles(espace: EspaceAccueil): string {
+    const titles = (espace.modules || []).map((m) => m.titre);
+    if (titles.length <= 2) {
+      return titles.join(', ');
+    }
+    return `${titles.slice(0, 2).join(', ')}…`;
   }
 }

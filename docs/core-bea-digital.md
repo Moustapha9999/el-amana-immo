@@ -26,13 +26,13 @@ est encore valide. Détail auth : [socle-bea-digital.md](socle-bea-digital.md).
 | A | Utilisateurs | `users` | Email unique, bcrypt, `is_active`, soft-delete |
 | B | Rôles | `roles` + `user_roles` | Immo = codes courts legacy (`comptable`, …). Nouveaux modules = `{module}.{profil}` (`credit.admin`). Helpers : `module_role_code` / `role_module_code` |
 | C | Permissions | `permissions` + `role_permissions` | `{module}.{action}` ; `{module}.admin` couvre `{module}.*` |
-| D | Départements | `plateforme_espaces` | Comptabilité, Crédit, RH, … **≠** `departements` (org immo / centres de coût) |
+| D | Départements | `plateforme_espaces` | Comptabilité, Crédit, RH, … **≠** `departements` (org immo / centres de coût). Catalogue processus : [catalogue-modules-futurs.md](catalogue-modules-futurs.md) |
 | E | Modules | `plateforme_modules` | Premier actif : `immobilisations` |
 | F | Accès | `user_espace_acces`, `user_module_acces` | User → département, User → module |
 | G | Audit | `audit_logs` | Qui, quoi, quand, espace, module, action, session |
-| H | Notifications | `notifications` | Filtrables par `espace_code` / `module_code` |
+| H | Notifications | `notifications` | Filtrables par `espace_code` / `module_code`. Enum Postgres historique immo ; nouveaux modules → `event_type` libre + `categorie` (`notification_taxonomy`) |
 | I | Sessions | `auth_sessions` | `kind=platform` (BEA DIGITAL) et `kind=module` |
-| J | GED | `ged_documents` | Table + lecture CORE ADMIN. Upload métier pas encore branché. `pieces_jointes` / `archive_*` restent immo |
+| J | GED | `ged_documents` | Lecture CORE ADMIN + API métier `/api/v1/ged/*`. `pieces_jointes` / `archive_*` restent immo |
 
 CORE ADMIN (pilotage Login 1) : [core-admin.md](core-admin.md).
 
@@ -61,14 +61,18 @@ Ces URLs restent `/api/v1/...` (pas de préfixe `/comptabilite/`).
 Le métier immo (`/immobilisations`, `/amortissements`, écritures, …) exige
 toujours Login 2 `immobilisations`.
 
-## GED (table prête, upload métier à venir)
+## GED (lecture CORE ADMIN + upload métier)
 
 - Table `ged_documents` : fichier + `espace_code` + `module_code` + `entity` / `entity_id`.
 - Lecture CORE ADMIN : `GET /api/v1/plateforme/admin/ged` (`core.admin.settings`).
-- Stockage prévu : `storage/ged/{module}/{entity}/{id}/`.
+- API métier : `/api/v1/ged/documents`
+  - `POST` upload (`ged.write`) — multipart : `file`, `espace_code`, `module_code`, `entity`, `entity_id`
+  - `GET` liste / `GET …/download` (`ged.read`)
+  - `DELETE` soft-delete (`ged.write`)
+- Stockage : `storage/ged/{module}/{entity}/{id}/` (volume compose `./storage/ged`).
 - Les pièces comptables immo (`pieces_jointes`) et les archives Excel/PDF
-  **ne migrent pas** dans cette table pour l’instant. Un module futur
-  (Crédit, RH, …) écrira ici via `GedService`.
+  **ne migrent pas** dans cette table. Les modules futurs (Crédit, RH, …)
+  écrivent ici via `GedService`.
 - Schéma idempotent : `scripts/supabase/01_upgrade.sql` (cible docker ou Supabase).
 
 ## Ce que le CORE n’est pas

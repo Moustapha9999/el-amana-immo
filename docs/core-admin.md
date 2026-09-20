@@ -119,6 +119,9 @@ local avant Alembic `20260918_core_admin_ops`).
 
 - Catalogue Python = **seed des lignes absentes** uniquement. Les saisies
   CORE ADMIN (libellé, statut, route) ne sont plus écrasées au login.
+- **Suppressions** : hors `comptabilite` / `immobilisations`, un module ou
+  département effacé en CORE ADMIN **ne revient pas** au refresh (le seed
+  optionnel ne s’applique qu’à la 1ʳᵉ install).
 - Départements : liste, KPI, création, fiche, édition, désactivation,
   suppression. Code unique (`credit`, `reporting-rh`).
 - Modules : mêmes actions, rattachés à un département.
@@ -126,6 +129,11 @@ local avant Alembic `20260918_core_admin_ops`).
   ne se suppriment. Route `/comptabilite` et entrée `/dashboard` figées.
 - Suppression refusée s’il reste des modules (département) ou des accès
   utilisateurs.
+- **Effet plateforme immédiat** : un département créé avec route `/{code}`
+  (défaut) et statut `actif` apparaît sur Accueil pour les utilisateurs
+  grantés (ou superuser) → hub `EspaceHubComponent`. Modules `bientot` =
+  vitrine ; `actif` = Login 2 (shell métier = Immobilisations seulement
+  tant que les ateliers n’ont pas abouti).
 
 ## Phase 4 — Rôles et permissions
 

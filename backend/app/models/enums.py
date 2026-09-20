@@ -75,6 +75,12 @@ class TypePieceComptable(str, enum.Enum):
 
 
 class TypeNotification(str, enum.Enum):
+    """Valeurs historiques immo (colonne Postgres enum).
+
+    Nouveaux modules : passer une chaîne libre à NotificationService
+    (stockée dans event_type) ; la colonne enum reçoit SYSTEME via coerce.
+    """
+
     FIN_AMORTISSEMENT = "fin_amortissement"
     MAINTENANCE = "maintenance"
     ASSURANCE = "assurance"

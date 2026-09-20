@@ -11,7 +11,13 @@ Source de vérité code : `plateforme/module-routing.contract.ts`.
 | Module | Stratégie | URLs | Entrée Login 2 | Logout module → |
 |--------|-----------|------|----------------|-----------------|
 | `immobilisations` | `legacy-root` | racine (`/dashboard`, `/immobilisations`, …) | `/dashboard` | `/comptabilite` |
-| Futurs (Crédit, RH, …) | `prefixed` | `/{code}/...` | `/{code}` (ou `entry_path` catalogue) | espace du département |
+| `credit` | `prefixed` | `/credit/...` | `/credit` | `/credit` |
+| `rh` | `prefixed` | `/rh/...` | `/rh` | `/rh` |
+| `tickets-si` | `prefixed` | `/tickets-si/...` | `/tickets-si` | `/informatique` |
+| `demandes-achat` | `prefixed` | `/demandes-achat/...` | `/demandes-achat` | `/achats` |
+
+Futurs modules encore **bientôt** (pas de shell métier) — détail processus :
+[catalogue-modules-futurs.md](catalogue-modules-futurs.md).
 
 Règles :
 
@@ -33,12 +39,25 @@ Dossier : `frontend/angular20/src/app/plateforme/`
 | `chrome/bea-chrome.component.ts` | Bandeau BEA DIGITAL (pages Accueil / Comptabilité) |
 | `fil-ariane/fil-ariane.component.ts` | Miettes dans le **shell** du module immo |
 | `accueil/accueil.component.ts` | Cartes départements via `GET /plateforme/espaces` |
-| `comptabilite/comptabilite.component.ts` | Modules via la même API (espace `comptabilite`) |
-| `plateforme.routes.ts` | Routes `accueil` et `comptabilite` |
+| `espace-hub/espace-hub.component.ts` | Hub département dynamique `/{code}` |
+| `espace-hub.guard.ts` | Refuse segments réservés (immo / admin) |
+| `plateforme.routes.ts` | Accueil, hubs, Login 2, CORE ADMIN |
 | `plateforme-ui.css` | Jetons (bleus institutionnels des graphiques immo) |
+
+## Accueil & hubs départements (dynamiques)
+
+- Accueil : `GET /plateforme/espaces` (DB live, pas un catalogue front figé).
+- Hub : `/{code}` via `EspaceHubComponent` (ex. `/comptabilite`, `/credit`).
+  Segments réservés (immo + admin) exclus par `espaceHubCanMatch`.
+- Création CORE ADMIN d’un département → route défaut `/{code}` → carte Accueil
+  (statut actif + grant utilisateur, ou superuser).
+- Module `bientot` : carte non ouvrable. Module `actif` : Login 2 ; shell métier
+  seulement pour Immobilisations tant que les ateliers n’ont pas abouti.
 
 Catalogue espaces/modules : seed backend `plateforme_catalogue.py` → tables
 `plateforme_espaces` / `plateforme_modules` → API. Aucun doublon hardcodé dans le front.
+
+Voir [catalogue-modules-futurs.md](catalogue-modules-futurs.md).
 
 Standalone Angular 20, `OnPush`, sans Material / Tailwind / police d’icônes
 supplémentaires dans ce dossier.

@@ -15,6 +15,38 @@ from app.models.associations import user_espace_acces_table, user_module_acces_t
 from app.models.plateforme import PlateformeEspace, PlateformeModule
 
 CODE_RE = re.compile(r"^[a-z][a-z0-9-]{1,79}$")
+
+# Chemins réservés (shell immo + chrome plateforme) — route espace ≠ ces segments.
+RESERVED_ESPACE_ROUTE_SEGMENTS = frozenset(
+    {
+        "login",
+        "forgot-password",
+        "reset-password",
+        "accueil",
+        "admin",
+        "modules",
+        "dashboard",
+        "immobilisations",
+        "inventaire",
+        "amortissements",
+        "amortissements-agence",
+        "recap-amortissement",
+        "recap-immobilisations",
+        "comptes",
+        "archives",
+        "pieces-comptables",
+        "ecritures",
+        "cessions",
+        "rebuts",
+        "reevaluations",
+        "notifications",
+        "rapports",
+        "utilisateurs",
+        "audit",
+        "parametres",
+    }
+)
+
 STATUTS = {
     "actif",
     "bientot",
@@ -45,6 +77,23 @@ def normalize_path(value: str | None) -> str | None:
     if not trimmed.startswith("/"):
         raise ValueError("Le chemin doit commencer par /")
     return trimmed
+
+
+def default_espace_route(code: str) -> str:
+    return f"/{code}"
+
+
+def assert_espace_route_allowed(route: str | None, *, code: str) -> str:
+    """Impose une route hub `/{code}` utilisable par la plateforme (pas un segment immo)."""
+    path = normalize_path(route) or default_espace_route(code)
+    segment = path.strip("/").split("/", 1)[0]
+    if not segment:
+        raise ValueError("Route département invalide")
+    if code != DEFAULT_ESPACE_CODE and segment in RESERVED_ESPACE_ROUTE_SEGMENTS:
+        raise ValueError(
+            f"Route réservée (« /{segment} »). Utilisez /{code} ou un autre chemin libre."
+        )
+    return path
 
 
 def _iso(value) -> str | None:
@@ -248,7 +297,7 @@ class CoreAdminCatalogueService:
             code=code,
             label=payload.label.strip(),
             description=(payload.description or "").strip(),
-            route=normalize_path(payload.route),
+            route=assert_espace_route_allowed(payload.route, code=code),
             statut=payload.statut,
             sort_order=payload.sort_order,
             is_active=payload.statut != "inactif",
@@ -280,10 +329,12 @@ class CoreAdminCatalogueService:
             elif data["statut"] in {"actif", "bientot"} and not row.is_active:
                 row.is_active = True
         if "route" in data:
-            route = normalize_path(data["route"])
-            if row.code == DEFAULT_ESPACE_CODE and route != row.route:
-                raise ValueError("La route du département Comptabilité est figée")
-            row.route = route
+            if row.code == DEFAULT_ESPACE_CODE:
+                incoming = normalize_path(data["route"])
+                if incoming != row.route:
+                    raise ValueError("La route du département Comptabilité est figée")
+            else:
+                row.route = assert_espace_route_allowed(data["route"], code=row.code)
         await self.db.flush()
         return await self.espace_fiche(espace_id) or self.serialize_espace(
             row, modules_count=len(row.modules), users_count=0

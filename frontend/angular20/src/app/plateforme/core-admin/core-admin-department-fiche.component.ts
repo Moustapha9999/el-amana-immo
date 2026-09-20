@@ -91,8 +91,11 @@ import {
               <input type="text" formControlName="label" />
             </label>
             <label class="bea-admin-field">
-              <span>Route</span>
-              <input type="text" formControlName="route" placeholder="/comptabilite" />
+              <span>Route plateforme</span>
+              <input type="text" formControlName="route" placeholder="/credit" />
+              <span class="bea-admin-note">
+                Auto = /code. Accueil ouvre ce hub. Interdit : /dashboard, /admin, …
+              </span>
             </label>
             <label class="bea-admin-field">
               <span>Statut</span>
@@ -111,6 +114,10 @@ import {
               <textarea formControlName="description" rows="3"></textarea>
             </label>
           </div>
+          <p class="bea-admin-note">
+            Département actif visible sur Accueil seulement pour les utilisateurs qui ont le
+            grant (fiche utilisateur) — ou superuser. « Bientôt » = vitrine sans ouverture.
+          </p>
         </section>
         <div class="bea-admin-form__actions">
           @if (!isView()) {
@@ -187,6 +194,16 @@ export class CoreAdminDepartmentFicheComponent implements OnInit {
     this.espaceId.set(id);
     if (this.isView()) {
       this.form.disable({ emitEvent: false });
+    }
+    if (this.isCreate()) {
+      this.form.controls.code.valueChanges.subscribe((code) => {
+        const cleaned = (code || '').trim().toLowerCase();
+        const routeCtrl = this.form.controls.route;
+        if (!cleaned || routeCtrl.dirty) {
+          return;
+        }
+        routeCtrl.setValue(`/${cleaned}`, { emitEvent: false });
+      });
     }
     if (id) {
       this.api.get<CoreAdminEspaceFiche>(`/plateforme/admin/departments/${id}`).subscribe({

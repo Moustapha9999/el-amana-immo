@@ -37,6 +37,10 @@ Fichiers : sous-dossier `storage/uploads/immobilisations` (+ chemins `pieces_joi
 Avant recovery module : backup de sécurité du même périmètre + avertissement
 dépendances.
 
+Source de vérité code : `backend/app/data/module_backup_scopes.py`
+(`make_module_scope`, `SHARED_CORE_TABLES`, `MODULE_BACKUP_SCOPES`).
+Nouveau module = une entrée factory, sans recopier le CORE.
+
 ## Tables ops ajoutées
 
 - `platform_backups` — inventaire des sauvegardes

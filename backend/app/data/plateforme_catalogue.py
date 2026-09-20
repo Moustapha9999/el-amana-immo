@@ -27,6 +27,11 @@ class ModuleDef(TypedDict):
 DEFAULT_ESPACE_CODE = "comptabilite"
 DEFAULT_MODULE_CODE = "immobilisations"
 
+# Toujours (re)créés s’ils manquent. Le reste du catalogue = seed **bootstrap**
+# seulement : une suppression CORE ADMIN ne doit pas les faire revenir au refresh.
+SEED_LOCKED_ESPACE_CODES = frozenset({DEFAULT_ESPACE_CODE})
+SEED_LOCKED_MODULE_CODES = frozenset({DEFAULT_MODULE_CODE})
+
 PLATEFORME_ESPACES: list[EspaceDef] = [
     {
         "code": "comptabilite",
@@ -43,7 +48,7 @@ PLATEFORME_ESPACES: list[EspaceDef] = [
         "code": "credit",
         "label": "Crédit",
         "description": "Processus crédit autour d’ORION (dossiers, contrôles, workflows).",
-        "route": None,
+        "route": "/credit",
         "statut": "bientot",
         "sort_order": 2,
     },
@@ -51,7 +56,7 @@ PLATEFORME_ESPACES: list[EspaceDef] = [
         "code": "rh",
         "label": "RH",
         "description": "Processus ressources humaines internes.",
-        "route": None,
+        "route": "/rh",
         "statut": "bientot",
         "sort_order": 3,
     },
@@ -59,7 +64,7 @@ PLATEFORME_ESPACES: list[EspaceDef] = [
         "code": "informatique",
         "label": "Informatique",
         "description": "Demandes, suivi et outils internes DSI.",
-        "route": None,
+        "route": "/informatique",
         "statut": "bientot",
         "sort_order": 4,
     },
@@ -67,7 +72,7 @@ PLATEFORME_ESPACES: list[EspaceDef] = [
         "code": "achats",
         "label": "Achats",
         "description": "Demandes d’achat, validations et suivi documentaire.",
-        "route": None,
+        "route": "/achats",
         "statut": "bientot",
         "sort_order": 5,
     },
@@ -122,6 +127,46 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "statut": "bientot",
         "sort_order": 5,
     },
+    # --- Futurs (catalogue Étape 8 — statut bientôt, pas encore de shell métier) ---
+    {
+        "code": "credit",
+        "espace_code": "credit",
+        "label": "Dossiers crédit",
+        "description": (
+            "Instruction et suivi interne des dossiers autour d’ORION "
+            "(checklists, validations, GED) — sans remplacer le core banking."
+        ),
+        "entry_path": "/credit",
+        "statut": "bientot",
+        "sort_order": 1,
+    },
+    {
+        "code": "rh",
+        "espace_code": "rh",
+        "label": "Demandes RH",
+        "description": "Congés, absences et demandes administratives internes.",
+        "entry_path": "/rh",
+        "statut": "bientot",
+        "sort_order": 1,
+    },
+    {
+        "code": "tickets-si",
+        "espace_code": "informatique",
+        "label": "Tickets SI",
+        "description": "Incidents et demandes internes DSI (SLA, files, catégories).",
+        "entry_path": "/tickets-si",
+        "statut": "bientot",
+        "sort_order": 1,
+    },
+    {
+        "code": "demandes-achat",
+        "espace_code": "achats",
+        "label": "Demandes d’achat",
+        "description": "Demandes, validations et suivi documentaire des achats.",
+        "entry_path": "/demandes-achat",
+        "statut": "bientot",
+        "sort_order": 1,
+    },
 ]
 
 # Permissions CORE (tous les départements). `{module}.admin` couvre `{module}.*`.
@@ -129,7 +174,8 @@ CORE_PERMISSIONS: list[tuple[str, str, str]] = [
     ("plateforme.users.read", "Consultation des utilisateurs", "plateforme"),
     ("plateforme.users.admin", "Administration des utilisateurs et des accès", "plateforme"),
     ("plateforme.audit.read", "Consultation de l'audit plateforme", "plateforme"),
-    ("ged.read", "Consultation GED (réservée)", "ged"),
+    ("ged.read", "Consultation GED", "ged"),
+    ("ged.write", "Dépôt / suppression GED", "ged"),
 ]
 
 # CORE ADMIN — catalogue seulement. Ne pas lier au rôle immo `administrateur`.
@@ -200,6 +246,7 @@ _CORE_ADMIN = (
     "plateforme.users.admin",
     "plateforme.audit.read",
     "ged.read",
+    "ged.write",
 )
 
 ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {

@@ -6,7 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.pagination import page_offset
-from app.data.notification_taxonomy import categorie_from_type, infer_priorite
+from app.data.notification_taxonomy import (
+    categorie_from_type,
+    coerce_type_notification,
+    infer_priorite,
+)
 from app.models import Notification, User
 from app.models.enums import TypeNotification
 
@@ -24,7 +28,7 @@ class NotificationService:
         self,
         *,
         user_id: UUID,
-        type_notification: TypeNotification,
+        type_notification: TypeNotification | str,
         titre: str,
         message: str,
         entity: str | None = None,
@@ -40,14 +44,15 @@ class NotificationService:
         destinataire_label: str | None = None,
         actor_user_id: UUID | None = None,
     ) -> Notification:
-        type_code = (
+        raw_type = (
             type_notification.value
             if hasattr(type_notification, "value")
             else str(type_notification)
         )
+        enum_type = coerce_type_notification(type_notification)
         row = Notification(
             user_id=user_id,
-            type_notification=type_notification,
+            type_notification=enum_type,
             titre=titre,
             message=message,
             entity=entity,
@@ -55,9 +60,9 @@ class NotificationService:
             espace_code=espace_code,
             module_code=module_code,
             lu=False,
-            categorie=categorie or categorie_from_type(type_code, module_code=module_code),
+            categorie=categorie or categorie_from_type(raw_type, module_code=module_code),
             priorite=infer_priorite(titre, message, explicit=priorite),
-            event_type=event_type or type_code,
+            event_type=event_type or raw_type,
             emetteur_type=emetteur_type,
             emetteur_label=emetteur_label,
             destinataire_type=destinataire_type,
@@ -81,7 +86,7 @@ class NotificationService:
         self,
         *,
         role_codes: set[str],
-        type_notification: TypeNotification,
+        type_notification: TypeNotification | str,
         titre: str,
         message: str,
         entity: str | None = None,

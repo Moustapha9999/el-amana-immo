@@ -1,7 +1,8 @@
 import { Routes } from '@angular/router';
 import { authGuard, coreAdminGuard } from '../core/guards/auth.guard';
 import { AccueilComponent } from './accueil/accueil.component';
-import { ComptabiliteComponent } from './comptabilite/comptabilite.component';
+import { espaceHubCanMatch } from './espace-hub.guard';
+import { EspaceHubComponent } from './espace-hub/espace-hub.component';
 import { CoreAdminActivityComponent } from './core-admin/core-admin-activity.component';
 import { CoreAdminAlertsComponent } from './core-admin/core-admin-alerts.component';
 import { CoreAdminAuditComponent } from './core-admin/core-admin-audit.component';
@@ -37,7 +38,12 @@ import { ModuleAccesComponent } from './module-acces/module-acces.component';
 
 export const PLATEFORME_ROUTES: Routes = [
   { path: 'accueil', component: AccueilComponent, canActivate: [authGuard] },
-  { path: 'comptabilite', component: ComptabiliteComponent, canActivate: [authGuard] },
+  {
+    path: 'comptabilite',
+    component: EspaceHubComponent,
+    canActivate: [authGuard],
+    data: { espaceCode: 'comptabilite' },
+  },
   { path: 'modules/:moduleCode/acces', component: ModuleAccesComponent, canActivate: [authGuard] },
   {
     path: 'admin',
@@ -83,5 +89,13 @@ export const PLATEFORME_ROUTES: Routes = [
       { path: 'versions', component: CoreAdminVersionsComponent },
       { path: '**', redirectTo: '/admin/dashboard' },
     ],
+  },
+  // Après admin/modules : hub pour tout département créé en CORE ADMIN (route = /{code}).
+  // canMatch refuse les segments Immobilisations (dashboard, …) → shell legacy-root.
+  {
+    path: ':espaceCode',
+    component: EspaceHubComponent,
+    canMatch: [espaceHubCanMatch],
+    canActivate: [authGuard],
   },
 ];

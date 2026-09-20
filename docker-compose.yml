@@ -55,6 +55,7 @@ services:
       SKIP_MIGRATIONS: ${SKIP_MIGRATIONS:-1}
     volumes:
       - ./storage/uploads:/app/storage/uploads
+      - ./storage/ged:/app/storage/ged
       - ./backups:/backups
     depends_on:
       postgres:
