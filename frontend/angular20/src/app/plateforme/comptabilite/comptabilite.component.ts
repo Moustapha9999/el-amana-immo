@@ -2,13 +2,7 @@ import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@ang
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { BeaChromeComponent } from '../chrome/bea-chrome.component';
-import {
-  ESPACE_COMPTABILITE,
-  ESPACES_METIERS,
-  EspaceMetier,
-  ModuleMetier,
-  StatutModule,
-} from '../espaces-metiers';
+import { EspaceMetier, ModuleMetier } from '../espaces-metiers';
 
 const STATUT_BADGE: Record<string, { label: string; tone: string }> = {
   actif: { label: 'Disponible', tone: 'actif' },
@@ -31,6 +25,15 @@ const OPENABLE = new Set([
   'suspendu',
   'bloque',
 ]);
+
+const ESPACE_PLACEHOLDER: EspaceMetier = {
+  id: 'comptabilite',
+  titre: 'Comptabilité',
+  description: '',
+  route: '/comptabilite',
+  statut: 'actif',
+  modules: [],
+};
 
 @Component({
   selector: 'bea-comptabilite',
@@ -113,30 +116,14 @@ const OPENABLE = new Set([
 })
 export class ComptabiliteComponent implements OnInit {
   private readonly api = inject(ApiService);
-  readonly espace = signal<EspaceMetier>(ESPACE_COMPTABILITE);
+  readonly espace = signal<EspaceMetier>(ESPACE_PLACEHOLDER);
 
   ngOnInit(): void {
     this.api.get<EspaceMetier[]>('/plateforme/espaces').subscribe({
       next: (items) => {
         const found = items.find((item) => item.id === 'comptabilite');
         if (found) {
-          const src =
-            ESPACES_METIERS.find((item) => item.id === 'comptabilite') ?? ESPACE_COMPTABILITE;
-          this.espace.set({
-            ...found,
-            titre: src.titre,
-            description: src.description,
-            modules: found.modules.map((mod) => {
-              const local = src.modules.find((item) => item.id === mod.id);
-              return local
-                ? {
-                    ...mod,
-                    titre: local.titre,
-                    description: local.description,
-                  }
-                : mod;
-            }),
-          });
+          this.espace.set(found);
         }
       },
       error: () => undefined,

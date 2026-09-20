@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_permission
 from app.core.exceptions import AppError, raise_http_from_app
 from app.db.session import get_db
 from app.models import User
@@ -44,7 +44,7 @@ def _exercice_read(exo) -> ExerciceRead:
 
 @router.get("/situation", response_model=ExerciceSituationRead)
 async def get_situation(
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     data = await ExerciceOuvertureService(db).situation()
@@ -60,7 +60,7 @@ async def get_situation(
 @router.get("/{annee}/periodes", response_model=list[PeriodeAmortissementRead])
 async def get_periodes_amortissement(
     annee: int,
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -83,7 +83,7 @@ async def get_periodes_amortissement(
 async def cloturer_exercice(
     body: ExerciceClotureRequest,
     request: Request,
-    user: User = Depends(require_roles("administrateur")),
+    user: User = Depends(require_permission("immobilisations.admin")),
     db: AsyncSession = Depends(get_db),
 ):
     """Clôture définitive de l'exercice N (archives immuables, sans ouverture N+1)."""
@@ -129,7 +129,7 @@ async def cloturer_exercice(
 )
 async def ouvrir_exercice_suivant(
     request: Request,
-    user: User = Depends(require_roles("administrateur")),
+    user: User = Depends(require_permission("immobilisations.admin")),
     db: AsyncSession = Depends(get_db),
 ):
     """Ouvre automatiquement N+1 après le dernier exercice clôturé (142/148, 68=0)."""

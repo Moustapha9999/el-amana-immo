@@ -32,7 +32,14 @@ import { ArchivesComponent } from './archives/archives.component';
 import { ArchiveDetailComponent } from './archives/archive-detail.component';
 import { ArchiveNatureComponent } from './archives/archive-nature.component';
 import { PLATEFORME_ROUTES } from './plateforme/plateforme.routes';
+import { LEGACY_ROOT_MODULE_CODE } from './plateforme/module-routing.contract';
 
+/**
+ * Contrat de routes (voir plateforme/module-routing.contract.ts) :
+ * - Immobilisations = legacy-root (bloc ShellComponent ci-dessous, paths inchangés).
+ * - Futurs modules (Crédit, RH, …) = arbre dédié path: '{code}' + moduleGuard(code),
+ *   JAMAIS les segments listés dans LEGACY_ROOT_PATH_SEGMENTS.
+ */
 export const routes: Routes = [
   { path: 'login', component: LoginComponent, canActivate: [guestGuard] },
   { path: 'forgot-password', redirectTo: 'login', pathMatch: 'full' },
@@ -40,9 +47,10 @@ export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'accueil' },
   ...PLATEFORME_ROUTES,
   {
+    // Exception figée : module immobilisations aux URLs racine.
     path: '',
     component: ShellComponent,
-    canActivate: [authGuard, moduleGuard('immobilisations')],
+    canActivate: [authGuard, moduleGuard(LEGACY_ROOT_MODULE_CODE)],
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
       { path: 'dashboard', component: DashboardComponent },

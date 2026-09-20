@@ -159,6 +159,12 @@ def require_module_access(module_code: str):
 
 
 def require_roles(*role_codes: str):
+    """DEPRECATED — préférer require_permission pour le métier.
+
+    Conservé uniquement pour d’éventuels appels legacy hors endpoints v1.
+    Les routes Immobilisations utilisent désormais immobilisations.* .
+    """
+
     async def _checker(user: User = Depends(get_current_user)) -> User:
         if user.is_superuser:
             return user

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_permission
 from app.core.exceptions import AppError, NotFoundError, ValidationError, raise_http_from_app
 from app.db.session import get_db
 from app.models import ArchiveDossier, ArchiveFichier, ArchiveLigne, User
@@ -69,7 +69,7 @@ def _totaux_read(t: dict) -> ArchiveTotauxRead:
 
 @router.get("/dossiers", response_model=list[ArchiveDossierRead])
 async def list_dossiers(
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     rows = await ArchiveService(db).list_dossiers()
@@ -80,7 +80,7 @@ async def list_dossiers(
 async def create_dossier(
     body: ArchiveDossierCreate,
     request: Request,
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.update", "immobilisations.create")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -105,7 +105,7 @@ async def create_dossier(
 async def cloturer_exercice(
     body: ArchiveClotureRequest,
     request: Request,
-    user: User = Depends(require_roles("administrateur")),
+    user: User = Depends(require_permission("immobilisations.admin")),
     db: AsyncSession = Depends(get_db),
 ):
     """Clôture définitive N (archives). L'ouverture N+1 se fait via POST /exercices/ouvrir-suivant."""
@@ -144,7 +144,7 @@ async def cloturer_exercice(
 @router.get("/dossiers/{annee}", response_model=ArchiveDossierDetailRead)
 async def get_dossier(
     annee: int,
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -158,7 +158,7 @@ async def get_dossier(
 async def delete_dossier(
     annee: int,
     request: Request,
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.update", "immobilisations.create")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -193,7 +193,7 @@ async def upload_fichier(
     request: Request,
     file: UploadFile = File(...),
     nature_code: str | None = Form(None),
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.update", "immobilisations.create")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -226,7 +226,7 @@ async def rescan_fichier(
     annee: int,
     fichier_id: UUID,
     request: Request,
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.update", "immobilisations.create")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -253,7 +253,7 @@ async def rescan_fichier(
 async def download_fichier(
     annee: int,
     fichier_id: UUID,
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -278,7 +278,7 @@ async def delete_fichier(
     annee: int,
     fichier_id: UUID,
     request: Request,
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.update", "immobilisations.create")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -302,7 +302,7 @@ async def list_acquisitions(
     annee: int,
     nature_code: str | None = Query(None),
     q: str | None = Query(None),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:

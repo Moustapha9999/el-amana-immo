@@ -4,19 +4,41 @@ BEA DIGITAL est **greffée** sur `frontend/angular20/`. Il n’y a pas de second
 front, pas de rewrite React/Next, pas de dépendance ajoutée au `package.json`
 pour le chrome.
 
+## Contrat de routes des modules (figé)
+
+Source de vérité code : `plateforme/module-routing.contract.ts`.
+
+| Module | Stratégie | URLs | Entrée Login 2 | Logout module → |
+|--------|-----------|------|----------------|-----------------|
+| `immobilisations` | `legacy-root` | racine (`/dashboard`, `/immobilisations`, …) | `/dashboard` | `/comptabilite` |
+| Futurs (Crédit, RH, …) | `prefixed` | `/{code}/...` | `/{code}` (ou `entry_path` catalogue) | espace du département |
+
+Règles :
+
+1. **Ne jamais** déplacer l’immo sous `/comptabilite/immobilisations/` (liens absolus + notifications).
+2. **Ne jamais** réutiliser à la racine les segments de `LEGACY_ROOT_PATH_SEGMENTS` pour un autre module.
+3. Pour un nouveau module : ajouter une entrée dans `MODULE_ROUTE_CONTRACTS`, un bloc
+   `path: '{code}'` + `moduleGuard('{code}')` dans `app.routes.ts` (shell dédié ou lazy),
+   et un `entry_path` en base / catalogue.
+4. Plateforme (`/accueil`, `/comptabilite`, `/admin`, `/modules/:code/acces`) reste hors shell métier.
+
 ## Chrome
 
 Dossier : `frontend/angular20/src/app/plateforme/`
 
 | Fichier | Rôle |
 |---------|------|
-| `espaces-metiers.ts` | Catalogue : Comptabilité actif + module immo actif ; Crédit / RH / IT / Achats = bientôt |
+| `module-routing.contract.ts` | Contrat URLs modules (legacy-root vs prefixed) |
+| `espaces-metiers.ts` | Types + libellés fil d’Ariane immo — **pas** le catalogue (API) |
 | `chrome/bea-chrome.component.ts` | Bandeau BEA DIGITAL (pages Accueil / Comptabilité) |
 | `fil-ariane/fil-ariane.component.ts` | Miettes dans le **shell** du module immo |
-| `accueil/accueil.component.ts` | Cartes des espaces métiers |
-| `comptabilite/comptabilite.component.ts` | Carte Immobilisations & Amortissements → `/dashboard` |
+| `accueil/accueil.component.ts` | Cartes départements via `GET /plateforme/espaces` |
+| `comptabilite/comptabilite.component.ts` | Modules via la même API (espace `comptabilite`) |
 | `plateforme.routes.ts` | Routes `accueil` et `comptabilite` |
 | `plateforme-ui.css` | Jetons (bleus institutionnels des graphiques immo) |
+
+Catalogue espaces/modules : seed backend `plateforme_catalogue.py` → tables
+`plateforme_espaces` / `plateforme_modules` → API. Aucun doublon hardcodé dans le front.
 
 Standalone Angular 20, `OnPush`, sans Material / Tailwind / police d’icônes
 supplémentaires dans ce dossier.
@@ -28,8 +50,9 @@ supplémentaires dans ce dossier.
 3. `...PLATEFORME_ROUTES` **avant** la route `''` de `ShellComponent`
    (sinon le prefix matching du shell avale `accueil` / `comptabilite`),
    avec `canActivate: [authGuard]`.
-4. Bloc `ShellComponent` + enfants **tels quels** (mêmes paths module).
-5. `**` → `accueil` (plus `dashboard`).
+4. Bloc `ShellComponent` + enfants **tels quels** (mêmes paths module immo, `legacy-root`).
+5. Futurs modules : blocs `path: 'credit'` (etc.) **à côté**, jamais dans le shell immo.
+6. `**` → `accueil` (plus `dashboard`).
 
 Après login → `/accueil`. `guestGuard` (déjà connecté) → `/accueil`.
 
@@ -40,11 +63,15 @@ le contenu hors écran.
 
 `<bea-fil-ariane>` est inséré **dans** `shell.component.html`, sous la topbar.
 
-Miettes : `Accueil → Comptabilité → Immobilisations & Amortissements`
-(+ écran courant du module le cas échéant).
+Miettes (génériques) : `Accueil → {espace} → {module}` (+ écran courant).
+Titres et routes viennent de `PlateformeContextService` (API Login 2 /
+`GET /plateforme/modules/{code}`), pas de chaînes hardcodées « Comptabilité ».
 
 `app-shell__main` : `min-height: calc(100vh - 4rem - 2.5rem)`
 (topbar 4rem + fil d’Ariane 2.5rem).
+
+Déconnexion module : retour via `espace_route` du contexte / contrat
+(`module-routing.contract.ts`) — jamais Login 1.
 
 ## Pourquoi on ne préfixe PAS sous `/comptabilite/immobilisations/`
 

@@ -5,6 +5,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { BeaChromeComponent } from '../chrome/bea-chrome.component';
+import { PlateformeContextService } from '../plateforme-context.service';
+import { resolveEspacePathForModule } from '../module-routing.contract';
 
 interface ModuleInfo {
   id: string;
@@ -82,12 +84,13 @@ export class ModuleAccesComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly nav = inject(PlateformeContextService);
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly titre = signal('Module');
   readonly entryPath = signal('/dashboard');
-  readonly espaceRoute = signal('/comptabilite');
+  readonly espaceRoute = signal(resolveEspacePathForModule('immobilisations'));
   readonly espaceTitre = signal('Comptabilité');
   readonly blocked = signal(false);
   readonly blockMessage = signal('');
@@ -126,6 +129,13 @@ export class ModuleAccesComponent implements OnInit {
         if (info.espace_titre) {
           this.espaceTitre.set(info.espace_titre);
         }
+        this.nav.setFromModuleInfo({
+          moduleCode,
+          titre: info.titre,
+          entry_path: info.entry_path,
+          espace_route: info.espace_route,
+          espace_titre: info.espace_titre,
+        });
         const loginOk = info.access_allowed === true || (info.access_allowed == null && info.accessible);
         if (!loginOk && info.statut && info.statut !== 'actif') {
           this.applyBlock(info.statut, info.status_message, info.maintenance_ends_at);

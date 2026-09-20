@@ -24,7 +24,7 @@ est encore valide. Détail auth : [socle-bea-digital.md](socle-bea-digital.md).
 | | Brique | Table / service | Notes |
 |---|--------|-----------------|-------|
 | A | Utilisateurs | `users` | Email unique, bcrypt, `is_active`, soft-delete |
-| B | Rôles | `roles` + `user_roles` | Profils immo actuels (`comptable`, …). Les modules suivants préfixeront (`credit.…`) |
+| B | Rôles | `roles` + `user_roles` | Immo = codes courts legacy (`comptable`, …). Nouveaux modules = `{module}.{profil}` (`credit.admin`). Helpers : `module_role_code` / `role_module_code` |
 | C | Permissions | `permissions` + `role_permissions` | `{module}.{action}` ; `{module}.admin` couvre `{module}.*` |
 | D | Départements | `plateforme_espaces` | Comptabilité, Crédit, RH, … **≠** `departements` (org immo / centres de coût) |
 | E | Modules | `plateforme_modules` | Premier actif : `immobilisations` |

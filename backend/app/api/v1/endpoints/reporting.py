@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_permission
 from app.api.v1.endpoints.helpers import to_paginated
 from app.db.session import get_db
 from app.models import AuditLog, User
@@ -102,7 +102,7 @@ async def dashboard_kpi(
     statut: str | None = None,
     famille: str | None = None,
     mois: int | None = Query(None, ge=1, le=12),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     data = await DashboardService(db).kpi(statut=statut, famille=famille, mois=mois)
@@ -114,7 +114,7 @@ async def dashboard_charts(
     statut: str | None = None,
     famille: str | None = None,
     mois: int | None = Query(None, ge=1, le=12),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     data = await DashboardService(db).charts(statut=statut, famille=famille, mois=mois)
@@ -132,7 +132,7 @@ async def list_audit(
     date_fin: date | None = None,
     espace_code: str | None = None,
     module_code: str | None = None,
-    _: User = Depends(require_roles("administrateur", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.reporting", "plateforme.audit.read")),
     db: AsyncSession = Depends(get_db),
 ):
     items, total = await AuditService(db).list(
@@ -158,7 +158,7 @@ async def export_audit(
     date_fin: date | None = None,
     espace_code: str | None = None,
     module_code: str | None = None,
-    _: User = Depends(require_roles("administrateur", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.reporting", "plateforme.audit.read")),
     db: AsyncSession = Depends(get_db),
 ):
     rows = await list_audit_for_export(
@@ -184,7 +184,7 @@ async def export_ecritures(
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     date_debut: date | None = None,
     date_fin: date | None = None,
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     rows = await list_ecritures_for_export(db, date_debut=date_debut, date_fin=date_fin)
@@ -224,7 +224,7 @@ async def export_cessions(
     date_debut: date | None = None,
     date_fin: date | None = None,
     search: str | None = None,
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     rows = await list_cessions_for_export(
@@ -252,7 +252,7 @@ async def export_rebuts(
     date_debut: date | None = None,
     date_fin: date | None = None,
     search: str | None = None,
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     rows = await list_rebuts_for_export(
@@ -280,7 +280,7 @@ async def export_reevaluations(
     date_debut: date | None = None,
     date_fin: date | None = None,
     search: str | None = None,
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     rows = await list_reevaluations_for_export(
@@ -334,7 +334,7 @@ async def export_immobilisations(
     search: str | None = Query(None),
     statuts: str | None = Query(None, description="Statuts séparés par des virgules"),
     famille: str | None = Query(None, description="Filtre sur le type / famille de catégorie"),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     statut_list = _parse_statuts_param(statuts)
@@ -375,7 +375,7 @@ async def export_amortissements_liste(
         description="Statuts séparés par des virgules (périmètre amortissements)",
     ),
     famille: str | None = Query(None, description="Filtre sur le type / famille de catégorie"),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Liste des immobilisations amortissables (écran Amortissements)."""
@@ -416,7 +416,7 @@ async def export_amortissements_liste(
 
 
 @router.get("/reporting/immobilisations/import-template")
-async def download_import_template(_: User = Depends(require_roles("administrateur", "comptable"))):
+async def download_import_template(_: User = Depends(require_permission("immobilisations.update", "immobilisations.create"))):
     from app.services.immobilisation_import import immobilisations_import_template_bytes
 
     return Response(
@@ -458,7 +458,7 @@ def _recap_detail_read(detail) -> RecapAmortissementDetailRead:
 @router.get("/reporting/recap-amortissement", response_model=RecapAmortissementRead)
 async def get_recap_amortissement(
     annee: int = Query(..., ge=2000, le=2100),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await resolve_recap(db, annee)
@@ -476,7 +476,7 @@ async def export_recap_amortissement(
     annee: int = Query(..., ge=2000, le=2100),
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     vue: str = Query("synthese", pattern="^(synthese|detail)$"),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await resolve_recap(db, annee)
@@ -593,7 +593,7 @@ def _recap_immo_payload(result) -> dict:
 @router.get("/reporting/recap-immobilisations", response_model=RecapImmobilisationsRead)
 async def get_recap_immobilisations(
     annee: int = Query(..., ge=2001, le=2100, description="Exercice des mouvements (ex. 2026)"),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Tableau récapitulatif VB : ouverture N-1, acquisitions/cessions N, clôture N."""
@@ -615,7 +615,7 @@ async def get_recap_immobilisations(
 async def export_recap_immobilisations(
     annee: int = Query(..., ge=2001, le=2100),
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -713,7 +713,7 @@ def _comptes_par_nature_payload(result) -> dict:
 async def get_comptes_par_nature(
     annee: int = Query(..., ge=2000, le=2100),
     compte: str | None = Query(None, description="Compte immobilisation (ex. 142010). Vide = tous."),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await resolve_comptes(db, annee, compte=compte)
@@ -742,7 +742,7 @@ async def export_comptes_par_nature(
     annee: int = Query(..., ge=2000, le=2100),
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     compte: str | None = Query(None),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await resolve_comptes(db, annee, compte=compte)
@@ -896,7 +896,7 @@ async def get_soldes_148_68(
     date_debut: date | None = Query(None),
     date_fin: date | None = Query(None),
     search: str | None = Query(None),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Consultation des comptes 142 / 148 / 68 — synthèse et détail filtrables."""
@@ -919,7 +919,7 @@ async def get_soldes_148_68(
 @router.get("/reporting/soldes-orion", response_model=SoldeCompteOrionListRead)
 async def get_soldes_orion(
     annee: int = Query(..., ge=2000, le=2100),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Soldes Orion agrégés (Titres / Terrain / Immo en cours) pour Soldes 142."""
@@ -950,7 +950,7 @@ async def get_soldes_orion(
 @router.put("/reporting/soldes-orion", response_model=SoldeCompteOrionListRead)
 async def put_soldes_orion(
     payload: SoldeCompteOrionUpsertRequest,
-    user: User = Depends(require_roles("administrateur", "comptable")),
+    user: User = Depends(require_permission("immobilisations.update", "immobilisations.create")),
     db: AsyncSession = Depends(get_db),
 ):
     """Enregistre une seule fois les soldes Orion — puis verrouillage définitif."""
@@ -996,7 +996,7 @@ async def export_soldes_148_68(
     date_fin: date | None = Query(None),
     search: str | None = Query(None),
     vue: str = Query("detail", pattern="^(detail|synthese)$"),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -1155,7 +1155,7 @@ async def get_amortissements_agence(
     ),
     agence_id: UUID | None = Query(None, description="Filtrer une agence (vide = toutes)"),
     categorie_id: UUID | None = Query(None, description="Filtrer une catégorie (optionnel)"),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Ventilation des dotations (compte 68) par agence."""
@@ -1179,7 +1179,7 @@ async def export_amortissements_agence(
     periode_index: int | None = Query(None, ge=1, le=12),
     agence_id: UUID | None = Query(None),
     categorie_id: UUID | None = Query(None),
-    _: User = Depends(require_roles("administrateur", "comptable", "auditeur")),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _build_ventilation(

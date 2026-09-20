@@ -1892,31 +1892,6 @@ bea-fil-ariane {
   color: var(--bea-brand-700);
 }
 
-.bea-admin-dash__stamp {
-  flex-shrink: 0;
-  display: grid;
-  gap: 0.15rem;
-  min-width: 9.5rem;
-  padding: 0.65rem 0.8rem;
-  border-radius: 0.7rem;
-  border: 1px solid rgb(26 82 120 / 0.12);
-  background: rgb(255 255 255 / 0.78);
-  text-align: right;
-}
-
-.bea-admin-dash__stamp-label {
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--bea-ink-muted);
-}
-
-.bea-admin-dash__stamp strong {
-  font-size: 0.82rem;
-  color: var(--bea-brand-900);
-}
-
 .bea-admin-dash__head p,
 .bea-admin-dash__loading,
 .bea-admin-panel__empty {
@@ -4458,11 +4433,6 @@ button.bea-admin-kpi {
 
   .bea-admin-dash__head--hero {
     flex-direction: column;
-  }
-
-  .bea-admin-dash__stamp {
-    text-align: left;
-    width: 100%;
   }
 
   .bea-admin {

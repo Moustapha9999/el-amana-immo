@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_permission, require_roles
+from app.api.deps import require_permission
 from app.api.v1.endpoints.helpers import to_paginated
 from app.core.exceptions import AppError, NotFoundError, raise_http_from_app
 from app.core.pagination import page_offset
@@ -63,13 +63,13 @@ router = APIRouter(tags=["comptabilite"])
 
 
 @router.get("/journaux", response_model=PaginatedResponse[JournalRead])
-async def list_journaux(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), search: str | None = None, _: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def list_journaux(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), search: str | None = None, _: User = Depends(require_permission("immobilisations.read")), db: AsyncSession = Depends(get_db)):
     items, total = await JournalService(db).list(page, size, search)
     return to_paginated(items, total, page, size, JournalRead.model_validate)
 
 
 @router.post("/journaux", response_model=JournalRead, status_code=status.HTTP_201_CREATED)
-async def create_journal(payload: JournalCreate, _: User = Depends(require_roles("administrateur", "comptable")), db: AsyncSession = Depends(get_db)):
+async def create_journal(payload: JournalCreate, _: User = Depends(require_permission("immobilisations.update", "immobilisations.create")), db: AsyncSession = Depends(get_db)):
     return await JournalService(db).create(payload)
 
 
@@ -78,7 +78,7 @@ async def list_plan(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     search: str | None = None,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.models import CategorieImmobilisation
@@ -119,7 +119,7 @@ async def list_plan(
 @router.post("/plan-comptable", response_model=ComptePlanRead, status_code=status.HTTP_201_CREATED)
 async def create_compte(
     payload: ComptePlanCreateLinked,
-    _: User = Depends(require_roles("administrateur", "comptable")),
+    _: User = Depends(require_permission("immobilisations.update", "immobilisations.create")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -131,7 +131,7 @@ async def create_compte(
 @router.get("/plan-comptable/{entity_id}", response_model=ComptePlanRead)
 async def get_compte(
     entity_id: UUID,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -144,7 +144,7 @@ async def get_compte(
 async def update_compte(
     entity_id: UUID,
     payload: ComptePlanUpdate,
-    _: User = Depends(require_roles("administrateur", "comptable")),
+    _: User = Depends(require_permission("immobilisations.update", "immobilisations.create")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -156,7 +156,7 @@ async def update_compte(
 @router.delete("/plan-comptable/{entity_id}", response_model=MessageResponse)
 async def delete_compte(
     entity_id: UUID,
-    _: User = Depends(require_roles("administrateur")),
+    _: User = Depends(require_permission("immobilisations.admin")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -167,17 +167,17 @@ async def delete_compte(
 
 
 @router.get("/parametrage/amortissement", response_model=ParametrageAmortissementRead)
-async def get_parametrage(_: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def get_parametrage(_: User = Depends(require_permission("immobilisations.read")), db: AsyncSession = Depends(get_db)):
     return await ParametrageService(db).get_or_create()
 
 
 @router.patch("/parametrage/amortissement", response_model=ParametrageAmortissementRead)
-async def update_parametrage(payload: ParametrageAmortissementUpdate, _: User = Depends(require_roles("administrateur")), db: AsyncSession = Depends(get_db)):
+async def update_parametrage(payload: ParametrageAmortissementUpdate, _: User = Depends(require_permission("immobilisations.admin")), db: AsyncSession = Depends(get_db)):
     return await ParametrageService(db).update(payload.model_dump(exclude_unset=True))
 
 
 @router.get("/amortissements/immobilisation/{immobilisation_id}", response_model=list[AmortissementRead])
-async def list_amortissements(immobilisation_id: UUID, _: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def list_amortissements(immobilisation_id: UUID, _: User = Depends(require_permission("immobilisations.read")), db: AsyncSession = Depends(get_db)):
     rows = await AmortissementService(db).list_for_immobilisation(immobilisation_id)
     return [AmortissementRead.model_validate(r) for r in rows]
 
@@ -187,7 +187,7 @@ async def export_amortissement_fiche(
     immobilisation_id: UUID,
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     annee: int | None = Query(None, ge=2000, le=2100),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Export fiche amortissement (exercice courant par défaut)."""
@@ -359,7 +359,7 @@ async def list_ecritures(
     date_fin: date | None = None,
     search: str | None = None,
     journal_code: str | None = None,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     from sqlalchemy import String, cast, or_
@@ -435,7 +435,7 @@ async def _ecriture_detail(db: AsyncSession, ecriture_id: UUID) -> EcritureDetai
 @router.get("/ecritures/{ecriture_id}", response_model=EcritureDetailRead)
 async def get_ecriture(
     ecriture_id: UUID,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -448,7 +448,7 @@ async def get_ecriture(
 async def export_ecriture_fiche(
     ecriture_id: UUID,
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
     from fastapi.responses import Response
@@ -499,7 +499,7 @@ async def export_ecriture_fiche(
 
 
 @router.post("/ecritures", response_model=EcritureRead, status_code=status.HTTP_201_CREATED)
-async def create_ecriture(payload: EcritureCreate, _: User = Depends(require_roles("administrateur", "comptable")), db: AsyncSession = Depends(get_db)):
+async def create_ecriture(payload: EcritureCreate, _: User = Depends(require_permission("immobilisations.update", "immobilisations.create")), db: AsyncSession = Depends(get_db)):
     from app.core.exceptions import AppError, raise_http_from_app
     from app.services.exercice_guard import ensure_exercice_ouvert_pour_date
 

@@ -3,6 +3,8 @@ import { Router } from '@angular/router';
 import { Observable, of, throwError } from 'rxjs';
 import { catchError, finalize, shareReplay, tap } from 'rxjs/operators';
 import { ApiService } from './api.service';
+import { PlateformeContextService } from '../../plateforme/plateforme-context.service';
+import { resolveEspacePathForModule } from '../../plateforme/module-routing.contract';
 
 export interface TokenPair {
   access_token: string;
@@ -33,6 +35,7 @@ const LEGACY_REFRESH_KEY = 'immo_refresh';
 export class AuthService {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
+  private readonly plateformeContext = inject(PlateformeContextService);
 
   readonly user = signal<UserProfile | null>(null);
   readonly canAccessCoreAdmin = computed(() => {
@@ -111,6 +114,7 @@ export class AuthService {
     localStorage.removeItem(MODULE_REFRESH_KEY);
     localStorage.removeItem(MODULE_CODE_KEY);
     this.moduleRefreshInFlight$ = null;
+    this.plateformeContext.clear();
   }
 
   clearLocalSession(): void {
@@ -202,6 +206,8 @@ export class AuthService {
   logoutModule(options?: { redirectTo?: string }): void {
     const refresh = this.moduleRefreshToken;
     const code = this.moduleCode;
+    // Capturer la route espace AVANT clear (contexte session).
+    const dest = options?.redirectTo ?? this.espaceRouteForModule(code);
     if (this.moduleAccessToken || refresh) {
       this.api
         .post<{ message: string }>('/auth/modules/logout', { refresh_token: refresh })
@@ -210,15 +216,11 @@ export class AuthService {
     }
     this.clearModuleSession();
     // Retour au département — jamais Login 1.
-    const dest = options?.redirectTo ?? this.espaceRouteForModule(code);
     void this.router.navigateByUrl(dest);
   }
 
   private espaceRouteForModule(moduleCode: string | null): string {
-    if (moduleCode === 'immobilisations' || !moduleCode) {
-      return '/comptabilite';
-    }
-    return '/accueil';
+    return this.plateformeContext.espacePathFor(moduleCode) || resolveEspacePathForModule(moduleCode);
   }
 
   isAuthenticated(): boolean {

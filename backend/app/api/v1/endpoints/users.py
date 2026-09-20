@@ -16,13 +16,17 @@ from app.services.auth_service import AuthService
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-def _require_platform_admin(user: User = Depends(get_platform_user)) -> User:
-    """Users métier : session plateforme uniquement + rôle administrateur."""
-    if user.is_superuser:
+async def _require_platform_admin(
+    user: User = Depends(get_platform_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Users métier : session plateforme + permission plateforme.users.admin."""
+    from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
+
+    have = await load_user_permission_codes(db, user)
+    if user_has_permission_codes(have, "plateforme.users.admin"):
         return user
-    if not {r.code for r in user.roles}.intersection({"administrateur"}):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission refusée")
-    return user
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission refusée")
 
 
 @router.get("", response_model=PaginatedResponse[UserRead])

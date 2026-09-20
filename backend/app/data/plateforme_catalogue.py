@@ -174,7 +174,9 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("immobilisations.admin", "Administration du module", "immobilisations"),
 ]
 
-# Rôles figés Login 2 / module Immobilisations.
+# Rôles figés Login 2 / module Immobilisations (codes courts = legacy).
+# Convention nouveaux modules : "{module}.{profil}" (ex. credit.admin, rh.lecteur).
+# Ne jamais réutiliser un code court nu (comptable, administrateur, …) hors Immobilisations.
 # Consultation ⊂ les rôles métier (lecture toujours requise pour agir).
 RBAC_ROLES: list[tuple[str, str, str]] = [
     ("consultation", "Consultation", "Lecture du module Immobilisations"),
@@ -186,6 +188,9 @@ RBAC_ROLES: list[tuple[str, str, str]] = [
     ("auditeur", "Auditeur", "Consultation et reporting"),
     ("administrateur", "Administration", "Permissions immobilisations + utilisateurs plateforme"),
 ]
+
+# Codes courts réservés au module Immobilisations (ne pas créer pour Crédit / RH / …).
+IMMO_LEGACY_ROLE_CODES = frozenset(code for code, _label, _desc in RBAC_ROLES)
 
 _IMMO_ALL = tuple(
     code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "immobilisations"
@@ -225,3 +230,40 @@ IMMO_ADMIN_ROLE_CODE = "administrateur"
 
 def permissions_for_role(role_code: str) -> tuple[str, ...]:
     return ROLE_PERMISSIONS.get(role_code, ())
+
+
+def module_role_code(module_code: str, profil: str) -> str:
+    """Construit le code rôle d’un module.
+
+    Immobilisations → codes courts legacy (`comptable`).
+    Autres modules → `{module}.{profil}` (`credit.admin`).
+    """
+    module = (module_code or "").strip().lower()
+    short = (profil or "").strip().lower()
+    if not module or not short:
+        raise ValueError("module_code et profil sont obligatoires")
+    if module == "immobilisations":
+        if short.startswith("immobilisations."):
+            short = short.split(".", 1)[1]
+        return short
+    if short.startswith(f"{module}."):
+        return short
+    if "." in short:
+        raise ValueError(f"Profil invalide pour {module} : utiliser un segment sans autre module")
+    return f"{module}.{short}"
+
+
+def role_module_code(role_code: str) -> str | None:
+    """Module propriétaire d’un rôle, ou None si code libre non namespacé."""
+    code = (role_code or "").strip().lower()
+    if not code:
+        return None
+    if code in IMMO_LEGACY_ROLE_CODES:
+        return "immobilisations"
+    if "." in code:
+        return code.split(".", 1)[0]
+    return None
+
+
+def is_legacy_immo_role(role_code: str) -> bool:
+    return (role_code or "").strip().lower() in IMMO_LEGACY_ROLE_CODES

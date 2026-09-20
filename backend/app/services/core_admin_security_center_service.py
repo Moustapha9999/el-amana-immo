@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
@@ -18,7 +19,7 @@ class CoreAdminSecurityCenterService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def search_users(self, q: str, *, limit: int = 12) -> list[dict]:
+    async def search_users(self, q: str, *, limit: int = 12) -> list[dict[str, Any]]:
         term = (q or "").strip()
         stmt = (
             select(User)
@@ -42,7 +43,7 @@ class CoreAdminSecurityCenterService:
         rows = (await self.db.execute(stmt)).scalars().all()
         return [self._user_search_item(u) for u in rows]
 
-    def _user_search_item(self, u: User) -> dict:
+    def _user_search_item(self, u: User) -> dict[str, Any]:
         parts = (u.full_name or "").strip().split(None, 1)
         return {
             "id": str(u.id),
@@ -58,7 +59,7 @@ class CoreAdminSecurityCenterService:
             "modules": [{"code": m.code, "label": m.label} for m in (u.modules or [])],
         }
 
-    async def user_dossier(self, user_id: UUID) -> dict | None:
+    async def user_dossier(self, user_id: UUID) -> dict[str, Any] | None:
         user = await AuthService(self.db).get_by_id(user_id, include_inactive=True)
         if user is None or user.deleted_at is not None:
             return None
@@ -92,7 +93,7 @@ class CoreAdminSecurityCenterService:
 
     async def update_login(
         self, user_id: UUID, *, new_email: str, actor: User
-    ) -> dict:
+    ) -> dict[str, Any]:
         email = new_email.strip().lower()
         if not email or "@" not in email:
             raise ValueError("E-mail invalide")
@@ -120,7 +121,7 @@ class CoreAdminSecurityCenterService:
 
     async def reset_password(
         self, user_id: UUID, *, password: str | None, actor: User
-    ) -> dict:
+    ) -> dict[str, Any]:
         from app.core.temp_password import generate_temporary_password
 
         user = await AuthService(self.db).get_by_id(user_id, include_inactive=True)
@@ -135,7 +136,7 @@ class CoreAdminSecurityCenterService:
             "message": "Mot de passe réinitialisé (Login 1 et Login 2). Sessions révoquées.",
         }
 
-    async def mfa_disable(self, user_id: UUID) -> dict:
+    async def mfa_disable(self, user_id: UUID) -> dict[str, Any]:
         user = await AuthService(self.db).get_by_id(user_id, include_inactive=True)
         if user is None:
             raise ValueError("Utilisateur introuvable")
@@ -144,11 +145,11 @@ class CoreAdminSecurityCenterService:
         await self.db.flush()
         return {"id": str(user.id), "totp_enabled": False}
 
-    async def mfa_reset(self, user_id: UUID) -> dict:
+    async def mfa_reset(self, user_id: UUID) -> dict[str, Any]:
         """Révoque le secret MFA — l’utilisateur devra ré-enrôler."""
         return await self.mfa_disable(user_id)
 
-    async def overview(self) -> dict:
+    async def overview(self) -> dict[str, Any]:
         from app.services.core_admin_ops_service import CoreAdminOpsService
 
         snap = await CoreAdminOpsService(self.db).security_settings()
@@ -235,7 +236,7 @@ class CoreAdminSecurityCenterService:
         statut: str | None = None,
         niveau: str | None = None,
         limit: int = 100,
-    ) -> dict:
+    ) -> dict[str, Any]:
         try:
             filters = []
             if statut and statut != "tous":
@@ -254,7 +255,7 @@ class CoreAdminSecurityCenterService:
             "items": [self._incident_dict(r) for r in rows],
         }
 
-    def _incident_dict(self, r: SecurityIncident) -> dict:
+    def _incident_dict(self, r: SecurityIncident) -> dict[str, Any]:
         return {
             "id": str(r.id),
             "titre": r.titre,
@@ -275,7 +276,7 @@ class CoreAdminSecurityCenterService:
             "updated_at": r.updated_at.isoformat() if r.updated_at else None,
         }
 
-    async def create_incident(self, payload: dict, *, actor: User) -> SecurityIncident:
+    async def create_incident(self, payload: dict[str, Any], *, actor: User) -> SecurityIncident:
         titre = str(payload.get("titre") or "").strip()
         if not titre:
             raise ValueError("Titre requis")
@@ -309,7 +310,7 @@ class CoreAdminSecurityCenterService:
         await self.db.flush()
         return incident
 
-    async def update_incident(self, incident_id: UUID, payload: dict) -> SecurityIncident:
+    async def update_incident(self, incident_id: UUID, payload: dict[str, Any]) -> SecurityIncident:
         result = await self.db.execute(
             select(SecurityIncident).where(SecurityIncident.id == incident_id)
         )
@@ -356,7 +357,7 @@ class CoreAdminSecurityCenterService:
         )
         return result.scalar_one_or_none()
 
-    async def delete_incident(self, incident_id: UUID) -> dict:
+    async def delete_incident(self, incident_id: UUID) -> dict[str, Any]:
         incident = await self.get_incident(incident_id)
         if incident is None:
             raise ValueError("Incident introuvable")

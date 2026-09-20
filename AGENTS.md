@@ -67,6 +67,9 @@ remplacement d’ORION.
 - Fil d’Ariane **dans** le shell, sous la topbar (ne pas empiler un bandeau
   au-dessus de `height: 100vh`).
 - Wildcard `**` → `accueil`.
+- **Contrat routes modules** (`plateforme/module-routing.contract.ts`) :
+  immobilisations = URLs racine figées ; tout nouveau module = `/{code}/...`
+  (jamais réutiliser les segments root immo). Détail : `docs/frontend-plateforme.md`.
 
 ## Secrets
 

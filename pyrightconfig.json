@@ -1,0 +1,28 @@
+{
+  "include": ["backend/app"],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "backend/.venv",
+    "backend/tests",
+    "backend/scripts",
+    "app",
+    "alembic",
+    "frontend",
+    "storage",
+    "backups"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "backend",
+      "pythonVersion": "3.13",
+      "pythonPlatform": "Windows",
+      "extraPaths": ["."]
+    }
+  ],
+  "venvPath": "backend",
+  "venv": ".venv",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "warning",
+  "reportImplicitRelativeImport": false
+}

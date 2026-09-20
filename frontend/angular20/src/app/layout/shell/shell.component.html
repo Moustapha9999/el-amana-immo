@@ -11,7 +11,7 @@
         alt="Banque El Amana"
       />
       <div class="app-shell__brand-text">
-        <div class="app-shell__brand-sub">BEA DIGITAL — Comptabilité</div>
+        <div class="app-shell__brand-sub">{{ brandSubtitle() }}</div>
       </div>
     </a>
 
@@ -71,7 +71,7 @@
 
     <header class="app-shell__topbar">
 
-      <div class="app-shell__topbar-title">Immobilisations &amp; Amortissements</div>
+      <div class="app-shell__topbar-title">{{ moduleTitle() }}</div>
 
       <div class="app-shell__topbar-actions">
 
@@ -112,8 +112,6 @@
       </div>
 
     </header>
-
-    <bea-fil-ariane />
 
     <main class="app-shell__main">
 

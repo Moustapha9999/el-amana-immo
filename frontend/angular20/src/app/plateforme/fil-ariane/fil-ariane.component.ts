@@ -3,34 +3,11 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { filter, map, startWith } from 'rxjs/operators';
 import { labelPageModuleImmo } from '../espaces-metiers';
+import { PlateformeContextService } from '../plateforme-context.service';
 
 export interface FilArianeCrumb {
   label: string;
   path: string | null;
-}
-
-function crumbsForUrl(url: string): FilArianeCrumb[] {
-  const path = url.split('?')[0];
-  const accueil: FilArianeCrumb = { label: 'Accueil', path: '/accueil' };
-  const compta: FilArianeCrumb = { label: 'Comptabilité', path: '/comptabilite' };
-  const immo: FilArianeCrumb = {
-    label: 'Immobilisations & Amortissements',
-    path: '/dashboard',
-  };
-
-  if (path === '/accueil' || path === '/') {
-    return [{ label: 'Accueil', path: null }];
-  }
-
-  const page = labelPageModuleImmo(path);
-  const crumbs: FilArianeCrumb[] = [accueil, compta, immo];
-  if (page && path !== '/dashboard') {
-    crumbs.push({ label: page, path: null });
-    crumbs[2] = { ...immo, path: '/dashboard' };
-  } else {
-    crumbs[2] = { ...immo, path: null };
-  }
-  return crumbs;
 }
 
 @Component({
@@ -58,13 +35,38 @@ function crumbsForUrl(url: string): FilArianeCrumb[] {
 })
 export class FilArianeComponent {
   private readonly router = inject(Router);
+  private readonly nav = inject(PlateformeContextService);
 
   readonly crumbs = toSignal(
     this.router.events.pipe(
       filter((event): event is NavigationEnd => event instanceof NavigationEnd),
-      map((event) => crumbsForUrl(event.urlAfterRedirects)),
-      startWith(crumbsForUrl(this.router.url)),
+      map((event) => this.crumbsForUrl(event.urlAfterRedirects)),
+      startWith(this.crumbsForUrl(this.router.url)),
     ),
-    { initialValue: crumbsForUrl('/') },
+    { initialValue: this.crumbsForUrl('/') },
   );
+
+  private crumbsForUrl(url: string): FilArianeCrumb[] {
+    const path = url.split('?')[0];
+    if (path === '/accueil' || path === '/') {
+      return [{ label: 'Accueil', path: null }];
+    }
+
+    const ctx = this.nav.ensureLegacyImmoDefaults();
+    const accueil: FilArianeCrumb = { label: 'Accueil', path: '/accueil' };
+    const espace: FilArianeCrumb = {
+      label: ctx.espaceTitre,
+      path: ctx.espaceRoute,
+    };
+    const moduleCrumb: FilArianeCrumb = {
+      label: ctx.moduleTitre,
+      path: ctx.entryPath,
+    };
+
+    const page = labelPageModuleImmo(path);
+    if (page && path !== ctx.entryPath) {
+      return [accueil, espace, moduleCrumb, { label: page, path: null }];
+    }
+    return [accueil, espace, { ...moduleCrumb, path: null }];
+  }
 }

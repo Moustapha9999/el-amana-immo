@@ -1,6 +1,11 @@
 from types import SimpleNamespace
 
-from app.data.plateforme_catalogue import permissions_for_role
+from app.data.plateforme_catalogue import (
+    is_legacy_immo_role,
+    module_role_code,
+    permissions_for_role,
+    role_module_code,
+)
 from app.services.permission_service import permission_codes_from_user, user_has_permission_codes
 
 
@@ -66,3 +71,14 @@ def test_unloaded_role_permissions_fall_back_to_catalogue():
     role = SimpleNamespace(code="consultation")
     user = SimpleNamespace(is_superuser=False, roles=[role])
     assert "immobilisations.read" in permission_codes_from_user(user)
+
+
+def test_module_role_code_legacy_vs_prefixed():
+    assert module_role_code("immobilisations", "comptable") == "comptable"
+    assert module_role_code("credit", "admin") == "credit.admin"
+    assert module_role_code("credit", "credit.lecteur") == "credit.lecteur"
+    assert role_module_code("comptable") == "immobilisations"
+    assert role_module_code("credit.admin") == "credit"
+    assert role_module_code("custom_libre") is None
+    assert is_legacy_immo_role("administrateur")
+    assert not is_legacy_immo_role("credit.admin")

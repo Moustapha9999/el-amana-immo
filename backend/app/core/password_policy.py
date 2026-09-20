@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from app.services.security_policy_service import get_cached_security_policy
 
@@ -26,7 +27,7 @@ def validate_password_policy(password: str) -> None:
         raise ValueError("Le mot de passe doit contenir au moins un caractère spécial.")
 
 
-def password_policy_summary() -> dict:
+def password_policy_summary() -> dict[str, Any]:
     pol = get_cached_security_policy()
     return {
         "min_length": max(8, int(pol.get("password_min_length") or 8)),

@@ -55,6 +55,7 @@ async def _headers(client: AsyncClient) -> dict[str, str]:
 
 def test_normalize_rbac_codes():
     assert normalize_role_code("Credit_Lecteur") == "credit_lecteur"
+    assert normalize_role_code("Credit.Admin") == "credit.admin"
     try:
         normalize_role_code("Crédit")
         raise AssertionError("expected ValueError")
@@ -66,6 +67,22 @@ def test_normalize_rbac_codes():
         raise AssertionError("expected ValueError")
     except ValueError:
         pass
+
+
+def test_validate_new_role_code_requires_module_prefix():
+    from app.services.core_admin_rbac_service import validate_new_role_code
+
+    assert validate_new_role_code("credit.admin") == "credit.admin"
+    try:
+        validate_new_role_code("lecteur_credit")
+        raise AssertionError("expected ValueError")
+    except ValueError as exc:
+        assert "préfixés" in str(exc)
+    try:
+        validate_new_role_code("immobilisations.admin")
+        raise AssertionError("expected ValueError")
+    except ValueError as exc:
+        assert "Immobilisations" in str(exc)
 
 
 @pytest.mark.asyncio

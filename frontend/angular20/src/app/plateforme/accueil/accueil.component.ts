@@ -4,7 +4,7 @@ import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { BeaChromeComponent } from '../chrome/bea-chrome.component';
-import { ESPACES_METIERS, EspaceMetier } from '../espaces-metiers';
+import { EspaceMetier } from '../espaces-metiers';
 
 type EspaceAccueil = EspaceMetier & { accessible?: boolean };
 type HubVue = 'admin' | 'responsable' | 'utilisateur';
@@ -64,21 +64,6 @@ interface HubActivity {
   module_code?: string | null;
   espace_code?: string | null;
   who?: string | null;
-}
-
-function withCatalogueText(items: EspaceAccueil[]): EspaceAccueil[] {
-  const local = new Map(ESPACES_METIERS.map((espace) => [espace.id, espace]));
-  return items.map((item) => {
-    const src = local.get(item.id);
-    if (!src) {
-      return item;
-    }
-    return {
-      ...item,
-      titre: src.titre,
-      description: src.description,
-    };
-  });
 }
 
 @Component({
@@ -348,7 +333,7 @@ export class AccueilComponent implements OnInit {
   readonly canAdmin = this.auth.canAccessCoreAdmin;
   readonly periodes = [7, 30, 90] as const;
 
-  readonly espaces = signal<EspaceAccueil[]>(ESPACES_METIERS);
+  readonly espaces = signal<EspaceAccueil[]>([]);
   readonly hub = signal<HubSummary | null>(null);
   readonly serie = signal<HubSeriePoint[]>([]);
   readonly jours = signal<7 | 30 | 90>(7);
@@ -385,7 +370,7 @@ export class AccueilComponent implements OnInit {
       this.auth.loadProfile().subscribe({ error: () => undefined });
     }
     this.api.get<EspaceAccueil[]>('/plateforme/espaces').subscribe({
-      next: (items) => this.espaces.set(withCatalogueText(items)),
+      next: (items) => this.espaces.set(items),
       error: () => undefined,
     });
     this.api.get<HubSummary>('/plateforme/me/hub', { jours: 7 }).subscribe({

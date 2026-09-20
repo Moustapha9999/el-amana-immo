@@ -15,7 +15,7 @@ from app.models.platform_ops import PlatformOpsFlag
 SECURITY_POLICY_KEY = "security_policy"
 
 _CACHE_LOCK = threading.Lock()
-_CACHE: dict[str, Any] | None = None
+_policy_cache: dict[str, Any] | None = None
 
 
 def _env_defaults() -> dict[str, Any]:
@@ -40,7 +40,7 @@ def _env_defaults() -> dict[str, Any]:
     }
 
 
-def _merge(stored: dict | None) -> dict[str, Any]:
+def _merge(stored: dict[str, Any] | None) -> dict[str, Any]:
     base = _env_defaults()
     if not stored:
         return base
@@ -79,21 +79,21 @@ def _merge(stored: dict | None) -> dict[str, Any]:
 def get_cached_security_policy() -> dict[str, Any]:
     """Lecture sync pour middleware / validation MDP (cache mémoire)."""
     with _CACHE_LOCK:
-        if _CACHE is not None:
-            return deepcopy(_CACHE)
+        if _policy_cache is not None:
+            return deepcopy(_policy_cache)
     return _env_defaults()
 
 
 def set_cached_security_policy(policy: dict[str, Any]) -> None:
+    global _policy_cache
     with _CACHE_LOCK:
-        global _CACHE
-        _CACHE = deepcopy(policy)
+        _policy_cache = deepcopy(policy)
 
 
 def invalidate_security_policy_cache() -> None:
+    global _policy_cache
     with _CACHE_LOCK:
-        global _CACHE
-        _CACHE = None
+        _policy_cache = None
 
 
 class SecurityPolicyService:

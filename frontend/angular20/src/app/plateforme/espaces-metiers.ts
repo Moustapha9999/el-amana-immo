@@ -1,3 +1,9 @@
+/** Types catalogue plateforme + libellés d’écrans immo (fil d’Ariane).
+ *
+ * Source de vérité des espaces / modules = API `/plateforme/espaces`
+ * (seed backend `plateforme_catalogue.py`). Pas de doublon front.
+ */
+
 export type StatutEspace = 'actif' | 'bientot';
 
 /** Statuts module renvoyés par l’API (catalogue + ops CORE ADMIN). */
@@ -29,109 +35,20 @@ export interface EspaceMetier {
   titre: string;
   description: string;
   route: string | null;
-  statut: StatutEspace;
+  statut: StatutEspace | string;
   modules: ModuleMetier[];
   accessible?: boolean;
 }
-
-/** Catalogue des espaces BEA DIGITAL. Un seul espace actif : Comptabilité. */
-export const ESPACES_METIERS: EspaceMetier[] = [
-  {
-    id: 'comptabilite',
-    titre: 'Comptabilité',
-    description:
-      'Immobilisations, amortissements, pièces et contrôles autour d’ORION — sans remplacer le core banking.',
-    route: '/comptabilite',
-    statut: 'actif',
-    modules: [
-      {
-        id: 'immobilisations',
-        titre: 'Immobilisations & Amortissements',
-        description:
-          'Parc, dotations, cessions, rebuts, réévaluations, inventaire, écritures et rapports.',
-        route: '/modules/immobilisations/acces',
-        statut: 'actif',
-      },
-      {
-        id: 'rapprochements',
-        titre: 'Rapprochements',
-        description: 'Rapprochements Excel / ORION, écarts et contrôles de cohérence.',
-        route: null,
-        statut: 'bientot',
-      },
-      {
-        id: 'controles',
-        titre: 'Contrôles comptables',
-        description: 'Contrôles périodiques, anomalies et pistes d’audit.',
-        route: null,
-        statut: 'bientot',
-      },
-      {
-        id: 'cloture',
-        titre: 'Clôture comptable',
-        description: 'Checklist de clôture, validations et suivi des échéances.',
-        route: null,
-        statut: 'bientot',
-      },
-      {
-        id: 'reporting-compta',
-        titre: 'Reporting comptable',
-        description: 'Tableaux de bord, exports et synthèses transverses.',
-        route: null,
-        statut: 'bientot',
-      },
-    ],
-  },
-  {
-    id: 'credit',
-    titre: 'Crédit',
-    description: 'Processus crédit autour d’ORION (dossiers, contrôles, workflows).',
-    route: null,
-    statut: 'bientot',
-    modules: [],
-  },
-  {
-    id: 'rh',
-    titre: 'RH',
-    description: 'Processus ressources humaines internes.',
-    route: null,
-    statut: 'bientot',
-    modules: [],
-  },
-  {
-    id: 'informatique',
-    titre: 'Informatique',
-    description: 'Demandes, suivi et outils internes DSI.',
-    route: null,
-    statut: 'bientot',
-    modules: [],
-  },
-  {
-    id: 'achats',
-    titre: 'Achats',
-    description: 'Demandes d’achat, validations et suivi documentaire.',
-    route: null,
-    statut: 'bientot',
-    modules: [],
-  },
-];
-
-function espaceComptabilite(): EspaceMetier {
-  const espace = ESPACES_METIERS.find((item) => item.id === 'comptabilite');
-  if (!espace) {
-    throw new Error('Catalogue BEA DIGITAL : espace Comptabilité manquant.');
-  }
-  return espace;
-}
-
-export const ESPACE_COMPTABILITE: EspaceMetier = espaceComptabilite();
 
 export interface PageModuleImmo {
   prefix: string;
   label: string;
 }
 
-/** Libellés d’écran du module immo (chemins d’URL inchangés). */
+/**
+ * Libellés d’écran du module immo (chemins d’URL figés — contrat legacy-root).
+ * Hors catalogue API : pure UI fil d’Ariane.
+ */
 export const PAGES_MODULE_IMMO: PageModuleImmo[] = [
   { prefix: '/dashboard', label: 'Tableau de bord' },
   { prefix: '/notifications', label: 'Notifications' },

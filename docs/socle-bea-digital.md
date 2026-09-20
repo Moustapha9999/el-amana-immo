@@ -84,6 +84,17 @@ Déconnexion module  →  révocation session module seulement  →  /comptabili
 
 Le catalogue rôles / permissions est synchronisé au Login 1 (`ensure_catalogue`).
 
+### Convention multi-modules (rôles)
+
+| Module | Forme du `roles.code` | Exemple |
+|--------|----------------------|---------|
+| Immobilisations (legacy) | code court figé | `comptable`, `administrateur` |
+| Tout nouveau module | `{module}.{profil}` | `credit.admin`, `rh.lecteur` |
+
+- Permissions restent `{module}.{action}` (`credit.read`, `immobilisations.validate`).
+- Un code court nu hors catalogue immo est **refusé** à la création CORE ADMIN.
+- `administrateur` immo ≠ CORE ADMIN (`core.admin.*`).
+
 Le CORE commun (users, espaces, modules, audit, GED prévue) :
 [core-bea-digital.md](core-bea-digital.md).
 CORE ADMIN : [core-admin.md](core-admin.md).
@@ -91,5 +102,8 @@ CORE ADMIN : [core-admin.md](core-admin.md).
 ## Où c’est contrôlé
 
 1. **Espace / module** — `PlateformeAccessService` + `require_module_access`
-2. **Permission** — `require_permission("immobilisations.…")` sur les endpoints métier
-3. **Front** — garde de route uniquement (ne pas s’y fier pour la sécurité)
+2. **Permission** — `require_permission("immobilisations.…")` sur **tous** les endpoints métier
+   (archives, reporting, organisation, exercices, comptabilité, parc, opérations).
+   `require_roles(...)` est déprécié pour le métier.
+3. **Users métier** (`/api/v1/users`) — `plateforme.users.admin` (Login 1), plus le rôle `administrateur`
+4. **Front** — garde de route uniquement (ne pas s’y fier pour la sécurité)

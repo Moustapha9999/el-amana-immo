@@ -59,7 +59,7 @@ export interface CoreAdminDashboard {
   charts?: CoreAdminDashboardCharts;
   activite: CoreAdminActivity[];
   etat: Record<string, CoreAdminHealth>;
-  fuseau: string;
+  fuseau?: string;
   app_name?: string;
 }
 
@@ -87,10 +87,6 @@ const CHART_COLORS = ['#1a5278', '#2874a6', '#3498db', '#5dade2', '#0f766e', '#b
           <p class="bea-admin-dash__eyebrow">{{ appName() }}</p>
           <h1>Dashboard</h1>
           <p>Vue d’ensemble — organisation, accès et supervision de la plateforme.</p>
-        </div>
-        <div class="bea-admin-dash__stamp">
-          <span class="bea-admin-dash__stamp-label">Fuseau</span>
-          <strong>{{ fuseau() }}</strong>
         </div>
       </header>
 
@@ -363,7 +359,6 @@ export class CoreAdminDashboardComponent implements OnInit {
   });
   readonly activite = signal<CoreAdminActivity[]>([]);
   readonly etatList = signal<{ key: string; label: string; ok: boolean }[]>([]);
-  readonly fuseau = signal('Africa/Nouakchott');
   readonly appName = signal('BEA DIGITAL');
   readonly erreur = signal<string | null>(null);
 
@@ -407,7 +402,6 @@ export class CoreAdminDashboardComponent implements OnInit {
           modules: data.charts?.modules ?? [],
         });
         this.activite.set(data.activite ?? []);
-        this.fuseau.set(data.fuseau || 'Africa/Nouakchott');
         this.appName.set(data.app_name || 'BEA DIGITAL');
         const order = ['core', 'api', 'auth', 'db', 'modules'];
         const entries = Object.entries(data.etat ?? {});

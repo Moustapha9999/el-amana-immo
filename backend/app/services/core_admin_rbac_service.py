@@ -13,13 +13,18 @@ from sqlalchemy.orm import selectinload
 from app.data.plateforme_catalogue import (
     CORE_ADMIN_PERMISSION_CODES,
     IMMO_ADMIN_ROLE_CODE,
+    IMMO_LEGACY_ROLE_CODES,
     SYSTEM_PERMISSION_CODES,
     SYSTEM_ROLE_CODES,
+    role_module_code,
 )
 from app.models import Permission, Role
 from app.models.associations import role_permissions_table, user_roles_table
 
-ROLE_CODE_RE = re.compile(r"^[a-z][a-z0-9_-]{1,48}$")
+# Codes courts (legacy immo) OU préfixés module.profil (nouveaux modules).
+ROLE_CODE_RE = re.compile(
+    r"^[a-z][a-z0-9_-]{1,48}$|^[a-z][a-z0-9_-]{0,30}\.[a-z][a-z0-9_-]{0,30}$"
+)
 PERM_CODE_RE = re.compile(r"^[a-z][a-z0-9_-]+(\.[a-z0-9_-]+)+$")
 MODULE_RE = re.compile(r"^[a-z][a-z0-9_-]{0,79}$")
 
@@ -28,8 +33,33 @@ def normalize_role_code(raw: str) -> str:
     code = (raw or "").strip().lower()
     if not ROLE_CODE_RE.fullmatch(code):
         raise ValueError(
-            "Code de rôle invalide : lettres minuscules, chiffres, tirets et underscores (ex. credit_lecteur)."
+            "Code de rôle invalide : code court (ex. comptable) ou préfixé "
+            "{module}.{profil} (ex. credit.admin)."
         )
+    return code
+
+
+def validate_new_role_code(raw: str) -> str:
+    """Valide un code à la création : nouveaux modules = préfixe obligatoire."""
+    code = normalize_role_code(raw)
+    if "." not in code:
+        if code in IMMO_LEGACY_ROLE_CODES:
+            # Doublon système géré plus loin ; message clair si quelqu’un retente.
+            return code
+        raise ValueError(
+            "Les nouveaux rôles doivent être préfixés {module}.{profil} "
+            "(ex. credit.admin). Les codes courts (comptable, administrateur, …) "
+            "sont réservés au module Immobilisations."
+        )
+    module = role_module_code(code)
+    if module == "immobilisations":
+        raise ValueError(
+            "Pour Immobilisations, utilisez les rôles système existants "
+            "(comptable, administrateur, …), pas immobilisations.*"
+        )
+    _profil = code.split(".", 1)[1]
+    if not _profil or not MODULE_RE.fullmatch(module or ""):
+        raise ValueError("Code de rôle préfixé invalide")
     return code
 
 
@@ -262,7 +292,7 @@ class CoreAdminRbacService:
             raise ValueError("Le rôle Immobilisations administrateur n’ouvre pas CORE ADMIN")
 
     async def create_role(self, payload) -> dict:
-        code = normalize_role_code(payload.code)
+        code = validate_new_role_code(payload.code)
         existing = await self.db.execute(select(Role.id).where(Role.code == code))
         if existing.scalar_one_or_none() is not None:
             raise ValueError("Ce code de rôle existe déjà")
