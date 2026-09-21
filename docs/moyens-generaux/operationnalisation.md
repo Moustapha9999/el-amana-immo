@@ -30,5 +30,17 @@ Attribuer via CORE ADMIN → utilisateurs / rôles. Un `is_superuser` voit tout.
 ## GED
 
 Upload via `POST /api/v1/ged/documents` (`espace_code=moyens-generaux`,
-`module_code` + `entity` + `entity_id`). Panneau UI sur BC et notes de frais.
+`module_code` + `entity` + `entity_id`). Panneau UI :
+
+| Module | Entités GED |
+|--------|--------------|
+| `achats-appro` | `bon_commande` |
+| `notes-frais` | `note_frais` |
+| `stock-fournitures` | `demande_fourniture`, `inventaire`, `article` |
+| `contrats-echeances` | `contrat` |
+
+Téléchargement : `GET /api/v1/ged/documents/{id}/download` (panneau GED + Archives MG).
+
+Les documents apparaissent dans Archives MG (`/archives-mg/registre`, filtre module + lien fiche).
+
 Permissions `ged.read` / `ged.write` (incluses dans les rôles `*.admin` MG).

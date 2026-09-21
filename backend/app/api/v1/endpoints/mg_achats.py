@@ -1,29 +1,167 @@
-"""API Achats MG — bons de commande."""
+"""API Achats & Approvisionnements — cycle d'achat complet."""
 
 from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_module_access, require_permission
-from app.models.auth import User
-from app.schemas.mg_ops import BonCreate, BonOut, BonUpdate, TransitionIn
-from app.services.mg_ops_service import MgOpsService
+from app.models.auth import Agence, User
+from app.schemas.mg_achats import (
+    AlerteOut,
+    BlCreate,
+    BlOut,
+    ComparaisonCreate,
+    ComparaisonOut,
+    ComparaisonUpdate,
+    ComparaisonValidateIn,
+    ConsultationCreate,
+    ConsultationOut,
+    ConsultationUpdate,
+    DashboardAchatsOut,
+    DemandeCreate,
+    DemandeOut,
+    DemandeUpdate,
+    DevisCreate,
+    DevisOut,
+    DevisUpdate,
+    EvenementOut,
+    FactureCreate,
+    FactureOut,
+    FactureUpdate,
+    FournisseurSummaryOut,
+    PaginatedBonsOut,
+    PaiementCreate,
+    PaiementOut,
+    PaiementUpdate,
+    ParametreCreate,
+    ParametreOut,
+    ParametreUpdate,
+    RapportSummaryOut,
+    ReceptionCreate,
+    ReceptionOut,
+    ThreeWayMatchOut,
+    TransitionIn,
+)
+from app.schemas.mg_ops import BonCreate, BonOut, BonUpdate
+from app.services.mg_achats_events import audit_achats, notify_achats_roles
+from app.services.mg_achats_service import MgAchatsService
 from app.services.mg_pdf_service import pdf_bon_commande
 
 router = APIRouter(prefix="/mg/achats", tags=["mg-achats"])
 _module = [Depends(require_module_access("achats-appro"))]
 
 
-@router.get("/fournisseurs", dependencies=_module)
-async def list_fournisseurs(
+def _csv(rows: list[dict], headers: list[str]) -> Response:
+    lines = [";".join(headers)]
+    for r in rows:
+        lines.append(";".join(str(r.get(h, "") or "") for h in headers))
+    data = "\n".join(lines).encode("utf-8-sig")
+    return Response(
+        content=data,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="export.csv"'},
+    )
+
+
+# --- Agences / paramètres / dashboard ---
+
+
+@router.get("/agences", dependencies=_module)
+async def list_agences(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.purchase.view")),
 ):
-    rows = await MgOpsService(db).list_fournisseurs()
+    rows = (
+        await db.execute(
+            select(Agence)
+            .where(Agence.is_active.is_(True), Agence.deleted_at.is_(None))
+            .order_by(Agence.libelle)
+        )
+    ).scalars().all()
+    return [
+        {
+            "id": str(a.id),
+            "code": a.code,
+            "libelle": a.libelle,
+            "adresse": a.adresse,
+            "ville": a.ville,
+        }
+        for a in rows
+    ]
+
+
+@router.get("/parametres", response_model=list[ParametreOut], dependencies=_module)
+async def list_parametres(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).list_parametres()
+
+
+@router.post("/parametres", response_model=ParametreOut, dependencies=_module)
+async def create_parametre(
+    body: ParametreCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.create")),
+):
+    row = await MgAchatsService(db).create_parametre(body)
+    await audit_achats(db, user, "create", "mg_achat_parametre", row.cle, request)
+    return row
+
+
+@router.patch("/parametres/{cle}", response_model=ParametreOut, dependencies=_module)
+async def update_parametre(
+    cle: str,
+    body: ParametreUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.create")),
+):
+    row = await MgAchatsService(db).update_parametre(cle, body)
+    await audit_achats(db, user, "update", "mg_achat_parametre", cle, request)
+    return row
+
+
+@router.get("/dashboard", response_model=DashboardAchatsOut, dependencies=_module)
+async def dashboard(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).dashboard()
+
+
+@router.get("/alertes", response_model=list[AlerteOut], dependencies=_module)
+async def alertes(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).list_alertes()
+
+
+@router.get("/rapports/summary", response_model=RapportSummaryOut, dependencies=_module)
+async def rapports_summary(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.export")),
+):
+    return await MgAchatsService(db).rapports_summary()
+
+
+# --- Fournisseurs ---
+
+
+@router.get("/fournisseurs", dependencies=_module)
+async def list_fournisseurs(
+    q: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    rows = await MgAchatsService(db).list_fournisseurs(q=q)
     return [
         {
             "id": str(f.id),
@@ -37,22 +175,373 @@ async def list_fournisseurs(
     ]
 
 
-@router.get("/bons", response_model=list[BonOut], dependencies=_module)
-async def list_bons(
+@router.get(
+    "/fournisseurs/{fournisseur_id}",
+    response_model=FournisseurSummaryOut,
+    dependencies=_module,
+)
+async def get_fournisseur(
+    fournisseur_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).get_fournisseur_summary(fournisseur_id)
+
+
+# --- Demandes ---
+
+
+@router.get("/demandes", response_model=list[DemandeOut], dependencies=_module)
+async def list_demandes(
+    statut: str | None = None,
+    q: str | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    rows, _ = await MgAchatsService(db).list_demandes(
+        statut=statut, q=q, page=page, size=size
+    )
+    return rows
+
+
+@router.get("/demandes/export", dependencies=_module)
+async def export_demandes(
+    statut: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.export")),
+):
+    rows, _ = await MgAchatsService(db).list_demandes(statut=statut, page=1, size=500)
+    return _csv(
+        [
+            {
+                "reference": r.reference,
+                "date": r.date_demande,
+                "statut": r.statut,
+                "priorite": r.priorite,
+                "demandeur": r.demandeur_nom,
+                "type_achat": r.type_achat,
+            }
+            for r in rows
+        ],
+        ["reference", "date", "statut", "priorite", "demandeur", "type_achat"],
+    )
+
+
+@router.post("/demandes", response_model=DemandeOut, dependencies=_module)
+async def create_demande(
+    body: DemandeCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.demande")),
+):
+    row = await MgAchatsService(db).create_demande(body, user)
+    await audit_achats(db, user, "create", "mg_achat_demande", row.id, request)
+    return row
+
+
+@router.get("/demandes/{demande_id}", response_model=DemandeOut, dependencies=_module)
+async def get_demande(
+    demande_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).get_demande(demande_id)
+
+
+@router.patch("/demandes/{demande_id}", response_model=DemandeOut, dependencies=_module)
+async def update_demande(
+    demande_id: UUID,
+    body: DemandeUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.demande")),
+):
+    row = await MgAchatsService(db).update_demande(demande_id, body)
+    await audit_achats(db, user, "update", "mg_achat_demande", row.id, request)
+    return row
+
+
+@router.post(
+    "/demandes/{demande_id}/transition",
+    response_model=DemandeOut,
+    dependencies=_module,
+)
+async def transition_demande(
+    demande_id: UUID,
+    body: TransitionIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.approve")),
+):
+    row = await MgAchatsService(db).transition_demande(demande_id, body.action, user)
+    await audit_achats(
+        db, user, f"transition:{body.action}", "mg_achat_demande", row.id, request
+    )
+    await notify_achats_roles(
+        db,
+        {"achats-appro.acheteur", "achats-appro.valideur", "achats-appro.admin"},
+        titre=f"Demande {row.reference}",
+        message=f"Statut → {row.statut}",
+        entity="mg_achat_demande",
+        entity_id=row.id,
+        actor=user,
+    )
+    return row
+
+
+@router.get(
+    "/demandes/{demande_id}/timeline",
+    response_model=list[EvenementOut],
+    dependencies=_module,
+)
+async def demande_timeline(
+    demande_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).list_evenements("demande", demande_id)
+
+
+# --- Consultations ---
+
+
+@router.get("/consultations", response_model=list[ConsultationOut], dependencies=_module)
+async def list_consultations(
     statut: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.purchase.view")),
 ):
-    return await MgOpsService(db).list_bons(statut=statut)
+    svc = MgAchatsService(db)
+    return [svc.consultation_to_out(r) for r in await svc.list_consultations(statut=statut)]
+
+
+@router.post("/consultations", response_model=ConsultationOut, dependencies=_module)
+async def create_consultation(
+    body: ConsultationCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.create")),
+):
+    svc = MgAchatsService(db)
+    row = await svc.create_consultation(body, user)
+    await audit_achats(db, user, "create", "mg_achat_consultation", row.id, request)
+    return svc.consultation_to_out(row)
+
+
+@router.get(
+    "/consultations/{consultation_id}",
+    response_model=ConsultationOut,
+    dependencies=_module,
+)
+async def get_consultation(
+    consultation_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    svc = MgAchatsService(db)
+    return svc.consultation_to_out(await svc.get_consultation(consultation_id))
+
+
+@router.patch(
+    "/consultations/{consultation_id}",
+    response_model=ConsultationOut,
+    dependencies=_module,
+)
+async def update_consultation(
+    consultation_id: UUID,
+    body: ConsultationUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.create")),
+):
+    svc = MgAchatsService(db)
+    row = await svc.update_consultation(consultation_id, body)
+    await audit_achats(db, user, "update", "mg_achat_consultation", row.id, request)
+    return svc.consultation_to_out(row)
+
+
+# --- Devis ---
+
+
+@router.get("/devis", response_model=list[DevisOut], dependencies=_module)
+async def list_devis(
+    consultation_id: UUID | None = None,
+    fournisseur_id: UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).list_devis(
+        consultation_id=consultation_id, fournisseur_id=fournisseur_id
+    )
+
+
+@router.post("/devis", response_model=DevisOut, dependencies=_module)
+async def create_devis(
+    body: DevisCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.create")),
+):
+    row = await MgAchatsService(db).create_devis(body, user)
+    await audit_achats(db, user, "create", "mg_achat_devis", row.id, request)
+    return row
+
+
+@router.get("/devis/{devis_id}", response_model=DevisOut, dependencies=_module)
+async def get_devis(
+    devis_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).get_devis(devis_id)
+
+
+@router.patch("/devis/{devis_id}", response_model=DevisOut, dependencies=_module)
+async def update_devis(
+    devis_id: UUID,
+    body: DevisUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.create")),
+):
+    row = await MgAchatsService(db).update_devis(devis_id, body)
+    await audit_achats(db, user, "update", "mg_achat_devis", row.id, request)
+    return row
+
+
+# --- Comparaisons ---
+
+
+@router.get("/comparaisons", response_model=list[ComparaisonOut], dependencies=_module)
+async def list_comparaisons(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).list_comparaisons()
+
+
+@router.post("/comparaisons", response_model=ComparaisonOut, dependencies=_module)
+async def create_comparaison(
+    body: ComparaisonCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.create")),
+):
+    row = await MgAchatsService(db).create_comparaison(body, user)
+    await audit_achats(db, user, "create", "mg_achat_comparaison", row.id, request)
+    return row
+
+
+@router.get(
+    "/comparaisons/{comparaison_id}",
+    response_model=ComparaisonOut,
+    dependencies=_module,
+)
+async def get_comparaison(
+    comparaison_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).get_comparaison(comparaison_id)
+
+
+@router.patch(
+    "/comparaisons/{comparaison_id}",
+    response_model=ComparaisonOut,
+    dependencies=_module,
+)
+async def update_comparaison(
+    comparaison_id: UUID,
+    body: ComparaisonUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.create")),
+):
+    row = await MgAchatsService(db).update_comparaison(comparaison_id, body)
+    await audit_achats(db, user, "update", "mg_achat_comparaison", row.id, request)
+    return row
+
+
+@router.post(
+    "/comparaisons/{comparaison_id}/valider",
+    response_model=ComparaisonOut,
+    dependencies=_module,
+)
+async def validate_comparaison(
+    comparaison_id: UUID,
+    body: ComparaisonValidateIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.approve")),
+):
+    row = await MgAchatsService(db).validate_comparaison(comparaison_id, body, user)
+    await audit_achats(db, user, "valider", "mg_achat_comparaison", row.id, request)
+    await notify_achats_roles(
+        db,
+        {"achats-appro.acheteur", "achats-appro.admin"},
+        titre=f"Comparaison {row.reference}",
+        message="Fournisseur retenu",
+        entity="mg_achat_comparaison",
+        entity_id=row.id,
+        actor=user,
+    )
+    return row
+
+
+# --- Bons de commande ---
+
+
+@router.get("/bons", response_model=PaginatedBonsOut, dependencies=_module)
+async def list_bons(
+    statut: str | None = None,
+    q: str | None = None,
+    fournisseur_id: UUID | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    rows, total = await MgAchatsService(db).list_bons(
+        page=page, size=size, statut=statut, q=q, fournisseur_id=fournisseur_id
+    )
+    return PaginatedBonsOut(items=rows, total=total, page=page, size=size)
+
+
+@router.get("/bons/export", dependencies=_module)
+async def export_bons(
+    statut: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.export")),
+):
+    rows, _ = await MgAchatsService(db).list_bons(statut=statut, page=1, size=500)
+    return _csv(
+        [
+            {
+                "reference": r.reference,
+                "date": r.date_bc,
+                "statut": r.statut,
+                "fournisseur": r.fournisseur_raison_sociale,
+                "total_ht": r.total_ht,
+                "total_ttc": r.total_ttc,
+            }
+            for r in rows
+        ],
+        ["reference", "date", "statut", "fournisseur", "total_ht", "total_ttc"],
+    )
 
 
 @router.post("/bons", response_model=BonOut, dependencies=_module)
 async def create_bon(
     body: BonCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.purchase.create")),
 ):
-    return await MgOpsService(db).create_bon(body, user)
+    row = await MgAchatsService(db).create_bon(body, user)
+    await audit_achats(db, user, "create", "mg_bon_commande", row.id, request)
+    return row
 
 
 @router.get("/bons/{bon_id}", response_model=BonOut, dependencies=_module)
@@ -61,27 +550,68 @@ async def get_bon(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.purchase.view")),
 ):
-    return await MgOpsService(db).get_bon(bon_id)
+    return await MgAchatsService(db).get_bon(bon_id)
 
 
 @router.patch("/bons/{bon_id}", response_model=BonOut, dependencies=_module)
 async def update_bon(
     bon_id: UUID,
     body: BonUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("mg.purchase.create")),
+    user: User = Depends(require_permission("mg.purchase.create")),
 ):
-    return await MgOpsService(db).update_bon(bon_id, body)
+    row = await MgAchatsService(db).update_bon(bon_id, body)
+    await audit_achats(db, user, "update", "mg_bon_commande", row.id, request)
+    return row
 
 
 @router.post("/bons/{bon_id}/transition", response_model=BonOut, dependencies=_module)
 async def transition_bon(
     bon_id: UUID,
     body: TransitionIn,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.purchase.approve")),
 ):
-    return await MgOpsService(db).transition_bon(bon_id, body.action, user)
+    row = await MgAchatsService(db).transition_bon(bon_id, body.action, user)
+    await audit_achats(
+        db, user, f"transition:{body.action}", "mg_bon_commande", row.id, request
+    )
+    await notify_achats_roles(
+        db,
+        {"achats-appro.acheteur", "achats-appro.valideur", "achats-appro.admin"},
+        titre=f"BC {row.reference}",
+        message=f"Statut → {row.statut}",
+        entity="mg_bon_commande",
+        entity_id=row.id,
+        actor=user,
+    )
+    return row
+
+
+@router.post("/bons/{bon_id}/envoyer", response_model=BonOut, dependencies=_module)
+async def envoyer_bon(
+    bon_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.create")),
+):
+    row = await MgAchatsService(db).transition_bon(bon_id, "envoyer", user)
+    await audit_achats(db, user, "envoyer", "mg_bon_commande", row.id, request)
+    return row
+
+
+@router.post("/bons/{bon_id}/cloturer", response_model=BonOut, dependencies=_module)
+async def cloturer_bon(
+    bon_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.approve")),
+):
+    row = await MgAchatsService(db).transition_bon(bon_id, "cloturer", user)
+    await audit_achats(db, user, "cloturer", "mg_bon_commande", row.id, request)
+    return row
 
 
 @router.get("/bons/{bon_id}/pdf", dependencies=_module)
@@ -90,10 +620,214 @@ async def bon_pdf(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.purchase.export")),
 ):
-    bon = await MgOpsService(db).get_bon(bon_id)
+    bon = await MgAchatsService(db).get_bon(bon_id)
     data = pdf_bon_commande(bon)
     return Response(
         content=data,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{bon.reference}.pdf"'},
     )
+
+
+@router.get(
+    "/bons/{bon_id}/timeline",
+    response_model=list[EvenementOut],
+    dependencies=_module,
+)
+async def bon_timeline(
+    bon_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).list_evenements("bon", bon_id)
+
+
+# --- Livraisons (BL) ---
+
+
+@router.get("/livraisons", response_model=list[BlOut], dependencies=_module)
+async def list_livraisons(
+    bon_id: UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).list_bl(bon_id=bon_id)
+
+
+@router.post("/livraisons", response_model=BlOut, dependencies=_module)
+async def create_livraison(
+    body: BlCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.receive")),
+):
+    row = await MgAchatsService(db).create_bl(body, user)
+    await audit_achats(db, user, "create", "mg_achat_bl", row.id, request)
+    return row
+
+
+@router.get("/livraisons/{bl_id}", response_model=BlOut, dependencies=_module)
+async def get_livraison(
+    bl_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).get_bl(bl_id)
+
+
+# --- Réceptions ---
+
+
+@router.get("/receptions", response_model=list[ReceptionOut], dependencies=_module)
+async def list_receptions(
+    bon_id: UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).list_receptions(bon_id=bon_id)
+
+
+@router.post("/receptions", response_model=ReceptionOut, dependencies=_module)
+async def create_reception(
+    body: ReceptionCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.receive")),
+):
+    row = await MgAchatsService(db).create_reception(body, user)
+    await audit_achats(db, user, "create", "mg_achat_reception", row.id, request)
+    await notify_achats_roles(
+        db,
+        {"achats-appro.acheteur", "achats-appro.admin"},
+        titre=f"Réception {row.reference}",
+        message=f"Statut {row.statut}",
+        entity="mg_achat_reception",
+        entity_id=row.id,
+        actor=user,
+    )
+    return row
+
+
+@router.get("/receptions/{reception_id}", response_model=ReceptionOut, dependencies=_module)
+async def get_reception(
+    reception_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).get_reception(reception_id)
+
+
+# --- Factures ---
+
+
+@router.get("/factures", response_model=list[FactureOut], dependencies=_module)
+async def list_factures(
+    bon_id: UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).list_factures(bon_id=bon_id)
+
+
+@router.post("/factures", response_model=FactureOut, dependencies=_module)
+async def create_facture(
+    body: FactureCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.invoice")),
+):
+    row = await MgAchatsService(db).create_facture(body, user)
+    await audit_achats(db, user, "create", "mg_achat_facture", row.id, request)
+    return row
+
+
+@router.get("/factures/{facture_id}", response_model=FactureOut, dependencies=_module)
+async def get_facture(
+    facture_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).get_facture(facture_id)
+
+
+@router.patch("/factures/{facture_id}", response_model=FactureOut, dependencies=_module)
+async def update_facture(
+    facture_id: UUID,
+    body: FactureUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.invoice")),
+):
+    row = await MgAchatsService(db).update_facture(facture_id, body)
+    await audit_achats(db, user, "update", "mg_achat_facture", row.id, request)
+    return row
+
+
+@router.post(
+    "/factures/{facture_id}/match",
+    response_model=ThreeWayMatchOut,
+    dependencies=_module,
+)
+async def match_facture(
+    facture_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.invoice")),
+):
+    result = await MgAchatsService(db).match_facture(facture_id)
+    await audit_achats(
+        db,
+        user,
+        "three_way_match",
+        "mg_achat_facture",
+        facture_id,
+        request,
+        after={"resultat": result.resultat},
+    )
+    return result
+
+
+# --- Paiements ---
+
+
+@router.get("/paiements", response_model=list[PaiementOut], dependencies=_module)
+async def list_paiements(
+    facture_id: UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).list_paiements(facture_id=facture_id)
+
+
+@router.post("/paiements", response_model=PaiementOut, dependencies=_module)
+async def create_paiement(
+    body: PaiementCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.pay")),
+):
+    row = await MgAchatsService(db).create_paiement(body, user)
+    await audit_achats(db, user, "create", "mg_achat_paiement", row.id, request)
+    return row
+
+
+@router.get("/paiements/{paiement_id}", response_model=PaiementOut, dependencies=_module)
+async def get_paiement(
+    paiement_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).get_paiement(paiement_id)
+
+
+@router.patch("/paiements/{paiement_id}", response_model=PaiementOut, dependencies=_module)
+async def update_paiement(
+    paiement_id: UUID,
+    body: PaiementUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.pay")),
+):
+    row = await MgAchatsService(db).update_paiement(paiement_id, body)
+    await audit_achats(db, user, "update", "mg_achat_paiement", row.id, request)
+    return row

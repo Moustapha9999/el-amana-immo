@@ -82,6 +82,9 @@ interface Bon {
               <button type="button" class="bea-admin-btn" (click)="transition('visa_dr')">Visa DR</button>
               <button type="button" class="bea-admin-btn" (click)="transition('valider')">Valider</button>
             }
+            @if (bonStatut() === 'VALIDE' || bonStatut() === 'PARTIEL') {
+              <a class="bea-admin-btn" routerLink="/stock-fournitures/entrees">Réception stock</a>
+            }
             <a routerLink="/achats-appro/bons">Retour</a>
           </div>
           @if (bonId(); as id) {
@@ -103,6 +106,7 @@ export class AchatsBonsComponent implements OnInit {
   readonly mode = signal<'list' | 'edit'>('list');
   readonly bons = signal<Bon[]>([]);
   readonly bonId = signal<string | null>(null);
+  readonly bonStatut = signal<string | null>(null);
   readonly erreur = signal<string | null>(null);
 
   readonly form = this.fb.nonNullable.group({
@@ -157,6 +161,7 @@ export class AchatsBonsComponent implements OnInit {
   loadOne(id: string): void {
     this.api.get<Bon>(`/mg/achats/bons/${id}`).subscribe({
       next: (b) => {
+        this.bonStatut.set(b.statut);
         this.form.patchValue({
           date_bc: b.date_bc,
           fournisseur_raison_sociale: b.fournisseur_raison_sociale ?? '',

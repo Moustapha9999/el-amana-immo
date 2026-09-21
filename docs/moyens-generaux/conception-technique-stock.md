@@ -26,16 +26,26 @@ Stock temps réel : solde dénormalisé `mg_articles.stock_actuel` mis à jour d
 ## Workflow demande
 
 ```text
-BROUILLON → SOUMIS → VISA_AGENCE → VISA_MG → ACCORDEE
-  → mouvements SORTIE (qty accordée) → CLOTUREE
+BROUILLON → SOUMIS → VISA_AGENCE → PREPARATION → SERVIE → ARCHIVEE
 (+ REJETEE | ANNULEE)
 ```
 
+- `visa_mg` : VISA_AGENCE → PREPARATION (quantités accordées, pas de sortie)
+- `servir` : PREPARATION → SERVIE (sorties stock)
+- `archiver` : SERVIE → ARCHIVEE
+
+Compat ancienne : `ACCORDEE` ≈ PREPARATION ; `CLOTUREE` ≈ ARCHIVEE.
 ## Permissions
 
 `mg.stock.view`, `mg.stock.create`, `mg.stock.entry`, `mg.stock.exit`, `mg.stock.adjust`, `mg.stock.inventory`, `mg.stock.approve`, `mg.stock.export`
 
 Rôles module : `stock-fournitures.lecteur`, `stock-fournitures.magasinier`, `stock-fournitures.valideur`, `stock-fournitures.admin`.
+
+## Pagination
+
+Listes `articles`, `mouvements`, `demandes` (et Archives `documents`) : réponse
+`{ items, total, page, size }` (`page`/`size`, défaut 50, max 500).
+Exports restent non paginés (plafond 500).
 
 ## Écrans
 
@@ -43,6 +53,7 @@ Rôles module : `stock-fournitures.lecteur`, `stock-fournitures.magasinier`, `st
 |-------|---------|
 | `/stock-fournitures/dashboard` | KPI + charts conso / alertes stock bas (filtres agence/famille) |
 | `/stock-fournitures/articles` | Référentiel articles / familles |
+| `/stock-fournitures/articles/:id` | Fiche article (onglets Informations / Stock / Mouvements / Demandes / Documents) |
 | `/stock-fournitures/stock` | État du stock temps réel |
 | `/stock-fournitures/entrees` | Entrées de stock |
 | `/stock-fournitures/sorties` | Sorties de stock |

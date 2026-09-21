@@ -7,6 +7,18 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class FamilleCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=40)
+    libelle: str = Field(min_length=1, max_length=120)
+    sort_order: int = 0
+
+
+class FamilleUpdate(BaseModel):
+    libelle: str | None = None
+    sort_order: int | None = None
+    is_active: bool | None = None
+
+
 class FamilleOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -57,6 +69,18 @@ class ArticleOut(BaseModel):
     niveau: str | None = None  # faible | normal | epuise
 
 
+class ArticleFicheOut(ArticleOut):
+    """Fiche article : identité + résumé de stock CDC."""
+
+    famille_libelle: str | None = None
+    agence_libelle: str | None = None
+    stock_initial: Decimal = Decimal("0")
+    total_entrees: Decimal = Decimal("0")
+    total_sorties: Decimal = Decimal("0")
+    total_ajustements: Decimal = Decimal("0")
+    total_inventaires: int = 0
+
+
 class MouvementCreate(BaseModel):
     article_id: UUID
     type_mouvement: str  # ENTREE | SORTIE | AJUSTEMENT | INVENTAIRE
@@ -66,6 +90,20 @@ class MouvementCreate(BaseModel):
     motif: str | None = None
     observation: str | None = None
     date_mouvement: datetime | None = None
+    source_type: str | None = None
+    source_id: UUID | None = None
+
+
+class ReceptionLigneIn(BaseModel):
+    ligne_id: UUID
+    quantite: Decimal = Field(gt=0)
+    article_id: UUID | None = None
+
+
+class ReceptionBcIn(BaseModel):
+    lignes: list[ReceptionLigneIn] = Field(min_length=1)
+    agence_id: UUID | None = None
+    motif: str | None = None
 
 
 class MouvementOut(BaseModel):
@@ -83,6 +121,11 @@ class MouvementOut(BaseModel):
     observation: str | None
     source_type: str | None
     source_id: UUID | None
+    initiateur_id: UUID | None = None
+    initiateur_nom: str | None = None
+    article_code: str | None = None
+    article_designation: str | None = None
+    stock_disponible: Decimal | None = None
 
 
 class DemandeLigneIn(BaseModel):
@@ -109,7 +152,7 @@ class DemandeUpdate(BaseModel):
 
 
 class DemandeTransition(BaseModel):
-    action: str  # soumettre | visa_agence | visa_mg | rejeter | annuler
+    action: str  # soumettre | visa_agence | visa_mg | servir | archiver | rejeter | annuler
     lignes: list[DemandeLigneIn] | None = None  # qty accordées au visa_mg
 
 
@@ -143,10 +186,23 @@ class DemandeOut(BaseModel):
 
 class DashboardOut(BaseModel):
     articles_total: int
+    articles_actifs: int
+    articles_inactifs: int
+    stock_total_unites: float
+    entrees_mois: int
+    sorties_mois: int
+    articles_crees_mois: int
     stock_faible: int
     stock_epuise: int
+    demandes_en_attente: int
     demandes_en_cours: int
+    demandes_validees: int
+    demandes_rejetees: int
+    inventaires_en_cours: int
+    inventaire_progression: float
+    mouvements_aujourd_hui: int
     mouvements_mois: int
+    evolution: list[dict]
     conso_par_famille: list[dict]
     conso_par_agence: list[dict]
     conso_par_mois: list[dict]
@@ -156,6 +212,12 @@ class RapportConsoOut(BaseModel):
     periode: str
     granularity: str
     lignes: list[dict]
+
+
+class ParametreCreate(BaseModel):
+    cle: str = Field(min_length=1, max_length=60)
+    valeur: str = Field(min_length=1, max_length=255)
+    libelle: str | None = None
 
 
 class ParametreOut(BaseModel):

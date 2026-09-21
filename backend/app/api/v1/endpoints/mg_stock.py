@@ -6,14 +6,17 @@ import csv
 import io
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, require_module_access, require_permission
 from app.models.auth import User
+from app.schemas.common import PaginatedResponse
+from app.schemas.mg_ops import BonOut
 from app.schemas.mg_stock import (
     AlerteOut,
     ArticleCreate,
+    ArticleFicheOut,
     ArticleOut,
     ArticleUpdate,
     DashboardOut,
@@ -21,17 +24,22 @@ from app.schemas.mg_stock import (
     DemandeOut,
     DemandeTransition,
     DemandeUpdate,
+    FamilleCreate,
     FamilleOut,
+    FamilleUpdate,
     InventaireCreate,
     InventaireLigneIn,
     InventaireOut,
     InventaireLigneOut,
     MouvementCreate,
     MouvementOut,
+    ParametreCreate,
     ParametreOut,
     ParametreUpdate,
     RapportConsoOut,
+    ReceptionBcIn,
 )
+from app.services.mg_stock_events import audit_stock, notify_stock_roles, notify_stock_user
 from app.services.mg_stock_service import MgStockService
 from app.services.mg_pdf_service import pdf_demande_fourniture
 
@@ -44,6 +52,21 @@ def _article_out(svc: MgStockService, article) -> ArticleOut:
     data = ArticleOut.model_validate(article)
     data.niveau = svc.niveau_stock(article)
     return data
+
+
+def _article_fiche_out(svc: MgStockService, payload: dict) -> ArticleFicheOut:
+    article = payload["article"]
+    base = _article_out(svc, article)
+    return ArticleFicheOut(
+        **base.model_dump(),
+        famille_libelle=payload.get("famille_libelle"),
+        agence_libelle=payload.get("agence_libelle"),
+        stock_initial=payload.get("stock_initial") or 0,
+        total_entrees=payload.get("total_entrees") or 0,
+        total_sorties=payload.get("total_sorties") or 0,
+        total_ajustements=payload.get("total_ajustements") or 0,
+        total_inventaires=int(payload.get("total_inventaires") or 0),
+    )
 
 
 def _inventaire_out(inv) -> InventaireOut:
@@ -94,30 +117,141 @@ async def list_familles(
     return await MgStockService(db).list_familles()
 
 
-@router.get("/articles", response_model=list[ArticleOut], dependencies=_module)
+@router.post("/familles", response_model=FamilleOut, dependencies=_module)
+async def create_famille(
+    body: FamilleCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.create")),
+):
+    return await MgStockService(db).create_famille(body)
+
+
+@router.patch("/familles/{famille_id}", response_model=FamilleOut, dependencies=_module)
+async def update_famille(
+    famille_id: UUID,
+    body: FamilleUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.create")),
+):
+    return await MgStockService(db).update_famille(famille_id, body)
+
+
+@router.delete("/familles/{famille_id}", response_model=FamilleOut, dependencies=_module)
+async def deactivate_famille(
+    famille_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.create")),
+):
+    """Désactivation logique (pas de suppression physique)."""
+    return await MgStockService(db).update_famille(famille_id, FamilleUpdate(is_active=False))
+
+
+@router.get("/articles", response_model=PaginatedResponse[ArticleOut], dependencies=_module)
 async def list_articles(
     q: str | None = None,
     famille_id: UUID | None = None,
     agence_id: UUID | None = None,
     bas_stock: bool = False,
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.stock.view")),
 ):
     svc = MgStockService(db)
-    rows = await svc.list_articles(
-        q=q, famille_id=famille_id, agence_id=agence_id, bas_stock=bas_stock
+    rows, total = await svc.list_articles(
+        q=q, famille_id=famille_id, agence_id=agence_id, bas_stock=bas_stock, page=page, size=size
     )
-    return [_article_out(svc, a) for a in rows]
+    return PaginatedResponse(
+        items=[_article_out(svc, a) for a in rows],
+        total=total,
+        page=page,
+        size=size,
+    )
+
+
+@router.get("/articles/export", dependencies=_module)
+async def export_articles(
+    q: str | None = None,
+    famille_id: UUID | None = None,
+    agence_id: UUID | None = None,
+    bas_stock: bool = False,
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.export")),
+):
+    svc = MgStockService(db)
+    rows, _ = await svc.list_articles(
+        q=q, famille_id=famille_id, agence_id=agence_id, bas_stock=bas_stock, page=1, size=500
+    )
+    familles = {f.id: f.libelle for f in await svc.list_familles()}
+    headers = ["Code", "Désignation", "Famille", "UOM", "Stock", "Min", "Niveau"]
+    data_rows = [
+        [
+            a.code,
+            a.designation,
+            familles.get(a.famille_id, ""),
+            a.uom,
+            float(a.stock_actuel or 0),
+            float(a.stock_min or 0),
+            svc.niveau_stock(a),
+        ]
+        for a in rows
+    ]
+    from app.services.reporting_export import build_styled_pdf, build_styled_workbook
+
+    title = "Référentiel articles — Stock & Fournitures"
+    subtitle = f"{len(data_rows)} article(s)"
+    if format == "xlsx":
+        content = build_styled_workbook(
+            sheet_title="Articles",
+            report_title=title,
+            headers=headers,
+            rows=data_rows,
+            subtitle=subtitle,
+        )
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="articles-stock.xlsx"'},
+        )
+    content = build_styled_pdf(
+        report_title=title,
+        headers=headers,
+        rows=data_rows,
+        subtitle=subtitle,
+        landscape_mode=True,
+    )
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="articles-stock.pdf"'},
+    )
+
+
+@router.get("/articles/{article_id}", response_model=ArticleFicheOut, dependencies=_module)
+async def get_article(
+    article_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.view")),
+):
+    svc = MgStockService(db)
+    payload = await svc.get_article_fiche(article_id)
+    return _article_fiche_out(svc, payload)
 
 
 @router.post("/articles", response_model=ArticleOut, dependencies=_module)
 async def create_article(
     body: ArticleCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.stock.create")),
 ):
     svc = MgStockService(db)
     article = await svc.create_article(body, user)
+    await audit_stock(
+        db, user, "create", "mg_article", article.id, request=request,
+        after={"code": article.code, "designation": article.designation},
+    )
     return _article_out(svc, article)
 
 
@@ -125,34 +259,137 @@ async def create_article(
 async def update_article(
     article_id: UUID,
     body: ArticleUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("mg.stock.create")),
+    user: User = Depends(require_permission("mg.stock.create")),
 ):
     svc = MgStockService(db)
     article = await svc.update_article(article_id, body)
+    await audit_stock(
+        db, user, "update", "mg_article", article.id, request=request,
+        after={"code": article.code, "is_active": article.is_active},
+    )
     return _article_out(svc, article)
 
 
-@router.get("/mouvements", response_model=list[MouvementOut], dependencies=_module)
+@router.delete("/articles/{article_id}", response_model=ArticleOut, dependencies=_module)
+async def deactivate_article(
+    article_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.create")),
+):
+    """Désactivation logique (pas de suppression physique)."""
+    from app.schemas.mg_stock import ArticleUpdate
+
+    svc = MgStockService(db)
+    article = await svc.update_article(article_id, ArticleUpdate(is_active=False))
+    await audit_stock(
+        db, user, "deactivate", "mg_article", article.id, request=request,
+        after={"code": article.code, "is_active": False},
+    )
+    return _article_out(svc, article)
+
+
+@router.get("/mouvements/export", dependencies=_module)
+async def export_mouvements(
+    type_mouvement: str | None = None,
+    agence_id: UUID | None = None,
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.export")),
+):
+    svc = MgStockService(db)
+    rows, _ = await svc.list_mouvements(
+        type_mouvement=type_mouvement, agence_id=agence_id, page=1, size=500
+    )
+    enriched = await svc.enrich_mouvements(rows)
+    headers = [
+        "Référence",
+        "Date",
+        "Type",
+        "Article",
+        "Quantité",
+        "Stock disponible",
+        "Initiateur",
+        "Département",
+        "Motif",
+    ]
+    data_rows = [
+        [
+            m["reference"],
+            m["date_mouvement"].strftime("%Y-%m-%d %H:%M") if m.get("date_mouvement") else "",
+            m["type_mouvement"],
+            (
+                f"{m['article_code']} — {m['article_designation']}"
+                if m.get("article_code")
+                else str(m.get("article_id") or "")
+            ),
+            float(m["quantite"] or 0),
+            float(m["stock_disponible"] or 0) if m.get("stock_disponible") is not None else "",
+            m.get("initiateur_nom") or "",
+            m.get("departement") or "",
+            m.get("motif") or "",
+        ]
+        for m in enriched
+    ]
+    from app.services.reporting_export import build_styled_pdf, build_styled_workbook
+
+    title = "Mouvements de stock — Stock & Fournitures"
+    subtitle = f"{len(data_rows)} mouvement(s)"
+    if format == "xlsx":
+        content = build_styled_workbook(
+            sheet_title="Mouvements",
+            report_title=title,
+            headers=headers,
+            rows=data_rows,
+            subtitle=subtitle,
+        )
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="mouvements-stock.xlsx"'},
+        )
+    content = build_styled_pdf(
+        report_title=title,
+        headers=headers,
+        rows=data_rows,
+        subtitle=subtitle,
+        landscape_mode=True,
+    )
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="mouvements-stock.pdf"'},
+    )
+
+
+@router.get("/mouvements", response_model=PaginatedResponse[MouvementOut], dependencies=_module)
 async def list_mouvements(
     article_id: UUID | None = None,
     type_mouvement: str | None = None,
     agence_id: UUID | None = None,
-    limit: int = Query(100, ge=1, le=500),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.stock.view")),
 ):
-    return await MgStockService(db).list_mouvements(
+    svc = MgStockService(db)
+    rows, total = await svc.list_mouvements(
         article_id=article_id,
         type_mouvement=type_mouvement,
         agence_id=agence_id,
-        limit=limit,
+        page=page,
+        size=size,
     )
+    items = await svc.enrich_mouvements(rows)
+    return PaginatedResponse(items=items, total=total, page=page, size=size)
 
 
 @router.post("/mouvements", response_model=MouvementOut, dependencies=_module)
 async def create_mouvement(
     body: MouvementCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -172,26 +409,136 @@ async def create_mouvement(
         from fastapi import HTTPException
 
         raise HTTPException(403, detail=f"Permission requise : {needed}")
-    return await MgStockService(db).create_mouvement(body, user)
+    svc = MgStockService(db)
+    mvt = await svc.create_mouvement(body, user)
+    await audit_stock(
+        db, user, "create", "mg_stock_mouvement", mvt.id, request=request,
+        after={
+            "reference": mvt.reference,
+            "type_mouvement": mvt.type_mouvement,
+            "article_id": str(mvt.article_id),
+            "quantite": str(mvt.quantite),
+        },
+    )
+    return (await svc.enrich_mouvements([mvt]))[0]
 
 
-@router.get("/demandes", response_model=list[DemandeOut], dependencies=_module)
+@router.get("/receptions/bons", response_model=list[BonOut], dependencies=_module)
+async def list_bons_reception(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.entry")),
+):
+    return await MgStockService(db).list_bons_reception()
+
+
+@router.post("/receptions/bc/{bon_id}", dependencies=_module)
+async def receive_from_bc(
+    bon_id: UUID,
+    body: ReceptionBcIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.entry")),
+):
+    result = await MgStockService(db).receive_from_bc(bon_id, body, user)
+    bon = result["bon"]
+    await audit_stock(
+        db, user, "receive", "mg_bon_commande", bon.id, request=request,
+        after={
+            "reference": bon.reference,
+            "statut": bon.statut,
+            "mouvements_count": result["mouvements_count"],
+        },
+    )
+    return {
+        "bon": BonOut.model_validate(bon),
+        "mouvements_count": result["mouvements_count"],
+    }
+
+
+@router.get("/demandes", response_model=PaginatedResponse[DemandeOut], dependencies=_module)
 async def list_demandes(
     statut: str | None = None,
     agence_id: UUID | None = None,
+    article_id: UUID | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.stock.view")),
 ):
-    return await MgStockService(db).list_demandes(statut=statut, agence_id=agence_id)
+    rows, total = await MgStockService(db).list_demandes(
+        statut=statut, agence_id=agence_id, article_id=article_id, page=page, size=size
+    )
+    return PaginatedResponse(items=rows, total=total, page=page, size=size)
+
+
+@router.get("/demandes/export", dependencies=_module)
+async def export_demandes(
+    statut: str | None = None,
+    agence_id: UUID | None = None,
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.export")),
+):
+    rows, _ = await MgStockService(db).list_demandes(
+        statut=statut, agence_id=agence_id, page=1, size=500
+    )
+    headers = ["Référence", "Date", "Agence", "Département", "Demandeur", "Statut", "Lignes"]
+    data_rows = [
+        [
+            d.reference,
+            d.date_demande.isoformat() if d.date_demande else "",
+            d.agence_libelle_snapshot or str(d.agence_id),
+            d.departement or "",
+            d.demandeur_nom or "",
+            d.statut,
+            len(d.lignes or []),
+        ]
+        for d in rows
+    ]
+    from app.services.reporting_export import build_styled_pdf, build_styled_workbook
+
+    title = "Demandes de fournitures — Stock & Fournitures"
+    subtitle = f"{len(data_rows)} demande(s)"
+    if format == "xlsx":
+        content = build_styled_workbook(
+            sheet_title="Demandes",
+            report_title=title,
+            headers=headers,
+            rows=data_rows,
+            subtitle=subtitle,
+        )
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="demandes-stock.xlsx"'},
+        )
+    content = build_styled_pdf(
+        report_title=title,
+        headers=headers,
+        rows=data_rows,
+        subtitle=subtitle,
+        landscape_mode=True,
+    )
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="demandes-stock.pdf"'},
+    )
 
 
 @router.post("/demandes", response_model=DemandeOut, dependencies=_module)
 async def create_demande(
     body: DemandeCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.stock.create")),
 ):
-    return await MgStockService(db).create_demande(body, user)
+    demande = await MgStockService(db).create_demande(body, user)
+    await audit_stock(
+        db, user, "create", "mg_demande_fourniture", demande.id, request=request,
+        after={"reference": demande.reference, "statut": demande.statut},
+    )
+    return demande
 
 
 @router.get("/demandes/{demande_id}", response_model=DemandeOut, dependencies=_module)
@@ -217,6 +564,7 @@ async def update_demande(
 async def transition_demande(
     demande_id: UUID,
     body: DemandeTransition,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -224,15 +572,48 @@ async def transition_demande(
     from fastapi import HTTPException
 
     have = await load_user_permission_codes(db, user)
-    if body.action in {"visa_agence", "visa_mg", "rejeter"}:
+    action = body.action.strip().lower()
+    if action in {"visa_agence", "visa_mg", "rejeter", "archiver"}:
         if not user_has_permission_codes(have, "mg.stock.approve"):
             raise HTTPException(403, detail="Permission mg.stock.approve requise")
-    elif body.action in {"soumettre", "annuler"}:
+    elif action == "servir":
+        if not (
+            user_has_permission_codes(have, "mg.stock.exit")
+            or user_has_permission_codes(have, "mg.stock.approve")
+        ):
+            raise HTTPException(403, detail="Permission mg.stock.exit ou mg.stock.approve requise")
+    elif action in {"soumettre", "annuler"}:
         if not user_has_permission_codes(have, "mg.stock.create"):
             raise HTTPException(403, detail="Permission mg.stock.create requise")
-    return await MgStockService(db).transition_demande(
+
+    demande = await MgStockService(db).transition_demande(
         demande_id, body.action, user, body.lignes
     )
+    await audit_stock(
+        db, user, action, "mg_demande_fourniture", demande.id, request=request,
+        after={"reference": demande.reference, "statut": demande.statut},
+    )
+    if demande.demandeur_id:
+        await notify_stock_user(
+            db,
+            demande.demandeur_id,
+            titre=f"Demande {demande.reference}",
+            message=f"Statut mis à jour : {demande.statut}",
+            entity="mg_demande_fourniture",
+            entity_id=demande.id,
+            actor=user,
+        )
+    if action == "servir":
+        await notify_stock_roles(
+            db,
+            {"stock-fournitures.magasinier", "stock-fournitures.admin"},
+            titre=f"Demande servie {demande.reference}",
+            message=f"La demande {demande.reference} a été servie.",
+            entity="mg_demande_fourniture",
+            entity_id=demande.id,
+            actor=user,
+        )
+    return demande
 
 
 @router.get("/demandes/{demande_id}/pdf", dependencies=_module)
@@ -254,10 +635,17 @@ async def demande_pdf(
 async def dashboard(
     agence_id: UUID | None = None,
     famille_id: UUID | None = None,
+    period: str = Query("30j"),
+    statut_niveau: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.stock.view")),
 ):
-    return await MgStockService(db).dashboard(agence_id=agence_id, famille_id=famille_id)
+    return await MgStockService(db).dashboard(
+        agence_id=agence_id,
+        famille_id=famille_id,
+        period=period,
+        statut_niveau=statut_niveau,
+    )
 
 
 @router.get("/alertes", response_model=list[AlerteOut], dependencies=_module)
@@ -269,12 +657,71 @@ async def list_alertes(
     return await MgStockService(db).list_alertes(agence_id=agence_id)
 
 
+@router.get("/alertes/export", dependencies=_module)
+async def export_alertes(
+    agence_id: UUID | None = None,
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.export")),
+):
+    rows = await MgStockService(db).list_alertes(agence_id=agence_id)
+    headers = ["Code", "Désignation", "Stock", "Min", "Niveau"]
+    data_rows = [
+        [
+            a["code"],
+            a["designation"],
+            float(a["stock_actuel"] or 0),
+            float(a["stock_min"] or 0),
+            a["niveau"],
+        ]
+        for a in rows
+    ]
+    from app.services.reporting_export import build_styled_pdf, build_styled_workbook
+
+    title = "Alertes stock — Stock & Fournitures"
+    subtitle = f"{len(data_rows)} alerte(s)"
+    if format == "xlsx":
+        content = build_styled_workbook(
+            sheet_title="Alertes",
+            report_title=title,
+            headers=headers,
+            rows=data_rows,
+            subtitle=subtitle,
+        )
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="alertes-stock.xlsx"'},
+        )
+    content = build_styled_pdf(
+        report_title=title,
+        headers=headers,
+        rows=data_rows,
+        subtitle=subtitle,
+        landscape_mode=True,
+    )
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="alertes-stock.pdf"'},
+    )
+
+
 @router.get("/parametres", response_model=list[ParametreOut], dependencies=_module)
 async def list_parametres(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.stock.create")),
 ):
     return await MgStockService(db).list_parametres()
+
+
+@router.post("/parametres", response_model=ParametreOut, dependencies=_module)
+async def create_parametre(
+    body: ParametreCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.create")),
+):
+    return await MgStockService(db).create_parametre(body)
 
 
 @router.patch("/parametres/{cle}", response_model=ParametreOut, dependencies=_module)
@@ -287,6 +734,15 @@ async def update_parametre(
     return await MgStockService(db).update_parametre(cle, body)
 
 
+@router.delete("/parametres/{cle}", status_code=204, dependencies=_module)
+async def delete_parametre(
+    cle: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.create")),
+):
+    await MgStockService(db).delete_parametre(cle)
+
+
 @router.get("/inventaires", response_model=list[InventaireOut], dependencies=_module)
 async def list_inventaires(
     statut: str | None = None,
@@ -297,13 +753,69 @@ async def list_inventaires(
     return [_inventaire_out(r) for r in rows]
 
 
+@router.get("/inventaires/export", dependencies=_module)
+async def export_inventaires(
+    statut: str | None = None,
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.export")),
+):
+    rows = await MgStockService(db).list_inventaires(statut=statut)
+    headers = ["Référence", "Libellé", "Date début", "Date fin", "Statut", "Lignes"]
+    data_rows = [
+        [
+            inv.reference,
+            inv.libelle,
+            inv.date_debut.isoformat() if inv.date_debut else "",
+            inv.date_fin.isoformat() if inv.date_fin else "",
+            inv.statut,
+            len(inv.lignes or []),
+        ]
+        for inv in rows
+    ]
+    from app.services.reporting_export import build_styled_pdf, build_styled_workbook
+
+    title = "Inventaires — Stock & Fournitures"
+    subtitle = f"{len(data_rows)} inventaire(s)"
+    if format == "xlsx":
+        content = build_styled_workbook(
+            sheet_title="Inventaires",
+            report_title=title,
+            headers=headers,
+            rows=data_rows,
+            subtitle=subtitle,
+        )
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="inventaires-stock.xlsx"'},
+        )
+    content = build_styled_pdf(
+        report_title=title,
+        headers=headers,
+        rows=data_rows,
+        subtitle=subtitle,
+        landscape_mode=True,
+    )
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="inventaires-stock.pdf"'},
+    )
+
+
 @router.post("/inventaires", response_model=InventaireOut, dependencies=_module)
 async def create_inventaire(
     body: InventaireCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.stock.inventory")),
 ):
     inv = await MgStockService(db).create_inventaire(body, user)
+    await audit_stock(
+        db, user, "create", "mg_inventaire", inv.id, request=request,
+        after={"reference": inv.reference, "statut": inv.statut},
+    )
     return _inventaire_out(inv)
 
 
@@ -330,10 +842,15 @@ async def saisir_inventaire(
 @router.post("/inventaires/{inventaire_id}/cloturer", response_model=InventaireOut, dependencies=_module)
 async def cloturer_inventaire(
     inventaire_id: UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.stock.inventory")),
 ):
     inv = await MgStockService(db).cloturer_inventaire(inventaire_id, user)
+    await audit_stock(
+        db, user, "cloture", "mg_inventaire", inv.id, request=request,
+        after={"reference": inv.reference, "statut": inv.statut},
+    )
     return _inventaire_out(inv)
 
 

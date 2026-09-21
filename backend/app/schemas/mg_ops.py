@@ -16,6 +16,10 @@ class BcLigneIn(BaseModel):
     quantite: Decimal = Field(gt=0)
     uom: str = "U"
     prix_unitaire: Decimal = Field(ge=0)
+    article_id: UUID | None = None
+    remise_pct: Decimal = Field(default=Decimal("0"), ge=0)
+    taux_tva: Decimal = Field(default=Decimal("0"), ge=0)
+    stockable: bool = False
 
 
 class BcLigneOut(BcLigneIn):
@@ -23,7 +27,9 @@ class BcLigneOut(BcLigneIn):
 
     id: UUID
     prix_total: Decimal
+    total_ttc: Decimal = Decimal("0")
     sort_order: int
+    quantite_recue: Decimal = Decimal("0")
 
 
 class BonCreate(BaseModel):
@@ -46,6 +52,15 @@ class BonCreate(BaseModel):
     demandeur_nom: str | None = None
     demandeur_date: date | None = None
     observation: str | None = None
+    demande_id: UUID | None = None
+    consultation_id: UUID | None = None
+    comparaison_id: UUID | None = None
+    contrat_id: UUID | None = None
+    agence_facturation_id: UUID | None = None
+    agence_livraison_id: UUID | None = None
+    type_achat: str = "FOURNITURE"
+    devise: str = "MRU"
+    date_livraison_prevue: date | None = None
     lignes: list[BcLigneIn] = Field(default_factory=list)
 
 
@@ -69,6 +84,15 @@ class BonUpdate(BaseModel):
     demandeur_nom: str | None = None
     demandeur_date: date | None = None
     observation: str | None = None
+    demande_id: UUID | None = None
+    consultation_id: UUID | None = None
+    comparaison_id: UUID | None = None
+    contrat_id: UUID | None = None
+    agence_facturation_id: UUID | None = None
+    agence_livraison_id: UUID | None = None
+    type_achat: str | None = None
+    devise: str | None = None
+    date_livraison_prevue: date | None = None
     lignes: list[BcLigneIn] | None = None
 
 
@@ -97,6 +121,20 @@ class BonOut(BaseModel):
     demandeur_date: date | None
     statut: str
     total_ht: Decimal
+    total_tva: Decimal = Decimal("0")
+    total_ttc: Decimal = Decimal("0")
+    type_achat: str = "FOURNITURE"
+    devise: str = "MRU"
+    demande_id: UUID | None = None
+    consultation_id: UUID | None = None
+    comparaison_id: UUID | None = None
+    contrat_id: UUID | None = None
+    agence_facturation_id: UUID | None = None
+    agence_livraison_id: UUID | None = None
+    agence_facturation_snapshot: str | None = None
+    agence_livraison_snapshot: str | None = None
+    date_livraison_prevue: date | None = None
+    pdf_version: int = 1
     observation: str | None
     lignes: list[BcLigneOut] = []
 

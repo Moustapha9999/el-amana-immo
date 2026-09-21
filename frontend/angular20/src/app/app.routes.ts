@@ -35,6 +35,7 @@ import { PLATEFORME_ROUTES } from './plateforme/plateforme.routes';
 import { LEGACY_ROOT_MODULE_CODE } from './plateforme/module-routing.contract';
 import { StockDashboardComponent } from './stock-fournitures/stock-dashboard.component';
 import { StockArticlesComponent } from './stock-fournitures/stock-articles.component';
+import { StockArticleFicheComponent } from './stock-fournitures/stock-article-fiche.component';
 import { StockMouvementsComponent } from './stock-fournitures/stock-mouvements.component';
 import { StockDemandesComponent } from './stock-fournitures/stock-demandes.component';
 import { StockRapportsComponent } from './stock-fournitures/stock-rapports.component';
@@ -69,6 +70,7 @@ export const routes: Routes = [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
       { path: 'dashboard', component: StockDashboardComponent },
       { path: 'articles', component: StockArticlesComponent },
+      { path: 'articles/:id', component: StockArticleFicheComponent },
       { path: 'stock', component: StockEtatComponent },
       { path: 'entrees', component: StockEntreesComponent },
       { path: 'sorties', component: StockSortiesComponent },
@@ -114,6 +116,7 @@ export const routes: Routes = [
       { path: 'liste', component: ContratsListComponent },
       { path: 'alertes', component: ContratsListComponent },
       { path: 'nouveau', component: ContratsListComponent },
+      { path: ':id', component: ContratsListComponent },
     ],
   },
   {
