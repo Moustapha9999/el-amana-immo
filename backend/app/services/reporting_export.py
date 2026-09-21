@@ -5,17 +5,19 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
+from pathlib import Path
 from typing import Any, Sequence
 from zoneinfo import ZoneInfo
 
 from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XlImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.data.el_amana_referentiel import BANQUE_EL_AMANA
 from app.models import EcritureComptable, Immobilisation
@@ -31,6 +33,22 @@ _COLOR_ZEBRA = "F8FAFC"
 _COLOR_META = "64748B"
 _COLOR_TITLE = "0F172A"
 _COLOR_BORDER = "CBD5E1"
+
+
+def resolve_bea_logo_path() -> Path | None:
+    """Logo BEA pour PDF/Excel — assets backend, sinon front public."""
+    here = Path(__file__).resolve()
+    candidates = [
+        here.parents[1] / "assets" / "brand" / "logo-bea-horizontal.png",
+        here.parents[1] / "assets" / "brand" / "logo-bea.png",
+        here.parents[3] / "frontend" / "angular20" / "public" / "brand" / "logo-bea-horizontal.png",
+        here.parents[3] / "frontend" / "angular20" / "public" / "brand" / "logo-bea.png",
+        here.parents[3] / "docs" / "moyens-generaux" / "references" / "logo-bea.jpg",
+    ]
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
 
 _THIN = Border(
     left=Side(style="thin", color=_COLOR_BORDER),
@@ -114,13 +132,24 @@ def build_styled_workbook(
     n_cols = len(headers)
     last_col = get_column_letter(n_cols)
 
-    # Ligne 1 — Banque
+    # Ligne 1 — Banque (+ logo BEA si disponible)
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
     c1 = ws["A1"]
     c1.value = _bank_line()
     c1.font = Font(name="Calibri", size=11, bold=True, color=_COLOR_NAVY)
-    c1.alignment = Alignment(horizontal="left", vertical="center")
-    ws.row_dimensions[1].height = 20
+    c1.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[1].height = 28
+    logo_path = resolve_bea_logo_path()
+    if logo_path is not None:
+        try:
+            img = XlImage(str(logo_path))
+            img.width = 96
+            img.height = 32
+            ws.add_image(img, "A1")
+            c1.alignment = Alignment(horizontal="left", vertical="center", indent=18)
+            ws.row_dimensions[1].height = 36
+        except Exception:
+            pass
 
     # Ligne 2 — Titre du rapport
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
@@ -281,7 +310,7 @@ def _pdf_footer(canvas, doc, *, exported_label: str, report_title: str) -> None:
     canvas.rect(0, canvas._pagesize[1] - 8 * mm, page_w, 8 * mm, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
     canvas.setFont("Helvetica-Bold", 8)
-    canvas.drawString(12 * mm, canvas._pagesize[1] - 5.2 * mm, "BEA DIGITAL — Comptabilité")
+    canvas.drawString(12 * mm, canvas._pagesize[1] - 5.2 * mm, "BEA DIGITAL — Banque El Amana")
     canvas.drawRightString(page_w - 12 * mm, canvas._pagesize[1] - 5.2 * mm, report_title[:48])
     canvas.restoreState()
 
@@ -320,12 +349,22 @@ def build_styled_pdf(
         meta_parts.append(subtitle)
     meta_parts.append(f"{len(rows)} ligne(s)")
 
-    story: list = [
-        Paragraph(_bank_line(), styles["bank"]),
-        Paragraph(report_title, styles["title"]),
-        Paragraph("  ·  ".join(meta_parts), styles["meta"]),
-        Spacer(1, 4),
-    ]
+    story: list = []
+    logo_path = resolve_bea_logo_path()
+    if logo_path is not None:
+        try:
+            story.append(Image(str(logo_path), width=42 * mm, height=14 * mm))
+            story.append(Spacer(1, 2 * mm))
+        except Exception:
+            pass
+    story.extend(
+        [
+            Paragraph(_bank_line(), styles["bank"]),
+            Paragraph(report_title, styles["title"]),
+            Paragraph("  ·  ".join(meta_parts), styles["meta"]),
+            Spacer(1, 4),
+        ]
+    )
 
     n_cols = len(headers)
     aligns = list(col_aligns) if col_aligns else ["left"] * n_cols

@@ -12,6 +12,16 @@ const PLATEFORME_FIXED = [
   'accueil',
   'admin',
   'modules',
+  // Modules préfixés (ne pas confondre avec un code espace)
+  'stock-fournitures',
+  'achats-appro',
+  'notes-frais',
+  'contrats-echeances',
+  'archives-mg',
+  'credit',
+  'rh',
+  'tickets-si',
+  'demandes-achat',
 ] as const;
 
 export const ESPACE_HUB_RESERVED_SEGMENTS: ReadonlySet<string> = new Set([

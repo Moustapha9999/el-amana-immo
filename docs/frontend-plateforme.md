@@ -11,12 +11,17 @@ Source de vérité code : `plateforme/module-routing.contract.ts`.
 | Module | Stratégie | URLs | Entrée Login 2 | Logout module → |
 |--------|-----------|------|----------------|-----------------|
 | `immobilisations` | `legacy-root` | racine (`/dashboard`, `/immobilisations`, …) | `/dashboard` | `/comptabilite` |
+| `stock-fournitures` | `prefixed` | `/stock-fournitures/...` | `/stock-fournitures/dashboard` | `/moyens-generaux` |
 | `credit` | `prefixed` | `/credit/...` | `/credit` | `/credit` |
 | `rh` | `prefixed` | `/rh/...` | `/rh` | `/rh` |
 | `tickets-si` | `prefixed` | `/tickets-si/...` | `/tickets-si` | `/informatique` |
 | `demandes-achat` | `prefixed` | `/demandes-achat/...` | `/demandes-achat` | `/achats` |
 
-Futurs modules encore **bientôt** (pas de shell métier) — détail processus :
+CDC Stock / MG : [moyens-generaux/README.md](moyens-generaux/README.md).
+Chrome métier : **un seul** `ShellComponent` (`layout/shell/`) pour Immobilisations
+et modules MG — navigation via `MODULE_SHELL_NAV` dans `shell-nav.ts`
+(sidebar Material, topbar, bouton « Déconnexion du module » identiques).
+Futurs modules encore **bientôt** — détail processus :
 [catalogue-modules-futurs.md](catalogue-modules-futurs.md).
 
 Règles :

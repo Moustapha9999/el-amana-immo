@@ -5728,3 +5728,394 @@ button.bea-admin-kpi {
     border-radius: 0.7rem;
   }
 }
+
+/* --- Stock & Fournitures (Moyens Généraux) --- */
+.bea-stock {
+  --bea-stock-navy: #0f172a;
+  --bea-stock-brand: #1a5278;
+  display: grid;
+  grid-template-columns: 15.5rem minmax(0, 1fr);
+  min-height: 100vh;
+  background: #f4f7fb;
+  color: #0f172a;
+}
+
+.bea-stock__side {
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #1a5278 0%, #0f172a 70%);
+  color: #e2e8f0;
+}
+
+.bea-stock__brand {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 1rem;
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid rgb(255 255 255 / 0.1);
+}
+
+.bea-stock__brand strong {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.bea-stock__brand span {
+  display: block;
+  font-size: 0.7rem;
+  opacity: 0.75;
+}
+
+.bea-stock__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.75rem 0.5rem;
+  flex: 1;
+}
+
+.bea-stock__link {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.45rem;
+  color: rgb(226 232 240 / 0.9);
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.bea-stock__link .material-icons {
+  font-size: 1.2rem;
+}
+
+.bea-stock__link:hover,
+.bea-stock__link--on {
+  background: rgb(255 255 255 / 0.1);
+  color: #fff;
+}
+
+.bea-stock__footer {
+  padding: 0.75rem;
+  border-top: 1px solid rgb(255 255 255 / 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+}
+
+.bea-stock__footer a,
+.bea-stock__footer button {
+  color: #cbd5e1;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: none;
+}
+
+.bea-stock__main {
+  min-width: 0;
+  padding: 1.25rem 1.5rem 2rem;
+  overflow: auto;
+}
+
+/* Contenu métier MG dans le shell commun (pas de sidebar dédiée). */
+.bea-stock-page {
+  max-width: 72rem;
+}
+
+.bea-stock-page__head h1 {
+  margin: 0.15rem 0 0.35rem;
+  font-size: 1.45rem;
+}
+
+.bea-stock-page__kicker {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.bea-stock-page__error {
+  color: #b91c1c;
+}
+
+.bea-stock-page__ok {
+  color: #166534;
+}
+
+.bea-stock-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.bea-stock-kpis article {
+  background: #fff;
+  border: 1px solid #dbe3ee;
+  border-radius: 0.75rem;
+  padding: 0.85rem 1rem;
+}
+
+.bea-stock-kpis span {
+  display: block;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.bea-stock-kpis strong {
+  font-size: 1.4rem;
+}
+
+.bea-stock-kpis article[data-tone='warn'] strong {
+  color: #b45309;
+}
+
+.bea-stock-kpis article[data-tone='danger'] strong {
+  color: #b91c1c;
+}
+
+.bea-stock-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.bea-stock-panel {
+  background: #fff;
+  border: 1px solid #dbe3ee;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.bea-stock-panel--wide {
+  grid-column: 1 / -1;
+}
+
+.bea-stock-panel h2,
+.bea-stock-panel summary {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.bea-stock-panel__empty {
+  color: #64748b;
+  margin: 0;
+}
+
+.bea-stock-bars__row {
+  display: grid;
+  grid-template-columns: 8rem 1fr 3rem;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.45rem;
+  font-size: 0.82rem;
+}
+
+.bea-stock-bars__track {
+  height: 0.55rem;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.bea-stock-bars__fill {
+  height: 100%;
+  background: #2874a6;
+  border-radius: 999px;
+}
+
+.bea-stock-bars__fill--alt {
+  background: #0e9f6e;
+}
+
+.bea-stock-month {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.65rem;
+  min-height: 8rem;
+}
+
+.bea-stock-month__col {
+  flex: 1;
+  text-align: center;
+  font-size: 0.7rem;
+}
+
+.bea-stock-month__bar {
+  background: #1a5278;
+  border-radius: 0.35rem 0.35rem 0 0;
+  min-height: 0.25rem;
+  margin: 0 auto 0.35rem;
+  width: 70%;
+}
+
+.bea-stock-toolbar,
+.bea-stock-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+
+.bea-stock-form__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+  width: 100%;
+  margin-bottom: 0.85rem;
+}
+
+.bea-stock-toolbar input,
+.bea-stock-toolbar select,
+.bea-stock-form input,
+.bea-stock-form select,
+.bea-stock-fiche input,
+.bea-stock-fiche select {
+  font: inherit;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.4rem;
+  min-width: 9rem;
+}
+
+.bea-stock-form label,
+.bea-stock-toolbar label,
+.bea-stock-fiche__meta label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.bea-stock-check {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.bea-stock-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.bea-stock-table th,
+.bea-stock-table td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.55rem 0.4rem;
+  text-align: left;
+}
+
+.bea-stock-pill,
+.bea-stock-badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.bea-stock-pill[data-niveau='faible'],
+.bea-stock-badge[data-niveau='faible'] {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.bea-stock-pill[data-niveau='epuise'],
+.bea-stock-badge[data-niveau='epuise'] {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.bea-stock-pill[data-niveau='normal'],
+.bea-stock-badge[data-niveau='normal'] {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.bea-stock-fiche {
+  background: #fff;
+  border: 1px solid #dbe3ee;
+  border-radius: 0.85rem;
+  padding: 1.25rem;
+}
+
+.bea-stock-fiche__banner {
+  display: flex;
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  margin: -1.25rem -1.25rem 1rem;
+  border-radius: 0.85rem 0.85rem 0 0;
+  background: linear-gradient(90deg, #1a5278, #0f172a);
+  color: #fff;
+}
+
+.bea-stock-fiche__banner span {
+  display: block;
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.bea-stock-fiche__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.bea-stock-fiche__visas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1.25rem 0;
+  min-height: 4rem;
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.bea-stock-fiche__visas > div {
+  border: 1px dashed #cbd5e1;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+
+.bea-stock-fiche__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+@media (max-width: 900px) {
+  .bea-stock {
+    grid-template-columns: 1fr;
+  }
+
+  .bea-stock__side {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+
+  .bea-stock__nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .bea-stock-charts {
+    grid-template-columns: 1fr;
+  }
+}

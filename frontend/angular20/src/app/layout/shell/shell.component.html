@@ -1,6 +1,17 @@
-<mat-sidenav-container class="app-shell">
-
+<mat-sidenav-container class="app-shell" [class.app-shell--collapsed]="collapsed()">
   <mat-sidenav mode="side" opened class="app-shell__sidenav">
+    <div class="app-shell__side-top">
+      <button
+        type="button"
+        class="app-shell__collapse"
+        (click)="toggleSidebar()"
+        [attr.aria-expanded]="!collapsed()"
+        [attr.aria-label]="collapsed() ? 'Développer le menu' : 'Réduire le menu'"
+        [title]="collapsed() ? 'Développer le menu' : 'Réduire le menu'"
+      >
+        <mat-icon>{{ collapsed() ? 'chevron_right' : 'chevron_left' }}</mat-icon>
+      </button>
+    </div>
 
     <a routerLink="/accueil" class="app-shell__brand" title="Accueil BEA DIGITAL">
       <img
@@ -15,84 +26,49 @@
       </div>
     </a>
 
-
-
-    <nav class="app-shell__nav">
-
-      @for (section of navSections; track section.title) {
-
+    <nav class="app-shell__nav" (scroll)="hideTooltip()">
+      @for (section of navSections(); track section.title) {
         <div class="app-shell__section">{{ section.title }}</div>
-
         @for (item of section.items; track item.path) {
-
           <a
-
             class="app-shell__link"
-
             [routerLink]="item.path"
-
             routerLinkActive="app-shell__link--active"
-
-            [routerLinkActiveOptions]="{ exact: item.path === '/dashboard' }"
-
+            [routerLinkActiveOptions]="{ exact: !!item.exact }"
+            [attr.aria-label]="item.label"
+            (mouseenter)="showTooltip($event, item.label)"
+            (mouseleave)="hideTooltip()"
+            (focus)="showTooltip($event, item.label)"
+            (blur)="hideTooltip()"
           >
-
             <mat-icon class="app-shell__link-icon">{{ item.icon }}</mat-icon>
-
             <span class="app-shell__link-label">{{ item.label }}</span>
-
             @if (unreadForPath(item.path); as badge) {
-
               <span class="app-shell__badge">{{ badge }}</span>
-
             }
-
           </a>
-
         }
-
       }
-
     </nav>
 
-
-
     <div class="app-shell__footer">
-
-          <span class="app-shell__footer-text">BEA DIGITAL — Banque El Amana</span>
-
+      <span class="app-shell__footer-text">BEA DIGITAL — Banque El Amana</span>
     </div>
-
   </mat-sidenav>
 
-
-
   <mat-sidenav-content class="app-shell__content">
-
     <header class="app-shell__topbar">
-
       <div class="app-shell__topbar-title">{{ moduleTitle() }}</div>
-
       <div class="app-shell__topbar-actions">
-
         @if (auth.user(); as u) {
-
           <div class="app-shell__user">
-
             <span class="app-shell__user-avatar" aria-hidden="true">{{ u.full_name.charAt(0) }}</span>
-
             <div class="app-shell__user-meta">
-
               <span class="app-shell__user-name">{{ u.full_name }}</span>
-
               <span class="app-shell__user-role">{{ primaryRoleLabel(u) }}</span>
-
             </div>
-
           </div>
-
         }
-
         <div class="app-shell__clock" title="Date et heure système">
           <mat-icon class="app-shell__clock-icon" aria-hidden="true">schedule</mat-icon>
           <div class="app-shell__clock-meta">
@@ -100,26 +76,27 @@
             <span class="app-shell__clock-time">{{ clock.timeDisplay() }}</span>
           </div>
         </div>
-
         <button mat-stroked-button type="button" class="app-shell__logout" (click)="logout()">
-
           <mat-icon>logout</mat-icon>
-
           Déconnexion du module
-
         </button>
-
       </div>
-
     </header>
-
     <main class="app-shell__main">
-
       <router-outlet />
-
     </main>
-
   </mat-sidenav-content>
-
 </mat-sidenav-container>
 
+@if (collapsed()) {
+  @if (tooltip(); as tip) {
+    <div
+      class="app-shell__tooltip"
+      role="tooltip"
+      [style.top.px]="tip.top"
+      [style.left.px]="tip.left"
+    >
+      {{ tip.label }}
+    </div>
+  }
+}

@@ -28,9 +28,18 @@ DEFAULT_ESPACE_CODE = "comptabilite"
 DEFAULT_MODULE_CODE = "immobilisations"
 
 # Toujours (re)créés s’ils manquent. Le reste du catalogue = seed **bootstrap**
-# seulement : une suppression CORE ADMIN ne doit pas les faire revenir au refresh.
-SEED_LOCKED_ESPACE_CODES = frozenset({DEFAULT_ESPACE_CODE})
-SEED_LOCKED_MODULE_CODES = frozenset({DEFAULT_MODULE_CODE})
+# seulement (CORE ADMIN peut supprimer sans resurrection au refresh).
+SEED_LOCKED_ESPACE_CODES = frozenset({DEFAULT_ESPACE_CODE, "moyens-generaux"})
+SEED_LOCKED_MODULE_CODES = frozenset(
+    {
+        DEFAULT_MODULE_CODE,
+        "stock-fournitures",
+        "achats-appro",
+        "notes-frais",
+        "contrats-echeances",
+        "archives-mg",
+    }
+)
 
 PLATEFORME_ESPACES: list[EspaceDef] = [
     {
@@ -75,6 +84,17 @@ PLATEFORME_ESPACES: list[EspaceDef] = [
         "route": "/achats",
         "statut": "bientot",
         "sort_order": 5,
+    },
+    {
+        "code": "moyens-generaux",
+        "label": "Moyens Généraux",
+        "description": (
+            "Achats, stock & fournitures, notes de frais, contrats et archives "
+            "documentaires — digitalisation des processus internes MG."
+        ),
+        "route": "/moyens-generaux",
+        "statut": "actif",
+        "sort_order": 6,
     },
 ]
 
@@ -167,6 +187,55 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "statut": "bientot",
         "sort_order": 1,
     },
+    # --- Moyens Généraux (CDC v1 — Phase 1 = stock-fournitures) ---
+    {
+        "code": "stock-fournitures",
+        "espace_code": "moyens-generaux",
+        "label": "Stock & Fournitures",
+        "description": (
+            "Articles, familles, entrées/sorties, demandes de fournitures, "
+            "états de stock et rapports de consommation."
+        ),
+        "entry_path": "/stock-fournitures/dashboard",
+        "statut": "actif",
+        "sort_order": 1,
+    },
+    {
+        "code": "achats-appro",
+        "espace_code": "moyens-generaux",
+        "label": "Achats & Approvisionnements",
+        "description": "Demandes d’approvisionnement, bons de commande, réceptions et factures.",
+        "entry_path": "/achats-appro/bons",
+        "statut": "actif",
+        "sort_order": 2,
+    },
+    {
+        "code": "notes-frais",
+        "espace_code": "moyens-generaux",
+        "label": "Notes de Frais",
+        "description": "Création, validation, visas et archivage des notes de frais.",
+        "entry_path": "/notes-frais/notes",
+        "statut": "actif",
+        "sort_order": 3,
+    },
+    {
+        "code": "contrats-echeances",
+        "espace_code": "moyens-generaux",
+        "label": "Contrats & Échéances",
+        "description": "Contrats fournisseurs, échéances, alertes et renouvellements.",
+        "entry_path": "/contrats-echeances/liste",
+        "statut": "actif",
+        "sort_order": 4,
+    },
+    {
+        "code": "archives-mg",
+        "espace_code": "moyens-generaux",
+        "label": "Archives",
+        "description": "Registre documentaire central du département Moyens Généraux.",
+        "entry_path": "/archives-mg/registre",
+        "statut": "actif",
+        "sort_order": 5,
+    },
 ]
 
 # Permissions CORE (tous les départements). `{module}.admin` couvre `{module}.*`.
@@ -218,6 +287,29 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("immobilisations.amortissement", "Amortissements", "immobilisations"),
     ("immobilisations.reporting", "Reporting immobilisations", "immobilisations"),
     ("immobilisations.admin", "Administration du module", "immobilisations"),
+    # Stock & Fournitures (Moyens Généraux — Phase 1)
+    ("mg.stock.view", "Consultation stock & fournitures", "stock-fournitures"),
+    ("mg.stock.create", "Création articles / demandes", "stock-fournitures"),
+    ("mg.stock.entry", "Entrées de stock", "stock-fournitures"),
+    ("mg.stock.exit", "Sorties de stock", "stock-fournitures"),
+    ("mg.stock.adjust", "Ajustements de stock", "stock-fournitures"),
+    ("mg.stock.inventory", "Inventaire stock", "stock-fournitures"),
+    ("mg.stock.approve", "Validation demandes de fournitures", "stock-fournitures"),
+    ("mg.stock.export", "Exports / rapports stock", "stock-fournitures"),
+    ("mg.purchase.view", "Consultation achats / bons de commande", "achats-appro"),
+    ("mg.purchase.create", "Création bons de commande", "achats-appro"),
+    ("mg.purchase.approve", "Validation bons de commande", "achats-appro"),
+    ("mg.purchase.export", "Exports achats", "achats-appro"),
+    ("mg.notes.view", "Consultation notes de frais", "notes-frais"),
+    ("mg.notes.create", "Création notes de frais", "notes-frais"),
+    ("mg.notes.approve", "Validation notes de frais", "notes-frais"),
+    ("mg.notes.export", "Exports notes de frais", "notes-frais"),
+    ("mg.contrats.view", "Consultation contrats", "contrats-echeances"),
+    ("mg.contrats.create", "Création contrats", "contrats-echeances"),
+    ("mg.contrats.manage", "Gestion / alertes contrats", "contrats-echeances"),
+    ("mg.contrats.export", "Exports contrats", "contrats-echeances"),
+    ("mg.archives.view", "Consultation archives MG", "archives-mg"),
+    ("mg.archives.export", "Exports archives MG", "archives-mg"),
 ]
 
 # Rôles figés Login 2 / module Immobilisations (codes courts = legacy).
@@ -233,13 +325,56 @@ RBAC_ROLES: list[tuple[str, str, str]] = [
     ("comptable", "Comptable", "Opérations courantes du module"),
     ("auditeur", "Auditeur", "Consultation et reporting"),
     ("administrateur", "Administration", "Permissions immobilisations + utilisateurs plateforme"),
+    ("stock-fournitures.lecteur", "Stock — Lecteur", "Consultation stock & fournitures"),
+    ("stock-fournitures.magasinier", "Stock — Magasinier", "Entrées / sorties / articles"),
+    ("stock-fournitures.valideur", "Stock — Valideur", "Visas demandes de fournitures"),
+    ("stock-fournitures.admin", "Stock — Admin", "Administration stock & fournitures"),
+    ("achats-appro.lecteur", "Achats — Lecteur", "Consultation bons de commande"),
+    ("achats-appro.acheteur", "Achats — Acheteur", "Création / suivi bons de commande"),
+    ("achats-appro.valideur", "Achats — Valideur", "Visas bons de commande"),
+    ("achats-appro.admin", "Achats — Admin", "Administration achats MG"),
+    ("notes-frais.lecteur", "Notes — Lecteur", "Consultation notes de frais"),
+    ("notes-frais.redacteur", "Notes — Rédacteur", "Création notes de frais"),
+    ("notes-frais.valideur", "Notes — Valideur", "Visas notes de frais"),
+    ("notes-frais.admin", "Notes — Admin", "Administration notes de frais"),
+    ("contrats-echeances.lecteur", "Contrats — Lecteur", "Consultation contrats"),
+    ("contrats-echeances.gestionnaire", "Contrats — Gestionnaire", "Création / alertes contrats"),
+    ("contrats-echeances.admin", "Contrats — Admin", "Administration contrats"),
+    ("archives-mg.lecteur", "Archives MG — Lecteur", "Consultation archives MG"),
+    ("archives-mg.admin", "Archives MG — Admin", "Administration archives MG"),
 ]
 
 # Codes courts réservés au module Immobilisations (ne pas créer pour Crédit / RH / …).
-IMMO_LEGACY_ROLE_CODES = frozenset(code for code, _label, _desc in RBAC_ROLES)
+IMMO_LEGACY_ROLE_CODES = frozenset(
+    {
+        "consultation",
+        "lecture_seule",
+        "creation",
+        "modification",
+        "validation",
+        "comptable",
+        "auditeur",
+        "administrateur",
+    }
+)
 
 _IMMO_ALL = tuple(
     code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "immobilisations"
+)
+_MG_STOCK_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "stock-fournitures"
+)
+_MG_ACHATS_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "achats-appro"
+)
+_MG_NOTES_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "notes-frais"
+)
+_MG_CONTRATS_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "contrats-echeances"
+)
+_MG_ARCHIVES_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "archives-mg"
 )
 _CORE_ADMIN = (
     "plateforme.users.read",
@@ -267,6 +402,35 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "immobilisations.reporting",
     ),
     "administrateur": _IMMO_ALL + _CORE_ADMIN,
+    "stock-fournitures.lecteur": ("mg.stock.view",),
+    "stock-fournitures.magasinier": (
+        "mg.stock.view",
+        "mg.stock.create",
+        "mg.stock.entry",
+        "mg.stock.exit",
+        "mg.stock.adjust",
+        "mg.stock.inventory",
+    ),
+    "stock-fournitures.valideur": ("mg.stock.view", "mg.stock.approve"),
+    "stock-fournitures.admin": _MG_STOCK_ALL + ("ged.read", "ged.write"),
+    "achats-appro.lecteur": ("mg.purchase.view",),
+    "achats-appro.acheteur": ("mg.purchase.view", "mg.purchase.create", "mg.purchase.export"),
+    "achats-appro.valideur": ("mg.purchase.view", "mg.purchase.approve"),
+    "achats-appro.admin": _MG_ACHATS_ALL + ("ged.read", "ged.write"),
+    "notes-frais.lecteur": ("mg.notes.view",),
+    "notes-frais.redacteur": ("mg.notes.view", "mg.notes.create", "mg.notes.export"),
+    "notes-frais.valideur": ("mg.notes.view", "mg.notes.approve"),
+    "notes-frais.admin": _MG_NOTES_ALL + ("ged.read", "ged.write"),
+    "contrats-echeances.lecteur": ("mg.contrats.view",),
+    "contrats-echeances.gestionnaire": (
+        "mg.contrats.view",
+        "mg.contrats.create",
+        "mg.contrats.manage",
+        "mg.contrats.export",
+    ),
+    "contrats-echeances.admin": _MG_CONTRATS_ALL + ("ged.read", "ged.write"),
+    "archives-mg.lecteur": ("mg.archives.view",),
+    "archives-mg.admin": _MG_ARCHIVES_ALL + ("ged.read", "ged.write"),
 }
 
 SYSTEM_ROLE_CODES = frozenset(code for code, _label, _desc in RBAC_ROLES)

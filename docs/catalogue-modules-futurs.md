@@ -34,6 +34,9 @@ Pour chaque processus candidat :
 | `rh` | `rh` | bientôt |
 | `informatique` | `tickets-si` | bientôt |
 | `achats` | `demandes-achat` | bientôt |
+| `moyens-generaux` | `stock-fournitures`, `achats-appro`, `notes-frais`, `contrats-echeances`, `archives-mg` | **actif** |
+
+CDC et conception : [moyens-generaux/](moyens-generaux/README.md).
 
 Conventions techniques déjà figées (Phase B) :
 
@@ -190,24 +193,31 @@ Référence livrée : Immobilisations & Amortissements.
 
 ---
 
-## 6. Autres départements (à cartographier)
+## 6. Autres départements
 
-Candidats fréquents banque (non seedés) : Compliance / LBC, Audit interne,
-Marketing, Agence / réseau, Juridique, Risques.
+### 6.1 Moyens Généraux — seedé (5 modules actifs)
 
-Méthode : même grille (processus → Excel → ORION → contrôles → GED → module).
-Créer l’espace CORE ADMIN **seulement** après atelier (évite catalogue fantôme).
+Voir [moyens-generaux/cdc-fonctionnel-v1.md](moyens-generaux/cdc-fonctionnel-v1.md).
+
+| Module | Statut |
+|--------|--------|
+| `stock-fournitures`, `achats-appro`, `notes-frais`, `contrats-echeances`, `archives-mg` | actif |
+
+### 6.2 Candidats non seedés
+
+Compliance / LBC, Audit interne, Marketing, Agence / réseau, Juridique, Risques.
+Créer l’espace CORE ADMIN **seulement** après atelier.
 
 ---
 
 ## Ordre de construction recommandé (Étape 9+)
 
 ```text
-1. Atelier Crédit (P1) → CDC court → tables → API → front /credit/...
-2. Tickets SI ou Demandes d’achat (selon douleur métier)
-3. RH demandes
-4. Modules compta secondaires (rapprochements…)
-5. Modules P2/P3
+1. Stock & Fournitures (MG) — Phase 1
+2. Atelier Crédit (P1) → CDC → /credit/...
+3. Achats MG / Notes de frais / Contrats
+4. Tickets SI ou Demandes d’achat
+5. RH demandes
 ```
 
 Pour **chaque** nouveau module (checklist technique) :
