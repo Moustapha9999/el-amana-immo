@@ -16,6 +16,23 @@ from app.models.platform_ops import (
     PlatformRestore,
 )
 from app.models.ged import GedDocument
+from app.models.mg_stock import (
+    MgArticle,
+    MgArticleFamille,
+    MgDemandeFourniture,
+    MgDemandeFournitureLigne,
+    MgInventaire,
+    MgInventaireLigne,
+    MgStockMouvement,
+    MgStockParametre,
+)
+from app.models.mg_ops import (
+    MgBcLigne,
+    MgBonCommande,
+    MgContrat,
+    MgNoteFrais,
+    MgNoteFraisLigne,
+)
 from app.models.comptabilite import (
     Amortissement,
     ComptePlanComptable,
@@ -75,6 +92,19 @@ __all__ = [
     "PlatformModuleVersion",
     "PlatformOpsFlag",
     "GedDocument",
+    "MgArticleFamille",
+    "MgArticle",
+    "MgStockMouvement",
+    "MgDemandeFourniture",
+    "MgDemandeFournitureLigne",
+    "MgInventaire",
+    "MgInventaireLigne",
+    "MgStockParametre",
+    "MgBonCommande",
+    "MgBcLigne",
+    "MgNoteFrais",
+    "MgNoteFraisLigne",
+    "MgContrat",
     "Direction",
     "Departement",
     "CentreCout",

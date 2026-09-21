@@ -98,21 +98,55 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
             "archive_lignes",
         ],
     ),
-    # Exemple futur (décommenter / compléter à l’arrivée du module) :
-    # "credit": make_module_scope(
-    #     label="Crédit",
-    #     uploads_subdir="credit",
-    #     exclusive_tables=["credit_dossiers", "credit_decisions"],
-    # ),
+    "stock-fournitures": make_module_scope(
+        label="Stock & Fournitures",
+        uploads_subdir="stock-fournitures",
+        exclusive_tables=[
+            "mg_article_familles",
+            "mg_articles",
+            "mg_stock_mouvements",
+            "mg_demandes_fourniture",
+            "mg_demande_fourniture_lignes",
+            "mg_inventaires",
+            "mg_inventaire_lignes",
+            "mg_stock_parametres",
+        ],
+    ),
+    "achats-appro": make_module_scope(
+        label="Achats & Approvisionnements",
+        uploads_subdir="achats-appro",
+        exclusive_tables=["mg_bons_commande", "mg_bc_lignes"],
+    ),
+    "notes-frais": make_module_scope(
+        label="Notes de Frais",
+        uploads_subdir="notes-frais",
+        exclusive_tables=["mg_notes_frais", "mg_note_frais_lignes"],
+    ),
+    "contrats-echeances": make_module_scope(
+        label="Contrats & Échéances",
+        uploads_subdir="contrats-echeances",
+        exclusive_tables=["mg_contrats"],
+    ),
+    "archives-mg": make_module_scope(
+        label="Archives MG",
+        uploads_subdir="archives-mg",
+        exclusive_tables=[],
+    ),
 }
 
 ESPACE_MODULES: dict[str, list[str]] = {
     "comptabilite": ["immobilisations"],
-    # Modules bientôt (scopes à compléter à l’activation métier) :
     "credit": ["credit"],
     "rh": ["rh"],
     "informatique": ["tickets-si"],
     "achats": ["demandes-achat"],
+    "moyens-generaux": [
+        "stock-fournitures",
+        "achats-appro",
+        "notes-frais",
+        "contrats-echeances",
+        "archives-mg",
+    ],
 }
 
 

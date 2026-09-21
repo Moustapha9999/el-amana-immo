@@ -78,6 +78,11 @@ class PlateformeAccessService:
                 self.db.add(row)
                 existing[item["code"]] = row
             else:
+                # Seeds verrouillés : garder statut / route alignés sur le catalogue produit.
+                if item["code"] in SEED_LOCKED_ESPACE_CODES:
+                    row.route = item["route"]
+                    row.statut = item["statut"]
+                    row.sort_order = item["sort_order"]
                 if _text_needs_utf8_repair(row.label):
                     row.label = item["label"]
                 if _text_needs_utf8_repair(row.description):
@@ -113,6 +118,11 @@ class PlateformeAccessService:
                     )
                 )
             else:
+                if item["code"] in SEED_LOCKED_MODULE_CODES:
+                    row.entry_path = item["entry_path"]
+                    row.statut = item["statut"]
+                    row.sort_order = item["sort_order"]
+                    row.espace_id = espace.id
                 if _text_needs_utf8_repair(row.label):
                     row.label = item["label"]
                 if _text_needs_utf8_repair(row.description):
@@ -138,14 +148,12 @@ class PlateformeAccessService:
             row.code: row
             for row in (await self.db.execute(select(Role))).scalars().all()
         }
-        newly_created_roles: set[str] = set()
         for code, label, description in RBAC_ROLES:
             role = existing_roles.get(code)
             if role is None:
                 role = Role(code=code, label=label, description=description)
                 self.db.add(role)
                 existing_roles[code] = role
-                newly_created_roles.add(code)
             else:
                 if _text_needs_utf8_repair(role.label):
                     role.label = label
@@ -153,9 +161,7 @@ class PlateformeAccessService:
                     role.description = description
         await self.db.flush()
 
-        if not newly_created_roles:
-            return
-
+        # Liens rôle→permission additifs pour tous les rôles catalogue (y compris MG).
         existing_links = {
             (role_id, perm_id)
             for role_id, perm_id in (
@@ -168,11 +174,11 @@ class PlateformeAccessService:
             ).all()
         }
         new_links: list[dict] = []
-        for role_code in newly_created_roles:
+        for role_code, perm_codes in ROLE_PERMISSIONS.items():
             role = existing_roles.get(role_code)
             if role is None:
                 continue
-            for perm_code in ROLE_PERMISSIONS.get(role_code, ()):
+            for perm_code in perm_codes:
                 perm = existing_perms.get(perm_code)
                 if perm is None:
                     continue

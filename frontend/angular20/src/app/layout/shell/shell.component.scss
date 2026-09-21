@@ -15,6 +15,74 @@
   color: #e2e8f0;
   display: flex;
   flex-direction: column;
+  transition: width 0.2s ease;
+}
+
+.app-shell--collapsed .app-shell__sidenav {
+  width: 4.5rem;
+}
+
+.app-shell__side-top {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.5rem 0.5rem 0;
+}
+
+.app-shell__collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 0.4rem;
+  background: rgb(255 255 255 / 0.08);
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.app-shell__collapse:hover {
+  background: rgb(255 255 255 / 0.14);
+}
+
+.app-shell--collapsed .app-shell__brand-text,
+.app-shell--collapsed .app-shell__section,
+.app-shell--collapsed .app-shell__link-label,
+.app-shell--collapsed .app-shell__badge,
+.app-shell--collapsed .app-shell__footer-text {
+  display: none;
+}
+
+.app-shell--collapsed .app-shell__brand {
+  padding: 0.75rem 0.5rem;
+}
+
+.app-shell--collapsed .app-shell__brand-logo {
+  width: 2.25rem;
+}
+
+.app-shell--collapsed .app-shell__link {
+  justify-content: center;
+  padding: 0.65rem 0.5rem;
+}
+
+.app-shell--collapsed .app-shell__nav {
+  padding: 0.5rem 0.35rem;
+}
+
+.app-shell__tooltip {
+  position: fixed;
+  z-index: 1200;
+  transform: translateY(-50%);
+  padding: 0.4rem 0.65rem;
+  border-radius: 0.35rem;
+  background: #0f172a;
+  color: #f8fafc;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgb(15 23 42 / 0.35);
 }
 
 .app-shell__brand {

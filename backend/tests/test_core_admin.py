@@ -73,6 +73,9 @@ def test_seed_does_not_revive_deleted_optional_modules():
     assert should_insert_missing_seed(
         code="immobilisations", locked=SEED_LOCKED_MODULE_CODES, bootstrap=False
     )
+    assert should_insert_missing_seed(
+        code="stock-fournitures", locked=SEED_LOCKED_MODULE_CODES, bootstrap=False
+    )
     assert not should_insert_missing_seed(
         code="rapprochements", locked=SEED_LOCKED_MODULE_CODES, bootstrap=False
     )

@@ -6,7 +6,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { BeaChromeComponent } from '../chrome/bea-chrome.component';
 import { PlateformeContextService } from '../plateforme-context.service';
-import { LEGACY_ROOT_MODULE_CODE, resolveEspacePathForModule, resolveModuleEntryPath } from '../module-routing.contract';
+import { moduleHasMetierShell, resolveEspacePathForModule, resolveModuleEntryPath } from '../module-routing.contract';
 
 interface ModuleInfo {
   id: string;
@@ -185,9 +185,9 @@ export class ModuleAccesComponent implements OnInit {
     });
   }
 
-  /** Shell métier branché uniquement pour Immobilisations tant que les ateliers n’ont pas abouti. */
+  /** Shell métier Angular branché (contrat `MODULES_WITH_METIER_SHELL`). */
   private moduleHasMetierShell(code: string): boolean {
-    return code === LEGACY_ROOT_MODULE_CODE;
+    return moduleHasMetierShell(code);
   }
 
   private enterModuleOrPending(): void {

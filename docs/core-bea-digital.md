@@ -1,7 +1,7 @@
 # CORE BEA DIGITAL — commun à tous les départements
 
 Le CORE n’est pas le module Immobilisations. C’est ce que **Crédit, RH, IT,
-Achats** réutiliseront sans recopier l’auth, l’audit ou les fichiers.
+Achats, Moyens Généraux** réutiliseront sans recopier l’auth, l’audit ou les fichiers.
 
 ORION reste le core banking. BEA DIGITAL reste la plateforme interne
 (Excel, contrôles, workflows, reporting, GED).
@@ -26,8 +26,8 @@ est encore valide. Détail auth : [socle-bea-digital.md](socle-bea-digital.md).
 | A | Utilisateurs | `users` | Email unique, bcrypt, `is_active`, soft-delete |
 | B | Rôles | `roles` + `user_roles` | Immo = codes courts legacy (`comptable`, …). Nouveaux modules = `{module}.{profil}` (`credit.admin`). Helpers : `module_role_code` / `role_module_code` |
 | C | Permissions | `permissions` + `role_permissions` | `{module}.{action}` ; `{module}.admin` couvre `{module}.*` |
-| D | Départements | `plateforme_espaces` | Comptabilité, Crédit, RH, … **≠** `departements` (org immo / centres de coût). Catalogue processus : [catalogue-modules-futurs.md](catalogue-modules-futurs.md) |
-| E | Modules | `plateforme_modules` | Premier actif : `immobilisations` |
+| D | Départements | `plateforme_espaces` | Comptabilité, Moyens Généraux, Crédit, RH, … **≠** `departements` (org immo / centres de coût). Catalogue : [catalogue-modules-futurs.md](catalogue-modules-futurs.md) · MG : [moyens-generaux/README.md](moyens-generaux/README.md) |
+| E | Modules | `plateforme_modules` | Actifs : `immobilisations`, `stock-fournitures` (+ stubs bientôt) |
 | F | Accès | `user_espace_acces`, `user_module_acces` | User → département, User → module |
 | G | Audit | `audit_logs` | Qui, quoi, quand, espace, module, action, session |
 | H | Notifications | `notifications` | Filtrables par `espace_code` / `module_code`. Enum Postgres historique immo ; nouveaux modules → `event_type` libre + `categorie` (`notification_taxonomy`) |

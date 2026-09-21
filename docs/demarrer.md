@@ -99,4 +99,5 @@ npm run build
 - [runbook-migrations.md](runbook-migrations.md) — Alembic après restore seulement
 - [DEPLOIEMENT_LOCAL.md](DEPLOIEMENT_LOCAL.md) — kit USB machine comptable
 - [deployment/README.md](deployment/README.md) — GitLab / Runner BEA / production (cible)
+- [moyens-generaux/README.md](moyens-generaux/README.md) — CDC Moyens Généraux / Stock Phase 1
 - [AGENTS.md](../AGENTS.md) — invariants

@@ -89,7 +89,56 @@ export const MODULE_ROUTE_CONTRACTS: Readonly<Record<string, ModuleRouteContract
     espacePath: '/achats',
     urlPrefix: '/demandes-achat',
   },
+  'stock-fournitures': {
+    code: 'stock-fournitures',
+    strategy: 'prefixed',
+    entryPath: '/stock-fournitures/dashboard',
+    espacePath: '/moyens-generaux',
+    urlPrefix: '/stock-fournitures',
+  },
+  'achats-appro': {
+    code: 'achats-appro',
+    strategy: 'prefixed',
+    entryPath: '/achats-appro/bons',
+    espacePath: '/moyens-generaux',
+    urlPrefix: '/achats-appro',
+  },
+  'notes-frais': {
+    code: 'notes-frais',
+    strategy: 'prefixed',
+    entryPath: '/notes-frais/notes',
+    espacePath: '/moyens-generaux',
+    urlPrefix: '/notes-frais',
+  },
+  'contrats-echeances': {
+    code: 'contrats-echeances',
+    strategy: 'prefixed',
+    entryPath: '/contrats-echeances/liste',
+    espacePath: '/moyens-generaux',
+    urlPrefix: '/contrats-echeances',
+  },
+  'archives-mg': {
+    code: 'archives-mg',
+    strategy: 'prefixed',
+    entryPath: '/archives-mg/registre',
+    espacePath: '/moyens-generaux',
+    urlPrefix: '/archives-mg',
+  },
 };
+
+/** Modules dont le shell métier Angular est branché (Login 2 peut naviguer). */
+export const MODULES_WITH_METIER_SHELL = new Set<string>([
+  LEGACY_ROOT_MODULE_CODE,
+  'stock-fournitures',
+  'achats-appro',
+  'notes-frais',
+  'contrats-echeances',
+  'archives-mg',
+]);
+
+export function moduleHasMetierShell(moduleCode: string): boolean {
+  return MODULES_WITH_METIER_SHELL.has(moduleCode);
+}
 
 export function getModuleRouteContract(moduleCode: string): ModuleRouteContract | null {
   return MODULE_ROUTE_CONTRACTS[moduleCode] ?? null;

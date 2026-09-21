@@ -33,18 +33,98 @@ import { ArchiveDetailComponent } from './archives/archive-detail.component';
 import { ArchiveNatureComponent } from './archives/archive-nature.component';
 import { PLATEFORME_ROUTES } from './plateforme/plateforme.routes';
 import { LEGACY_ROOT_MODULE_CODE } from './plateforme/module-routing.contract';
+import { StockDashboardComponent } from './stock-fournitures/stock-dashboard.component';
+import { StockArticlesComponent } from './stock-fournitures/stock-articles.component';
+import { StockMouvementsComponent } from './stock-fournitures/stock-mouvements.component';
+import { StockDemandesComponent } from './stock-fournitures/stock-demandes.component';
+import { StockRapportsComponent } from './stock-fournitures/stock-rapports.component';
+import {
+  StockAlertesComponent,
+  StockEntreesComponent,
+  StockEtatComponent,
+  StockInventairesComponent,
+  StockParametresComponent,
+  StockSortiesComponent,
+} from './stock-fournitures/stock-pages.component';
+import { AchatsBonsComponent } from './achats-appro/achats-bons.component';
+import { NotesListComponent } from './notes-frais/notes-list.component';
+import { ContratsListComponent } from './contrats-echeances/contrats-list.component';
+import { ArchivesRegistreComponent } from './archives-mg/archives-registre.component';
 
 /**
  * Contrat de routes (voir plateforme/module-routing.contract.ts) :
- * - Immobilisations = legacy-root (bloc ShellComponent ci-dessous, paths inchangés).
- * - Futurs modules (Crédit, RH, …) = arbre dédié path: '{code}' + moduleGuard(code),
- *   JAMAIS les segments listés dans LEGACY_ROOT_PATH_SEGMENTS.
+ * - Immobilisations = legacy-root (ShellComponent, paths inchangés).
+ * - Modules MG / futurs = même ShellComponent + nav MODULE_SHELL_NAV, path préfixé.
  */
 export const routes: Routes = [
   { path: 'login', component: LoginComponent, canActivate: [guestGuard] },
   { path: 'forgot-password', redirectTo: 'login', pathMatch: 'full' },
   { path: 'reset-password', redirectTo: 'login', pathMatch: 'full' },
   { path: '', pathMatch: 'full', redirectTo: 'accueil' },
+  {
+    path: 'stock-fournitures',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('stock-fournitures')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      { path: 'dashboard', component: StockDashboardComponent },
+      { path: 'articles', component: StockArticlesComponent },
+      { path: 'stock', component: StockEtatComponent },
+      { path: 'entrees', component: StockEntreesComponent },
+      { path: 'sorties', component: StockSortiesComponent },
+      { path: 'mouvements', component: StockMouvementsComponent },
+      { path: 'journal', component: StockMouvementsComponent },
+      { path: 'demandes', component: StockDemandesComponent },
+      { path: 'demandes/nouvelle', component: StockDemandesComponent },
+      { path: 'demandes/:id', component: StockDemandesComponent },
+      { path: 'inventaires', component: StockInventairesComponent },
+      { path: 'alertes', component: StockAlertesComponent },
+      { path: 'rapports', component: StockRapportsComponent },
+      { path: 'parametres', component: StockParametresComponent },
+    ],
+  },
+  {
+    path: 'achats-appro',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('achats-appro')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'bons' },
+      { path: 'bons', component: AchatsBonsComponent },
+      { path: 'nouveau', component: AchatsBonsComponent },
+      { path: 'bons/:id', component: AchatsBonsComponent },
+    ],
+  },
+  {
+    path: 'notes-frais',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('notes-frais')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'notes' },
+      { path: 'notes', component: NotesListComponent },
+      { path: 'nouvelle', component: NotesListComponent },
+      { path: 'notes/:id', component: NotesListComponent },
+    ],
+  },
+  {
+    path: 'contrats-echeances',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('contrats-echeances')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'liste' },
+      { path: 'liste', component: ContratsListComponent },
+      { path: 'alertes', component: ContratsListComponent },
+      { path: 'nouveau', component: ContratsListComponent },
+    ],
+  },
+  {
+    path: 'archives-mg',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('archives-mg')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'registre' },
+      { path: 'registre', component: ArchivesRegistreComponent },
+    ],
+  },
   ...PLATEFORME_ROUTES,
   {
     // Exception figée : module immobilisations aux URLs racine.
