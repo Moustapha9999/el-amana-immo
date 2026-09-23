@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -49,10 +50,13 @@ from app.schemas.mg_achats import (
     PaiementUpdate,
     ParametreCreate,
     ParametreUpdate,
+    BlOut,
     ReceptionCreate,
+    ReceptionOut,
     ThreeWayMatchOut,
 )
 from app.schemas.mg_ops import BonCreate, BonUpdate
+from app.schemas.organisation import FournisseurCreate, FournisseurUpdate
 
 DEMANDE_TRANSITIONS = {
     "soumettre": ("BROUILLON", "SOUMISE"),
@@ -77,6 +81,12 @@ BC_TRANSITIONS = {
 
 BC_STATUTS_BL = {"VALIDE", "ENVOYE", "PARTIEL", "RECU"}
 BC_STATUTS_RECEPTION = {"VALIDE", "ENVOYE", "PARTIEL"}
+
+CONSULTATION_TRANSITIONS = {
+    "ouvrir": ("BROUILLON", "OUVERTE"),
+    "cloturer": ("OUVERTE", "CLOTUREE"),
+    "annuler": (None, "ANNULEE"),
+}
 
 
 def _money(v: Decimal) -> Decimal:
@@ -202,6 +212,16 @@ class MgAchatsService:
             MgAchatConsultation.deleted_at.is_(None),
             MgAchatConsultation.statut.in_(["BROUILLON", "OUVERTE", "EN_COURS"]),
         )
+        devis_ouverts = await _count(
+            MgAchatDevis,
+            MgAchatDevis.deleted_at.is_(None),
+            MgAchatDevis.statut == "RECU",
+        )
+        comparaisons_ouvertes = await _count(
+            MgAchatComparaison,
+            MgAchatComparaison.deleted_at.is_(None),
+            MgAchatComparaison.statut.in_(["BROUILLON", "EN_COURS"]),
+        )
         bons_en_cours = await _count(
             MgBonCommande,
             MgBonCommande.deleted_at.is_(None),
@@ -245,6 +265,8 @@ class MgAchatsService:
         return {
             "demandes_ouvertes": demandes_ouvertes,
             "consultations_ouvertes": consultations_ouvertes,
+            "devis_ouverts": devis_ouverts,
+            "comparaisons_ouvertes": comparaisons_ouvertes,
             "bons_en_cours": bons_en_cours,
             "bons_partiels": bons_partiels,
             "receptions_mois": receptions_mois,
@@ -325,6 +347,70 @@ class MgAchatsService:
                     "priorite": "NORMAL",
                 }
             )
+
+        devis = (
+            await self.db.execute(
+                select(MgAchatDevis).where(
+                    MgAchatDevis.deleted_at.is_(None),
+                    MgAchatDevis.date_validite.is_not(None),
+                    MgAchatDevis.date_validite <= horizon,
+                    MgAchatDevis.statut == "RECU",
+                )
+            )
+        ).scalars().all()
+        for d in devis:
+            out.append(
+                {
+                    "type": "DEVIS_VALIDITE",
+                    "reference": d.reference,
+                    "entity_id": d.id,
+                    "message": f"Devis {d.reference} expire le {d.date_validite}",
+                    "date_echeance": d.date_validite,
+                    "priorite": "URGENT" if d.date_validite and d.date_validite <= date.today() else "NORMAL",
+                }
+            )
+
+        consultations = (
+            await self.db.execute(
+                select(MgAchatConsultation).where(
+                    MgAchatConsultation.deleted_at.is_(None),
+                    MgAchatConsultation.date_limite.is_not(None),
+                    MgAchatConsultation.date_limite <= horizon,
+                    MgAchatConsultation.statut.in_(["BROUILLON", "OUVERTE", "EN_COURS"]),
+                )
+            )
+        ).scalars().all()
+        for cons in consultations:
+            out.append(
+                {
+                    "type": "CONSULTATION_LIMITE",
+                    "reference": cons.reference,
+                    "entity_id": cons.id,
+                    "message": f"Consultation {cons.reference} limite {cons.date_limite}",
+                    "date_echeance": cons.date_limite,
+                    "priorite": "URGENT" if cons.date_limite and cons.date_limite <= date.today() else "NORMAL",
+                }
+            )
+
+        anomalies = (
+            await self.db.execute(
+                select(MgAchatFacture).where(
+                    MgAchatFacture.deleted_at.is_(None),
+                    MgAchatFacture.statut == "ANOMALIE",
+                )
+            )
+        ).scalars().all()
+        for f in anomalies:
+            out.append(
+                {
+                    "type": "FACTURE_3WM",
+                    "reference": f.reference,
+                    "entity_id": f.id,
+                    "message": f"Facture {f.reference} : écart contrôle 3 voies",
+                    "date_echeance": f.date_echeance,
+                    "priorite": "URGENT",
+                }
+            )
         return out
 
     async def rapports_summary(self) -> dict:
@@ -332,6 +418,30 @@ class MgAchatsService:
             await self.db.scalar(
                 select(func.count()).select_from(MgAchatDemande).where(
                     MgAchatDemande.deleted_at.is_(None)
+                )
+            )
+            or 0
+        )
+        nb_consultations = int(
+            await self.db.scalar(
+                select(func.count()).select_from(MgAchatConsultation).where(
+                    MgAchatConsultation.deleted_at.is_(None)
+                )
+            )
+            or 0
+        )
+        nb_devis = int(
+            await self.db.scalar(
+                select(func.count()).select_from(MgAchatDevis).where(
+                    MgAchatDevis.deleted_at.is_(None)
+                )
+            )
+            or 0
+        )
+        nb_comparaisons = int(
+            await self.db.scalar(
+                select(func.count()).select_from(MgAchatComparaison).where(
+                    MgAchatComparaison.deleted_at.is_(None)
                 )
             )
             or 0
@@ -378,6 +488,9 @@ class MgAchatsService:
         )
         return {
             "nb_demandes": nb_demandes,
+            "nb_consultations": nb_consultations,
+            "nb_devis": nb_devis,
+            "nb_comparaisons": nb_comparaisons,
             "nb_bons": nb_bons,
             "nb_receptions": nb_receptions,
             "nb_factures": nb_factures,
@@ -388,26 +501,185 @@ class MgAchatsService:
 
     # --- Fournisseurs ---
 
-    async def list_fournisseurs(self, q: str | None = None) -> list[Fournisseur]:
-        stmt = (
-            select(Fournisseur)
-            .where(Fournisseur.is_active.is_(True), Fournisseur.deleted_at.is_(None))
-            .order_by(Fournisseur.raison_sociale)
-        )
+    _FRS_FIELDS = (
+        "code",
+        "raison_sociale",
+        "nom_commercial",
+        "type_fournisseur",
+        "contact",
+        "contact_fonction",
+        "telephone",
+        "telephone_secondaire",
+        "email",
+        "site_web",
+        "adresse",
+        "ville",
+        "pays",
+        "nif",
+        "rc",
+        "devise_defaut",
+        "mode_paiement_defaut",
+        "delai_paiement_jours",
+        "conditions_commerciales",
+    )
+
+    def _frs_snapshot(self, fr: Fournisseur) -> dict:
+        return {
+            "id": str(fr.id),
+            "code": fr.code,
+            "raison_sociale": fr.raison_sociale,
+            "nom_commercial": fr.nom_commercial,
+            "type_fournisseur": fr.type_fournisseur,
+            "contact": fr.contact,
+            "contact_fonction": fr.contact_fonction,
+            "telephone": fr.telephone,
+            "telephone_secondaire": fr.telephone_secondaire,
+            "email": fr.email,
+            "site_web": fr.site_web,
+            "adresse": fr.adresse,
+            "ville": fr.ville,
+            "pays": fr.pays,
+            "nif": fr.nif,
+            "rc": fr.rc,
+            "devise_defaut": fr.devise_defaut,
+            "mode_paiement_defaut": fr.mode_paiement_defaut,
+            "delai_paiement_jours": fr.delai_paiement_jours,
+            "conditions_commerciales": fr.conditions_commerciales,
+            "is_active": fr.is_active,
+        }
+
+    async def _assert_fournisseur_unique(
+        self,
+        *,
+        code: str,
+        raison_sociale: str,
+        email: str | None = None,
+        exclude_id: uuid.UUID | None = None,
+    ) -> None:
+        code_n = code.strip().upper()
+        rs_n = raison_sociale.strip()
+        filters_code = [
+            func.upper(Fournisseur.code) == code_n,
+            Fournisseur.deleted_at.is_(None),
+        ]
+        filters_rs = [
+            func.lower(Fournisseur.raison_sociale) == rs_n.lower(),
+            Fournisseur.deleted_at.is_(None),
+        ]
+        if exclude_id:
+            filters_code.append(Fournisseur.id != exclude_id)
+            filters_rs.append(Fournisseur.id != exclude_id)
+        if await self.db.scalar(select(func.count()).select_from(Fournisseur).where(*filters_code)):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"Un fournisseur avec le code « {code_n} » existe déjà",
+            )
+        if await self.db.scalar(select(func.count()).select_from(Fournisseur).where(*filters_rs)):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"Un fournisseur « {rs_n} » existe déjà",
+            )
+        if email and email.strip():
+            em = email.strip().lower()
+            filters_em = [
+                func.lower(Fournisseur.email) == em,
+                Fournisseur.deleted_at.is_(None),
+            ]
+            if exclude_id:
+                filters_em.append(Fournisseur.id != exclude_id)
+            if await self.db.scalar(select(func.count()).select_from(Fournisseur).where(*filters_em)):
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail=f"Un fournisseur avec l’e-mail « {em} » existe déjà",
+                )
+
+    async def list_fournisseurs(
+        self,
+        *,
+        q: str | None = None,
+        statut: str | None = None,
+        type_fournisseur: str | None = None,
+        ville: str | None = None,
+        pays: str | None = None,
+        actifs_seulement: bool = True,
+        page: int = 1,
+        size: int = 50,
+    ) -> tuple[list[dict], int]:
+        filters = [Fournisseur.deleted_at.is_(None)]
+        if actifs_seulement and statut != "INACTIF":
+            filters.append(Fournisseur.is_active.is_(True))
+        if statut == "ACTIF":
+            filters.append(Fournisseur.is_active.is_(True))
+        elif statut == "INACTIF":
+            filters.append(Fournisseur.is_active.is_(False))
+        if type_fournisseur:
+            filters.append(Fournisseur.type_fournisseur == type_fournisseur.strip().upper())
+        if ville:
+            filters.append(Fournisseur.ville.ilike(f"%{ville.strip()}%"))
+        if pays:
+            filters.append(Fournisseur.pays.ilike(f"%{pays.strip()}%"))
         if q:
             like = f"%{q.strip()}%"
-            stmt = stmt.where(
+            filters.append(
                 or_(
-                    Fournisseur.raison_sociale.ilike(like),
                     Fournisseur.code.ilike(like),
+                    Fournisseur.raison_sociale.ilike(like),
+                    Fournisseur.nom_commercial.ilike(like),
+                    Fournisseur.telephone.ilike(like),
+                    Fournisseur.email.ilike(like),
+                    Fournisseur.nif.ilike(like),
                 )
             )
-        return list((await self.db.execute(stmt)).scalars().all())
+        total = int(
+            await self.db.scalar(select(func.count()).select_from(Fournisseur).where(*filters)) or 0
+        )
+        stmt = (
+            select(Fournisseur)
+            .where(*filters)
+            .order_by(Fournisseur.raison_sociale)
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+        rows = list((await self.db.execute(stmt)).scalars().all())
+        # Compteurs batch pour la liste
+        ids = [r.id for r in rows]
+        counts: dict[uuid.UUID, dict[str, int]] = {i: {"nb_bons": 0, "nb_devis": 0, "nb_factures": 0} for i in ids}
+        if ids:
+            for model, key, col in (
+                (MgBonCommande, "nb_bons", MgBonCommande.fournisseur_id),
+                (MgAchatDevis, "nb_devis", MgAchatDevis.fournisseur_id),
+                (MgAchatFacture, "nb_factures", MgAchatFacture.fournisseur_id),
+            ):
+                result = await self.db.execute(
+                    select(col, func.count())
+                    .where(col.in_(ids), model.deleted_at.is_(None))
+                    .group_by(col)
+                )
+                for fid, n in result.all():
+                    counts[fid][key] = int(n)
+        out = []
+        for fr in rows:
+            snap = self._frs_snapshot(fr)
+            snap.update(counts.get(fr.id, {}))
+            out.append(snap)
+        return out, total
 
-    async def get_fournisseur_summary(self, fournisseur_id: uuid.UUID) -> dict:
+    async def get_fournisseur(self, fournisseur_id: uuid.UUID) -> Fournisseur:
         fr = await self.db.get(Fournisseur, fournisseur_id)
         if not fr or fr.deleted_at is not None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Fournisseur introuvable")
+        return fr
+
+    async def get_fournisseur_summary(self, fournisseur_id: uuid.UUID) -> dict:
+        fr = await self.get_fournisseur(fournisseur_id)
+        nb_consultations = int(
+            await self.db.scalar(
+                select(func.count())
+                .select_from(MgAchatConsultationFournisseur)
+                .where(MgAchatConsultationFournisseur.fournisseur_id == fournisseur_id)
+            )
+            or 0
+        )
         nb_bons = int(
             await self.db.scalar(
                 select(func.count()).select_from(MgBonCommande).where(
@@ -435,24 +707,227 @@ class MgAchatsService:
             )
             or 0
         )
+        nb_paiements = int(
+            await self.db.scalar(
+                select(func.count()).select_from(MgAchatPaiement).where(
+                    MgAchatPaiement.fournisseur_id == fournisseur_id,
+                    MgAchatPaiement.deleted_at.is_(None),
+                )
+            )
+            or 0
+        )
+        # Réceptions via BC du fournisseur
+        nb_receptions = int(
+            await self.db.scalar(
+                select(func.count())
+                .select_from(MgAchatReception)
+                .join(MgBonCommande, MgAchatReception.bon_id == MgBonCommande.id)
+                .where(
+                    MgBonCommande.fournisseur_id == fournisseur_id,
+                    MgAchatReception.deleted_at.is_(None),
+                    MgBonCommande.deleted_at.is_(None),
+                )
+            )
+            or 0
+        )
         montant_bons = await self.db.scalar(
             select(func.coalesce(func.sum(MgBonCommande.total_ttc), 0)).where(
                 MgBonCommande.fournisseur_id == fournisseur_id,
                 MgBonCommande.deleted_at.is_(None),
             )
         )
-        return {
-            "id": fr.id,
-            "code": fr.code,
-            "raison_sociale": fr.raison_sociale,
-            "telephone": fr.telephone,
-            "email": fr.email,
-            "adresse": fr.adresse,
-            "nb_bons": nb_bons,
-            "nb_devis": nb_devis,
-            "nb_factures": nb_factures,
-            "montant_bons": Decimal(montant_bons or 0),
+        montant_factures = await self.db.scalar(
+            select(func.coalesce(func.sum(MgAchatFacture.montant_ttc), 0)).where(
+                MgAchatFacture.fournisseur_id == fournisseur_id,
+                MgAchatFacture.deleted_at.is_(None),
+            )
+        )
+        snap = self._frs_snapshot(fr)
+        snap.update(
+            {
+                "nb_consultations": nb_consultations,
+                "nb_devis": nb_devis,
+                "nb_bons": nb_bons,
+                "nb_receptions": nb_receptions,
+                "nb_factures": nb_factures,
+                "nb_paiements": nb_paiements,
+                "montant_bons": Decimal(montant_bons or 0),
+                "montant_factures": Decimal(montant_factures or 0),
+            }
+        )
+        return snap
+
+    async def create_fournisseur(self, data: FournisseurCreate, user: User) -> Fournisseur:
+        await self._assert_fournisseur_unique(
+            code=data.code,
+            raison_sociale=data.raison_sociale,
+            email=data.email,
+        )
+        payload = data.model_dump()
+        payload["code"] = data.code.strip().upper()
+        payload["raison_sociale"] = data.raison_sociale.strip()
+        payload["type_fournisseur"] = (data.type_fournisseur or "FOURNITURE").strip().upper()
+        fr = Fournisseur(**payload, created_by=user.id, updated_by=user.id, is_active=True)
+        self.db.add(fr)
+        await self.db.flush()
+        await self._append_event("fournisseur", fr.id, "create", fr.code, user)
+        await self.db.commit()
+        await self.db.refresh(fr)
+        return fr
+
+    async def update_fournisseur(
+        self, fournisseur_id: uuid.UUID, data: FournisseurUpdate, user: User
+    ) -> Fournisseur:
+        fr = await self.get_fournisseur(fournisseur_id)
+        before = self._frs_snapshot(fr)
+        patch = data.model_dump(exclude_unset=True)
+        if "code" in patch and patch["code"]:
+            patch["code"] = patch["code"].strip().upper()
+        if "raison_sociale" in patch and patch["raison_sociale"]:
+            patch["raison_sociale"] = patch["raison_sociale"].strip()
+        if "type_fournisseur" in patch and patch["type_fournisseur"]:
+            patch["type_fournisseur"] = patch["type_fournisseur"].strip().upper()
+        await self._assert_fournisseur_unique(
+            code=patch.get("code") or fr.code,
+            raison_sociale=patch.get("raison_sociale") or fr.raison_sociale,
+            email=patch["email"] if "email" in patch else fr.email,
+            exclude_id=fr.id,
+        )
+        for key, val in patch.items():
+            if key in self._FRS_FIELDS or key == "is_active":
+                setattr(fr, key, val)
+        fr.updated_by = user.id
+        await self._append_event("fournisseur", fr.id, "update", fr.code, user)
+        await self.db.commit()
+        await self.db.refresh(fr)
+        fr._audit_before = before  # type: ignore[attr-defined]
+        return fr
+
+    async def set_fournisseur_active(
+        self, fournisseur_id: uuid.UUID, active: bool, user: User
+    ) -> Fournisseur:
+        fr = await self.get_fournisseur(fournisseur_id)
+        fr.is_active = active
+        fr.updated_by = user.id
+        await self._append_event(
+            "fournisseur",
+            fr.id,
+            "activate" if active else "deactivate",
+            fr.code,
+            user,
+        )
+        await self.db.commit()
+        await self.db.refresh(fr)
+        return fr
+
+    async def count_fournisseur_usage(self, fournisseur_id: uuid.UUID) -> dict[str, int]:
+        from app.models.immobilisation import Immobilisation
+        from app.models.mg_ops import MgContrat
+
+        usage = {
+            "consultations": int(
+                await self.db.scalar(
+                    select(func.count())
+                    .select_from(MgAchatConsultationFournisseur)
+                    .where(MgAchatConsultationFournisseur.fournisseur_id == fournisseur_id)
+                )
+                or 0
+            ),
+            "devis": int(
+                await self.db.scalar(
+                    select(func.count()).select_from(MgAchatDevis).where(
+                        MgAchatDevis.fournisseur_id == fournisseur_id,
+                        MgAchatDevis.deleted_at.is_(None),
+                    )
+                )
+                or 0
+            ),
+            "comparaisons": int(
+                await self.db.scalar(
+                    select(func.count()).select_from(MgAchatComparaison).where(
+                        MgAchatComparaison.fournisseur_retenu_id == fournisseur_id,
+                        MgAchatComparaison.deleted_at.is_(None),
+                    )
+                )
+                or 0
+            ),
+            "bons": int(
+                await self.db.scalar(
+                    select(func.count()).select_from(MgBonCommande).where(
+                        MgBonCommande.fournisseur_id == fournisseur_id,
+                        MgBonCommande.deleted_at.is_(None),
+                    )
+                )
+                or 0
+            ),
+            "bl": int(
+                await self.db.scalar(
+                    select(func.count()).select_from(MgAchatBl).where(
+                        MgAchatBl.fournisseur_id == fournisseur_id,
+                        MgAchatBl.deleted_at.is_(None),
+                    )
+                )
+                or 0
+            ),
+            "factures": int(
+                await self.db.scalar(
+                    select(func.count()).select_from(MgAchatFacture).where(
+                        MgAchatFacture.fournisseur_id == fournisseur_id,
+                        MgAchatFacture.deleted_at.is_(None),
+                    )
+                )
+                or 0
+            ),
+            "paiements": int(
+                await self.db.scalar(
+                    select(func.count()).select_from(MgAchatPaiement).where(
+                        MgAchatPaiement.fournisseur_id == fournisseur_id,
+                        MgAchatPaiement.deleted_at.is_(None),
+                    )
+                )
+                or 0
+            ),
+            "immobilisations": int(
+                await self.db.scalar(
+                    select(func.count()).select_from(Immobilisation).where(
+                        Immobilisation.fournisseur_id == fournisseur_id,
+                        Immobilisation.deleted_at.is_(None),
+                    )
+                )
+                or 0
+            ),
+            "contrats": int(
+                await self.db.scalar(
+                    select(func.count()).select_from(MgContrat).where(
+                        MgContrat.fournisseur_id == fournisseur_id,
+                        MgContrat.deleted_at.is_(None),
+                    )
+                )
+                or 0
+            ),
         }
+        return usage
+
+    async def soft_delete_fournisseur(self, fournisseur_id: uuid.UUID, user: User) -> Fournisseur:
+        fr = await self.get_fournisseur(fournisseur_id)
+        usage = await self.count_fournisseur_usage(fournisseur_id)
+        total = sum(usage.values())
+        if total > 0:
+            details = ", ".join(f"{k}={v}" for k, v in usage.items() if v)
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Ce fournisseur est utilisé dans des données métier existantes. "
+                    "La suppression est impossible. Veuillez le désactiver. "
+                    f"({details})"
+                ),
+            )
+        fr.is_active = False
+        fr.deleted_at = datetime.now(timezone.utc)
+        fr.updated_by = user.id
+        await self._append_event("fournisseur", fr.id, "delete", fr.code, user)
+        await self.db.commit()
+        return fr
 
     # --- Demandes ---
 
@@ -469,6 +944,7 @@ class MgAchatsService:
                     MgAchatDemande.reference.ilike(like),
                     MgAchatDemande.demandeur_nom.ilike(like),
                     MgAchatDemande.projet.ilike(like),
+                    MgAchatDemande.motif.ilike(like),
                 )
             )
         total = int(
@@ -496,6 +972,35 @@ class MgAchatsService:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Demande introuvable")
         return row
 
+    async def _demande_links(self, demande_id: uuid.UUID) -> dict:
+        cons_id = await self.db.scalar(
+            select(MgAchatConsultation.id)
+            .where(
+                MgAchatConsultation.demande_id == demande_id,
+                MgAchatConsultation.deleted_at.is_(None),
+            )
+            .order_by(MgAchatConsultation.created_at.desc())
+            .limit(1)
+        )
+        bon_id = await self.db.scalar(
+            select(MgBonCommande.id)
+            .where(
+                MgBonCommande.demande_id == demande_id,
+                MgBonCommande.deleted_at.is_(None),
+            )
+            .order_by(MgBonCommande.created_at.desc())
+            .limit(1)
+        )
+        return {"consultation_id": cons_id, "bon_id": bon_id}
+
+    async def serialize_demande(self, demande: MgAchatDemande) -> dict:
+        from app.schemas.mg_achats import DemandeOut
+
+        links = await self._demande_links(demande.id)
+        data = DemandeOut.model_validate(demande).model_dump()
+        data.update(links)
+        return data
+
     def _apply_demande_lignes(self, demande: MgAchatDemande, lignes) -> None:
         demande.lignes.clear()
         for i, row in enumerate(lignes):
@@ -514,6 +1019,14 @@ class MgAchatsService:
             )
 
     async def create_demande(self, data: DemandeCreate, user: User) -> MgAchatDemande:
+        if not data.lignes:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Au moins une ligne est obligatoire",
+            )
+        ag = await self.db.get(Agence, data.agence_id)
+        if not ag or getattr(ag, "deleted_at", None) is not None or not ag.is_active:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Agence invalide")
         demande = MgAchatDemande(
             reference=await self._next_ref(
                 "prefix_demande", MgAchatDemande, MgAchatDemande.reference, "DA"
@@ -524,8 +1037,8 @@ class MgAchatsService:
             demandeur_id=user.id,
             demandeur_nom=data.demandeur_nom or user.full_name,
             fonction=data.fonction,
-            type_achat=data.type_achat or "FOURNITURE",
-            priorite=data.priorite or "NORMAL",
+            type_achat=(data.type_achat or "FOURNITURE").strip().upper(),
+            priorite=(data.priorite or "NORMAL").strip().upper(),
             projet=data.projet,
             motif=data.motif,
             date_souhaitee=data.date_souhaitee,
@@ -540,10 +1053,19 @@ class MgAchatsService:
         await self.db.commit()
         return await self.get_demande(demande.id)
 
-    async def update_demande(self, demande_id: uuid.UUID, data: DemandeUpdate) -> MgAchatDemande:
+    async def update_demande(
+        self, demande_id: uuid.UUID, data: DemandeUpdate, user: User
+    ) -> MgAchatDemande:
         demande = await self.get_demande(demande_id)
-        if demande.statut not in {"BROUILLON", "SOUMISE"}:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Demande non modifiable")
+        if demande.statut != "BROUILLON":
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Seules les demandes en brouillon peuvent être modifiées",
+            )
+        if data.agence_id is not None:
+            ag = await self.db.get(Agence, data.agence_id)
+            if not ag or getattr(ag, "deleted_at", None) is not None or not ag.is_active:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Agence invalide")
         for field in (
             "date_demande",
             "agence_id",
@@ -560,11 +1082,41 @@ class MgAchatsService:
         ):
             val = getattr(data, field)
             if val is not None:
+                if field in {"type_achat", "priorite"} and isinstance(val, str):
+                    val = val.strip().upper()
                 setattr(demande, field, val)
         if data.lignes is not None:
+            if not data.lignes:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail="Au moins une ligne est obligatoire",
+                )
             self._apply_demande_lignes(demande, data.lignes)
+        await self._append_event("demande", demande.id, "update", demande.reference, user)
         await self.db.commit()
         return await self.get_demande(demande.id)
+
+    async def delete_demande(self, demande_id: uuid.UUID, user: User) -> MgAchatDemande:
+        demande = await self.get_demande(demande_id)
+        links = await self._demande_links(demande_id)
+        if links["consultation_id"] or links["bon_id"]:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Cette demande est liée à une consultation ou un bon de commande. "
+                    "La suppression est impossible. Veuillez l’annuler."
+                ),
+            )
+        if demande.statut not in {"BROUILLON", "ANNULEE", "REJETEE"}:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Seules les demandes brouillon / annulées / rejetées peuvent être supprimées",
+            )
+        demande.is_active = False
+        demande.deleted_at = datetime.now(timezone.utc)
+        await self._append_event("demande", demande.id, "delete", demande.reference, user)
+        await self.db.commit()
+        return demande
 
     async def transition_demande(
         self, demande_id: uuid.UUID, action: str, user: User
@@ -586,12 +1138,75 @@ class MgAchatsService:
                     status.HTTP_400_BAD_REQUEST,
                     detail=f"Transition impossible depuis {demande.statut}",
                 )
-        if key in {"rejeter", "annuler"} and demande.statut in {
-            "CLOTUREE",
-            "REJETEE",
-            "ANNULEE",
-        }:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Statut final")
+        if key in {"rejeter", "annuler"} and demande.statut == new_statut:
+            return demande
+        if key == "soumettre" and not demande.lignes:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Impossible de soumettre une demande sans ligne",
+            )
+
+        created_consultation_id: uuid.UUID | None = None
+        created_bon_id: uuid.UUID | None = None
+
+        if key == "lancer_consultation":
+            cons = MgAchatConsultation(
+                reference=await self._next_ref(
+                    "prefix_consultation",
+                    MgAchatConsultation,
+                    MgAchatConsultation.reference,
+                    "CONS",
+                ),
+                date_consultation=date.today(),
+                demande_id=demande.id,
+                agence_id=demande.agence_id,
+                objet=(demande.motif or f"Consultation suite {demande.reference}").strip()[:255],
+                responsable_id=user.id,
+                observation=demande.observation,
+                statut="BROUILLON",
+            )
+            self.db.add(cons)
+            await self.db.flush()
+            created_consultation_id = cons.id
+            await self._append_event(
+                "consultation", cons.id, "create", f"Depuis {demande.reference}", user
+            )
+
+        if key == "commander":
+            tva = Decimal(await self.get_parametre("tva_defaut", "0") or "0")
+            if not demande.lignes:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail="Impossible de commander sans ligne",
+                )
+            bon = await self.create_bon(
+                BonCreate(
+                    date_bc=date.today(),
+                    demande_id=demande.id,
+                    agence_facturation_id=demande.agence_id,
+                    agence_livraison_id=demande.agence_id,
+                    type_achat=demande.type_achat,
+                    projet=demande.projet,
+                    demandeur_nom=demande.demandeur_nom,
+                    demandeur_date=demande.date_demande,
+                    observation=f"Issu de {demande.reference}",
+                    lignes=[
+                        {
+                            "description": ln.designation,
+                            "quantite": ln.quantite,
+                            "uom": ln.uom or "U",
+                            "prix_unitaire": ln.prix_estime or Decimal("0"),
+                            "article_id": ln.article_id,
+                            "taux_tva": tva,
+                        }
+                        for ln in sorted(demande.lignes, key=lambda x: x.sort_order)
+                    ],
+                ),
+                user,
+            )
+            created_bon_id = bon.id
+            demande = await self.get_demande(demande_id)
+
         demande.statut = new_statut
         await self._append_event(
             "demande",
@@ -601,21 +1216,33 @@ class MgAchatsService:
             user,
         )
         await self.db.commit()
-        return await self.get_demande(demande.id)
+        demande = await self.get_demande(demande.id)
+        demande._created_consultation_id = created_consultation_id  # type: ignore[attr-defined]
+        demande._created_bon_id = created_bon_id  # type: ignore[attr-defined]
+        return demande
 
     # --- Consultations ---
 
     async def list_consultations(
-        self, *, statut: str | None = None
+        self, *, statut: str | None = None, q: str | None = None
     ) -> list[MgAchatConsultation]:
+        filters = [MgAchatConsultation.deleted_at.is_(None)]
+        if statut:
+            filters.append(MgAchatConsultation.statut == statut)
+        if q:
+            like = f"%{q.strip()}%"
+            filters.append(
+                or_(
+                    MgAchatConsultation.reference.ilike(like),
+                    MgAchatConsultation.objet.ilike(like),
+                )
+            )
         stmt = (
             select(MgAchatConsultation)
             .options(selectinload(MgAchatConsultation.fournisseurs))
-            .where(MgAchatConsultation.deleted_at.is_(None))
+            .where(*filters)
             .order_by(MgAchatConsultation.date_consultation.desc())
         )
-        if statut:
-            stmt = stmt.where(MgAchatConsultation.statut == statut)
         return list((await self.db.execute(stmt)).scalars().all())
 
     async def get_consultation(self, consultation_id: uuid.UUID) -> MgAchatConsultation:
@@ -631,11 +1258,39 @@ class MgAchatsService:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Consultation introuvable")
         return row
 
+    async def _assert_active_fournisseurs(self, fournisseur_ids: list[uuid.UUID]) -> None:
+        if not fournisseur_ids:
+            return
+        unique = list(dict.fromkeys(fournisseur_ids))
+        rows = list(
+            (
+                await self.db.execute(
+                    select(Fournisseur).where(
+                        Fournisseur.id.in_(unique),
+                        Fournisseur.deleted_at.is_(None),
+                    )
+                )
+            ).scalars().all()
+        )
+        by_id = {r.id: r for r in rows}
+        for fid in unique:
+            fr = by_id.get(fid)
+            if not fr:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail=f"Fournisseur introuvable ({fid})",
+                )
+            if not fr.is_active:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail=f"Le fournisseur « {fr.raison_sociale} » est inactif et ne peut pas être invité",
+                )
+
     def _set_consultation_fournisseurs(
         self, consultation: MgAchatConsultation, fournisseur_ids: list[uuid.UUID]
     ) -> None:
         consultation.fournisseurs.clear()
-        for fid in fournisseur_ids:
+        for fid in dict.fromkeys(fournisseur_ids):
             consultation.fournisseurs.append(
                 MgAchatConsultationFournisseur(fournisseur_id=fid)
             )
@@ -643,6 +1298,17 @@ class MgAchatsService:
     async def create_consultation(
         self, data: ConsultationCreate, user: User
     ) -> MgAchatConsultation:
+        ag = await self.db.get(Agence, data.agence_id)
+        if not ag or getattr(ag, "deleted_at", None) is not None or not ag.is_active:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Agence invalide")
+        if data.demande_id:
+            dem = await self.get_demande(data.demande_id)
+            if dem.statut in {"ANNULEE", "REJETEE"}:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail="Impossible de lier une demande annulée ou rejetée",
+                )
+        await self._assert_active_fournisseurs(data.fournisseur_ids)
         row = MgAchatConsultation(
             reference=await self._next_ref(
                 "prefix_consultation",
@@ -667,9 +1333,18 @@ class MgAchatsService:
         return await self.get_consultation(row.id)
 
     async def update_consultation(
-        self, consultation_id: uuid.UUID, data: ConsultationUpdate
+        self, consultation_id: uuid.UUID, data: ConsultationUpdate, user: User
     ) -> MgAchatConsultation:
         row = await self.get_consultation(consultation_id)
+        if row.statut not in {"BROUILLON", "OUVERTE"}:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Consultation non modifiable dans cet état",
+            )
+        if data.agence_id is not None:
+            ag = await self.db.get(Agence, data.agence_id)
+            if not ag or getattr(ag, "deleted_at", None) is not None or not ag.is_active:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Agence invalide")
         for field in (
             "date_consultation",
             "demande_id",
@@ -677,17 +1352,122 @@ class MgAchatsService:
             "objet",
             "date_limite",
             "observation",
-            "statut",
         ):
             val = getattr(data, field)
             if val is not None:
                 setattr(row, field, val if field != "objet" else val.strip())
         if data.fournisseur_ids is not None:
+            await self._assert_active_fournisseurs(data.fournisseur_ids)
             self._set_consultation_fournisseurs(row, data.fournisseur_ids)
+        await self._append_event("consultation", row.id, "update", row.reference, user)
         await self.db.commit()
         return await self.get_consultation(row.id)
 
-    def consultation_to_out(self, row: MgAchatConsultation) -> dict:
+    async def transition_consultation(
+        self, consultation_id: uuid.UUID, action: str, user: User
+    ) -> MgAchatConsultation:
+        row = await self.get_consultation(consultation_id)
+        key = action.strip().lower()
+        if key not in CONSULTATION_TRANSITIONS:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Action invalide")
+        expected, new_statut = CONSULTATION_TRANSITIONS[key]
+        if expected is not None and row.statut != expected:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"Transition impossible depuis {row.statut}",
+            )
+        if key == "ouvrir" and not row.fournisseurs:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Invitez au moins un fournisseur avant d’ouvrir la consultation",
+            )
+        if key == "annuler" and row.statut == "ANNULEE":
+            return row
+        row.statut = new_statut
+        await self._append_event(
+            "consultation", row.id, key, f"{row.reference} → {new_statut}", user
+        )
+        await self.db.commit()
+        return await self.get_consultation(row.id)
+
+    async def delete_consultation(
+        self, consultation_id: uuid.UUID, user: User
+    ) -> MgAchatConsultation:
+        row = await self.get_consultation(consultation_id)
+        nb_devis = int(
+            await self.db.scalar(
+                select(func.count()).select_from(MgAchatDevis).where(
+                    MgAchatDevis.consultation_id == consultation_id,
+                    MgAchatDevis.deleted_at.is_(None),
+                )
+            )
+            or 0
+        )
+        nb_cmp = int(
+            await self.db.scalar(
+                select(func.count()).select_from(MgAchatComparaison).where(
+                    MgAchatComparaison.consultation_id == consultation_id,
+                    MgAchatComparaison.deleted_at.is_(None),
+                )
+            )
+            or 0
+        )
+        if nb_devis or nb_cmp:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Cette consultation est liée à des devis ou comparaisons. "
+                    "La suppression est impossible. Veuillez l’annuler."
+                ),
+            )
+        if row.statut not in {"BROUILLON", "ANNULEE"}:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Seules les consultations brouillon ou annulées peuvent être supprimées",
+            )
+        row.is_active = False
+        row.deleted_at = datetime.now(timezone.utc)
+        await self._append_event("consultation", row.id, "delete", row.reference, user)
+        await self.db.commit()
+        return row
+
+    async def consultation_to_out(self, row: MgAchatConsultation) -> dict:
+        ids = [f.fournisseur_id for f in row.fournisseurs]
+        fournisseurs: list[dict] = []
+        if ids:
+            frs = list(
+                (
+                    await self.db.execute(
+                        select(Fournisseur).where(Fournisseur.id.in_(ids))
+                    )
+                ).scalars().all()
+            )
+            by_id = {f.id: f for f in frs}
+            for fid in ids:
+                fr = by_id.get(fid)
+                if fr:
+                    fournisseurs.append(
+                        {
+                            "id": str(fr.id),
+                            "code": fr.code,
+                            "raison_sociale": fr.raison_sociale,
+                            "is_active": fr.is_active,
+                        }
+                    )
+        dem_ref = None
+        if row.demande_id:
+            dem_ref = await self.db.scalar(
+                select(MgAchatDemande.reference).where(MgAchatDemande.id == row.demande_id)
+            )
+        nb_devis = int(
+            await self.db.scalar(
+                select(func.count()).select_from(MgAchatDevis).where(
+                    MgAchatDevis.consultation_id == row.id,
+                    MgAchatDevis.deleted_at.is_(None),
+                )
+            )
+            or 0
+        )
         return {
             "id": row.id,
             "reference": row.reference,
@@ -699,7 +1479,11 @@ class MgAchatsService:
             "responsable_id": row.responsable_id,
             "statut": row.statut,
             "observation": row.observation,
-            "fournisseur_ids": [f.fournisseur_id for f in row.fournisseurs],
+            "fournisseur_ids": ids,
+            "fournisseurs": fournisseurs,
+            "demande_reference": dem_ref,
+            "nb_devis": nb_devis,
+            "nb_fournisseurs": len(ids),
         }
 
     # --- Devis ---
@@ -754,6 +1538,23 @@ class MgAchatsService:
         devis.montant_ttc = _money(total_ht + total_tva)
 
     async def create_devis(self, data: DevisCreate, user: User) -> MgAchatDevis:
+        if not data.lignes:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Au moins une ligne est requise pour le devis",
+            )
+        if data.consultation_id:
+            invited = await self.db.scalar(
+                select(MgAchatConsultationFournisseur.id).where(
+                    MgAchatConsultationFournisseur.consultation_id == data.consultation_id,
+                    MgAchatConsultationFournisseur.fournisseur_id == data.fournisseur_id,
+                )
+            )
+            if not invited:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail="Ce fournisseur n'est pas invité sur la consultation sélectionnée",
+                )
         row = MgAchatDevis(
             reference=await self._next_ref(
                 "prefix_devis", MgAchatDevis, MgAchatDevis.reference, "DEV"
@@ -778,6 +1579,17 @@ class MgAchatsService:
 
     async def update_devis(self, devis_id: uuid.UUID, data: DevisUpdate) -> MgAchatDevis:
         row = await self.get_devis(devis_id)
+        locked = {"RETENU", "REJETE", "ANNULE"}
+        if row.statut in locked:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Ce devis ne peut plus être modifié (statut final)",
+            )
+        if data.lignes is not None and not data.lignes:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Au moins une ligne est requise pour le devis",
+            )
         for field in (
             "date_devis",
             "date_validite",
@@ -820,6 +1632,19 @@ class MgAchatsService:
     async def create_comparaison(
         self, data: ComparaisonCreate, user: User
     ) -> MgAchatComparaison:
+        devis_rows = await self.list_devis(consultation_id=data.consultation_id)
+        snapshot = {
+            "devis": [
+                {
+                    "id": str(d.id),
+                    "ref": d.reference,
+                    "fournisseur_id": str(d.fournisseur_id),
+                    "montant_ttc": str(d.montant_ttc),
+                }
+                for d in devis_rows
+            ]
+        }
+        snapshot_json = data.snapshot_json or json.dumps(snapshot, ensure_ascii=False)
         row = MgAchatComparaison(
             reference=await self._next_ref(
                 "prefix_comparaison",
@@ -830,7 +1655,7 @@ class MgAchatsService:
             consultation_id=data.consultation_id,
             demande_id=data.demande_id,
             observation=data.observation,
-            snapshot_json=data.snapshot_json,
+            snapshot_json=snapshot_json,
             statut="BROUILLON",
         )
         self.db.add(row)
@@ -858,9 +1683,20 @@ class MgAchatsService:
         row = await self.get_comparaison(comparaison_id)
         if row.statut not in {"BROUILLON", "EN_COURS"}:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Comparaison déjà validée")
+        devis_list = await self.list_devis(consultation_id=row.consultation_id)
+        if not any(d.fournisseur_id == data.fournisseur_retenu_id for d in devis_list):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Aucun devis du fournisseur retenu sur cette consultation",
+            )
         row.fournisseur_retenu_id = data.fournisseur_retenu_id
         row.motif_choix = data.motif_choix
         row.statut = "VALIDEE"
+        for d in devis_list:
+            if d.fournisseur_id == data.fournisseur_retenu_id:
+                d.statut = "RETENU"
+            elif d.statut not in {"ANNULE", "REJETE"}:
+                d.statut = "REJETE"
         await self._append_event(
             "comparaison",
             row.id,
@@ -1024,8 +1860,6 @@ class MgAchatsService:
 
     async def update_bon(self, bon_id: uuid.UUID, data: BonUpdate) -> MgBonCommande:
         bon = await self.get_bon(bon_id)
-        if bon.statut == "CLOTURE":
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Bon clôturé : non modifiable")
         for field in (
             "date_bc",
             "fournisseur_id",
@@ -1098,24 +1932,9 @@ class MgAchatsService:
                     status.HTTP_400_BAD_REQUEST,
                     detail=f"Transition impossible depuis {bon.statut} (attendu : {expected})",
                 )
-        if key in {"rejeter", "annuler"} and bon.statut in {
-            "RECU",
-            "CLOTURE",
-            "REJETEE",
-            "ANNULEE",
-            "PARTIEL",
-        }:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail=f"Annulation impossible : statut {bon.statut}",
-            )
-        if key == "annuler" and any(
-            (getattr(l, "quantite_recue", None) or 0) > 0 for l in (bon.lignes or [])
-        ):
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail="Annulation impossible : réception déjà commencée",
-            )
+        # Annulation / rejet : toujours possible (y compris après réception).
+        if key in {"rejeter", "annuler"} and bon.statut == new_statut:
+            return bon
         now = datetime.now(timezone.utc)
         if key == "visa_mg":
             bon.visa_mg_at, bon.visa_mg_by = now, user.id
@@ -1127,6 +1946,50 @@ class MgAchatsService:
         return await self.get_bon(bon.id)
 
     # --- BL ---
+
+    async def _bon_references_map(
+        self, bon_ids: set[uuid.UUID]
+    ) -> dict[uuid.UUID, str]:
+        if not bon_ids:
+            return {}
+        rows = await self.db.execute(
+            select(MgBonCommande.id, MgBonCommande.reference).where(
+                MgBonCommande.id.in_(bon_ids)
+            )
+        )
+        return {row[0]: row[1] for row in rows.all()}
+
+    async def serialize_bl(self, row: MgAchatBl) -> BlOut:
+        refs = await self._bon_references_map({row.bon_id})
+        return BlOut.model_validate(row).model_copy(
+            update={"bon_reference": refs.get(row.bon_id)}
+        )
+
+    async def serialize_bl_list(self, rows: list[MgAchatBl]) -> list[BlOut]:
+        refs = await self._bon_references_map({r.bon_id for r in rows})
+        return [
+            BlOut.model_validate(r).model_copy(
+                update={"bon_reference": refs.get(r.bon_id)}
+            )
+            for r in rows
+        ]
+
+    async def serialize_reception(self, row: MgAchatReception) -> ReceptionOut:
+        refs = await self._bon_references_map({row.bon_id})
+        return ReceptionOut.model_validate(row).model_copy(
+            update={"bon_reference": refs.get(row.bon_id)}
+        )
+
+    async def serialize_reception_list(
+        self, rows: list[MgAchatReception]
+    ) -> list[ReceptionOut]:
+        refs = await self._bon_references_map({r.bon_id for r in rows})
+        return [
+            ReceptionOut.model_validate(r).model_copy(
+                update={"bon_reference": refs.get(r.bon_id)}
+            )
+            for r in rows
+        ]
 
     async def list_bl(self, *, bon_id: uuid.UUID | None = None) -> list[MgAchatBl]:
         stmt = (
@@ -1206,6 +2069,13 @@ class MgAchatsService:
                 status.HTTP_400_BAD_REQUEST,
                 detail=f"Réception impossible pour statut BC {bon.statut}",
             )
+        if data.bl_id is not None:
+            bl = await self.get_bl(data.bl_id)
+            if bl.bon_id != bon.id:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail="Le BL ne correspond pas au bon de commande",
+                )
         by_id = {l.id: l for l in bon.lignes}
         reception = MgAchatReception(
             reference=await self._next_ref(
@@ -1331,6 +2201,30 @@ class MgAchatsService:
 
     async def create_facture(self, data: FactureCreate, user: User) -> MgAchatFacture:
         bon = await self.get_bon(data.bon_id)
+        fr = await self.db.scalar(
+            select(Fournisseur).where(
+                Fournisseur.id == data.fournisseur_id,
+                Fournisseur.deleted_at.is_(None),
+            )
+        )
+        if fr is None:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, detail="Fournisseur introuvable"
+            )
+        if data.bl_id is not None:
+            bl = await self.get_bl(data.bl_id)
+            if bl.bon_id != bon.id:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail="Le BL ne correspond pas au bon de commande",
+                )
+        if data.reception_id is not None:
+            rec = await self.get_reception(data.reception_id)
+            if rec.bon_id != bon.id:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail="La réception ne correspond pas au bon de commande",
+                )
         row = MgAchatFacture(
             reference=await self._next_ref(
                 "prefix_facture", MgAchatFacture, MgAchatFacture.reference, "FAC"
@@ -1509,4 +2403,69 @@ class MgAchatsService:
             row.statut = "PAYE"
         await self.db.commit()
         await self.db.refresh(row)
+        return row
+
+    # --- Désactivation / suppression logique (toutes fiches) ---
+
+    async def soft_delete_entity(
+        self,
+        kind: str,
+        entity_id: uuid.UUID,
+        user: User,
+    ):
+        getters = {
+            "demande": self.get_demande,
+            "consultation": self.get_consultation,
+            "devis": self.get_devis,
+            "comparaison": self.get_comparaison,
+            "bl": self.get_bl,
+            "reception": self.get_reception,
+            "facture": self.get_facture,
+            "paiement": self.get_paiement,
+        }
+        getter = getters.get(kind)
+        if getter is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Type inconnu")
+        row = await getter(entity_id)
+        if kind == "devis" and getattr(row, "statut", None) == "RETENU":
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Un devis retenu ne peut pas être supprimé",
+            )
+        row.deleted_at = datetime.now(timezone.utc)
+        ref = getattr(row, "reference", None) or str(entity_id)
+        await self._append_event(kind, row.id, "delete", ref, user)
+        await self.db.commit()
+        return row
+
+    async def deactivate_entity(
+        self,
+        kind: str,
+        entity_id: uuid.UUID,
+        user: User,
+    ):
+        """Désactivation métier : statut ANNULE(E) ou is_active=False (fournisseur)."""
+        if kind == "fournisseur":
+            return await self.set_fournisseur_active(entity_id, False, user)
+
+        getters = {
+            "demande": (self.get_demande, "ANNULEE"),
+            "consultation": (self.get_consultation, "ANNULEE"),
+            "devis": (self.get_devis, "ANNULE"),
+            "comparaison": (self.get_comparaison, "ANNULEE"),
+            "bl": (self.get_bl, "ANNULE"),
+            "reception": (self.get_reception, "ANNULEE"),
+            "facture": (self.get_facture, "ANNULEE"),
+            "paiement": (self.get_paiement, "ANNULE"),
+            "bon": (self.get_bon, "ANNULEE"),
+        }
+        conf = getters.get(kind)
+        if conf is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Type inconnu")
+        getter, statut = conf
+        row = await getter(entity_id)
+        row.statut = statut
+        ref = getattr(row, "reference", None) or str(entity_id)
+        await self._append_event(kind, row.id, "deactivate", f"{ref} → {statut}", user)
+        await self.db.commit()
         return row

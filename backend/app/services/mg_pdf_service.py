@@ -57,10 +57,10 @@ def _styles():
         "bc_title": ParagraphStyle(
             "BcTitle",
             parent=base["Normal"],
-            fontSize=15,
-            leading=18,
+            fontSize=13,
+            leading=15,
             spaceBefore=0,
-            spaceAfter=4,
+            spaceAfter=2,
             textColor=colors.HexColor("#0F172A"),
             fontName="Helvetica-Bold",
         ),
@@ -72,20 +72,20 @@ def _styles():
             textColor=BEA_META,
             spaceAfter=8,
         ),
-        "meta": ParagraphStyle("MgMeta", parent=base["Normal"], fontSize=9, leading=12),
+        "meta": ParagraphStyle("MgMeta", parent=base["Normal"], fontSize=8, leading=10),
         "label": ParagraphStyle(
             "BcLabel",
             parent=base["Normal"],
-            fontSize=8,
-            leading=10,
+            fontSize=7,
+            leading=9,
             textColor=colors.HexColor("#475569"),
             fontName="Helvetica-Bold",
         ),
         "value": ParagraphStyle(
             "BcValue",
             parent=base["Normal"],
-            fontSize=9,
-            leading=11,
+            fontSize=8,
+            leading=10,
             textColor=colors.HexColor("#0F172A"),
         ),
         "cell": ParagraphStyle("MgCell", parent=base["Normal"], fontSize=8, leading=10),
@@ -115,8 +115,8 @@ def _styles():
         "visa": ParagraphStyle(
             "BcVisa",
             parent=base["Normal"],
-            fontSize=9,
-            leading=12,
+            fontSize=8,
+            leading=10,
             alignment=TA_CENTER,
             fontName="Helvetica-Bold",
             textColor=BEA_NAVY,
@@ -155,7 +155,7 @@ def money(value: Decimal | None) -> str:
     return f"{value:,.2f}".replace(",", " ").replace(".", ",")
 
 
-def _box(label: str, value: str, styles, *, min_h: float = 10 * mm, width: float = 85 * mm) -> Table:
+def _box(label: str, value: str, styles, *, min_h: float = 8 * mm, width: float = 85 * mm) -> Table:
     """Libellé au-dessus (hors case) + valeur en gras dans le cadre."""
     inner_w = max(width - 2 * mm, 20 * mm)
     raw = (value or "—").strip() or "—"
@@ -166,10 +166,10 @@ def _box(label: str, value: str, styles, *, min_h: float = 10 * mm, width: float
     value_cell.setStyle(
         TableStyle(
             [
-                ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 3),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("BACKGROUND", (0, 0), (-1, -1), colors.white),
             ]
@@ -192,7 +192,7 @@ def _box(label: str, value: str, styles, *, min_h: float = 10 * mm, width: float
     block = Table(
         [
             [Paragraph(label, styles["label"])],
-            [Spacer(1, 1 * mm)],
+            [Spacer(1, 0.5 * mm)],
             [framed],
         ],
         colWidths=[width],
@@ -231,9 +231,9 @@ def _plain_line(label: str, value: str, styles) -> Paragraph:
     )
 
 
-def _visa_block(label: str, styles) -> Table:
+def _visa_block(label: str, styles, *, zone_h: float = 16 * mm, width: float = 80 * mm) -> Table:
     """Libellé + zone de signature vide en dessous (sans texte « Signature / cachet »)."""
-    zone = Table([[""]], colWidths=[80 * mm], rowHeights=[22 * mm])
+    zone = Table([[""]], colWidths=[width], rowHeights=[zone_h])
     zone.setStyle(
         TableStyle(
             [
@@ -246,10 +246,10 @@ def _visa_block(label: str, styles) -> Table:
     block = Table(
         [
             [Paragraph(label, styles["visa"])],
-            [Spacer(1, 3 * mm)],
+            [Spacer(1, 1.5 * mm)],
             [zone],
         ],
-        colWidths=[82 * mm],
+        colWidths=[width + 2 * mm],
     )
     block.setStyle(
         TableStyle(
@@ -257,7 +257,7 @@ def _visa_block(label: str, styles) -> Table:
                 ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("TOPPADDING", (0, 0), (-1, -1), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
             ]
         )
     )
@@ -301,10 +301,10 @@ def pdf_bon_commande(
     doc = SimpleDocTemplate(
         buf,
         pagesize=A4,
-        leftMargin=14 * mm,
-        rightMargin=14 * mm,
-        topMargin=14 * mm,
-        bottomMargin=18 * mm,
+        leftMargin=12 * mm,
+        rightMargin=12 * mm,
+        topMargin=10 * mm,
+        bottomMargin=16 * mm,
         title=f"Bon de commande {bon.reference}",
     )
 
@@ -317,18 +317,18 @@ def pdf_bon_commande(
     logo = resolve_bea_logo_path()
     if logo is not None:
         try:
-            story.append(Image(str(logo), width=42 * mm, height=14 * mm))
-            story.append(Spacer(1, 1 * mm))
+            story.append(Image(str(logo), width=36 * mm, height=12 * mm))
+            story.append(Spacer(1, 0.5 * mm))
         except Exception:
             pass
 
     story.append(Paragraph("BON DE COMMANDE", styles["bc_title"]))
 
-    # Largeur utile A4 (210 − 2×14) = 182 mm — mêmes extrémités gauche/droite partout.
-    content_w = 182 * mm
-    left_w = 85 * mm
-    gutter = 12 * mm
-    right_w = 85 * mm  # 85 + 12 + 85 = 182
+    # Largeur utile A4 (210 − 2×12) = 186 mm — mêmes extrémités gauche/droite partout.
+    content_w = 186 * mm
+    left_w = 88 * mm
+    gutter = 10 * mm
+    right_w = 88 * mm  # 88 + 10 + 88 = 186
 
     # Ligne d’identité : numéro/date et fournisseur alignés (même hauteur / extrémités).
     numero_cell = Table(
@@ -346,10 +346,10 @@ def pdf_bon_commande(
         TableStyle(
             [
                 ("BOX", (0, 0), (-1, -1), 0.5, BEA_LINE),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ]
         )
@@ -374,10 +374,10 @@ def pdf_bon_commande(
             [
                 ("BACKGROUND", (0, 0), (-1, -1), BEA_SOFT),
                 ("BOX", (0, 0), (-1, -1), 0.5, BEA_LINE),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ]
         )
@@ -400,8 +400,8 @@ def pdf_bon_commande(
 
     # Lignes appariées : mêmes hauteurs / extrémités gauche-droite.
     # Conditions… collées sous facturation, même largeur / bord gauche.
-    row_h = 12 * mm
-    row_h_tall = 16 * mm
+    row_h = 9 * mm
+    row_h_tall = 12 * mm
     fields = Table(
         [
             [
@@ -489,10 +489,10 @@ def pdf_bon_commande(
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                 ("TOPPADDING", (0, 0), (-1, -1), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
                 # Conditions / paiement : texte libre sous facturation (sans cadre).
-                ("BOTTOMPADDING", (0, 4), (0, -1), 1),
-                ("TOPPADDING", (0, 4), (0, -1), 1),
+                ("BOTTOMPADDING", (0, 4), (0, -1), 0.5),
+                ("TOPPADDING", (0, 4), (0, -1), 0.5),
             ]
         )
     )
@@ -523,8 +523,8 @@ def pdf_bon_commande(
     if not lignes:
         rows.append(["", "", Paragraph("Aucune ligne", styles["cell"]), "", "", "", ""])
 
-    # Même largeur totale que le bloc infos (182 mm).
-    col_w = [22 * mm, 24 * mm, 58 * mm, 18 * mm, 16 * mm, 22 * mm, 22 * mm]
+    # Même largeur totale que le bloc infos (186 mm).
+    col_w = [22 * mm, 24 * mm, 62 * mm, 18 * mm, 16 * mm, 22 * mm, 22 * mm]
     table = Table(rows, colWidths=col_w, repeatRows=1)
     table.setStyle(
         TableStyle(
@@ -534,10 +534,10 @@ def pdf_bon_commande(
                 ("FONTSIZE", (0, 0), (-1, -1), 8),
                 ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ("LEFTPADDING", (0, 0), (-1, -1), 3),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, BEA_FILL]),
             ]
         )
@@ -576,10 +576,10 @@ def pdf_bon_commande(
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("ALIGN", (0, 0), (0, -1), "LEFT"),
                 ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
             ]
         )
     )
@@ -601,8 +601,8 @@ def pdf_bon_commande(
     visas = Table(
         [
             [
-                _visa_block(s1, styles),
-                _visa_block(s2, styles),
+                _visa_block(s1, styles, zone_h=14 * mm, width=78 * mm),
+                _visa_block(s2, styles, zone_h=14 * mm, width=78 * mm),
             ]
         ],
         colWidths=[left_w + gutter / 2, right_w + gutter / 2],
@@ -621,13 +621,13 @@ def pdf_bon_commande(
     story.extend(
         [
             header,
-            Spacer(1, 3 * mm),
+            Spacer(1, 2 * mm),
             fields,
-            Spacer(1, 4 * mm),
+            Spacer(1, 2.5 * mm),
             table,
-            Spacer(1, 3 * mm),
+            Spacer(1, 2 * mm),
             total_block,
-            Spacer(1, 22 * mm),
+            Spacer(1, 6 * mm),
             KeepTogether([visas]),
         ]
     )

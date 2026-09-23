@@ -79,6 +79,8 @@ class ParametreOut(BaseModel):
 class DashboardAchatsOut(BaseModel):
     demandes_ouvertes: int = 0
     consultations_ouvertes: int = 0
+    devis_ouverts: int = 0
+    comparaisons_ouvertes: int = 0
     bons_en_cours: int = 0
     bons_partiels: int = 0
     receptions_mois: int = 0
@@ -158,6 +160,8 @@ class DemandeOut(BaseModel):
     statut: str
     observation: str | None
     lignes: list[DemandeLigneOut] = []
+    consultation_id: UUID | None = None
+    bon_id: UUID | None = None
 
 
 class ConsultationCreate(BaseModel):
@@ -181,6 +185,13 @@ class ConsultationUpdate(BaseModel):
     statut: str | None = None
 
 
+class ConsultationFournisseurOut(BaseModel):
+    id: str
+    code: str
+    raison_sociale: str
+    is_active: bool = True
+
+
 class ConsultationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -195,6 +206,10 @@ class ConsultationOut(BaseModel):
     statut: str
     observation: str | None
     fournisseur_ids: list[UUID] = []
+    fournisseurs: list[ConsultationFournisseurOut] = []
+    demande_reference: str | None = None
+    nb_devis: int = 0
+    nb_fournisseurs: int = 0
 
 
 class DevisLigneIn(BaseModel):
@@ -308,6 +323,7 @@ class BlOut(BaseModel):
     id: UUID
     reference: str
     bon_id: UUID
+    bon_reference: str | None = None
     fournisseur_id: UUID
     date_bl: date
     date_livraison: date | None
@@ -347,6 +363,7 @@ class ReceptionOut(BaseModel):
     id: UUID
     reference: str
     bon_id: UUID
+    bon_reference: str | None = None
     bl_id: UUID | None
     date_reception: date
     agence_id: UUID | None
@@ -494,6 +511,9 @@ class AlerteOut(BaseModel):
 
 class RapportSummaryOut(BaseModel):
     nb_demandes: int = 0
+    nb_consultations: int = 0
+    nb_devis: int = 0
+    nb_comparaisons: int = 0
     nb_bons: int = 0
     nb_receptions: int = 0
     nb_factures: int = 0
@@ -502,17 +522,60 @@ class RapportSummaryOut(BaseModel):
     montant_paiements: Decimal = Decimal("0")
 
 
+class RapportExportIn(BaseModel):
+    format: str = Field(pattern="^(pdf|xlsx|csv)$")
+    scope: str = Field(default="filtered", pattern="^(selection|filtered)$")
+    ids: list[UUID] = Field(default_factory=list)
+    filters: dict[str, str | None] = Field(default_factory=dict)
+    columns: list[str] | None = None
+
+
+class RapportCustomPreviewIn(BaseModel):
+    dataset: str
+    columns: list[str] = Field(default_factory=list)
+    filters: dict[str, str | None] = Field(default_factory=dict)
+    sort_by: str | None = None
+    sort_dir: str = "desc"
+    page: int = Field(default=1, ge=1)
+    size: int = Field(default=50, ge=1, le=200)
+
+
+class RapportCustomExportIn(RapportCustomPreviewIn):
+    format: str = Field(pattern="^(pdf|xlsx|csv)$")
+    scope: str = Field(default="filtered", pattern="^(selection|filtered)$")
+    ids: list[UUID] = Field(default_factory=list)
+
+
 class FournisseurSummaryOut(BaseModel):
     id: UUID
     code: str | None = None
     raison_sociale: str
+    nom_commercial: str | None = None
+    type_fournisseur: str = "FOURNITURE"
+    contact: str | None = None
+    contact_fonction: str | None = None
     telephone: str | None = None
+    telephone_secondaire: str | None = None
     email: str | None = None
+    site_web: str | None = None
     adresse: str | None = None
-    nb_bons: int = 0
+    ville: str | None = None
+    pays: str | None = None
+    nif: str | None = None
+    rc: str | None = None
+    devise_defaut: str | None = "MRU"
+    mode_paiement_defaut: str | None = None
+    delai_paiement_jours: int | None = None
+    conditions_commerciales: str | None = None
+    is_active: bool = True
+    nb_consultations: int = 0
     nb_devis: int = 0
+    nb_bons: int = 0
+    nb_receptions: int = 0
     nb_factures: int = 0
+    nb_paiements: int = 0
     montant_bons: Decimal = Decimal("0")
+    montant_factures: Decimal = Decimal("0")
 
 
 class PaginatedBonsOut(BaseModel):

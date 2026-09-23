@@ -239,7 +239,7 @@
 .bea-ach__badge[data-prio='URGENT'],
 .bea-ach__badge[data-statut='REJETEE'],
 .bea-ach__badge[data-statut='ANNULEE'] { background: #fee2e2; color: #b91c1c; }
-.bea-ach__badge[data-prio='HAUTE'],
+.bea-ach__badge[data-statut='OUVERTE'],
 .bea-ach__badge[data-statut='SOUMISE'] { background: #fef3c7; color: #b45309; }
 .bea-ach__badge[data-statut='VALIDEE'],
 .bea-ach__badge[data-statut='COMMANDE'] { background: #d1fae5; color: #047857; }
@@ -384,12 +384,14 @@
   font-weight: 600;
 }
 .bea-ach__grid input,
-.bea-ach__grid select {
+.bea-ach__grid select,
+.bea-ach__grid textarea {
   border: 1px solid #cbd5e1;
   border-radius: 0.5rem;
   padding: 0.5rem 0.65rem;
   font: inherit;
 }
+.bea-ach__grid textarea { resize: vertical; min-height: 2.5rem; }
 .bea-ach__form-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .bea-ach__error {
   margin: 0 0 0.75rem;
@@ -416,6 +418,12 @@
   border: 1px solid #bfdbfe;
   font-size: 0.88rem;
   animation: beaAchRise 0.45s ease both;
+}
+.bea-ach__muted {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #64748b;
 }
 .bea-ach__kicker {
   margin: 0;
@@ -524,4 +532,83 @@
   .bea-ach__shortcuts a:hover,
   .bea-ach__icon-btn:hover,
   .bea-ach__btn:hover { transform: none; }
+}
+
+/* Reporting hub */
+.bea-ach__report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  padding: 0.25rem 0 0.5rem;
+}
+.bea-ach__report-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #dbe3ee;
+  border-radius: 0.85rem;
+  background: #fff;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  animation: beaAchRise 0.45s ease both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+.bea-ach__report-card:hover {
+  border-color: #94a3b8;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  transform: translateY(-2px);
+}
+.bea-ach__report-card strong {
+  display: block;
+  font-size: 0.95rem;
+}
+.bea-ach__report-card em {
+  display: block;
+  font-style: normal;
+  color: #64748b;
+  font-size: 0.8rem;
+  margin-top: 0.15rem;
+}
+.bea-ach__report-chevron {
+  margin-left: auto;
+  color: #94a3b8;
+}
+.bea-ach__export-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0 0 0.85rem;
+  padding: 0.75rem 1rem;
+  background: #fff;
+  border: 1px solid #dbe3ee;
+  border-radius: 0.85rem;
+}
+.bea-ach__export-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.bea-ach__col-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1rem;
+  padding: 0.25rem 0 0.5rem;
+}
+.bea-ach__col-pick label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+@media (max-width: 900px) {
+  .bea-ach__report-grid { grid-template-columns: 1fr; }
+}
+@media print {
+  .bea-ach--no-print { display: none !important; }
+  .bea-ach--print .bea-ach__panel { box-shadow: none; border: 0; }
 }

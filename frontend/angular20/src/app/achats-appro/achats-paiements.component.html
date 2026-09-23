@@ -1,0 +1,185 @@
+<section class="bea-ach">
+  @if (mode() === 'list') {
+    <header class="bea-ach__hero">
+      <p>Trésorerie</p>
+      <h1>Suivi des paiements</h1>
+      <div class="bea-ach__hero-glow" aria-hidden="true"></div>
+    </header>
+
+    <p class="bea-ach__note">Suivi interne uniquement. Aucun virement ni écriture comptable n'est émis.</p>
+
+    <div class="bea-ach__head">
+      <div class="bea-ach__kpis bea-ach__kpis--3" style="flex:1;margin:0">
+        <div class="bea-ach__kpi" style="--i:0">
+          <span class="bea-ach__kpi-icon" data-tone="navy"><mat-icon>payments</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>Total suivi</span>
+            <strong>{{ total() | number: '1.0-0' }}</strong>
+            <em>MRU</em>
+          </span>
+        </div>
+        <div class="bea-ach__kpi" style="--i:1">
+          <span class="bea-ach__kpi-icon" data-tone="warn"><mat-icon>schedule</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>À payer</span>
+            <strong>{{ pending() }}</strong>
+            <em>Échéances ouvertes</em>
+          </span>
+        </div>
+        <div class="bea-ach__kpi" style="--i:2">
+          <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>task_alt</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>Payés</span>
+            <strong>{{ rows().length - pending() }}</strong>
+            <em>Soldés</em>
+          </span>
+        </div>
+      </div>
+      <a class="bea-ach__btn" routerLink="/achats-appro/paiements/nouveau">
+        <mat-icon>add</mat-icon> Nouveau suivi
+      </a>
+    </div>
+
+    <form class="bea-ach__search" [formGroup]="filters">
+      <label class="bea-ach__field bea-ach__field--grow">
+        <mat-icon>search</mat-icon>
+        <input formControlName="q" placeholder="Référence ou facture…" (input)="search()" />
+      </label>
+    </form>
+
+    @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
+    @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
+
+    <div class="bea-ach__panel">
+      <div class="bea-ach__panel-top">
+        <h2>Échéancier interne</h2>
+        <span class="bea-ach__count">{{ filtered().length }} résultat(s)</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="bea-ach__table">
+          <thead>
+            <tr>
+              <th>Réf.</th>
+              <th>Montant</th>
+              <th>Échéance</th>
+              <th>Statut</th>
+              <th class="bea-ach__th-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of filtered(); track r.id; let i = $index) {
+              <tr [style.--i]="i">
+                <td><code class="bea-ach__code">{{ r.reference }}</code></td>
+                <td>{{ r.montant | number: '1.2-2' }} MRU</td>
+                <td>{{ r.date_echeance || '—' }}</td>
+                <td><span class="bea-ach__badge" [attr.data-statut]="r.statut">{{ r.statut }}</span></td>
+                <td class="bea-ach__actions">
+                  <button type="button" class="bea-ach__icon-btn" title="Voir" (click)="open(r)">
+                    <mat-icon>visibility</mat-icon>
+                  </button>
+                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Désactiver" (click)="askAction(r, 'desactiver')">
+                    <mat-icon>block</mat-icon>
+                  </button>
+                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer" (click)="askAction(r, 'supprimer')">
+                    <mat-icon>delete</mat-icon>
+                  </button>
+                </td>
+              </tr>
+            } @empty {
+              <tr class="bea-ach__empty">
+                <td colspan="5">
+                  <mat-icon>payments</mat-icon>
+                  <p>Aucun paiement.</p>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  } @else {
+    <header class="bea-ach__head">
+      <div>
+        <p class="bea-ach__kicker">{{ id() ? 'Fiche' : 'Création' }}</p>
+        <h1>{{ id() ? 'Paiement ' + (current()?.reference || '') : 'Nouveau suivi de paiement' }}</h1>
+        @if (current(); as c) {
+          <p class="bea-ach__muted">
+            <span class="bea-ach__badge" [attr.data-statut]="c.statut">{{ c.statut }}</span>
+          </p>
+        }
+      </div>
+      <a class="bea-ach__btn bea-ach__btn--ghost" routerLink="/achats-appro/paiements">
+        <mat-icon>arrow_back</mat-icon> Retour
+      </a>
+    </header>
+
+    <p class="bea-ach__note">Ce formulaire alimente uniquement le suivi interne.</p>
+
+    @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
+    @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
+
+    <form class="bea-ach__form" [formGroup]="form" (ngSubmit)="save()">
+      <div class="bea-ach__grid">
+        <label style="grid-column:1/-1">Facture *
+          <select formControlName="facture_id">
+            <option value="">— Choisir —</option>
+            @for (f of factures(); track f.id) {
+              <option [value]="f.id">{{ factureLabel(f) }}</option>
+            }
+          </select>
+        </label>
+        <label>Montant *<input type="number" formControlName="montant" step="0.01" /></label>
+        <label>Date échéance <input type="date" formControlName="date_echeance" /></label>
+        <label>Date paiement <input type="date" formControlName="date_paiement" /></label>
+        <label>Mode de paiement
+          <select formControlName="mode_paiement">
+            <option value="">— Choisir —</option>
+            <option value="VIREMENT">Virement</option>
+            <option value="CHEQUE">Chèque</option>
+            <option value="ESPECES">Espèces</option>
+            <option value="AUTRE">Autre</option>
+          </select>
+        </label>
+        <label>Réf. paiement <input formControlName="reference_paiement" placeholder="N° chèque, virement…" /></label>
+        <label style="grid-column:1/-1">Observation <textarea formControlName="observation" rows="2"></textarea></label>
+      </div>
+      <div class="bea-ach__form-actions">
+        @if (canEditForm()) {
+          <button type="submit" class="bea-ach__btn" [disabled]="saving()">
+            <mat-icon>save</mat-icon> {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
+          </button>
+          @if (id() && current()?.statut !== 'PAYE') {
+            <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="markPaid()">
+              <mat-icon>task_alt</mat-icon> Marquer payé
+            </button>
+          }
+        }
+        @if (current()?.facture_id; as fid) {
+          <a class="bea-ach__btn bea-ach__btn--ghost" [routerLink]="['/achats-appro/factures', fid]">
+            <mat-icon>request_quote</mat-icon> Facture
+          </a>
+        }
+      </div>
+    </form>
+  }
+
+  @if (confirm(); as c) {
+    <div class="bea-ach__backdrop" (click)="confirm.set(null)" role="presentation"></div>
+    <div class="bea-ach__modal" role="dialog" aria-modal="true">
+      <header class="bea-ach__modal-head">
+        <div>
+          <p class="bea-ach__kicker">Confirmation</p>
+          <h2>{{ c.action === 'supprimer' ? 'Supprimer' : 'Désactiver' }} le paiement ?</h2>
+        </div>
+        <button type="button" class="bea-ach__icon-btn" (click)="confirm.set(null)" title="Fermer">
+          <mat-icon>close</mat-icon>
+        </button>
+      </header>
+      <p><code class="bea-ach__code">{{ c.row.reference }}</code></p>
+      <footer class="bea-ach__modal-foot">
+        <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="confirm.set(null)">Retour</button>
+        <button type="button" class="bea-ach__btn" (click)="confirmAction()">Confirmer</button>
+      </footer>
+    </div>
+  }
+</section>

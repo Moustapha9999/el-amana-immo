@@ -48,20 +48,21 @@ import {
   StockSortiesComponent,
 } from './stock-fournitures/stock-pages.component';
 import { AchatsBonsComponent } from './achats-appro/achats-bons.component';
+import { AchatsConsultationsComponent } from './achats-appro/achats-consultations.component';
+import { AchatsDemandesComponent } from './achats-appro/achats-demandes.component';
+import { AchatsFournisseursComponent } from './achats-appro/achats-fournisseurs.component';
+import { AchatsDevisComponent } from './achats-appro/achats-devis.component';
+import { AchatsComparaisonsComponent } from './achats-appro/achats-comparaisons.component';
+import { AchatsFacturesComponent } from './achats-appro/achats-factures.component';
+import { AchatsLivraisonsComponent } from './achats-appro/achats-livraisons.component';
+import { AchatsPaiementsComponent } from './achats-appro/achats-paiements.component';
+import { AchatsReceptionsComponent } from './achats-appro/achats-receptions.component';
+import { AchatsRapportsComponent } from './achats-appro/achats-rapports.component';
+import { AchatsRapportViewerComponent } from './achats-appro/achats-rapport-viewer.component';
 import {
   AchatsAlertesComponent,
-  AchatsComparaisonsComponent,
-  AchatsConsultationsComponent,
   AchatsDashboardComponent,
-  AchatsDemandesComponent,
-  AchatsDevisComponent,
-  AchatsFacturesComponent,
-  AchatsFournisseursComponent,
-  AchatsLivraisonsComponent,
-  AchatsPaiementsComponent,
   AchatsParametresComponent,
-  AchatsRapportsComponent,
-  AchatsReceptionsComponent,
 } from './achats-appro/achats-pages.component';
 import { NotesListComponent } from './notes-frais/notes-list.component';
 import { ContratsListComponent } from './contrats-echeances/contrats-list.component';
@@ -112,6 +113,7 @@ export const routes: Routes = [
       { path: 'demandes/nouvelle', component: AchatsDemandesComponent },
       { path: 'demandes/:id', component: AchatsDemandesComponent },
       { path: 'fournisseurs', component: AchatsFournisseursComponent },
+      { path: 'fournisseurs/nouveau', component: AchatsFournisseursComponent },
       { path: 'fournisseurs/:id', component: AchatsFournisseursComponent },
       { path: 'consultations', component: AchatsConsultationsComponent },
       { path: 'consultations/nouvelle', component: AchatsConsultationsComponent },
@@ -138,6 +140,7 @@ export const routes: Routes = [
       { path: 'paiements/nouveau', component: AchatsPaiementsComponent },
       { path: 'paiements/:id', component: AchatsPaiementsComponent },
       { path: 'rapports', component: AchatsRapportsComponent },
+      { path: 'rapports/:key', component: AchatsRapportViewerComponent },
       { path: 'parametres', component: AchatsParametresComponent },
     ],
   },

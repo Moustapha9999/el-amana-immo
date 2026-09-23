@@ -5,16 +5,29 @@ import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
+import { SupplierSelectComponent } from './supplier-select.component';
+
+interface Agence {
+  id: string;
+  libelle: string;
+}
 
 interface Bon {
   id: string;
   reference: string;
   date_bc: string;
+  fournisseur_id?: string | null;
   fournisseur_raison_sociale: string | null;
   statut: string;
   total_ht: number;
   total_tva?: number;
   total_ttc?: number;
+  demande_id?: string | null;
+  consultation_id?: string | null;
+  comparaison_id?: string | null;
+  agence_facturation_id?: string | null;
+  agence_livraison_id?: string | null;
+  date_livraison_prevue?: string | null;
   lignes?: {
     description: string;
     quantite: number;
@@ -29,7 +42,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
 @Component({
   selector: 'bea-achats-bons',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, DecimalPipe, MgGedPanelComponent, MatIconModule],
+  imports: [ReactiveFormsModule, RouterLink, DecimalPipe, MgGedPanelComponent, MatIconModule, SupplierSelectComponent],
   template: `
     <section class="bea-ach">
       @if (mode() === 'list') {
@@ -72,6 +85,9 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
         <form class="bea-ach__form" [formGroup]="form" (ngSubmit)="save()">
           <h2 class="bea-ach__kicker" style="font-size:0.9rem;color:#0f172a;text-transform:none;letter-spacing:0">Fournisseur</h2>
           <div class="bea-ach__grid">
+            <label style="grid-column:1/-1">Fournisseur *
+              <bea-supplier-select formControlName="fournisseur_id" />
+            </label>
             <label>Nom fournisseur <input formControlName="fournisseur_raison_sociale" placeholder="Raison sociale" /></label>
             <label>NIF fournisseur <input formControlName="fournisseur_nif" /></label>
             <label>Tél. fournisseur <input formControlName="fournisseur_telephone" placeholder="+222 …" /></label>
@@ -80,6 +96,23 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
           <h2 class="bea-ach__kicker" style="font-size:0.9rem;color:#0f172a;text-transform:none;letter-spacing:0;margin-top:0.5rem">Commande &amp; acheteur (BEA)</h2>
           <div class="bea-ach__grid">
             <label>Date BC <input type="date" formControlName="date_bc" /></label>
+            <label>Livraison prévue <input type="date" formControlName="date_livraison_prevue" /></label>
+            <label>Agence facturation
+              <select formControlName="agence_facturation_id">
+                <option value="">— Choisir —</option>
+                @for (a of agences(); track a.id) {
+                  <option [value]="a.id">{{ a.libelle }}</option>
+                }
+              </select>
+            </label>
+            <label>Agence livraison
+              <select formControlName="agence_livraison_id">
+                <option value="">— Choisir —</option>
+                @for (a of agences(); track a.id) {
+                  <option [value]="a.id">{{ a.libelle }}</option>
+                }
+              </select>
+            </label>
             <label>Département <input formControlName="departement" /></label>
             <label>Projet <input formControlName="projet" /></label>
             <label>Nom acheteur <input formControlName="acheteur_nom" placeholder="Agent BEA" /></label>
@@ -202,10 +235,16 @@ export class AchatsBonsComponent implements OnInit {
 
   readonly mode = signal<'list' | 'edit'>('list');
   readonly bons = signal<Bon[]>([]);
+  readonly agences = signal<Agence[]>([]);
   readonly bonId = signal<string | null>(null);
   readonly bonReference = signal<string | null>(null);
   readonly bonStatut = signal<string | null>(null);
   readonly tvaDefaut = signal(0);
+  private parentIds: {
+    demande_id?: string;
+    consultation_id?: string;
+    comparaison_id?: string;
+  } = {};
   readonly erreur = signal<string | null>(null);
   readonly msg = signal('');
   readonly q = signal('');
@@ -243,10 +282,14 @@ export class AchatsBonsComponent implements OnInit {
 
   readonly form = this.fb.nonNullable.group({
     date_bc: ['', Validators.required],
+    date_livraison_prevue: [''],
+    fournisseur_id: [null as string | null],
     fournisseur_raison_sociale: [''],
     fournisseur_nif: [''],
     fournisseur_telephone: [''],
     fournisseur_adresse: [''],
+    agence_facturation_id: [''],
+    agence_livraison_id: [''],
     departement: ['Siege'],
     projet: [''],
     acheteur_nom: [''],
@@ -280,17 +323,69 @@ export class AchatsBonsComponent implements OnInit {
 
   ngOnInit(): void {
     this.form.valueChanges.subscribe(() => this.formTick.update((n) => n + 1));
+    this.form.controls.fournisseur_id.valueChanges.subscribe((id) => this.fillFromSupplier(id));
     this.loadTvaDefaut();
+    this.loadAgences();
     const id = this.route.snapshot.paramMap.get('id');
     const path = this.route.snapshot.routeConfig?.path ?? '';
     if (path === 'nouveau' || id) {
       this.mode.set('edit');
       this.bonId.set(id);
       if (id) this.loadOne(id);
-      else this.form.patchValue({ date_bc: new Date().toISOString().slice(0, 10) });
+      else {
+        this.form.patchValue({ date_bc: new Date().toISOString().slice(0, 10) });
+        this.applyQueryPrefills();
+      }
     } else {
       this.loadList();
     }
+  }
+
+  private loadAgences(): void {
+    this.api.get<Agence[]>('/mg/achats/agences').subscribe({
+      next: (rows) => this.agences.set(rows),
+    });
+  }
+
+  private applyQueryPrefills(): void {
+    const q = this.route.snapshot.queryParamMap;
+    const fournisseurId = q.get('fournisseur_id');
+    const consultationId = q.get('consultation_id');
+    const demandeId = q.get('demande_id');
+    const comparaisonId = q.get('comparaison_id');
+    if (fournisseurId) {
+      this.form.patchValue({ fournisseur_id: fournisseurId });
+      this.fillFromSupplier(fournisseurId);
+    }
+    this.parentIds = {
+      ...(demandeId ? { demande_id: demandeId } : {}),
+      ...(consultationId ? { consultation_id: consultationId } : {}),
+      ...(comparaisonId ? { comparaison_id: comparaisonId } : {}),
+    };
+  }
+
+  private fillFromSupplier(id: string | null): void {
+    if (!id) return;
+    this.api
+      .get<{
+        raison_sociale: string;
+        nif?: string | null;
+        telephone?: string | null;
+        adresse?: string | null;
+      }>(`/mg/achats/fournisseurs/${id}`)
+      .subscribe({
+        next: (f) => {
+          this.form.patchValue(
+            {
+              fournisseur_raison_sociale: f.raison_sociale ?? '',
+              fournisseur_nif: f.nif ?? '',
+              fournisseur_telephone: f.telephone ?? '',
+              fournisseur_adresse: f.adresse ?? '',
+            },
+            { emitEvent: false },
+          );
+        },
+      });
   }
 
   private loadTvaDefaut(): void {
@@ -348,12 +443,12 @@ export class AchatsBonsComponent implements OnInit {
     return this.bons().filter((b) => b.statut === statut).length;
   }
 
-  canEdit(b: Bon): boolean {
-    return b.statut !== 'CLOTURE';
+  canEdit(_b: Bon): boolean {
+    return true;
   }
 
-  canCancel(b: Bon): boolean {
-    return !['RECU', 'PARTIEL', 'CLOTURE', 'REJETEE', 'ANNULEE'].includes(b.statut);
+  canCancel(_b: Bon): boolean {
+    return true;
   }
 
   canDelete(_b: Bon): boolean {
@@ -424,12 +519,21 @@ export class AchatsBonsComponent implements OnInit {
       next: (b) => {
         this.bonStatut.set(b.statut);
         this.bonReference.set(b.reference);
+        this.parentIds = {
+          ...(b.demande_id ? { demande_id: b.demande_id } : {}),
+          ...(b.consultation_id ? { consultation_id: b.consultation_id } : {}),
+          ...(b.comparaison_id ? { comparaison_id: b.comparaison_id } : {}),
+        };
         this.form.patchValue({
           date_bc: b.date_bc,
+          date_livraison_prevue: b.date_livraison_prevue ?? '',
+          fournisseur_id: b.fournisseur_id ?? null,
           fournisseur_raison_sociale: b.fournisseur_raison_sociale ?? '',
           fournisseur_nif: (b['fournisseur_nif'] as string) ?? '',
           fournisseur_telephone: (b['fournisseur_telephone'] as string) ?? '',
           fournisseur_adresse: (b['fournisseur_adresse'] as string) ?? '',
+          agence_facturation_id: b.agence_facturation_id ?? '',
+          agence_livraison_id: b.agence_livraison_id ?? '',
           departement: (b['departement'] as string) ?? '',
           projet: (b['projet'] as string) ?? '',
           acheteur_nom: (b['acheteur_nom'] as string) ?? '',
@@ -472,8 +576,12 @@ export class AchatsBonsComponent implements OnInit {
     const rate = this.tvaDefaut();
     const body = {
       ...rest,
+      date_livraison_prevue: raw.date_livraison_prevue || null,
       demandeur_date: raw.demandeur_date || null,
+      agence_facturation_id: raw.agence_facturation_id || null,
+      agence_livraison_id: raw.agence_livraison_id || null,
       moyen_paiement: this.resolveMoyenPaiement() || null,
+      ...this.parentIds,
       lignes: raw.lignes.map((l) => ({ ...l, taux_tva: rate })),
     };
     const req = this.bonId()

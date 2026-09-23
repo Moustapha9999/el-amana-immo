@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_platform_user
+from app.api.deps import get_current_user
 from app.api.v1.endpoints.helpers import to_paginated
 from app.core.temp_password import generate_temporary_password
 from app.db.session import get_db
@@ -16,15 +16,19 @@ from app.services.auth_service import AuthService
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-async def _require_platform_admin(
-    user: User = Depends(get_platform_user),
+async def _require_users_admin(
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Users métier : session plateforme + permission plateforme.users.admin."""
+    """Users métier : Login 1 (`plateforme.users.admin`) ou Login 2 (`administrateur`)."""
     from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
 
+    if user.is_superuser:
+        return user
     have = await load_user_permission_codes(db, user)
     if user_has_permission_codes(have, "plateforme.users.admin"):
+        return user
+    if {r.code for r in (user.roles or [])}.intersection({"administrateur"}):
         return user
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission refusée")
 
@@ -34,7 +38,7 @@ async def list_users(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     search: str | None = None,
-    _: User = Depends(_require_platform_admin),
+    _: User = Depends(_require_users_admin),
     db: AsyncSession = Depends(get_db),
 ):
     items, total = await AuthService(db).list_users(page, size, search=search)
@@ -43,7 +47,7 @@ async def list_users(
 
 @router.get("/roles", response_model=list[RoleRead])
 async def list_roles(
-    _: User = Depends(_require_platform_admin),
+    _: User = Depends(_require_users_admin),
     db: AsyncSession = Depends(get_db),
 ):
     return await AuthService(db).list_roles()
@@ -53,7 +57,7 @@ async def list_roles(
 async def create_user(
     payload: UserCreate,
     request: Request,
-    actor: User = Depends(_require_platform_admin),
+    actor: User = Depends(_require_users_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Création sans MDP libre : mot de passe temporaire serveur."""
@@ -83,7 +87,7 @@ async def create_user(
 @router.get("/{user_id}", response_model=UserRead)
 async def get_user(
     user_id: UUID,
-    _: User = Depends(_require_platform_admin),
+    _: User = Depends(_require_users_admin),
     db: AsyncSession = Depends(get_db),
 ):
     service = AuthService(db)
@@ -98,7 +102,7 @@ async def update_user(
     user_id: UUID,
     payload: UserUpdate,
     request: Request,
-    actor: User = Depends(_require_platform_admin),
+    actor: User = Depends(_require_users_admin),
     db: AsyncSession = Depends(get_db),
 ):
     if payload.password:
@@ -133,7 +137,7 @@ async def update_user(
 async def delete_user(
     user_id: UUID,
     request: Request,
-    current: User = Depends(_require_platform_admin),
+    current: User = Depends(_require_users_admin),
     db: AsyncSession = Depends(get_db),
 ):
     service = AuthService(db)

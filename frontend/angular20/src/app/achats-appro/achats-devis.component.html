@@ -1,0 +1,232 @@
+<section class="bea-ach">
+  @if (mode() === 'list') {
+    <header class="bea-ach__hero">
+      <p>Offres fournisseurs</p>
+      <h1>Devis</h1>
+      <div class="bea-ach__hero-glow" aria-hidden="true"></div>
+    </header>
+
+    <div class="bea-ach__head">
+      <div class="bea-ach__kpis bea-ach__kpis--3" style="flex:1;margin:0">
+        <div class="bea-ach__kpi" style="--i:0">
+          <span class="bea-ach__kpi-icon" data-tone="navy"><mat-icon>request_quote</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>Total</span>
+            <strong>{{ rows().length }}</strong>
+            <em>Offres reçues</em>
+          </span>
+        </div>
+        <div class="bea-ach__kpi" style="--i:1">
+          <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>payments</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>Montant TTC</span>
+            <strong>{{ totalTtc() | number: '1.0-0' }}</strong>
+            <em>MRU</em>
+          </span>
+        </div>
+        <div class="bea-ach__kpi" style="--i:2">
+          <span class="bea-ach__kpi-icon" data-tone="warn"><mat-icon>pending</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>Actifs</span>
+            <strong>{{ active() }}</strong>
+            <em>À analyser</em>
+          </span>
+        </div>
+      </div>
+      <a class="bea-ach__btn" routerLink="/achats-appro/devis/nouveau">
+        <mat-icon>add</mat-icon> Nouveau
+      </a>
+    </div>
+
+    <form class="bea-ach__search" [formGroup]="filters" (ngSubmit)="$event.preventDefault()">
+      <label class="bea-ach__field bea-ach__field--grow">
+        <mat-icon>search</mat-icon>
+        <input formControlName="q" placeholder="Référence…" (input)="onSearch()" />
+      </label>
+      <label class="bea-ach__field">
+        <mat-icon>filter_alt</mat-icon>
+        <select formControlName="statut" (change)="onSearch()">
+          <option value="">Tous les statuts</option>
+          <option value="RECU">Reçu</option>
+          <option value="EN_COURS">En cours</option>
+          <option value="ANALYSE">Analyse</option>
+          <option value="RETENU">Retenu</option>
+          <option value="REJETE">Rejeté</option>
+          <option value="ANNULE">Annulé</option>
+        </select>
+      </label>
+    </form>
+
+    @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
+    @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
+
+    <div class="bea-ach__panel">
+      <div class="bea-ach__panel-top">
+        <h2>Liste des devis</h2>
+        <span class="bea-ach__count">{{ filtered().length }} résultat(s)</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="bea-ach__table">
+          <thead>
+            <tr>
+              <th>Réf.</th>
+              <th>Date</th>
+              <th>TTC</th>
+              <th>Statut</th>
+              <th class="bea-ach__th-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of filtered(); track r.id; let i = $index) {
+              <tr [style.--i]="i">
+                <td><code class="bea-ach__code">{{ r.reference }}</code></td>
+                <td>{{ r.date_devis }}</td>
+                <td>{{ r.montant_ttc | number: '1.2-2' }} MRU</td>
+                <td><span class="bea-ach__badge" [attr.data-statut]="r.statut">{{ r.statut }}</span></td>
+                <td class="bea-ach__actions">
+                  <a class="bea-ach__icon-btn" title="Voir" [routerLink]="['/achats-appro/devis', r.id]">
+                    <mat-icon>visibility</mat-icon>
+                  </a>
+                  <button type="button" class="bea-ach__icon-btn" title="Éditer" [disabled]="!canEdit(r)" (click)="edit(r)">
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                  <button
+                    type="button"
+                    class="bea-ach__icon-btn bea-ach__icon-btn--warn"
+                    title="Désactiver"
+                    [disabled]="!canDesactiver(r)"
+                    (click)="askAction(r, 'desactiver')"
+                  >
+                    <mat-icon>block</mat-icon>
+                  </button>
+                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer" (click)="askAction(r, 'supprimer')">
+                    <mat-icon>delete</mat-icon>
+                  </button>
+                </td>
+              </tr>
+            } @empty {
+              <tr class="bea-ach__empty">
+                <td colspan="5">
+                  <mat-icon>request_quote</mat-icon>
+                  <p>Aucun devis.</p>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  } @else {
+    <header class="bea-ach__head">
+      <div>
+        <p class="bea-ach__kicker">{{ id() ? 'Fiche' : 'Création' }}</p>
+        <h1>{{ id() ? 'Devis ' + (current()?.reference || '') : 'Nouveau devis' }}</h1>
+        @if (current(); as c) {
+          <p class="bea-ach__muted">
+            <span class="bea-ach__badge" [attr.data-statut]="c.statut">{{ c.statut }}</span>
+            · TTC <strong>{{ c.montant_ttc | number: '1.2-2' }} {{ c.devise }}</strong>
+          </p>
+        }
+      </div>
+      <a class="bea-ach__btn bea-ach__btn--ghost" routerLink="/achats-appro/devis">
+        <mat-icon>arrow_back</mat-icon> Retour
+      </a>
+    </header>
+
+    @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
+    @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
+
+    <form class="bea-ach__form" [formGroup]="form" (ngSubmit)="save()">
+      <div class="bea-ach__grid">
+        <label style="grid-column:1/-1">Fournisseur *
+          <bea-supplier-select formControlName="fournisseur_id" />
+        </label>
+        <label>Consultation
+          <select formControlName="consultation_id">
+            <option value="">— Aucune —</option>
+            @for (c of consultations(); track c.id) {
+              <option [value]="c.id">{{ c.reference }} — {{ c.objet }}</option>
+            }
+          </select>
+        </label>
+        <label>Date devis *<input type="date" formControlName="date_devis" /></label>
+        <label>Validité <input type="date" formControlName="date_validite" /></label>
+        <label>Devise <input formControlName="devise" maxlength="10" /></label>
+        <label style="grid-column:1/-1">Conditions générales<textarea formControlName="conditions" rows="2"></textarea></label>
+        <label>Délai livraison <input formControlName="delai_livraison" /></label>
+        <label>Conditions paiement <input formControlName="conditions_paiement" /></label>
+        <label style="grid-column:1/-1">Observation <textarea formControlName="observation" rows="2"></textarea></label>
+      </div>
+
+      <h2 class="bea-ach__kicker" style="font-size:0.9rem;color:#0f172a;text-transform:none;letter-spacing:0;margin-top:0.5rem">Lignes</h2>
+      <div formArrayName="lignes">
+        @for (ctrl of lignes.controls; track $index; let i = $index) {
+          <div class="bea-ach__grid" [formGroupName]="i">
+            <label style="grid-column:1/-1">Désignation * <input formControlName="designation" /></label>
+            <label>Qté * <input type="number" formControlName="quantite" step="0.001" /></label>
+            <label>PU * <input type="number" formControlName="prix_unitaire" step="0.01" /></label>
+            <label>Remise % <input type="number" formControlName="remise_pct" step="0.01" /></label>
+            <label>TVA % <input type="number" formControlName="taux_tva" step="0.01" /></label>
+            @if (canEditForm() && lignes.length > 1) {
+              <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Retirer" (click)="removeLigne(i)">
+                <mat-icon>delete</mat-icon>
+              </button>
+            }
+          </div>
+        }
+      </div>
+      @if (canEditForm()) {
+        <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="addLigne()">
+          <mat-icon>add</mat-icon> Ligne
+        </button>
+      }
+
+      <div class="bea-ach__form-actions">
+        @if (canEditForm()) {
+          <button type="submit" class="bea-ach__btn" [disabled]="saving()">
+            <mat-icon>save</mat-icon> {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
+          </button>
+        }
+        @if (canStatutActions()) {
+          <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="patchStatut('RETENU')">
+            <mat-icon>task_alt</mat-icon> Marquer retenu
+          </button>
+          <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="patchStatut('REJETE')">
+            <mat-icon>cancel</mat-icon> Marquer rejeté
+          </button>
+        }
+        @if (current()?.consultation_id; as cid) {
+          <a class="bea-ach__btn bea-ach__btn--ghost" [routerLink]="['/achats-appro/consultations', cid]">
+            <mat-icon>forum</mat-icon> Consultation liée
+          </a>
+        }
+      </div>
+    </form>
+
+    @if (id()) {
+      <div style="margin-top:1rem">
+        <bea-mg-ged moduleCode="achats-appro" entity="achat_devis" [entityId]="id()!" />
+      </div>
+    }
+  }
+
+  @if (confirm(); as c) {
+    <div class="bea-ach__backdrop" (click)="confirm.set(null)" role="presentation"></div>
+    <div class="bea-ach__modal" role="dialog" aria-modal="true">
+      <header class="bea-ach__modal-head">
+        <div>
+          <p class="bea-ach__kicker">Confirmation</p>
+          <h2>{{ c.action === 'supprimer' ? 'Supprimer' : 'Désactiver' }} le devis ?</h2>
+        </div>
+        <button type="button" class="bea-ach__icon-btn" (click)="confirm.set(null)" title="Fermer">
+          <mat-icon>close</mat-icon>
+        </button>
+      </header>
+      <p><code class="bea-ach__code">{{ c.row.reference }}</code></p>
+      <footer class="bea-ach__modal-foot">
+        <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="confirm.set(null)">Retour</button>
+        <button type="button" class="bea-ach__btn" (click)="confirmAction()">Confirmer</button>
+      </footer>
+    </div>
+  }
+</section>
