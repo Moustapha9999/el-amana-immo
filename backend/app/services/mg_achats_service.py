@@ -131,6 +131,13 @@ class MgAchatsService:
         await self.db.refresh(row)
         return row
 
+    async def delete_parametre(self, cle: str) -> None:
+        row = await self.db.get(MgAchatParametre, cle)
+        if not row:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Paramètre introuvable")
+        await self.db.delete(row)
+        await self.db.commit()
+
     async def _next_ref(self, prefix_key: str, model, field, default_prefix: str) -> str:
         prefix = await self.get_parametre(prefix_key, default_prefix)
         year = date.today().year
@@ -978,8 +985,8 @@ class MgAchatsService:
             acheteur_tel=data.acheteur_tel,
             adresse_facturation=data.adresse_facturation,
             adresse_livraison=data.adresse_livraison,
-            conditions=data.conditions,
-            incoterm=data.incoterm,
+            conditions=data.conditions or "Voir pièce jointe",
+            incoterm=data.incoterm or "N/A",
             conditions_paiement=data.conditions_paiement,
             moyen_paiement=data.moyen_paiement,
             demandeur_nom=data.demandeur_nom,
@@ -1017,8 +1024,8 @@ class MgAchatsService:
 
     async def update_bon(self, bon_id: uuid.UUID, data: BonUpdate) -> MgBonCommande:
         bon = await self.get_bon(bon_id)
-        if bon.statut not in {"BROUILLON", "SOUMIS"}:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Bon non modifiable")
+        if bon.statut == "CLOTURE":
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Bon clôturé : non modifiable")
         for field in (
             "date_bc",
             "fournisseur_id",
@@ -1065,27 +1072,50 @@ class MgAchatsService:
         await self.db.commit()
         return await self.get_bon(bon.id)
 
+    async def delete_bon(self, bon_id: uuid.UUID, user: User) -> MgBonCommande:
+        """Suppression logique (hors liste) — autorisée quel que soit le statut."""
+        bon = await self.get_bon(bon_id)
+        bon.deleted_at = datetime.now(timezone.utc)
+        await self._append_event("bon", bon.id, "delete", bon.reference, user)
+        await self.db.commit()
+        return bon
+
     async def transition_bon(self, bon_id: uuid.UUID, action: str, user: User) -> MgBonCommande:
         bon = await self.get_bon(bon_id)
         key = action.strip().lower()
         if key not in BC_TRANSITIONS:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Action invalide")
         expected, new_statut = BC_TRANSITIONS[key]
-        if expected and bon.statut != expected:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail=f"Transition impossible depuis {bon.statut}",
-            )
+        if expected is not None:
+            if isinstance(expected, (set, frozenset)):
+                if bon.statut not in expected:
+                    raise HTTPException(
+                        status.HTTP_400_BAD_REQUEST,
+                        detail=f"Transition impossible depuis {bon.statut} (attendu : {', '.join(sorted(expected))})",
+                    )
+            elif bon.statut != expected:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail=f"Transition impossible depuis {bon.statut} (attendu : {expected})",
+                )
         if key in {"rejeter", "annuler"} and bon.statut in {
-            "VALIDE",
-            "ENVOYE",
             "RECU",
             "CLOTURE",
             "REJETEE",
             "ANNULEE",
             "PARTIEL",
         }:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Statut final")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"Annulation impossible : statut {bon.statut}",
+            )
+        if key == "annuler" and any(
+            (getattr(l, "quantite_recue", None) or 0) > 0 for l in (bon.lignes or [])
+        ):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Annulation impossible : réception déjà commencée",
+            )
         now = datetime.now(timezone.utc)
         if key == "visa_mg":
             bon.visa_mg_at, bon.visa_mg_by = now, user.id
@@ -1215,15 +1245,15 @@ class MgAchatsService:
                 )
                 if article is None:
                     raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Article introuvable")
-                await stock_svc._apply_mouvement(
+                # Passage par l'API publique du Stock — jamais d'UPDATE direct
+                # sur mg_articles.stock_actuel depuis Achats & Approvisionnements.
+                await stock_svc.record_achat_reception(
                     article=article,
-                    type_mouvement="ENTREE",
                     quantite=qty,
                     agence_id=data.agence_id or article.agence_id or bon.agence_livraison_id,
                     initiateur=user,
                     motif=f"Réception achat {bon.reference}",
-                    source_type="achat_reception",
-                    source_id=None,
+                    source_id=bon.id,
                 )
                 if ligne.article_id is None:
                     ligne.article_id = article_id

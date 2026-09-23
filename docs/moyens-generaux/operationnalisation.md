@@ -23,9 +23,25 @@ Attribuer via CORE ADMIN → utilisateurs / rôles. Un `is_superuser` voit tout.
 
 ## PDF
 
-- `GET /api/v1/mg/achats/bons/{id}/pdf`
+- `GET /api/v1/mg/achats/bons/{id}/pdf?signataire_1=…&signataire_2=…`
+  - Mini-page front « Préparer le Bon de Commande » avant téléchargement
+  - Nom fichier : `Bon-Commande-00XXXX.pdf`
+  - Signataires dynamiques (défaut : Chef Sce Moyens Généraux / Directrice des Ressources)
+  - Totaux HT / TVA / TTC (taux `tva_defaut` dans paramètres achats)
 - `GET /api/v1/mg/notes-frais/notes/{id}/pdf`
 - `GET /api/v1/mg/stock/demandes/{id}/pdf`
+
+## Paramètres achats (CRUD)
+
+UI `/achats-appro/parametres` — API `GET|POST /mg/achats/parametres`,
+`PATCH|DELETE /mg/achats/parametres/{cle}`.
+
+Clés utiles : `tva_defaut`, `prefix_bc`, `devise_defaut`, `alerte_jours`, …
+
+Permission : `mg.purchase.create` (écriture) / `mg.purchase.view` (lecture).
+
+Attribuer les rôles Login 2 via **CORE ADMIN** (`achats-appro.acheteur`,
+`.valideur`, `.admin`, `.lecteur`) — le catalogue se resynchronise au Login 1.
 
 ## GED
 
@@ -34,7 +50,7 @@ Upload via `POST /api/v1/ged/documents` (`espace_code=moyens-generaux`,
 
 | Module | Entités GED |
 |--------|--------------|
-| `achats-appro` | `bon_commande` |
+| `achats-appro` | `bon_commande`, `achat_demande`, `achat_facture`, `fournisseur` |
 | `notes-frais` | `note_frais` |
 | `stock-fournitures` | `demande_fourniture`, `inventaire`, `article` |
 | `contrats-echeances` | `contrat` |

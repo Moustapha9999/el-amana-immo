@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,7 +50,7 @@ from app.schemas.mg_achats import (
 from app.schemas.mg_ops import BonCreate, BonOut, BonUpdate
 from app.services.mg_achats_events import audit_achats, notify_achats_roles
 from app.services.mg_achats_service import MgAchatsService
-from app.services.mg_pdf_service import pdf_bon_commande
+from app.services.mg_pdf_service import _bc_pdf_filename, pdf_bon_commande
 
 router = APIRouter(prefix="/mg/achats", tags=["mg-achats"])
 _module = [Depends(require_module_access("achats-appro"))]
@@ -126,6 +126,17 @@ async def update_parametre(
     row = await MgAchatsService(db).update_parametre(cle, body)
     await audit_achats(db, user, "update", "mg_achat_parametre", cle, request)
     return row
+
+
+@router.delete("/parametres/{cle}", status_code=status.HTTP_204_NO_CONTENT, dependencies=_module)
+async def delete_parametre(
+    cle: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.create")),
+):
+    await MgAchatsService(db).delete_parametre(cle)
+    await audit_achats(db, user, "delete", "mg_achat_parametre", cle, request)
 
 
 @router.get("/dashboard", response_model=DashboardAchatsOut, dependencies=_module)
@@ -566,6 +577,18 @@ async def update_bon(
     return row
 
 
+@router.delete("/bons/{bon_id}", response_model=BonOut, dependencies=_module)
+async def delete_bon(
+    bon_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.create")),
+):
+    row = await MgAchatsService(db).delete_bon(bon_id, user)
+    await audit_achats(db, user, "delete", "mg_bon_commande", row.id, request)
+    return row
+
+
 @router.post("/bons/{bon_id}/transition", response_model=BonOut, dependencies=_module)
 async def transition_bon(
     bon_id: UUID,
@@ -619,13 +642,23 @@ async def bon_pdf(
     bon_id: UUID,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.purchase.export")),
+    signataire_1: str | None = None,
+    signataire_2: str | None = None,
 ):
+    s1 = (signataire_1 or "").strip()
+    s2 = (signataire_2 or "").strip()
+    if not s1 or not s2:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Veuillez renseigner les deux signataires avant de générer le PDF.",
+        )
     bon = await MgAchatsService(db).get_bon(bon_id)
-    data = pdf_bon_commande(bon)
+    data = pdf_bon_commande(bon, signataire_1=s1, signataire_2=s2)
+    filename = _bc_pdf_filename(bon.reference)
     return Response(
         content=data,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{bon.reference}.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

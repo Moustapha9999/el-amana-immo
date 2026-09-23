@@ -9,11 +9,9 @@ import pytest
 from fastapi import HTTPException
 
 from app.schemas.mg_achats import (
-    FactureLigneIn,
     ReceptionCreate,
     ReceptionLigneIn,
 )
-from app.schemas.mg_ops import ThreeWayMatchOut  # noqa: F401 — may not exist
 from app.services.mg_achats_service import BC_TRANSITIONS, DEMANDE_TRANSITIONS, MgAchatsService
 
 

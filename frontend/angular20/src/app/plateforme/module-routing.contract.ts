@@ -99,7 +99,7 @@ export const MODULE_ROUTE_CONTRACTS: Readonly<Record<string, ModuleRouteContract
   'achats-appro': {
     code: 'achats-appro',
     strategy: 'prefixed',
-    entryPath: '/achats-appro/bons',
+    entryPath: '/achats-appro/dashboard',
     espacePath: '/moyens-generaux',
     urlPrefix: '/achats-appro',
   },

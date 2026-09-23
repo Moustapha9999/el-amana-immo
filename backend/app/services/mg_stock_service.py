@@ -976,6 +976,33 @@ class MgStockService:
                 departement=demande.departement,
             )
 
+    async def record_achat_reception(
+        self,
+        *,
+        article: MgArticle,
+        quantite: Decimal,
+        agence_id: uuid.UUID | None,
+        initiateur: User | None,
+        motif: str | None = None,
+        source_id: uuid.UUID | None = None,
+    ) -> MgStockMouvement:
+        """API publique appelée par Achats & Approvisionnements.
+
+        Enregistre une entrée de stock consécutive à une réception achat.
+        Ne modifie ``mg_articles.stock_actuel`` qu'à travers ``_apply_mouvement``
+        (source unique de vérité pour les mouvements de stock).
+        """
+        return await self._apply_mouvement(
+            article=article,
+            type_mouvement="ENTREE",
+            quantite=quantite,
+            agence_id=agence_id,
+            initiateur=initiateur,
+            motif=motif,
+            source_type="achat_reception",
+            source_id=source_id,
+        )
+
     async def _apply_mouvement(
         self,
         *,
