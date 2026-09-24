@@ -1,0 +1,277 @@
+<section class="bea-ach bea-ach--print">
+  <header class="bea-ach__head bea-ach--no-print">
+    <div>
+      <p class="bea-ach__kicker">Reporting</p>
+      <h1>{{ meta()?.label || preview()?.label || 'Rapport' }}</h1>
+      <p style="margin:0.25rem 0 0;color:#64748b;font-size:0.9rem">{{ meta()?.description }}</p>
+    </div>
+    <a class="bea-ach__btn bea-ach__btn--ghost" routerLink="/achats-appro/rapports">
+      <mat-icon>arrow_back</mat-icon> Catalogue
+    </a>
+  </header>
+
+  <form class="bea-ach__search bea-ach--no-print" [formGroup]="filters" (ngSubmit)="applyFilters()">
+    @if (isCustom()) {
+      <label class="bea-ach__field">
+        <mat-icon>category</mat-icon>
+        <select formControlName="dataset" (change)="onDatasetChange()">
+          @for (d of catalogDatasets(); track d.key) {
+            <option [value]="d.key">{{ d.label }}</option>
+          }
+        </select>
+      </label>
+    }
+
+    @if (availableFilters().includes('q') || isAnalyses()) {
+      <label class="bea-ach__field bea-ach__field--grow">
+        <mat-icon>search</mat-icon>
+        <input formControlName="q" placeholder="Rechercher…" />
+      </label>
+    }
+    @if (availableFilters().includes('statut')) {
+      <label class="bea-ach__field">
+        <mat-icon>flag</mat-icon>
+        <input formControlName="statut" placeholder="Statut" />
+      </label>
+    }
+    @if (availableFilters().includes('priorite') || availableFilters().includes('type')) {
+      <label class="bea-ach__field">
+        <mat-icon>priority_high</mat-icon>
+        <input formControlName="priorite" placeholder="Priorité" />
+      </label>
+    }
+    @if (availableFilters().includes('type_achat')) {
+      <label class="bea-ach__field">
+        <input formControlName="type_achat" placeholder="Type achat" />
+      </label>
+    }
+    @if (availableFilters().includes('type_fournisseur')) {
+      <label class="bea-ach__field">
+        <input formControlName="type_fournisseur" placeholder="Type fournisseur" />
+      </label>
+    }
+    @if (availableFilters().includes('ville')) {
+      <label class="bea-ach__field">
+        <input formControlName="ville" placeholder="Ville" />
+      </label>
+    }
+    @if (availableFilters().includes('pays')) {
+      <label class="bea-ach__field">
+        <input formControlName="pays" placeholder="Pays" />
+      </label>
+    }
+    @if (availableFilters().includes('departement')) {
+      <label class="bea-ach__field">
+        <input formControlName="departement" placeholder="Département" />
+      </label>
+    }
+    @if (availableFilters().includes('type')) {
+      <label class="bea-ach__field">
+        <input formControlName="type" placeholder="Type alerte" />
+      </label>
+    }
+    @if (availableFilters().includes('agence_id') || isAnalyses()) {
+      <label class="bea-ach__field">
+        <mat-icon>store</mat-icon>
+        <select formControlName="agence_id">
+          <option value="">Toutes agences</option>
+          @for (a of agences(); track a.id) {
+            <option [value]="a.id">{{ a.libelle }}</option>
+          }
+        </select>
+      </label>
+    }
+    @if (availableFilters().includes('date_debut') || isAnalyses()) {
+      <label class="bea-ach__field">
+        <mat-icon>event</mat-icon>
+        <input type="date" formControlName="date_debut" title="Du" />
+      </label>
+    }
+    @if (availableFilters().includes('date_fin') || isAnalyses()) {
+      <label class="bea-ach__field">
+        <mat-icon>event</mat-icon>
+        <input type="date" formControlName="date_fin" title="Au" />
+      </label>
+    }
+    <label class="bea-ach__field">
+      <mat-icon>sort</mat-icon>
+      <select formControlName="sort_by">
+        <option value="">Tri défaut</option>
+        @for (c of preview()?.columns || meta()?.columns || []; track c.key) {
+          <option [value]="c.key">{{ c.label }}</option>
+        }
+      </select>
+    </label>
+    <label class="bea-ach__field">
+      <select formControlName="sort_dir">
+        <option value="desc">Desc</option>
+        <option value="asc">Asc</option>
+      </select>
+    </label>
+    <button type="submit" class="bea-ach__btn"><mat-icon>filter_alt</mat-icon>Appliquer</button>
+  </form>
+
+  @if (isCustom()) {
+    <div class="bea-ach__panel bea-ach--no-print" style="margin-bottom:0.85rem">
+      <div class="bea-ach__panel-top"><h2>Colonnes</h2></div>
+      <div class="bea-ach__col-pick">
+        @for (c of datasetColumns(); track c.key) {
+          <label>
+            <input
+              type="checkbox"
+              [checked]="customColumns().includes(c.key)"
+              (change)="toggleColumn(c.key, $any($event.target).checked)"
+            />
+            {{ c.label }}
+          </label>
+        }
+      </div>
+    </div>
+  }
+
+  <div class="bea-ach__export-bar bea-ach--no-print">
+    <div class="bea-ach__export-group">
+      <span class="bea-ach__kicker" style="margin:0">Sélection ({{ selectedCount() }})</span>
+      <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="exporting() || selectedCount() === 0" (click)="export('pdf', 'selection')">
+        <mat-icon>picture_as_pdf</mat-icon> PDF
+      </button>
+      <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="exporting() || selectedCount() === 0" (click)="export('xlsx', 'selection')">
+        <mat-icon>table_view</mat-icon> Excel
+      </button>
+      @if (meta()?.csv_enabled !== false) {
+        <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="exporting() || selectedCount() === 0" (click)="export('csv', 'selection')">
+          <mat-icon>description</mat-icon> CSV
+        </button>
+      }
+    </div>
+    <div class="bea-ach__export-group">
+      <span class="bea-ach__kicker" style="margin:0">Tous les résultats filtrés</span>
+      <button type="button" class="bea-ach__btn" [disabled]="exporting()" (click)="export('pdf', 'filtered')">
+        <mat-icon>picture_as_pdf</mat-icon> PDF
+      </button>
+      <button type="button" class="bea-ach__btn" [disabled]="exporting()" (click)="export('xlsx', 'filtered')">
+        <mat-icon>table_view</mat-icon> Excel
+      </button>
+      @if (meta()?.csv_enabled !== false) {
+        <button type="button" class="bea-ach__btn" [disabled]="exporting()" (click)="export('csv', 'filtered')">
+          <mat-icon>description</mat-icon> CSV
+        </button>
+      }
+      <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="print()">
+        <mat-icon>print</mat-icon> Imprimer
+      </button>
+    </div>
+  </div>
+
+  @if (erreur()) {
+    <p class="bea-ach__error">{{ erreur() }}</p>
+  }
+  @if (msg()) {
+    <p class="bea-ach__ok">{{ msg() }}</p>
+  }
+
+  @if (loading()) {
+    <p class="bea-ach__kicker">Chargement…</p>
+  } @else if (isAnalyses() && preview(); as p) {
+    <div class="bea-ach__kpis">
+      @for (entry of (p.kpis | keyvalue); track entry.key; let i = $index) {
+        <div class="bea-ach__kpi" [style.--i]="i">
+          <span class="bea-ach__kpi-icon" data-tone="navy"><mat-icon>analytics</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>{{ entry.key }}</span>
+            <strong>{{ formatKpi(entry.key, entry.value) }}</strong>
+          </span>
+        </div>
+      }
+    </div>
+    @if (p.bons_par_statut?.length) {
+      <div class="bea-ach__panel">
+        <div class="bea-ach__panel-top"><h2>BC par statut</h2></div>
+        <div class="bea-mg__table-scroll">
+        <table class="bea-ach__table">
+          <thead><tr><th>Statut</th><th>Nombre</th></tr></thead>
+          <tbody>
+            @for (b of p.bons_par_statut; track b.statut) {
+              <tr><td>{{ b.statut }}</td><td>{{ b.count | quantite }}</td></tr>
+            }
+          </tbody>
+        </table>
+        </div>
+      </div>
+    }
+  } @else if (preview(); as p) {
+    <div class="bea-ach__panel">
+      <div class="bea-ach__panel-top">
+        <h2>{{ p.label }}</h2>
+        <span class="bea-ach__count">{{ p.total }} résultat(s) · page {{ p.page }}/{{ totalPages() }}</span>
+      </div>
+      <p style="margin:0 0 0.75rem;color:#64748b;font-size:0.85rem">{{ p.filters_label }}</p>
+
+      @if (p.totals && (p.totals | keyvalue).length) {
+        <div class="bea-ach__money" style="margin-bottom:0.75rem">
+          @for (t of p.totals | keyvalue; track t.key) {
+            <div class="bea-ach__money-card">
+              <span>{{ t.key }}</span>
+              <strong>{{ t.value | montant }}</strong>
+            </div>
+          }
+        </div>
+      }
+
+      <div class="bea-mg__table-scroll">
+        <table class="bea-ach__table">
+          <thead>
+            <tr>
+              <th class="bea-ach--no-print">
+                <input type="checkbox" [checked]="allPageSelected()" (change)="toggleAllPage($any($event.target).checked)" />
+              </th>
+              @for (c of p.columns; track c.key) {
+                <th>{{ c.label }}</th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of p.rows; track row['id']; let i = $index) {
+              <tr [style.--i]="i">
+                <td class="bea-ach--no-print">
+                  <input
+                    type="checkbox"
+                    [checked]="selected().has(rowId(row))"
+                    (change)="toggleRow(rowId(row), $any($event.target).checked)"
+                  />
+                </td>
+                @for (c of p.columns; track c.key) {
+                  <td>
+                    @if (c.kind === 'money') {
+                      {{ cellValue(row, c) | montant }}
+                    } @else if (c.kind === 'number') {
+                      {{ cellValue(row, c) | quantite }}
+                    } @else {
+                      {{ cellValue(row, c) }}
+                    }
+                  </td>
+                }
+              </tr>
+            } @empty {
+              <tr class="bea-ach__empty">
+                <td [attr.colspan]="p.columns.length + 1">
+                  <mat-icon>inbox</mat-icon>
+                  <p>{{ p.empty_message || 'Aucune donnée ne correspond aux critères sélectionnés.' }}</p>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <div class="bea-ach__form-actions bea-ach--no-print" style="margin-top:0.75rem">
+        <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="page() <= 1" (click)="goPage(-1)">
+          <mat-icon>chevron_left</mat-icon> Précédent
+        </button>
+        <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="page() >= totalPages()" (click)="goPage(1)">
+          Suivant <mat-icon>chevron_right</mat-icon>
+        </button>
+      </div>
+    </div>
+  }
+</section>

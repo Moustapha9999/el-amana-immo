@@ -1,0 +1,363 @@
+<section class="bea-ach">
+  @if (mode() === 'list') {
+    <header class="bea-ach__hero">
+      <p>Référentiel</p>
+      <h1>Fournisseurs</h1>
+      <div class="bea-ach__hero-glow"></div>
+    </header>
+
+    <div class="bea-ach__head">
+      <div class="bea-ach__kpis bea-ach__kpis--3" style="flex:1;margin:0">
+        <div class="bea-ach__kpi" style="--i:0">
+          <span class="bea-ach__kpi-icon" data-tone="navy"><mat-icon>storefront</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>Total</span>
+            <strong>{{ total() }}</strong>
+            <em>Référencés</em>
+          </span>
+        </div>
+        <div class="bea-ach__kpi" style="--i:1">
+          <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>check_circle</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>Actifs</span>
+            <strong>{{ actifs() }}</strong>
+            <em>Disponibles</em>
+          </span>
+        </div>
+        <div class="bea-ach__kpi" style="--i:2">
+          <span class="bea-ach__kpi-icon" data-tone="warn"><mat-icon>block</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>Inactifs</span>
+            <strong>{{ inactifs() }}</strong>
+            <em>Hors sélection</em>
+          </span>
+        </div>
+      </div>
+      <button type="button" class="bea-ach__btn" (click)="openCreate()">
+        <mat-icon>add</mat-icon>
+        Nouveau fournisseur
+      </button>
+    </div>
+
+    <form class="bea-ach__search" [formGroup]="filters" (ngSubmit)="search()">
+      <label class="bea-ach__field bea-ach__field--grow">
+        <mat-icon>search</mat-icon>
+        <input formControlName="q" placeholder="Code, raison sociale, téléphone, e-mail…" aria-label="Rechercher un fournisseur" />
+      </label>
+      <label class="bea-ach__field">
+        <select formControlName="statut" aria-label="Statut">
+          <option value="">Tous statuts</option>
+          <option value="ACTIF">Actif</option>
+          <option value="INACTIF">Inactif</option>
+        </select>
+      </label>
+      <label class="bea-ach__field">
+        <select formControlName="type_fournisseur" aria-label="Type de fournisseur">
+          <option value="">Tous types</option>
+          @for (t of types; track t.value) {
+            <option [value]="t.value">{{ t.label }}</option>
+          }
+        </select>
+      </label>
+      <label class="bea-ach__field">
+        <input formControlName="ville" placeholder="Ville" aria-label="Ville" />
+      </label>
+      <label class="bea-ach__field">
+        <input formControlName="pays" placeholder="Pays" aria-label="Pays" />
+      </label>
+      <button type="submit" class="bea-ach__btn bea-ach__btn--ghost">Filtrer</button>
+    </form>
+
+    @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
+    @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
+
+    <div class="bea-ach__panel">
+      <div class="bea-ach__panel-top">
+        <h2>Annuaire fournisseurs</h2>
+        <span class="bea-ach__count">{{ rows().length }} / {{ total() }}</span>
+      </div>
+      <div class="bea-mg__table-scroll">
+        <table class="bea-ach__table">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Fournisseur</th>
+              <th>Contact</th>
+              <th>Téléphone</th>
+              <th>E-mail</th>
+              <th>Ville</th>
+              <th>Statut</th>
+              <th class="bea-ach__th-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (f of rows(); track f.id; let i = $index) {
+              <tr [style.--i]="i">
+                <td><code class="bea-ach__code">{{ f.code }}</code></td>
+                <td>
+                  <strong>{{ f.raison_sociale }}</strong>
+                  @if (f.nom_commercial) {
+                    <div class="bea-ach__muted">{{ f.nom_commercial }}</div>
+                  }
+                </td>
+                <td>{{ f.contact || '—' }}</td>
+                <td>{{ f.telephone || '—' }}</td>
+                <td>{{ f.email || '—' }}</td>
+                <td>{{ f.ville || '—' }}</td>
+                <td>
+                  <span class="bea-ach__badge" [attr.data-statut]="f.is_active === false ? 'ANNULEE' : 'VALIDE'">
+                    {{ f.is_active === false ? 'Inactif' : 'Actif' }}
+                  </span>
+                </td>
+                <td class="bea-ach__actions">
+                  <a class="bea-ach__icon-btn" title="Consulter" [routerLink]="['/achats-appro/fournisseurs', f.id]">
+                    <mat-icon>visibility</mat-icon>
+                  </a>
+                  <button type="button" class="bea-ach__icon-btn" title="Modifier" (click)="openEdit(f)">
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                  @if (f.is_active === false) {
+                    <button type="button" class="bea-ach__icon-btn" title="Réactiver" (click)="askAction(f, 'activer')">
+                      <mat-icon>check_circle</mat-icon>
+                    </button>
+                  } @else {
+                    <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Désactiver" (click)="askAction(f, 'desactiver')">
+                      <mat-icon>block</mat-icon>
+                    </button>
+                  }
+                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer" (click)="askAction(f, 'supprimer')">
+                    <mat-icon>delete</mat-icon>
+                  </button>
+                </td>
+              </tr>
+            } @empty {
+              <tr class="bea-ach__empty">
+                <td colspan="8">
+                  <mat-icon>storefront</mat-icon>
+                  <p>Aucun fournisseur pour ces critères.</p>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  @if (mode() === 'form') {
+    <header class="bea-ach__head">
+      <div>
+        <p class="bea-ach__kicker">Fournisseur</p>
+        <h1>{{ editingId() ? 'Modifier le fournisseur' : 'Nouveau fournisseur' }}</h1>
+      </div>
+      <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="cancelForm()">
+        <mat-icon>arrow_back</mat-icon>
+        Retour
+      </button>
+    </header>
+
+    @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
+
+    <form class="bea-ach__form" [formGroup]="form" (ngSubmit)="save()">
+      <div class="bea-ach__panel">
+        <div class="bea-ach__panel-top"><h2>Informations générales</h2></div>
+        <div class="bea-ach__grid">
+          <label>Code *<input formControlName="code" [readonly]="!!editingId()" /></label>
+          <label>Raison sociale *<input formControlName="raison_sociale" /></label>
+          <label>Nom commercial<input formControlName="nom_commercial" /></label>
+          <label>Type
+            <select formControlName="type_fournisseur">
+              @for (t of types; track t.value) {
+                <option [value]="t.value">{{ t.label }}</option>
+              }
+            </select>
+          </label>
+          <label>NIF<input formControlName="nif" /></label>
+          <label>RC<input formControlName="rc" /></label>
+        </div>
+      </div>
+
+      <div class="bea-ach__panel">
+        <div class="bea-ach__panel-top"><h2>Contacts</h2></div>
+        <div class="bea-ach__grid">
+          <label>Contact principal<input formControlName="contact" /></label>
+          <label>Fonction<input formControlName="contact_fonction" /></label>
+          <label>Téléphone<input formControlName="telephone" /></label>
+          <label>Téléphone secondaire<input formControlName="telephone_secondaire" /></label>
+          <label>E-mail<input type="email" formControlName="email" /></label>
+          <label>Site web<input formControlName="site_web" /></label>
+        </div>
+      </div>
+
+      <div class="bea-ach__panel">
+        <div class="bea-ach__panel-top"><h2>Adresse</h2></div>
+        <div class="bea-ach__grid">
+          <label style="grid-column:1/-1">Adresse<textarea formControlName="adresse" rows="2"></textarea></label>
+          <label>Ville<input formControlName="ville" /></label>
+          <label>Pays<input formControlName="pays" /></label>
+        </div>
+      </div>
+
+      <div class="bea-ach__panel">
+        <div class="bea-ach__panel-top"><h2>Conditions commerciales</h2></div>
+        <div class="bea-ach__grid">
+          <label>Devise<select formControlName="devise_defaut"><option value="MRU">MRU</option><option value="EUR">EUR</option><option value="USD">USD</option></select></label>
+          <label>Mode de paiement<input formControlName="mode_paiement_defaut" placeholder="Virement, chèque…" /></label>
+          <label>Délai (jours)<input type="number" formControlName="delai_paiement_jours" min="0" /></label>
+          <label style="grid-column:1/-1">Conditions<textarea formControlName="conditions_commerciales" rows="3"></textarea></label>
+        </div>
+      </div>
+
+      <div class="bea-ach__form-actions">
+        <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="cancelForm()">Annuler</button>
+        <button type="submit" class="bea-ach__btn" [disabled]="saving()">
+          <mat-icon>save</mat-icon>
+          {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
+        </button>
+      </div>
+    </form>
+  }
+
+  @if (mode() === 'fiche') {
+    @if (fiche(); as f) {
+      <header class="bea-ach__head">
+        <div>
+          <p class="bea-ach__kicker">Fiche fournisseur</p>
+          <h1>{{ f.raison_sociale }}</h1>
+          <p class="bea-ach__muted"><code class="bea-ach__code">{{ f.code }}</code>
+            ·
+            <span class="bea-ach__badge" [attr.data-statut]="f.is_active === false ? 'ANNULEE' : 'VALIDE'">
+              {{ f.is_active === false ? 'Inactif' : 'Actif' }}
+            </span>
+          </p>
+        </div>
+        <div class="bea-ach__actions" style="gap:0.5rem">
+          <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="backToList()">
+            <mat-icon>arrow_back</mat-icon>Retour
+          </button>
+          <button type="button" class="bea-ach__btn" (click)="editFromFiche()">
+            <mat-icon>edit</mat-icon>Modifier
+          </button>
+          @if (f.is_active === false) {
+            <button type="button" class="bea-ach__btn" (click)="askAction(f, 'activer')">
+              <mat-icon>check_circle</mat-icon>Réactiver
+            </button>
+          } @else {
+            <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="askAction(f, 'desactiver')">
+              <mat-icon>block</mat-icon>Désactiver
+            </button>
+          }
+        </div>
+      </header>
+
+      @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
+      @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
+
+      <div class="bea-ach__money">
+        <div class="bea-ach__money-card"><span>Consultations</span><strong>{{ f.nb_consultations ?? 0 }}</strong></div>
+        <div class="bea-ach__money-card"><span>Devis</span><strong>{{ f.nb_devis | quantite }}</strong></div>
+        <div class="bea-ach__money-card"><span>BC</span><strong>{{ f.nb_bons | quantite }}</strong></div>
+        <div class="bea-ach__money-card"><span>Réceptions</span><strong>{{ f.nb_receptions | quantite }}</strong></div>
+        <div class="bea-ach__money-card"><span>Factures</span><strong>{{ f.nb_factures | quantite }}</strong></div>
+        <div class="bea-ach__money-card"><span>Achats TTC</span><strong>{{ (f.montant_bons ?? 0) | montant }} MRU</strong></div>
+      </div>
+
+      <div class="bea-ach__tabs" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin:1rem 0">
+        @for (t of [
+          { id: 'infos', label: 'Général' },
+          { id: 'contacts', label: 'Contacts' },
+          { id: 'adresse', label: 'Adresse' },
+          { id: 'conditions', label: 'Conditions' },
+          { id: 'documents', label: 'Documents' },
+          { id: 'historique', label: 'Historique' },
+        ]; track t.id) {
+          <button
+            type="button"
+            class="bea-ach__btn"
+            [class.bea-ach__btn--ghost]="ficheTab() !== t.id"
+            (click)="ficheTab.set($any(t.id))"
+          >{{ t.label }}</button>
+        }
+      </div>
+
+      @if (ficheTab() === 'infos') {
+        <div class="bea-ach__panel">
+          <div class="bea-ach__panel-top"><h2>Informations générales</h2></div>
+          <p><strong>Type :</strong> {{ f.type_fournisseur || '—' }}</p>
+          <p><strong>Nom commercial :</strong> {{ f.nom_commercial || '—' }}</p>
+          <p><strong>NIF :</strong> {{ f.nif || '—' }} · <strong>RC :</strong> {{ f.rc || '—' }}</p>
+        </div>
+      }
+      @if (ficheTab() === 'contacts') {
+        <div class="bea-ach__panel">
+          <div class="bea-ach__panel-top"><h2>Contacts</h2></div>
+          <p><strong>{{ f.contact || '—' }}</strong> {{ f.contact_fonction ? '— ' + f.contact_fonction : '' }}</p>
+          <p>{{ f.telephone || '—' }} @if (f.telephone_secondaire) { / {{ f.telephone_secondaire }} }</p>
+          <p>{{ f.email || 'E-mail non renseigné' }}</p>
+          <p>{{ f.site_web || '—' }}</p>
+        </div>
+      }
+      @if (ficheTab() === 'adresse') {
+        <div class="bea-ach__panel">
+          <div class="bea-ach__panel-top"><h2>Adresse</h2></div>
+          <p>{{ f.adresse || '—' }}</p>
+          <p>{{ f.ville || '—' }} · {{ f.pays || '—' }}</p>
+        </div>
+      }
+      @if (ficheTab() === 'conditions') {
+        <div class="bea-ach__panel">
+          <div class="bea-ach__panel-top"><h2>Conditions commerciales</h2></div>
+          <p><strong>Devise :</strong> {{ f.devise_defaut || 'MRU' }}</p>
+          <p><strong>Paiement :</strong> {{ f.mode_paiement_defaut || '—' }}
+            @if (f.delai_paiement_jours != null) { ({{ f.delai_paiement_jours }} j) }</p>
+          <p>{{ f.conditions_commerciales || '—' }}</p>
+        </div>
+      }
+      @if (ficheTab() === 'documents') {
+        <bea-mg-ged moduleCode="achats-appro" entity="fournisseur" [entityId]="f.id" />
+      }
+      @if (ficheTab() === 'historique') {
+        <div class="bea-ach__panel">
+          <div class="bea-ach__panel-top"><h2>Historique achats</h2></div>
+          <div class="bea-ach__money">
+            <div class="bea-ach__money-card"><span>Devis</span><strong>{{ f.nb_devis | quantite }}</strong></div>
+            <div class="bea-ach__money-card"><span>BC TTC</span><strong>{{ f.montant_bons | montant }}</strong></div>
+            <div class="bea-ach__money-card"><span>Factures TTC</span><strong>{{ f.montant_factures | montant }}</strong></div>
+            <div class="bea-ach__money-card"><span>Paiements</span><strong>{{ f.nb_paiements | quantite }}</strong></div>
+          </div>
+          <p class="bea-ach__note">Compteurs issus des données métier réelles (consultations, devis, BC, réceptions, factures).</p>
+        </div>
+      }
+    }
+  }
+
+  @if (confirm(); as c) {
+    <div class="bea-ach__backdrop" (click)="confirm.set(null)"></div>
+    <div class="bea-ach__modal" role="dialog" aria-modal="true">
+      <header class="bea-ach__modal-head">
+        <div>
+          <p class="bea-ach__kicker">Confirmation</p>
+          <h2>
+            @if (c.action === 'supprimer') { Supprimer }
+            @else if (c.action === 'activer') { Réactiver }
+            @else { Désactiver }
+            le fournisseur ?
+          </h2>
+        </div>
+        <button type="button" class="bea-ach__icon-btn" (click)="confirm.set(null)"><mat-icon>close</mat-icon></button>
+      </header>
+      <p>
+        <strong>{{ c.row.raison_sociale }}</strong>
+        @if (c.action === 'supprimer') {
+          — suppression refusée s’il est lié à des données métier.
+        } @else if (c.action === 'desactiver') {
+          — ne sera plus sélectionnable pour les nouvelles opérations.
+        }
+      </p>
+      <footer class="bea-ach__modal-foot">
+        <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="confirm.set(null)">Retour</button>
+        <button type="button" class="bea-ach__btn" (click)="confirmAction()">Confirmer</button>
+      </footer>
+    </div>
+  }
+</section>

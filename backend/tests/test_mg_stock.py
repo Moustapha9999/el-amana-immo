@@ -35,6 +35,11 @@ def test_mg_stock_permissions_in_catalogue():
         "mg.stock.inventory",
         "mg.stock.approve",
         "mg.stock.export",
+        "mg.stock.period.view",
+        "mg.stock.period.close",
+        "mg.stock.period.reopen",
+        "mg.stock.inventory.validate",
+        "mg.stock.negative",
     ):
         assert p in codes
 
@@ -67,6 +72,10 @@ def test_stock_nav_contract_routes():
     from pathlib import Path
 
     routes = Path(__file__).resolve().parents[2] / "frontend" / "angular20" / "src" / "app" / "app.routes.ts"
+    if not routes.is_file():
+        import pytest
+
+        pytest.skip("frontend hors contexte (image Docker backend)")
     text = routes.read_text(encoding="utf-8")
     assert "path: 'stock-fournitures'" in text
     assert "entrees" in text
@@ -74,3 +83,4 @@ def test_stock_nav_contract_routes():
     assert "inventaires" in text
     assert "alertes" in text
     assert "parametres" in text
+    assert "articles/:id" in text

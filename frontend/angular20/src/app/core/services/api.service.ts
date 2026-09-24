@@ -35,6 +35,12 @@ export class ApiService {
     });
   }
 
+  downloadPost(path: string, body: unknown): Observable<Blob> {
+    return this.http.post(`${this.baseUrl}${path}`, body, {
+      responseType: 'blob',
+    });
+  }
+
   upload<T>(path: string, file: File, fields?: Record<string, string>): Observable<T> {
     const form = new FormData();
     form.append('file', file);

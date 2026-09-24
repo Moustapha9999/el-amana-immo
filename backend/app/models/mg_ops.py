@@ -6,7 +6,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -50,6 +50,34 @@ class MgBonCommande(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     total_ht: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
     observation: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Cycle achat étendu
+    demande_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_achat_demandes.id"), nullable=True, index=True
+    )
+    consultation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_achat_consultations.id"), nullable=True
+    )
+    comparaison_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_achat_comparaisons.id"), nullable=True
+    )
+    contrat_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_contrats.id"), nullable=True, index=True
+    )
+    agence_facturation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agences.id"), nullable=True
+    )
+    agence_livraison_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agences.id"), nullable=True
+    )
+    agence_facturation_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    agence_livraison_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    type_achat: Mapped[str] = mapped_column(String(40), default="FOURNITURE")
+    devise: Mapped[str] = mapped_column(String(10), default="MRU")
+    total_tva: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    total_ttc: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    date_livraison_prevue: Mapped[date | None] = mapped_column(Date, nullable=True)
+    pdf_version: Mapped[int] = mapped_column(Integer, default=1)
+
     lignes: Mapped[list[MgBcLigne]] = relationship(
         back_populates="bon", cascade="all, delete-orphan"
     )
@@ -65,9 +93,17 @@ class MgBcLigne(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     departement: Mapped[str | None] = mapped_column(String(120), nullable=True)
     description: Mapped[str] = mapped_column(String(255))
     quantite: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("1"))
+    quantite_recue: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("0"))
+    article_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_articles.id"), nullable=True, index=True
+    )
     uom: Mapped[str] = mapped_column(String(20), default="U")
     prix_unitaire: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
     prix_total: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    remise_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0"))
+    taux_tva: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0"))
+    total_ttc: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    stockable: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
     bon: Mapped[MgBonCommande] = relationship(back_populates="lignes")

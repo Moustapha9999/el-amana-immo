@@ -29,6 +29,8 @@ BC_TRANSITIONS = {
     "visa_mg": ("SOUMIS", "VISA_MG"),
     "visa_dr": ("VISA_MG", "VISA_DR"),
     "valider": ("VISA_DR", "VALIDE"),
+    "envoyer": ("VALIDE", "ENVOYE"),
+    "cloturer": ("RECU", "CLOTURE"),
     "rejeter": (None, "REJETEE"),
     "annuler": (None, "ANNULEE"),
 }
@@ -87,22 +89,38 @@ class MgOpsService:
     def _apply_bc_lignes(self, bon: MgBonCommande, lignes) -> None:
         bon.lignes.clear()
         total = Decimal("0")
+        total_tva = Decimal("0")
+        total_ttc = Decimal("0")
         for i, row in enumerate(lignes):
-            pt = (row.quantite * row.prix_unitaire).quantize(Decimal("0.01"))
+            remise = Decimal(getattr(row, "remise_pct", None) or 0)
+            taux = Decimal(getattr(row, "taux_tva", None) or 0)
+            brut = (row.quantite * row.prix_unitaire).quantize(Decimal("0.01"))
+            pt = (brut * (Decimal("1") - remise / Decimal("100"))).quantize(Decimal("0.01"))
+            ttc = (pt * (Decimal("1") + taux / Decimal("100"))).quantize(Decimal("0.01"))
             total += pt
+            total_tva += (ttc - pt).quantize(Decimal("0.01"))
+            total_ttc += ttc
             bon.lignes.append(
                 MgBcLigne(
                     code_produit=row.code_produit,
                     departement=row.departement,
                     description=row.description.strip(),
                     quantite=row.quantite,
+                    quantite_recue=Decimal("0"),
+                    article_id=getattr(row, "article_id", None),
                     uom=row.uom or "U",
                     prix_unitaire=row.prix_unitaire,
                     prix_total=pt,
+                    remise_pct=remise,
+                    taux_tva=taux,
+                    total_ttc=ttc,
+                    stockable=bool(getattr(row, "stockable", False)),
                     sort_order=i,
                 )
             )
         bon.total_ht = total
+        bon.total_tva = total_tva
+        bon.total_ttc = total_ttc
 
     async def create_bon(self, data: BonCreate, user: User) -> MgBonCommande:
         bon = MgBonCommande(
@@ -374,26 +392,34 @@ class MgOpsService:
     # --- Archives GED ---
 
     async def list_archives(
-        self, *, module_code: str | None = None, q: str | None = None, limit: int = 100
-    ) -> list[GedDocument]:
-        stmt = (
-            select(GedDocument)
-            .where(
-                GedDocument.espace_code == "moyens-generaux",
-                GedDocument.deleted_at.is_(None),
-            )
-            .order_by(GedDocument.created_at.desc())
-            .limit(limit)
-        )
+        self, *, module_code: str | None = None, q: str | None = None, page: int = 1, size: int = 50
+    ) -> tuple[list[GedDocument], int]:
+        filters = [
+            GedDocument.espace_code == "moyens-generaux",
+            GedDocument.deleted_at.is_(None),
+        ]
         if module_code:
-            stmt = stmt.where(GedDocument.module_code == module_code)
+            filters.append(GedDocument.module_code == module_code)
         if q:
             like = f"%{q.strip()}%"
-            stmt = stmt.where(
+            filters.append(
                 or_(
                     GedDocument.filename.ilike(like),
                     GedDocument.module_code.ilike(like),
                     GedDocument.entity.ilike(like),
                 )
             )
-        return list((await self.db.execute(stmt)).scalars().all())
+        total = int(
+            (await self.db.scalar(select(func.count()).select_from(GedDocument).where(*filters)))
+            or 0
+        )
+        page = max(1, page)
+        size = max(1, min(size, 500))
+        stmt = (
+            select(GedDocument)
+            .where(*filters)
+            .order_by(GedDocument.created_at.desc())
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+        return list((await self.db.execute(stmt)).scalars().all()), total

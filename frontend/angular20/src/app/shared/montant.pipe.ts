@@ -1,9 +1,49 @@
 import { Pipe, PipeTransform } from '@angular/core';
 
 /**
- * Format monétaire français : séparateur de milliers (espace) + virgule décimale.
- * Ex. 165185262.94 → « 165 185 262,94 »
+ * Règles BEA DIGITAL :
+ * - Montant : 2 décimales, virgule, espace milliers (1 250,00)
+ * - Quantité : entier, espace milliers (1 000)
+ * - Taux : 2 décimales + « % » (18,00 %)
+ * - Null / vide : 0,00 (montant) ou 0 (quantité)
  */
+
+function groupInt(absInt: string): string {
+  return absInt.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+function asNumber(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  return parseMontant(value);
+}
+
+/** Arrondi standard au centime (half-up). */
+export function montantArrondi(value: number | string | null | undefined): number {
+  const n = asNumber(value);
+  if (n === null) return 0;
+  return Math.round(n * 100) / 100;
+}
+
+/** Quantité entière (half-up). */
+export function quantiteEntiere(value: number | string | null | undefined): number {
+  const n = asNumber(value);
+  if (n === null) return 0;
+  return Math.round(n);
+}
+
+/** Total ligne = quantité (entier) × prix unitaire (2 décimales), arrondi à 2 décimales. */
+export function montantLigne(
+  quantite: number | string | null | undefined,
+  prixUnitaire: number | string | null | undefined,
+): number {
+  return montantArrondi(quantiteEntiere(quantite) * montantArrondi(prixUnitaire));
+}
+
 export function formatMontant(
   value: number | string | null | undefined,
   fractionDigits: number | string | boolean = 2,
@@ -24,21 +64,27 @@ export function formatMontant(
     devise = currency;
   }
 
-  if (value === null || value === undefined || value === '') {
-    return '—';
-  }
-  const n = typeof value === 'number' ? value : parseMontant(value);
-  if (n === null || !Number.isFinite(n)) {
-    return '—';
-  }
-  const fixed = n.toFixed(digits);
+  const n = asNumber(value);
+  const raw = n === null ? 0 : n;
+  const fixed = raw.toFixed(Math.max(0, digits));
   const neg = fixed.startsWith('-');
   const abs = neg ? fixed.slice(1) : fixed;
   const [intPart, decPart] = abs.split('.');
-  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const grouped = groupInt(intPart);
   const body = decPart !== undefined ? `${grouped},${decPart}` : grouped;
   const formatted = neg ? `-${body}` : body;
   return devise ? `${formatted} ${devise}` : formatted;
+}
+
+export function formatQuantite(value: number | string | null | undefined): string {
+  const q = quantiteEntiere(value);
+  const neg = q < 0;
+  const grouped = groupInt(String(Math.abs(q)));
+  return neg ? `-${grouped}` : grouped;
+}
+
+export function formatTaux(value: number | string | null | undefined): string {
+  return `${formatMontant(value, 2)} %`;
 }
 
 /** Parse une saisie FR/EN vers number (``1 234,56`` / ``1234.56``). */
@@ -53,7 +99,6 @@ export function parseMontant(value: number | string | null | undefined): number 
   if (!s || s === '-' || s === ',' || s === '.') {
     return null;
   }
-  // Si virgule et point : le dernier séparateur est décimal
   const lastComma = s.lastIndexOf(',');
   const lastDot = s.lastIndexOf('.');
   if (lastComma >= 0 && lastDot >= 0) {
@@ -87,5 +132,27 @@ export class MontantPipe implements PipeTransform {
     currency?: string | boolean,
   ): string {
     return formatMontant(value, digitsOrCurrency, currency);
+  }
+}
+
+@Pipe({
+  name: 'quantite',
+  standalone: true,
+  pure: true,
+})
+export class QuantitePipe implements PipeTransform {
+  transform(value: number | string | null | undefined): string {
+    return formatQuantite(value);
+  }
+}
+
+@Pipe({
+  name: 'taux',
+  standalone: true,
+  pure: true,
+})
+export class TauxPipe implements PipeTransform {
+  transform(value: number | string | null | undefined): string {
+    return formatTaux(value);
   }
 }

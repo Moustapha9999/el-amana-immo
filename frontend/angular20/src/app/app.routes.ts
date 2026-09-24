@@ -35,9 +35,11 @@ import { PLATEFORME_ROUTES } from './plateforme/plateforme.routes';
 import { LEGACY_ROOT_MODULE_CODE } from './plateforme/module-routing.contract';
 import { StockDashboardComponent } from './stock-fournitures/stock-dashboard.component';
 import { StockArticlesComponent } from './stock-fournitures/stock-articles.component';
+import { StockArticleFicheComponent } from './stock-fournitures/stock-article-fiche.component';
 import { StockMouvementsComponent } from './stock-fournitures/stock-mouvements.component';
 import { StockDemandesComponent } from './stock-fournitures/stock-demandes.component';
 import { StockRapportsComponent } from './stock-fournitures/stock-rapports.component';
+import { StockRapportViewerComponent } from './stock-fournitures/stock-rapport-viewer.component';
 import {
   StockAlertesComponent,
   StockEntreesComponent,
@@ -47,6 +49,22 @@ import {
   StockSortiesComponent,
 } from './stock-fournitures/stock-pages.component';
 import { AchatsBonsComponent } from './achats-appro/achats-bons.component';
+import { AchatsConsultationsComponent } from './achats-appro/achats-consultations.component';
+import { AchatsDemandesComponent } from './achats-appro/achats-demandes.component';
+import { AchatsFournisseursComponent } from './achats-appro/achats-fournisseurs.component';
+import { AchatsDevisComponent } from './achats-appro/achats-devis.component';
+import { AchatsComparaisonsComponent } from './achats-appro/achats-comparaisons.component';
+import { AchatsFacturesComponent } from './achats-appro/achats-factures.component';
+import { AchatsLivraisonsComponent } from './achats-appro/achats-livraisons.component';
+import { AchatsPaiementsComponent } from './achats-appro/achats-paiements.component';
+import { AchatsReceptionsComponent } from './achats-appro/achats-receptions.component';
+import { AchatsRapportsComponent } from './achats-appro/achats-rapports.component';
+import { AchatsRapportViewerComponent } from './achats-appro/achats-rapport-viewer.component';
+import {
+  AchatsAlertesComponent,
+  AchatsDashboardComponent,
+  AchatsParametresComponent,
+} from './achats-appro/achats-pages.component';
 import { NotesListComponent } from './notes-frais/notes-list.component';
 import { ContratsListComponent } from './contrats-echeances/contrats-list.component';
 import { ArchivesRegistreComponent } from './archives-mg/archives-registre.component';
@@ -69,6 +87,7 @@ export const routes: Routes = [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
       { path: 'dashboard', component: StockDashboardComponent },
       { path: 'articles', component: StockArticlesComponent },
+      { path: 'articles/:id', component: StockArticleFicheComponent },
       { path: 'stock', component: StockEtatComponent },
       { path: 'entrees', component: StockEntreesComponent },
       { path: 'sorties', component: StockSortiesComponent },
@@ -80,6 +99,7 @@ export const routes: Routes = [
       { path: 'inventaires', component: StockInventairesComponent },
       { path: 'alertes', component: StockAlertesComponent },
       { path: 'rapports', component: StockRapportsComponent },
+      { path: 'rapports/:key', component: StockRapportViewerComponent },
       { path: 'parametres', component: StockParametresComponent },
     ],
   },
@@ -88,10 +108,42 @@ export const routes: Routes = [
     component: ShellComponent,
     canActivate: [authGuard, moduleGuard('achats-appro')],
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'bons' },
+      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      { path: 'dashboard', component: AchatsDashboardComponent },
+      { path: 'alertes', component: AchatsAlertesComponent },
+      { path: 'demandes', component: AchatsDemandesComponent },
+      { path: 'demandes/nouvelle', component: AchatsDemandesComponent },
+      { path: 'demandes/:id', component: AchatsDemandesComponent },
+      { path: 'fournisseurs', component: AchatsFournisseursComponent },
+      { path: 'fournisseurs/nouveau', component: AchatsFournisseursComponent },
+      { path: 'fournisseurs/:id', component: AchatsFournisseursComponent },
+      { path: 'consultations', component: AchatsConsultationsComponent },
+      { path: 'consultations/nouvelle', component: AchatsConsultationsComponent },
+      { path: 'consultations/:id', component: AchatsConsultationsComponent },
+      { path: 'devis', component: AchatsDevisComponent },
+      { path: 'devis/nouveau', component: AchatsDevisComponent },
+      { path: 'devis/:id', component: AchatsDevisComponent },
+      { path: 'comparaisons', component: AchatsComparaisonsComponent },
+      { path: 'comparaisons/nouvelle', component: AchatsComparaisonsComponent },
+      { path: 'comparaisons/:id', component: AchatsComparaisonsComponent },
       { path: 'bons', component: AchatsBonsComponent },
       { path: 'nouveau', component: AchatsBonsComponent },
       { path: 'bons/:id', component: AchatsBonsComponent },
+      { path: 'livraisons', component: AchatsLivraisonsComponent },
+      { path: 'livraisons/nouvelle', component: AchatsLivraisonsComponent },
+      { path: 'livraisons/:id', component: AchatsLivraisonsComponent },
+      { path: 'receptions', component: AchatsReceptionsComponent },
+      { path: 'receptions/nouvelle', component: AchatsReceptionsComponent },
+      { path: 'receptions/:id', component: AchatsReceptionsComponent },
+      { path: 'factures', component: AchatsFacturesComponent },
+      { path: 'factures/nouvelle', component: AchatsFacturesComponent },
+      { path: 'factures/:id', component: AchatsFacturesComponent },
+      { path: 'paiements', component: AchatsPaiementsComponent },
+      { path: 'paiements/nouveau', component: AchatsPaiementsComponent },
+      { path: 'paiements/:id', component: AchatsPaiementsComponent },
+      { path: 'rapports', component: AchatsRapportsComponent },
+      { path: 'rapports/:key', component: AchatsRapportViewerComponent },
+      { path: 'parametres', component: AchatsParametresComponent },
     ],
   },
   {
@@ -114,6 +166,7 @@ export const routes: Routes = [
       { path: 'liste', component: ContratsListComponent },
       { path: 'alertes', component: ContratsListComponent },
       { path: 'nouveau', component: ContratsListComponent },
+      { path: ':id', component: ContratsListComponent },
     ],
   },
   {

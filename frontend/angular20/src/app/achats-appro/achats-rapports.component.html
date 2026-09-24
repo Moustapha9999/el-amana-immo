@@ -1,0 +1,113 @@
+<section class="bea-ach">
+  <header class="bea-ach__hero">
+    <p>Achats &amp; Approvisionnements</p>
+    <h1>Centre de reporting</h1>
+    <div class="bea-ach__hero-glow" aria-hidden="true"></div>
+  </header>
+
+  @if (erreur()) {
+    <p class="bea-ach__error">{{ erreur() }}</p>
+  }
+
+  @if (summary(); as s) {
+    <div class="bea-ach__kpis">
+      <div class="bea-ach__kpi" style="--i:0">
+        <span class="bea-ach__kpi-icon" data-tone="navy"><mat-icon>assignment</mat-icon></span>
+        <span class="bea-ach__kpi-meta">
+          <span>Demandes</span>
+          <strong>{{ s.nb_demandes | quantite }}</strong>
+          <em>En base</em>
+        </span>
+      </div>
+      <div class="bea-ach__kpi" style="--i:1">
+        <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>receipt_long</mat-icon></span>
+        <span class="bea-ach__kpi-meta">
+          <span>Bons</span>
+          <strong>{{ s.nb_bons | quantite }}</strong>
+          <em>{{ s.montant_bons | montant }} MRU</em>
+        </span>
+      </div>
+      <div class="bea-ach__kpi" style="--i:2">
+        <span class="bea-ach__kpi-icon" data-tone="blue"><mat-icon>receipt</mat-icon></span>
+        <span class="bea-ach__kpi-meta">
+          <span>Factures</span>
+          <strong>{{ s.nb_factures | quantite }}</strong>
+          <em>{{ s.montant_factures | montant }} MRU</em>
+        </span>
+      </div>
+      <div class="bea-ach__kpi" style="--i:3">
+        <span class="bea-ach__kpi-icon" data-tone="warn"><mat-icon>payments</mat-icon></span>
+        <span class="bea-ach__kpi-meta">
+          <span>Paiements</span>
+          <strong>{{ s.montant_paiements | montant }}</strong>
+          <em>MRU suivis</em>
+        </span>
+      </div>
+    </div>
+  }
+
+  @if (loading()) {
+    <div class="bea-ach__skeleton" aria-busy="true">
+      @for (_ of [1, 2, 3, 4, 5, 6]; track _) {
+        <div class="bea-ach__skel"></div>
+      }
+    </div>
+  } @else {
+    <div class="bea-ach__panel" style="margin-bottom:1rem">
+      <div class="bea-ach__panel-top">
+        <h2>Objets métier</h2>
+        <span class="bea-ach__count">{{ objets().length }} rapports</span>
+      </div>
+      <div class="bea-ach__report-grid">
+        @for (r of objets(); track r.key; let i = $index) {
+          <a class="bea-ach__report-card" [routerLink]="['/achats-appro/rapports', r.key]" [style.--i]="i">
+            <span class="bea-ach__kpi-icon" data-tone="navy"><mat-icon>{{ r.icon }}</mat-icon></span>
+            <span>
+              <strong>{{ r.label }}</strong>
+              <em>{{ r.description }}</em>
+            </span>
+            <mat-icon class="bea-ach__report-chevron">chevron_right</mat-icon>
+          </a>
+        }
+      </div>
+    </div>
+
+    <div class="bea-ach__panel" style="margin-bottom:1rem">
+      <div class="bea-ach__panel-top">
+        <h2>Pilotage</h2>
+        <span class="bea-ach__count">{{ pilotage().length }}</span>
+      </div>
+      <div class="bea-ach__report-grid">
+        @for (r of pilotage(); track r.key; let i = $index) {
+          <a class="bea-ach__report-card" [routerLink]="['/achats-appro/rapports', r.key]" [style.--i]="i">
+            <span class="bea-ach__kpi-icon" data-tone="danger"><mat-icon>{{ r.icon }}</mat-icon></span>
+            <span>
+              <strong>{{ r.label }}</strong>
+              <em>{{ r.description }}</em>
+            </span>
+            <mat-icon class="bea-ach__report-chevron">chevron_right</mat-icon>
+          </a>
+        }
+      </div>
+    </div>
+
+    <div class="bea-ach__panel">
+      <div class="bea-ach__panel-top">
+        <h2>Analyses &amp; personnalisation</h2>
+        <span class="bea-ach__count">{{ analyses().length }}</span>
+      </div>
+      <div class="bea-ach__report-grid">
+        @for (r of analyses(); track r.key; let i = $index) {
+          <a class="bea-ach__report-card" [routerLink]="['/achats-appro/rapports', r.key]" [style.--i]="i">
+            <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>{{ r.icon }}</mat-icon></span>
+            <span>
+              <strong>{{ r.label }}</strong>
+              <em>{{ r.description }}</em>
+            </span>
+            <mat-icon class="bea-ach__report-chevron">chevron_right</mat-icon>
+          </a>
+        }
+      </div>
+    </div>
+  }
+</section>

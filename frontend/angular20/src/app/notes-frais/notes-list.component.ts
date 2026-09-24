@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+import { MontantPipe } from '../shared/montant.pipe';
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -17,7 +17,7 @@ interface Note {
 @Component({
   selector: 'bea-notes-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, DecimalPipe, MgGedPanelComponent],
+  imports: [ReactiveFormsModule, RouterLink, MontantPipe, MgGedPanelComponent],
   template: `
     <section class="bea-stock-page">
       <header class="bea-stock-page__head">
@@ -29,6 +29,7 @@ interface Note {
       </header>
 
       @if (mode() === 'list') {
+        <div class="bea-mg__table-scroll">
         <table class="bea-stock-table">
           <thead><tr><th>Réf.</th><th>Date</th><th>Demandeur</th><th>Total</th><th>Statut</th><th></th></tr></thead>
           <tbody>
@@ -36,13 +37,14 @@ interface Note {
               <tr>
                 <td>{{ n.reference }}</td><td>{{ n.date_demande }}</td>
                 <td>{{ n.demandeur_nom || '—' }}</td>
-                <td>{{ n.total_mru | number:'1.2-2' }}</td>
+                <td>{{ n.total_mru | montant }}</td>
                 <td>{{ n.statut }}</td>
                 <td><a [routerLink]="['/notes-frais/notes', n.id]">Ouvrir</a></td>
               </tr>
             }
           </tbody>
         </table>
+        </div>
       } @else {
         <form class="bea-stock-form" [formGroup]="form" (ngSubmit)="save()">
           <div class="bea-stock-form__grid">

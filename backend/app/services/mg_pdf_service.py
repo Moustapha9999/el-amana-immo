@@ -2,16 +2,38 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import (
+    Image,
+    KeepTogether,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
-from app.services.reporting_export import resolve_bea_logo_path
+from app.data.el_amana_referentiel import BANQUE_EL_AMANA
+from app.services.reporting_export import (
+    format_export_datetime,
+    resolve_bea_logo_path,
+)
 import io
+
+BEA_NAVY = colors.HexColor("#1E3A5F")
+BEA_LINE = colors.HexColor("#94A3B8")
+BEA_FILL = colors.HexColor("#F1F5F9")
+BEA_SOFT = colors.HexColor("#E8EEF5")
+BEA_META = colors.HexColor("#64748B")
+_TZ = ZoneInfo("Africa/Nouakchott")
 
 
 def _styles():
@@ -22,92 +44,600 @@ def _styles():
             parent=base["Heading1"],
             fontSize=14,
             spaceAfter=8,
-            textColor=colors.HexColor("#1E3A5F"),
+            textColor=BEA_NAVY,
         ),
-        "meta": ParagraphStyle("MgMeta", parent=base["Normal"], fontSize=9, leading=12),
+        "bank": ParagraphStyle(
+            "BcBank",
+            parent=base["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=10,
+            textColor=BEA_NAVY,
+            spaceAfter=2,
+        ),
+        "bc_title": ParagraphStyle(
+            "BcTitle",
+            parent=base["Normal"],
+            fontSize=13,
+            leading=15,
+            spaceBefore=0,
+            spaceAfter=2,
+            textColor=colors.HexColor("#0F172A"),
+            fontName="Helvetica-Bold",
+        ),
+        "export_meta": ParagraphStyle(
+            "BcExportMeta",
+            parent=base["Normal"],
+            fontName="Helvetica-Oblique",
+            fontSize=9,
+            textColor=BEA_META,
+            spaceAfter=8,
+        ),
+        "meta": ParagraphStyle("MgMeta", parent=base["Normal"], fontSize=8, leading=10),
+        "label": ParagraphStyle(
+            "BcLabel",
+            parent=base["Normal"],
+            fontSize=7,
+            leading=9,
+            textColor=colors.HexColor("#475569"),
+            fontName="Helvetica-Bold",
+        ),
+        "value": ParagraphStyle(
+            "BcValue",
+            parent=base["Normal"],
+            fontSize=8,
+            leading=10,
+            textColor=colors.HexColor("#0F172A"),
+        ),
         "cell": ParagraphStyle("MgCell", parent=base["Normal"], fontSize=8, leading=10),
+        "cell_center": ParagraphStyle(
+            "MgCellCenter", parent=base["Normal"], fontSize=8, leading=10, alignment=TA_CENTER
+        ),
+        "cell_right": ParagraphStyle(
+            "MgCellRight", parent=base["Normal"], fontSize=8, leading=10, alignment=TA_RIGHT
+        ),
+        "header_cell": ParagraphStyle(
+            "BcHeaderCell",
+            parent=base["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=8,
+            leading=10,
+            textColor=colors.whitesmoke,
+            alignment=TA_CENTER,
+        ),
+        "small": ParagraphStyle(
+            "BcSmall",
+            parent=base["Normal"],
+            fontSize=8,
+            leading=10,
+            textColor=colors.HexColor("#334155"),
+            alignment=TA_CENTER,
+        ),
+        "visa": ParagraphStyle(
+            "BcVisa",
+            parent=base["Normal"],
+            fontSize=8,
+            leading=10,
+            alignment=TA_CENTER,
+            fontName="Helvetica-Bold",
+            textColor=BEA_NAVY,
+        ),
     }
 
 
-def _doc_buffer(build_fn) -> bytes:
+def _doc_buffer(build_fn, *, with_logo: bool = True) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
         pagesize=A4,
-        leftMargin=15 * mm,
-        rightMargin=15 * mm,
-        topMargin=15 * mm,
-        bottomMargin=15 * mm,
+        leftMargin=14 * mm,
+        rightMargin=14 * mm,
+        topMargin=12 * mm,
+        bottomMargin=14 * mm,
     )
     styles = _styles()
     story = []
-    logo = resolve_bea_logo_path()
-    if logo is not None:
-        try:
-            story.append(Image(str(logo), width=45 * mm, height=15 * mm))
-            story.append(Spacer(1, 3 * mm))
-        except Exception:
-            pass
+    if with_logo:
+        logo = resolve_bea_logo_path()
+        if logo is not None:
+            try:
+                story.append(Image(str(logo), width=45 * mm, height=15 * mm))
+                story.append(Spacer(1, 3 * mm))
+            except Exception:
+                pass
     story.extend(build_fn(styles))
     doc.build(story)
     return buf.getvalue()
 
 
-def pdf_bon_commande(bon) -> bytes:
-    def body(styles):
-        out = [
-            Paragraph("BANQUE EL AMANA — BON DE COMMANDE", styles["title"]),
-            Paragraph(
-                f"<b>Réf.</b> {bon.reference} &nbsp;|&nbsp; <b>Date</b> {bon.date_bc} "
-                f"&nbsp;|&nbsp; <b>Statut</b> {bon.statut}",
-                styles["meta"],
-            ),
-            Paragraph(
-                f"<b>Fournisseur</b> {bon.fournisseur_raison_sociale or '—'} "
-                f"(NIF {bon.fournisseur_nif or '—'})<br/>"
-                f"<b>Tél.</b> {bon.fournisseur_telephone or '—'} — {bon.fournisseur_adresse or ''}<br/>"
-                f"<b>Département</b> {bon.departement or '—'} — <b>Acheteur</b> {bon.acheteur_nom or '—'}",
-                styles["meta"],
-            ),
-            Spacer(1, 6 * mm),
-        ]
-        rows = [["Code", "Description", "Qté", "UOM", "PU", "Total"]]
-        for ligne in sorted(bon.lignes, key=lambda x: x.sort_order):
-            rows.append(
-                [
-                    ligne.code_produit or "",
-                    Paragraph(ligne.description, styles["cell"]),
-                    f"{ligne.quantite}",
-                    ligne.uom,
-                    f"{ligne.prix_unitaire}",
-                    f"{ligne.prix_total}",
-                ]
-            )
-        rows.append(["", "", "", "", "Total HT", f"{bon.total_ht}"])
-        table = Table(rows, colWidths=[22 * mm, 70 * mm, 18 * mm, 15 * mm, 25 * mm, 25 * mm])
-        table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A5F")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                    ("FONTSIZE", (0, 0), (-1, -1), 8),
-                    ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ]
-            )
-        )
-        out.append(table)
-        out.append(Spacer(1, 12 * mm))
-        out.append(
-            Paragraph(
-                "Visa Chef Sce Moyens Généraux _______________ &nbsp;&nbsp;&nbsp; "
-                "Visa Directrice des Ressources _______________",
-                styles["meta"],
-            )
-        )
-        return out
+def money(value: Decimal | None) -> str:
+    if value is None:
+        return "0,00"
+    return f"{value:,.2f}".replace(",", " ").replace(".", ",")
 
-    return _doc_buffer(body)
+
+def _box(label: str, value: str, styles, *, min_h: float = 8 * mm, width: float = 85 * mm) -> Table:
+    """Libellé au-dessus (hors case) + valeur en gras dans le cadre."""
+    inner_w = max(width - 2 * mm, 20 * mm)
+    raw = (value or "—").strip() or "—"
+    value_cell = Table(
+        [[Paragraph(f"<b>{raw}</b>", styles["value"])]],
+        colWidths=[inner_w],
+    )
+    value_cell.setStyle(
+        TableStyle(
+            [
+                ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+            ]
+        )
+    )
+    framed = Table([[value_cell]], colWidths=[width], rowHeights=[min_h])
+    framed.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.7, BEA_NAVY),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    block = Table(
+        [
+            [Paragraph(label, styles["label"])],
+            [Spacer(1, 0.5 * mm)],
+            [framed],
+        ],
+        colWidths=[width],
+    )
+    block.setStyle(
+        TableStyle(
+            [
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    return block
+
+
+def _qty_int(value) -> str:
+    """Quantité affichée en entier (pas comme les prix décimaux)."""
+    if value is None:
+        return "—"
+    try:
+        return str(int(value))
+    except (TypeError, ValueError):
+        try:
+            return str(int(float(value)))
+        except (TypeError, ValueError):
+            return "—"
+
+
+def _plain_line(label: str, value: str, styles) -> Paragraph:
+    return Paragraph(
+        f"<b>{label}</b> {value or '—'}",
+        styles["meta"],
+    )
+
+
+def _visa_block(label: str, styles, *, zone_h: float = 16 * mm, width: float = 80 * mm) -> Table:
+    """Libellé + zone de signature vide en dessous (sans texte « Signature / cachet »)."""
+    zone = Table([[""]], colWidths=[width], rowHeights=[zone_h])
+    zone.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.7, BEA_NAVY),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    block = Table(
+        [
+            [Paragraph(label, styles["visa"])],
+            [Spacer(1, 1.5 * mm)],
+            [zone],
+        ],
+        colWidths=[width + 2 * mm],
+    )
+    block.setStyle(
+        TableStyle(
+            [
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    return block
+
+
+def _bc_footer(canvas, doc, *, exported_label: str) -> None:
+    """Pied de page style Immo — sans bandeau bleu du haut."""
+    canvas.saveState()
+    page_w, _ = canvas._pagesize
+    canvas.setStrokeColor(colors.HexColor("#1A5278"))
+    canvas.setLineWidth(1.2)
+    canvas.line(12 * mm, 12 * mm, page_w - 12 * mm, 12 * mm)
+    canvas.setFont("Helvetica", 8)
+    canvas.setFillColor(BEA_META)
+    canvas.drawString(12 * mm, 7 * mm, BANQUE_EL_AMANA["raison_sociale"])
+    canvas.drawCentredString(page_w / 2, 7 * mm, exported_label)
+    canvas.drawRightString(page_w - 12 * mm, 7 * mm, f"Page {doc.page}")
+    canvas.restoreState()
+
+
+def _bc_pdf_filename(reference: str) -> str:
+    """Nom de fichier : Bon-Commande-00XXXX.pdf (chiffres de la référence, pad ≥ 6)."""
+    digits = "".join(ch for ch in (reference or "") if ch.isdigit()) or "0"
+    return f"Bon-Commande-{digits.zfill(6)}.pdf"
+
+
+def pdf_bon_commande(
+    bon,
+    *,
+    signataire_1: str | None = None,
+    signataire_2: str | None = None,
+) -> bytes:
+    """PDF BC : en-tête Immo (logo + banque) + fiche métier + tableau stylé."""
+    when = datetime.now(_TZ)
+    exported_label = f"Exporté le {format_export_datetime(when)}"
+    styles = _styles()
+    s1 = (signataire_1 or "").strip() or "Signature Chef Sce Moyens Généraux"
+    s2 = (signataire_2 or "").strip() or "Signature Directrice des Ressources"
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=12 * mm,
+        rightMargin=12 * mm,
+        topMargin=10 * mm,
+        bottomMargin=16 * mm,
+        title=f"Bon de commande {bon.reference}",
+    )
+
+    date_bc = bon.date_bc.strftime("%d/%m/%Y") if bon.date_bc else "—"
+    dem_date = (
+        bon.demandeur_date.strftime("%d/%m/%Y") if getattr(bon, "demandeur_date", None) else ""
+    )
+
+    story: list = []
+    logo = resolve_bea_logo_path()
+    if logo is not None:
+        try:
+            story.append(Image(str(logo), width=36 * mm, height=12 * mm))
+            story.append(Spacer(1, 0.5 * mm))
+        except Exception:
+            pass
+
+    story.append(Paragraph("BON DE COMMANDE", styles["bc_title"]))
+
+    # Largeur utile A4 (210 − 2×12) = 186 mm — mêmes extrémités gauche/droite partout.
+    content_w = 186 * mm
+    left_w = 88 * mm
+    gutter = 10 * mm
+    right_w = 88 * mm  # 88 + 10 + 88 = 186
+
+    # Ligne d’identité : numéro/date et fournisseur alignés (même hauteur / extrémités).
+    numero_cell = Table(
+        [
+            [
+                Paragraph(
+                    f"<b>Numéro</b> {bon.reference}<br/><b>Date</b> {date_bc}",
+                    styles["meta"],
+                )
+            ]
+        ],
+        colWidths=[left_w],
+    )
+    numero_cell.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.5, BEA_LINE),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    adresse_fourn = (bon.fournisseur_adresse or "").strip() or "—"
+    fournisseur_cell = Table(
+        [
+            [
+                Paragraph(
+                    f"<b>{bon.fournisseur_raison_sociale or '—'}</b><br/>"
+                    f"NIF {bon.fournisseur_nif or '—'}<br/>"
+                    f"{bon.fournisseur_telephone or '—'}<br/>"
+                    f"{adresse_fourn}",
+                    styles["meta"],
+                )
+            ]
+        ],
+        colWidths=[right_w],
+    )
+    fournisseur_cell.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), BEA_SOFT),
+                ("BOX", (0, 0), (-1, -1), 0.5, BEA_LINE),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    header = Table(
+        [[numero_cell, "", fournisseur_cell]],
+        colWidths=[left_w, gutter, right_w],
+    )
+    header.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+
+    # Lignes appariées : mêmes hauteurs / extrémités gauche-droite.
+    # Conditions… collées sous facturation, même largeur / bord gauche.
+    row_h = 9 * mm
+    row_h_tall = 12 * mm
+    fields = Table(
+        [
+            [
+                _box("Département", bon.departement or "", styles, min_h=row_h, width=left_w),
+                "",
+                _box(
+                    "Adresse de livraison",
+                    bon.adresse_livraison
+                    or getattr(bon, "agence_livraison_snapshot", None)
+                    or "",
+                    styles,
+                    min_h=row_h,
+                    width=right_w,
+                ),
+            ],
+            [
+                _box("Projet", bon.projet or "", styles, min_h=row_h_tall, width=left_w),
+                "",
+                _box(
+                    "Demandeur",
+                    f"Nom : {bon.demandeur_nom or '—'}<br/>"
+                    f"Date : {dem_date or '—'}",
+                    styles,
+                    min_h=row_h_tall,
+                    width=right_w,
+                ),
+            ],
+            [
+                _box(
+                    "Acheteur (interne BEA)",
+                    f"Nom : {bon.acheteur_nom or '—'}<br/>Tél. : {bon.acheteur_tel or '—'}",
+                    styles,
+                    min_h=row_h_tall,
+                    width=left_w,
+                ),
+                "",
+                "",
+            ],
+            [
+                _box(
+                    "Adresse de facturation",
+                    bon.adresse_facturation
+                    or getattr(bon, "agence_facturation_snapshot", None)
+                    or "",
+                    styles,
+                    min_h=row_h,
+                    width=left_w,
+                ),
+                "",
+                "",
+            ],
+            [
+                _plain_line("Conditions :", bon.conditions or "Voir pièce jointe", styles),
+                "",
+                "",
+            ],
+            [
+                _plain_line("Incoterm :", bon.incoterm or "N/A", styles),
+                "",
+                "",
+            ],
+            [
+                _plain_line(
+                    "Conditions de paiement :",
+                    bon.conditions_paiement or "—",
+                    styles,
+                ),
+                "",
+                "",
+            ],
+            [
+                _plain_line("Moyen de paiement :", bon.moyen_paiement or "—", styles),
+                "",
+                "",
+            ],
+        ],
+        colWidths=[left_w, gutter, right_w],
+        spaceBefore=0,
+        spaceAfter=0,
+    )
+    fields.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
+                # Conditions / paiement : texte libre sous facturation (sans cadre).
+                ("BOTTOMPADDING", (0, 4), (0, -1), 0.5),
+                ("TOPPADDING", (0, 4), (0, -1), 0.5),
+            ]
+        )
+    )
+
+    head = [
+        Paragraph("Code produit", styles["header_cell"]),
+        Paragraph("Département", styles["header_cell"]),
+        Paragraph("Description &amp; Commentaires", styles["header_cell"]),
+        Paragraph("Quantité", styles["header_cell"]),
+        Paragraph("U.O.M", styles["header_cell"]),
+        Paragraph("Prix unitaire (MRU)", styles["header_cell"]),
+        Paragraph("Prix total (MRU)", styles["header_cell"]),
+    ]
+    rows: list = [head]
+    lignes = sorted(bon.lignes or [], key=lambda x: x.sort_order)
+    for ligne in lignes:
+        rows.append(
+            [
+                Paragraph(ligne.code_produit or "—", styles["cell_center"]),
+                Paragraph(ligne.departement or bon.departement or "—", styles["cell_center"]),
+                Paragraph(ligne.description or "", styles["cell"]),
+                Paragraph(_qty_int(ligne.quantite), styles["cell_center"]),
+                Paragraph(ligne.uom or "U", styles["cell_center"]),
+                Paragraph(money(ligne.prix_unitaire), styles["cell_right"]),
+                Paragraph(money(ligne.prix_total), styles["cell_right"]),
+            ]
+        )
+    if not lignes:
+        rows.append(["", "", Paragraph("Aucune ligne", styles["cell"]), "", "", "", ""])
+
+    # Même largeur totale que le bloc infos (186 mm).
+    col_w = [22 * mm, 24 * mm, 62 * mm, 18 * mm, 16 * mm, 22 * mm, 22 * mm]
+    table = Table(rows, colWidths=col_w, repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), BEA_NAVY),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, BEA_FILL]),
+            ]
+        )
+    )
+
+    # Totaux alignés : libellés à gauche, montants à droite, même cadre.
+    totals_inner = Table(
+        [
+            [
+                Paragraph("<b>Prix total (MRU) HT</b>", styles["meta"]),
+                Paragraph(f"<b>{money(bon.total_ht)}</b>", styles["cell_right"]),
+            ],
+            [
+                Paragraph("<b>Prix total (MRU) TVA</b>", styles["meta"]),
+                Paragraph(
+                    f"<b>{money(getattr(bon, 'total_tva', None))}</b>",
+                    styles["cell_right"],
+                ),
+            ],
+            [
+                Paragraph("<b>Prix total (MRU) TTC</b>", styles["meta"]),
+                Paragraph(
+                    f"<b>{money(getattr(bon, 'total_ttc', None) or bon.total_ht)}</b>",
+                    styles["cell_right"],
+                ),
+            ],
+        ],
+        colWidths=[52 * mm, 28 * mm],
+    )
+    totals_inner.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), BEA_SOFT),
+                ("BOX", (0, 0), (-1, -1), 0.6, BEA_NAVY),
+                ("LINEBELOW", (0, 0), (-1, -2), 0.4, BEA_LINE),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (0, -1), "LEFT"),
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+    total_block = Table(
+        [["", totals_inner]],
+        colWidths=[content_w - 80 * mm, 80 * mm],
+    )
+    total_block.setStyle(
+        TableStyle(
+            [
+                ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+
+    visas = Table(
+        [
+            [
+                _visa_block(s1, styles, zone_h=14 * mm, width=78 * mm),
+                _visa_block(s2, styles, zone_h=14 * mm, width=78 * mm),
+            ]
+        ],
+        colWidths=[left_w + gutter / 2, right_w + gutter / 2],
+    )
+    visas.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+
+    story.extend(
+        [
+            header,
+            Spacer(1, 2 * mm),
+            fields,
+            Spacer(1, 2.5 * mm),
+            table,
+            Spacer(1, 2 * mm),
+            total_block,
+            Spacer(1, 6 * mm),
+            KeepTogether([visas]),
+        ]
+    )
+
+    doc.build(
+        story,
+        onFirstPage=lambda c, d: _bc_footer(c, d, exported_label=exported_label),
+        onLaterPages=lambda c, d: _bc_footer(c, d, exported_label=exported_label),
+    )
+    return buf.getvalue()
 
 
 def pdf_note_frais(note) -> bytes:
@@ -130,16 +660,16 @@ def pdf_note_frais(note) -> bytes:
                     str(ligne.date_depense),
                     Paragraph(ligne.description, styles["cell"]),
                     ligne.motif or "",
-                    f"{ligne.montant}",
+                    money(ligne.montant),
                     ligne.mode_reglement or "",
                 ]
             )
-        rows.append(["", "TOTAL", "", f"{note.total_mru}", ""])
+        rows.append(["", "TOTAL", "", money(note.total_mru), ""])
         table = Table(rows, colWidths=[25 * mm, 55 * mm, 40 * mm, 25 * mm, 30 * mm])
         table.setStyle(
             TableStyle(
                 [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A5F")),
+                    ("BACKGROUND", (0, 0), (-1, 0), BEA_NAVY),
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                     ("FONTSIZE", (0, 0), (-1, -1), 8),
                     ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
@@ -147,13 +677,16 @@ def pdf_note_frais(note) -> bytes:
             )
         )
         out.extend([table, Spacer(1, 12 * mm)])
-        out.append(
-            Paragraph(
-                "Visa Chef Sce MG _______________ &nbsp;&nbsp;&nbsp; "
-                "Visa Directrice des Ressources _______________",
-                styles["meta"],
-            )
+        visas = Table(
+            [
+                [
+                    _visa_block("Visa Chef Sce Moyens Généraux", styles),
+                    _visa_block("Visa Directrice des Ressources", styles),
+                ]
+            ],
+            colWidths=[95 * mm, 95 * mm],
         )
+        out.append(visas)
         return out
 
     return _doc_buffer(body)
@@ -185,7 +718,7 @@ def pdf_demande_fourniture(demande) -> bytes:
         table.setStyle(
             TableStyle(
                 [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A5F")),
+                    ("BACKGROUND", (0, 0), (-1, 0), BEA_NAVY),
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                     ("FONTSIZE", (0, 0), (-1, -1), 8),
                     ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
@@ -193,18 +726,16 @@ def pdf_demande_fourniture(demande) -> bytes:
             )
         )
         out.extend([table, Spacer(1, 12 * mm)])
-        out.append(
-            Paragraph(
-                "Visa Agence _______________ &nbsp;&nbsp;&nbsp; Visa Moyens Généraux _______________",
-                styles["meta"],
-            )
+        visas = Table(
+            [
+                [
+                    _visa_block("Visa Agence", styles),
+                    _visa_block("Visa Moyens Généraux", styles),
+                ]
+            ],
+            colWidths=[95 * mm, 95 * mm],
         )
+        out.append(visas)
         return out
 
     return _doc_buffer(body)
-
-
-def money(value: Decimal | None) -> str:
-    if value is None:
-        return "0"
-    return f"{value:.2f}"
