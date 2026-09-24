@@ -251,6 +251,14 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
   'notes-frais': [
     {
       section: 'Notes de frais',
+      label: 'Dashboard',
+      path: '/notes-frais/dashboard',
+      icon: 'dashboard',
+      exact: true,
+      permissions: ['mg.notes.view'],
+    },
+    {
+      section: 'Notes de frais',
       label: 'Registre',
       path: '/notes-frais/notes',
       icon: 'receipt_long',
@@ -263,6 +271,20 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
       path: '/notes-frais/nouvelle',
       icon: 'add_circle',
       permissions: ['mg.notes.create'],
+    },
+    {
+      section: 'Notes de frais',
+      label: 'Rapports',
+      path: '/notes-frais/rapports',
+      icon: 'assessment',
+      permissions: ['mg.notes.export'],
+    },
+    {
+      section: 'Notes de frais',
+      label: 'Paramètres',
+      path: '/notes-frais/parametres',
+      icon: 'settings',
+      permissions: ['mg.notes.settings'],
     },
   ],
   'contrats-echeances': [
