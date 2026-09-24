@@ -6005,6 +6005,17 @@ button.bea-admin-kpi {
   font-size: 0.85rem;
 }
 
+.bea-stock-table-scroll {
+  overflow: auto;
+  max-height: min(42rem, calc(100vh - 20rem));
+}
+.bea-stock-table-scroll .bea-stock-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  box-shadow: 0 1px 0 #e2e8f0;
+}
 .bea-stock-table {
   width: 100%;
   border-collapse: collapse;
@@ -6269,6 +6280,76 @@ button.bea-admin-kpi {
   border-radius: 999px;
 }
 
+.bea-stock-period-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.85rem 1.15rem 0.65rem;
+  padding: 0.7rem 1rem;
+  background: #f8fafc;
+  border: 1px solid #dbe3ee;
+  border-radius: 0.75rem;
+}
+.bea-stock-period-banner[data-statut='CLOTUREE'] {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+.bea-stock-period-banner__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+.bea-stock-period-banner__label {
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 600;
+}
+.bea-stock-period-banner strong {
+  font-size: 1.02rem;
+  color: #0f172a;
+}
+.bea-stock-period-alert {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 1.15rem 0.85rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 0.75rem;
+  background: #fffbeb;
+  border: 1px solid #f59e0b;
+  color: #92400e;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.86rem;
+}
+.bea-stock-period-alert mat-icon {
+  font-size: 1.15rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  flex-shrink: 0;
+}
+.bea-stock-period-alert:hover {
+  background: #fef3c7;
+}
+.bea-mg__table-scroll {
+  max-height: min(42rem, calc(100vh - 20rem));
+  overflow: auto;
+  border-top: 1px solid #eef2f7;
+}
+.bea-mg__table-scroll .bea-mg__table thead th,
+.bea-mg__table-scroll .bea-ach__table thead th,
+.bea-mg__table-scroll .bea-stock-table thead th,
+.bea-mg__table-scroll .bea-art__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  box-shadow: 0 1px 0 #e2e8f0;
+}
+
 .bea-mg__table {
   width: 100%;
   border-collapse: collapse;
@@ -6287,9 +6368,55 @@ button.bea-admin-kpi {
 }
 .bea-mg__table td {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid #cbd5e1;
   color: #0f172a;
   vertical-align: middle;
+}
+.bea-mg__table input,
+.bea-mg__table select,
+.bea-mg__table textarea,
+.bea-ach__table input,
+.bea-ach__table select,
+.bea-ach__table textarea {
+  font: inherit;
+  font-weight: 500;
+  font-size: 0.9rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0.48rem 0.7rem;
+  border: 1.5px solid #475569;
+  border-radius: 0.4rem;
+  background: #fff;
+  color: #0f172a;
+}
+.bea-mg__table input[type='number'],
+.bea-ach__table input[type='number'] {
+  width: 8.5rem;
+  max-width: 100%;
+  text-align: right;
+}
+.bea-mg__table input:focus,
+.bea-mg__table select:focus,
+.bea-mg__table textarea:focus,
+.bea-ach__table input:focus,
+.bea-ach__table select:focus,
+.bea-ach__table textarea:focus {
+  outline: none;
+  border-color: #1a5278;
+  box-shadow: 0 0 0 3px rgba(26, 82, 120, 0.16);
+}
+.bea-mg__lignes {
+  margin-top: 1rem;
+  border: 1.5px solid #475569;
+  border-radius: 0.7rem;
+  overflow: hidden;
+  background: #fff;
+}
+.bea-mg__lignes .bea-mg__table-scroll {
+  margin-top: 0;
+  border-top: 0;
+  max-height: none;
 }
 .bea-mg__table tbody tr {
   transition: background 0.15s ease;
@@ -6418,12 +6545,13 @@ button.bea-admin-kpi {
 .bea-mg__grid select,
 .bea-mg__grid textarea {
   font: inherit;
-  font-weight: 400;
+  font-weight: 500;
   font-size: 0.9rem;
-  padding: 0.5rem 0.65rem;
-  border: 1px solid #cbd5e1;
+  padding: 0.55rem 0.7rem;
+  border: 1.5px solid #475569;
   border-radius: 0.45rem;
   background: #fff;
+  color: #0f172a;
 }
 .bea-mg__grid input:focus,
 .bea-mg__grid select:focus,

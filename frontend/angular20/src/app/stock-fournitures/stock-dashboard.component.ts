@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+import { QuantitePipe, TauxPipe } from '../shared/montant.pipe';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -43,6 +43,21 @@ interface Dash {
   conso_par_famille: { label: string; value: number }[];
   conso_par_agence: { label: string; value: number }[];
   conso_par_mois: { label: string; value: number }[];
+  periode_active?: {
+    id: string;
+    libelle: string;
+    statut: string;
+    annee: number;
+    mois: number;
+  } | null;
+  stock_initial_periode?: number;
+  entrees_qte_periode?: number;
+  sorties_qte_periode?: number;
+  ajustements_qte_periode?: number;
+  stock_theorique_periode?: number;
+  ajustements_mois?: number;
+  cloture_statut?: string | null;
+  cloture_message?: string | null;
 }
 
 interface Agence {
@@ -68,7 +83,7 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
 @Component({
   selector: 'bea-stock-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, MatIconModule, ReactiveFormsModule, DecimalPipe],
+  imports: [RouterLink, MatIconModule, ReactiveFormsModule, QuantitePipe, TauxPipe],
   template: `
     <section class="bea-stock-dash">
       <header class="bea-stock-dash__hero">
@@ -77,6 +92,26 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
         </div>
         <div class="bea-stock-dash__hero-glow" aria-hidden="true"></div>
       </header>
+
+      @if (data(); as d) {
+        @if (d.periode_active; as per) {
+          <div class="bea-stock-dash__period" [attr.data-statut]="per.statut">
+            <span>
+              <strong>Période active</strong>
+              {{ per.libelle }}
+            </span>
+            <span class="bea-stock-badge" [attr.data-niveau]="per.statut === 'OUVERTE' ? 'normal' : 'epuise'">
+              {{ per.statut === 'OUVERTE' ? 'Ouverte' : 'Clôturée' }}
+            </span>
+          </div>
+        }
+        @if (d.cloture_message) {
+          <a class="bea-stock-dash__close-alert" routerLink="/stock-fournitures/inventaires">
+            <mat-icon>event_busy</mat-icon>
+            {{ d.cloture_message }}
+          </a>
+        }
+      }
 
       <form class="bea-mg__search bea-stock-dash__filters" [formGroup]="filters">
         <label class="bea-mg__field">
@@ -135,8 +170,8 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
             </span>
             <span class="bea-stock-dash__kpi-meta">
               <span>Articles</span>
-              <strong>{{ d.articles_actifs | number: '1.0-0' }}</strong>
-              <em>+{{ d.articles_crees_mois | number: '1.0-0' }} ce mois</em>
+              <strong>{{ d.articles_actifs | quantite }}</strong>
+              <em>+{{ d.articles_crees_mois | quantite }} ce mois</em>
             </span>
           </a>
           <a class="bea-stock-dash__kpi" routerLink="/stock-fournitures/articles" style="--i:1">
@@ -145,7 +180,7 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
             </span>
             <span class="bea-stock-dash__kpi-meta">
               <span>Stock total</span>
-              <strong>{{ d.stock_total_unites | number: '1.0-2' }}</strong>
+              <strong>{{ d.stock_total_unites | quantite }}</strong>
               <em>unités</em>
             </span>
           </a>
@@ -155,7 +190,7 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
             </span>
             <span class="bea-stock-dash__kpi-meta">
               <span>Entrées</span>
-              <strong>{{ d.entrees_mois | number: '1.0-0' }}</strong>
+              <strong>{{ d.entrees_mois | quantite }}</strong>
               <em>ce mois</em>
             </span>
           </a>
@@ -165,7 +200,7 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
             </span>
             <span class="bea-stock-dash__kpi-meta">
               <span>Sorties</span>
-              <strong>{{ d.sorties_mois | number: '1.0-0' }}</strong>
+              <strong>{{ d.sorties_mois | quantite }}</strong>
               <em>ce mois</em>
             </span>
           </a>
@@ -183,7 +218,7 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
             </span>
             <span class="bea-stock-dash__kpi-meta">
               <span>Stock faible</span>
-              <strong>{{ d.stock_faible | number: '1.0-0' }}</strong>
+              <strong>{{ d.stock_faible | quantite }}</strong>
               <em>Attention</em>
             </span>
           </a>
@@ -198,7 +233,7 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
             </span>
             <span class="bea-stock-dash__kpi-meta">
               <span>Rupture</span>
-              <strong>{{ d.stock_epuise | number: '1.0-0' }}</strong>
+              <strong>{{ d.stock_epuise | quantite }}</strong>
               <em>Épuisé</em>
             </span>
           </a>
@@ -208,7 +243,7 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
             </span>
             <span class="bea-stock-dash__kpi-meta">
               <span>Demandes en attente</span>
-              <strong>{{ d.demandes_en_attente | number: '1.0-0' }}</strong>
+              <strong>{{ d.demandes_en_attente | quantite }}</strong>
               <em>À traiter</em>
             </span>
           </a>
@@ -218,12 +253,55 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
             </span>
             <span class="bea-stock-dash__kpi-meta">
               <span>Inventaire</span>
-              <strong>{{ d.inventaire_progression | number: '1.0-1' }}%</strong>
+              <strong>{{ d.inventaire_progression | taux }}</strong>
               <em
-                >Progression · {{ d.inventaires_en_cours | number: '1.0-0' }} en cours</em
+                >Progression · {{ d.inventaires_en_cours | quantite }} en cours</em
               >
             </span>
           </a>
+        </div>
+
+        <div class="bea-stock-dash__kpis bea-stock-dash__kpis--row2">
+          <div class="bea-stock-dash__kpi" style="--i:0">
+            <span class="bea-stock-dash__kpi-icon" data-tone="navy">
+              <mat-icon>start</mat-icon>
+            </span>
+            <span class="bea-stock-dash__kpi-meta">
+              <span>Stock initial</span>
+              <strong>{{ (d.stock_initial_periode || 0) | quantite }}</strong>
+              <em>période</em>
+            </span>
+          </div>
+          <div class="bea-stock-dash__kpi" style="--i:1">
+            <span class="bea-stock-dash__kpi-icon" data-tone="teal">
+              <mat-icon>south</mat-icon>
+            </span>
+            <span class="bea-stock-dash__kpi-meta">
+              <span>Entrées (qté)</span>
+              <strong>{{ (d.entrees_qte_periode || 0) | quantite }}</strong>
+              <em>période</em>
+            </span>
+          </div>
+          <div class="bea-stock-dash__kpi" style="--i:2">
+            <span class="bea-stock-dash__kpi-icon" data-tone="blue">
+              <mat-icon>north</mat-icon>
+            </span>
+            <span class="bea-stock-dash__kpi-meta">
+              <span>Sorties (qté)</span>
+              <strong>{{ (d.sorties_qte_periode || 0) | quantite }}</strong>
+              <em>période</em>
+            </span>
+          </div>
+          <div class="bea-stock-dash__kpi" style="--i:3">
+            <span class="bea-stock-dash__kpi-icon" data-tone="warn">
+              <mat-icon>tune</mat-icon>
+            </span>
+            <span class="bea-stock-dash__kpi-meta">
+              <span>Théorique</span>
+              <strong>{{ (d.stock_theorique_periode || 0) | quantite }}</strong>
+              <em>ajust. {{ (d.ajustements_qte_periode || 0) | quantite }}</em>
+            </span>
+          </div>
         </div>
 
         <section class="bea-stock-dash__panel bea-stock-dash__panel--chart" style="--i:0">
@@ -327,7 +405,7 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
                       [style.--w.%]="barPct(row.value, maxFamille())"
                     ></div>
                   </div>
-                  <strong>{{ row.value | number: '1.0-2' }}</strong>
+                  <strong>{{ row.value | quantite }}</strong>
                 </div>
               } @empty {
                 <p class="bea-stock-panel__empty">Aucune sortie enregistrée.</p>
@@ -350,7 +428,7 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
                       [style.--w.%]="barPct(row.value, maxAgence())"
                     ></div>
                   </div>
-                  <strong>{{ row.value | number: '1.0-2' }}</strong>
+                  <strong>{{ row.value | quantite }}</strong>
                 </div>
               } @empty {
                 <p class="bea-stock-panel__empty">Aucune donnée agence.</p>
@@ -414,6 +492,41 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
       background: radial-gradient(circle, rgba(255, 255, 255, 0.22), transparent 68%);
       animation: beaDashPulse 4.5s ease-in-out infinite;
       pointer-events: none;
+    }
+
+    .bea-stock-dash__period {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+      padding: 0.7rem 1rem;
+      background: #fff;
+      border: 1px solid #dbe3ee;
+      border-radius: 0.8rem;
+    }
+    .bea-stock-dash__period[data-statut='CLOTUREE'] {
+      border-color: #94a3b8;
+      background: #f8fafc;
+    }
+    .bea-stock-dash__close-alert {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-bottom: 0.85rem;
+      padding: 0.7rem 1rem;
+      border-radius: 0.8rem;
+      background: #fffbeb;
+      border: 1px solid #f59e0b;
+      color: #92400e;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .bea-stock-dash__close-alert mat-icon {
+      font-size: 1.15rem;
+      width: 1.15rem;
+      height: 1.15rem;
     }
 
     .bea-stock-dash__filters {

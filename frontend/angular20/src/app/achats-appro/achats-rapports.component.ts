@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+import { MontantPipe, QuantitePipe } from '../shared/montant.pipe';
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
@@ -29,7 +29,7 @@ interface Summary {
 @Component({
   selector: 'bea-achats-rapports',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, MatIconModule, DecimalPipe],
+  imports: [RouterLink, MatIconModule, MontantPipe, QuantitePipe],
   templateUrl: './achats-rapports.component.html',
 })
 export class AchatsRapportsComponent implements OnInit {

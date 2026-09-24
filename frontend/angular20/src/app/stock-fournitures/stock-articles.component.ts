@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+import { QuantitePipe } from '../shared/montant.pipe';
 import { ChangeDetectionStrategy, Component, OnInit, HostListener, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -24,6 +24,7 @@ interface Article {
   agence_id: string | null;
   emplacement: string | null;
   niveau: string | null;
+  stockable?: boolean;
 }
 interface Agence {
   id: string;
@@ -39,7 +40,7 @@ interface Paginated<T> {
 @Component({
   selector: 'bea-stock-articles',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MatIconModule, DecimalPipe, MgGedPanelComponent, RouterLink, PaginationComponent],
+  imports: [ReactiveFormsModule, MatIconModule, QuantitePipe, MgGedPanelComponent, RouterLink, PaginationComponent],
   template: `
     <section class="bea-art">
       <header class="bea-art__head">
@@ -114,8 +115,8 @@ interface Paginated<T> {
                   <td><code class="bea-art__code">{{ a.code }}</code></td>
                   <td>{{ a.designation }}</td>
                   <td>{{ familleLabel(a.famille_id) }}</td>
-                  <td class="bea-art__num">{{ a.stock_actuel | number:'1.0-3' }} {{ a.uom }}</td>
-                  <td class="bea-art__num">{{ a.stock_min | number:'1.0-3' }}</td>
+                  <td class="bea-art__num">{{ a.stock_actuel | quantite }} {{ a.uom }}</td>
+                  <td class="bea-art__num">{{ a.stock_min | quantite }}</td>
                   <td>
                     <span class="bea-stock-badge" [attr.data-niveau]="a.niveau">{{ a.niveau || '—' }}</span>
                   </td>
@@ -213,6 +214,12 @@ interface Paginated<T> {
               <label>
                 Emplacement
                 <input formControlName="emplacement" placeholder="Rayon / casier…" />
+              </label>
+              <label class="bea-art__span2">
+                <span>
+                  <input type="checkbox" formControlName="stockable" />
+                  Article stockable
+                </span>
               </label>
             </div>
             @if (editingId(); as aid) {
@@ -402,7 +409,10 @@ interface Paginated<T> {
       border-radius: 999px;
     }
 
-    .bea-art__table-wrap { overflow-x: auto; }
+    .bea-art__table-wrap {
+      overflow: auto;
+      max-height: min(42rem, calc(100vh - 20rem));
+    }
     .bea-art__table {
       width: 100%;
       border-collapse: collapse;
@@ -418,6 +428,10 @@ interface Paginated<T> {
       background: #f8fafc;
       border-bottom: 1px solid #e2e8f0;
       white-space: nowrap;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      box-shadow: 0 1px 0 #e2e8f0;
     }
     .bea-art__table td {
       padding: 0.75rem 1rem;
@@ -633,6 +647,7 @@ export class StockArticlesComponent implements OnInit {
     stock_min: [0],
     agence_id: [''],
     emplacement: [''],
+    stockable: [true],
   });
 
   @HostListener('document:keydown.escape')
@@ -712,6 +727,7 @@ export class StockArticlesComponent implements OnInit {
       stock_min: 0,
       agence_id: '',
       emplacement: '',
+      stockable: true,
     });
     this.form.controls.code.enable();
     this.modalOpen.set(true);
@@ -730,6 +746,7 @@ export class StockArticlesComponent implements OnInit {
       stock_min: Number(a.stock_min),
       agence_id: a.agence_id || '',
       emplacement: a.emplacement || '',
+      stockable: a.stockable !== false,
     });
     this.form.controls.code.disable();
     this.modalOpen.set(true);
@@ -756,6 +773,7 @@ export class StockArticlesComponent implements OnInit {
         stock_min: raw.stock_min,
         agence_id: raw.agence_id || null,
         emplacement: raw.emplacement || null,
+        stockable: raw.stockable,
       };
       this.api.patch<Article>(`/mg/stock/articles/${id}`, body).subscribe({
         next: () => {
@@ -781,6 +799,7 @@ export class StockArticlesComponent implements OnInit {
       stock_min: raw.stock_min,
       agence_id: raw.agence_id || null,
       emplacement: raw.emplacement || null,
+      stockable: raw.stockable,
     };
     this.api.post<Article>('/mg/stock/articles', body).subscribe({
       next: () => {

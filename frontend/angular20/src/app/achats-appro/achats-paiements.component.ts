@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+import { MontantPipe } from '../shared/montant.pipe';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -39,7 +39,7 @@ type Mode = 'list' | 'form';
 @Component({
   selector: 'bea-achats-paiements',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, DecimalPipe, MatIconModule],
+  imports: [ReactiveFormsModule, RouterLink, MontantPipe, MatIconModule],
   templateUrl: './achats-paiements.component.html',
   styleUrl: './achats-ui.css',
 })

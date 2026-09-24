@@ -6,7 +6,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
+import { MontantPipe } from '../shared/montant.pipe';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -38,7 +38,7 @@ type Mode = 'list' | 'create' | 'fiche';
 @Component({
   selector: 'bea-achats-comparaisons',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, DecimalPipe, MatIconModule],
+  imports: [ReactiveFormsModule, RouterLink, MontantPipe, MatIconModule],
   templateUrl: './achats-comparaisons.component.html',
   styleUrl: './achats-ui.css',
 })

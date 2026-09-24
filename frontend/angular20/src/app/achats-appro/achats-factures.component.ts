@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+import { MontantPipe } from '../shared/montant.pipe';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -67,7 +67,7 @@ type Mode = 'list' | 'form';
   imports: [
     ReactiveFormsModule,
     RouterLink,
-    DecimalPipe,
+    MontantPipe,
     MatIconModule,
     MgGedPanelComponent,
     SupplierSelectComponent,

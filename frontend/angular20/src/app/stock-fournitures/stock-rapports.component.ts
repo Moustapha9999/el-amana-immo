@@ -1,190 +1,156 @@
-import { DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { QuantitePipe } from '../shared/montant.pipe';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
+import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 
-interface Rapport {
-  periode: string;
-  granularity: string;
-  lignes: { famille: string; code: string; designation: string; quantite: number }[];
+interface CatalogItem {
+  key: string;
+  label: string;
+  description: string;
+  icon: string;
+  group: string;
+  csv_enabled: boolean;
 }
 
-interface Agence {
-  id: string;
-  libelle: string;
+interface Summary {
+  nb_articles: number;
+  nb_mouvements: number;
+  nb_inventaires: number;
+  nb_periodes: number;
 }
 
 @Component({
   selector: 'bea-stock-rapports',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MatIconModule, DecimalPipe],
+  imports: [RouterLink, MatIconModule, QuantitePipe],
   template: `
     <section class="bea-mg">
       <header class="bea-mg__head">
         <div>
           <p class="bea-stock-page__kicker">Reporting</p>
-          <h1>Rapports de consommation</h1>
-        </div>
-        <div class="bea-mg__actions">
-          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="exportFile('xlsx')" title="Excel">
-            <mat-icon>table_view</mat-icon> Excel
-          </button>
-          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="exportFile('pdf')" title="PDF">
-            <mat-icon>picture_as_pdf</mat-icon> PDF
-          </button>
-          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="exportFile('csv')" title="CSV">
-            <mat-icon>description</mat-icon> CSV
-          </button>
+          <h1>Centre de reporting</h1>
         </div>
       </header>
-
-      <form class="bea-mg__search" [formGroup]="form" (ngSubmit)="load()">
-        <label class="bea-mg__field">
-          <mat-icon>calendar_today</mat-icon>
-          <input type="number" formControlName="year" placeholder="Année" />
-        </label>
-        <label class="bea-mg__field">
-          <mat-icon>date_range</mat-icon>
-          <select formControlName="month">
-            <option value="">Année entière</option>
-            @for (m of months; track m) {
-              <option [value]="m">{{ monthLabel(m) }}</option>
-            }
-          </select>
-        </label>
-        <label class="bea-mg__field bea-mg__field--grow">
-          <mat-icon>store</mat-icon>
-          <select formControlName="agence_id">
-            <option value="">Toutes les agences</option>
-            @for (a of agences(); track a.id) {
-              <option [value]="a.id">{{ a.libelle }}</option>
-            }
-          </select>
-        </label>
-        <button type="submit" class="bea-mg__btn bea-mg__btn--primary">
-          <mat-icon>query_stats</mat-icon> Afficher
-        </button>
-      </form>
 
       @if (erreur()) {
         <p class="bea-stock-page__error">{{ erreur() }}</p>
       }
 
-      @if (rapport(); as r) {
-        <div class="bea-mg__panel">
-          <div class="bea-mg__panel-top">
-            <h2>Période {{ r.periode }}</h2>
-            <span class="bea-mg__count">{{ r.granularity }} · {{ r.lignes.length }} ligne(s)</span>
+      @if (summary(); as s) {
+        <div class="bea-stock-dash__kpis" style="margin-bottom:1rem">
+          <div class="bea-mg__panel" style="padding:0.9rem 1rem">
+            <span class="bea-stock-page__kicker">Articles</span>
+            <strong style="display:block;font-size:1.35rem">{{ s.nb_articles | quantite }}</strong>
           </div>
-          <div style="overflow-x:auto">
-            <table class="bea-mg__table">
-              <thead>
-                <tr>
-                  <th>Famille</th>
-                  <th>Code</th>
-                  <th>Désignation</th>
-                  <th>Quantité sortie</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (l of r.lignes; track l.code + l.designation; let i = $index) {
-                  <tr [style.--i]="i">
-                    <td>{{ l.famille || '—' }}</td>
-                    <td><code class="bea-mg__code">{{ l.code }}</code></td>
-                    <td>{{ l.designation }}</td>
-                    <td>{{ l.quantite | number: '1.0-3' }}</td>
-                  </tr>
-                } @empty {
-                  <tr>
-                    <td colspan="4">
-                      <div class="bea-mg__empty">
-                        <mat-icon>bar_chart</mat-icon>
-                        <p>Aucune consommation sur la période.</p>
-                      </div>
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
+          <div class="bea-mg__panel" style="padding:0.9rem 1rem">
+            <span class="bea-stock-page__kicker">Mouvements</span>
+            <strong style="display:block;font-size:1.35rem">{{ s.nb_mouvements | quantite }}</strong>
+          </div>
+          <div class="bea-mg__panel" style="padding:0.9rem 1rem">
+            <span class="bea-stock-page__kicker">Inventaires</span>
+            <strong style="display:block;font-size:1.35rem">{{ s.nb_inventaires | quantite }}</strong>
+          </div>
+          <div class="bea-mg__panel" style="padding:0.9rem 1rem">
+            <span class="bea-stock-page__kicker">Périodes</span>
+            <strong style="display:block;font-size:1.35rem">{{ s.nb_periodes | quantite }}</strong>
           </div>
         </div>
-      } @else if (!erreur()) {
-        <div class="bea-mg__panel">
-          <div class="bea-mg__empty">
-            <mat-icon>insights</mat-icon>
-            <p>Choisissez une période puis cliquez sur Afficher.</p>
+      }
+
+      @for (grp of groups(); track grp.key) {
+        <div class="bea-mg__panel" style="margin-bottom:1rem">
+          <div class="bea-mg__panel-top">
+            <h2>{{ grp.label }}</h2>
+            <span class="bea-mg__count">{{ grp.items.length }}</span>
+          </div>
+          <div class="bea-stock-report-grid">
+            @for (r of grp.items; track r.key; let i = $index) {
+              <a class="bea-stock-report-card" [routerLink]="['/stock-fournitures/rapports', r.key]" [style.--i]="i">
+                <span class="bea-stock-dash__kpi-icon" data-tone="navy"><mat-icon>{{ r.icon }}</mat-icon></span>
+                <span>
+                  <strong>{{ r.label }}</strong>
+                  <em>{{ r.description }}</em>
+                </span>
+                <mat-icon>chevron_right</mat-icon>
+              </a>
+            }
           </div>
         </div>
       }
     </section>
   `,
+  styles: `
+    .bea-stock-report-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+      gap: 0.75rem;
+    }
+    .bea-stock-report-card {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      padding: 0.85rem 1rem;
+      border: 1px solid #dbe3ee;
+      border-radius: 0.85rem;
+      text-decoration: none;
+      color: inherit;
+      background: #fff;
+      animation: beaRepIn 0.4s ease both;
+      animation-delay: calc(var(--i, 0) * 40ms);
+    }
+    .bea-stock-report-card:hover {
+      border-color: #1a5278;
+    }
+    .bea-stock-report-card strong {
+      display: block;
+      color: #0f172a;
+    }
+    .bea-stock-report-card em {
+      display: block;
+      font-style: normal;
+      font-size: 0.78rem;
+      color: #64748b;
+    }
+    .bea-stock-dash__kpis {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.75rem;
+    }
+    @keyframes beaRepIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: none; }
+    }
+    @media (max-width: 800px) {
+      .bea-stock-dash__kpis { grid-template-columns: 1fr 1fr; }
+    }
+  `,
 })
-export class StockRapportsComponent {
+export class StockRapportsComponent implements OnInit {
   private readonly api = inject(ApiService);
-  private readonly fb = inject(FormBuilder);
-
-  readonly months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-  readonly agences = signal<Agence[]>([]);
-  readonly rapport = signal<Rapport | null>(null);
+  readonly catalog = signal<CatalogItem[]>([]);
+  readonly summary = signal<Summary | null>(null);
   readonly erreur = signal('');
 
-  readonly form = this.fb.nonNullable.group({
-    year: [new Date().getFullYear(), Validators.required],
-    month: [''],
-    agence_id: [''],
+  readonly groups = computed(() => {
+    const rows = this.catalog();
+    return [
+      { key: 'objets', label: 'États & journaux', items: rows.filter((r) => r.group === 'objets') },
+      { key: 'pilotage', label: 'Pilotage', items: rows.filter((r) => r.group === 'pilotage') },
+      { key: 'analyses', label: 'Analyses & personnalisation', items: rows.filter((r) => r.group === 'analyses') },
+    ].filter((g) => g.items.length);
   });
 
-  constructor() {
-    this.api.get<Agence[]>('/mg/stock/agences').subscribe((a) => this.agences.set(a));
-  }
-
-  monthLabel(m: number): string {
-    const names = [
-      'Janvier',
-      'Février',
-      'Mars',
-      'Avril',
-      'Mai',
-      'Juin',
-      'Juillet',
-      'Août',
-      'Septembre',
-      'Octobre',
-      'Novembre',
-      'Décembre',
-    ];
-    return names[m - 1] || String(m);
-  }
-
-  private params(): Record<string, string> {
-    const v = this.form.getRawValue();
-    const p: Record<string, string> = { year: String(v.year) };
-    if (v.month) p['month'] = String(v.month);
-    if (v.agence_id) p['agence_id'] = v.agence_id;
-    return p;
-  }
-
-  load(): void {
-    this.erreur.set('');
-    this.api.get<Rapport>('/mg/stock/rapports/consommation', this.params()).subscribe({
-      next: (r) => this.rapport.set(r),
-      error: () => this.erreur.set('Rapport indisponible (permission export ?)'),
+  ngOnInit(): void {
+    this.api.get<CatalogItem[]>('/mg/stock/rapports/catalog').subscribe({
+      next: (rows) => this.catalog.set(rows),
+      error: () => this.erreur.set('Catalogue de rapports indisponible.'),
     });
-  }
-
-  exportFile(format: 'csv' | 'xlsx' | 'pdf'): void {
-    const p = { ...this.params(), format };
-    this.api.download('/mg/stock/rapports/consommation', p).subscribe({
-      next: (blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `conso-${this.form.value.year}.${format === 'xlsx' ? 'xlsx' : format}`;
-        a.click();
-        URL.revokeObjectURL(url);
+    this.api.get<Summary>('/mg/stock/rapports/summary').subscribe({
+      next: (s) => this.summary.set(s),
+      error: () => {
+        /* export optionnel */
       },
-      error: () => this.erreur.set(`Export ${format.toUpperCase()} impossible`),
     });
   }
 }

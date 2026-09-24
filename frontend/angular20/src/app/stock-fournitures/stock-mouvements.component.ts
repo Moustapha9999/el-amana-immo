@@ -1,4 +1,5 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { DatePipe } from '@angular/common';
+import { QuantitePipe } from '../shared/montant.pipe';
 import { ChangeDetectionStrategy, Component, HostListener, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -40,7 +41,7 @@ interface Paginated<T> {
 @Component({
   selector: 'bea-stock-mouvements',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MatIconModule, DatePipe, DecimalPipe, PaginationComponent],
+  imports: [ReactiveFormsModule, MatIconModule, DatePipe, QuantitePipe, PaginationComponent],
   template: `
     <section class="bea-mg">
       <header class="bea-mg__head">
@@ -93,7 +94,7 @@ interface Paginated<T> {
           <h2>Mouvements</h2>
           <span class="bea-mg__count">{{ total() }} résultat(s)</span>
         </div>
-        <div style="overflow-x:auto">
+        <div class="bea-mg__table-scroll">
           <table class="bea-mg__table">
             <thead>
               <tr>
@@ -118,8 +119,8 @@ interface Paginated<T> {
                   </td>
                   <td>{{ m.article_code || articleLabel(m.article_id) }}</td>
                   <td>{{ m.initiateur_nom || '—' }}</td>
-                  <td>{{ m.stock_disponible != null ? (m.stock_disponible | number: '1.0-3') : '—' }}</td>
-                  <td>{{ m.quantite | number: '1.0-3' }}</td>
+                  <td>{{ m.stock_disponible | quantite }}</td>
+                  <td>{{ m.quantite | quantite }}</td>
                   <td>{{ m.motif || '—' }}</td>
                   <td class="bea-mg__actions-cell">
                     <button type="button" class="bea-mg__icon-btn" title="Voir" (click)="openView(m)">

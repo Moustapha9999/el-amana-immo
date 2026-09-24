@@ -22,6 +22,7 @@ from app.models.mg_stock import (
     MgStockMouvement,
     MgStockParametre,
 )
+from app.services.mg_stock_periodes import MgStockPeriodeService, nature_ecart
 from app.schemas.mg_stock import (
     ArticleCreate,
     ArticleUpdate,
@@ -159,11 +160,17 @@ class MgStockService:
             designation=data.designation.strip(),
             famille_id=data.famille_id,
             uom=data.uom or "U",
+            stockable=bool(data.stockable),
+            reference=(data.reference.strip() if data.reference else None),
+            sous_famille=(data.sous_famille.strip() if data.sous_famille else None),
             stock_actuel=Decimal("0"),
             stock_min=data.stock_min,
             stock_max=data.stock_max,
             agence_id=data.agence_id,
             emplacement=data.emplacement,
+            fournisseur_habituel=(
+                data.fournisseur_habituel.strip() if data.fournisseur_habituel else None
+            ),
         )
         self.db.add(article)
         await self.db.flush()
@@ -257,6 +264,10 @@ class MgStockService:
         )
         if article is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Article introuvable")
+        if t in {"ENTREE", "SORTIE"} and data.quantite <= 0:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Quantité invalide")
+        if t == "AJUSTEMENT" and data.quantite == 0:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ajustement nul")
         mvt = await self._apply_mouvement(
             article=article,
             type_mouvement=t,
@@ -269,6 +280,7 @@ class MgStockService:
             date_mouvement=data.date_mouvement,
             source_type=data.source_type,
             source_id=data.source_id,
+            allow_negative=bool(data.allow_negative),
         )
         await self.db.commit()
         await self.db.refresh(mvt)
@@ -296,6 +308,7 @@ class MgStockService:
             select(MgBonCommande)
             .options(selectinload(MgBonCommande.lignes))
             .where(MgBonCommande.id == bon_id, MgBonCommande.deleted_at.is_(None))
+            .with_for_update()
         )
         if bon is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Bon de commande introuvable")
@@ -339,20 +352,21 @@ class MgStockService:
             )
             if article is None:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Article introuvable")
-            await self._apply_mouvement(
-                article=article,
-                type_mouvement="ENTREE",
-                quantite=payload.quantite,
-                agence_id=data.agence_id or article.agence_id,
-                initiateur=user,
-                motif=motif,
-                source_type="bon_commande",
-                source_id=bon.id,
-            )
+            if getattr(article, "stockable", True):
+                await self._apply_mouvement(
+                    article=article,
+                    type_mouvement="ENTREE",
+                    quantite=payload.quantite,
+                    agence_id=data.agence_id or article.agence_id,
+                    initiateur=user,
+                    motif=motif,
+                    source_type="bon_commande",
+                    source_id=bon.id,
+                )
+                mouvements_count += 1
             ligne.quantite_recue = deja + Decimal(payload.quantite)
             if ligne.article_id is None:
                 ligne.article_id = article_id
-            mouvements_count += 1
 
         if all(
             Decimal(l.quantite_recue or 0) >= Decimal(l.quantite or 0) for l in bon.lignes
@@ -442,6 +456,7 @@ class MgStockService:
                     "article_code": article.code if article else None,
                     "article_designation": article.designation if article else None,
                     "stock_disponible": article.stock_actuel if article else None,
+                    "periode_id": getattr(m, "periode_id", None),
                 }
             )
         return out
@@ -493,7 +508,7 @@ class MgStockService:
     async def transition_demande(
         self, demande_id: uuid.UUID, action: str, user: User, lignes: list[DemandeLigneIn] | None
     ) -> MgDemandeFourniture:
-        demande = await self.get_demande(demande_id)
+        demande = await self.get_demande(demande_id, for_update=True)
         action = action.strip().lower()
         now = datetime.now(timezone.utc)
 
@@ -589,12 +604,16 @@ class MgStockService:
         )
         return list((await self.db.execute(stmt)).scalars().unique().all()), total
 
-    async def get_demande(self, demande_id: uuid.UUID) -> MgDemandeFourniture:
+    async def get_demande(
+        self, demande_id: uuid.UUID, *, for_update: bool = False
+    ) -> MgDemandeFourniture:
         stmt = (
             select(MgDemandeFourniture)
             .options(selectinload(MgDemandeFourniture.lignes))
             .where(MgDemandeFourniture.id == demande_id)
         )
+        if for_update:
+            stmt = stmt.with_for_update()
         demande = (await self.db.execute(stmt)).scalar_one_or_none()
         if demande is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Demande introuvable")
@@ -733,13 +752,14 @@ class MgStockService:
             "conso_par_famille": await self._conso_par_famille(agence_id=agence_id),
             "conso_par_agence": await self._conso_par_agence(),
             "conso_par_mois": await self._conso_par_mois(agence_id=agence_id),
+            **await self._dashboard_periode(),
         }
 
     async def list_alertes(
         self, *, agence_id: uuid.UUID | None = None
     ) -> list[dict]:
         articles, _ = await self.list_articles(bas_stock=True, agence_id=agence_id, size=500)
-        return [
+        out = [
             {
                 "article_id": a.id,
                 "code": a.code,
@@ -748,9 +768,57 @@ class MgStockService:
                 "stock_min": a.stock_min,
                 "niveau": self.niveau_stock(a),
                 "agence_id": a.agence_id,
+                "type_alerte": "RUPTURE" if self.niveau_stock(a) == "epuise" else "STOCK_FAIBLE",
+                "titre": "Rupture" if self.niveau_stock(a) == "epuise" else "Stock faible",
+                "message": f"{a.code} — {a.designation}",
+                "lien": "/stock-fournitures/alertes",
             }
             for a in articles
         ]
+        try:
+            psvc = MgStockPeriodeService(self.db)
+            periode = await psvc.periode_ouverte()
+            if periode is None:
+                periode = await psvc.ensure_open_periode()
+            code, message = await psvc.cloture_alerte(periode)
+            if code and message:
+                out.insert(
+                    0,
+                    {
+                        "article_id": None,
+                        "code": code,
+                        "designation": message,
+                        "stock_actuel": None,
+                        "stock_min": None,
+                        "niveau": "warn",
+                        "agence_id": None,
+                        "type_alerte": code.upper(),
+                        "titre": message,
+                        "message": message,
+                        "lien": "/stock-fournitures/inventaires",
+                    },
+                )
+            rec_pending = await self._count_receptions_en_attente()
+            if rec_pending:
+                out.insert(
+                    0 if not (code and message) else 1,
+                    {
+                        "article_id": None,
+                        "code": "RECEPTION_EN_ATTENTE",
+                        "designation": f"{rec_pending} bon(s) en attente de réception",
+                        "stock_actuel": None,
+                        "stock_min": None,
+                        "niveau": "warn",
+                        "agence_id": None,
+                        "type_alerte": "RECEPTION_EN_ATTENTE",
+                        "titre": "Réception en attente",
+                        "message": f"{rec_pending} bon(s) VALIDE/PARTIEL à réceptionner",
+                        "lien": "/stock-fournitures/entrees",
+                    },
+                )
+        except Exception:
+            await self.db.rollback()
+        return out
 
     async def list_parametres(self) -> list[MgStockParametre]:
         stmt = select(MgStockParametre).order_by(MgStockParametre.cle)
@@ -792,7 +860,11 @@ class MgStockService:
     async def list_inventaires(self, *, statut: str | None = None) -> list[MgInventaire]:
         stmt = (
             select(MgInventaire)
-            .options(selectinload(MgInventaire.lignes).selectinload(MgInventaireLigne.article))
+            .options(
+                selectinload(MgInventaire.lignes)
+                .selectinload(MgInventaireLigne.article)
+                .selectinload(MgArticle.famille)
+            )
             .where(MgInventaire.deleted_at.is_(None))
             .order_by(MgInventaire.date_debut.desc())
         )
@@ -803,7 +875,11 @@ class MgStockService:
     async def get_inventaire(self, inventaire_id: uuid.UUID) -> MgInventaire:
         stmt = (
             select(MgInventaire)
-            .options(selectinload(MgInventaire.lignes).selectinload(MgInventaireLigne.article))
+            .options(
+                selectinload(MgInventaire.lignes)
+                .selectinload(MgInventaireLigne.article)
+                .selectinload(MgArticle.famille)
+            )
             .where(MgInventaire.id == inventaire_id)
         )
         inv = (await self.db.execute(stmt)).scalar_one_or_none()
@@ -812,21 +888,33 @@ class MgStockService:
         return inv
 
     async def create_inventaire(self, data: InventaireCreate, user: User) -> MgInventaire:
-        ref = await self._next_inventaire_ref()
+        psvc = MgStockPeriodeService(self.db)
+        if data.periode_id:
+            periode = await psvc.get_periode(data.periode_id)
+        else:
+            periode = await psvc.ensure_open_periode(user)
+        if periode.statut == "CLOTUREE":
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"Période {periode.libelle} clôturée — inventaire interdit.",
+            )
+        ref = await self._next_inventaire_ref(periode.annee, periode.mois)
+        libelle = data.libelle.strip() or f"Inventaire mensuel {periode.libelle}"
         inv = MgInventaire(
             reference=ref,
-            libelle=data.libelle.strip(),
+            libelle=libelle,
             date_debut=data.date_debut or date.today(),
             agence_id=data.agence_id,
-            statut="OUVERT",
+            statut="BROUILLON",
             observation=data.observation,
             created_by=user.id,
+            periode_id=periode.id,
         )
         self.db.add(inv)
         await self.db.flush()
 
-        articles, _ = await self.list_articles(
-            agence_id=data.agence_id, famille_id=data.famille_id, size=500
+        articles = await self._articles_inventaire(
+            agence_id=data.agence_id, famille_id=data.famille_id
         )
         for i, article in enumerate(articles):
             theo = Decimal(article.stock_actuel or 0)
@@ -837,6 +925,7 @@ class MgStockService:
                     stock_theorique=theo,
                     stock_physique=None,
                     ecart=None,
+                    nature_ecart=None,
                     sort_order=i,
                 )
             )
@@ -847,7 +936,14 @@ class MgStockService:
         self, inventaire_id: uuid.UUID, lignes: list[InventaireLigneIn]
     ) -> MgInventaire:
         inv = await self.get_inventaire(inventaire_id)
-        if inv.statut not in {"OUVERT", "EN_COURS"}:
+        if inv.statut not in {
+            "BROUILLON",
+            "OUVERT",
+            "EN_COMPTAGE",
+            "EN_COURS",
+            "COMPTAGE_TERMINE",
+            "EN_CONTROLE",
+        }:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Inventaire non modifiable")
         by_id = {row.id: row for row in inv.lignes}
         for payload in lignes:
@@ -856,48 +952,81 @@ class MgStockService:
                 continue
             row.stock_physique = Decimal(payload.stock_physique)
             row.ecart = row.stock_physique - Decimal(row.stock_theorique or 0)
+            row.nature_ecart = nature_ecart(row.ecart)
             if payload.observation is not None:
                 row.observation = payload.observation
-        inv.statut = "EN_COURS"
+        inv.statut = "EN_COMPTAGE"
         await self.db.commit()
         return await self.get_inventaire(inventaire_id)
 
     async def cloturer_inventaire(self, inventaire_id: uuid.UUID, user: User) -> MgInventaire:
+        """Chemin compact (UI existante) : saisie complète → ajustements → clôture."""
+        return await self.transition_inventaire(inventaire_id, "cloturer", user)
+
+    async def transition_inventaire(
+        self, inventaire_id: uuid.UUID, action: str, user: User, motif: str | None = None
+    ) -> MgInventaire:
         inv = await self.get_inventaire(inventaire_id)
-        if inv.statut not in {"OUVERT", "EN_COURS"}:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Inventaire déjà clôturé")
-        missing = [l for l in inv.lignes if l.stock_physique is None]
-        if missing:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail=f"{len(missing)} ligne(s) sans comptage physique",
-            )
-        for ligne in inv.lignes:
-            article = await self.db.scalar(
-                select(MgArticle)
-                .where(MgArticle.id == ligne.article_id, MgArticle.deleted_at.is_(None))
-                .with_for_update()
-            )
-            if article is None:
-                continue
-            physique = Decimal(ligne.stock_physique or 0)
-            await self._apply_mouvement(
-                article=article,
-                type_mouvement="INVENTAIRE",
-                quantite=physique,
-                agence_id=inv.agence_id or article.agence_id,
-                initiateur=user,
-                motif=f"Inventaire {inv.reference}",
-                observation=f"théorique={ligne.stock_theorique} physique={physique}",
-                source_type="inventaire",
-                source_id=inv.id,
-                allow_zero=True,
-                force_stock=physique,
-            )
-        inv.statut = "CLOTURE"
-        inv.date_fin = date.today()
-        inv.cloture_at = datetime.now(timezone.utc)
-        inv.cloture_by = user.id
+        action = action.strip().lower()
+        now = datetime.now(timezone.utc)
+
+        if inv.statut in {"CLOTURE", "REJETE", "ANNULE"} and action not in {"cloturer"}:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Inventaire non modifiable")
+
+        if action == "commencer":
+            if inv.statut not in {"BROUILLON", "OUVERT"}:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Statut incompatible")
+            inv.statut = "EN_COMPTAGE"
+        elif action == "terminer":
+            if inv.statut not in {"EN_COMPTAGE", "EN_COURS", "OUVERT"}:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Statut incompatible")
+            self._require_lignes_comptees(inv)
+            inv.statut = "COMPTAGE_TERMINE"
+        elif action == "controler":
+            if inv.statut not in {"COMPTAGE_TERMINE", "EN_COMPTAGE", "EN_COURS"}:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Statut incompatible")
+            self._require_lignes_comptees(inv)
+            inv.statut = "EN_CONTROLE"
+        elif action == "valider":
+            if inv.statut not in {"EN_CONTROLE", "COMPTAGE_TERMINE", "EN_COMPTAGE", "EN_COURS"}:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Statut incompatible")
+            self._require_lignes_comptees(inv)
+            inv.statut = "VALIDE"
+            inv.valide_at = now
+            inv.valide_by = user.id
+        elif action == "appliquer":
+            if inv.statut not in {"VALIDE", "EN_CONTROLE", "COMPTAGE_TERMINE", "EN_COURS", "EN_COMPTAGE"}:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Statut incompatible")
+            self._require_lignes_comptees(inv)
+            await self._appliquer_ajustements_inventaire(inv, user)
+            inv.statut = "AJUSTEMENTS_APPLIQUES"
+            inv.ajustements_at = now
+            inv.ajustements_by = user.id
+        elif action == "cloturer":
+            if inv.statut in {"CLOTURE", "REJETE", "ANNULE"}:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Inventaire déjà clôturé")
+            self._require_lignes_comptees(inv)
+            if inv.statut != "AJUSTEMENTS_APPLIQUES":
+                await self._appliquer_ajustements_inventaire(inv, user)
+                inv.ajustements_at = now
+                inv.ajustements_by = user.id
+            inv.statut = "CLOTURE"
+            inv.date_fin = date.today()
+            inv.cloture_at = now
+            inv.cloture_by = user.id
+        elif action == "rejeter":
+            if inv.statut in {"CLOTURE", "AJUSTEMENTS_APPLIQUES"}:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Déjà ajusté / clôturé")
+            inv.statut = "REJETE"
+            inv.observation = motif or inv.observation
+        elif action == "annuler":
+            if inv.statut in {"CLOTURE", "AJUSTEMENTS_APPLIQUES"}:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Déjà ajusté / clôturé")
+            inv.statut = "ANNULE"
+            inv.observation = motif or inv.observation
+        else:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Action inventaire inconnue")
+
         await self.db.commit()
         return await self.get_inventaire(inventaire_id)
 
@@ -957,12 +1086,24 @@ class MgStockService:
             qty = ligne.quantite_accordee or Decimal("0")
             if qty <= 0 or ligne.article_id is None:
                 continue
+            already = await self.db.scalar(
+                select(MgStockMouvement.id).where(
+                    MgStockMouvement.source_type == "demande_fourniture",
+                    MgStockMouvement.source_id == demande.id,
+                    MgStockMouvement.article_id == ligne.article_id,
+                    MgStockMouvement.type_mouvement == "SORTIE",
+                )
+            )
+            if already:
+                continue
             article = await self.db.scalar(
                 select(MgArticle)
                 .where(MgArticle.id == ligne.article_id, MgArticle.deleted_at.is_(None))
                 .with_for_update()
             )
             if article is None:
+                continue
+            if not getattr(article, "stockable", True):
                 continue
             await self._apply_mouvement(
                 article=article,
@@ -992,6 +1133,8 @@ class MgStockService:
         Ne modifie ``mg_articles.stock_actuel`` qu'à travers ``_apply_mouvement``
         (source unique de vérité pour les mouvements de stock).
         """
+        if not getattr(article, "stockable", True):
+            return None
         return await self._apply_mouvement(
             article=article,
             type_mouvement="ENTREE",
@@ -1019,31 +1162,54 @@ class MgStockService:
         date_mouvement: datetime | None = None,
         allow_zero: bool = False,
         force_stock: Decimal | None = None,
+        allow_negative: bool = False,
     ) -> MgStockMouvement:
         qty = Decimal(quantite)
-        if qty < 0 or (qty == 0 and not allow_zero):
+        if type_mouvement == "AJUSTEMENT":
+            if qty == 0 and not allow_zero:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Quantité invalide")
+        elif qty < 0 or (qty == 0 and not allow_zero):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Quantité invalide")
+
+        if not getattr(article, "stockable", True):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"Article {article.code} non stockable — aucun mouvement de stock.",
+            )
+
+        if source_type and source_id:
+            existing = await self._existing_source_mvt(
+                source_type, source_id, article.id, type_mouvement
+            )
+            if existing is not None:
+                return existing
+
+        psvc = MgStockPeriodeService(self.db)
+        periode = await psvc.resolve_for_movement(date_mouvement)
+
         current = Decimal(article.stock_actuel or 0)
         if type_mouvement == "ENTREE":
-            article.stock_actuel = current + qty
+            new_stock = current + qty
         elif type_mouvement == "SORTIE":
-            if current < qty:
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST,
-                    detail=f"Stock insuffisant ({current}) pour {article.code}",
-                )
-            article.stock_actuel = current - qty
+            new_stock = current - qty
         elif type_mouvement == "AJUSTEMENT":
-            article.stock_actuel = current + qty
+            new_stock = current + qty
         elif type_mouvement == "INVENTAIRE":
-            article.stock_actuel = force_stock if force_stock is not None else qty
-            qty = Decimal(article.stock_actuel or 0)
+            new_stock = force_stock if force_stock is not None else qty
+            qty = Decimal(new_stock or 0)
         else:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Type invalide")
 
-        # Mouvement journal : quantité 0 autorisée uniquement inventaire → stocker 0
-        mvt_qty = qty if qty > 0 else Decimal("0")
-        if mvt_qty == 0 and type_mouvement != "INVENTAIRE":
+        if new_stock < 0 and not allow_negative:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"Stock insuffisant ({current}) pour {article.code} — stock négatif interdit.",
+            )
+
+        article.stock_actuel = new_stock
+
+        mvt_qty = qty
+        if mvt_qty == 0 and type_mouvement not in {"INVENTAIRE", "AJUSTEMENT"}:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Quantité invalide")
 
         ref = await self._next_mvt_ref(type_mouvement)
@@ -1052,7 +1218,7 @@ class MgStockService:
             date_mouvement=date_mouvement or datetime.now(timezone.utc),
             type_mouvement=type_mouvement,
             article_id=article.id,
-            quantite=mvt_qty if mvt_qty > 0 else Decimal("0.000"),
+            quantite=mvt_qty,
             agence_id=agence_id,
             departement=departement,
             initiateur_id=initiateur.id if initiateur else None,
@@ -1060,9 +1226,12 @@ class MgStockService:
             observation=observation,
             source_type=source_type,
             source_id=source_id,
+            periode_id=periode.id,
         )
         self.db.add(mvt)
         await self.db.flush()
+        if type_mouvement in {"ENTREE", "SORTIE", "AJUSTEMENT"}:
+            await psvc.touch_solde(periode, article, type_mouvement, mvt_qty)
         return mvt
 
     async def _next_mvt_ref(self, type_mouvement: str) -> str:
@@ -1102,14 +1271,158 @@ class MgStockService:
         )
         return f"{prefix}-{year}-{(count or 0) + 1:05d}"
 
-    async def _next_inventaire_ref(self) -> str:
-        year = datetime.now(timezone.utc).year
+    async def _next_inventaire_ref(self, year: int | None = None, month: int | None = None) -> str:
+        now = datetime.now(timezone.utc)
+        year = year or now.year
+        month = month or now.month
+        prefix = f"INV-{year}-{month:02d}-"
         count = await self.db.scalar(
+            select(func.count())
+            .select_from(MgInventaire)
+            .where(MgInventaire.reference.like(f"{prefix}%"))
+        )
+        legacy = await self.db.scalar(
             select(func.count())
             .select_from(MgInventaire)
             .where(MgInventaire.reference.like(f"INVCP-{year}-%"))
         )
-        return f"INVCP-{year}-{(count or 0) + 1:05d}"
+        return f"{prefix}{(count or 0) + (legacy or 0) + 1:03d}"
+
+    async def _existing_source_mvt(
+        self,
+        source_type: str,
+        source_id: uuid.UUID,
+        article_id: uuid.UUID,
+        type_mouvement: str,
+    ) -> MgStockMouvement | None:
+        if source_type not in {"demande_fourniture", "inventaire"}:
+            return None
+        return await self.db.scalar(
+            select(MgStockMouvement).where(
+                MgStockMouvement.source_type == source_type,
+                MgStockMouvement.source_id == source_id,
+                MgStockMouvement.article_id == article_id,
+                MgStockMouvement.type_mouvement == type_mouvement,
+            )
+        )
+
+    async def _articles_inventaire(
+        self, *, agence_id: uuid.UUID | None, famille_id: uuid.UUID | None
+    ) -> list[MgArticle]:
+        filters = [
+            MgArticle.is_active.is_(True),
+            MgArticle.deleted_at.is_(None),
+            MgArticle.stockable.is_(True),
+        ]
+        if agence_id:
+            filters.append(MgArticle.agence_id == agence_id)
+        if famille_id:
+            filters.append(MgArticle.famille_id == famille_id)
+        stmt = select(MgArticle).where(*filters).order_by(MgArticle.code).limit(5000)
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    @staticmethod
+    def _require_lignes_comptees(inv: MgInventaire) -> None:
+        missing = [l for l in inv.lignes if l.stock_physique is None]
+        if missing:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"{len(missing)} ligne(s) sans comptage physique",
+            )
+
+    async def _appliquer_ajustements_inventaire(self, inv: MgInventaire, user: User) -> None:
+        psvc = MgStockPeriodeService(self.db)
+        periode = None
+        if inv.periode_id:
+            periode = await psvc.get_periode(inv.periode_id)
+        for ligne in inv.lignes:
+            article = await self.db.scalar(
+                select(MgArticle)
+                .where(MgArticle.id == ligne.article_id, MgArticle.deleted_at.is_(None))
+                .with_for_update()
+            )
+            if article is None or not getattr(article, "stockable", True):
+                continue
+            physique = Decimal(ligne.stock_physique or 0)
+            ligne.ecart = physique - Decimal(ligne.stock_theorique or 0)
+            ligne.nature_ecart = nature_ecart(ligne.ecart)
+            current = Decimal(article.stock_actuel or 0)
+            delta = physique - current
+            if delta != 0:
+                await self._apply_mouvement(
+                    article=article,
+                    type_mouvement="AJUSTEMENT",
+                    quantite=delta,
+                    agence_id=inv.agence_id or article.agence_id,
+                    initiateur=user,
+                    motif=f"Écart constaté lors de l'inventaire {inv.reference}",
+                    observation=(
+                        f"théorique={ligne.stock_theorique} physique={physique} écart={ligne.ecart}"
+                    ),
+                    source_type="inventaire",
+                    source_id=inv.id,
+                    allow_zero=False,
+                )
+            if periode is not None:
+                await psvc.apply_physique(periode, article, physique)
+
+    async def _dashboard_periode(self) -> dict:
+        empty = {
+            "periode_active": None,
+            "stock_initial_periode": 0.0,
+            "entrees_qte_periode": 0.0,
+            "sorties_qte_periode": 0.0,
+            "ajustements_qte_periode": 0.0,
+            "stock_theorique_periode": 0.0,
+            "ajustements_mois": 0,
+            "cloture_statut": None,
+            "cloture_message": None,
+        }
+        try:
+            psvc = MgStockPeriodeService(self.db)
+            periode = await psvc.ensure_open_periode()
+            totaux = await psvc.totaux_periode(periode)
+            code, message = await psvc.cloture_alerte(periode)
+            aj_count = int(
+                await self.db.scalar(
+                    select(func.count())
+                    .select_from(MgStockMouvement)
+                    .where(
+                        MgStockMouvement.type_mouvement == "AJUSTEMENT",
+                        MgStockMouvement.periode_id == periode.id,
+                    )
+                )
+                or 0
+            )
+            return {
+                "periode_active": psvc.serialize_periode(periode),
+                "stock_initial_periode": totaux["stock_initial"],
+                "entrees_qte_periode": totaux["entrees"],
+                "sorties_qte_periode": totaux["sorties"],
+                "ajustements_qte_periode": totaux["ajustements"],
+                "stock_theorique_periode": totaux["stock_theorique"],
+                "ajustements_mois": aj_count,
+                "cloture_statut": code,
+                "cloture_message": message,
+            }
+        except Exception:
+            await self.db.rollback()
+            return empty
+
+    async def _count_receptions_en_attente(self) -> int:
+        from app.models.mg_ops import MgBonCommande
+
+        return int(
+            await self.db.scalar(
+                select(func.count())
+                .select_from(MgBonCommande)
+                .where(
+                    MgBonCommande.deleted_at.is_(None),
+                    MgBonCommande.statut.in_(["VALIDE", "PARTIEL"]),
+                )
+            )
+            or 0
+        )
 
     async def _evolution_mouvements(
         self,

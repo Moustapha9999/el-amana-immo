@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
@@ -90,11 +90,15 @@ CONSULTATION_TRANSITIONS = {
 
 
 def _money(v: Decimal) -> Decimal:
-    return Decimal(v or 0).quantize(Decimal("0.01"))
+    return Decimal(v or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _qty(v: Decimal) -> Decimal:
+    return Decimal(v or 0).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
 
 
 def _line_ht(qty: Decimal, pu: Decimal, remise_pct: Decimal = Decimal("0")) -> Decimal:
-    brut = Decimal(qty) * Decimal(pu)
+    brut = _qty(qty) * _money(pu)
     rem = brut * Decimal(remise_pct or 0) / Decimal("100")
     return _money(brut - rem)
 
@@ -1748,12 +1752,15 @@ class MgAchatsService:
         )
         return list((await self.db.execute(stmt)).scalars().all()), total
 
-    async def get_bon(self, bon_id: uuid.UUID) -> MgBonCommande:
-        bon = await self.db.scalar(
+    async def get_bon(self, bon_id: uuid.UUID, *, for_update: bool = False) -> MgBonCommande:
+        stmt = (
             select(MgBonCommande)
             .options(selectinload(MgBonCommande.lignes))
             .where(MgBonCommande.id == bon_id, MgBonCommande.deleted_at.is_(None))
         )
+        if for_update:
+            stmt = stmt.with_for_update()
+        bon = await self.db.scalar(stmt)
         if not bon:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Bon de commande introuvable")
         return bon
@@ -2063,7 +2070,7 @@ class MgAchatsService:
     async def create_reception(self, data: ReceptionCreate, user: User) -> MgAchatReception:
         from app.services.mg_stock_service import MgStockService
 
-        bon = await self.get_bon(data.bon_id)
+        bon = await self.get_bon(data.bon_id, for_update=True)
         if bon.statut not in BC_STATUTS_RECEPTION:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,

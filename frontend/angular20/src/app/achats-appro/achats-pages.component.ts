@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+import { MontantPipe, QuantitePipe } from '../shared/montant.pipe';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -74,7 +74,7 @@ interface Parametre {
 @Component({
   selector: 'bea-achats-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, DecimalPipe, MatIconModule],
+  imports: [RouterLink, MontantPipe, QuantitePipe, MatIconModule],
   template: `
     <section class="bea-ach">
       <header class="bea-ach__hero">
@@ -97,7 +97,7 @@ interface Parametre {
             <span class="bea-ach__kpi-icon" data-tone="navy"><mat-icon>assignment</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>Demandes ouvertes</span>
-              <strong>{{ dash.demandes_ouvertes | number: '1.0-0' }}</strong>
+              <strong>{{ dash.demandes_ouvertes | quantite }}</strong>
               <em>À traiter</em>
             </span>
           </a>
@@ -105,7 +105,7 @@ interface Parametre {
             <span class="bea-ach__kpi-icon" data-tone="blue"><mat-icon>forum</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>Consultations</span>
-              <strong>{{ dash.consultations_ouvertes | number: '1.0-0' }}</strong>
+              <strong>{{ dash.consultations_ouvertes | quantite }}</strong>
               <em>En cours</em>
             </span>
           </a>
@@ -113,7 +113,7 @@ interface Parametre {
             <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>request_quote</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>Devis</span>
-              <strong>{{ dash.devis_ouverts | number: '1.0-0' }}</strong>
+              <strong>{{ dash.devis_ouverts | quantite }}</strong>
               <em>À analyser</em>
             </span>
           </a>
@@ -121,7 +121,7 @@ interface Parametre {
             <span class="bea-ach__kpi-icon" data-tone="warn"><mat-icon>compare_arrows</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>Comparaisons</span>
-              <strong>{{ dash.comparaisons_ouvertes | number: '1.0-0' }}</strong>
+              <strong>{{ dash.comparaisons_ouvertes | quantite }}</strong>
               <em>En cours</em>
             </span>
           </a>
@@ -132,7 +132,7 @@ interface Parametre {
             <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>receipt_long</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>BC en cours</span>
-              <strong>{{ dash.bons_en_cours | number: '1.0-0' }}</strong>
+              <strong>{{ dash.bons_en_cours | quantite }}</strong>
               <em>Pipeline commande</em>
             </span>
           </a>
@@ -145,7 +145,7 @@ interface Parametre {
             <span class="bea-ach__kpi-icon" data-tone="warn"><mat-icon>pending_actions</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>BC partiels</span>
-              <strong>{{ dash.bons_partiels | number: '1.0-0' }}</strong>
+              <strong>{{ dash.bons_partiels | quantite }}</strong>
               <em>Réception incomplète</em>
             </span>
           </a>
@@ -153,7 +153,7 @@ interface Parametre {
             <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>local_shipping</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>Réceptions</span>
-              <strong>{{ dash.receptions_mois | number: '1.0-0' }}</strong>
+              <strong>{{ dash.receptions_mois | quantite }}</strong>
               <em>Ce mois</em>
             </span>
           </a>
@@ -161,7 +161,7 @@ interface Parametre {
             <span class="bea-ach__kpi-icon" data-tone="blue"><mat-icon>receipt</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>Factures ouvertes</span>
-              <strong>{{ dash.factures_ouvertes | number: '1.0-0' }}</strong>
+              <strong>{{ dash.factures_ouvertes | quantite }}</strong>
               <em>Contrôle 3 voies</em>
             </span>
           </a>
@@ -172,7 +172,7 @@ interface Parametre {
             <span class="bea-ach__kpi-icon" data-tone="navy"><mat-icon>payments</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>À payer</span>
-              <strong>{{ dash.paiements_a_payer | number: '1.0-0' }}</strong>
+              <strong>{{ dash.paiements_a_payer | quantite }}</strong>
               <em>Suivi interne</em>
             </span>
           </a>
@@ -185,7 +185,7 @@ interface Parametre {
             <span class="bea-ach__kpi-icon" data-tone="danger"><mat-icon>notifications_active</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>Alertes</span>
-              <strong>{{ dash.alertes | number: '1.0-0' }}</strong>
+              <strong>{{ dash.alertes | quantite }}</strong>
               <em>Échéances / retards</em>
             </span>
           </a>
@@ -193,7 +193,7 @@ interface Parametre {
             <span class="bea-ach__kpi-icon" data-tone="blue"><mat-icon>analytics</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>Rapports</span>
-              <strong>{{ dash.montant_bc_mois | number: '1.0-0' }}</strong>
+              <strong>{{ dash.montant_bc_mois | montant }}</strong>
               <em>BC du mois (MRU)</em>
             </span>
           </a>
@@ -202,11 +202,11 @@ interface Parametre {
         <div class="bea-ach__money">
           <div class="bea-ach__money-card">
             <span>Montant BC du mois</span>
-            <strong>{{ dash.montant_bc_mois | number: '1.2-2' }} MRU</strong>
+            <strong>{{ dash.montant_bc_mois | montant }} MRU</strong>
           </div>
           <div class="bea-ach__money-card">
             <span>Montant factures du mois</span>
-            <strong>{{ dash.montant_factures_mois | number: '1.2-2' }} MRU</strong>
+            <strong>{{ dash.montant_factures_mois | montant }} MRU</strong>
           </div>
         </div>
 
@@ -303,7 +303,7 @@ export class AchatsDashboardComponent implements OnInit {
           <h2>Échéances et livraisons</h2>
           <span class="bea-ach__count">{{ filtered().length }} alerte(s)</span>
         </div>
-        <div style="overflow-x:auto">
+        <div class="bea-mg__table-scroll">
           <table class="bea-ach__table">
             <thead>
               <tr>
@@ -484,7 +484,7 @@ export class AchatsAlertesComponent implements OnInit {
           <h2>Référentiel de configuration</h2>
           <span class="bea-ach__count">{{ rows().length }} paramètre(s)</span>
         </div>
-        <div style="overflow-x:auto">
+        <div class="bea-mg__table-scroll">
           <table class="bea-ach__table">
             <thead>
               <tr>

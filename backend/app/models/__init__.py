@@ -25,6 +25,8 @@ from app.models.mg_stock import (
     MgInventaireLigne,
     MgStockMouvement,
     MgStockParametre,
+    MgStockPeriode,
+    MgStockSolde,
 )
 from app.models.mg_ops import (
     MgBcLigne,
@@ -117,6 +119,8 @@ __all__ = [
     "MgInventaire",
     "MgInventaireLigne",
     "MgStockParametre",
+    "MgStockPeriode",
+    "MgStockSolde",
     "MgBonCommande",
     "MgBcLigne",
     "MgNoteFrais",

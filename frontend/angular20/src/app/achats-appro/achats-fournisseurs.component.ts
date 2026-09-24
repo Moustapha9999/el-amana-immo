@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+import { MontantPipe, QuantitePipe } from '../shared/montant.pipe';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -58,7 +58,7 @@ type FicheTab = 'infos' | 'contacts' | 'adresse' | 'conditions' | 'documents' | 
 @Component({
   selector: 'bea-achats-fournisseurs',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, ReactiveFormsModule, MatIconModule, DecimalPipe, MgGedPanelComponent],
+  imports: [RouterLink, ReactiveFormsModule, MatIconModule, MontantPipe, QuantitePipe, MgGedPanelComponent],
   templateUrl: './achats-fournisseurs.component.html',
   styleUrl: './achats-ui.css',
 })

@@ -6,7 +6,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
+import { MontantPipe } from '../shared/montant.pipe';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -60,7 +60,7 @@ const EDITABLE_STATUTS = ['RECU', 'EN_COURS', 'ANALYSE'];
   imports: [
     ReactiveFormsModule,
     RouterLink,
-    DecimalPipe,
+    MontantPipe,
     MatIconModule,
     MgGedPanelComponent,
     SupplierSelectComponent,

@@ -39,6 +39,7 @@ import { StockArticleFicheComponent } from './stock-fournitures/stock-article-fi
 import { StockMouvementsComponent } from './stock-fournitures/stock-mouvements.component';
 import { StockDemandesComponent } from './stock-fournitures/stock-demandes.component';
 import { StockRapportsComponent } from './stock-fournitures/stock-rapports.component';
+import { StockRapportViewerComponent } from './stock-fournitures/stock-rapport-viewer.component';
 import {
   StockAlertesComponent,
   StockEntreesComponent,
@@ -98,6 +99,7 @@ export const routes: Routes = [
       { path: 'inventaires', component: StockInventairesComponent },
       { path: 'alertes', component: StockAlertesComponent },
       { path: 'rapports', component: StockRapportsComponent },
+      { path: 'rapports/:key', component: StockRapportViewerComponent },
       { path: 'parametres', component: StockParametresComponent },
     ],
   },

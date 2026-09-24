@@ -20,7 +20,7 @@
           <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>payments</mat-icon></span>
           <span class="bea-ach__kpi-meta">
             <span>Montant TTC</span>
-            <strong>{{ total() | number: '1.0-0' }}</strong>
+            <strong>{{ total() | montant }}</strong>
             <em>MRU</em>
           </span>
         </div>
@@ -53,7 +53,7 @@
         <h2>Factures fournisseurs</h2>
         <span class="bea-ach__count">{{ filtered().length }} résultat(s)</span>
       </div>
-      <div style="overflow-x:auto">
+      <div class="bea-mg__table-scroll">
         <table class="bea-ach__table">
           <thead>
             <tr>
@@ -70,7 +70,7 @@
               <tr [style.--i]="i">
                 <td><code class="bea-ach__code">{{ r.reference }}</code></td>
                 <td>{{ r.date_facture }}</td>
-                <td>{{ r.montant_ttc | number: '1.2-2' }} MRU</td>
+                <td>{{ r.montant_ttc | montant }} MRU</td>
                 <td><span class="bea-ach__badge" [attr.data-statut]="r.statut">{{ r.statut }}</span></td>
                 <td>
                   <span class="bea-ach__badge" [attr.data-statut]="ecartStatut(r)">{{ ecartLabel(r) }}</span>

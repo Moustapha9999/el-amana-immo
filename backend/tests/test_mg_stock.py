@@ -35,6 +35,11 @@ def test_mg_stock_permissions_in_catalogue():
         "mg.stock.inventory",
         "mg.stock.approve",
         "mg.stock.export",
+        "mg.stock.period.view",
+        "mg.stock.period.close",
+        "mg.stock.period.reopen",
+        "mg.stock.inventory.validate",
+        "mg.stock.negative",
     ):
         assert p in codes
 

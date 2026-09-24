@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+import { MontantPipe, montantLigne } from '../shared/montant.pipe';
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -42,7 +42,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
 @Component({
   selector: 'bea-achats-bons',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, DecimalPipe, MgGedPanelComponent, MatIconModule, SupplierSelectComponent],
+  imports: [ReactiveFormsModule, RouterLink, MontantPipe, MgGedPanelComponent, MatIconModule, SupplierSelectComponent],
   template: `
     <section class="bea-ach">
       @if (mode() === 'list') {
@@ -64,11 +64,11 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
         @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
         <div class="bea-ach__panel">
           <div class="bea-ach__panel-top"><h2>Liste des bons</h2><span class="bea-ach__count">{{ filtered().length }} résultat(s)</span></div>
-          <div style="overflow-x:auto"><table class="bea-ach__table">
+          <div class="bea-mg__table-scroll"><table class="bea-ach__table">
             <thead><tr><th>Réf.</th><th>Date</th><th>Fournisseur</th><th>Total HT</th><th>Statut</th><th class="bea-ach__th-actions">Actions</th></tr></thead>
             <tbody>
               @for (b of filtered(); track b.id; let i = $index) {
-                <tr [style.--i]="i"><td><code class="bea-ach__code">{{ b.reference }}</code></td><td>{{ b.date_bc }}</td><td>{{ b.fournisseur_raison_sociale || '—' }}</td><td>{{ b.total_ht | number:'1.2-2' }} MRU</td><td><span class="bea-ach__badge" [attr.data-statut]="b.statut">{{ b.statut }}</span></td>
+                <tr [style.--i]="i"><td><code class="bea-ach__code">{{ b.reference }}</code></td><td>{{ b.date_bc }}</td><td>{{ b.fournisseur_raison_sociale || '—' }}</td><td>{{ b.total_ht | montant }} MRU</td><td><span class="bea-ach__badge" [attr.data-statut]="b.statut">{{ b.statut }}</span></td>
                   <td class="bea-ach__actions">
                     <a class="bea-ach__icon-btn" title="Voir" [routerLink]="['/achats-appro/bons', b.id]"><mat-icon>visibility</mat-icon></a>
                     <button type="button" class="bea-ach__icon-btn" title="Éditer" [disabled]="!canEdit(b)" (click)="edit(b)"><mat-icon>edit</mat-icon></button>
@@ -171,9 +171,9 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
             TVA appliquée : {{ tvaDefaut() }}% (paramètre <code class="bea-ach__code">tva_defaut</code>)
           </p>
           <div class="bea-ach__money" style="margin:0.35rem 0 0.75rem">
-            <div class="bea-ach__money-card"><span>Prix total HT</span><strong>{{ totaux().ht | number:'1.2-2' }} MRU</strong></div>
-            <div class="bea-ach__money-card"><span>Prix total TVA</span><strong>{{ totaux().tva | number:'1.2-2' }} MRU</strong></div>
-            <div class="bea-ach__money-card"><span>Prix total TTC</span><strong>{{ totaux().ttc | number:'1.2-2' }} MRU</strong></div>
+            <div class="bea-ach__money-card"><span>Prix total HT</span><strong>{{ totaux().ht | montant }} MRU</strong></div>
+            <div class="bea-ach__money-card"><span>Prix total TVA</span><strong>{{ totaux().tva | montant }} MRU</strong></div>
+            <div class="bea-ach__money-card"><span>Prix total TTC</span><strong>{{ totaux().ttc | montant }} MRU</strong></div>
           </div>
             <div class="bea-ach__form-actions">
             <button type="submit" class="bea-ach__btn"><mat-icon>save</mat-icon>Enregistrer</button>
@@ -311,7 +311,7 @@ export class AchatsBonsComponent implements OnInit {
     const rate = this.tvaDefaut();
     let ht = 0;
     for (const row of this.lignes.getRawValue()) {
-      ht += Number(row.quantite || 0) * Number(row.prix_unitaire || 0);
+      ht += montantLigne(row.quantite, row.prix_unitaire);
     }
     const tva = ht * (rate / 100);
     return { ht, tva, ttc: ht + tva };

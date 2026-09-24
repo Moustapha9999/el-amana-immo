@@ -72,7 +72,7 @@ interface Paginated<T> {
           <h2>Documents GED</h2>
           <span class="bea-mg__count">Espace Moyens Généraux</span>
         </div>
-        <div style="overflow-x:auto">
+        <div class="bea-mg__table-scroll">
           <table class="bea-mg__table">
             <thead>
               <tr>

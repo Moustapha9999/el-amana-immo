@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+import { MontantPipe } from '../shared/montant.pipe';
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -23,7 +23,7 @@ interface Contrat {
 @Component({
   selector: 'bea-contrats-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, DecimalPipe, MgGedPanelComponent],
+  imports: [ReactiveFormsModule, RouterLink, MontantPipe, MgGedPanelComponent],
   template: `
     <section class="bea-stock-page">
       <header class="bea-stock-page__head">
@@ -42,6 +42,7 @@ interface Contrat {
         @if (erreur()) {
           <p class="bea-stock-page__error">{{ erreur() }}</p>
         }
+        <div class="bea-mg__table-scroll">
         <table class="bea-stock-table">
           <thead>
             <tr>
@@ -61,7 +62,7 @@ interface Contrat {
                 <td>{{ c.titre }}</td>
                 <td>{{ c.fournisseur_snapshot || '—' }}</td>
                 <td>{{ c.prochain_echeance || c.date_fin || '—' }}</td>
-                <td>{{ c.montant != null ? (c.montant | number: '1.2-2') : '—' }}</td>
+                <td>{{ c.montant | montant }}</td>
                 <td>{{ c.statut }}</td>
                 <td><a [routerLink]="['/contrats-echeances', c.id]">Ouvrir</a></td>
               </tr>
@@ -70,6 +71,7 @@ interface Contrat {
             }
           </tbody>
         </table>
+        </div>
       } @else {
         <form class="bea-stock-form" [formGroup]="form" (ngSubmit)="save()">
           <div class="bea-stock-form__grid">

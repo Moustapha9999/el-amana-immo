@@ -179,7 +179,7 @@
           <span class="bea-ach__kpi-icon" data-tone="navy"><mat-icon>analytics</mat-icon></span>
           <span class="bea-ach__kpi-meta">
             <span>{{ entry.key }}</span>
-            <strong>{{ entry.value | number: '1.0-2' }}</strong>
+            <strong>{{ formatKpi(entry.key, entry.value) }}</strong>
           </span>
         </div>
       }
@@ -187,14 +187,16 @@
     @if (p.bons_par_statut?.length) {
       <div class="bea-ach__panel">
         <div class="bea-ach__panel-top"><h2>BC par statut</h2></div>
+        <div class="bea-mg__table-scroll">
         <table class="bea-ach__table">
           <thead><tr><th>Statut</th><th>Nombre</th></tr></thead>
           <tbody>
             @for (b of p.bons_par_statut; track b.statut) {
-              <tr><td>{{ b.statut }}</td><td>{{ b.count }}</td></tr>
+              <tr><td>{{ b.statut }}</td><td>{{ b.count | quantite }}</td></tr>
             }
           </tbody>
         </table>
+        </div>
       </div>
     }
   } @else if (preview(); as p) {
@@ -210,13 +212,13 @@
           @for (t of p.totals | keyvalue; track t.key) {
             <div class="bea-ach__money-card">
               <span>{{ t.key }}</span>
-              <strong>{{ t.value | number: '1.2-2' }}</strong>
+              <strong>{{ t.value | montant }}</strong>
             </div>
           }
         </div>
       }
 
-      <div style="overflow-x:auto">
+      <div class="bea-mg__table-scroll">
         <table class="bea-ach__table">
           <thead>
             <tr>
@@ -240,8 +242,10 @@
                 </td>
                 @for (c of p.columns; track c.key) {
                   <td>
-                    @if (c.kind === 'money' || c.kind === 'number') {
-                      {{ cellValue(row, c) | number: '1.0-2' }}
+                    @if (c.kind === 'money') {
+                      {{ cellValue(row, c) | montant }}
+                    } @else if (c.kind === 'number') {
+                      {{ cellValue(row, c) | quantite }}
                     } @else {
                       {{ cellValue(row, c) }}
                     }

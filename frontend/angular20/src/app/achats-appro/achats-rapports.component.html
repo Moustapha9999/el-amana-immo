@@ -15,7 +15,7 @@
         <span class="bea-ach__kpi-icon" data-tone="navy"><mat-icon>assignment</mat-icon></span>
         <span class="bea-ach__kpi-meta">
           <span>Demandes</span>
-          <strong>{{ s.nb_demandes | number: '1.0-0' }}</strong>
+          <strong>{{ s.nb_demandes | quantite }}</strong>
           <em>En base</em>
         </span>
       </div>
@@ -23,23 +23,23 @@
         <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>receipt_long</mat-icon></span>
         <span class="bea-ach__kpi-meta">
           <span>Bons</span>
-          <strong>{{ s.nb_bons | number: '1.0-0' }}</strong>
-          <em>{{ s.montant_bons | number: '1.0-0' }} MRU</em>
+          <strong>{{ s.nb_bons | quantite }}</strong>
+          <em>{{ s.montant_bons | montant }} MRU</em>
         </span>
       </div>
       <div class="bea-ach__kpi" style="--i:2">
         <span class="bea-ach__kpi-icon" data-tone="blue"><mat-icon>receipt</mat-icon></span>
         <span class="bea-ach__kpi-meta">
           <span>Factures</span>
-          <strong>{{ s.nb_factures | number: '1.0-0' }}</strong>
-          <em>{{ s.montant_factures | number: '1.0-0' }} MRU</em>
+          <strong>{{ s.nb_factures | quantite }}</strong>
+          <em>{{ s.montant_factures | montant }} MRU</em>
         </span>
       </div>
       <div class="bea-ach__kpi" style="--i:3">
         <span class="bea-ach__kpi-icon" data-tone="warn"><mat-icon>payments</mat-icon></span>
         <span class="bea-ach__kpi-meta">
           <span>Paiements</span>
-          <strong>{{ s.montant_paiements | number: '1.0-0' }}</strong>
+          <strong>{{ s.montant_paiements | montant }}</strong>
           <em>MRU suivis</em>
         </span>
       </div>

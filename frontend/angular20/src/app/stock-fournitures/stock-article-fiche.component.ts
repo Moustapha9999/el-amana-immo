@@ -1,4 +1,5 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { DatePipe } from '@angular/common';
+import { QuantitePipe } from '../shared/montant.pipe';
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -65,7 +66,7 @@ type Tab = 'infos' | 'stock' | 'mouvements' | 'demandes' | 'documents';
 @Component({
   selector: 'bea-stock-article-fiche',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MatIconModule, DecimalPipe, DatePipe, MgGedPanelComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatIconModule, QuantitePipe, DatePipe, MgGedPanelComponent],
   template: `
     <section class="bea-mg">
       <header class="bea-mg__head">
@@ -109,7 +110,7 @@ type Tab = 'infos' | 'stock' | 'mouvements' | 'demandes' | 'documents';
               </label>
               <label>
                 Stock actuel
-                <input [value]="(a.stock_actuel | number: '1.0-3') + ' ' + a.uom" readonly />
+                <input [value]="(a.stock_actuel | quantite) + ' ' + a.uom" readonly />
               </label>
               <label>
                 Agence
@@ -198,19 +199,19 @@ type Tab = 'infos' | 'stock' | 'mouvements' | 'demandes' | 'documents';
               <div class="bea-fiche-kpis">
                 <div>
                   <span>Stock initial</span>
-                  <strong>{{ a.stock_initial | number: '1.0-3' }}</strong>
+                  <strong>{{ a.stock_initial | quantite }}</strong>
                 </div>
                 <div>
                   <span>Σ Entrées</span>
-                  <strong>{{ a.total_entrees | number: '1.0-3' }}</strong>
+                  <strong>{{ a.total_entrees | quantite }}</strong>
                 </div>
                 <div>
                   <span>Σ Sorties</span>
-                  <strong>{{ a.total_sorties | number: '1.0-3' }}</strong>
+                  <strong>{{ a.total_sorties | quantite }}</strong>
                 </div>
                 <div>
                   <span>Σ Ajustements</span>
-                  <strong>{{ a.total_ajustements | number: '1.0-3' }}</strong>
+                  <strong>{{ a.total_ajustements | quantite }}</strong>
                 </div>
                 <div>
                   <span>Inventaires</span>
@@ -218,13 +219,13 @@ type Tab = 'infos' | 'stock' | 'mouvements' | 'demandes' | 'documents';
                 </div>
                 <div>
                   <span>Stock actuel</span>
-                  <strong>{{ a.stock_actuel | number: '1.0-3' }} {{ a.uom }}</strong>
+                  <strong>{{ a.stock_actuel | quantite }} {{ a.uom }}</strong>
                 </div>
               </div>
               <p class="bea-stock-page__kicker" style="margin-top:1rem">
-                Min {{ a.stock_min | number: '1.0-3' }}
+                Min {{ a.stock_min | quantite }}
                 @if (a.stock_max != null) {
-                  — Max {{ a.stock_max | number: '1.0-3' }}
+                  — Max {{ a.stock_max | quantite }}
                 }
               </p>
             </div>
@@ -235,7 +236,7 @@ type Tab = 'infos' | 'stock' | 'mouvements' | 'demandes' | 'documents';
               <h2>Mouvements</h2>
               <span class="bea-mg__count">{{ mouvements().length }}</span>
             </div>
-            <div style="overflow-x:auto">
+            <div class="bea-mg__table-scroll">
               <table class="bea-mg__table">
                 <thead>
                   <tr>
@@ -255,7 +256,7 @@ type Tab = 'infos' | 'stock' | 'mouvements' | 'demandes' | 'documents';
                       <td>
                         <span class="bea-stock-badge" [attr.data-type]="m.type_mouvement">{{ m.type_mouvement }}</span>
                       </td>
-                      <td>{{ m.quantite | number: '1.0-3' }}</td>
+                      <td>{{ m.quantite | quantite }}</td>
                       <td>{{ m.initiateur_nom || '—' }}</td>
                       <td>{{ m.motif || '—' }}</td>
                     </tr>
@@ -279,7 +280,7 @@ type Tab = 'infos' | 'stock' | 'mouvements' | 'demandes' | 'documents';
               <h2>Demandes liées</h2>
               <span class="bea-mg__count">{{ demandes().length }}</span>
             </div>
-            <div style="overflow-x:auto">
+            <div class="bea-mg__table-scroll">
               <table class="bea-mg__table">
                 <thead>
                   <tr>

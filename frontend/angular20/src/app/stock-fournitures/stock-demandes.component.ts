@@ -5,6 +5,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
+import { QuantitePipe } from '../shared/montant.pipe';
 import { PaginationComponent } from '../shared/pagination.component';
 
 interface Agence {
@@ -44,7 +45,7 @@ interface Paginated<T> {
 @Component({
   selector: 'bea-stock-demandes',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MatIconModule, DatePipe, MgGedPanelComponent, PaginationComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatIconModule, DatePipe, QuantitePipe, MgGedPanelComponent, PaginationComponent],
   template: `
     <section class="bea-mg">
       @if (mode() === 'list') {
@@ -102,7 +103,7 @@ interface Paginated<T> {
             <h2>Liste des demandes</h2>
             <span class="bea-mg__count">{{ total() }} résultat(s)</span>
           </div>
-          <div style="overflow-x:auto">
+          <div class="bea-mg__table-scroll">
             <table class="bea-mg__table">
               <thead>
                 <tr>
@@ -219,7 +220,7 @@ interface Paginated<T> {
               </label>
             </div>
 
-            <div style="margin-top:1rem;overflow-x:auto">
+            <div class="bea-mg__lignes">
               <table class="bea-mg__table" formArrayName="lignes">
                 <thead>
                   <tr>
@@ -231,7 +232,13 @@ interface Paginated<T> {
                 <tbody>
                   @for (ctrl of lignes.controls; track $index; let i = $index) {
                     <tr [formGroupName]="i">
-                      <td><input formControlName="designation" list="articles-list" /></td>
+                      <td>
+                        <input
+                          formControlName="designation"
+                          list="articles-list"
+                          placeholder="Article ou désignation"
+                        />
+                      </td>
                       <td>
                         <input type="number" formControlName="quantite_demandee" min="0.001" step="0.001" />
                       </td>
@@ -319,7 +326,7 @@ interface Paginated<T> {
               </label>
             </div>
 
-            <div style="margin-top:1rem;overflow-x:auto">
+            <div class="bea-mg__table-scroll" style="margin-top:1rem">
               <table class="bea-mg__table">
                 <thead>
                   <tr>
@@ -332,8 +339,8 @@ interface Paginated<T> {
                   @for (l of d.lignes; track l.id) {
                     <tr>
                       <td>{{ l.designation }}</td>
-                      <td>{{ l.quantite_demandee }}</td>
-                      <td>{{ l.quantite_accordee ?? '—' }}</td>
+                      <td>{{ l.quantite_demandee | quantite }}</td>
+                      <td>{{ l.quantite_accordee | quantite }}</td>
                     </tr>
                   }
                 </tbody>

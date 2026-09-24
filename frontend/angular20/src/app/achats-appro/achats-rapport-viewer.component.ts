@@ -1,4 +1,5 @@
-import { DecimalPipe, KeyValuePipe } from '@angular/common';
+import { KeyValuePipe } from '@angular/common';
+import { MontantPipe, QuantitePipe, formatMontant, formatQuantite } from '../shared/montant.pipe';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -52,7 +53,7 @@ interface Agence {
 @Component({
   selector: 'bea-achats-rapport-viewer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MatIconModule, DecimalPipe, KeyValuePipe],
+  imports: [ReactiveFormsModule, RouterLink, MatIconModule, MontantPipe, QuantitePipe, KeyValuePipe],
   templateUrl: './achats-rapport-viewer.component.html',
 })
 export class AchatsRapportViewerComponent implements OnInit {
@@ -275,10 +276,20 @@ export class AchatsRapportViewerComponent implements OnInit {
     this.selected.set(next);
   }
 
+  formatKpi(key: string, value: unknown): string {
+    if (String(key).startsWith('montant') || String(key).includes('ht') || String(key).includes('ttc')) {
+      return formatMontant(value as number | string | null);
+    }
+    return formatQuantite(value as number | string | null);
+  }
+
   cellValue(row: Record<string, unknown>, col: Col): string | number {
     const v = row[col.key];
-    if (v == null || v === '') return '—';
     if (col.kind === 'bool') return v ? 'Oui' : 'Non';
+    if (col.kind === 'money' || col.kind === 'number') {
+      return v == null || v === '' ? 0 : (v as number);
+    }
+    if (v == null || v === '') return '—';
     return v as string | number;
   }
 

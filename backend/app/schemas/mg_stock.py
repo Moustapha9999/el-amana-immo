@@ -34,10 +34,14 @@ class ArticleCreate(BaseModel):
     designation: str = Field(min_length=1, max_length=255)
     famille_id: UUID
     uom: str = "U"
+    stockable: bool = True
+    reference: str | None = None
+    sous_famille: str | None = None
     stock_min: Decimal = Decimal("0")
     stock_max: Decimal | None = None
     agence_id: UUID | None = None
     emplacement: str | None = None
+    fournisseur_habituel: str | None = None
     stock_initial: Decimal = Decimal("0")
 
 
@@ -45,10 +49,14 @@ class ArticleUpdate(BaseModel):
     designation: str | None = None
     famille_id: UUID | None = None
     uom: str | None = None
+    stockable: bool | None = None
+    reference: str | None = None
+    sous_famille: str | None = None
     stock_min: Decimal | None = None
     stock_max: Decimal | None = None
     agence_id: UUID | None = None
     emplacement: str | None = None
+    fournisseur_habituel: str | None = None
     is_active: bool | None = None
 
 
@@ -60,11 +68,15 @@ class ArticleOut(BaseModel):
     designation: str
     famille_id: UUID
     uom: str
+    stockable: bool = True
+    reference: str | None = None
+    sous_famille: str | None = None
     stock_actuel: Decimal
     stock_min: Decimal
     stock_max: Decimal | None
     agence_id: UUID | None
     emplacement: str | None
+    fournisseur_habituel: str | None = None
     is_active: bool
     niveau: str | None = None  # faible | normal | epuise
 
@@ -84,7 +96,7 @@ class ArticleFicheOut(ArticleOut):
 class MouvementCreate(BaseModel):
     article_id: UUID
     type_mouvement: str  # ENTREE | SORTIE | AJUSTEMENT | INVENTAIRE
-    quantite: Decimal = Field(gt=0)
+    quantite: Decimal
     agence_id: UUID | None = None
     departement: str | None = None
     motif: str | None = None
@@ -92,6 +104,7 @@ class MouvementCreate(BaseModel):
     date_mouvement: datetime | None = None
     source_type: str | None = None
     source_id: UUID | None = None
+    allow_negative: bool = False
 
 
 class ReceptionLigneIn(BaseModel):
@@ -121,6 +134,7 @@ class MouvementOut(BaseModel):
     observation: str | None
     source_type: str | None
     source_id: UUID | None
+    periode_id: UUID | None = None
     initiateur_id: UUID | None = None
     initiateur_nom: str | None = None
     article_code: str | None = None
@@ -206,6 +220,15 @@ class DashboardOut(BaseModel):
     conso_par_famille: list[dict]
     conso_par_agence: list[dict]
     conso_par_mois: list[dict]
+    periode_active: dict | None = None
+    stock_initial_periode: float = 0
+    entrees_qte_periode: float = 0
+    sorties_qte_periode: float = 0
+    ajustements_qte_periode: float = 0
+    stock_theorique_periode: float = 0
+    ajustements_mois: int = 0
+    cloture_statut: str | None = None
+    cloture_message: str | None = None
 
 
 class RapportConsoOut(BaseModel):
@@ -245,6 +268,12 @@ class InventaireCreate(BaseModel):
     agence_id: UUID | None = None
     observation: str | None = None
     famille_id: UUID | None = None
+    periode_id: UUID | None = None
+
+
+class InventaireTransition(BaseModel):
+    action: str
+    motif: str | None = None
 
 
 class InventaireLigneOut(BaseModel):
@@ -255,10 +284,12 @@ class InventaireLigneOut(BaseModel):
     stock_theorique: Decimal
     stock_physique: Decimal | None
     ecart: Decimal | None
+    nature_ecart: str | None = None
     observation: str | None
     sort_order: int
     article_code: str | None = None
     article_designation: str | None = None
+    famille_libelle: str | None = None
 
 
 class InventaireOut(BaseModel):
@@ -272,14 +303,73 @@ class InventaireOut(BaseModel):
     agence_id: UUID | None
     statut: str
     observation: str | None
+    periode_id: UUID | None = None
     lignes: list[InventaireLigneOut] = []
+    nb_conforme: int = 0
+    nb_surplus: int = 0
+    nb_manquant: int = 0
 
 
 class AlerteOut(BaseModel):
-    article_id: UUID
-    code: str
-    designation: str
-    stock_actuel: Decimal
-    stock_min: Decimal
+    article_id: UUID | None = None
+    code: str | None = None
+    designation: str | None = None
+    stock_actuel: Decimal | None = None
+    stock_min: Decimal | None = None
     niveau: str
     agence_id: UUID | None = None
+    type_alerte: str = "STOCK"
+    titre: str | None = None
+    message: str | None = None
+    lien: str | None = None
+
+
+class PeriodeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    annee: int
+    mois: int
+    libelle: str
+    date_debut: date
+    date_fin: date
+    statut: str
+    agence_id: UUID | None = None
+    periode_precedente_id: UUID | None = None
+    cloture_at: datetime | None = None
+    reopen_at: datetime | None = None
+    reopen_motif: str | None = None
+    periode_verrouillee: dict | None = None
+
+
+class PeriodeReopenIn(BaseModel):
+    motif: str = Field(min_length=5, max_length=500)
+
+
+class RapportExportIn(BaseModel):
+    format: str = Field(pattern="^(xlsx|pdf|csv)$")
+    scope: str = "filtered"
+    ids: list[UUID] = []
+    filters: dict = {}
+    columns: list[str] | None = None
+
+
+class RapportCustomPreviewIn(BaseModel):
+    dataset: str
+    columns: list[str] = []
+    filters: dict = {}
+    sort_by: str | None = None
+    sort_dir: str = "desc"
+    page: int = 1
+    size: int = 50
+
+
+class RapportCustomExportIn(BaseModel):
+    dataset: str
+    format: str = Field(pattern="^(xlsx|pdf|csv)$")
+    scope: str = "filtered"
+    ids: list[UUID] = []
+    filters: dict = {}
+    columns: list[str] = []
+    sort_by: str | None = None
+    sort_dir: str = "desc"
