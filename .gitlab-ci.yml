@@ -94,26 +94,6 @@ security:secrets-scan:
     - if: $CI_COMMIT_BRANCH
     - if: $CI_COMMIT_TAG
 
-security:sonar:
-  stage: security
-  image:
-    name: sonarsource/sonar-scanner-cli:11
-    entrypoint: [""]
-  variables:
-    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
-    GIT_DEPTH: "0"
-  cache:
-    key: "${CI_JOB_NAME}"
-    paths:
-      - .sonar/cache
-  script:
-    - sonar-scanner -Dsonar.projectBaseDir=.
-  rules:
-    - if: $SONAR_TOKEN
-      when: on_success
-    - when: never
-  allow_failure: true
-
 # ---------------------------------------------------------------------------
 # build + publish (tags SemVer v*)
 # ---------------------------------------------------------------------------

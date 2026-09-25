@@ -106,7 +106,7 @@ export const MODULE_ROUTE_CONTRACTS: Readonly<Record<string, ModuleRouteContract
   'notes-frais': {
     code: 'notes-frais',
     strategy: 'prefixed',
-    entryPath: '/notes-frais/notes',
+    entryPath: '/notes-frais/dashboard',
     espacePath: '/moyens-generaux',
     urlPrefix: '/notes-frais',
   },

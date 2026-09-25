@@ -4,16 +4,22 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
+from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_RIGHT
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
+    BaseDocTemplate,
+    Frame,
     Image,
     KeepTogether,
+    PageTemplate,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -640,56 +646,429 @@ def pdf_bon_commande(
     return buf.getvalue()
 
 
-def pdf_note_frais(note) -> bytes:
-    def body(styles):
-        out = [
-            Paragraph("BANQUE EL AMANA — NOTE DE FRAIS", styles["title"]),
-            Paragraph(
-                f"<b>Réf.</b> {note.reference} &nbsp;|&nbsp; <b>Date</b> {note.date_demande} "
-                f"&nbsp;|&nbsp; <b>Statut</b> {note.statut}<br/>"
-                f"<b>Demandeur</b> {note.demandeur_nom or '—'} — {note.fonction or ''} / {note.departement or ''}<br/>"
-                f"<b>Agence</b> {note.agence_libelle_snapshot or '—'}",
-                styles["meta"],
-            ),
-            Spacer(1, 6 * mm),
+def resolve_note_frais_logo_path() -> Path | None:
+    """Logo empilé (cercle BEA, arabe, Banque El Amana) pour la fiche note de frais."""
+    path = Path(__file__).resolve().parents[1] / "assets" / "brand" / "logo-bea-empile.png"
+    return path if path.is_file() else None
+
+
+def _esc(value: object | None, *, empty: str = "") -> str:
+    text = "" if value is None else str(value).strip()
+    return escape(text) if text else empty
+
+
+def pdf_note_frais(
+    note,
+    *,
+    signataire_1: str | None = None,
+    signataire_2: str | None = None,
+    signataire_1_role: str | None = None,
+    signataire_2_role: str | None = None,
+    orientation: str | None = None,
+) -> bytes:
+    """PDF note de frais — fiche papier BEA, A4 portrait ou paysage."""
+    s1_role = (signataire_1 or signataire_1_role or "").strip() or "Signature Chef Sce Moyens Généraux"
+    s2_role = (signataire_2 or signataire_2_role or "").strip() or "Signature Directrice des Ressources"
+    s1_name = ""
+    s2_name = ""
+    if (signataire_1_role or "").strip() and (signataire_1 or "").strip():
+        s1_role = signataire_1_role.strip()
+        s1_name = signataire_1.strip()
+    if (signataire_2_role or "").strip() and (signataire_2 or "").strip():
+        s2_role = signataire_2_role.strip()
+        s2_name = signataire_2.strip()
+
+    date_dem = note.date_demande.strftime("%d/%m/%Y") if note.date_demande else ""
+    agence = (note.agence_libelle_snapshot or "").strip()
+    title = f"NOTE DE FRAIS : {agence.upper()}" if agence else "NOTE DE FRAIS"
+
+    ink = colors.black
+    orient = (orientation or "paysage").strip().lower()
+    portrait = orient in {"portrait", "p", "a4-portrait"}
+    page_size = A4 if portrait else landscape(A4)
+    margin_x = 11 * mm
+    margin_top = 11 * mm
+    margin_bottom = 14 * mm
+    page_w = page_size[0] - 2 * margin_x
+    frame_h = page_size[1] - margin_top - margin_bottom
+
+    inset = 3.5 * mm
+    content_w = page_w - 2 * inset
+    expense_w = content_w
+    ratios = (0.16, 0.20, 0.22, 0.18, 0.24) if portrait else (0.16, 0.22, 0.26, 0.15, 0.21)
+    col_w = [expense_w * part for part in ratios]
+    col_w[-1] = expense_w - sum(col_w[:-1])
+    # Libellés du demandeur = colonne Montant, valeurs = colonne Mode de règlement.
+    split = 6 * mm
+    id_label_w = col_w[3]
+    id_value_w = col_w[4]
+    right_w = id_label_w + id_value_w
+    left_w = col_w[0] + col_w[1] + col_w[2] - split
+    logo_w = 36 * mm if portrait else 42 * mm
+    dept_w = left_w - logo_w
+    header_h = 40 * mm if portrait else 36 * mm
+    row_h = header_h / 4
+
+    dept_style = ParagraphStyle(
+        "NfDept",
+        fontName="Helvetica",
+        fontSize=10,
+        leading=13,
+        alignment=TA_CENTER,
+        textColor=ink,
+        spaceBefore=0,
+        spaceAfter=0,
+    )
+    id_label_style = ParagraphStyle(
+        "NfIdLabel",
+        fontName="Helvetica",
+        fontSize=8,
+        leading=10,
+        alignment=TA_LEFT,
+        textColor=ink,
+    )
+    id_value_style = ParagraphStyle(
+        "NfIdValue",
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        alignment=TA_LEFT,
+        textColor=ink,
+    )
+    title_style = ParagraphStyle(
+        "NfTitle",
+        fontName="Helvetica-Bold",
+        fontSize=11,
+        leading=14,
+        alignment=TA_CENTER,
+        textColor=ink,
+        spaceBefore=0,
+        spaceAfter=0,
+    )
+    head_style = ParagraphStyle(
+        "NfHead",
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        alignment=TA_CENTER,
+        textColor=ink,
+    )
+    cell = ParagraphStyle(
+        "NfCell",
+        fontName="Helvetica",
+        fontSize=8.5,
+        leading=11,
+        textColor=ink,
+    )
+    cell_c = ParagraphStyle("NfCellC", parent=cell, alignment=TA_CENTER)
+    total_style = ParagraphStyle(
+        "NfTotal",
+        fontName="Helvetica-Bold",
+        fontSize=9,
+        leading=12,
+        alignment=TA_CENTER,
+        textColor=ink,
+    )
+    sig_style = ParagraphStyle(
+        "NfSig",
+        fontName="Helvetica-Bold",
+        fontSize=9,
+        leading=12,
+        alignment=TA_CENTER,
+        textColor=ink,
+    )
+    sig_name_style = ParagraphStyle(
+        "NfSigName",
+        fontName="Helvetica",
+        fontSize=9,
+        leading=12,
+        alignment=TA_CENTER,
+        textColor=ink,
+    )
+
+    logo_flow = Paragraph("<b>BEA</b>", dept_style)
+    logo_path = resolve_note_frais_logo_path()
+    if logo_path is not None:
+        try:
+            iw, ih = ImageReader(str(logo_path)).getSize()
+            max_h = header_h - 7 * mm
+            max_w = logo_w - 6 * mm
+            draw_h = max_h
+            draw_w = draw_h * (iw / float(ih))
+            if draw_w > max_w:
+                draw_w = max_w
+                draw_h = draw_w * (ih / float(iw))
+            logo_flow = Image(str(logo_path), width=draw_w, height=draw_h, mask="auto")
+        except Exception:
+            logo_flow = Paragraph("<b>BEA</b>", dept_style)
+
+    dept_flow = Paragraph(
+        "<b>Département Ressources Humaines et Moyens Généraux</b>"
+        "<br/><br/>Service Moyens Généraux",
+        dept_style,
+    )
+
+    def _id(label: str, raw: object | None) -> list:
+        return [
+            Paragraph(label, id_label_style),
+            Paragraph(_esc(raw, empty="—"), id_value_style),
         ]
-        rows = [["Date", "Description", "Motif", "Montant", "Règlement"]]
-        for ligne in sorted(note.lignes, key=lambda x: x.sort_order):
-            rows.append(
+
+    # Deux cadres distincts, comme la fiche papier : logo+département | identité.
+    left_box = Table(
+        [[logo_flow, dept_flow]],
+        colWidths=[logo_w, dept_w],
+        rowHeights=[header_h],
+    )
+    left_box.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 1.05, ink),
+                ("LINEAFTER", (0, 0), (0, 0), 0.8, ink),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]
+        )
+    )
+    right_box = Table(
+        [
+            _id("Identité du demandeur", note.demandeur_nom),
+            _id("Département", note.departement),
+            _id("Fonction", note.fonction),
+            _id("date de la demande", date_dem),
+        ],
+        colWidths=[id_label_w, id_value_w],
+        rowHeights=[row_h, row_h, row_h, row_h],
+    )
+    right_box.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 1.05, ink),
+                ("INNERGRID", (0, 0), (-1, -1), 0.7, ink),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 1),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ]
+        )
+    )
+    header = Table(
+        [[left_box, "", right_box]],
+        colWidths=[left_w, split, right_w],
+        rowHeights=[header_h],
+    )
+    header.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    header.hAlign = "CENTER"
+
+    title_box = Table(
+        [[Paragraph(_esc(title), title_style)]],
+        colWidths=[expense_w],
+    )
+    title_box.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 1.05, ink),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    title_box.hAlign = "CENTER"
+
+    header_row = [
+        Paragraph("Date de la dépense", head_style),
+        Paragraph("Description", head_style),
+        Paragraph("Motif", head_style),
+        Paragraph("Montant En MRU", head_style),
+        Paragraph("Mode de règlement", head_style),
+    ]
+    data_rows: list = [header_row]
+    lignes = sorted(note.lignes or [], key=lambda x: x.sort_order)
+    if not lignes:
+        data_rows.append([Paragraph("", cell_c)] * 5)
+    else:
+        for lig in lignes:
+            d = lig.date_depense.strftime("%d/%m/%Y") if lig.date_depense else ""
+            data_rows.append(
                 [
-                    str(ligne.date_depense),
-                    Paragraph(ligne.description, styles["cell"]),
-                    ligne.motif or "",
-                    money(ligne.montant),
-                    ligne.mode_reglement or "",
+                    Paragraph(_esc(d), cell_c),
+                    Paragraph(_esc(lig.description), cell_c),
+                    Paragraph(_esc(lig.motif), cell_c),
+                    Paragraph(money(lig.montant), cell_c),
+                    Paragraph(_esc(lig.mode_reglement), cell_c),
                 ]
             )
-        rows.append(["", "TOTAL", "", money(note.total_mru), ""])
-        table = Table(rows, colWidths=[25 * mm, 55 * mm, 40 * mm, 25 * mm, 30 * mm])
-        table.setStyle(
+    data_rows.append(
+        [
+            Paragraph("total", total_style),
+            "",
+            "",
+            Paragraph(money(note.total_mru), total_style),
+            "",
+        ]
+    )
+
+    body = Table(data_rows, colWidths=col_w)
+    last = len(data_rows) - 1
+    body_style = [
+        ("BOX", (0, 0), (-1, -1), 1.05, ink),
+        ("INNERGRID", (0, 0), (-1, -1), 0.6, ink),
+        ("SPAN", (0, last), (2, last)),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, 0), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
+        ("TOPPADDING", (0, 1), (-1, last), 6),
+        ("BOTTOMPADDING", (0, 1), (-1, last), 6),
+    ]
+    if not lignes:
+        body_style.extend(
+            [
+                ("TOPPADDING", (0, 1), (-1, 1), 12),
+                ("BOTTOMPADDING", (0, 1), (-1, 1), 12),
+            ]
+        )
+    body.setStyle(TableStyle(body_style))
+    body.hAlign = "CENTER"
+
+    def _sig(role: str, name: str, width: float) -> Table:
+        bits = []
+        if name and name.strip():
+            bits.append(Paragraph(_esc(name), sig_name_style))
+        bits.append(Paragraph(_esc(role), sig_style))
+        block = Table([[bit] for bit in bits], colWidths=[width])
+        block.setStyle(
             TableStyle(
                 [
-                    ("BACKGROUND", (0, 0), (-1, 0), BEA_NAVY),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                    ("FONTSIZE", (0, 0), (-1, -1), 8),
-                    ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 2),
                 ]
             )
         )
-        out.extend([table, Spacer(1, 12 * mm)])
-        visas = Table(
-            [
-                [
-                    _visa_block("Visa Chef Sce Moyens Généraux", styles),
-                    _visa_block("Visa Directrice des Ressources", styles),
-                ]
-            ],
-            colWidths=[95 * mm, 95 * mm],
-        )
-        out.append(visas)
-        return out
+        return block
 
-    return _doc_buffer(body)
+    # Écart avec le cadre extérieur : les cases ne touchent ni les côtés ni le bas.
+    side_inset = 8 * mm
+    gutter = 10 * mm
+    sig_w = (page_w - 2 * side_inset - gutter) / 2
+    top_gap = 4 * mm
+    gap = 5 * mm
+    title_gap = 4 * mm
+    _, header_real = header.wrap(page_w, frame_h)
+    _, title_real = title_box.wrap(expense_w, frame_h)
+    _, body_real = body.wrap(expense_w, frame_h)
+    room = frame_h - top_gap - header_real - gap - title_real - title_gap - body_real
+    min_lift = 8 * mm
+    min_after = 6 * mm
+    sig_h = 30 * mm if portrait else 24 * mm
+    lift = 14 * mm if portrait else 10 * mm
+    if room >= min_after + sig_h + lift:
+        after = room - sig_h - lift
+    else:
+        lift = min(min_lift, max(4 * mm, room * 0.2))
+        after = min(min_after, max(3 * mm, room * 0.15))
+        sig_h = max(18 * mm, room - lift - after)
+
+    signs = Table(
+        [[_sig(s1_role, s1_name, sig_w - 4 * mm), "", _sig(s2_role, s2_name, sig_w - 4 * mm)]],
+        colWidths=[sig_w, gutter, sig_w],
+        rowHeights=[sig_h],
+    )
+    signs.hAlign = "CENTER"
+    signs.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (0, 0), 1.05, ink),
+                ("BOX", (2, 0), (2, 0), 1.05, ink),
+                ("VALIGN", (0, 0), (0, 0), "BOTTOM"),
+                ("VALIGN", (2, 0), (2, 0), "BOTTOM"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("LEFTPADDING", (0, 0), (0, 0), 4),
+                ("RIGHTPADDING", (0, 0), (0, 0), 4),
+                ("LEFTPADDING", (2, 0), (2, 0), 4),
+                ("RIGHTPADDING", (2, 0), (2, 0), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (0, 0), 5 * mm),
+                ("BOTTOMPADDING", (2, 0), (2, 0), 5 * mm),
+                ("LEFTPADDING", (1, 0), (1, 0), 0),
+                ("RIGHTPADDING", (1, 0), (1, 0), 0),
+            ]
+        )
+    )
+
+    story = [
+        Spacer(1, top_gap),
+        header,
+        Spacer(1, gap),
+        title_box,
+        Spacer(1, title_gap),
+        body,
+        Spacer(1, after),
+        signs,
+        Spacer(1, lift),
+    ]
+
+    def _paint(canvas, _doc):
+        canvas.saveState()
+        canvas.setStrokeColor(ink)
+        canvas.setLineWidth(1.5)
+        canvas.rect(_doc.leftMargin, _doc.bottomMargin, _doc.width, _doc.height, stroke=1, fill=0)
+        canvas.setFillColor(colors.HexColor("#4B5563"))
+        canvas.setFont("Helvetica", 7)
+        ref = str(getattr(note, "reference", "") or "").strip()
+        canvas.drawCentredString(page_size[0] / 2.0, 5.2 * mm, f"Réf. {ref}")
+        canvas.restoreState()
+
+    buf = io.BytesIO()
+    doc = BaseDocTemplate(
+        buf,
+        pagesize=page_size,
+        leftMargin=margin_x,
+        rightMargin=margin_x,
+        topMargin=margin_top,
+        bottomMargin=margin_bottom,
+        title=f"Note de frais {getattr(note, 'reference', '')}",
+    )
+    frame = Frame(
+        doc.leftMargin,
+        doc.bottomMargin,
+        doc.width,
+        doc.height,
+        leftPadding=0,
+        rightPadding=0,
+        topPadding=0,
+        bottomPadding=0,
+        id="fiche",
+    )
+    doc.addPageTemplates([PageTemplate(id="fiche", frames=[frame], onPage=_paint, pagesize=page_size)])
+    doc.build(story)
+    return buf.getvalue()
 
 
 def pdf_demande_fourniture(demande) -> bytes:

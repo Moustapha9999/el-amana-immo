@@ -66,6 +66,9 @@ import {
   AchatsParametresComponent,
 } from './achats-appro/achats-pages.component';
 import { NotesListComponent } from './notes-frais/notes-list.component';
+import { NotesDashboardComponent } from './notes-frais/notes-dashboard.component';
+import { NotesRapportsComponent } from './notes-frais/notes-rapports.component';
+import { NotesParametresComponent } from './notes-frais/notes-parametres.component';
 import { ContratsListComponent } from './contrats-echeances/contrats-list.component';
 import { ArchivesRegistreComponent } from './archives-mg/archives-registre.component';
 
@@ -151,10 +154,13 @@ export const routes: Routes = [
     component: ShellComponent,
     canActivate: [authGuard, moduleGuard('notes-frais')],
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'notes' },
+      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      { path: 'dashboard', component: NotesDashboardComponent },
       { path: 'notes', component: NotesListComponent },
       { path: 'nouvelle', component: NotesListComponent },
       { path: 'notes/:id', component: NotesListComponent },
+      { path: 'rapports', component: NotesRapportsComponent },
+      { path: 'parametres', component: NotesParametresComponent },
     ],
   },
   {

@@ -217,8 +217,12 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "code": "notes-frais",
         "espace_code": "moyens-generaux",
         "label": "Notes de Frais",
-        "description": "Création, validation, visas et archivage des notes de frais.",
-        "entry_path": "/notes-frais/notes",
+        "description": (
+            "Saisie avec agence ou intitulé libre, validation, paiement, "
+            "modification et suppression hors paiement, fiche PDF A4 portrait ou paysage, "
+            "rapports Excel et PDF."
+        ),
+        "entry_path": "/notes-frais",
         "statut": "actif",
         "sort_order": 3,
     },
@@ -314,9 +318,14 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("mg.purchase.pay", "Paiements fournisseurs", "achats-appro"),
     ("mg.purchase.demande", "Demandes d'achat", "achats-appro"),
     ("mg.notes.view", "Consultation notes de frais", "notes-frais"),
-    ("mg.notes.create", "Création notes de frais", "notes-frais"),
-    ("mg.notes.approve", "Validation notes de frais", "notes-frais"),
-    ("mg.notes.export", "Exports notes de frais", "notes-frais"),
+    ("mg.notes.create", "Création / modification notes de frais", "notes-frais"),
+    ("mg.notes.control", "Contrôle notes de frais", "notes-frais"),
+    ("mg.notes.approve", "Visas / validation notes de frais", "notes-frais"),
+    ("mg.notes.reject", "Rejet / annulation notes de frais", "notes-frais"),
+    ("mg.notes.payment", "Mise en paiement / paiement notes de frais", "notes-frais"),
+    ("mg.notes.archive", "Archivage notes de frais", "notes-frais"),
+    ("mg.notes.export", "Exports / rapports notes de frais", "notes-frais"),
+    ("mg.notes.settings", "Paramètres notes de frais", "notes-frais"),
     ("mg.contrats.view", "Consultation contrats", "contrats-echeances"),
     ("mg.contrats.create", "Création contrats", "contrats-echeances"),
     ("mg.contrats.manage", "Gestion / alertes contrats", "contrats-echeances"),
@@ -450,7 +459,13 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "achats-appro.admin": _MG_ACHATS_ALL + ("ged.read", "ged.write"),
     "notes-frais.lecteur": ("mg.notes.view",),
     "notes-frais.redacteur": ("mg.notes.view", "mg.notes.create", "mg.notes.export"),
-    "notes-frais.valideur": ("mg.notes.view", "mg.notes.approve"),
+    "notes-frais.valideur": (
+        "mg.notes.view",
+        "mg.notes.control",
+        "mg.notes.approve",
+        "mg.notes.reject",
+        "mg.notes.export",
+    ),
     "notes-frais.admin": _MG_NOTES_ALL + ("ged.read", "ged.write"),
     "contrats-echeances.lecteur": ("mg.contrats.view",),
     "contrats-echeances.gestionnaire": (

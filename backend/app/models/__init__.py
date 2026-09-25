@@ -33,7 +33,10 @@ from app.models.mg_ops import (
     MgBonCommande,
     MgContrat,
     MgNoteFrais,
+    MgNoteFraisCategorie,
+    MgNoteFraisHistorique,
     MgNoteFraisLigne,
+    MgNoteFraisParametre,
 )
 from app.models.mg_achats import (
     MgAchatBl,

@@ -122,7 +122,13 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
     "notes-frais": make_module_scope(
         label="Notes de Frais",
         uploads_subdir="notes-frais",
-        exclusive_tables=["mg_notes_frais", "mg_note_frais_lignes"],
+        exclusive_tables=[
+            "mg_notes_frais",
+            "mg_note_frais_lignes",
+            "mg_note_frais_categories",
+            "mg_note_frais_historique",
+            "mg_note_frais_parametres",
+        ],
     ),
     "contrats-echeances": make_module_scope(
         label="Contrats & Échéances",
