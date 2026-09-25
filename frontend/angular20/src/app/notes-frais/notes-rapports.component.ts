@@ -28,9 +28,9 @@ interface ReportJson {
 
       <form class="bea-mg__search" [formGroup]="filters" (ngSubmit)="load()">
         <label class="bea-mg__field">
-          <select formControlName="key">
+          <select formControlName="key" (change)="load()">
             <option value="periode">Par période</option>
-            <option value="agence">Par agence</option>
+            <option value="agence">Par intitulé</option>
             <option value="demandeur">Par demandeur</option>
             <option value="categorie">Par catégorie</option>
             <option value="paiement">Paiements</option>
@@ -39,15 +39,13 @@ interface ReportJson {
           </select>
         </label>
         <label class="bea-mg__field">
-          <input type="number" formControlName="annee" placeholder="Année" />
+          <input type="number" formControlName="annee" placeholder="Année" (change)="load()" />
         </label>
         <label class="bea-mg__field">
-          <input type="number" formControlName="mois" placeholder="Mois" min="1" max="12" />
+          <input type="number" formControlName="mois" placeholder="Mois" min="1" max="12" (change)="load()" />
         </label>
-        <button type="submit" class="bea-mg__btn bea-mg__btn--primary">Aperçu</button>
         <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="download('xlsx')">Excel</button>
         <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="download('pdf')">PDF</button>
-        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="download('csv')">CSV</button>
       </form>
 
       @if (erreur()) {
@@ -128,7 +126,7 @@ export class NotesRapportsComponent implements OnInit {
     });
   }
 
-  download(format: 'xlsx' | 'pdf' | 'csv'): void {
+  download(format: 'xlsx' | 'pdf'): void {
     const key = this.filters.value.key || 'periode';
     const params = { ...this.params(), format };
     this.api.download(`/mg/notes-frais/rapports/${key}`, params).subscribe({

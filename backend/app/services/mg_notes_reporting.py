@@ -20,7 +20,7 @@ from app.services.reporting_export import build_styled_pdf, export_now
 
 REPORTS = {
     "periode": "Notes de frais par période",
-    "agence": "Notes par agence",
+    "agence": "Notes par intitulé",
     "demandeur": "Notes par demandeur",
     "categorie": "Dépenses par catégorie",
     "paiement": "Rapport des paiements",
@@ -100,7 +100,7 @@ class MgNotesReporting:
                     buckets[key][1] += lig.montant or Decimal("0")
             rows = [[k, v[0], float(v[1])] for k, v in sorted(buckets.items())]
         elif report_key == "agence":
-            headers = ["Agence", "Nb notes", "Montant total", "Montant payé"]
+            headers = ["Intitulé", "Nb notes", "Montant total", "Montant payé"]
             buckets = {}
             for n in notes:
                 key = n.agence_libelle_snapshot or "—"
@@ -161,7 +161,7 @@ class MgNotesReporting:
                 "Référence",
                 "Date",
                 "Demandeur",
-                "Agence",
+                "Intitulé",
                 "Département",
                 "Montant",
                 "Payé",
@@ -247,7 +247,7 @@ class MgNotesReporting:
                 ws.cell(r_i, c_i, val)
 
         ws2 = wb.create_sheet("Notes")
-        nh = ["Référence", "Date", "Demandeur", "Agence", "Montant", "Payé", "Statut"]
+        nh = ["Référence", "Date", "Demandeur", "Intitulé", "Montant", "Payé", "Statut"]
         for i, h in enumerate(nh, 1):
             ws2.cell(1, i, h).font = Font(bold=True)
         for r_i, n in enumerate(notes, 2):

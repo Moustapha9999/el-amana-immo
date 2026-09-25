@@ -6461,6 +6461,11 @@ button.bea-admin-kpi {
   border-color: #94a3b8;
   transform: translateY(-1px);
 }
+.bea-mg__icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
 .bea-mg__icon-btn--danger:hover {
   color: #b91c1c;
   border-color: #fca5a5;
@@ -6633,6 +6638,10 @@ button.bea-admin-kpi {
 }
 
 /* ——— Notes de frais — design & animations ——— */
+.bea-nf__registre-scroll {
+  max-height: min(22rem, calc(100vh - 20rem));
+  overflow: auto;
+}
 .bea-nf .bea-mg__head h1 {
   background: linear-gradient(120deg, #0f172a 0%, #1a5278 55%, #2874a6 100%);
   -webkit-background-clip: text;

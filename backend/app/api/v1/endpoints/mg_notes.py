@@ -240,6 +240,7 @@ async def note_pdf(
     signataire_2: str | None = Query(None, description="Nom signataire DR"),
     signataire_1_role: str | None = Query(None),
     signataire_2_role: str | None = Query(None),
+    orientation: str = Query("paysage", pattern="^(portrait|paysage)$"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.notes.export")),
 ):
@@ -250,6 +251,7 @@ async def note_pdf(
         signataire_2=signataire_2,
         signataire_1_role=signataire_1_role,
         signataire_2_role=signataire_2_role,
+        orientation=orientation,
     )
     return Response(
         content=data,

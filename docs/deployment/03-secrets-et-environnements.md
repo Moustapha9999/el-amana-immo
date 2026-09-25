@@ -41,7 +41,6 @@ Build / runtime version :
 | `DEPLOY_HOST` | Hôte SSH serveur PROD |
 | `DEPLOY_USER` | Compte technique (ex. `bea-deploy`) |
 | `DEPLOY_PATH` | Répertoire déploiement sur le serveur |
-| `SONAR_TOKEN` | Analyse (si SonarCloud / SonarQube conservé) |
 
 Le Runner tagué `bea-prod` doit pouvoir joindre le serveur et le registry selon la politique IT.
 

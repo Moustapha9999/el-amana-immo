@@ -32,6 +32,8 @@ from app.services.mg_notes_events import audit_notes, notify_notes_roles, notify
 
 EDITABLE = {"BROUILLON", "CORRECTION_REQUISE"}
 LOCKED = {"VALIDEE", "MISE_EN_PAIEMENT", "PARTIELLEMENT_PAYEE", "PAYEE", "CLOTUREE", "ARCHIVEE"}
+# Paiement, clôture et archive : plus de modification ni de suppression.
+MUTATION_LOCKED = {"MISE_EN_PAIEMENT", "PARTIELLEMENT_PAYEE", "PAYEE", "CLOTUREE", "ARCHIVEE"}
 
 # action -> (from_statuts | None=any allowed set, to_statut, permission)
 # Circuit simplifié : visas papier (PDF signé à la main) — pas d'étapes VISA_MG / VISA_DR obligatoires.
@@ -393,13 +395,26 @@ class MgNotesService:
         await self.db.commit()
         return await self.get_note(note.id, user)
 
+    def _assert_can_mutate(self, note: MgNoteFrais, user: User, *, deleting: bool) -> None:
+        """Brouillon / correction : le demandeur. Sinon : un superviseur, hors paiement et archive."""
+        if note.statut in MUTATION_LOCKED:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Note non modifiable : déjà en paiement, payée, clôturée ou archivée",
+            )
+        if self._can_supervise(user):
+            return
+        if deleting:
+            if note.statut != "BROUILLON" or note.demandeur_id != user.id:
+                raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Suppression refusée")
+            return
+        if note.statut not in EDITABLE or note.demandeur_id != user.id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Modification refusée")
+
     async def update_note(self, note_id: uuid.UUID, data: NoteUpdate, user: User) -> MgNoteFrais:
         note = await self._lock_note(note_id)
         self._assert_access(note, user)
-        if note.statut not in EDITABLE:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Note non modifiable dans cet état")
-        if note.demandeur_id != user.id and not self._can_supervise(user):
-            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Modification refusée")
+        self._assert_can_mutate(note, user, deleting=False)
         before = {"statut": note.statut, "total": str(note.total_mru)}
         for field in (
             "date_demande",
@@ -448,12 +463,10 @@ class MgNotesService:
     async def soft_delete(self, note_id: uuid.UUID, user: User) -> None:
         note = await self._lock_note(note_id)
         self._assert_access(note, user)
-        if note.statut != "BROUILLON":
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Suppression uniquement en brouillon")
-        if note.demandeur_id != user.id and not user.is_superuser:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Suppression refusée")
+        self._assert_can_mutate(note, user, deleting=True)
+        old = note.statut
         note.deleted_at = datetime.now(timezone.utc)
-        self._add_hist(note, action="supprimer", from_statut="BROUILLON", to_statut=None, user=user)
+        self._add_hist(note, action="supprimer", from_statut=old, to_statut=None, user=user)
         await self.db.commit()
         await audit_notes(self.db, user, "notes.delete", "note_frais", note.id)
         await self.db.commit()

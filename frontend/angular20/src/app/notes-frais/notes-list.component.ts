@@ -4,9 +4,11 @@ import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
+import { AuthService } from '../core/services/auth.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
 import { MontantPipe } from '../shared/montant.pipe';
 import { PaginationComponent } from '../shared/pagination.component';
+import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 
 interface Agence {
   id: string;
@@ -38,6 +40,7 @@ interface Note {
   date_demande: string;
   agence_id: string | null;
   agence_libelle_snapshot: string | null;
+  demandeur_id: string | null;
   demandeur_nom: string | null;
   departement: string | null;
   fonction: string | null;
@@ -93,7 +96,7 @@ interface Paginated {
         <form class="bea-mg__search" [formGroup]="filters" (ngSubmit)="applyFilters()">
           <label class="bea-mg__field bea-mg__field--grow">
             <mat-icon>search</mat-icon>
-            <input formControlName="q" placeholder="Réf., demandeur, agence…" />
+            <input formControlName="q" placeholder="Réf., demandeur, intitulé…" />
           </label>
           <label class="bea-mg__field">
             <mat-icon>flag</mat-icon>
@@ -116,14 +119,14 @@ interface Paginated {
             <h2>Registre</h2>
             <span class="bea-mg__count">{{ total() }} résultat(s)</span>
           </div>
-          <div class="bea-mg__table-scroll">
+          <div class="bea-mg__table-scroll bea-nf__registre-scroll">
             <table class="bea-mg__table">
               <thead>
                 <tr>
                   <th>Réf</th>
                   <th>Date</th>
                   <th>Demandeur</th>
-                  <th>Agence</th>
+                  <th>Intitulé</th>
                   <th>Montant</th>
                   <th>Statut</th>
                   <th class="bea-mg__th-actions">Actions</th>
@@ -142,6 +145,24 @@ interface Paginated {
                       <a class="bea-mg__icon-btn" [routerLink]="['/notes-frais/notes', n.id]" title="Voir">
                         <mat-icon>visibility</mat-icon>
                       </a>
+                      @if (canEdit(n)) {
+                        <a class="bea-mg__icon-btn" [routerLink]="['/notes-frais/notes', n.id]" title="Modifier">
+                          <mat-icon>edit</mat-icon>
+                        </a>
+                      } @else {
+                        <button type="button" class="bea-mg__icon-btn" disabled [title]="editHint(n)">
+                          <mat-icon>edit</mat-icon>
+                        </button>
+                      }
+                      <button
+                        type="button"
+                        class="bea-mg__icon-btn bea-mg__icon-btn--danger"
+                        [title]="deleteHint(n)"
+                        [disabled]="!canDelete(n) || deletingId() === n.id"
+                        (click)="remove(n)"
+                      >
+                        <mat-icon>delete</mat-icon>
+                      </button>
                     </td>
                   </tr>
                 } @empty {
@@ -314,7 +335,7 @@ interface Paginated {
                   <mat-icon>add</mat-icon> Ligne
                 </button>
                 <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="form.invalid || saving()">
-                  Enregistrer brouillon
+                  {{ saveLabel() }}
                 </button>
               </div>
             }
@@ -434,6 +455,69 @@ interface Paginated {
         }
       }
 
+      @if (paiementModal()) {
+        <div class="bea-mg__backdrop" (click)="closePaiement()"></div>
+        <div
+          class="bea-mg__modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Enregistrer le paiement"
+        >
+          <div class="bea-mg__modal-head">
+            <div>
+              <p class="bea-stock-page__kicker">Paiement · {{ current()?.reference }}</p>
+              <h2>Enregistrer le paiement</h2>
+            </div>
+            <button type="button" class="bea-mg__icon-btn" (click)="closePaiement()" title="Fermer">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+          <form class="bea-mg__modal-body" [formGroup]="paiementForm" (ngSubmit)="confirmPaiement()">
+            <p style="margin:0 0 1rem;color:#64748b;font-size:0.9rem">
+              Le montant proposé correspond au reste à payer. Vous pouvez le confirmer ou le modifier.
+            </p>
+            <div class="bea-mg__grid">
+              <label>Total<input [value]="(current()?.total_mru || 0) | montant" readonly /></label>
+              <label>Déjà payé<input [value]="(current()?.montant_paye || 0) | montant" readonly /></label>
+              <label class="bea-mg__span2">
+                Reste à payer
+                <input [value]="resteAPayer() | montant" readonly />
+              </label>
+              <label class="bea-mg__span2">
+                Montant à enregistrer (MRU)
+                <input type="number" formControlName="montant" min="0.01" step="0.01" />
+              </label>
+              <label>
+                Mode de règlement
+                <select formControlName="mode_paiement">
+                  <option value="Espèces">Espèces</option>
+                  <option value="Carte">Carte</option>
+                  <option value="Virement">Virement</option>
+                  <option value="Chèque">Chèque</option>
+                  <option value="Amanty">Amanty</option>
+                </select>
+              </label>
+              <label>
+                Référence
+                <input formControlName="ref_paiement" placeholder="N° virement, chèque…" />
+              </label>
+            </div>
+            @if (paiementErreur()) {
+              <p class="bea-stock-page__error" style="margin-top:0.75rem">{{ paiementErreur() }}</p>
+            }
+            <footer class="bea-mg__modal-foot" style="padding:0.9rem 0 0">
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="closePaiement()">
+                Annuler
+              </button>
+              <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="paiementBusy()">
+                <mat-icon>payments</mat-icon>
+                {{ paiementBusy() ? 'Enregistrement…' : 'Enregistrer le paiement' }}
+              </button>
+            </footer>
+          </form>
+        </div>
+      }
+
       @if (pdfModal()) {
         <div class="bea-mg__backdrop" (click)="closePdfModal()"></div>
         <div class="bea-mg__modal bea-mg__modal--sm" role="dialog">
@@ -449,8 +533,16 @@ interface Paginated {
           <div class="bea-mg__modal-body">
             <p style="margin:0 0 1rem;color:#64748b;font-size:0.9rem">
               Signataires proposés par défaut — vous pouvez les modifier avant de télécharger.
+              La fiche est au format A4.
             </p>
             <form class="bea-mg__grid bea-mg__grid--1" [formGroup]="pdfForm" (ngSubmit)="downloadPdf()">
+              <label>
+                Orientation
+                <select formControlName="orientation">
+                  <option value="portrait">A4 — Portrait</option>
+                  <option value="paysage">A4 — Paysage</option>
+                </select>
+              </label>
               <label>
                 Signature 1
                 <input formControlName="signataire1" placeholder="Signature Chef Sce Moyens Généraux" />
@@ -478,6 +570,8 @@ interface Paginated {
 })
 export class NotesListComponent implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
+  private readonly dialogs = inject(UiDialogService);
   private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -488,17 +582,34 @@ export class NotesListComponent implements OnInit {
   readonly agences = signal<Agence[]>([]);
   readonly page = signal(1);
   readonly total = signal(0);
-  readonly pageSize = 50;
+  readonly pageSize = 10;
   readonly saving = signal(false);
+  readonly deletingId = signal<string | null>(null);
   readonly erreur = signal('');
   readonly msg = signal('');
   readonly pdfModal = signal(false);
   readonly pdfBusy = signal(false);
   readonly pdfErreur = signal('');
+  readonly paiementModal = signal(false);
+  readonly paiementBusy = signal(false);
+  readonly paiementErreur = signal('');
 
   readonly pdfForm = this.fb.nonNullable.group({
+    orientation: ['paysage' as 'portrait' | 'paysage'],
     signataire1: ['Signature Chef Sce Moyens Généraux'],
     signataire2: ['Signature Directrice des Ressources'],
+  });
+
+  readonly paiementForm = this.fb.nonNullable.group({
+    montant: [0, [Validators.required, Validators.min(0.01)]],
+    mode_paiement: ['Virement', Validators.required],
+    ref_paiement: [''],
+  });
+
+  readonly resteAPayer = computed(() => {
+    const n = this.current();
+    if (!n) return 0;
+    return Math.round((n.total_mru - (n.montant_paye || 0)) * 100) / 100;
   });
 
   readonly statuts = [
@@ -536,10 +647,99 @@ export class NotesListComponent implements OnInit {
     return this.form.get('lignes') as FormArray;
   }
 
+  private readonly mutationLocked = new Set([
+    'MISE_EN_PAIEMENT',
+    'PARTIELLEMENT_PAYEE',
+    'PAYEE',
+    'CLOTUREE',
+    'ARCHIVEE',
+  ]);
+
   editable = computed(() => {
-    const s = this.current()?.statut;
-    return !s || s === 'BROUILLON' || s === 'CORRECTION_REQUISE';
+    const n = this.current();
+    if (!n) return true;
+    return this.canEdit(n);
   });
+
+  saveLabel(): string {
+    const s = this.current()?.statut;
+    return !s || s === 'BROUILLON' ? 'Enregistrer brouillon' : 'Enregistrer';
+  }
+
+  canEdit(note: Note): boolean {
+    if (!this.canMutate() || this.mutationLocked.has(note.statut)) return false;
+    if (this.canSupervise()) return true;
+    return note.statut === 'BROUILLON' || note.statut === 'CORRECTION_REQUISE';
+  }
+
+  canDelete(note: Note): boolean {
+    if (!this.canMutate() || this.mutationLocked.has(note.statut)) return false;
+    const user = this.auth.user();
+    if (!user) return false;
+    if (this.canSupervise()) return true;
+    return note.statut === 'BROUILLON' && note.demandeur_id === user.id;
+  }
+
+  editHint(note: Note): string {
+    if (this.canEdit(note)) return 'Modifier';
+    if (this.mutationLocked.has(note.statut)) return 'Modification impossible après la mise en paiement';
+    return 'Modification réservée à l’administrateur';
+  }
+
+  deleteHint(note: Note): string {
+    if (this.canDelete(note)) return 'Supprimer';
+    if (this.mutationLocked.has(note.statut)) return 'Suppression impossible après la mise en paiement';
+    return 'Suppression réservée à l’administrateur';
+  }
+
+  private canMutate(): boolean {
+    const user = this.auth.user();
+    if (!user) return false;
+    if (user.is_superuser) return true;
+    return (user.permission_codes ?? []).includes('mg.notes.create');
+  }
+
+  private canSupervise(): boolean {
+    const user = this.auth.user();
+    if (!user) return false;
+    if (user.is_superuser) return true;
+    const codes = user.permission_codes ?? [];
+    return [
+      'mg.notes.control',
+      'mg.notes.approve',
+      'mg.notes.payment',
+      'mg.notes.archive',
+      'mg.notes.reject',
+      'mg.notes.settings',
+    ].some((code) => codes.includes(code));
+  }
+
+  remove(note: Note): void {
+    this.dialogs
+      .confirmAction('suppression', `Supprimer la note « ${note.reference} » ? Elle sera retirée du registre.`)
+      .subscribe((ok) => {
+        if (!ok) return;
+        this.deletingId.set(note.id);
+        this.erreur.set('');
+        this.api.delete<{ ok: boolean }>(`/mg/notes-frais/notes/${note.id}`).subscribe({
+          next: () => {
+            this.deletingId.set(null);
+            if (this.mode() !== 'list') {
+              void this.router.navigate(['/notes-frais/notes']);
+              return;
+            }
+            if (this.notes().length <= 1 && this.page() > 1) {
+              this.page.update((p) => p - 1);
+            }
+            this.loadList();
+          },
+          error: (err) => {
+            this.deletingId.set(null);
+            this.erreur.set(this.formatApiError(err, 'Suppression refusée'));
+          },
+        });
+      });
+  }
 
   sumLignes(): number {
     return this.lignes.controls.reduce((acc, c) => acc + (Number(c.value.montant) || 0), 0);
@@ -835,32 +1035,62 @@ export class NotesListComponent implements OnInit {
   openPaiement(): void {
     const n = this.current();
     if (!n) return;
-    const reste = n.total_mru - (n.montant_paye || 0);
-    const raw = window.prompt(`Montant à payer (reste ${reste}) :`, String(reste));
-    if (!raw) return;
-    const montant = Number(raw.replace(',', '.'));
+    this.paiementErreur.set('');
+    this.paiementForm.reset({
+      montant: this.resteAPayer(),
+      mode_paiement: 'Virement',
+      ref_paiement: '',
+    });
+    this.paiementModal.set(true);
+  }
+
+  closePaiement(): void {
+    if (this.paiementBusy()) return;
+    this.paiementModal.set(false);
+    this.paiementErreur.set('');
+  }
+
+  confirmPaiement(): void {
+    const n = this.current();
+    if (!n || this.paiementBusy()) return;
+    const raw = this.paiementForm.getRawValue();
+    const montant = Number(String(raw.montant).replace(',', '.'));
+    const reste = this.resteAPayer();
     if (!(montant > 0)) {
-      this.erreur.set('Montant invalide');
+      this.paiementErreur.set('Indiquez un montant supérieur à 0.');
       return;
     }
+    if (montant > reste + 0.001) {
+      this.paiementErreur.set('Le montant dépasse le reste à payer.');
+      return;
+    }
+    this.paiementBusy.set(true);
+    this.paiementErreur.set('');
     this.api
       .post<Note>(`/mg/notes-frais/notes/${n.id}/paiement`, {
         montant,
-        mode_paiement: 'Interne',
+        mode_paiement: raw.mode_paiement,
+        ref_paiement: raw.ref_paiement.trim() || null,
       })
       .subscribe({
         next: (updated) => {
+          this.paiementBusy.set(false);
+          this.paiementModal.set(false);
           this.current.set(updated);
           this.msg.set('Paiement enregistré.');
           this.loadOne(n.id);
         },
-        error: (err) => this.erreur.set(err?.error?.detail || 'Paiement refusé'),
+        error: (err) => {
+          this.paiementBusy.set(false);
+          this.paiementErreur.set(this.formatApiError(err, 'Paiement refusé'));
+        },
       });
   }
 
   openPdfModal(): void {
     this.pdfErreur.set('');
     this.pdfForm.reset({
+      orientation: 'paysage',
       signataire1: 'Signature Chef Sce Moyens Généraux',
       signataire2: 'Signature Directrice des Ressources',
     });
@@ -888,6 +1118,7 @@ export class NotesListComponent implements OnInit {
       .download(`/mg/notes-frais/notes/${id}/pdf`, {
         signataire_1: s1,
         signataire_2: s2,
+        orientation: v.orientation,
       })
       .subscribe({
         next: (blob) => {

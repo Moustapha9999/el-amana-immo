@@ -217,7 +217,11 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "code": "notes-frais",
         "espace_code": "moyens-generaux",
         "label": "Notes de Frais",
-        "description": "Création, validation, visas et archivage des notes de frais.",
+        "description": (
+            "Saisie avec agence ou intitulé libre, validation, paiement, "
+            "modification et suppression hors paiement, fiche PDF A4 portrait ou paysage, "
+            "rapports Excel et PDF."
+        ),
         "entry_path": "/notes-frais",
         "statut": "actif",
         "sort_order": 3,

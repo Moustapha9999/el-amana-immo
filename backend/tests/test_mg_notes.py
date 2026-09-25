@@ -1,5 +1,12 @@
 """Notes de frais — catalogue, transitions, scopes."""
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+from uuid import uuid4
+
+import pytest
+from fastapi import HTTPException
+
 from app.data.module_backup_scopes import MODULE_BACKUP_SCOPES
 from app.data.plateforme_catalogue import FUNCTIONAL_PERMISSIONS, PLATEFORME_MODULES, ROLE_PERMISSIONS
 from app.models.mg_ops import (
@@ -9,7 +16,7 @@ from app.models.mg_ops import (
     MgNoteFraisLigne,
     MgNoteFraisParametre,
 )
-from app.services.mg_notes_service import NOTE_TRANSITIONS
+from app.services.mg_notes_service import NOTE_TRANSITIONS, MgNotesService
 
 
 def test_notes_module_catalogue():
@@ -73,6 +80,54 @@ def test_notes_workflow_map():
     assert "SOUMIS" in NOTE_TRANSITIONS["valider"][0]
     assert NOTE_TRANSITIONS["mettre_en_paiement"][1] == "MISE_EN_PAIEMENT"
     assert NOTE_TRANSITIONS["archiver"][1] == "ARCHIVEE"
+
+
+def _note(statut: str, demandeur_id):
+    return SimpleNamespace(statut=statut, demandeur_id=demandeur_id)
+
+
+def _user(*, superuser: bool = False, user_id=None):
+    user = MagicMock()
+    user.is_superuser = superuser
+    user.id = user_id or uuid4()
+    user.roles = []
+    return user
+
+
+def test_admin_can_edit_and_delete_submitted_or_rejected():
+    svc = MgNotesService(db=MagicMock())
+    admin = _user(superuser=True)
+    for statut in ("SOUMIS", "REJETEE", "VALIDEE", "BROUILLON"):
+        note = _note(statut, uuid4())
+        svc._assert_can_mutate(note, admin, deleting=False)
+        svc._assert_can_mutate(note, admin, deleting=True)
+
+
+def test_demandeur_cannot_change_submitted_note():
+    svc = MgNotesService(db=MagicMock())
+    user = _user()
+    note = _note("SOUMIS", user.id)
+    with pytest.raises(HTTPException) as edited:
+        svc._assert_can_mutate(note, user, deleting=False)
+    assert edited.value.status_code == 403
+    with pytest.raises(HTTPException) as deleted:
+        svc._assert_can_mutate(note, user, deleting=True)
+    assert deleted.value.status_code == 403
+
+
+def test_demandeur_can_delete_own_draft():
+    svc = MgNotesService(db=MagicMock())
+    user = _user()
+    svc._assert_can_mutate(_note("BROUILLON", user.id), user, deleting=True)
+
+
+def test_paid_note_stays_locked_for_admin():
+    svc = MgNotesService(db=MagicMock())
+    admin = _user(superuser=True)
+    note = _note("PAYEE", uuid4())
+    with pytest.raises(HTTPException) as exc:
+        svc._assert_can_mutate(note, admin, deleting=True)
+    assert exc.value.status_code == 400
 
 
 def test_notes_front_routes():
