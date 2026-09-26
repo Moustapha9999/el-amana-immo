@@ -11,7 +11,8 @@ from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.db.sync_session import sync_session
-from app.models.audit import AuditLog
+from app.models.audit import AuditLog, Notification
+from app.models.enums import TypeNotification
 from app.models.ged import GedDocument
 from app.services.ocr_extract import extract_text_from_file
 from app.workers.celery_app import celery_app
@@ -55,6 +56,45 @@ def _audit_sync(
             session_id=None,
         )
     )
+
+
+def _notify_uploader(
+    session,
+    *,
+    user_id: UUID | None,
+    titre: str,
+    message: str,
+    document_id: str,
+    espace_code: str | None,
+    module_code: str | None,
+    event_type: str,
+    priorite: str = "info",
+) -> None:
+    if user_id is None:
+        return
+    year = datetime.now(timezone.utc).year
+    notif = Notification(
+        user_id=user_id,
+        type_notification=TypeNotification.SYSTEME,
+        titre=titre,
+        message=message,
+        entity="ged_document",
+        entity_id=document_id,
+        espace_code=espace_code,
+        module_code=module_code,
+        lu=False,
+        categorie="ged",
+        priorite=priorite,
+        event_type=event_type,
+        emetteur_type="systeme",
+        emetteur_label="GED OCR",
+        destinataire_type="utilisateur",
+        archived=False,
+    )
+    session.add(notif)
+    session.flush()
+    if not notif.event_code:
+        notif.event_code = f"EVT-{year}-{str(notif.id).replace('-', '')[:8].upper()}"
 
 
 @celery_app.task(
@@ -110,6 +150,16 @@ def ocr_document(self, document_id: str) -> dict:
                 espace_code=row.espace_code,
                 module_code=row.module_code,
             )
+            _notify_uploader(
+                session,
+                user_id=row.uploaded_by_id,
+                titre="OCR terminé",
+                message=f"L'analyse OCR de «{row.title or row.filename}» est terminée.",
+                document_id=str(row.id),
+                espace_code=row.espace_code,
+                module_code=row.module_code,
+                event_type="ocr_done",
+            )
             session.commit()
             return {"ok": True, "chars": len(extracted or "")}
         except Exception as exc:
@@ -118,6 +168,23 @@ def ocr_document(self, document_id: str) -> dict:
             row = session.get(GedDocument, doc_uuid)
             if row is None:
                 return {"ok": False, "reason": "not_found"}
+            # Retry auto pour erreurs techniques transitoires
+            if self.request.retries < self.max_retries and isinstance(
+                exc, (OSError, RuntimeError)
+            ):
+                row.ocr_status = "pending"
+                row.ocr_error = str(exc)[:2000]
+                _audit_sync(
+                    session,
+                    action="ocr_retry_auto",
+                    document_id=str(row.id),
+                    after={"attempt": row.ocr_attempts, "error": row.ocr_error},
+                    espace_code=row.espace_code,
+                    module_code=row.module_code,
+                )
+                session.commit()
+                raise self.retry(exc=exc)
+
             row.ocr_status = "failed"
             row.ocr_error = str(exc)[:2000]
             row.updated_at = datetime.now(timezone.utc)
@@ -129,7 +196,19 @@ def ocr_document(self, document_id: str) -> dict:
                 espace_code=row.espace_code,
                 module_code=row.module_code,
             )
+            _notify_uploader(
+                session,
+                user_id=row.uploaded_by_id,
+                titre="OCR échoué",
+                message=(
+                    f"L'analyse OCR de «{row.title or row.filename}» a échoué. "
+                    "Vous pouvez relancer le traitement."
+                ),
+                document_id=str(row.id),
+                espace_code=row.espace_code,
+                module_code=row.module_code,
+                event_type="ocr_failed",
+                priorite="avertissement",
+            )
             session.commit()
-            if self.request.retries < self.max_retries:
-                raise self.retry(exc=exc)
             return {"ok": False, "error": str(exc)}

@@ -51,6 +51,7 @@ def _doc_out(row: GedDocument) -> ArchiveDocOut:
         size_bytes=row.size_bytes or 0,
         version=row.version or 1,
         parent_document_id=row.parent_document_id,
+        version_comment=getattr(row, "version_comment", None),
         agence_id=row.agence_id,
         department_id=row.department_id,
         fournisseur_id=row.fournisseur_id,
@@ -94,6 +95,7 @@ class MgArchivesService:
         mine_only: bool = False,
         recent_days: int | None = None,
         trash: bool = False,
+        ocr_status: str | None = None,
         page: int = 1,
         size: int = 50,
         user: User | None = None,
@@ -111,6 +113,8 @@ class MgArchivesService:
             filters.append(GedDocument.fournisseur_id == fournisseur_id)
         if department_id:
             filters.append(GedDocument.department_id == department_id)
+        if ocr_status:
+            filters.append(GedDocument.ocr_status == ocr_status.strip().lower())
         if year:
             filters.append(
                 or_(
@@ -320,6 +324,10 @@ class MgArchivesService:
         stock = await _count(GedDocument.module_code == "stock-fournitures")
         notes = await _count(GedDocument.module_code == "notes-frais")
         contrats = await _count(GedDocument.module_code == "contrats-echeances")
+        ocr_done = await _count(GedDocument.ocr_status == "done")
+        ocr_pending = await _count(GedDocument.ocr_status == "pending")
+        ocr_processing = await _count(GedDocument.ocr_status == "processing")
+        ocr_failed = await _count(GedDocument.ocr_status == "failed")
         corbeille = int(
             await self.db.scalar(
                 select(func.count())
@@ -359,10 +367,11 @@ class MgArchivesService:
             for m, n in mod_rows
         ]
 
+        type_expr = func.coalesce(GedDocument.doc_type, GedDocument.entity)
         type_rows = await self.db.execute(
-            select(func.coalesce(GedDocument.doc_type, GedDocument.entity), func.count())
+            select(type_expr, func.count())
             .where(*active)
-            .group_by(func.coalesce(GedDocument.doc_type, GedDocument.entity))
+            .group_by(type_expr)
         )
         par_type = [{"type": t or "—", "count": int(n)} for t, n in type_rows]
 
@@ -386,6 +395,55 @@ class MgArchivesService:
             ).scalars().all()
         )
 
+        # Activité depuis audit_logs (données réelles)
+        from app.models.audit import AuditLog
+
+        act_rows = await self.db.execute(
+            select(
+                func.date(AuditLog.created_at).label("d"),
+                AuditLog.action,
+                func.count().label("n"),
+            )
+            .where(
+                AuditLog.entity == "ged_document",
+                AuditLog.espace_code == ESPACE,
+                AuditLog.action.in_(
+                    (
+                        "document_ingest",
+                        "document_archive_operation",
+                        "archive_manual",
+                        "archive_view",
+                        "document_view",
+                        "archive_download",
+                        "document_download",
+                    )
+                ),
+            )
+            .group_by("d", AuditLog.action)
+            .order_by("d")
+            .limit(400)
+        )
+        activity: dict[str, dict[str, int]] = {}
+        for r in act_rows:
+            day = str(r.d)
+            bucket = activity.setdefault(
+                day, {"uploads": 0, "views": 0, "downloads": 0, "archives": 0}
+            )
+            action = r.action or ""
+            n = int(r.n)
+            if action in (
+                "document_ingest",
+                "document_archive_operation",
+                "archive_manual",
+            ):
+                bucket["uploads"] += n
+                bucket["archives"] += n
+            elif action in ("document_view", "archive_view"):
+                bucket["views"] += n
+            elif action in ("document_download", "archive_download"):
+                bucket["downloads"] += n
+        activite = [{"date": d, **vals} for d, vals in sorted(activity.items())[-30:]]
+
         return ArchiveDashboardOut(
             total=total,
             ce_mois=ce_mois,
@@ -396,10 +454,15 @@ class MgArchivesService:
             contrats=contrats,
             manquants=manquants,
             corbeille=corbeille,
+            ocr_done=ocr_done,
+            ocr_pending=ocr_pending,
+            ocr_processing=ocr_processing,
+            ocr_failed=ocr_failed,
             par_mois=par_mois[-12:],
             par_module=par_module,
             par_type=par_type[:20],
             par_agence=par_agence[:20],
+            activite=activite,
             recents=[_doc_out(r) for r in recent_rows],
         )
 

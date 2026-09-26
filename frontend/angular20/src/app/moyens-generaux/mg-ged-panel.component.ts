@@ -14,14 +14,20 @@ interface GedDoc {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatIconModule],
   template: `
-    <section class="bea-mg-ged">
+    <section
+      class="bea-mg-ged"
+      [class.bea-mg-ged--drag]="dragging()"
+      (dragover)="onDragOver($event)"
+      (dragleave)="onDragLeave($event)"
+      (drop)="onDrop($event)"
+    >
       <div class="bea-mg-ged__head">
         <h3>Pièces jointes (GED)</h3>
         @if (entityId) {
           <label class="bea-mg__btn bea-mg__btn--ghost bea-mg-ged__upload">
             <mat-icon>archive</mat-icon>
             Archiver
-            <input type="file" hidden (change)="onFile($event)" />
+            <input type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp" hidden (change)="onFile($event)" />
           </label>
         }
       </div>
@@ -34,6 +40,13 @@ interface GedDoc {
         @if (erreur()) {
           <p class="bea-stock-page__error">{{ erreur() }}</p>
         }
+        @if (uploading()) {
+          <p class="bea-stock-page__kicker">Envoi en cours…</p>
+        }
+        <div class="bea-mg-ged__drop" aria-label="Zone de dépôt de fichier">
+          <mat-icon>upload_file</mat-icon>
+          <p>Glisser-déposer un PDF ou une image, ou utiliser Archiver.</p>
+        </div>
         <ul class="bea-mg-ged__list">
           @for (d of docs(); track d.id) {
             <li>
@@ -65,6 +78,26 @@ interface GedDoc {
       padding-top: 0.85rem;
       border-top: 1px solid #e2e8f0;
     }
+    .bea-mg-ged--drag .bea-mg-ged__drop {
+      border-color: #1a5278;
+      background: #eff6ff;
+    }
+    .bea-mg-ged__drop {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      margin-bottom: 0.65rem;
+      padding: 0.75rem 0.85rem;
+      border: 1px dashed #cbd5e1;
+      border-radius: 0.55rem;
+      color: #64748b;
+      font-size: 0.85rem;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+    .bea-mg-ged__drop mat-icon {
+      color: #94a3b8;
+    }
+    .bea-mg-ged__drop p { margin: 0; }
     .bea-mg-ged__head {
       display: flex;
       align-items: center;
@@ -155,6 +188,9 @@ interface GedDoc {
       background: transparent !important;
       padding-left: 0 !important;
     }
+    @media (prefers-reduced-motion: reduce) {
+      .bea-mg-ged__drop { transition: none; }
+    }
   `,
 })
 export class MgGedPanelComponent implements OnChanges {
@@ -169,6 +205,17 @@ export class MgGedPanelComponent implements OnChanges {
   readonly docs = signal<GedDoc[]>([]);
   readonly erreur = signal<string | null>(null);
   readonly msg = signal('');
+  readonly dragging = signal(false);
+  readonly uploading = signal(false);
+
+  private readonly allowed = new Set([
+    'application/pdf',
+    'image/png',
+    'image/jpeg',
+    'image/jpg',
+    'image/gif',
+    'image/webp',
+  ]);
 
   ngOnChanges(): void {
     this.reload();
@@ -191,6 +238,24 @@ export class MgGedPanelComponent implements OnChanges {
     if (bytes < 1024) return `${bytes} o`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
+  }
+
+  onDragOver(ev: DragEvent): void {
+    if (!this.entityId) return;
+    ev.preventDefault();
+    this.dragging.set(true);
+  }
+
+  onDragLeave(ev: DragEvent): void {
+    ev.preventDefault();
+    this.dragging.set(false);
+  }
+
+  onDrop(ev: DragEvent): void {
+    ev.preventDefault();
+    this.dragging.set(false);
+    const file = ev.dataTransfer?.files?.[0];
+    if (file) this.uploadFile(file);
   }
 
   reload(): void {
@@ -222,7 +287,22 @@ export class MgGedPanelComponent implements OnChanges {
   onFile(ev: Event): void {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
-    if (!file || !this.entityId) return;
+    if (file) this.uploadFile(file);
+    input.value = '';
+  }
+
+  private uploadFile(file: File): void {
+    if (!this.entityId) return;
+    const suffix = file.name.split('.').pop()?.toLowerCase() || '';
+    const okExt = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp'].includes(suffix);
+    if (!okExt && file.type && !this.allowed.has(file.type)) {
+      this.erreur.set('Type de fichier non autorisé (PDF / images uniquement).');
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      this.erreur.set('Fichier trop volumineux (max 25 Mo).');
+      return;
+    }
     const fields: Record<string, string> = {
       espace_code: this.espaceCode,
       module_code: this.moduleCode,
@@ -232,14 +312,18 @@ export class MgGedPanelComponent implements OnChanges {
       title: file.name,
     };
     if (this.reference) fields['reference'] = this.reference;
+    this.uploading.set(true);
     this.api.upload<GedDoc>('/documents/from-operation', file, fields).subscribe({
       next: () => {
         this.erreur.set(null);
-        this.msg.set('Document déposé — OCR en cours.');
+        this.msg.set('Document déposé avec succès. L\'analyse OCR est en cours.');
+        this.uploading.set(false);
         this.reload();
-        input.value = '';
       },
-      error: () => this.erreur.set('Archivage refusé (permission ged.write ?).'),
+      error: () => {
+        this.uploading.set(false);
+        this.erreur.set('Archivage refusé (permission ged.write ?).');
+      },
     });
   }
 }

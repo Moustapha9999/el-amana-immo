@@ -79,6 +79,7 @@ async def list_documents(
     mine: bool = False,
     recent_days: int | None = None,
     trash: bool = False,
+    ocr_status: str | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
@@ -99,6 +100,7 @@ async def list_documents(
         mine_only=mine,
         recent_days=recent_days,
         trash=trash,
+        ocr_status=ocr_status,
         page=page,
         size=size,
         user=user,
@@ -299,3 +301,49 @@ async def trash(
         trash=True, page=page, size=size, q=q, user=user
     )
     return PaginatedResponse(items=items, total=total, page=page, size=size)
+
+
+@router.get("/rapports/export", dependencies=_module)
+async def export_archives(
+    request: Request,
+    format: str = Query("csv"),
+    report_key: str = Query("documents"),
+    module_code: str | None = Query(None),
+    doc_type: str | None = Query(None),
+    ocr_status: str | None = Query(None),
+    date_debut: date | None = Query(None),
+    date_fin: date | None = Query(None),
+    q: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.archives.export", "ged.export")),
+):
+    from fastapi.responses import Response
+
+    from app.services.document_reporting_service import DocumentReportingService
+
+    content, media, filename = await DocumentReportingService(db).export(
+        user=user,
+        fmt=format,
+        espace_code=ESPACE,
+        module_code=module_code,
+        doc_type=doc_type,
+        ocr_status=ocr_status,
+        date_debut=date_debut,
+        date_fin=date_fin,
+        q=q,
+        general=False,
+        report_key=report_key,
+    )
+    await _audit(
+        db,
+        user,
+        "archive_export",
+        None,
+        request,
+        after={"format": format, "report_key": report_key},
+    )
+    return Response(
+        content=content,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

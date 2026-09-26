@@ -15,8 +15,8 @@ import { CoreAdminGedPage, coreAdminOpsError } from './core-admin-ops.models';
         <div>
           <h1>GED</h1>
           <p>
-            Table <code>ged_documents</code> réservée — pas encore branchée aux modules. Les pièces immo restent hors
-            GED.
+            Table centrale <code>ged_documents</code> — lecture CORE ADMIN. Upload / OCR / Archives via Document Service
+            (MG, Archive Générale). Les pièces immo restent hors GED.
           </p>
         </div>
       </header>
@@ -38,7 +38,9 @@ import { CoreAdminGedPage, coreAdminOpsError } from './core-admin-ops.models';
           }
         </div>
         @if (k.reservee) {
-          <p class="bea-admin-note">GED en lecture seule pour l’instant — upload métier à brancher module par module.</p>
+          <p class="bea-admin-note">
+            Vue CORE ADMIN en lecture seule — dépôt métier via Document Service / Archives.
+          </p>
         }
       }
 

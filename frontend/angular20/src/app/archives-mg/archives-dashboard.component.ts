@@ -1,8 +1,8 @@
 ﻿import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../core/services/api.service';
+import { ArchivesChartsComponent, ChartPoint, OcrSlice } from './archives-charts.component';
 
 interface DashDoc {
   id: string;
@@ -22,6 +22,11 @@ interface Dashboard {
   contrats: number;
   manquants: number;
   corbeille: number;
+  ocr_done: number;
+  ocr_pending: number;
+  ocr_processing: number;
+  ocr_failed: number;
+  par_mois: { year: number; month: number; count: number }[];
   par_module: { module_code: string; label: string; count: number }[];
   par_type: { type: string; count: number }[];
   recents: DashDoc[];
@@ -30,21 +35,17 @@ interface Dashboard {
 @Component({
   selector: 'bea-archives-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, MatIconModule, DatePipe],
+  imports: [RouterLink, DatePipe, ArchivesChartsComponent],
   template: `
     <section class="bea-mg bea-nf">
       <header class="bea-mg__head">
         <div>
-          <p class="bea-stock-page__kicker">Moyens Generaux</p>
+          <p class="bea-stock-page__kicker">Moyens Généraux</p>
           <h1>Archives — Tableau de bord</h1>
         </div>
         <div class="bea-mg__actions">
-          <a class="bea-mg__btn bea-mg__btn--primary" routerLink="/archives-mg/documents">
-            <mat-icon>folder_open</mat-icon> Tous les documents
-          </a>
-          <a class="bea-mg__btn" routerLink="/archives-mg/documents" [queryParams]="{ upload: 1 }">
-            <mat-icon>upload_file</mat-icon> Ajouter
-          </a>
+          <a class="bea-mg__btn" routerLink="/archives-mg/rapports">Rapports</a>
+          <a class="bea-mg__btn bea-mg__btn--primary" routerLink="/archives-mg/documents" [queryParams]="{}">Scanner / Importer</a>
         </div>
       </header>
 
@@ -55,43 +56,48 @@ interface Dashboard {
       @if (d(); as dash) {
         <div class="bea-nf-kpi">
           <a class="bea-nf-kpi__card" routerLink="/archives-mg/documents">
-            <p>Documents archives</p><strong>{{ dash.total }}</strong>
+            <p>Documents</p><strong>{{ dash.total }}</strong>
           </a>
           <a class="bea-nf-kpi__card" routerLink="/archives-mg/documents" [queryParams]="{ recent_days: 31 }">
             <p>Ce mois</p><strong>{{ dash.ce_mois }}</strong>
           </a>
           <a class="bea-nf-kpi__card" routerLink="/archives-mg/documents" [queryParams]="{ year: currentYear }">
-            <p>Cette annee</p><strong>{{ dash.cette_annee }}</strong>
+            <p>Cette année</p><strong>{{ dash.cette_annee }}</strong>
           </a>
-          <a class="bea-nf-kpi__card" routerLink="/archives-mg/documents" [queryParams]="{ module_code: 'achats-appro' }">
-            <p>Achats</p><strong>{{ dash.achats }}</strong>
+          <a class="bea-nf-kpi__card" routerLink="/archives-mg/documents" [queryParams]="{ ocr_status: 'done' }">
+            <p>OCR terminés</p><strong>{{ dash.ocr_done }}</strong>
           </a>
-          <a class="bea-nf-kpi__card" routerLink="/archives-mg/documents" [queryParams]="{ module_code: 'stock-fournitures' }">
-            <p>Stock</p><strong>{{ dash.stock }}</strong>
+          <a class="bea-nf-kpi__card" routerLink="/archives-mg/documents" [queryParams]="{ ocr_status: 'processing' }">
+            <p>OCR en cours</p><strong>{{ dash.ocr_processing + dash.ocr_pending }}</strong>
           </a>
-          <a class="bea-nf-kpi__card" routerLink="/archives-mg/documents" [queryParams]="{ module_code: 'notes-frais' }">
-            <p>Notes de frais</p><strong>{{ dash.notes }}</strong>
-          </a>
-          <a class="bea-nf-kpi__card" routerLink="/archives-mg/documents" [queryParams]="{ module_code: 'contrats-echeances' }">
-            <p>Contrats</p><strong>{{ dash.contrats }}</strong>
+          <a class="bea-nf-kpi__card" routerLink="/archives-mg/documents" [queryParams]="{ ocr_status: 'failed' }">
+            <p>OCR en erreur</p><strong>{{ dash.ocr_failed }}</strong>
           </a>
           <a class="bea-nf-kpi__card" routerLink="/archives-mg/manquants">
-            <p>Documents manquants</p><strong>{{ dash.manquants }}</strong>
+            <p>À vérifier</p><strong>{{ dash.manquants }}</strong>
           </a>
           <a class="bea-nf-kpi__card" routerLink="/archives-mg/corbeille">
             <p>Corbeille</p><strong>{{ dash.corbeille }}</strong>
           </a>
         </div>
 
+        <bea-archives-charts
+          [months]="monthPoints()"
+          [modules]="modulePoints()"
+          [types]="typePoints()"
+          [ocr]="ocrPoints()"
+          listPath="/archives-mg/documents"
+        />
+
         <div class="bea-mg__panel" style="margin-top:1rem">
           <div class="bea-mg__panel-top">
-            <h2>Documents recents</h2>
+            <h2>Documents récents</h2>
             <span class="bea-mg__count">{{ dash.recents.length }}</span>
           </div>
           <div class="bea-mg__table-scroll">
             <table class="bea-mg__table">
               <thead>
-                <tr><th>Fichier</th><th>Module</th><th>Entite</th><th>Date</th></tr>
+                <tr><th>Fichier</th><th>Module</th><th>Entité</th><th>Date</th></tr>
               </thead>
               <tbody>
                 @for (r of dash.recents; track r.id) {
@@ -104,12 +110,14 @@ interface Dashboard {
                     <td>{{ r.created_at ? (r.created_at | date: 'dd/MM/yyyy HH:mm') : '—' }}</td>
                   </tr>
                 } @empty {
-                  <tr><td colspan="4"><div class="bea-mg__empty"><p>Aucun document archive.</p></div></td></tr>
+                  <tr><td colspan="4"><div class="bea-mg__empty"><p>Aucun document archivé.</p></div></td></tr>
                 }
               </tbody>
             </table>
           </div>
         </div>
+      } @else if (!erreur()) {
+        <p class="bea-stock-page__kicker">Chargement du tableau de bord…</p>
       }
     </section>
   `,
@@ -119,6 +127,45 @@ export class ArchivesDashboardComponent implements OnInit {
   readonly d = signal<Dashboard | null>(null);
   readonly erreur = signal<string | null>(null);
   readonly currentYear = new Date().getFullYear();
+
+  readonly monthPoints = computed<ChartPoint[]>(() => {
+    const rows = this.d()?.par_mois ?? [];
+    return rows.map((r) => ({
+      label: `${String(r.month).padStart(2, '0')}/${r.year}`,
+      value: r.count,
+      key: `${r.year}-${r.month}`,
+    }));
+  });
+
+  readonly modulePoints = computed<ChartPoint[]>(() => {
+    const rows = this.d()?.par_module ?? [];
+    return rows.map((r) => ({
+      label: r.label || r.module_code,
+      value: r.count,
+      key: r.module_code,
+      queryParams: { module_code: r.module_code },
+    }));
+  });
+
+  readonly typePoints = computed<ChartPoint[]>(() => {
+    const rows = this.d()?.par_type ?? [];
+    return rows.map((r) => ({
+      label: r.type,
+      value: r.count,
+      key: r.type,
+    }));
+  });
+
+  readonly ocrPoints = computed<OcrSlice[]>(() => {
+    const dash = this.d();
+    if (!dash) return [];
+    return [
+      { label: 'Terminés', value: dash.ocr_done, key: 'done', color: '#166534' },
+      { label: 'En attente', value: dash.ocr_pending, key: 'pending', color: '#92400e' },
+      { label: 'En cours', value: dash.ocr_processing, key: 'processing', color: '#1e40af' },
+      { label: 'Échec', value: dash.ocr_failed, key: 'failed', color: '#991b1b' },
+    ];
+  });
 
   ngOnInit(): void {
     this.api.get<Dashboard>('/mg/archives/dashboard').subscribe({

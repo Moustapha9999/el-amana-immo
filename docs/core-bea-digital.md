@@ -61,19 +61,30 @@ Ces URLs restent `/api/v1/...` (pas de préfixe `/comptabilite/`).
 Le métier immo (`/immobilisations`, `/amortissements`, écritures, …) exige
 toujours Login 2 `immobilisations`.
 
-## GED (lecture CORE ADMIN + upload métier)
+## GED (Document Service central)
 
-- Table `ged_documents` : fichier + `espace_code` + `module_code` + `entity` / `entity_id`.
-- Lecture CORE ADMIN : `GET /api/v1/plateforme/admin/ged` (`core.admin.settings`).
-- API métier : `/api/v1/ged/documents`
-  - `POST` upload (`ged.write`) — multipart : `file`, `espace_code`, `module_code`, `entity`, `entity_id`
-  - `GET` liste / `GET …/download` (`ged.read`)
-  - `DELETE` soft-delete (`ged.write`)
+- Table unique `ged_documents` : métadonnées archives + OCR + `security_level` + versioning
+  (`version`, `parent_document_id`, `version_comment`).
+- Point d’entrée unique : `DocumentIngestService.ingest_document()` (upload manuel +
+  archivage opération) et `create_version()`.
+- Recherche : `DocumentQueryService` (métadonnées + FTS `ocr_text_search`, ACL espaces).
+- API Document Service : `/api/v1/documents`
+  - `POST /` upload (`ged.write`)
+  - `POST /from-operation` archivage métier
+  - `GET /search`, `GET /{id}`, `GET /{id}/download` (`ged.download` ou `ged.read`)
+  - `GET|POST /{id}/versions`, `GET /{id}/relations`, `GET /{id}/audit`
+  - `POST /{id}/retry-ocr`, `DELETE /{id}`, `POST /{id}/restore`
+  - `GET /rapports/export` (CSV / Excel / PDF)
+- Archives MG : `/api/v1/mg/archives/*` (vue filtrée `espace_code=moyens-generaux`)
+- Archive Générale : `/api/v1/doc-archives/general` (+ `/dashboard`, `/rapports/export`)
+- OCR asynchrone Celery + Tesseract (`app.workers.tasks_ocr`), retry auto, notifications.
+- Permissions : `ged.read|write|download|export`, `mg.archives.*`, `archives.general.*`
 - Stockage : `storage/ged/{module}/{entity}/{id}/` (volume compose `./storage/ged`).
 - Les pièces comptables immo (`pieces_jointes`) et les archives Excel/PDF
-  **ne migrent pas** dans cette table. Les modules futurs (Crédit, RH, …)
-  écrivent ici via `GedService`.
-- Schéma idempotent : `scripts/supabase/01_upgrade.sql` (cible docker ou Supabase).
+  **ne migrent pas** dans cette table.
+- Migrations : `20260917_ged_documents`, `20260926_ged_archives_meta`,
+  `20260926_ged_ocr`, `20260926_ged_version_comment`.
+- SQL idempotent : `storage/_ged_*.sql`.
 
 ## Ce que le CORE n’est pas
 

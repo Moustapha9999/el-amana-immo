@@ -127,7 +127,7 @@ export const MODULE_ROUTE_CONTRACTS: Readonly<Record<string, ModuleRouteContract
   'archives-generales': {
     code: 'archives-generales',
     strategy: 'prefixed',
-    entryPath: '/archives-generales',
+    entryPath: '/archives-generales/dashboard',
     espacePath: '/archive-generale',
     urlPrefix: '/archives-generales',
   },

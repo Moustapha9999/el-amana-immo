@@ -60,6 +60,7 @@ class GedDocument(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     parent_document_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ged_documents.id"), nullable=True, index=True
     )
+    version_comment: Mapped[str | None] = mapped_column(String(500), nullable=True)
     deleted_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )

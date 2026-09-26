@@ -100,7 +100,9 @@ interface Paginated<T> {
             <tbody>
               @for (d of docs(); track d.id; let i = $index) {
                 <tr [style.--i]="i">
-                  <td>{{ d.title || d.filename || '—' }}</td>
+                  <td>
+                    <a [routerLink]="['/archives-mg/documents', d.id]">{{ d.title || d.filename || '—' }}</a>
+                  </td>
                   <td><code class="bea-mg__code">{{ d.reference || '—' }}</code></td>
                   <td>{{ moduleLabel(d.module_code) }}</td>
                   <td>{{ d.doc_type || entityLabel(d.entity) }}</td>
@@ -118,6 +120,9 @@ interface Paginated<T> {
                   <td>{{ sizeLabel(d.size_bytes) }}</td>
                   <td class="bea-mg__actions-cell">
                     @if (!trashMode()) {
+                      <a class="bea-mg__icon-btn" [routerLink]="['/archives-mg/documents', d.id]" title="Fiche">
+                        <mat-icon>visibility</mat-icon>
+                      </a>
                       <button type="button" class="bea-mg__icon-btn" title="Telecharger" (click)="download(d)">
                         <mat-icon>download</mat-icon>
                       </button>
@@ -193,12 +198,14 @@ export class ArchivesDocumentsComponent implements OnInit {
   year: number | null = null;
   recentDays: number | null = null;
   mine = false;
+  ocrStatus = '';
 
   ngOnInit(): void {
     this.route.queryParamMap.subscribe((qp) => {
       this.moduleFilter = qp.get('module_code') || '';
       this.q = qp.get('q') || '';
       this.docType = qp.get('doc_type') || '';
+      this.ocrStatus = qp.get('ocr_status') || '';
       const y = qp.get('year');
       this.year = y ? Number(y) : null;
       const rd = qp.get('recent_days');
@@ -206,7 +213,11 @@ export class ArchivesDocumentsComponent implements OnInit {
       this.mine = qp.get('mine') === '1';
       const trash = this.router.url.includes('/corbeille') || qp.get('trash') === '1';
       this.trashMode.set(trash);
+      const numerisation = this.router.url.includes('/numerisation');
+      const ocrPage = this.router.url.includes('/ocr');
       this.pageTitle.set(trash ? 'Corbeille' : this.mine ? 'Mes documents' : 'Tous les documents');
+      if (numerisation) this.pageTitle.set('Scanner / Importer');
+      if (ocrPage) this.pageTitle.set('Traitement OCR');
       if (this.moduleFilter === 'achats-appro') this.pageTitle.set('Documents Achats');
       if (this.moduleFilter === 'stock-fournitures') this.pageTitle.set('Documents Stock');
       if (this.moduleFilter === 'notes-frais') this.pageTitle.set('Documents Notes de frais');
@@ -307,6 +318,7 @@ export class ArchivesDocumentsComponent implements OnInit {
     if (this.recentDays) params['recent_days'] = this.recentDays;
     if (this.mine) params['mine'] = 'true';
     if (this.trashMode()) params['trash'] = 'true';
+    if (this.ocrStatus) params['ocr_status'] = this.ocrStatus;
     this.api.get<Paginated<Doc>>('/mg/archives/documents', params).subscribe({
       next: (res) => {
         this.docs.set(res.items);

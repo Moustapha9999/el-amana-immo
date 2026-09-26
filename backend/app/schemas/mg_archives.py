@@ -28,6 +28,7 @@ class ArchiveDocOut(BaseModel):
     size_bytes: int = 0
     version: int = 1
     parent_document_id: UUID | None = None
+    version_comment: str | None = None
     agence_id: UUID | None = None
     department_id: UUID | None = None
     fournisseur_id: UUID | None = None
@@ -66,10 +67,15 @@ class ArchiveDashboardOut(BaseModel):
     contrats: int = 0
     manquants: int = 0
     corbeille: int = 0
+    ocr_done: int = 0
+    ocr_pending: int = 0
+    ocr_processing: int = 0
+    ocr_failed: int = 0
     par_mois: list[dict] = Field(default_factory=list)
     par_module: list[dict] = Field(default_factory=list)
     par_type: list[dict] = Field(default_factory=list)
     par_agence: list[dict] = Field(default_factory=list)
+    activite: list[dict] = Field(default_factory=list)
     recents: list[ArchiveDocOut] = Field(default_factory=list)
 
 

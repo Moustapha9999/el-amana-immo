@@ -74,7 +74,20 @@ import { ArchivesDashboardComponent } from './archives-mg/archives-dashboard.com
 import { ArchivesDocumentsComponent } from './archives-mg/archives-documents.component';
 import { ArchivesMissingComponent } from './archives-mg/archives-missing.component';
 import { ArchivesDossierComponent } from './archives-mg/archives-dossier.component';
+import { ArchivesDocumentDetailComponent } from './archives-mg/archives-document-detail.component';
+import { ArchivesRapportsComponent } from './archives-mg/archives-rapports.component';
 import { ArchivesGeneralesComponent } from './archives-generales/archives-generales.component';
+import { ArchivesGeneralesDashboardComponent } from './archives-generales/archives-generales-dashboard.component';
+import {
+  ArchivesGeneralesActiviteComponent,
+  ArchivesGeneralesDossiersComponent,
+  ArchivesGeneralesDoublonsComponent,
+  ArchivesGeneralesManquantsComponent,
+  ArchivesGeneralesNumeriserComponent,
+  ArchivesGeneralesOcrComponent,
+  ArchivesGeneralesParametresComponent,
+  ArchivesGeneralesVerifierComponent,
+} from './archives-generales/archives-generales-pages.component';
 
 /**
  * Contrat de routes (voir plateforme/module-routing.contract.ts) :
@@ -181,12 +194,15 @@ export const routes: Routes = [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
       { path: 'dashboard', component: ArchivesDashboardComponent },
       { path: 'documents', component: ArchivesDocumentsComponent },
-      { path: 'documents/:id', component: ArchivesDocumentsComponent },
+      { path: 'documents/:id', component: ArchivesDocumentDetailComponent },
       { path: 'recherche', component: ArchivesDocumentsComponent },
+      { path: 'numerisation', component: ArchivesDocumentsComponent },
+      { path: 'ocr', component: ArchivesDocumentsComponent },
       { path: 'manquants', component: ArchivesMissingComponent },
       { path: 'corbeille', component: ArchivesDocumentsComponent },
       { path: 'dossiers/:module/:type/:id', component: ArchivesDossierComponent },
       { path: 'registre', component: ArchivesRegistreComponent },
+      { path: 'rapports', component: ArchivesRapportsComponent, data: { archivesMode: 'mg' } },
     ],
   },
   {
@@ -194,8 +210,21 @@ export const routes: Routes = [
     component: ShellComponent,
     canActivate: [authGuard, moduleGuard('archives-generales')],
     children: [
-      { path: '', pathMatch: 'full', component: ArchivesGeneralesComponent },
-      { path: 'recherche', component: ArchivesGeneralesComponent },
+      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      { path: 'dashboard', component: ArchivesGeneralesDashboardComponent },
+      { path: 'vue', pathMatch: 'full', redirectTo: 'documents' },
+      { path: 'documents', component: ArchivesGeneralesComponent, data: { archivesMode: 'documents' } },
+      { path: 'recherche', component: ArchivesGeneralesComponent, data: { archivesMode: 'recherche' } },
+      { path: 'dossiers', component: ArchivesGeneralesDossiersComponent },
+      { path: 'ocr', component: ArchivesGeneralesOcrComponent },
+      { path: 'numeriser', component: ArchivesGeneralesNumeriserComponent },
+      { path: 'manquants', component: ArchivesGeneralesManquantsComponent },
+      { path: 'a-verifier', component: ArchivesGeneralesVerifierComponent },
+      { path: 'doublons', component: ArchivesGeneralesDoublonsComponent },
+      { path: 'controle', pathMatch: 'full', redirectTo: 'manquants' },
+      { path: 'activite', component: ArchivesGeneralesActiviteComponent },
+      { path: 'parametres', component: ArchivesGeneralesParametresComponent },
+      { path: 'rapports', component: ArchivesRapportsComponent, data: { archivesMode: 'general' } },
     ],
   },
   ...PLATEFORME_ROUTES,

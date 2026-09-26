@@ -284,6 +284,8 @@ CORE_PERMISSIONS: list[tuple[str, str, str]] = [
     ("plateforme.audit.read", "Consultation de l'audit plateforme", "plateforme"),
     ("ged.read", "Consultation GED", "ged"),
     ("ged.write", "Dépôt / suppression GED", "ged"),
+    ("ged.download", "Téléchargement GED", "ged"),
+    ("ged.export", "Export rapports GED", "ged"),
 ]
 
 # CORE ADMIN — catalogue seulement. Ne pas lier au rôle immo `administrateur`.
@@ -450,7 +452,10 @@ _CORE_ADMIN = (
     "plateforme.audit.read",
     "ged.read",
     "ged.write",
+    "ged.download",
+    "ged.export",
 )
+_GED_RW = ("ged.read", "ged.write", "ged.download", "ged.export")
 
 ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "consultation": ("immobilisations.read",),
@@ -486,7 +491,7 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "mg.stock.inventory.validate",
         "mg.stock.period.view",
     ),
-    "stock-fournitures.admin": _MG_STOCK_ALL + ("ged.read", "ged.write"),
+    "stock-fournitures.admin": _MG_STOCK_ALL + _GED_RW,
     "achats-appro.lecteur": ("mg.purchase.view", "mg.purchase.export"),
     "achats-appro.acheteur": (
         "mg.purchase.view",
@@ -502,7 +507,7 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "mg.purchase.demande",
         "mg.purchase.export",
     ),
-    "achats-appro.admin": _MG_ACHATS_ALL + ("ged.read", "ged.write"),
+    "achats-appro.admin": _MG_ACHATS_ALL + _GED_RW,
     "notes-frais.lecteur": ("mg.notes.view",),
     "notes-frais.redacteur": ("mg.notes.view", "mg.notes.create", "mg.notes.export"),
     "notes-frais.valideur": (
@@ -512,7 +517,7 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "mg.notes.reject",
         "mg.notes.export",
     ),
-    "notes-frais.admin": _MG_NOTES_ALL + ("ged.read", "ged.write"),
+    "notes-frais.admin": _MG_NOTES_ALL + _GED_RW,
     "contrats-echeances.lecteur": ("mg.contrats.view",),
     "contrats-echeances.gestionnaire": (
         "mg.contrats.view",
@@ -520,18 +525,21 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "mg.contrats.manage",
         "mg.contrats.export",
     ),
-    "contrats-echeances.admin": _MG_CONTRATS_ALL + ("ged.read", "ged.write"),
+    "contrats-echeances.admin": _MG_CONTRATS_ALL + _GED_RW,
     "archives-mg.lecteur": (
         "mg.archives.view",
         "mg.archives.download",
+        "ged.read",
+        "ged.download",
     ),
-    "archives-mg.admin": _MG_ARCHIVES_ALL + ("ged.read", "ged.write"),
+    "archives-mg.admin": _MG_ARCHIVES_ALL + _GED_RW,
     "archives-generales.lecteur": (
         "archives.general.view",
         "archives.general.download",
         "ged.read",
+        "ged.download",
     ),
-    "archives-generales.admin": _ARCHIVES_GENERALES_ALL + ("ged.read", "ged.write"),
+    "archives-generales.admin": _ARCHIVES_GENERALES_ALL + _GED_RW,
 }
 
 SYSTEM_ROLE_CODES = frozenset(code for code, _label, _desc in RBAC_ROLES)
