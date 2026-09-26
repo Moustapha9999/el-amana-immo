@@ -1,4 +1,4 @@
-﻿"""GED — metadonnees Archives MG.
+"""GED — metadonnees Archives MG.
 
 Revision ID: 20260926_ged_archives_meta
 Revises: 20260925_mg_contrats_v2

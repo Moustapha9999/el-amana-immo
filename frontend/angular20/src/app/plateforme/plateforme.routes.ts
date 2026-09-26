@@ -44,6 +44,18 @@ export const PLATEFORME_ROUTES: Routes = [
     canActivate: [authGuard],
     data: { espaceCode: 'comptabilite' },
   },
+  {
+    path: 'moyens-generaux',
+    component: EspaceHubComponent,
+    canActivate: [authGuard],
+    data: { espaceCode: 'moyens-generaux' },
+  },
+  {
+    path: 'archive-generale',
+    component: EspaceHubComponent,
+    canActivate: [authGuard],
+    data: { espaceCode: 'archives' },
+  },
   { path: 'modules/:moduleCode/acces', component: ModuleAccesComponent, canActivate: [authGuard] },
   {
     path: 'admin',

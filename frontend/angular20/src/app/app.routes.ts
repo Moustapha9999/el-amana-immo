@@ -74,6 +74,7 @@ import { ArchivesDashboardComponent } from './archives-mg/archives-dashboard.com
 import { ArchivesDocumentsComponent } from './archives-mg/archives-documents.component';
 import { ArchivesMissingComponent } from './archives-mg/archives-missing.component';
 import { ArchivesDossierComponent } from './archives-mg/archives-dossier.component';
+import { ArchivesGeneralesComponent } from './archives-generales/archives-generales.component';
 
 /**
  * Contrat de routes (voir plateforme/module-routing.contract.ts) :
@@ -186,6 +187,15 @@ export const routes: Routes = [
       { path: 'corbeille', component: ArchivesDocumentsComponent },
       { path: 'dossiers/:module/:type/:id', component: ArchivesDossierComponent },
       { path: 'registre', component: ArchivesRegistreComponent },
+    ],
+  },
+  {
+    path: 'archives-generales',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('archives-generales')],
+    children: [
+      { path: '', pathMatch: 'full', component: ArchivesGeneralesComponent },
+      { path: 'recherche', component: ArchivesGeneralesComponent },
     ],
   },
   ...PLATEFORME_ROUTES,

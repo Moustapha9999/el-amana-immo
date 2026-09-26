@@ -36,6 +36,19 @@ services:
     networks:
       - bea_internal
 
+  redis:
+    image: redis:7-alpine
+    pull_policy: missing
+    container_name: bea-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - bea_internal
+
   backend:
     image: bea-digital-backend:latest
     build:
@@ -53,12 +66,17 @@ services:
       DATABASE_SSL: "false"
       CORS_ORIGINS: http://localhost,http://localhost:80
       SKIP_MIGRATIONS: ${SKIP_MIGRATIONS:-1}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
     volumes:
       - ./storage/uploads:/app/storage/uploads
       - ./storage/ged:/app/storage/ged
       - ./backups:/backups
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test:
@@ -72,6 +90,31 @@ services:
       timeout: 5s
       retries: 12
       start_period: 20s
+    networks:
+      - bea_internal
+
+  worker:
+    image: bea-digital-backend:latest
+    pull_policy: missing
+    container_name: bea-worker
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-immo_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-bea_digital}
+      DATABASE_SSL: "false"
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      GED_DIR: storage/ged
+    volumes:
+      - ./storage/ged:/app/storage/ged
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    entrypoint: ["celery"]
+    command: ["-A", "app.workers.celery_app", "worker", "--loglevel=info"]
     networks:
       - bea_internal
 

@@ -33,6 +33,7 @@ class GedDocumentRead(BaseModel):
     mime_type: str | None = None
     size_bytes: int = 0
     created_at: object | None = None
+    ocr_status: str | None = "pending"
 
     model_config = {"from_attributes": True}
 
@@ -61,7 +62,9 @@ async def upload_document(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        row = await GedService(db).upload(
+        from app.services.document_ingest_service import DocumentIngestService
+
+        row = await DocumentIngestService(db).ingest_document(
             file=file,
             espace_code=espace_code.strip().lower(),
             module_code=module_code.strip().lower(),
@@ -80,6 +83,7 @@ async def upload_document(
                 "entity": row.entity,
                 "filename": row.filename,
                 "size_bytes": row.size_bytes,
+                "ocr_status": row.ocr_status,
             },
             request=request,
         )

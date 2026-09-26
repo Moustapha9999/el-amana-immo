@@ -1,4 +1,4 @@
-﻿"""Schemas Archives MG — registre documentaire moyens-generaux."""
+"""Schemas Archives MG — registre documentaire moyens-generaux."""
 
 from __future__ import annotations
 
@@ -35,6 +35,10 @@ class ArchiveDocOut(BaseModel):
     deleted_at: datetime | None = None
     delete_reason: str | None = None
     original_name: str | None = None
+    ocr_status: str = "pending"
+    ocr_error: str | None = None
+    ocr_attempts: int = 0
+    security_level: str = "internal"
 
 
 class ArchiveDocUpdate(BaseModel):

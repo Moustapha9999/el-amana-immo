@@ -18,6 +18,8 @@ const PLATEFORME_FIXED = [
   'notes-frais',
   'contrats-echeances',
   'archives-mg',
+  'archives-generales',
+  'archive-generale',
   'credit',
   'rh',
   'tickets-si',

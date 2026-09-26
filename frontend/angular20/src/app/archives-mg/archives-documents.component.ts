@@ -18,6 +18,8 @@ interface Doc {
   created_at: string | null;
   size_bytes: number | null;
   deleted_at?: string | null;
+  ocr_status?: string | null;
+  ocr_error?: string | null;
 }
 
 interface Paginated<T> {
@@ -89,6 +91,7 @@ interface Paginated<T> {
                 <th>Ref.</th>
                 <th>Module</th>
                 <th>Type / entite</th>
+                <th>OCR</th>
                 <th>Date</th>
                 <th>Taille</th>
                 <th class="bea-mg__th-actions">Actions</th>
@@ -101,6 +104,16 @@ interface Paginated<T> {
                   <td><code class="bea-mg__code">{{ d.reference || '—' }}</code></td>
                   <td>{{ moduleLabel(d.module_code) }}</td>
                   <td>{{ d.doc_type || entityLabel(d.entity) }}</td>
+                  <td>
+                    <span class="bea-ocr-badge" [attr.data-status]="d.ocr_status || 'pending'">
+                      {{ ocrLabel(d.ocr_status) }}
+                    </span>
+                    @if (d.ocr_status === 'failed') {
+                      <button type="button" class="bea-mg__icon-btn" title="Relancer OCR" (click)="retryOcr(d)">
+                        <mat-icon>refresh</mat-icon>
+                      </button>
+                    }
+                  </td>
                   <td>{{ d.created_at ? (d.created_at | date: 'dd/MM/yyyy HH:mm') : '—' }}</td>
                   <td>{{ sizeLabel(d.size_bytes) }}</td>
                   <td class="bea-mg__actions-cell">
@@ -126,7 +139,7 @@ interface Paginated<T> {
                 </tr>
               } @empty {
                 <tr>
-                  <td colspan="7">
+                  <td colspan="8">
                     <div class="bea-mg__empty">
                       <mat-icon>folder_open</mat-icon>
                       <p>Aucun document pour ces criteres.</p>
@@ -143,7 +156,22 @@ interface Paginated<T> {
       </div>
     </section>
   `,
-  styles: `a.bea-mg__icon-btn { text-decoration: none; color: inherit; }`,
+  styles: `
+    a.bea-mg__icon-btn { text-decoration: none; color: inherit; }
+    .bea-ocr-badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 650;
+      padding: 0.15rem 0.45rem;
+      border-radius: 0.35rem;
+      background: #e2e8f0;
+      color: #475569;
+    }
+    .bea-ocr-badge[data-status='pending'] { background: #fef3c7; color: #92400e; }
+    .bea-ocr-badge[data-status='processing'] { background: #dbeafe; color: #1e40af; }
+    .bea-ocr-badge[data-status='done'] { background: #dcfce7; color: #166534; }
+    .bea-ocr-badge[data-status='failed'] { background: #fee2e2; color: #991b1b; }
+  `,
 })
 export class ArchivesDocumentsComponent implements OnInit {
   private readonly api = inject(ApiService);
@@ -186,6 +214,19 @@ export class ArchivesDocumentsComponent implements OnInit {
       this.page.set(1);
       this.load();
     });
+  }
+
+  ocrLabel(status: string | null | undefined): string {
+    switch (status) {
+      case 'processing':
+        return 'En cours';
+      case 'done':
+        return 'Termine';
+      case 'failed':
+        return 'Echec';
+      default:
+        return 'En attente';
+    }
   }
 
   moduleLabel(code: string | null): string {
@@ -313,6 +354,16 @@ export class ArchivesDocumentsComponent implements OnInit {
     });
   }
 
+  retryOcr(d: Doc): void {
+    this.api.post<Doc>(`/mg/archives/documents/${d.id}/retry-ocr`, {}).subscribe({
+      next: () => {
+        this.msg.set(`OCR relance pour ${d.filename}.`);
+        this.load();
+      },
+      error: () => this.erreur.set('Relance OCR refusee.'),
+    });
+  }
+
   onFile(ev: Event): void {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -326,7 +377,7 @@ export class ArchivesDocumentsComponent implements OnInit {
       title: file.name,
     }).subscribe({
       next: () => {
-        this.msg.set('Document archive.');
+        this.msg.set('Document depose — OCR en cours.');
         this.load();
       },
       error: () => this.erreur.set('Upload refuse (permission create/archive ?).'),

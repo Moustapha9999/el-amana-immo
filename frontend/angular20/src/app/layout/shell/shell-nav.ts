@@ -344,6 +344,13 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
       permissions: ['mg.archives.view'],
     },
     {
+      section: 'Pilotage',
+      label: 'Archive Générale',
+      path: '/modules/archives-generales/acces',
+      icon: 'account_balance',
+      permissions: ['mg.archives.view'],
+    },
+    {
       section: 'Documents',
       label: 'Tous les documents',
       path: '/archives-mg/documents',
@@ -411,6 +418,23 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
       path: '/archives-mg/corbeille',
       icon: 'delete',
       permissions: ['mg.archives.view'],
+    },
+  ],
+  'archives-generales': [
+    {
+      section: 'Archive Générale',
+      label: 'Tous les documents',
+      path: '/archives-generales',
+      icon: 'inventory_2',
+      exact: true,
+      permissions: ['archives.general.view'],
+    },
+    {
+      section: 'Archive Générale',
+      label: 'Recherche avancée',
+      path: '/archives-generales/recherche',
+      icon: 'manage_search',
+      permissions: ['archives.general.view'],
     },
   ],
 };

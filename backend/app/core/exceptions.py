@@ -21,5 +21,10 @@ class ValidationError(AppError):
         super().__init__(message, status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
+class ForbiddenError(AppError):
+    def __init__(self, message: str = "Accès refusé"):
+        super().__init__(message, status.HTTP_403_FORBIDDEN)
+
+
 def raise_http_from_app(error: AppError) -> None:
     raise HTTPException(status_code=error.status_code, detail=error.message)

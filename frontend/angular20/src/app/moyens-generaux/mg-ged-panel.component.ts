@@ -6,6 +6,7 @@ interface GedDoc {
   id: string;
   filename: string;
   size_bytes: number;
+  ocr_status?: string | null;
 }
 
 @Component({
@@ -18,8 +19,8 @@ interface GedDoc {
         <h3>Pièces jointes (GED)</h3>
         @if (entityId) {
           <label class="bea-mg__btn bea-mg__btn--ghost bea-mg-ged__upload">
-            <mat-icon>attach_file</mat-icon>
-            Ajouter
+            <mat-icon>archive</mat-icon>
+            Archiver
             <input type="file" hidden (change)="onFile($event)" />
           </label>
         }
@@ -27,6 +28,9 @@ interface GedDoc {
       @if (!entityId) {
         <p class="bea-stock-page__kicker">Enregistrer d’abord la fiche pour attacher des fichiers.</p>
       } @else {
+        @if (msg()) {
+          <p class="bea-stock-page__ok">{{ msg() }}</p>
+        }
         @if (erreur()) {
           <p class="bea-stock-page__error">{{ erreur() }}</p>
         }
@@ -35,6 +39,9 @@ interface GedDoc {
             <li>
               <mat-icon>description</mat-icon>
               <span>{{ d.filename }}</span>
+              <small class="bea-ocr-badge" [attr.data-status]="d.ocr_status || 'pending'">
+                {{ ocrLabel(d.ocr_status) }}
+              </small>
               <small>{{ sizeLabel(d.size_bytes) }}</small>
               <button
                 type="button"
@@ -110,6 +117,17 @@ interface GedDoc {
       font-size: 0.75rem;
       white-space: nowrap;
     }
+    .bea-ocr-badge {
+      font-weight: 650;
+      padding: 0.1rem 0.35rem;
+      border-radius: 0.3rem;
+      background: #e2e8f0;
+      color: #475569 !important;
+    }
+    .bea-ocr-badge[data-status='pending'] { background: #fef3c7; color: #92400e !important; }
+    .bea-ocr-badge[data-status='processing'] { background: #dbeafe; color: #1e40af !important; }
+    .bea-ocr-badge[data-status='done'] { background: #dcfce7; color: #166534 !important; }
+    .bea-ocr-badge[data-status='failed'] { background: #fee2e2; color: #991b1b !important; }
     .bea-mg-ged__dl {
       display: inline-grid;
       place-items: center;
@@ -144,13 +162,29 @@ export class MgGedPanelComponent implements OnChanges {
   @Input({ required: true }) entity!: string;
   @Input() entityId: string | null = null;
   @Input() espaceCode = 'moyens-generaux';
+  @Input() docType = 'JUSTIFICATIF';
+  @Input() reference: string | null = null;
 
   private readonly api = inject(ApiService);
   readonly docs = signal<GedDoc[]>([]);
   readonly erreur = signal<string | null>(null);
+  readonly msg = signal('');
 
   ngOnChanges(): void {
     this.reload();
+  }
+
+  ocrLabel(status: string | null | undefined): string {
+    switch (status) {
+      case 'processing':
+        return 'OCR…';
+      case 'done':
+        return 'OCR ok';
+      case 'failed':
+        return 'OCR échec';
+      default:
+        return 'OCR…';
+    }
   }
 
   sizeLabel(bytes: number): string {
@@ -189,20 +223,23 @@ export class MgGedPanelComponent implements OnChanges {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file || !this.entityId) return;
-    this.api
-      .upload<GedDoc>('/ged/documents', file, {
-        espace_code: this.espaceCode,
-        module_code: this.moduleCode,
-        entity: this.entity,
-        entity_id: this.entityId,
-      })
-      .subscribe({
-        next: () => {
-          this.erreur.set(null);
-          this.reload();
-          input.value = '';
-        },
-        error: () => this.erreur.set('Upload GED refusé (permission ged.write ?).'),
-      });
+    const fields: Record<string, string> = {
+      espace_code: this.espaceCode,
+      module_code: this.moduleCode,
+      source_type: this.entity,
+      source_id: this.entityId,
+      doc_type: this.docType,
+      title: file.name,
+    };
+    if (this.reference) fields['reference'] = this.reference;
+    this.api.upload<GedDoc>('/documents/from-operation', file, fields).subscribe({
+      next: () => {
+        this.erreur.set(null);
+        this.msg.set('Document déposé — OCR en cours.');
+        this.reload();
+        input.value = '';
+      },
+      error: () => this.erreur.set('Archivage refusé (permission ged.write ?).'),
+    });
   }
 }

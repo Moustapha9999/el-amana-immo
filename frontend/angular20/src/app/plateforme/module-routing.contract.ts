@@ -124,6 +124,13 @@ export const MODULE_ROUTE_CONTRACTS: Readonly<Record<string, ModuleRouteContract
     espacePath: '/moyens-generaux',
     urlPrefix: '/archives-mg',
   },
+  'archives-generales': {
+    code: 'archives-generales',
+    strategy: 'prefixed',
+    entryPath: '/archives-generales',
+    espacePath: '/archive-generale',
+    urlPrefix: '/archives-generales',
+  },
 };
 
 /** Modules dont le shell métier Angular est branché (Login 2 peut naviguer). */
@@ -134,6 +141,7 @@ export const MODULES_WITH_METIER_SHELL = new Set<string>([
   'notes-frais',
   'contrats-echeances',
   'archives-mg',
+  'archives-generales',
 ]);
 
 export function moduleHasMetierShell(moduleCode: string): boolean {
