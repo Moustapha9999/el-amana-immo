@@ -366,7 +366,15 @@ type Tab = 'info' | 'ocr' | 'relations' | 'versions' | 'historique';
     }
     .bea-viewer__rel strong, .bea-viewer__rel em { display: block; }
     .bea-viewer__rel em { font-style: normal; color: #64748b; font-size: 0.78rem; }
-    .bea-viewer__feed { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+    .bea-viewer__feed {
+      list-style: none;
+      margin: 0;
+      padding: 0 0.25rem 0 0;
+      display: grid;
+      gap: 0.55rem;
+      max-height: calc(100dvh - 11rem);
+      overflow-y: auto;
+    }
     .bea-viewer__feed time { display: block; font-size: 0.75rem; color: #94a3b8; }
     @keyframes beaViewerIn {
       from { opacity: 0; transform: scale(0.985); }
@@ -468,6 +476,9 @@ export class DocumentViewerComponent implements OnChanges {
       document_download: 'Document téléchargé',
       document_metadata_update: 'Métadonnées modifiées',
       document_version_create: 'Nouvelle version',
+      document_versions_list: 'Versions consultées',
+      document_relations_view: 'Documents liés consultés',
+      document_audit_view: 'Historique consulté',
       document_delete: 'Mis à la corbeille',
       document_restore: 'Restauré',
       ocr_retry: 'OCR relancé',

@@ -17,6 +17,17 @@ import { CoreAdminDashboardComponent } from './core-admin/core-admin-dashboard.c
 import { CoreAdminDepartmentFicheComponent } from './core-admin/core-admin-department-fiche.component';
 import { CoreAdminDepartmentsComponent } from './core-admin/core-admin-departments.component';
 import { CoreAdminGedComponent } from './core-admin/core-admin-ged.component';
+import {
+  CoreAdminGedAuditComponent,
+  CoreAdminGedDashboardComponent,
+  CoreAdminGedDossiersComponent,
+  CoreAdminGedMissingComponent,
+  CoreAdminGedOcrComponent,
+  CoreAdminGedSearchComponent,
+  CoreAdminGedSettingsComponent,
+  CoreAdminGedStorageComponent,
+  CoreAdminGedTrashComponent,
+} from './core-admin/core-admin-ged-center.component';
 import { CoreAdminLayoutComponent } from './core-admin/core-admin-layout.component';
 import { CoreAdminMatrixComponent } from './core-admin/core-admin-matrix.component';
 import { CoreAdminModuleFicheComponent } from './core-admin/core-admin-module-fiche.component';
@@ -90,7 +101,16 @@ export const PLATEFORME_ROUTES: Routes = [
       { path: 'activity', component: CoreAdminActivityComponent },
       { path: 'alerts', component: CoreAdminAlertsComponent },
       { path: 'notifications', component: CoreAdminNotificationsComponent },
-      { path: 'ged', component: CoreAdminGedComponent },
+      { path: 'ged', component: CoreAdminGedDashboardComponent },
+      { path: 'ged/documents', component: CoreAdminGedComponent },
+      { path: 'ged/dossiers', component: CoreAdminGedDossiersComponent },
+      { path: 'ged/ocr', component: CoreAdminGedOcrComponent },
+      { path: 'ged/recherche', component: CoreAdminGedSearchComponent },
+      { path: 'ged/stockage', component: CoreAdminGedStorageComponent },
+      { path: 'ged/manquants', component: CoreAdminGedMissingComponent },
+      { path: 'ged/corbeille', component: CoreAdminGedTrashComponent },
+      { path: 'ged/audit', component: CoreAdminGedAuditComponent },
+      { path: 'ged/parametres', component: CoreAdminGedSettingsComponent },
       { path: 'general', component: CoreAdminGeneralComponent },
       { path: 'security', component: CoreAdminSecurityComponent },
       { path: 'maintenance', component: CoreAdminMaintenanceComponent },

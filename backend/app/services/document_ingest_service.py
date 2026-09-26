@@ -279,6 +279,8 @@ class DocumentIngestService:
 
     async def retry_ocr(self, document_id: UUID) -> GedDocument:
         row = await self.ged.get(document_id)
+        if int(row.ocr_attempts or 0) >= 3:
+            raise ValidationError("Nombre maximum de tentatives OCR atteint (3).")
         row.ocr_status = "pending"
         row.ocr_error = None
         await self.db.flush()

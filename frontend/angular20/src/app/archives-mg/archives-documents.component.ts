@@ -83,7 +83,7 @@ interface Paginated<T> {
       @if (msg()) { <p class="bea-stock-page__ok">{{ msg() }}</p> }
 
       <div class="bea-mg__panel">
-        <div class="bea-mg__table-scroll">
+        <div class="bea-mg__table-scroll" [class.bea-corbeille__scroll]="trashMode()">
           <table class="bea-mg__table">
             <thead>
               <tr>
@@ -136,8 +136,20 @@ interface Paginated<T> {
                         <mat-icon>delete</mat-icon>
                       </button>
                     } @else {
+                      <a class="bea-mg__icon-btn" [routerLink]="['/archives-mg/documents', d.id]" title="Voir">
+                        <mat-icon>visibility</mat-icon>
+                      </a>
+                      <button type="button" class="bea-mg__icon-btn" title="Télécharger" (click)="download(d)">
+                        <mat-icon>download</mat-icon>
+                      </button>
+                      <button type="button" class="bea-mg__icon-btn" title="Modifier" (click)="startEdit(d)">
+                        <mat-icon>edit</mat-icon>
+                      </button>
                       <button type="button" class="bea-mg__icon-btn" title="Restaurer" (click)="restore(d)">
                         <mat-icon>restore</mat-icon>
+                      </button>
+                      <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer définitivement" (click)="askPurge(d)">
+                        <mat-icon>delete_forever</mat-icon>
                       </button>
                     }
                   </td>
@@ -160,9 +172,46 @@ interface Paginated<T> {
         }
       </div>
     </section>
+
+    @if (editing(); as d) {
+      <div class="bea-modal" role="dialog">
+        <form class="bea-modal__card" (ngSubmit)="saveEdit()">
+          <h2>Modifier le document</h2>
+          <p>{{ d.filename }}</p>
+          <label>Nom<input [(ngModel)]="editTitle" name="title" /></label>
+          <label>Type<input [(ngModel)]="editType" name="type" /></label>
+          <label>Référence<input [(ngModel)]="editRef" name="ref" /></label>
+          <footer>
+            <button type="button" class="bea-mg__btn" (click)="editing.set(null)">Annuler</button>
+            <button type="submit" class="bea-mg__btn bea-mg__btn--primary">Enregistrer</button>
+          </footer>
+        </form>
+      </div>
+    }
+    @if (purging(); as d) {
+      <div class="bea-modal" role="dialog">
+        <div class="bea-modal__card">
+          <h2>Supprimer définitivement ?</h2>
+          <p>{{ d.filename }} sera retiré de la corbeille et du stockage. Cette action est irréversible.</p>
+          <footer>
+            <button type="button" class="bea-mg__btn" (click)="purging.set(null)">Annuler</button>
+            <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="confirmPurge()">Supprimer</button>
+          </footer>
+        </div>
+      </div>
+    }
   `,
   styles: `
     a.bea-mg__icon-btn { text-decoration: none; color: inherit; }
+    .bea-corbeille__scroll { max-height: min(22rem, calc(100dvh - 16rem)); overflow: auto; }
+    .bea-mg__actions-cell { white-space: nowrap; }
+    .bea-modal { position: fixed; inset: 0; z-index: 80; background: rgb(15 23 42 / 45%); display: grid; place-items: center; }
+    .bea-modal__card { background: #fff; width: min(28rem, 92vw); border-radius: 0.75rem; padding: 1rem; display: grid; gap: 0.55rem; }
+    .bea-modal__card h2 { margin: 0; font-size: 1.05rem; }
+    .bea-modal__card p { margin: 0; color: #64748b; font-size: 0.88rem; }
+    .bea-modal__card label { display: grid; gap: 0.2rem; font-size: 0.82rem; }
+    .bea-modal__card input { font: inherit; padding: 0.4rem 0.5rem; border: 1px solid #cbd5e1; border-radius: 0.4rem; }
+    .bea-modal__card footer { display: flex; justify-content: flex-end; gap: 0.4rem; }
     .bea-ocr-badge {
       display: inline-block;
       font-size: 0.72rem;
@@ -191,6 +240,11 @@ export class ArchivesDocumentsComponent implements OnInit {
   readonly msg = signal('');
   readonly trashMode = signal(false);
   readonly pageTitle = signal('Tous les documents');
+  readonly editing = signal<Doc | null>(null);
+  readonly purging = signal<Doc | null>(null);
+  editTitle = '';
+  editType = '';
+  editRef = '';
 
   moduleFilter = '';
   q = '';
@@ -359,10 +413,51 @@ export class ArchivesDocumentsComponent implements OnInit {
   restore(d: Doc): void {
     this.api.post(`/mg/archives/documents/${d.id}/restore`, {}).subscribe({
       next: () => {
-        this.msg.set(`${d.filename} restaure.`);
+        this.msg.set(`${d.filename} restauré.`);
         this.load();
       },
-      error: () => this.erreur.set('Restauration refusee.'),
+      error: () => this.erreur.set('Restauration refusée.'),
+    });
+  }
+
+  startEdit(d: Doc): void {
+    this.editTitle = d.title || d.filename;
+    this.editType = d.doc_type || '';
+    this.editRef = d.reference || '';
+    this.editing.set(d);
+  }
+
+  saveEdit(): void {
+    const d = this.editing();
+    if (!d) return;
+    this.api.patch(`/mg/archives/documents/${d.id}`, {
+      title: this.editTitle || null,
+      doc_type: this.editType || null,
+      reference: this.editRef || null,
+    }).subscribe({
+      next: () => {
+        this.editing.set(null);
+        this.msg.set('Métadonnées enregistrées.');
+        this.load();
+      },
+      error: () => this.erreur.set('Modification refusée.'),
+    });
+  }
+
+  askPurge(d: Doc): void {
+    this.purging.set(d);
+  }
+
+  confirmPurge(): void {
+    const d = this.purging();
+    if (!d) return;
+    this.api.delete(`/mg/archives/documents/${d.id}/purge`).subscribe({
+      next: () => {
+        this.purging.set(null);
+        this.msg.set(`${d.filename} supprimé définitivement.`);
+        this.load();
+      },
+      error: () => this.erreur.set('Suppression définitive refusée.'),
     });
   }
 

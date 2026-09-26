@@ -86,23 +86,45 @@ type Tab = 'info' | 'ocr' | 'relations' | 'versions' | 'historique';
                 <button type="button" class="bea-mg__icon-btn" (click)="zoomIn()" title="Zoom +"><mat-icon>zoom_in</mat-icon></button>
               </div>
             </div>
-            @if (previewUrl()) {
-              @if (isImage(d)) {
-                <img [src]="previewUrl()" [style.transform]="'scale(' + zoom() + ')'" alt="Aperçu document" />
-              } @else if (isPdf(d)) {
-                <iframe [src]="safePreview()" title="Aperçu PDF" [style.transform]="'scale(' + zoom() + ')'"></iframe>
+            <div class="bea-doc-detail__canvas">
+              @if (previewStatus() === 'loading') {
+                <div class="bea-mg__empty"><p>Chargement de l'aperçu…</p></div>
+              } @else if (previewStatus() === 'file' && previewUrl()) {
+                @if (isImage(d)) {
+                  <img [src]="previewUrl()" [style.transform]="'scale(' + zoom() + ')'" alt="Aperçu document" />
+                } @else if (isPdf(d)) {
+                  <iframe [src]="safePreview()" title="Aperçu PDF"></iframe>
+                }
+              } @else if (previewStatus() === 'table') {
+                <div class="bea-doc-detail__sheet" [style.transform]="'scale(' + zoom() + ')'">
+                  <p class="bea-doc-detail__sheet-title">{{ sheetTitle() }}</p>
+                  <div class="bea-doc-detail__table-scroll">
+                    <table>
+                      @for (row of sheetRows(); track $index; let first = $first) {
+                        <tr>
+                          @for (cell of row; track $index) {
+                            @if (first) { <th>{{ cell }}</th> } @else { <td>{{ cell }}</td> }
+                          }
+                        </tr>
+                      } @empty {
+                        <tr><td>Feuille vide.</td></tr>
+                      }
+                    </table>
+                  </div>
+                  @if (sheetTruncated()) {
+                    <p class="bea-stock-page__kicker">Aperçu limité aux premières lignes. Téléchargez le fichier pour le voir en entier.</p>
+                  }
+                </div>
               } @else {
                 <div class="bea-mg__empty">
                   <mat-icon>description</mat-icon>
                   <p>Aperçu non disponible pour ce type. Téléchargez le fichier.</p>
                 </div>
               }
-            } @else {
-              <div class="bea-mg__empty"><p>Chargement de l'aperçu…</p></div>
-            }
+            </div>
           </div>
 
-          <div class="bea-mg__panel">
+          <div class="bea-mg__panel bea-doc-detail__side">
             <nav class="bea-doc-detail__tabs" role="tablist">
               @for (t of tabs; track t.id) {
                 <button
@@ -114,6 +136,7 @@ type Tab = 'info' | 'ocr' | 'relations' | 'versions' | 'historique';
                 >{{ t.label }}</button>
               }
             </nav>
+            <div class="bea-doc-detail__pane">
 
             @if (tab() === 'info') {
               <dl class="bea-doc-detail__meta">
@@ -146,7 +169,7 @@ type Tab = 'info' | 'ocr' | 'relations' | 'versions' | 'historique';
             }
 
             @if (tab() === 'relations') {
-              <ul class="bea-doc-detail__list">
+              <ul class="bea-doc-detail__list bea-doc-detail__scroll">
                 @for (r of relations(); track r.id) {
                   <li>
                     <a [routerLink]="['/archives-mg/documents', r.id]">{{ r.title || r.filename }}</a>
@@ -159,7 +182,7 @@ type Tab = 'info' | 'ocr' | 'relations' | 'versions' | 'historique';
             }
 
             @if (tab() === 'versions') {
-              <ol class="bea-doc-detail__timeline">
+              <ol class="bea-doc-detail__timeline bea-doc-detail__scroll">
                 @for (v of versions(); track v.id) {
                   <li>
                     <strong>Version {{ v.version }}</strong>
@@ -178,7 +201,7 @@ type Tab = 'info' | 'ocr' | 'relations' | 'versions' | 'historique';
             }
 
             @if (tab() === 'historique') {
-              <ol class="bea-doc-detail__timeline">
+              <ol class="bea-doc-detail__timeline bea-doc-detail__scroll">
                 @for (e of audit(); track e.id) {
                   <li>
                     <strong>{{ actionLabel(e.action) }}</strong>
@@ -189,6 +212,7 @@ type Tab = 'info' | 'ocr' | 'relations' | 'versions' | 'historique';
                 }
               </ol>
             }
+            </div>
           </div>
         </div>
       }
@@ -204,31 +228,68 @@ type Tab = 'info' | 'ocr' | 'relations' | 'versions' | 'historique';
       font-size: 0.88rem;
       margin-bottom: 0.35rem;
     }
+    .bea-doc-detail {
+      display: flex;
+      flex-direction: column;
+      height: calc(100dvh - 7.5rem);
+      min-height: 32rem;
+    }
     .bea-doc-detail__layout {
+      flex: 1;
+      min-height: 0;
       display: grid;
-      grid-template-columns: 1.1fr 0.9fr;
+      grid-template-columns: minmax(0, 1.25fr) minmax(16rem, 0.75fr);
       gap: 1rem;
-      align-items: start;
+      align-items: stretch;
     }
-    .bea-doc-detail__preview {
-      min-height: 28rem;
+    .bea-doc-detail__preview,
+    .bea-doc-detail__side {
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+      margin-bottom: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .bea-doc-detail__canvas,
+    .bea-doc-detail__pane {
+      flex: 1;
+      min-height: 0;
       overflow: auto;
+      padding: 0.85rem 1rem 1rem;
     }
-    .bea-doc-detail__preview img,
-    .bea-doc-detail__preview iframe {
-      width: 100%;
-      min-height: 24rem;
-      border: 0;
+    .bea-doc-detail__preview img {
+      max-width: 100%;
       transform-origin: top left;
       transition: transform 0.25s ease;
     }
+    .bea-doc-detail__preview iframe {
+      width: 100%;
+      height: 100%;
+      min-height: 24rem;
+      border: 0;
+    }
+    .bea-doc-detail__sheet { transform-origin: top left; transition: transform 0.25s ease; }
+    .bea-doc-detail__sheet-title { margin: 0 0 0.55rem; font-weight: 650; }
+    .bea-doc-detail__table-scroll { overflow: auto; max-width: 100%; }
+    .bea-doc-detail__sheet table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .bea-doc-detail__sheet th,
+    .bea-doc-detail__sheet td {
+      border: 1px solid #e2e8f0;
+      padding: 0.35rem 0.5rem;
+      text-align: left;
+      white-space: nowrap;
+    }
+    .bea-doc-detail__sheet th { background: #f8fafc; position: sticky; top: 0; }
     .bea-doc-detail__tabs {
       display: flex;
-      flex-wrap: wrap;
-      gap: 0.35rem;
-      margin-bottom: 1rem;
+      flex-wrap: nowrap;
+      gap: 0.25rem;
+      margin: 0;
       border-bottom: 1px solid #e2e8f0;
-      padding-bottom: 0.5rem;
+      padding: 0.75rem 0.85rem 0.45rem;
+      overflow-x: auto;
     }
     .bea-doc-detail__tabs button {
       border: 0;
@@ -313,6 +374,11 @@ type Tab = 'info' | 'ocr' | 'relations' | 'versions' | 'historique';
       font-size: 0.78rem;
       color: #94a3b8;
     }
+    .bea-doc-detail__scroll {
+      max-height: calc(100dvh - 15rem);
+      overflow-y: auto;
+      padding-right: 0.35rem;
+    }
     .bea-ocr-badge {
       display: inline-block;
       font-size: 0.72rem;
@@ -327,11 +393,16 @@ type Tab = 'info' | 'ocr' | 'relations' | 'versions' | 'historique';
     .bea-ocr-badge[data-status='done'] { background: #dcfce7; color: #166534; }
     .bea-ocr-badge[data-status='failed'] { background: #fee2e2; color: #991b1b; }
     @media (max-width: 960px) {
-      .bea-doc-detail__layout { grid-template-columns: 1fr; }
+      .bea-doc-detail { height: auto; }
+      .bea-doc-detail__layout { grid-template-columns: 1fr; height: auto; }
+      .bea-doc-detail__preview,
+      .bea-doc-detail__side { height: auto; max-height: none; }
+      .bea-doc-detail__canvas { min-height: 22rem; max-height: 32rem; }
+      .bea-doc-detail__pane { max-height: 28rem; }
     }
     @media (prefers-reduced-motion: reduce) {
       .bea-doc-detail__preview img,
-      .bea-doc-detail__preview iframe { transition: none; }
+      .bea-doc-detail__sheet { transition: none; }
     }
   `,
 })
@@ -349,6 +420,10 @@ export class ArchivesDocumentDetailComponent implements OnInit {
   readonly erreur = signal<string | null>(null);
   readonly msg = signal('');
   readonly previewUrl = signal<string | null>(null);
+  readonly previewStatus = signal<'loading' | 'file' | 'table' | 'empty'>('loading');
+  readonly sheetTitle = signal('');
+  readonly sheetRows = signal<string[][]>([]);
+  readonly sheetTruncated = signal(false);
   readonly zoom = signal(1);
 
   readonly tabs: { id: Tab; label: string }[] = [
@@ -391,14 +466,20 @@ export class ArchivesDocumentDetailComponent implements OnInit {
       document_view: 'Consulté',
       document_download: 'Téléchargé',
       document_version_create: 'Nouvelle version',
+      document_versions_list: 'Versions consultées',
+      document_relations_view: 'Documents liés consultés',
+      document_audit_view: 'Historique consulté',
+      document_metadata_update: 'Métadonnées modifiées',
+      document_search: 'Recherche',
+      document_export: 'Export',
       document_delete: 'Mis en corbeille',
       document_restore: 'Restauré',
       ocr_processing: 'OCR démarré',
       ocr_done: 'OCR terminé',
       ocr_failed: 'OCR échoué',
       ocr_retry: 'OCR relancé',
-      archive_view: 'Consulté (archives)',
-      archive_download: 'Téléchargé (archives)',
+      archive_view: 'Consulté',
+      archive_download: 'Téléchargé',
       archive_update: 'Métadonnées modifiées',
     };
     return map[action] || action;
@@ -417,6 +498,10 @@ export class ArchivesDocumentDetailComponent implements OnInit {
 
   isPdf(d: Doc): boolean {
     return d.mime_type === 'application/pdf' || /\.pdf$/i.test(d.filename);
+  }
+
+  isSheet(d: Doc): boolean {
+    return /\.(xlsx|xlsm|xls|csv)$/i.test(d.filename) || (d.mime_type || '').includes('spreadsheet') || (d.mime_type || '').includes('excel');
   }
 
   zoomIn(): void {
@@ -471,11 +556,31 @@ export class ArchivesDocumentDetailComponent implements OnInit {
   }
 
   private loadPreview(id: string): void {
+    const d = this.doc();
+    this.previewStatus.set('loading');
+    this.sheetRows.set([]);
+    if (d && this.isSheet(d)) {
+      this.api.get<{ kind: string; title?: string; rows?: string[][]; truncated?: boolean }>(`/documents/${id}/preview`).subscribe({
+        next: (res) => {
+          this.sheetTitle.set(res.title || d.filename);
+          this.sheetRows.set((res.rows ?? []).map((row) => row.map((cell) => cell == null ? '' : String(cell))));
+          this.sheetTruncated.set(!!res.truncated);
+          this.previewStatus.set(res.kind === 'table' ? 'table' : 'empty');
+        },
+        error: () => this.previewStatus.set('empty'),
+      });
+      return;
+    }
+    if (d && !this.isPdf(d) && !this.isImage(d)) {
+      this.previewStatus.set('empty');
+      return;
+    }
     this.api.download(`/documents/${id}/download`).subscribe({
       next: (blob) => {
         const prev = this.previewUrl();
         if (prev) URL.revokeObjectURL(prev);
         this.previewUrl.set(URL.createObjectURL(blob));
+        this.previewStatus.set('file');
       },
       error: () => this.loadPreviewMg(id),
     });
@@ -487,8 +592,9 @@ export class ArchivesDocumentDetailComponent implements OnInit {
         const prev = this.previewUrl();
         if (prev) URL.revokeObjectURL(prev);
         this.previewUrl.set(URL.createObjectURL(blob));
+        this.previewStatus.set('file');
       },
-      error: () => this.previewUrl.set(null),
+      error: () => this.previewStatus.set('empty'),
     });
   }
 

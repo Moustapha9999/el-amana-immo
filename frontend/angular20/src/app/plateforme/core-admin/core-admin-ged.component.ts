@@ -2,21 +2,22 @@ import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
+import { DocumentViewerComponent } from '../../archives-generales/document-viewer.component';
 import { CoreAdminIconComponent } from './core-admin-icon.component';
 import { CoreAdminGedPage, coreAdminOpsError } from './core-admin-ops.models';
 
 @Component({
   selector: 'bea-core-admin-ged',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, ReactiveFormsModule, CoreAdminIconComponent],
+  imports: [DatePipe, ReactiveFormsModule, CoreAdminIconComponent, DocumentViewerComponent],
   template: `
     <section class="bea-admin-dash">
       <header class="bea-admin-dash__head">
         <div>
-          <h1>GED</h1>
+          <h1>Documents GED</h1>
           <p>
-            Table centrale <code>ged_documents</code> — lecture CORE ADMIN. Upload / OCR / Archives via Document Service
-            (MG, Archive Générale). Les pièces immo restent hors GED.
+            Administration de la table unique <code>ged_documents</code>. Cette liste n'est pas le registre
+            Archive Générale. Les pièces immobilisations restent hors GED.
           </p>
         </div>
       </header>
@@ -88,6 +89,7 @@ import { CoreAdminGedPage, coreAdminOpsError } from './core-admin-ops.models';
                     <th>Entité</th>
                     <th>Taille</th>
                     <th>Créé</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -99,6 +101,9 @@ import { CoreAdminGedPage, coreAdminOpsError } from './core-admin-ops.models';
                       <td class="bea-admin-table__clip">{{ row.entity }} · {{ row.entity_id }}</td>
                       <td>{{ row.size_bytes }} o</td>
                       <td>{{ row.created_at | date: 'dd/MM/yyyy HH:mm' : 'Africa/Nouakchott' }}</td>
+                      <td>
+                        <button type="button" class="bea-admin-btn bea-admin-btn--ghost" (click)="viewerId.set(row.id)">Voir</button>
+                      </td>
                     </tr>
                   }
                 </tbody>
@@ -119,6 +124,10 @@ import { CoreAdminGedPage, coreAdminOpsError } from './core-admin-ops.models';
         </div>
       }
     </section>
+    <bea-document-viewer [documentId]="viewerId()" (closed)="viewerId.set(null)" (openRelated)="viewerId.set($event)" />
+  `,
+  styles: `
+    .bea-admin-table-wrap { max-height: min(28rem, calc(100dvh - 22rem)); overflow: auto; }
   `,
 })
 export class CoreAdminGedComponent implements OnInit {
@@ -133,6 +142,7 @@ export class CoreAdminGedComponent implements OnInit {
   readonly size = 20;
   readonly kpis = signal<CoreAdminGedPage['kpis'] | null>(null);
   readonly filters = this.fb.nonNullable.group({ search: '' });
+  readonly viewerId = signal<string | null>(null);
   readonly totalPages = computed(() => Math.max(1, Math.ceil(this.total() / this.size)));
 
   ngOnInit(): void {

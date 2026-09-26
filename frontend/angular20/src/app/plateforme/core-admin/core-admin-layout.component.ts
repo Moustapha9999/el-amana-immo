@@ -64,7 +64,7 @@ interface SidebarTooltip {
                         class="bea-admin__link"
                         [routerLink]="item.path"
                         routerLinkActive="bea-admin__link--on"
-                        [routerLinkActiveOptions]="{ exact: item.path === '/admin/dashboard' }"
+                        [routerLinkActiveOptions]="{ exact: item.path === '/admin/dashboard' || item.path === '/admin/ged' }"
                         [attr.aria-label]="item.label"
                         (mouseenter)="showTooltip($event, item.label)"
                         (mouseleave)="hideTooltip()"

@@ -203,7 +203,7 @@ class MgArchivesService:
     async def update_document(
         self, document_id: UUID, data: ArchiveDocUpdate, user: User
     ) -> ArchiveDocOut:
-        row = await self.get_document(document_id)
+        row = await self.get_document(document_id, include_deleted=True)
         for field in (
             "title",
             "description",
@@ -251,6 +251,11 @@ class MgArchivesService:
 
     async def purge(self, document_id: UUID, user: User) -> None:
         row = await self.get_document(document_id, include_deleted=True)
+        if row.deleted_at is None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail="Seul un document de la corbeille peut être supprimé définitivement",
+            )
         path = self.ged.absolute_path(row.stored_path)
         await self.db.delete(row)
         await self.db.commit()

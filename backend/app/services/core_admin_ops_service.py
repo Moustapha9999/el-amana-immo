@@ -416,6 +416,288 @@ class CoreAdminOpsService:
             await self.db.rollback()
             return [], 0, empty_kpis
 
+    async def ged_overview(self, user: User) -> dict:
+        from sqlalchemy import text
+
+        from app.services.document_query_service import DocumentQueryService
+
+        stats = await DocumentQueryService(self.db).dashboard_stats(user, general=True)
+        now = datetime.now(timezone.utc)
+        start, end = day_bounds_nouakchott(now)
+        today = await self._count(
+            select(func.count())
+            .select_from(GedDocument)
+            .where(
+                GedDocument.deleted_at.is_(None),
+                GedDocument.created_at >= start,
+                GedDocument.created_at < end,
+            )
+        )
+        views = await self._count(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(
+                AuditLog.action.in_(("document_view", "archive_view")),
+                AuditLog.created_at >= start,
+                AuditLog.created_at < end,
+            )
+        )
+        downloads = await self._count(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(
+                AuditLog.action.in_(("document_download", "archive_download")),
+                AuditLog.created_at >= start,
+                AuditLog.created_at < end,
+            )
+        )
+        health = await self.ged_health()
+        return {
+            "stats": stats,
+            "aujourd_hui": today,
+            "consultations_aujourd_hui": views,
+            "telechargements_aujourd_hui": downloads,
+            "health": health,
+            "storage": self._storage_probe(),
+            "ocr_max_attempts": 3,
+        }
+
+    async def ged_health(self) -> list[dict]:
+        from sqlalchemy import text
+
+        items: list[dict] = []
+        try:
+            await self.db.execute(text("SELECT 1"))
+            items.append({"code": "postgresql", "label": "PostgreSQL", "status": "OK", "detail": "SELECT 1 réussi"})
+        except Exception as exc:
+            await self.db.rollback()
+            items.append({"code": "postgresql", "label": "PostgreSQL", "status": "ERREUR", "detail": str(exc)[:180]})
+        try:
+            total = await self._count(
+                select(func.count()).select_from(GedDocument).where(GedDocument.deleted_at.is_(None))
+            )
+            items.append({"code": "ged", "label": "GED", "status": "OK", "detail": f"{total} document(s) actif(s)"})
+        except Exception as exc:
+            await self.db.rollback()
+            items.append({"code": "ged", "label": "GED", "status": "ERREUR", "detail": str(exc)[:180]})
+        storage = self._storage_probe()
+        if storage["repertoire_present"]:
+            items.append({"code": "storage", "label": "Storage", "status": "OK", "detail": "Répertoire local accessible"})
+        else:
+            items.append({"code": "storage", "label": "Storage", "status": "ERREUR", "detail": "Répertoire GED absent"})
+        import shutil
+
+        if shutil.which("tesseract"):
+            items.append({
+                "code": "ocr",
+                "label": "OCR",
+                "status": "ATTENTION",
+                "detail": "Tesseract présent sur ce serveur. La file du worker n'a pas été interrogée.",
+            })
+        else:
+            items.append({
+                "code": "ocr",
+                "label": "OCR",
+                "status": "NON DISPONIBLE",
+                "detail": "Binaire Tesseract introuvable dans ce processus.",
+            })
+        try:
+            await self.db.execute(text("SELECT to_tsvector('french', 'banque')"))
+            items.append({"code": "recherche", "label": "Recherche", "status": "OK", "detail": "to_tsvector('french') répond"})
+        except Exception as exc:
+            await self.db.rollback()
+            items.append({"code": "recherche", "label": "Recherche", "status": "ERREUR", "detail": str(exc)[:180]})
+        items.append({"code": "api", "label": "API", "status": "OK", "detail": "Cette requête est servie par l'API"})
+        return items
+
+    def _storage_probe(self) -> dict:
+        import shutil
+
+        settings = get_settings()
+        path = Path(settings.ged_dir)
+        if not path.is_absolute():
+            path = (Path.cwd() / path).resolve()
+        present = path.is_dir()
+        payload: dict = {
+            "provider": "disque local",
+            "bucket": None,
+            "repertoire_present": present,
+            "capacite_octets": None,
+            "disponible_octets": None,
+            "utilise_disque_octets": None,
+        }
+        if present:
+            usage = shutil.disk_usage(path)
+            payload["capacite_octets"] = usage.total
+            payload["disponible_octets"] = usage.free
+            payload["utilise_disque_octets"] = usage.used
+        return payload
+
+    async def ged_storage(self) -> dict:
+        probe = self._storage_probe()
+        taille = int(
+            (
+                await self.db.execute(
+                    select(func.coalesce(func.sum(GedDocument.size_bytes), 0)).where(
+                        GedDocument.deleted_at.is_(None)
+                    )
+                )
+            ).scalar()
+            or 0
+        )
+        total = await self._count(
+            select(func.count()).select_from(GedDocument).where(GedDocument.deleted_at.is_(None))
+        )
+        corbeille = await self._count(
+            select(func.count()).select_from(GedDocument).where(GedDocument.deleted_at.is_not(None))
+        )
+        recent = (
+            await self.db.execute(
+                select(GedDocument)
+                .where(GedDocument.deleted_at.is_(None))
+                .order_by(GedDocument.created_at.desc())
+                .limit(8)
+            )
+        ).scalars().all()
+        return {
+            **probe,
+            "documents": total,
+            "corbeille": corbeille,
+            "taille_metadonnees_octets": taille,
+            "erreurs": None,
+            "erreurs_detail": "Aucun journal d'erreur storage n'est enregistré.",
+            "recents": [
+                {
+                    "id": str(row.id),
+                    "filename": row.filename,
+                    "size_bytes": row.size_bytes or 0,
+                    "espace_code": row.espace_code,
+                    "module_code": row.module_code,
+                    "created_at": _iso(row.created_at),
+                }
+                for row in recent
+            ],
+        }
+
+    async def ged_ocr(self, *, status: str | None, page: int, size: int) -> dict:
+        stmt = select(GedDocument).where(GedDocument.deleted_at.is_(None))
+        if status:
+            stmt = stmt.where(GedDocument.ocr_status == status)
+        total = await self._count(select(func.count()).select_from(stmt.order_by(None).subquery()))
+        rows = (
+            await self.db.execute(
+                stmt.order_by(GedDocument.created_at.desc()).offset(page_offset(page, size)).limit(size)
+            )
+        ).scalars().all()
+        counts = {}
+        for key in ("pending", "processing", "done", "failed"):
+            counts[key] = await self._count(
+                select(func.count())
+                .select_from(GedDocument)
+                .where(GedDocument.deleted_at.is_(None), GedDocument.ocr_status == key)
+            )
+        return {
+            "counts": counts,
+            "max_attempts": 3,
+            "items": [
+                {
+                    "id": str(row.id),
+                    "filename": row.title or row.filename,
+                    "espace_code": row.espace_code,
+                    "module_code": row.module_code,
+                    "ocr_status": row.ocr_status,
+                    "ocr_attempts": row.ocr_attempts or 0,
+                    "ocr_error": row.ocr_error,
+                    "created_at": _iso(row.created_at),
+                }
+                for row in rows
+            ],
+            "total": total,
+            "page": page,
+            "size": size,
+        }
+
+    async def ged_trash(self, page: int, size: int) -> dict:
+        stmt = select(GedDocument).where(GedDocument.deleted_at.is_not(None))
+        total = await self._count(select(func.count()).select_from(stmt.order_by(None).subquery()))
+        rows = (
+            await self.db.execute(
+                stmt.order_by(GedDocument.deleted_at.desc()).offset(page_offset(page, size)).limit(size)
+            )
+        ).scalars().all()
+        user_ids = {row.deleted_by_id for row in rows if row.deleted_by_id}
+        names: dict = {}
+        if user_ids:
+            users = (await self.db.scalars(select(User).where(User.id.in_(user_ids)))).all()
+            names = {user.id: (user.full_name or user.email) for user in users}
+        return {
+            "total": total,
+            "page": page,
+            "size": size,
+            "items": [
+                {
+                    "id": str(row.id),
+                    "filename": row.title or row.filename,
+                    "espace_code": row.espace_code,
+                    "module_code": row.module_code,
+                    "deleted_at": _iso(row.deleted_at),
+                    "deleted_by": names.get(row.deleted_by_id) if row.deleted_by_id else None,
+                    "delete_reason": row.delete_reason,
+                }
+                for row in rows
+            ],
+        }
+
+    async def ged_audit(self, page: int, size: int) -> dict:
+        actions = (
+            "document_ingest",
+            "document_view",
+            "document_download",
+            "document_metadata_update",
+            "document_archive_operation",
+            "document_version_create",
+            "document_delete",
+            "document_restore",
+            "document_export",
+            "ocr_processing",
+            "ocr_done",
+            "ocr_failed",
+            "ocr_retry",
+            "archive_view",
+            "archive_download",
+            "archive_delete",
+            "archive_restore",
+            "archive_purge",
+        )
+        stmt = select(AuditLog).where(AuditLog.action.in_(actions))
+        total = await self._count(select(func.count()).select_from(stmt.order_by(None).subquery()))
+        rows = (
+            await self.db.execute(
+                stmt.order_by(AuditLog.created_at.desc()).offset(page_offset(page, size)).limit(size)
+            )
+        ).scalars().all()
+        return {
+            "total": total,
+            "page": page,
+            "size": size,
+            "items": [
+                {
+                    "id": str(row.id),
+                    "action": row.action,
+                    "entity_id": row.entity_id,
+                    "espace_code": row.espace_code,
+                    "module_code": row.module_code,
+                    "created_at": _iso(row.created_at),
+                }
+                for row in rows
+            ],
+        }
+
+    async def ged_dossiers(self, user: User) -> list[dict]:
+        from app.services.document_query_service import DocumentQueryService
+
+        return await DocumentQueryService(self.db).list_dossiers(user, limit=200)
+
     def general_settings(self) -> dict:
         settings = get_settings()
         return {

@@ -190,7 +190,7 @@ async def download_document(
     user: User = Depends(require_permission("mg.archives.download", "mg.archives.view")),
 ):
     svc = MgArchivesService(db)
-    row = await svc.get_document(document_id)
+    row = await svc.get_document(document_id, include_deleted=True)
     path = GedService(db).absolute_path(row.stored_path)
     if not path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Fichier introuvable sur disque")

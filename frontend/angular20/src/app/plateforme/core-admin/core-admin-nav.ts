@@ -51,10 +51,24 @@ export const CORE_ADMIN_NAV: CoreAdminNavGroup[] = [
     ],
   },
   {
+    label: 'Documentaire / GED',
+    items: [
+      { label: 'Dashboard GED', path: '/admin/ged', icon: 'dashboard' },
+      { label: 'Documents', path: '/admin/ged/documents', icon: 'description' },
+      { label: 'Dossiers', path: '/admin/ged/dossiers', icon: 'folder' },
+      { label: 'OCR', path: '/admin/ged/ocr', icon: 'document_scanner' },
+      { label: 'Recherche', path: '/admin/ged/recherche', icon: 'search' },
+      { label: 'Stockage', path: '/admin/ged/stockage', icon: 'hard_drive' },
+      { label: 'Documents manquants', path: '/admin/ged/manquants', icon: 'folder_off' },
+      { label: 'Corbeille', path: '/admin/ged/corbeille', icon: 'delete' },
+      { label: 'Audit documentaire', path: '/admin/ged/audit', icon: 'policy' },
+      { label: 'Paramètres GED', path: '/admin/ged/parametres', icon: 'tune' },
+    ],
+  },
+  {
     label: 'Services',
     items: [
       { label: 'Centre notifications', path: '/admin/notifications', icon: 'notifications' },
-      { label: 'GED', path: '/admin/ged', icon: 'folder' },
     ],
   },
   {
