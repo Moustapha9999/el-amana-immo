@@ -24,6 +24,9 @@ def _iso(value) -> str | None:
     return value.isoformat() if value else None
 
 
+_OCR_PROBE: dict = {"at": 0.0, "item": None}
+
+
 class CoreAdminOpsService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -485,22 +488,7 @@ class CoreAdminOpsService:
             items.append({"code": "storage", "label": "Storage", "status": "OK", "detail": "Répertoire local accessible"})
         else:
             items.append({"code": "storage", "label": "Storage", "status": "ERREUR", "detail": "Répertoire GED absent"})
-        import shutil
-
-        if shutil.which("tesseract"):
-            items.append({
-                "code": "ocr",
-                "label": "OCR",
-                "status": "ATTENTION",
-                "detail": "Tesseract présent sur ce serveur. La file du worker n'a pas été interrogée.",
-            })
-        else:
-            items.append({
-                "code": "ocr",
-                "label": "OCR",
-                "status": "NON DISPONIBLE",
-                "detail": "Binaire Tesseract introuvable dans ce processus.",
-            })
+        items.append(await self._ocr_worker_status())
         try:
             await self.db.execute(text("SELECT to_tsvector('french', 'banque')"))
             items.append({"code": "recherche", "label": "Recherche", "status": "OK", "detail": "to_tsvector('french') répond"})
@@ -509,6 +497,84 @@ class CoreAdminOpsService:
             items.append({"code": "recherche", "label": "Recherche", "status": "ERREUR", "detail": str(exc)[:180]})
         items.append({"code": "api", "label": "API", "status": "OK", "detail": "Cette requête est servie par l'API"})
         return items
+
+    async def _ocr_worker_status(self) -> dict:
+        """Contrôle réel : Tesseract dans l'API, et un worker qui consomme la file OCR."""
+        import asyncio
+        import shutil
+        import time
+
+        now = time.monotonic()
+        cached = _OCR_PROBE.get("item")
+        if cached and now - float(_OCR_PROBE.get("at") or 0) < 20:
+            return cached
+
+        tesseract = shutil.which("tesseract") is not None
+
+        def probe() -> dict:
+            from app.workers.celery_app import celery_app
+
+            return celery_app.control.inspect(timeout=1.2).active_queues() or {}
+
+        try:
+            queues = await asyncio.wait_for(asyncio.to_thread(probe), timeout=6)
+        except Exception as exc:
+            detail = "Tesseract présent. " if tesseract else "Tesseract absent. "
+            item = {
+                "code": "ocr",
+                "label": "OCR",
+                "status": "ERREUR",
+                "detail": f"{detail}File du worker injoignable ({type(exc).__name__}).",
+            }
+            return item
+
+        on_default = [
+            name
+            for name, rows in queues.items()
+            if any(isinstance(row, dict) and row.get("name") == "default" for row in (rows or []))
+        ]
+        listened = sorted({
+            row.get("name")
+            for rows in queues.values()
+            for row in (rows or [])
+            if isinstance(row, dict) and row.get("name")
+        })
+
+        if not tesseract:
+            item = {
+                "code": "ocr",
+                "label": "OCR",
+                "status": "NON DISPONIBLE",
+                "detail": "Binaire Tesseract introuvable dans l'API.",
+            }
+        elif not queues:
+            item = {
+                "code": "ocr",
+                "label": "OCR",
+                "status": "ATTENTION",
+                "detail": "Tesseract présent. Aucun worker ne répond.",
+            }
+        elif not on_default:
+            seen = ", ".join(listened) if listened else "aucune"
+            item = {
+                "code": "ocr",
+                "label": "OCR",
+                "status": "ATTENTION",
+                "detail": f"Worker joignable, mais la file default n'est pas consommée (files vues : {seen}).",
+            }
+        else:
+            count = len(on_default)
+            verb = "répondent" if count > 1 else "répond"
+            noun = "workers" if count > 1 else "worker"
+            item = {
+                "code": "ocr",
+                "label": "OCR",
+                "status": "OK",
+                "detail": f"{count} {noun} {verb} sur la file default. Tesseract présent.",
+            }
+        _OCR_PROBE["at"] = now
+        _OCR_PROBE["item"] = item
+        return item
 
     def _storage_probe(self) -> dict:
         import shutil

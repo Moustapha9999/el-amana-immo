@@ -114,7 +114,7 @@ services:
       redis:
         condition: service_healthy
     entrypoint: ["celery"]
-    command: ["-A", "app.workers.celery_app", "worker", "--loglevel=info"]
+    command: ["-A", "app.workers.celery_app", "worker", "--loglevel=info", "-Q", "default,celery"]
     networks:
       - bea_internal
 
