@@ -28,7 +28,7 @@
           <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>verified</mat-icon></span>
           <span class="bea-ach__kpi-meta">
             <span>Validées</span>
-            <strong>{{ countStatut('VALIDEE') + countStatut('CONSULTATION') + countStatut('COMMANDE') }}</strong>
+            <strong>{{ countStatut('VALIDEE') + countStatut('COMMANDE') }}</strong>
             <em>Pipeline amont</em>
           </span>
         </div>
@@ -50,7 +50,6 @@
           <option value="BROUILLON">Brouillon</option>
           <option value="SOUMISE">Soumise</option>
           <option value="VALIDEE">Validée</option>
-          <option value="CONSULTATION">Consultation</option>
           <option value="COMMANDE">Commandée</option>
           <option value="ANNULEE">Annulée</option>
         </select>
@@ -201,11 +200,6 @@
           <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="go(a.action)">
             {{ a.label }}
           </button>
-        }
-        @if (current()?.consultation_id; as cid) {
-          <a class="bea-ach__btn bea-ach__btn--ghost" [routerLink]="['/achats-appro/consultations', cid]">
-            <mat-icon>forum</mat-icon> Consultation liée
-          </a>
         }
         @if (current()?.bon_id; as bid) {
           <a class="bea-ach__btn bea-ach__btn--ghost" [routerLink]="['/achats-appro/bons', bid]">

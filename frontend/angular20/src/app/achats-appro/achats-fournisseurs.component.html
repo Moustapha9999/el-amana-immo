@@ -254,8 +254,6 @@
       @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
 
       <div class="bea-ach__money">
-        <div class="bea-ach__money-card"><span>Consultations</span><strong>{{ f.nb_consultations ?? 0 }}</strong></div>
-        <div class="bea-ach__money-card"><span>Devis</span><strong>{{ f.nb_devis | quantite }}</strong></div>
         <div class="bea-ach__money-card"><span>BC</span><strong>{{ f.nb_bons | quantite }}</strong></div>
         <div class="bea-ach__money-card"><span>Réceptions</span><strong>{{ f.nb_receptions | quantite }}</strong></div>
         <div class="bea-ach__money-card"><span>Factures</span><strong>{{ f.nb_factures | quantite }}</strong></div>
@@ -320,12 +318,11 @@
         <div class="bea-ach__panel">
           <div class="bea-ach__panel-top"><h2>Historique achats</h2></div>
           <div class="bea-ach__money">
-            <div class="bea-ach__money-card"><span>Devis</span><strong>{{ f.nb_devis | quantite }}</strong></div>
             <div class="bea-ach__money-card"><span>BC TTC</span><strong>{{ f.montant_bons | montant }}</strong></div>
             <div class="bea-ach__money-card"><span>Factures TTC</span><strong>{{ f.montant_factures | montant }}</strong></div>
             <div class="bea-ach__money-card"><span>Paiements</span><strong>{{ f.nb_paiements | quantite }}</strong></div>
           </div>
-          <p class="bea-ach__note">Compteurs issus des données métier réelles (consultations, devis, BC, réceptions, factures).</p>
+          <p class="bea-ach__note">Compteurs issus des données métier réelles (BC, réceptions, factures, paiements).</p>
         </div>
       }
     }

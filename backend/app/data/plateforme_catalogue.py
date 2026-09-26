@@ -205,9 +205,9 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "espace_code": "moyens-generaux",
         "label": "Achats & Approvisionnements",
         "description": (
-            "Cycle d’achat complet : demandes, consultations, devis, comparaisons, "
+            "Cycle d’achat : demandes, fournisseurs, "
             "bons de commande (PDF signataires dynamiques, TVA/TTC via paramètres), "
-            "livraisons, réceptions, factures, paiements, GED et rapports."
+            "réceptions, factures, paiements, GED et rapports."
         ),
         "entry_path": "/achats-appro/dashboard",
         "statut": "actif",
@@ -230,8 +230,11 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "code": "contrats-echeances",
         "espace_code": "moyens-generaux",
         "label": "Contrats & Échéances",
-        "description": "Contrats fournisseurs, échéances, alertes et renouvellements.",
-        "entry_path": "/contrats-echeances/liste",
+        "description": (
+            "Cycle de vie des contrats : fournisseur et agence du référentiel, "
+            "échéances, paiements suivis, alertes, renouvellement, GED et rapports."
+        ),
+        "entry_path": "/contrats-echeances/dashboard",
         "statut": "actif",
         "sort_order": 4,
     },
@@ -239,8 +242,11 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "code": "archives-mg",
         "espace_code": "moyens-generaux",
         "label": "Archives",
-        "description": "Registre documentaire central du département Moyens Généraux.",
-        "entry_path": "/archives-mg/registre",
+        "description": (
+            "Mémoire documentaire MG : registre GED, recherche, dossiers métier, "
+            "corbeille, documents manquants, rapports."
+        ),
+        "entry_path": "/archives-mg/dashboard",
         "statut": "actif",
         "sort_order": 5,
     },
@@ -313,7 +319,7 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("mg.purchase.create", "Création / modification BC, paramètres achats (TVA…)", "achats-appro"),
     ("mg.purchase.approve", "Validation / visas bons de commande", "achats-appro"),
     ("mg.purchase.export", "Exports achats et PDF bon de commande", "achats-appro"),
-    ("mg.purchase.receive", "Réceptions / bons de livraison", "achats-appro"),
+    ("mg.purchase.receive", "Réceptions marchandises", "achats-appro"),
     ("mg.purchase.invoice", "Factures fournisseurs / rapprochement", "achats-appro"),
     ("mg.purchase.pay", "Paiements fournisseurs", "achats-appro"),
     ("mg.purchase.demande", "Demandes d'achat", "achats-appro"),
@@ -331,7 +337,14 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("mg.contrats.manage", "Gestion / alertes contrats", "contrats-echeances"),
     ("mg.contrats.export", "Exports contrats", "contrats-echeances"),
     ("mg.archives.view", "Consultation archives MG", "archives-mg"),
+    ("mg.archives.create", "Ajout / archivage manuel archives MG", "archives-mg"),
+    ("mg.archives.update", "Modification metadonnees archives MG", "archives-mg"),
+    ("mg.archives.download", "Telechargement archives MG", "archives-mg"),
     ("mg.archives.export", "Exports archives MG", "archives-mg"),
+    ("mg.archives.archive", "Archivage automatique / manuel archives MG", "archives-mg"),
+    ("mg.archives.restore", "Restauration corbeille archives MG", "archives-mg"),
+    ("mg.archives.delete", "Purge definitive archives MG", "archives-mg"),
+    ("mg.archives.manage", "Parametres archives MG", "archives-mg"),
 ]
 
 # Rôles figés Login 2 / module Immobilisations (codes courts = legacy).
@@ -475,7 +488,10 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "mg.contrats.export",
     ),
     "contrats-echeances.admin": _MG_CONTRATS_ALL + ("ged.read", "ged.write"),
-    "archives-mg.lecteur": ("mg.archives.view",),
+    "archives-mg.lecteur": (
+        "mg.archives.view",
+        "mg.archives.download",
+    ),
     "archives-mg.admin": _MG_ARCHIVES_ALL + ("ged.read", "ged.write"),
 }
 

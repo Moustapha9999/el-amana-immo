@@ -47,6 +47,7 @@ from app.schemas.mg_achats import (
     RapportSummaryOut,
     ReceptionCreate,
     ReceptionOut,
+    ReceptionUpdate,
     ThreeWayMatchOut,
     TransitionIn,
 )
@@ -1097,6 +1098,20 @@ async def get_reception(
 ):
     svc = MgAchatsService(db)
     return await svc.serialize_reception(await svc.get_reception(reception_id))
+
+
+@router.patch("/receptions/{reception_id}", response_model=ReceptionOut, dependencies=_module)
+async def update_reception(
+    reception_id: UUID,
+    body: ReceptionUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.receive")),
+):
+    svc = MgAchatsService(db)
+    row = await svc.update_reception(reception_id, body, user)
+    await audit_achats(db, user, "update", "mg_achat_reception", row.id, request)
+    return await svc.serialize_reception(row)
 
 
 # --- Factures ---

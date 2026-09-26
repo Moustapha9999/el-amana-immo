@@ -238,3 +238,107 @@ class MgContrat(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     alerte_jours: Mapped[int] = mapped_column(Integer, default=30)
     statut: Mapped[str] = mapped_column(String(30), default="BROUILLON", index=True)
     observation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    agence_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agences.id"), nullable=True, index=True
+    )
+    agence_libelle_snapshot: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    type_contrat: Mapped[str] = mapped_column(String(40), default="AUTRE")
+    numero_contrat: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    date_signature: Mapped[date | None] = mapped_column(Date, nullable=True)
+    devise: Mapped[str] = mapped_column(String(8), default="MRU")
+    montant_ht: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    taux_tva: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
+    responsable_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    responsable_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mode_paiement: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    contrat_precedent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_contrats.id"), nullable=True
+    )
+
+    echeances: Mapped[list["MgContratEcheance"]] = relationship(
+        back_populates="contrat", cascade="all, delete-orphan"
+    )
+    paiements: Mapped[list["MgContratPaiement"]] = relationship(
+        back_populates="contrat", cascade="all, delete-orphan"
+    )
+    historique: Mapped[list["MgContratHistorique"]] = relationship(
+        back_populates="contrat", cascade="all, delete-orphan"
+    )
+
+
+class MgContratEcheance(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "mg_contrat_echeances"
+
+    contrat_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_contrats.id", ondelete="CASCADE"), index=True
+    )
+    type_echeance: Mapped[str] = mapped_column(String(40), default="AUTRE")
+    date_prevue: Mapped[date] = mapped_column(Date)
+    date_reelle: Mapped[date | None] = mapped_column(Date, nullable=True)
+    montant: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    responsable_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    statut: Mapped[str] = mapped_column(String(30), default="A_VENIR")
+    commentaire: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    contrat: Mapped[MgContrat] = relationship(back_populates="echeances")
+
+
+class MgContratPaiement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "mg_contrat_paiements"
+
+    contrat_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_contrats.id", ondelete="CASCADE"), index=True
+    )
+    echeance_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_contrat_echeances.id", ondelete="SET NULL"), nullable=True
+    )
+    reference: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    date_prevue: Mapped[date] = mapped_column(Date)
+    date_reelle: Mapped[date | None] = mapped_column(Date, nullable=True)
+    montant_prevu: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=0)
+    montant_paye: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=0)
+    devise: Mapped[str] = mapped_column(String(8), default="MRU")
+    statut: Mapped[str] = mapped_column(String(30), default="A_VENIR")
+    mode: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    commentaire: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    contrat: Mapped[MgContrat] = relationship(back_populates="paiements")
+
+
+class MgContratHistorique(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "mg_contrat_historique"
+
+    contrat_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_contrats.id", ondelete="CASCADE"), index=True
+    )
+    action: Mapped[str] = mapped_column(String(60))
+    from_statut: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    to_statut: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    user_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    commentaire: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    contrat: Mapped[MgContrat] = relationship(back_populates="historique")
+
+
+class MgContratType(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "mg_contrat_types"
+    __table_args__ = (UniqueConstraint("code", name="uq_mg_contrat_types_code"),)
+
+    code: Mapped[str] = mapped_column(String(40))
+    libelle: Mapped[str] = mapped_column(String(120))
+    actif: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class MgContratParametre(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "mg_contrat_parametres"
+    __table_args__ = (UniqueConstraint("cle", name="uq_mg_contrat_parametres_cle"),)
+
+    cle: Mapped[str] = mapped_column(String(80))
+    valeur: Mapped[str] = mapped_column(String(255), default="")
+    libelle: Mapped[str | None] = mapped_column(String(255), nullable=True)

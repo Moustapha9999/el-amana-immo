@@ -1,10 +1,11 @@
-"""GED plateforme — documents transverses (pas encore branchée aux modules)."""
+﻿"""GED plateforme — documents transverses (espace MG + autres)."""
 
 from __future__ import annotations
 
 import uuid
+from datetime import date, datetime
 
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,7 +17,7 @@ class GedDocument(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     """Fichier CORE : espace + module + entité métier.
 
     Les pièces immo (`pieces_jointes`) et archives Excel/PDF ne sont pas
-    migrées ici. Les modules futurs (Crédit, RH, …) écriront via GedService.
+    migrées ici. Archives MG enrichit les métadonnées pour le registre MG.
     """
 
     __tablename__ = "ged_documents"
@@ -32,3 +33,30 @@ class GedDocument(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     uploaded_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
     )
+
+    # Métadonnées Archives MG (nullable = rétrocompat uploads existants)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    doc_type: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    reference: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    date_document: Mapped[date | None] = mapped_column(Date, nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    agence_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agences.id"), nullable=True, index=True
+    )
+    department_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departements.id"), nullable=True, index=True
+    )
+    fournisseur_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("fournisseurs.id"), nullable=True, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    parent_document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ged_documents.id"), nullable=True, index=True
+    )
+    deleted_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    delete_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)

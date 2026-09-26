@@ -199,12 +199,22 @@ class ContratCreate(BaseModel):
     titre: str = Field(min_length=1, max_length=255)
     fournisseur_id: UUID | None = None
     fournisseur_snapshot: str | None = None
+    agence_id: UUID | None = None
+    type_contrat: str = "AUTRE"
+    numero_contrat: str | None = None
+    description: str | None = None
+    date_signature: date | None = None
     date_debut: date
     date_fin: date | None = None
     montant: Decimal | None = None
+    montant_ht: Decimal | None = None
+    taux_tva: Decimal | None = None
+    devise: str = "MRU"
     periodicite: str = "ANNUEL"
     prochain_echeance: date | None = None
     alerte_jours: int = 30
+    responsable_id: UUID | None = None
+    mode_paiement: str | None = None
     observation: str | None = None
 
 
@@ -212,13 +222,22 @@ class ContratUpdate(BaseModel):
     titre: str | None = None
     fournisseur_id: UUID | None = None
     fournisseur_snapshot: str | None = None
+    agence_id: UUID | None = None
+    type_contrat: str | None = None
+    numero_contrat: str | None = None
+    description: str | None = None
+    date_signature: date | None = None
     date_debut: date | None = None
     date_fin: date | None = None
     montant: Decimal | None = None
+    montant_ht: Decimal | None = None
+    taux_tva: Decimal | None = None
+    devise: str | None = None
     periodicite: str | None = None
     prochain_echeance: date | None = None
     alerte_jours: int | None = None
-    statut: str | None = None
+    responsable_id: UUID | None = None
+    mode_paiement: str | None = None
     observation: str | None = None
 
 
@@ -228,16 +247,101 @@ class ContratOut(BaseModel):
     id: UUID
     reference: str
     titre: str
-    fournisseur_id: UUID | None
-    fournisseur_snapshot: str | None
+    fournisseur_id: UUID | None = None
+    fournisseur_snapshot: str | None = None
+    agence_id: UUID | None = None
+    agence_libelle_snapshot: str | None = None
+    type_contrat: str = "AUTRE"
+    numero_contrat: str | None = None
+    description: str | None = None
+    date_signature: date | None = None
     date_debut: date
-    date_fin: date | None
-    montant: Decimal | None
-    periodicite: str
-    prochain_echeance: date | None
-    alerte_jours: int
+    date_fin: date | None = None
+    montant: Decimal | None = None
+    montant_ht: Decimal | None = None
+    taux_tva: Decimal | None = None
+    devise: str = "MRU"
+    periodicite: str = "ANNUEL"
+    prochain_echeance: date | None = None
+    alerte_jours: int = 30
+    responsable_id: UUID | None = None
+    responsable_nom: str | None = None
+    mode_paiement: str | None = None
+    contrat_precedent_id: UUID | None = None
     statut: str
-    observation: str | None
+    observation: str | None = None
+
+
+class ContratEcheanceIn(BaseModel):
+    type_echeance: str = "AUTRE"
+    date_prevue: date
+    date_reelle: date | None = None
+    montant: Decimal | None = None
+    responsable_nom: str | None = None
+    commentaire: str | None = None
+    statut: str | None = None
+
+
+class ContratEcheanceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    type_echeance: str
+    date_prevue: date
+    date_reelle: date | None = None
+    montant: Decimal | None = None
+    responsable_nom: str | None = None
+    statut: str
+    commentaire: str | None = None
+
+
+class ContratPaiementIn(BaseModel):
+    reference: str | None = None
+    date_prevue: date
+    date_reelle: date | None = None
+    montant_prevu: Decimal = Decimal("0")
+    montant_paye: Decimal = Decimal("0")
+    mode: str | None = None
+    commentaire: str | None = None
+    echeance_id: UUID | None = None
+
+
+class ContratPaiementOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    reference: str | None = None
+    date_prevue: date
+    date_reelle: date | None = None
+    montant_prevu: Decimal
+    montant_paye: Decimal
+    devise: str
+    statut: str
+    mode: str | None = None
+    commentaire: str | None = None
+
+
+class ContratHistoriqueOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    action: str
+    from_statut: str | None = None
+    to_statut: str | None = None
+    user_nom: str | None = None
+    commentaire: str | None = None
+    created_at: datetime
+
+
+class ContratDetail(ContratOut):
+    echeances: list[ContratEcheanceOut] = []
+    paiements: list[ContratPaiementOut] = []
+    historique: list[ContratHistoriqueOut] = []
+
+
+class ContratTransitionIn(BaseModel):
+    action: str
+    commentaire: str | None = None
 
 
 class ArchiveDocOut(BaseModel):

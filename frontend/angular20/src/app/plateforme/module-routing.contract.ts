@@ -113,14 +113,14 @@ export const MODULE_ROUTE_CONTRACTS: Readonly<Record<string, ModuleRouteContract
   'contrats-echeances': {
     code: 'contrats-echeances',
     strategy: 'prefixed',
-    entryPath: '/contrats-echeances/liste',
+    entryPath: '/contrats-echeances/dashboard',
     espacePath: '/moyens-generaux',
     urlPrefix: '/contrats-echeances',
   },
   'archives-mg': {
     code: 'archives-mg',
     strategy: 'prefixed',
-    entryPath: '/archives-mg/registre',
+    entryPath: '/archives-mg/dashboard',
     espacePath: '/moyens-generaux',
     urlPrefix: '/archives-mg',
   },

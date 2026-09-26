@@ -101,34 +101,7 @@ interface Parametre {
               <em>À traiter</em>
             </span>
           </a>
-          <a class="bea-ach__kpi" routerLink="/achats-appro/consultations" style="--i:1">
-            <span class="bea-ach__kpi-icon" data-tone="blue"><mat-icon>forum</mat-icon></span>
-            <span class="bea-ach__kpi-meta">
-              <span>Consultations</span>
-              <strong>{{ dash.consultations_ouvertes | quantite }}</strong>
-              <em>En cours</em>
-            </span>
-          </a>
-          <a class="bea-ach__kpi" routerLink="/achats-appro/devis" style="--i:2">
-            <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>request_quote</mat-icon></span>
-            <span class="bea-ach__kpi-meta">
-              <span>Devis</span>
-              <strong>{{ dash.devis_ouverts | quantite }}</strong>
-              <em>À analyser</em>
-            </span>
-          </a>
-          <a class="bea-ach__kpi" routerLink="/achats-appro/comparaisons" style="--i:3">
-            <span class="bea-ach__kpi-icon" data-tone="warn"><mat-icon>compare_arrows</mat-icon></span>
-            <span class="bea-ach__kpi-meta">
-              <span>Comparaisons</span>
-              <strong>{{ dash.comparaisons_ouvertes | quantite }}</strong>
-              <em>En cours</em>
-            </span>
-          </a>
-        </div>
-
-        <div class="bea-ach__kpis">
-          <a class="bea-ach__kpi" routerLink="/achats-appro/bons" style="--i:0">
+          <a class="bea-ach__kpi" routerLink="/achats-appro/bons" style="--i:1">
             <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>receipt_long</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>BC en cours</span>
@@ -139,7 +112,7 @@ interface Parametre {
           <a
             class="bea-ach__kpi"
             routerLink="/achats-appro/bons"
-            style="--i:1"
+            style="--i:2"
             [attr.data-active]="dash.bons_partiels > 0 ? 'warn' : null"
           >
             <span class="bea-ach__kpi-icon" data-tone="warn"><mat-icon>pending_actions</mat-icon></span>
@@ -149,15 +122,18 @@ interface Parametre {
               <em>Réception incomplète</em>
             </span>
           </a>
-          <a class="bea-ach__kpi" routerLink="/achats-appro/receptions" style="--i:2">
-            <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>local_shipping</mat-icon></span>
+          <a class="bea-ach__kpi" routerLink="/achats-appro/receptions" style="--i:3">
+            <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>inventory</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>Réceptions</span>
               <strong>{{ dash.receptions_mois | quantite }}</strong>
               <em>Ce mois</em>
             </span>
           </a>
-          <a class="bea-ach__kpi" routerLink="/achats-appro/factures" style="--i:3">
+        </div>
+
+        <div class="bea-ach__kpis">
+          <a class="bea-ach__kpi" routerLink="/achats-appro/factures" style="--i:0">
             <span class="bea-ach__kpi-icon" data-tone="blue"><mat-icon>receipt</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>Factures ouvertes</span>
@@ -165,10 +141,7 @@ interface Parametre {
               <em>Contrôle 3 voies</em>
             </span>
           </a>
-        </div>
-
-        <div class="bea-ach__kpis bea-ach__kpis--3">
-          <a class="bea-ach__kpi" routerLink="/achats-appro/paiements" style="--i:0">
+          <a class="bea-ach__kpi" routerLink="/achats-appro/paiements" style="--i:1">
             <span class="bea-ach__kpi-icon" data-tone="navy"><mat-icon>payments</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>À payer</span>
@@ -179,7 +152,7 @@ interface Parametre {
           <a
             class="bea-ach__kpi"
             routerLink="/achats-appro/alertes"
-            style="--i:1"
+            style="--i:2"
             [attr.data-active]="dash.alertes > 0 ? 'danger' : null"
           >
             <span class="bea-ach__kpi-icon" data-tone="danger"><mat-icon>notifications_active</mat-icon></span>
@@ -189,7 +162,7 @@ interface Parametre {
               <em>Échéances / retards</em>
             </span>
           </a>
-          <a class="bea-ach__kpi" routerLink="/achats-appro/rapports" style="--i:2">
+          <a class="bea-ach__kpi" routerLink="/achats-appro/rapports" style="--i:3">
             <span class="bea-ach__kpi-icon" data-tone="blue"><mat-icon>analytics</mat-icon></span>
             <span class="bea-ach__kpi-meta">
               <span>Rapports</span>
@@ -418,8 +391,6 @@ export class AchatsAlertesComponent implements OnInit {
       FACTURE_ECHEANCE: 'Facture',
       PAIEMENT_ECHEANCE: 'Paiement',
       LIVRAISON_PREVUE: 'Livraison BC',
-      DEVIS_VALIDITE: 'Devis',
-      CONSULTATION_LIMITE: 'Consultation',
       FACTURE_3WM: 'Contrôle 3 voies',
     };
     return map[type] ?? type;
@@ -431,8 +402,6 @@ export class AchatsAlertesComponent implements OnInit {
     }
     if (a.type === 'PAIEMENT_ECHEANCE') return `/achats-appro/paiements/${a.entity_id}`;
     if (a.type === 'LIVRAISON_PREVUE') return `/achats-appro/bons/${a.entity_id}`;
-    if (a.type === 'DEVIS_VALIDITE') return `/achats-appro/devis/${a.entity_id}`;
-    if (a.type === 'CONSULTATION_LIMITE') return `/achats-appro/consultations/${a.entity_id}`;
     return '/achats-appro/alertes';
   }
 

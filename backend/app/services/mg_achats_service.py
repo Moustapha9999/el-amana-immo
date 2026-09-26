@@ -53,6 +53,7 @@ from app.schemas.mg_achats import (
     BlOut,
     ReceptionCreate,
     ReceptionOut,
+    ReceptionUpdate,
     ThreeWayMatchOut,
 )
 from app.schemas.mg_ops import BonCreate, BonUpdate
@@ -79,8 +80,26 @@ BC_TRANSITIONS = {
     "annuler": (None, "ANNULEE"),
 }
 
-BC_STATUTS_BL = {"VALIDE", "ENVOYE", "PARTIEL", "RECU"}
-BC_STATUTS_RECEPTION = {"VALIDE", "ENVOYE", "PARTIEL"}
+BC_STATUTS_BL = {
+    "BROUILLON",
+    "SOUMIS",
+    "VISA_MG",
+    "VISA_DR",
+    "VALIDE",
+    "ENVOYE",
+    "PARTIEL",
+    "RECU",
+}
+BC_STATUTS_RECEPTION = {
+    "BROUILLON",
+    "SOUMIS",
+    "VISA_MG",
+    "VISA_DR",
+    "VALIDE",
+    "ENVOYE",
+    "PARTIEL",
+    "RECU",
+}
 
 CONSULTATION_TRANSITIONS = {
     "ouvrir": ("BROUILLON", "OUVERTE"),
@@ -349,50 +368,6 @@ class MgAchatsService:
                     "message": f"BC {b.reference} livraison prévue {b.date_livraison_prevue}",
                     "date_echeance": b.date_livraison_prevue,
                     "priorite": "NORMAL",
-                }
-            )
-
-        devis = (
-            await self.db.execute(
-                select(MgAchatDevis).where(
-                    MgAchatDevis.deleted_at.is_(None),
-                    MgAchatDevis.date_validite.is_not(None),
-                    MgAchatDevis.date_validite <= horizon,
-                    MgAchatDevis.statut == "RECU",
-                )
-            )
-        ).scalars().all()
-        for d in devis:
-            out.append(
-                {
-                    "type": "DEVIS_VALIDITE",
-                    "reference": d.reference,
-                    "entity_id": d.id,
-                    "message": f"Devis {d.reference} expire le {d.date_validite}",
-                    "date_echeance": d.date_validite,
-                    "priorite": "URGENT" if d.date_validite and d.date_validite <= date.today() else "NORMAL",
-                }
-            )
-
-        consultations = (
-            await self.db.execute(
-                select(MgAchatConsultation).where(
-                    MgAchatConsultation.deleted_at.is_(None),
-                    MgAchatConsultation.date_limite.is_not(None),
-                    MgAchatConsultation.date_limite <= horizon,
-                    MgAchatConsultation.statut.in_(["BROUILLON", "OUVERTE", "EN_COURS"]),
-                )
-            )
-        ).scalars().all()
-        for cons in consultations:
-            out.append(
-                {
-                    "type": "CONSULTATION_LIMITE",
-                    "reference": cons.reference,
-                    "entity_id": cons.id,
-                    "message": f"Consultation {cons.reference} limite {cons.date_limite}",
-                    "date_echeance": cons.date_limite,
-                    "priorite": "URGENT" if cons.date_limite and cons.date_limite <= date.today() else "NORMAL",
                 }
             )
 
@@ -914,18 +889,6 @@ class MgAchatsService:
 
     async def soft_delete_fournisseur(self, fournisseur_id: uuid.UUID, user: User) -> Fournisseur:
         fr = await self.get_fournisseur(fournisseur_id)
-        usage = await self.count_fournisseur_usage(fournisseur_id)
-        total = sum(usage.values())
-        if total > 0:
-            details = ", ".join(f"{k}={v}" for k, v in usage.items() if v)
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "Ce fournisseur est utilisé dans des données métier existantes. "
-                    "La suppression est impossible. Veuillez le désactiver. "
-                    f"({details})"
-                ),
-            )
         fr.is_active = False
         fr.deleted_at = datetime.now(timezone.utc)
         fr.updated_by = user.id
@@ -1061,11 +1024,6 @@ class MgAchatsService:
         self, demande_id: uuid.UUID, data: DemandeUpdate, user: User
     ) -> MgAchatDemande:
         demande = await self.get_demande(demande_id)
-        if demande.statut != "BROUILLON":
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail="Seules les demandes en brouillon peuvent être modifiées",
-            )
         if data.agence_id is not None:
             ag = await self.db.get(Agence, data.agence_id)
             if not ag or getattr(ag, "deleted_at", None) is not None or not ag.is_active:
@@ -1102,20 +1060,6 @@ class MgAchatsService:
 
     async def delete_demande(self, demande_id: uuid.UUID, user: User) -> MgAchatDemande:
         demande = await self.get_demande(demande_id)
-        links = await self._demande_links(demande_id)
-        if links["consultation_id"] or links["bon_id"]:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "Cette demande est liée à une consultation ou un bon de commande. "
-                    "La suppression est impossible. Veuillez l’annuler."
-                ),
-            )
-        if demande.statut not in {"BROUILLON", "ANNULEE", "REJETEE"}:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail="Seules les demandes brouillon / annulées / rejetées peuvent être supprimées",
-            )
         demande.is_active = False
         demande.deleted_at = datetime.now(timezone.utc)
         await self._append_event("demande", demande.id, "delete", demande.reference, user)
@@ -1340,11 +1284,6 @@ class MgAchatsService:
         self, consultation_id: uuid.UUID, data: ConsultationUpdate, user: User
     ) -> MgAchatConsultation:
         row = await self.get_consultation(consultation_id)
-        if row.statut not in {"BROUILLON", "OUVERTE"}:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail="Consultation non modifiable dans cet état",
-            )
         if data.agence_id is not None:
             ag = await self.db.get(Agence, data.agence_id)
             if not ag or getattr(ag, "deleted_at", None) is not None or not ag.is_active:
@@ -1398,37 +1337,6 @@ class MgAchatsService:
         self, consultation_id: uuid.UUID, user: User
     ) -> MgAchatConsultation:
         row = await self.get_consultation(consultation_id)
-        nb_devis = int(
-            await self.db.scalar(
-                select(func.count()).select_from(MgAchatDevis).where(
-                    MgAchatDevis.consultation_id == consultation_id,
-                    MgAchatDevis.deleted_at.is_(None),
-                )
-            )
-            or 0
-        )
-        nb_cmp = int(
-            await self.db.scalar(
-                select(func.count()).select_from(MgAchatComparaison).where(
-                    MgAchatComparaison.consultation_id == consultation_id,
-                    MgAchatComparaison.deleted_at.is_(None),
-                )
-            )
-            or 0
-        )
-        if nb_devis or nb_cmp:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "Cette consultation est liée à des devis ou comparaisons. "
-                    "La suppression est impossible. Veuillez l’annuler."
-                ),
-            )
-        if row.statut not in {"BROUILLON", "ANNULEE"}:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail="Seules les consultations brouillon ou annulées peuvent être supprimées",
-            )
         row.is_active = False
         row.deleted_at = datetime.now(timezone.utc)
         await self._append_event("consultation", row.id, "delete", row.reference, user)
@@ -1583,12 +1491,6 @@ class MgAchatsService:
 
     async def update_devis(self, devis_id: uuid.UUID, data: DevisUpdate) -> MgAchatDevis:
         row = await self.get_devis(devis_id)
-        locked = {"RETENU", "REJETE", "ANNULE"}
-        if row.statut in locked:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail="Ce devis ne peut plus être modifié (statut final)",
-            )
         if data.lignes is not None and not data.lignes:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
@@ -1685,8 +1587,6 @@ class MgAchatsService:
         self, comparaison_id: uuid.UUID, data: ComparaisonValidateIn, user: User
     ) -> MgAchatComparaison:
         row = await self.get_comparaison(comparaison_id)
-        if row.statut not in {"BROUILLON", "EN_COURS"}:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Comparaison déjà validée")
         devis_list = await self.list_devis(consultation_id=row.consultation_id)
         if not any(d.fournisseur_id == data.fournisseur_retenu_id for d in devis_list):
             raise HTTPException(
@@ -2165,6 +2065,22 @@ class MgAchatsService:
         await self.db.commit()
         return await self.get_reception(reception.id)
 
+    async def update_reception(
+        self, reception_id: uuid.UUID, data: ReceptionUpdate, user: User
+    ) -> MgAchatReception:
+        row = await self.get_reception(reception_id)
+        if data.date_reception is not None:
+            row.date_reception = data.date_reception
+        if data.agence_id is not None:
+            row.agence_id = data.agence_id
+        if data.observation is not None:
+            row.observation = data.observation
+        if data.statut is not None:
+            row.statut = data.statut.strip().upper()
+        await self._append_event("reception", row.id, "update", row.reference, user)
+        await self.db.commit()
+        return await self.get_reception(row.id)
+
     # --- Factures / 3-way match ---
 
     async def list_factures(self, *, bon_id: uuid.UUID | None = None) -> list[MgAchatFacture]:
@@ -2434,11 +2350,6 @@ class MgAchatsService:
         if getter is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Type inconnu")
         row = await getter(entity_id)
-        if kind == "devis" and getattr(row, "statut", None) == "RETENU":
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail="Un devis retenu ne peut pas être supprimé",
-            )
         row.deleted_at = datetime.now(timezone.utc)
         ref = getattr(row, "reference", None) or str(entity_id)
         await self._append_event(kind, row.id, "delete", ref, user)

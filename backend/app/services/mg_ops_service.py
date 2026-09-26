@@ -367,10 +367,9 @@ class MgOpsService:
             "periodicite",
             "prochain_echeance",
             "alerte_jours",
-            "statut",
             "observation",
         ):
-            val = getattr(data, field)
+            val = getattr(data, field, None)
             if val is not None:
                 setattr(c, field, val)
         await self.db.commit()

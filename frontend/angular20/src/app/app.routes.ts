@@ -49,13 +49,9 @@ import {
   StockSortiesComponent,
 } from './stock-fournitures/stock-pages.component';
 import { AchatsBonsComponent } from './achats-appro/achats-bons.component';
-import { AchatsConsultationsComponent } from './achats-appro/achats-consultations.component';
 import { AchatsDemandesComponent } from './achats-appro/achats-demandes.component';
 import { AchatsFournisseursComponent } from './achats-appro/achats-fournisseurs.component';
-import { AchatsDevisComponent } from './achats-appro/achats-devis.component';
-import { AchatsComparaisonsComponent } from './achats-appro/achats-comparaisons.component';
 import { AchatsFacturesComponent } from './achats-appro/achats-factures.component';
-import { AchatsLivraisonsComponent } from './achats-appro/achats-livraisons.component';
 import { AchatsPaiementsComponent } from './achats-appro/achats-paiements.component';
 import { AchatsReceptionsComponent } from './achats-appro/achats-receptions.component';
 import { AchatsRapportsComponent } from './achats-appro/achats-rapports.component';
@@ -69,8 +65,15 @@ import { NotesListComponent } from './notes-frais/notes-list.component';
 import { NotesDashboardComponent } from './notes-frais/notes-dashboard.component';
 import { NotesRapportsComponent } from './notes-frais/notes-rapports.component';
 import { NotesParametresComponent } from './notes-frais/notes-parametres.component';
+import { ContratsDashboardComponent } from './contrats-echeances/contrats-dashboard.component';
 import { ContratsListComponent } from './contrats-echeances/contrats-list.component';
+import { ContratsParametresComponent } from './contrats-echeances/contrats-parametres.component';
+import { ContratsRapportsComponent } from './contrats-echeances/contrats-rapports.component';
 import { ArchivesRegistreComponent } from './archives-mg/archives-registre.component';
+import { ArchivesDashboardComponent } from './archives-mg/archives-dashboard.component';
+import { ArchivesDocumentsComponent } from './archives-mg/archives-documents.component';
+import { ArchivesMissingComponent } from './archives-mg/archives-missing.component';
+import { ArchivesDossierComponent } from './archives-mg/archives-dossier.component';
 
 /**
  * Contrat de routes (voir plateforme/module-routing.contract.ts) :
@@ -120,21 +123,9 @@ export const routes: Routes = [
       { path: 'fournisseurs', component: AchatsFournisseursComponent },
       { path: 'fournisseurs/nouveau', component: AchatsFournisseursComponent },
       { path: 'fournisseurs/:id', component: AchatsFournisseursComponent },
-      { path: 'consultations', component: AchatsConsultationsComponent },
-      { path: 'consultations/nouvelle', component: AchatsConsultationsComponent },
-      { path: 'consultations/:id', component: AchatsConsultationsComponent },
-      { path: 'devis', component: AchatsDevisComponent },
-      { path: 'devis/nouveau', component: AchatsDevisComponent },
-      { path: 'devis/:id', component: AchatsDevisComponent },
-      { path: 'comparaisons', component: AchatsComparaisonsComponent },
-      { path: 'comparaisons/nouvelle', component: AchatsComparaisonsComponent },
-      { path: 'comparaisons/:id', component: AchatsComparaisonsComponent },
       { path: 'bons', component: AchatsBonsComponent },
       { path: 'nouveau', component: AchatsBonsComponent },
       { path: 'bons/:id', component: AchatsBonsComponent },
-      { path: 'livraisons', component: AchatsLivraisonsComponent },
-      { path: 'livraisons/nouvelle', component: AchatsLivraisonsComponent },
-      { path: 'livraisons/:id', component: AchatsLivraisonsComponent },
       { path: 'receptions', component: AchatsReceptionsComponent },
       { path: 'receptions/nouvelle', component: AchatsReceptionsComponent },
       { path: 'receptions/:id', component: AchatsReceptionsComponent },
@@ -168,10 +159,16 @@ export const routes: Routes = [
     component: ShellComponent,
     canActivate: [authGuard, moduleGuard('contrats-echeances')],
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'liste' },
+      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      { path: 'dashboard', component: ContratsDashboardComponent },
       { path: 'liste', component: ContratsListComponent },
       { path: 'alertes', component: ContratsListComponent },
+      { path: 'echeances', component: ContratsListComponent },
+      { path: 'paiements', component: ContratsListComponent },
+      { path: 'renouvellements', component: ContratsListComponent },
       { path: 'nouveau', component: ContratsListComponent },
+      { path: 'rapports', component: ContratsRapportsComponent },
+      { path: 'parametres', component: ContratsParametresComponent },
       { path: ':id', component: ContratsListComponent },
     ],
   },
@@ -180,7 +177,14 @@ export const routes: Routes = [
     component: ShellComponent,
     canActivate: [authGuard, moduleGuard('archives-mg')],
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'registre' },
+      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      { path: 'dashboard', component: ArchivesDashboardComponent },
+      { path: 'documents', component: ArchivesDocumentsComponent },
+      { path: 'documents/:id', component: ArchivesDocumentsComponent },
+      { path: 'recherche', component: ArchivesDocumentsComponent },
+      { path: 'manquants', component: ArchivesMissingComponent },
+      { path: 'corbeille', component: ArchivesDocumentsComponent },
+      { path: 'dossiers/:module/:type/:id', component: ArchivesDossierComponent },
       { path: 'registre', component: ArchivesRegistreComponent },
     ],
   },
