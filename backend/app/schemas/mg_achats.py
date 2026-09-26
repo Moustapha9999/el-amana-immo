@@ -39,6 +39,7 @@ __all__ = [
     "ReceptionLigneIn",
     "ReceptionLigneOut",
     "ReceptionCreate",
+    "ReceptionUpdate",
     "ReceptionOut",
     "FactureLigneIn",
     "FactureLigneOut",
@@ -355,6 +356,13 @@ class ReceptionCreate(BaseModel):
     agence_id: UUID | None = None
     observation: str | None = None
     lignes: list[ReceptionLigneIn] = Field(min_length=1)
+
+
+class ReceptionUpdate(BaseModel):
+    date_reception: date | None = None
+    agence_id: UUID | None = None
+    observation: str | None = None
+    statut: str | None = None
 
 
 class ReceptionOut(BaseModel):

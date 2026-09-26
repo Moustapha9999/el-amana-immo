@@ -37,12 +37,6 @@ interface BonDetail {
   lignes: BcLigne[];
 }
 
-interface BlOpt {
-  id: string;
-  reference: string;
-  bon_id: string;
-}
-
 export interface ReceptionLigne {
   id: string;
   bc_ligne_id: string;
@@ -54,7 +48,6 @@ export interface ReceptionRow {
   reference: string;
   bon_id: string;
   bon_reference?: string | null;
-  bl_id?: string | null;
   date_reception: string;
   agence_id?: string | null;
   statut: string;
@@ -81,7 +74,6 @@ export class AchatsReceptionsComponent implements OnInit {
   readonly current = signal<ReceptionRow | null>(null);
   readonly agences = signal<Agence[]>([]);
   readonly bons = signal<BonOpt[]>([]);
-  readonly bls = signal<BlOpt[]>([]);
   readonly bonDetail = signal<BonDetail | null>(null);
   readonly erreur = signal('');
   readonly msg = signal('');
@@ -94,7 +86,6 @@ export class AchatsReceptionsComponent implements OnInit {
   readonly filters = this.fb.nonNullable.group({ q: '' });
   readonly form = this.fb.nonNullable.group({
     bon_id: ['', Validators.required],
-    bl_id: [''],
     date_reception: [new Date().toISOString().slice(0, 10), Validators.required],
     agence_id: [''],
     observation: [''],
@@ -128,9 +119,6 @@ export class AchatsReceptionsComponent implements OnInit {
         this.bons.set(
           r.items.filter((b) => ['ENVOYE', 'PARTIEL', 'VALIDE', 'RECU'].includes(b.statut)),
         ),
-    });
-    this.api.get<BlOpt[]>('/mg/achats/livraisons').subscribe({
-      next: (r) => this.bls.set(r),
     });
     this.form.controls.bon_id.valueChanges.subscribe((bonId) => {
       if (this.isFiche()) return;
@@ -182,10 +170,6 @@ export class AchatsReceptionsComponent implements OnInit {
     });
   }
 
-  blsForBon(bonId: string): BlOpt[] {
-    return this.bls().filter((b) => b.bon_id === bonId);
-  }
-
   loadList(): void {
     this.api.get<ReceptionRow[]>('/mg/achats/receptions').subscribe({
       next: (r) => this.rows.set(r),
@@ -199,7 +183,6 @@ export class AchatsReceptionsComponent implements OnInit {
         this.current.set(rec);
         this.form.patchValue({
           bon_id: rec.bon_id,
-          bl_id: rec.bl_id ?? '',
           date_reception: rec.date_reception,
           agence_id: rec.agence_id ?? '',
           observation: rec.observation ?? '',
@@ -258,14 +241,40 @@ export class AchatsReceptionsComponent implements OnInit {
   }
 
   save(): void {
+    this.erreur.set('');
+    const v = this.form.getRawValue();
+    if (this.id()) {
+      if (!v.date_reception) {
+        this.form.markAllAsTouched();
+        this.erreur.set('Date de réception obligatoire.');
+        return;
+      }
+      this.saving.set(true);
+      this.api
+        .patch<ReceptionRow>(`/mg/achats/receptions/${this.id()}`, {
+          date_reception: v.date_reception,
+          agence_id: v.agence_id || null,
+          observation: v.observation.trim() || null,
+        })
+        .subscribe({
+          next: (rec) => {
+            this.saving.set(false);
+            this.current.set(rec);
+            this.msg.set('Réception mise à jour.');
+          },
+          error: (err) => {
+            this.saving.set(false);
+            this.erreur.set(this.apiDetail(err, 'Mise à jour refusée.'));
+          },
+        });
+      return;
+    }
     if (this.form.invalid || !this.lignes.length) {
       this.form.markAllAsTouched();
       this.erreur.set('Sélectionnez un BC et saisissez au moins une quantité reçue.');
       return;
     }
     this.saving.set(true);
-    this.erreur.set('');
-    const v = this.form.getRawValue();
     const lignesPayload = this.lignes.controls
       .map((ctrl) => {
         const g = ctrl.getRawValue() as {
@@ -285,7 +294,6 @@ export class AchatsReceptionsComponent implements OnInit {
     }
     const body = {
       bon_id: v.bon_id,
-      bl_id: v.bl_id || null,
       date_reception: v.date_reception,
       agence_id: v.agence_id || null,
       observation: v.observation.trim() || null,

@@ -112,17 +112,14 @@ export class AchatsDemandesComponent implements OnInit {
         { action: 'valider', label: 'Valider' },
         { action: 'rejeter', label: 'Rejeter' },
       ],
-      VALIDEE: [
-        { action: 'lancer_consultation', label: 'Lancer consultation' },
-        { action: 'commander', label: 'Transformer en BC' },
-      ],
+      VALIDEE: [{ action: 'commander', label: 'Transformer en BC' }],
       CONSULTATION: [{ action: 'commander', label: 'Transformer en BC' }],
       COMMANDE: [{ action: 'cloturer', label: 'Clôturer' }],
     };
     return s ? map[s] ?? [] : [];
   });
 
-  readonly canEditForm = computed(() => !this.id() || this.current()?.statut === 'BROUILLON');
+  readonly canEditForm = computed(() => true);
 
   get lignes(): FormArray {
     return this.form.get('lignes') as FormArray;
@@ -219,12 +216,12 @@ export class AchatsDemandesComponent implements OnInit {
     return this.rows().filter((r) => r.statut === statut).length;
   }
 
-  canEdit(r: DemandeRow): boolean {
-    return r.statut === 'BROUILLON';
+  canEdit(_r: DemandeRow): boolean {
+    return true;
   }
 
-  canCancel(r: DemandeRow): boolean {
-    return !['ANNULEE', 'REJETEE', 'CLOTUREE'].includes(r.statut);
+  canCancel(_r: DemandeRow): boolean {
+    return true;
   }
 
   edit(r: DemandeRow): void {
@@ -311,10 +308,6 @@ export class AchatsDemandesComponent implements OnInit {
       next: (d) => {
         this.current.set(d);
         this.msg.set(`Transition effectuée → ${d.statut}`);
-        if (action === 'lancer_consultation' && d.consultation_id) {
-          void this.router.navigateByUrl(`/achats-appro/consultations/${d.consultation_id}`);
-          return;
-        }
         if (action === 'commander' && d.bon_id) {
           void this.router.navigateByUrl(`/achats-appro/bons/${d.bon_id}`);
           return;

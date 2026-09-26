@@ -71,6 +71,7 @@ async def test_demande_transition_brouillon_to_soumise():
     db = MagicMock()
     svc = MgAchatsService(db)
     dem = _demande(statut="BROUILLON")
+    dem.lignes = [SimpleNamespace(id=uuid4(), description="Article")]
     svc.get_demande = AsyncMock(return_value=dem)
     svc._append_event = AsyncMock()
     db.commit = AsyncMock()

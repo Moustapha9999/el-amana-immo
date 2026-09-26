@@ -85,7 +85,7 @@ export class AchatsPaiementsComponent implements OnInit {
 
   readonly total = computed(() => this.rows().reduce((n, r) => n + Number(r.montant || 0), 0));
   readonly pending = computed(() => this.rows().filter((r) => r.statut !== 'PAYE').length);
-  readonly canEditForm = computed(() => !this.id() || this.current()?.statut !== 'ANNULE');
+  readonly canEditForm = computed(() => true);
 
   ngOnInit(): void {
     this.api.get<FactureOpt[]>('/mg/achats/factures').subscribe({

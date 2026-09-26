@@ -133,7 +133,14 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
     "contrats-echeances": make_module_scope(
         label="Contrats & Échéances",
         uploads_subdir="contrats-echeances",
-        exclusive_tables=["mg_contrats"],
+        exclusive_tables=[
+            "mg_contrats",
+            "mg_contrat_echeances",
+            "mg_contrat_paiements",
+            "mg_contrat_historique",
+            "mg_contrat_types",
+            "mg_contrat_parametres",
+        ],
     ),
     "archives-mg": make_module_scope(
         label="Archives MG",

@@ -126,16 +126,6 @@
             }
           </select>
         </label>
-        @if (form.controls.bon_id.value) {
-          <label>BL (optionnel)
-            <select formControlName="bl_id">
-              <option value="">— Aucun —</option>
-              @for (bl of blsForBon(form.controls.bon_id.value); track bl.id) {
-                <option [value]="bl.id">{{ bl.reference }}</option>
-              }
-            </select>
-          </label>
-        }
         <label>Date réception *<input type="date" formControlName="date_reception" /></label>
         <label>Agence
           <select formControlName="agence_id">
@@ -169,11 +159,14 @@
       }
 
       <div class="bea-ach__form-actions">
-        @if (!isFiche()) {
-          <button type="submit" class="bea-ach__btn" [disabled]="saving() || !lignes.length">
-            <mat-icon>inventory</mat-icon> {{ saving() ? 'Enregistrement…' : 'Réceptionner' }}
-          </button>
-        }
+        <button
+          type="submit"
+          class="bea-ach__btn"
+          [disabled]="saving() || (!isFiche() && !lignes.length)"
+        >
+          <mat-icon>{{ isFiche() ? 'save' : 'inventory' }}</mat-icon>
+          {{ saving() ? 'Enregistrement…' : isFiche() ? 'Enregistrer' : 'Réceptionner' }}
+        </button>
         @if (current()?.bon_id; as bid) {
           <a class="bea-ach__btn bea-ach__btn--ghost" [routerLink]="['/achats-appro/bons', bid]">
             <mat-icon>receipt_long</mat-icon> Voir le BC

@@ -119,7 +119,7 @@ export class AchatsFacturesComponent implements OnInit {
 
   readonly total = computed(() => this.rows().reduce((n, r) => n + Number(r.montant_ttc || 0), 0));
   readonly ecarts = computed(() => this.rows().filter((r) => r.ecart_quantite || r.ecart_montant).length);
-  readonly canEditForm = computed(() => !this.id() || !['ANNULE', 'PAYEE'].includes(this.current()?.statut ?? ''));
+  readonly canEditForm = computed(() => true);
 
   get lignes(): FormArray {
     return this.form.get('lignes') as FormArray;
