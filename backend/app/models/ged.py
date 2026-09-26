@@ -1,4 +1,4 @@
-﻿"""GED plateforme — documents transverses (espace MG + autres)."""
+"""GED plateforme — documents transverses (espace MG + autres)."""
 
 from __future__ import annotations
 
@@ -6,18 +6,22 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.models.mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
+
+OCR_STATUSES = ("pending", "processing", "done", "failed")
+SECURITY_LEVELS = ("public", "internal", "confidential", "restricted")
 
 
 class GedDocument(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     """Fichier CORE : espace + module + entité métier.
 
     Les pièces immo (`pieces_jointes`) et archives Excel/PDF ne sont pas
-    migrées ici. Archives MG enrichit les métadonnées pour le registre MG.
+    migrées ici. Document Service + Archives départementales enrichissent
+    les métadonnées et l'OCR sur cette table unique.
     """
 
     __tablename__ = "ged_documents"
@@ -34,7 +38,7 @@ class GedDocument(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
     )
 
-    # Métadonnées Archives MG (nullable = rétrocompat uploads existants)
+    # Métadonnées Archives (nullable = rétrocompat uploads existants)
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     doc_type: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
@@ -60,3 +64,15 @@ class GedDocument(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     delete_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Document Service — OCR + confidentialité
+    ocr_status: Mapped[str] = mapped_column(
+        String(20), default="pending", nullable=False, index=True
+    )
+    ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ocr_text_search: Mapped[str | None] = mapped_column(TSVECTOR(), nullable=True)
+    ocr_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ocr_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    security_level: Mapped[str] = mapped_column(
+        String(40), default="internal", nullable=False, index=True
+    )

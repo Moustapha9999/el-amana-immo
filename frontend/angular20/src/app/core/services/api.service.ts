@@ -8,8 +8,10 @@ export class ApiService {
   private readonly http = inject(HttpClient);
   readonly baseUrl = environment.apiUrl;
 
-  get<T>(path: string, params?: Record<string, string | number>): Observable<T> {
-    return this.http.get<T>(`${this.baseUrl}${path}`, { params: params as Record<string, string> });
+  get<T>(path: string, params?: Record<string, string | number | boolean>): Observable<T> {
+    return this.http.get<T>(`${this.baseUrl}${path}`, {
+      params: params as Record<string, string>,
+    });
   }
 
   post<T>(path: string, body: unknown): Observable<T> {

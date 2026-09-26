@@ -29,7 +29,7 @@ DEFAULT_MODULE_CODE = "immobilisations"
 
 # Toujours (re)créés s’ils manquent. Le reste du catalogue = seed **bootstrap**
 # seulement (CORE ADMIN peut supprimer sans resurrection au refresh).
-SEED_LOCKED_ESPACE_CODES = frozenset({DEFAULT_ESPACE_CODE, "moyens-generaux"})
+SEED_LOCKED_ESPACE_CODES = frozenset({DEFAULT_ESPACE_CODE, "moyens-generaux", "archives"})
 SEED_LOCKED_MODULE_CODES = frozenset(
     {
         DEFAULT_MODULE_CODE,
@@ -38,6 +38,7 @@ SEED_LOCKED_MODULE_CODES = frozenset(
         "notes-frais",
         "contrats-echeances",
         "archives-mg",
+        "archives-generales",
     }
 )
 
@@ -95,6 +96,18 @@ PLATEFORME_ESPACES: list[EspaceDef] = [
         "route": "/moyens-generaux",
         "statut": "actif",
         "sort_order": 6,
+    },
+    {
+        "code": "archives",
+        "label": "Archives",
+        "description": (
+            "Archive Générale BEA-DIGITAL — vue transverse sur la GED centrale, "
+            "recherche et OCR selon permissions."
+        ),
+        # Pas /archives : segment réservé Immobilisations (LEGACY_ROOT_PATH_SEGMENTS).
+        "route": "/archive-generale",
+        "statut": "actif",
+        "sort_order": 7,
     },
 ]
 
@@ -250,6 +263,18 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "statut": "actif",
         "sort_order": 5,
     },
+    {
+        "code": "archives-generales",
+        "espace_code": "archives",
+        "label": "Archive Générale",
+        "description": (
+            "Centre documentaire transverse : recherche métadonnées + OCR, "
+            "tous départements selon permissions."
+        ),
+        "entry_path": "/archives-generales",
+        "statut": "actif",
+        "sort_order": 1,
+    },
 ]
 
 # Permissions CORE (tous les départements). `{module}.admin` couvre `{module}.*`.
@@ -345,6 +370,9 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("mg.archives.restore", "Restauration corbeille archives MG", "archives-mg"),
     ("mg.archives.delete", "Purge definitive archives MG", "archives-mg"),
     ("mg.archives.manage", "Parametres archives MG", "archives-mg"),
+    ("archives.general.view", "Consultation Archive Générale", "archives-generales"),
+    ("archives.general.download", "Téléchargement Archive Générale", "archives-generales"),
+    ("archives.general.ocr.retry", "Relance OCR Archive Générale", "archives-generales"),
 ]
 
 # Rôles figés Login 2 / module Immobilisations (codes courts = legacy).
@@ -377,6 +405,8 @@ RBAC_ROLES: list[tuple[str, str, str]] = [
     ("contrats-echeances.admin", "Contrats — Admin", "Administration contrats"),
     ("archives-mg.lecteur", "Archives MG — Lecteur", "Consultation archives MG"),
     ("archives-mg.admin", "Archives MG — Admin", "Administration archives MG"),
+    ("archives-generales.lecteur", "Archive Générale — Lecteur", "Consultation Archive Générale"),
+    ("archives-generales.admin", "Archive Générale — Admin", "Administration Archive Générale"),
 ]
 
 # Codes courts réservés au module Immobilisations (ne pas créer pour Crédit / RH / …).
@@ -410,6 +440,9 @@ _MG_CONTRATS_ALL = tuple(
 )
 _MG_ARCHIVES_ALL = tuple(
     code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "archives-mg"
+)
+_ARCHIVES_GENERALES_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "archives-generales"
 )
 _CORE_ADMIN = (
     "plateforme.users.read",
@@ -493,6 +526,12 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "mg.archives.download",
     ),
     "archives-mg.admin": _MG_ARCHIVES_ALL + ("ged.read", "ged.write"),
+    "archives-generales.lecteur": (
+        "archives.general.view",
+        "archives.general.download",
+        "ged.read",
+    ),
+    "archives-generales.admin": _ARCHIVES_GENERALES_ALL + ("ged.read", "ged.write"),
 }
 
 SYSTEM_ROLE_CODES = frozenset(code for code, _label, _desc in RBAC_ROLES)

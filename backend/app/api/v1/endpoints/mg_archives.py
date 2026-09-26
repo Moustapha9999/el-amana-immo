@@ -1,4 +1,4 @@
-﻿"""API Archives MG — memoire documentaire moyens-generaux."""
+"""API Archives MG — memoire documentaire moyens-generaux."""
 
 from __future__ import annotations
 
@@ -248,6 +248,24 @@ async def purge_document(
 ):
     await MgArchivesService(db).purge(document_id, user)
     await _audit(db, user, "archive_purge", document_id, request)
+
+
+@router.post("/documents/{document_id}/retry-ocr", response_model=ArchiveDocOut, dependencies=_module)
+async def retry_ocr(
+    document_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.archives.update")),
+):
+    from app.services.document_ingest_service import DocumentIngestService
+
+    svc = MgArchivesService(db)
+    await svc.get_document(document_id)
+    row = await DocumentIngestService(db).retry_ocr(document_id)
+    await _audit(db, user, "ocr_retry", document_id, request, after={"ocr_status": row.ocr_status})
+    from app.services.mg_archives_service import _doc_out
+
+    return _doc_out(row)
 
 
 @router.get("/missing", response_model=list[ArchiveMissingItem], dependencies=_module)

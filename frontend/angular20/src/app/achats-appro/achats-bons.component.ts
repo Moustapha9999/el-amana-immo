@@ -668,15 +668,17 @@ export class AchatsBonsComponent implements OnInit {
     this.conditionsUploadMsg.set(null);
     this.form.patchValue({ conditions: 'Voir pièce jointe' });
     this.api
-      .upload('/ged/documents', file, {
+      .upload('/documents/from-operation', file, {
         espace_code: 'moyens-generaux',
         module_code: 'achats-appro',
-        entity: 'bon_commande',
-        entity_id: bonId,
+        source_type: 'bon_commande',
+        source_id: bonId,
+        doc_type: 'CONDITIONS',
+        title: file.name,
       })
       .subscribe({
         next: () => {
-          this.conditionsUploadMsg.set(`Pièce jointe importée : ${file.name}`);
+          this.conditionsUploadMsg.set(`Document déposé (OCR en cours) : ${file.name}`);
           input.value = '';
         },
         error: (err) => {

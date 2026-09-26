@@ -1,4 +1,4 @@
-﻿"""Archives MG — registre documentaire sur ged_documents (espace moyens-generaux)."""
+"""Archives MG — registre documentaire sur ged_documents (espace moyens-generaux)."""
 
 from __future__ import annotations
 
@@ -57,6 +57,10 @@ def _doc_out(row: GedDocument) -> ArchiveDocOut:
         uploaded_by_id=row.uploaded_by_id,
         deleted_at=row.deleted_at,
         delete_reason=row.delete_reason,
+        ocr_status=getattr(row, "ocr_status", None) or "pending",
+        ocr_error=getattr(row, "ocr_error", None),
+        ocr_attempts=int(getattr(row, "ocr_attempts", 0) or 0),
+        security_level=getattr(row, "security_level", None) or "internal",
     )
 
 
@@ -268,30 +272,30 @@ class MgArchivesService:
         agence_id: UUID | None = None,
         department_id: UUID | None = None,
         fournisseur_id: UUID | None = None,
+        security_level: str = "internal",
     ) -> ArchiveDocOut:
+        from app.services.document_ingest_service import DocumentIngestService
+
         mod = module_code.strip().lower()
         if mod not in MODULE_LABELS:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Module source invalide")
-        row = await self.ged.upload(
+        row = await DocumentIngestService(self.db).ingest_document(
             file=file,
             espace_code=ESPACE,
             module_code=mod,
             entity=entity.strip(),
             entity_id=entity_id.strip(),
             uploaded_by_id=user.id,
+            title=title,
+            description=description,
+            doc_type=doc_type,
+            reference=reference,
+            date_document=date_document,
+            agence_id=agence_id,
+            department_id=department_id,
+            fournisseur_id=fournisseur_id,
+            security_level=security_level,
         )
-        row.title = (title or row.filename)[:255]
-        row.description = description
-        row.doc_type = (doc_type or "JUSTIFICATIF").strip().upper()[:80]
-        row.reference = (reference or None) and reference.strip()[:120]
-        row.date_document = date_document or date.today()
-        row.archived_at = datetime.now(timezone.utc)
-        row.agence_id = agence_id
-        row.department_id = department_id
-        row.fournisseur_id = fournisseur_id
-        row.version = 1
-        await self.db.commit()
-        await self.db.refresh(row)
         return _doc_out(row)
 
     async def dashboard(self) -> ArchiveDashboardOut:
