@@ -17,6 +17,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
+    Flowable,
     Image,
     KeepTogether,
     PageTemplate,
@@ -1118,3 +1119,308 @@ def pdf_demande_fourniture(demande) -> bytes:
         return out
 
     return _doc_buffer(body)
+
+
+_PRIO_PDF = {"NORMALE": "Normale", "HAUTE": "Haute", "URGENTE": "Urgente", "URGENT": "Urgente"}
+
+
+class _DropToMiddle(Flowable):
+    """Décale le bloc métier vers le milieu de la page."""
+
+    def __init__(self):
+        super().__init__()
+        self._h = 0
+
+    def wrap(self, aw, ah):
+        self._h = min(78 * mm, max(18 * mm, ah * 0.32))
+        return aw, self._h
+
+    def draw(self):
+        return
+
+
+class _PushToBottom(Flowable):
+    """Occupe l'espace libre pour coller le bloc suivant en bas de page."""
+
+    def __init__(self, reserve: float):
+        super().__init__()
+        self.reserve = reserve
+        self._h = 0
+
+    def wrap(self, aw, ah):
+        room = ah - self.reserve
+        self._h = room if room > 8 else 0
+        return aw, self._h
+
+    def draw(self):
+        return
+
+
+_VISA_PDF = (
+    ("demandeur", "Visa demandeur"),
+    ("chef", "Visa chef de département"),
+    ("agence", "Visa Agence concernée"),
+    ("mg", "Visa Service Moyens Généraux"),
+    ("direction", "Visa Direction"),
+)
+
+
+def _visa_labels(raw: str | list[str] | None) -> list[str]:
+    if isinstance(raw, str):
+        chosen = {part.strip().lower() for part in raw.split(",") if part.strip()}
+    elif raw:
+        chosen = {str(part).strip().lower() for part in raw}
+    else:
+        chosen = set()
+    labels = [label for code, label in _VISA_PDF if code in chosen]
+    if not labels:
+        labels = [label for code, label in _VISA_PDF if code in {"agence", "mg"}]
+    return labels
+
+
+def _qty_label(value, unit: str | None) -> str:
+    if value is None or value == "":
+        text = ""
+    else:
+        try:
+            number = Decimal(str(value))
+            text = str(int(number)) if number == number.to_integral() else f"{number.normalize()}"
+        except Exception:
+            text = str(value)
+    unit_txt = (unit or "").strip()
+    return f"{text} {unit_txt}".strip()
+
+
+def pdf_employee_request(
+    row,
+    *,
+    requester_name: str,
+    department_label: str,
+    category_name: str,
+    visas: str | list[str] | None = None,
+) -> bytes:
+    """Formulaire d'expression de besoin — quantité accordée et visas à la main."""
+
+    def _d(value) -> str:
+        if value is None:
+            return ""
+        if hasattr(value, "strftime"):
+            return value.strftime("%d/%m/%Y")
+        return str(value)
+
+    def body(styles):
+        prio = _PRIO_PDF.get(row.priority, row.priority or "Normale")
+        when = _d(getattr(row, "created_at", None)) or datetime.now(_TZ).strftime("%d/%m/%Y")
+        dept = ParagraphStyle(
+            "FebDept",
+            fontName="Helvetica",
+            fontSize=8.5,
+            leading=11,
+            textColor=colors.HexColor("#0F172A"),
+        )
+        title = ParagraphStyle(
+            "FebTitle",
+            fontName="Helvetica-Bold",
+            fontSize=13,
+            leading=16,
+            alignment=TA_CENTER,
+            textColor=BEA_NAVY,
+        )
+        head = ParagraphStyle(
+            "FebHead",
+            fontName="Helvetica-Bold",
+            fontSize=8,
+            leading=10,
+            alignment=TA_CENTER,
+            textColor=colors.white,
+        )
+        date_style = ParagraphStyle(
+            "FebDate",
+            fontName="Helvetica",
+            fontSize=9,
+            leading=12,
+            alignment=TA_RIGHT,
+            textColor=colors.HexColor("#0F172A"),
+        )
+        logo_flow: Image | Paragraph = Paragraph("<b>BEA</b>", dept)
+        logo_path = resolve_note_frais_logo_path()
+        if logo_path is not None:
+            try:
+                iw, ih = ImageReader(str(logo_path)).getSize()
+                draw_h = 16 * mm
+                draw_w = draw_h * (iw / float(ih))
+                if draw_w > 22 * mm:
+                    draw_w = 22 * mm
+                    draw_h = draw_w * (ih / float(iw))
+                logo_flow = Image(str(logo_path), width=draw_w, height=draw_h, mask="auto")
+            except Exception:
+                logo_flow = Paragraph("<b>BEA</b>", dept)
+
+        header = Table(
+            [[
+                logo_flow,
+                Paragraph(
+                    "<b>Banque El Amana</b><br/>"
+                    "Département Ressources Humaines et Moyens Généraux<br/>"
+                    "Service Moyens Généraux",
+                    dept,
+                ),
+                Paragraph(f"Nouakchott le {escape(when)}", date_style),
+            ]],
+            colWidths=[24 * mm, 102 * mm, 56 * mm],
+        )
+        header.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (2, 0), (2, 0), "RIGHT"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 1),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 1),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                    ("LINEBELOW", (0, 0), (-1, -1), 1.5, BEA_NAVY),
+                ]
+            )
+        )
+
+        label = ParagraphStyle(
+            "FebIdLabel",
+            fontName="Helvetica-Bold",
+            fontSize=9,
+            leading=12,
+            textColor=BEA_NAVY,
+        )
+        value = ParagraphStyle(
+            "FebIdValue",
+            fontName="Helvetica",
+            fontSize=9,
+            leading=12,
+            textColor=colors.HexColor("#0F172A"),
+        )
+        side = ParagraphStyle(
+            "FebIdSide",
+            fontName="Helvetica",
+            fontSize=9,
+            leading=12,
+            alignment=TA_RIGHT,
+            textColor=colors.HexColor("#0F172A"),
+        )
+        period = (getattr(row, "period", None) or "").strip() or "—"
+        ident = Table(
+            [
+                [
+                    Paragraph("Demandeur", label),
+                    Paragraph(escape(requester_name or "—"), value),
+                    Paragraph(escape(category_name or "Demande"), side),
+                ],
+                [
+                    Paragraph("Département", label),
+                    Paragraph(escape(department_label or "—"), value),
+                    Paragraph(f"N° {escape(row.request_number or '—')}", side),
+                ],
+                [
+                    Paragraph("Objet", label),
+                    Paragraph(escape(row.title or "—"), value),
+                    Paragraph(f"Priorité {escape(prio)}", side),
+                ],
+                [
+                    Paragraph("Motif", label),
+                    Paragraph(escape(getattr(row, "description", None) or "—"), value),
+                    Paragraph(escape(period), side),
+                ],
+            ],
+            colWidths=[32 * mm, 92 * mm, 58 * mm],
+        )
+        ident.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (2, 0), (2, -1), "RIGHT"),
+                    ("LEFTPADDING", (0, 0), (0, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (0, -1), 2),
+                    ("LEFTPADDING", (1, 0), (1, -1), 3),
+                    ("RIGHTPADDING", (1, 0), (1, -1), 4),
+                    ("LEFTPADDING", (2, 0), (2, -1), 4),
+                    ("RIGHTPADDING", (2, 0), (2, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+                    ("LINEBELOW", (0, -1), (-1, -1), 0.4, BEA_LINE),
+                ]
+            )
+        )
+
+        rows: list[list] = [[
+            Paragraph("Désignation", head),
+            Paragraph("Quantité demandée", head),
+            Paragraph("Quantité accordée", head),
+        ]]
+        for it in list(getattr(row, "items", None) or []):
+            description = (getattr(it, "description", None) or "").strip()
+            if not description:
+                continue
+            granted = getattr(it, "quantity_granted", None)
+            granted_txt = "" if granted is None else _qty_label(granted, getattr(it, "unit", None))
+            rows.append([
+                Paragraph(escape(description), styles["cell"]),
+                Paragraph(escape(_qty_label(it.quantity, getattr(it, "unit", None))), styles["cell_center"]),
+                Paragraph(escape(granted_txt), styles["cell_center"]),
+            ])
+        usable = 182 * mm
+        table = Table(
+            rows,
+            colWidths=[usable * 0.50, usable * 0.25, usable * 0.25],
+        )
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), BEA_NAVY),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("ALIGN", (1, 1), (-1, -1), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("GRID", (0, 0), (-1, -1), 0.7, BEA_NAVY),
+                    ("LEFTPADDING", (0, 1), (0, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                    ("TOPPADDING", (0, 0), (-1, 0), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 3),
+                ]
+            )
+        )
+        labels = _visa_labels(visas)
+        blocks = [_visa_block(name, styles, zone_h=24 * mm, width=80 * mm) for name in labels]
+        visa_rows: list[list] = []
+        if len(blocks) == 1:
+            visa_rows = [[blocks[0]]]
+            visa_widths = [182 * mm]
+        else:
+            for index in range(0, len(blocks), 2):
+                pair = blocks[index:index + 2]
+                if len(pair) == 1:
+                    pair.append("")
+                visa_rows.append(pair)
+            visa_widths = [91 * mm, 91 * mm]
+        visa_table = Table(visa_rows, colWidths=visa_widths)
+        visa_table.setStyle(
+            TableStyle(
+                [
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                    ("TOPPADDING", (0, 0), (-1, -1), 1),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                ]
+            )
+        )
+        reserve = ((len(labels) + 1) // 2) * 36 * mm + 4 * mm
+        return [
+            header,
+            _DropToMiddle(),
+            Paragraph("Formulaire d'expression de besoin", title),
+            Spacer(1, 4 * mm),
+            ident,
+            Spacer(1, 5 * mm),
+            table,
+            _PushToBottom(reserve),
+            visa_table,
+        ]
+
+    return _doc_buffer(body, with_logo=False)

@@ -334,6 +334,12 @@ interface HubActivity {
               <path d="M9 19.5h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             </svg>
           }
+          @case ('employe') {
+            <svg viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="8" r="3.1" fill="currentColor" />
+              <path d="M5.5 19.2c.8-3.6 3.2-5.4 6.5-5.4s5.7 1.8 6.5 5.4" fill="currentColor" opacity=".55" />
+            </svg>
+          }
           @case ('achats') {
             <svg viewBox="0 0 24 24" fill="none">
               <path

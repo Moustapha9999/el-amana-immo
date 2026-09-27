@@ -69,6 +69,24 @@ import { ContratsDashboardComponent } from './contrats-echeances/contrats-dashbo
 import { ContratsListComponent } from './contrats-echeances/contrats-list.component';
 import { ContratsParametresComponent } from './contrats-echeances/contrats-parametres.component';
 import { ContratsRapportsComponent } from './contrats-echeances/contrats-rapports.component';
+import {
+  DmgBatchesComponent,
+  DmgDashboardComponent,
+  DmgInboxComponent,
+} from './demandes-mg/demandes-mg.pages';
+
+const loadEmpAccueil = () =>
+  import('./demandes-employes/demandes-employe.pages').then((m) => m.EmpAccueilComponent);
+const loadEmpListe = () =>
+  import('./demandes-employes/demandes-employe.pages').then((m) => m.EmpListeComponent);
+const loadEmpNouvelle = () =>
+  import('./demandes-employes/demandes-employe.pages').then((m) => m.EmpNouvelleComponent);
+const loadEmpDocs = () =>
+  import('./demandes-employes/demandes-employe.pages').then((m) => m.EmpDocsComponent);
+const loadEmpNotifs = () =>
+  import('./demandes-employes/demandes-employe.pages').then((m) => m.EmpNotifsComponent);
+const loadEmpHistorique = () =>
+  import('./demandes-employes/demandes-employe.pages').then((m) => m.EmpHistoriqueComponent);
 import { ArchivesRegistreComponent } from './archives-mg/archives-registre.component';
 import { ArchivesDashboardComponent } from './archives-mg/archives-dashboard.component';
 import { ArchivesDocumentsComponent } from './archives-mg/archives-documents.component';
@@ -227,6 +245,83 @@ export const routes: Routes = [
       { path: 'rapports', component: ArchivesRapportsComponent, data: { archivesMode: 'general' } },
     ],
   },
+  {
+    path: 'demandes-comptabilite',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('demandes-comptabilite')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'accueil' },
+      { path: 'accueil', loadComponent: loadEmpAccueil },
+      { path: 'demandes', loadComponent: loadEmpListe },
+      { path: 'nouvelle', loadComponent: loadEmpNouvelle },
+      { path: 'documents', loadComponent: loadEmpDocs },
+      { path: 'notifications', loadComponent: loadEmpNotifs },
+      { path: 'historique', loadComponent: loadEmpHistorique },
+    ],
+  },
+  {
+    path: 'demandes-credit',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('demandes-credit')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'accueil' },
+      { path: 'accueil', loadComponent: loadEmpAccueil },
+      { path: 'demandes', loadComponent: loadEmpListe },
+      { path: 'nouvelle', loadComponent: loadEmpNouvelle },
+      { path: 'documents', loadComponent: loadEmpDocs },
+      { path: 'notifications', loadComponent: loadEmpNotifs },
+      { path: 'historique', loadComponent: loadEmpHistorique },
+    ],
+  },
+  {
+    path: 'demandes-rh',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('demandes-rh')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'accueil' },
+      { path: 'accueil', loadComponent: loadEmpAccueil },
+      { path: 'demandes', loadComponent: loadEmpListe },
+      { path: 'nouvelle', loadComponent: loadEmpNouvelle },
+      { path: 'documents', loadComponent: loadEmpDocs },
+      { path: 'notifications', loadComponent: loadEmpNotifs },
+      { path: 'historique', loadComponent: loadEmpHistorique },
+    ],
+  },
+  {
+    path: 'demandes-informatique',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('demandes-informatique')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'accueil' },
+      { path: 'accueil', loadComponent: loadEmpAccueil },
+      { path: 'demandes', loadComponent: loadEmpListe },
+      { path: 'nouvelle', loadComponent: loadEmpNouvelle },
+      { path: 'documents', loadComponent: loadEmpDocs },
+      { path: 'notifications', loadComponent: loadEmpNotifs },
+      { path: 'historique', loadComponent: loadEmpHistorique },
+    ],
+  },
+  {
+    path: 'demandes-mg',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('demandes-mg')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      { path: 'dashboard', component: DmgDashboardComponent },
+      { path: 'accueil', loadComponent: loadEmpAccueil },
+      { path: 'nouvelle', loadComponent: loadEmpNouvelle },
+      { path: 'mes-demandes', loadComponent: loadEmpListe },
+      { path: 'demandes', component: DmgInboxComponent },
+      { path: 'a-traiter', component: DmgInboxComponent, data: { statut: 'a_traiter' } },
+      { path: 'a-completer', component: DmgInboxComponent, data: { statut: 'A_COMPLETER' } },
+      { path: 'validees', component: DmgInboxComponent, data: { statut: 'a_regrouper' } },
+      { path: 'refusees', component: DmgInboxComponent, data: { statut: 'REFUSEE' } },
+      { path: 'regroupements', component: DmgBatchesComponent },
+      { path: 'documents', loadComponent: loadEmpDocs },
+      { path: 'notifications', loadComponent: loadEmpNotifs },
+    ],
+  },
+  { path: 'demandes-employes', redirectTo: 'accueil' },
   ...PLATEFORME_ROUTES,
   {
     // Exception figée : module immobilisations aux URLs racine.

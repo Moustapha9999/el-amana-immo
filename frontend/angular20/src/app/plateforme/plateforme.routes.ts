@@ -46,6 +46,7 @@ import {
 import { CoreAdminUserFicheComponent } from './core-admin/core-admin-user-fiche.component';
 import { CoreAdminUsersComponent } from './core-admin/core-admin-users.component';
 import { ModuleAccesComponent } from './module-acces/module-acces.component';
+import { CoreAdminDemandesComponent } from './core-admin/core-admin-demandes.component';
 
 export const PLATEFORME_ROUTES: Routes = [
   { path: 'accueil', component: AccueilComponent, canActivate: [authGuard] },
@@ -67,6 +68,25 @@ export const PLATEFORME_ROUTES: Routes = [
     canActivate: [authGuard],
     data: { espaceCode: 'archives' },
   },
+  { path: 'employe', redirectTo: 'accueil', pathMatch: 'full' },
+  {
+    path: 'credit',
+    component: EspaceHubComponent,
+    canActivate: [authGuard],
+    data: { espaceCode: 'credit' },
+  },
+  {
+    path: 'rh',
+    component: EspaceHubComponent,
+    canActivate: [authGuard],
+    data: { espaceCode: 'rh' },
+  },
+  {
+    path: 'informatique',
+    component: EspaceHubComponent,
+    canActivate: [authGuard],
+    data: { espaceCode: 'informatique' },
+  },
   { path: 'modules/:moduleCode/acces', component: ModuleAccesComponent, canActivate: [authGuard] },
   {
     path: 'admin',
@@ -83,6 +103,7 @@ export const PLATEFORME_ROUTES: Routes = [
       { path: 'departments/nouveau', component: CoreAdminDepartmentFicheComponent },
       { path: 'departments/:id/modifier', component: CoreAdminDepartmentFicheComponent },
       { path: 'departments/:id', component: CoreAdminDepartmentFicheComponent },
+      { path: 'demandes', component: CoreAdminDemandesComponent },
       { path: 'modules', component: CoreAdminModulesComponent },
       { path: 'modules/nouveau', component: CoreAdminModuleFicheComponent },
       { path: 'modules/:id/modifier', component: CoreAdminModuleFicheComponent },

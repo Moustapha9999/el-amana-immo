@@ -90,6 +90,8 @@ class PlateformeHubService:
             "par_statut": by_statut,
         }
 
+        mes_demandes = await self._mes_demandes_counts(user)
+
         if vue == "admin":
             kpis, sessions_actives = await self._kpis_admin(now=now, plateforme=plateforme)
         elif vue == "responsable":
@@ -107,6 +109,7 @@ class PlateformeHubService:
                 unread=unread_perso,
                 sessions=sessions_perso,
             )
+        kpis = list(kpis) + mes_demandes
 
         modules_recents = await self._modules_recents(user, modules=modules, limit=6)
 
@@ -349,6 +352,47 @@ class PlateformeHubService:
         return kpis, sessions
 
     @staticmethod
+    async def _mes_demandes_counts(self, user: User) -> list[dict]:
+        try:
+            from app.models.mg_requests import MgEmployeeRequest
+
+            mine = MgEmployeeRequest.requester_id == user.id
+            total = int(
+                (await self.db.scalar(select(func.count()).select_from(MgEmployeeRequest).where(mine)))
+                or 0
+            )
+            a_completer = int(
+                (
+                    await self.db.scalar(
+                        select(func.count()).select_from(MgEmployeeRequest).where(
+                            mine,
+                            MgEmployeeRequest.status.in_(["BROUILLON", "A_COMPLETER"]),
+                        )
+                    )
+                )
+                or 0
+            )
+            en_cours = int(
+                (
+                    await self.db.scalar(
+                        select(func.count()).select_from(MgEmployeeRequest).where(
+                            mine,
+                            MgEmployeeRequest.status.notin_(
+                                ["BROUILLON", "SERVIE", "CLOTUREE", "REFUSEE", "ANNULEE"]
+                            ),
+                        )
+                    )
+                )
+                or 0
+            )
+        except Exception:
+            return []
+        return [
+            {"key": "mes_demandes", "label": "Mes demandes", "value": total, "hint": "Demandes que vous avez déposées"},
+            {"key": "demandes_action", "label": "À compléter", "value": a_completer, "hint": "Brouillons ou complément demandé"},
+            {"key": "demandes_cours", "label": "En cours", "value": en_cours, "hint": "Demandes en traitement"},
+        ]
+
     def _kpis_utilisateur(
         *,
         depts_ouverts: list,

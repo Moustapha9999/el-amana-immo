@@ -1011,6 +1011,8 @@ class MgAchatsService:
             date_souhaitee=data.date_souhaitee,
             budget_estime=data.budget_estime,
             observation=data.observation,
+            source_type=data.source_type,
+            source_id=data.source_id,
             statut="BROUILLON",
         )
         self._apply_demande_lignes(demande, data.lignes)

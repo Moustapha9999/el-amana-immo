@@ -9,6 +9,7 @@ from sqlalchemy import insert, inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.data.demandes_engine import RETIRED_ESPACE_CODES, RETIRED_MODULE_CODES
 from app.data.plateforme_catalogue import (
     DEFAULT_ESPACE_CODE,
     DEFAULT_MODULE_CODE,
@@ -127,6 +128,16 @@ class PlateformeAccessService:
                     row.label = item["label"]
                 if _text_needs_utf8_repair(row.description):
                     row.description = item["description"]
+        for code in RETIRED_ESPACE_CODES:
+            retired = existing.get(code)
+            if retired is not None:
+                retired.is_active = False
+                retired.statut = "inactif"
+        for code in RETIRED_MODULE_CODES:
+            retired_mod = modules.get(code)
+            if retired_mod is not None:
+                retired_mod.is_active = False
+                retired_mod.statut = "inactif"
         await self.db.flush()
         await self._ensure_permissions()
 

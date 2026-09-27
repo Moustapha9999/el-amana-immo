@@ -122,6 +122,8 @@ class DemandeCreate(BaseModel):
     date_souhaitee: date | None = None
     budget_estime: Decimal | None = None
     observation: str | None = None
+    source_type: str | None = None
+    source_id: UUID | None = None
     lignes: list[DemandeLigneIn] = Field(default_factory=list)
 
 
@@ -160,6 +162,8 @@ class DemandeOut(BaseModel):
     budget_estime: Decimal | None
     statut: str
     observation: str | None
+    source_type: str | None = None
+    source_id: UUID | None = None
     lignes: list[DemandeLigneOut] = []
     consultation_id: UUID | None = None
     bon_id: UUID | None = None

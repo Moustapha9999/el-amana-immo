@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.security import decode_token
+from app.data.demandes_engine import is_demandes_module
 from app.db.session import get_db
 from app.models import Permission, Role, User
 from app.models.auth import SESSION_KIND_MODULE, SESSION_KIND_PLATFORM
@@ -126,6 +127,55 @@ def require_module_access(module_code: str):
                 "MODULE_AUTH_REQUIRED",
                 "Authentification du module requise",
                 module=module_code,
+            )
+        parent_id = session.parent_session_id
+        if parent_id is None:
+            raise auth_http_error(
+                status.HTTP_401_UNAUTHORIZED,
+                "PLATFORM_SESSION_EXPIRED",
+                "Session BEA DIGITAL expirée ou révoquée",
+            )
+        parent = await AuthSessionService(db).get_active_session(parent_id)
+        if parent is None or (parent.kind or SESSION_KIND_PLATFORM) != SESSION_KIND_PLATFORM:
+            raise auth_http_error(
+                status.HTTP_401_UNAUTHORIZED,
+                "PLATFORM_SESSION_EXPIRED",
+                "Session BEA DIGITAL expirée ou révoquée",
+            )
+        access = PlateformeAccessService(db)
+        module = await access.get_module(module_code)
+        if module is None or not module.is_active or module.statut != "actif":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Module indisponible")
+        if not await access.user_has_module(user, module_code):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"code": "MODULE_FORBIDDEN", "message": "Module non autorisé", "module": module_code},
+            )
+        request.state.bea_module_code = module_code
+        request.state.bea_espace_code = module.espace.code if module.espace else None
+        request.state.bea_session_id = getattr(session, "id", None)
+        return user
+
+    return _checker
+
+
+def require_demandes_module():
+    """Login 2 d’un module Demandes (demandeur ou traitant)."""
+
+    async def _checker(
+        request: Request,
+        credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+        db: AsyncSession = Depends(get_db),
+    ) -> User:
+        user, session, _ = await _load_user_and_session(credentials, db)
+        kind = getattr(session, "kind", None) or SESSION_KIND_PLATFORM
+        module_code = (session.module_code or "").strip().lower()
+        if kind != SESSION_KIND_MODULE or not is_demandes_module(module_code):
+            raise auth_http_error(
+                status.HTTP_401_UNAUTHORIZED,
+                "MODULE_AUTH_REQUIRED",
+                "Authentification du module Demandes requise",
+                module="demandes",
             )
         parent_id = session.parent_session_id
         if parent_id is None:

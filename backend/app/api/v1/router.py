@@ -20,6 +20,7 @@ from app.api.v1.endpoints import (
     mg_archives,
     mg_contrats,
     mg_notes,
+    mg_requests,
     mg_stock,
     notifications,
     operations,
@@ -51,6 +52,9 @@ api_router.include_router(mg_achats.router)
 api_router.include_router(mg_notes.router)
 api_router.include_router(mg_contrats.router)
 api_router.include_router(mg_archives.router)
+api_router.include_router(mg_requests.me_router)
+api_router.include_router(mg_requests.mg_router)
+api_router.include_router(mg_requests.batch_router)
 
 _immo = [Depends(require_module_access("immobilisations"))]
 api_router.include_router(organisation.router, dependencies=_immo)

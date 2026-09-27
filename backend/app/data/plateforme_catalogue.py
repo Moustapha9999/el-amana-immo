@@ -29,7 +29,9 @@ DEFAULT_MODULE_CODE = "immobilisations"
 
 # Toujours (re)créés s’ils manquent. Le reste du catalogue = seed **bootstrap**
 # seulement (CORE ADMIN peut supprimer sans resurrection au refresh).
-SEED_LOCKED_ESPACE_CODES = frozenset({DEFAULT_ESPACE_CODE, "moyens-generaux", "archives"})
+SEED_LOCKED_ESPACE_CODES = frozenset(
+    {DEFAULT_ESPACE_CODE, "credit", "rh", "informatique", "moyens-generaux", "archives"}
+)
 SEED_LOCKED_MODULE_CODES = frozenset(
     {
         DEFAULT_MODULE_CODE,
@@ -39,6 +41,11 @@ SEED_LOCKED_MODULE_CODES = frozenset(
         "contrats-echeances",
         "archives-mg",
         "archives-generales",
+        "demandes-mg",
+        "demandes-comptabilite",
+        "demandes-credit",
+        "demandes-rh",
+        "demandes-informatique",
     }
 )
 
@@ -59,7 +66,7 @@ PLATEFORME_ESPACES: list[EspaceDef] = [
         "label": "Crédit",
         "description": "Processus crédit autour d’ORION (dossiers, contrôles, workflows).",
         "route": "/credit",
-        "statut": "bientot",
+        "statut": "actif",
         "sort_order": 2,
     },
     {
@@ -67,7 +74,7 @@ PLATEFORME_ESPACES: list[EspaceDef] = [
         "label": "RH",
         "description": "Processus ressources humaines internes.",
         "route": "/rh",
-        "statut": "bientot",
+        "statut": "actif",
         "sort_order": 3,
     },
     {
@@ -75,7 +82,7 @@ PLATEFORME_ESPACES: list[EspaceDef] = [
         "label": "Informatique",
         "description": "Demandes, suivi et outils internes DSI.",
         "route": "/informatique",
-        "statut": "bientot",
+        "statut": "actif",
         "sort_order": 4,
     },
     {
@@ -122,6 +129,18 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         ),
         "entry_path": "/dashboard",
         "statut": "actif",
+        "sort_order": 2,
+    },
+    {
+        "code": "demandes-comptabilite",
+        "espace_code": "comptabilite",
+        "label": "Demandes",
+        "description": (
+            "Déposer et suivre les demandes internes du département "
+            "(fournitures, matériel, achat) — routées vers le service destinataire."
+        ),
+        "entry_path": "/demandes-comptabilite/accueil",
+        "statut": "actif",
         "sort_order": 1,
     },
     {
@@ -162,6 +181,17 @@ PLATEFORME_MODULES: list[ModuleDef] = [
     },
     # --- Futurs (catalogue Étape 8 — statut bientôt, pas encore de shell métier) ---
     {
+        "code": "demandes-credit",
+        "espace_code": "credit",
+        "label": "Demandes",
+        "description": (
+            "Déposer et suivre les demandes internes du département Crédit."
+        ),
+        "entry_path": "/demandes-credit/accueil",
+        "statut": "actif",
+        "sort_order": 1,
+    },
+    {
         "code": "credit",
         "espace_code": "credit",
         "label": "Dossiers crédit",
@@ -171,15 +201,33 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         ),
         "entry_path": "/credit",
         "statut": "bientot",
+        "sort_order": 2,
+    },
+    {
+        "code": "demandes-rh",
+        "espace_code": "rh",
+        "label": "Demandes",
+        "description": "Déposer et suivre les demandes internes du département RH.",
+        "entry_path": "/demandes-rh/accueil",
+        "statut": "actif",
         "sort_order": 1,
     },
     {
         "code": "rh",
         "espace_code": "rh",
-        "label": "Demandes RH",
+        "label": "Congés & dossiers RH",
         "description": "Congés, absences et demandes administratives internes.",
         "entry_path": "/rh",
         "statut": "bientot",
+        "sort_order": 2,
+    },
+    {
+        "code": "demandes-informatique",
+        "espace_code": "informatique",
+        "label": "Demandes",
+        "description": "Déposer et suivre les demandes internes du département Informatique.",
+        "entry_path": "/demandes-informatique/accueil",
+        "statut": "actif",
         "sort_order": 1,
     },
     {
@@ -189,7 +237,7 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "description": "Incidents et demandes internes DSI (SLA, files, catégories).",
         "entry_path": "/tickets-si",
         "statut": "bientot",
-        "sort_order": 1,
+        "sort_order": 2,
     },
     {
         "code": "demandes-achat",
@@ -211,6 +259,18 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         ),
         "entry_path": "/stock-fournitures/dashboard",
         "statut": "actif",
+        "sort_order": 2,
+    },
+    {
+        "code": "demandes-mg",
+        "espace_code": "moyens-generaux",
+        "label": "Demandes",
+        "description": (
+            "Centre de traitement : recevoir les demandes des départements, "
+            "contrôler, regrouper, servir depuis le stock ou lancer un achat."
+        ),
+        "entry_path": "/demandes-mg/dashboard",
+        "statut": "actif",
         "sort_order": 1,
     },
     {
@@ -224,7 +284,7 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         ),
         "entry_path": "/achats-appro/dashboard",
         "statut": "actif",
-        "sort_order": 2,
+        "sort_order": 3,
     },
     {
         "code": "notes-frais",
@@ -237,7 +297,7 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         ),
         "entry_path": "/notes-frais",
         "statut": "actif",
-        "sort_order": 3,
+        "sort_order": 4,
     },
     {
         "code": "contrats-echeances",
@@ -249,7 +309,7 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         ),
         "entry_path": "/contrats-echeances/dashboard",
         "statut": "actif",
-        "sort_order": 4,
+        "sort_order": 5,
     },
     {
         "code": "archives-mg",
@@ -261,7 +321,7 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         ),
         "entry_path": "/archives-mg/dashboard",
         "statut": "actif",
-        "sort_order": 5,
+        "sort_order": 6,
     },
     {
         "code": "archives-generales",
@@ -375,6 +435,23 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("archives.general.view", "Consultation Archive Générale", "archives-generales"),
     ("archives.general.download", "Téléchargement Archive Générale", "archives-generales"),
     ("archives.general.ocr.retry", "Relance OCR Archive Générale", "archives-generales"),
+    ("mg.request.mine.view", "Consultation de mes demandes internes", "demandes"),
+    ("mg.request.mine.create", "Création de mes demandes internes", "demandes"),
+    ("mg.request.mine.update", "Modification de mes demandes internes", "demandes"),
+    ("mg.request.mine.cancel", "Annulation de mes demandes internes", "demandes"),
+    ("mg.request.view", "Consultation des demandes reçues (traitant)", "demandes-mg"),
+    ("mg.request.validate", "Validation des demandes", "demandes-mg"),
+    ("mg.request.reject", "Refus des demandes", "demandes-mg"),
+    ("mg.request.request_info", "Demande de complément", "demandes-mg"),
+    ("mg.request.group", "Regroupement des demandes", "demandes-mg"),
+    ("mg.request.serve", "Servir une demande depuis le stock", "demandes-mg"),
+    ("mg.request.assign", "Affectation d’une demande", "demandes-mg"),
+    ("mg.request.export", "Exports demandes", "demandes-mg"),
+    ("mg.request.admin", "Administration des types et du moteur Demandes", "demandes-mg"),
+    ("mg.batch.view", "Consultation des regroupements achats", "demandes-mg"),
+    ("mg.batch.create", "Création des regroupements achats", "demandes-mg"),
+    ("mg.batch.update", "Modification des regroupements achats", "demandes-mg"),
+    ("mg.batch.validate", "Validation des regroupements (création DA)", "demandes-mg"),
 ]
 
 # Rôles figés Login 2 / module Immobilisations (codes courts = legacy).
@@ -409,6 +486,15 @@ RBAC_ROLES: list[tuple[str, str, str]] = [
     ("archives-mg.admin", "Archives MG — Admin", "Administration archives MG"),
     ("archives-generales.lecteur", "Archive Générale — Lecteur", "Consultation Archive Générale"),
     ("archives-generales.admin", "Archive Générale — Admin", "Administration Archive Générale"),
+    ("demandes-comptabilite.demandeur", "Demandes Comptabilité — Demandeur", "Dépôt et suivi de ses demandes"),
+    ("demandes-credit.demandeur", "Demandes Crédit — Demandeur", "Dépôt et suivi de ses demandes"),
+    ("demandes-rh.demandeur", "Demandes RH — Demandeur", "Dépôt et suivi de ses demandes"),
+    ("demandes-informatique.demandeur", "Demandes Informatique — Demandeur", "Dépôt et suivi de ses demandes"),
+    ("demandes-mg.demandeur", "Demandes MG — Demandeur", "Dépôt et suivi de ses propres demandes"),
+    ("demandes-mg.lecteur", "Demandes MG — Lecteur", "Consultation des demandes reçues"),
+    ("demandes-mg.gestionnaire", "Demandes MG — Gestionnaire", "Traitement et regroupement des demandes"),
+    ("demandes-mg.valideur", "Demandes MG — Valideur", "Validation / refus des demandes"),
+    ("demandes-mg.admin", "Demandes MG — Admin", "Administration des demandes employés"),
 ]
 
 # Codes courts réservés au module Immobilisations (ne pas créer pour Crédit / RH / …).
@@ -445,6 +531,12 @@ _MG_ARCHIVES_ALL = tuple(
 )
 _ARCHIVES_GENERALES_ALL = tuple(
     code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "archives-generales"
+)
+_MG_REQUEST_EMP_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "demandes"
+)
+_MG_REQUEST_MG_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "demandes-mg"
 )
 _CORE_ADMIN = (
     "plateforme.users.read",
@@ -540,6 +632,39 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "ged.download",
     ),
     "archives-generales.admin": _ARCHIVES_GENERALES_ALL + _GED_RW,
+    "demandes-comptabilite.demandeur": _MG_REQUEST_EMP_ALL + ("ged.read", "ged.write", "ged.download"),
+    "demandes-credit.demandeur": _MG_REQUEST_EMP_ALL + ("ged.read", "ged.write", "ged.download"),
+    "demandes-rh.demandeur": _MG_REQUEST_EMP_ALL + ("ged.read", "ged.write", "ged.download"),
+    "demandes-informatique.demandeur": _MG_REQUEST_EMP_ALL + ("ged.read", "ged.write", "ged.download"),
+    "demandes-mg.demandeur": _MG_REQUEST_EMP_ALL + ("ged.read", "ged.write", "ged.download"),
+    "demandes-mg.lecteur": ("mg.request.view", "mg.batch.view", "ged.read", "ged.download"),
+    "demandes-mg.gestionnaire": (
+        "mg.request.view",
+        "mg.request.request_info",
+        "mg.request.group",
+        "mg.request.serve",
+        "mg.request.assign",
+        "mg.request.export",
+        "mg.batch.view",
+        "mg.batch.create",
+        "mg.batch.update",
+        "ged.read",
+        "ged.write",
+        "ged.download",
+    ),
+    "demandes-mg.valideur": (
+        "mg.request.view",
+        "mg.request.validate",
+        "mg.request.reject",
+        "mg.request.request_info",
+        "mg.request.assign",
+        "mg.request.export",
+        "mg.batch.view",
+        "mg.batch.validate",
+        "ged.read",
+        "ged.download",
+    ),
+    "demandes-mg.admin": _MG_REQUEST_MG_ALL + _GED_RW,
 }
 
 SYSTEM_ROLE_CODES = frozenset(code for code, _label, _desc in RBAC_ROLES)

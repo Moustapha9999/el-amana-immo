@@ -132,10 +132,22 @@ class NotificationService:
                 count += 1
         return count
 
-    async def list_for_user(self, user_id: UUID, page: int, size: int, unread_only: bool = False) -> tuple[list[Notification], int]:
+    async def list_for_user(
+        self,
+        user_id: UUID,
+        page: int,
+        size: int,
+        unread_only: bool = False,
+        entity: str | None = None,
+        event_type: str | None = None,
+    ) -> tuple[list[Notification], int]:
         filters = [Notification.user_id == user_id, Notification.archived.is_(False)]
         if unread_only:
             filters.append(Notification.lu.is_(False))
+        if entity:
+            filters.append(Notification.entity == entity)
+        if event_type:
+            filters.append(Notification.event_type == event_type)
         count = await self.db.execute(select(func.count()).select_from(Notification).where(*filters))
         total = int(count.scalar_one())
         result = await self.db.execute(
@@ -155,14 +167,15 @@ class NotificationService:
         await self.db.flush()
         return row
 
-    async def mark_all_read(self, user_id: UUID) -> int:
-        result = await self.db.execute(
-            select(Notification).where(
-                Notification.user_id == user_id,
-                Notification.lu.is_(False),
-                Notification.archived.is_(False),
-            )
-        )
+    async def mark_all_read(self, user_id: UUID, entity: str | None = None) -> int:
+        filters = [
+            Notification.user_id == user_id,
+            Notification.lu.is_(False),
+            Notification.archived.is_(False),
+        ]
+        if entity:
+            filters.append(Notification.entity == entity)
+        result = await self.db.execute(select(Notification).where(*filters))
         rows = list(result.scalars().all())
         for row in rows:
             row.lu = True

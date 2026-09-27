@@ -43,6 +43,15 @@ from app.models.mg_ops import (
     MgNoteFraisLigne,
     MgNoteFraisParametre,
 )
+from app.models.mg_requests import (
+    MgEmployeeRequest,
+    MgEmployeeRequestItem,
+    MgProcurementBatch,
+    MgProcurementBatchItem,
+    MgRequestApproval,
+    MgRequestCategory,
+    MgRequestComment,
+)
 from app.models.mg_achats import (
     MgAchatBl,
     MgAchatComparaison,
@@ -139,6 +148,13 @@ __all__ = [
     "MgContratPaiement",
     "MgContratParametre",
     "MgContratType",
+    "MgRequestCategory",
+    "MgEmployeeRequest",
+    "MgEmployeeRequestItem",
+    "MgRequestApproval",
+    "MgRequestComment",
+    "MgProcurementBatch",
+    "MgProcurementBatchItem",
     "MgAchatParametre",
     "MgAchatDemande",
     "MgAchatDemandeLigne",

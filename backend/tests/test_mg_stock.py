@@ -53,6 +53,9 @@ def test_mg_stock_backup_scope():
     assert "mg_stock_parametres" in scope["exclusive_tables"]
     assert "users" in scope["shared_dependencies"]
     assert ESPACE_MODULES["moyens-generaux"][0] == "stock-fournitures"
+    assert "demandes-mg" in ESPACE_MODULES["moyens-generaux"]
+    assert "demandes-credit" in ESPACE_MODULES["credit"]
+    assert "employe" not in ESPACE_MODULES
 
 
 def test_niveau_stock():

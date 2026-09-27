@@ -310,3 +310,34 @@ async def delete_module(
         raise _http_from_value_error(exc) from exc
     await _audit(db, actor=actor, action="delete", entity="module", entity_id=str(module_id), request=request)
     return MessageResponse(message="Module supprimé")
+
+
+@router.get("/request-types")
+async def list_request_types(
+    _: User = Depends(_MOD_PERM),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.schemas.mg_requests import CategoryOut
+    from app.services.mg_requests_service import MgRequestsService
+
+    rows = await MgRequestsService(db).list_categories(active_only=False)
+    return [CategoryOut.model_validate(r).model_dump() for r in rows]
+
+
+@router.post("/request-types")
+async def upsert_request_type(
+    request: Request,
+    actor: User = Depends(_MOD_PERM),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.schemas.mg_requests import CategoryIn, CategoryOut
+    from app.services.mg_requests_service import MgRequestsService
+
+    body = await request.json()
+    data = CategoryIn.model_validate(body)
+    row = await MgRequestsService(db).upsert_category(data)
+    await _audit(
+        db, actor=actor, action="upsert", entity="request_type", entity_id=str(row.id),
+        request=request, after={"code": row.code},
+    )
+    return CategoryOut.model_validate(row).model_dump()

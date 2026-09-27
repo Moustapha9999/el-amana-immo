@@ -24,6 +24,13 @@ const PLATEFORME_FIXED = [
   'rh',
   'tickets-si',
   'demandes-achat',
+  'demandes-employes',
+  'demandes-mg',
+  'demandes-comptabilite',
+  'demandes-credit',
+  'demandes-rh',
+  'demandes-informatique',
+  'employe',
 ] as const;
 
 export const ESPACE_HUB_RESERVED_SEGMENTS: ReadonlySet<string> = new Set([

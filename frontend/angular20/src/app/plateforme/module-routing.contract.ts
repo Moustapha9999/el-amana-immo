@@ -131,6 +131,41 @@ export const MODULE_ROUTE_CONTRACTS: Readonly<Record<string, ModuleRouteContract
     espacePath: '/archive-generale',
     urlPrefix: '/archives-generales',
   },
+  'demandes-mg': {
+    code: 'demandes-mg',
+    strategy: 'prefixed',
+    entryPath: '/demandes-mg/dashboard',
+    espacePath: '/moyens-generaux',
+    urlPrefix: '/demandes-mg',
+  },
+  'demandes-comptabilite': {
+    code: 'demandes-comptabilite',
+    strategy: 'prefixed',
+    entryPath: '/demandes-comptabilite/accueil',
+    espacePath: '/comptabilite',
+    urlPrefix: '/demandes-comptabilite',
+  },
+  'demandes-credit': {
+    code: 'demandes-credit',
+    strategy: 'prefixed',
+    entryPath: '/demandes-credit/accueil',
+    espacePath: '/credit',
+    urlPrefix: '/demandes-credit',
+  },
+  'demandes-rh': {
+    code: 'demandes-rh',
+    strategy: 'prefixed',
+    entryPath: '/demandes-rh/accueil',
+    espacePath: '/rh',
+    urlPrefix: '/demandes-rh',
+  },
+  'demandes-informatique': {
+    code: 'demandes-informatique',
+    strategy: 'prefixed',
+    entryPath: '/demandes-informatique/accueil',
+    espacePath: '/informatique',
+    urlPrefix: '/demandes-informatique',
+  },
 };
 
 /** Modules dont le shell métier Angular est branché (Login 2 peut naviguer). */
@@ -142,6 +177,11 @@ export const MODULES_WITH_METIER_SHELL = new Set<string>([
   'contrats-echeances',
   'archives-mg',
   'archives-generales',
+  'demandes-mg',
+  'demandes-comptabilite',
+  'demandes-credit',
+  'demandes-rh',
+  'demandes-informatique',
 ]);
 
 export function moduleHasMetierShell(moduleCode: string): boolean {

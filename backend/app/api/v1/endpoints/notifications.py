@@ -19,10 +19,14 @@ async def list_notifications(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     unread_only: bool = False,
+    entity: str | None = Query(None, max_length=80),
+    event_type: str | None = Query(None, max_length=80),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    items, total = await NotificationService(db).list_for_user(user.id, page, size, unread_only)
+    items, total = await NotificationService(db).list_for_user(
+        user.id, page, size, unread_only, entity=entity, event_type=event_type
+    )
     return to_paginated(items, total, page, size, NotificationRead.model_validate)
 
 
@@ -39,6 +43,10 @@ async def mark_notification_read(
 
 
 @router.post("/read-all", response_model=MessageResponse)
-async def mark_all_read(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    count = await NotificationService(db).mark_all_read(user.id)
+async def mark_all_read(
+    entity: str | None = Query(None, max_length=80),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    count = await NotificationService(db).mark_all_read(user.id, entity=entity)
     return MessageResponse(message=f"{count} notification(s) lue(s)")

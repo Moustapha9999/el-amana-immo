@@ -58,6 +58,8 @@ class MgAchatDemande(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base)
     budget_estime: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     statut: Mapped[str] = mapped_column(String(30), default="BROUILLON", index=True)
     observation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_type: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     lignes: Mapped[list[MgAchatDemandeLigne]] = relationship(
         back_populates="demande", cascade="all, delete-orphan"
