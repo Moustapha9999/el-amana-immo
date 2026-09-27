@@ -60,3 +60,9 @@ storage/uploads/**
 !storage/uploads/.gitkeep
 storage/ged/**
 !storage/ged/.gitkeep
+
+# Données métier importées (stock USB, fournisseurs) — locales uniquement
+storage/imports/
+storage/Liste-Fournisseurs/
+storage/*.sql
+/*.tsv
