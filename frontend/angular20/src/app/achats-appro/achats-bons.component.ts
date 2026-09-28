@@ -160,7 +160,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
             @for (ctrl of lignes.controls; track $index; let i = $index) {
               <div class="bea-ach__grid" [formGroupName]="i">
                 <label>Description <input formControlName="description" /></label>
-                <label>Qté <input type="number" formControlName="quantite" /></label>
+                <label>Qté <input type="number" formControlName="quantite" min="1" step="1" /></label>
                 <label>PU <input type="number" formControlName="prix_unitaire" /></label>
                 <label>UOM <input formControlName="uom" /></label>
               </div>

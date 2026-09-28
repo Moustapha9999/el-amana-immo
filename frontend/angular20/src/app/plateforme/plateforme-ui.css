@@ -7677,28 +7677,43 @@ button.bea-admin-kpi {
 }
 .bea-emp-paper table {
   width: 100%;
+  height: 13.5rem;
   border-collapse: collapse;
+  border: 1px solid #1a5278;
   font-size: 0.74rem;
 }
 .bea-emp-paper th,
 .bea-emp-paper td {
-  border: 1px solid #1a5278;
+  border: 0;
+  border-right: 1px solid #1a5278;
   padding: 0.28rem 0.4rem;
-  height: 1.55rem;
+  vertical-align: middle;
+  text-align: center;
+}
+.bea-emp-paper th:last-child,
+.bea-emp-paper td:last-child {
+  border-right: 0;
 }
 .bea-emp-paper th {
   background: #1a5278;
   color: #fff;
-  text-align: center;
   font-weight: 600;
-  height: auto;
+  border-bottom: 1px solid #1a5278;
+  border-right-color: rgba(255, 255, 255, 0.9);
+}
+.bea-emp-paper td {
+  padding-top: 0.35rem;
+  padding-bottom: 0.12rem;
 }
 .bea-emp-paper td:nth-child(n + 2) {
   width: 27%;
-  text-align: center;
+}
+.bea-emp-paper__fill td {
+  height: 100%;
+  padding: 0;
 }
 .bea-emp-paper__body {
-  margin-top: auto;
+  margin-top: 2rem;
 }
 .bea-emp-paper__foot {
   margin-top: auto;
@@ -7783,6 +7798,164 @@ button.bea-admin-kpi {
   border-radius: 0.4rem;
 }
 .bea-dmg-grant__short { color: #b45309; font-weight: 650; }
+
+.bea-dmg-fiche .bea-mg__modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.bea-dmg-fiche__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+.bea-dmg-fiche__title h2 {
+  margin: 0.1rem 0 0;
+}
+.bea-dmg-fiche__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bea-dmg-fiche__meta li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  max-width: 100%;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.bea-dmg-fiche__meta mat-icon {
+  flex-shrink: 0;
+  font-size: 0.95rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  color: #1a5278;
+}
+.bea-dmg-fiche__desc {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border-left: 3px solid #1a5278;
+  border-radius: 0 0.55rem 0.55rem 0;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+.bea-dmg-fiche__grant {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.85rem 0.9rem 0.95rem;
+  border: 1px solid #dbe3ee;
+  border-radius: 0.85rem;
+  background: #fff;
+}
+.bea-dmg-fiche__grant h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #0f172a;
+}
+.bea-dmg-fiche__grant > .bea-mg__btn {
+  align-self: flex-start;
+}
+.bea-dmg-fiche__grant .bea-dmg-grant__lead {
+  margin: 0;
+}
+.bea-dmg-fiche__table {
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.65rem;
+}
+.bea-dmg-fiche__table .bea-mg__table,
+.bea-dmg-fiche__table .bea-dmg-grant {
+  margin: 0;
+}
+.bea-dmg-fiche__alert {
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.55rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+.bea-dmg-fiche__alert--ok {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+.bea-dmg-fiche__alert--err {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+.bea-dmg-note {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.85rem 0.9rem 0.9rem;
+  border: 1px solid #dbe3ee;
+  border-radius: 0.85rem;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 2.4rem);
+}
+.bea-dmg-note > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #1a5278;
+}
+.bea-dmg-note mat-icon {
+  font-size: 1rem;
+  width: 1rem;
+  height: 1rem;
+}
+.bea-dmg-note textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 6.2rem;
+  resize: vertical;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 500;
+  line-height: 1.5;
+  padding: 0.75rem 0.85rem;
+  border: 1.5px solid #475569;
+  border-radius: 0.6rem;
+  background: #fff;
+  color: #0f172a;
+}
+.bea-dmg-note textarea::placeholder {
+  color: #94a3b8;
+  font-weight: 450;
+}
+.bea-dmg-note textarea:focus {
+  outline: none;
+  border-color: #1a5278;
+  box-shadow: 0 0 0 3px rgba(26, 82, 120, 0.14);
+}
+.bea-dmg-note small {
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.bea-dmg-note--plain {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
 
 .bea-dmg-dash .bea-mg__head h1 {
   background: linear-gradient(120deg, #0f172a 0%, #1a5278 55%, #2874a6 100%);

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db, require_module_access, require_permission
 from app.models.auth import User
 from app.schemas.common import PaginatedResponse
+from app.schemas.nombres import as_qty
 from app.schemas.mg_ops import BonOut
 from app.schemas.mg_stock import (
     AlerteOut,
@@ -202,8 +203,8 @@ async def export_articles(
             a.designation,
             familles.get(a.famille_id, ""),
             a.uom,
-            float(a.stock_actuel or 0),
-            float(a.stock_min or 0),
+            as_qty(a.stock_actuel or 0),
+            as_qty(a.stock_min or 0),
             svc.niveau_stock(a),
         ]
         for a in rows
@@ -336,7 +337,7 @@ async def export_mouvements(
                 if m.get("article_code")
                 else str(m.get("article_id") or "")
             ),
-            float(m["quantite"] or 0),
+            as_qty(m["quantite"] or 0),
             float(m["stock_disponible"] or 0) if m.get("stock_disponible") is not None else "",
             m.get("initiateur_nom") or "",
             m.get("departement") or "",
@@ -683,8 +684,8 @@ async def export_alertes(
         [
             a["code"],
             a["designation"],
-            float(a["stock_actuel"] or 0),
-            float(a["stock_min"] or 0),
+            as_qty(a["stock_actuel"] or 0),
+            as_qty(a["stock_min"] or 0),
             a["niveau"],
         ]
         for a in rows
@@ -913,7 +914,7 @@ async def rapport_consommation(
 
     headers = ["Famille", "Code", "Désignation", "Quantité sortie"]
     rows = [
-        [r["famille"], r["code"], r["designation"], float(r["quantite"])]
+        [r["famille"], r["code"], r["designation"], as_qty(r["quantite"] or 0)]
         for r in data["lignes"]
     ]
     title = f"Consommation stock — {data['periode']}"

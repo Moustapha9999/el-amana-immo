@@ -145,7 +145,7 @@
         @for (ctrl of lignes.controls; track $index; let i = $index) {
           <div class="bea-ach__grid" [formGroupName]="i">
             <label style="grid-column:1/-1">Désignation * <input formControlName="designation" /></label>
-            <label>Qté * <input type="number" formControlName="quantite" step="0.001" /></label>
+            <label>Qté * <input type="number" formControlName="quantite" min="1" step="1" /></label>
             <label>PU HT * <input type="number" formControlName="prix_unitaire" step="0.01" /></label>
             @if (canEditForm() && lignes.length > 1) {
               <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Retirer" (click)="removeLigne(i)">

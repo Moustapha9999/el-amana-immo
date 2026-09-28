@@ -15,6 +15,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import extract, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.auth import Agence, User
+from app.schemas.nombres import as_qty
 from app.models.mg_stock import (
     MgArticle,
     MgArticleFamille,
@@ -732,7 +733,7 @@ class MgStockReportingService:
                     "article": art.designation,
                     "famille": fam.libelle,
                     "type_mouvement": m.type_mouvement,
-                    "quantite": float(m.quantite or 0),
+                    "quantite": as_qty(m.quantite or 0),
                     "agence": await self._agence(m.agence_id),
                     "departement": m.departement or "",
                     "initiateur": users.get(m.initiateur_id, ""),

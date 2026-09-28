@@ -205,10 +205,10 @@ export function canDeleteRequest(row: { status: string; batch_number?: string | 
   return true;
 }
 
-export function formatQty(n: number): string {
-  const v = Number(n);
+export function formatQty(n: number | string | null | undefined): string {
+  const v = typeof n === 'number' ? n : Number(String(n ?? '').replace(',', '.'));
   if (!Number.isFinite(v)) return '—';
-  return Number.isInteger(v) ? String(v) : v.toLocaleString('fr-FR', { maximumFractionDigits: 3 });
+  return String(Math.round(v));
 }
 
 export const VISA_OPTIONS: { id: string; label: string }[] = [

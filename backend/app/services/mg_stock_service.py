@@ -22,6 +22,7 @@ from app.models.mg_stock import (
     MgStockMouvement,
     MgStockParametre,
 )
+from app.schemas.nombres import as_qty
 from app.services.mg_stock_periodes import MgStockPeriodeService, nature_ecart
 from app.schemas.mg_stock import (
     ArticleCreate,
@@ -1060,7 +1061,7 @@ class MgStockService:
                     "famille": r.famille,
                     "code": r.code,
                     "designation": r.designation,
-                    "quantite": float(r.quantite or 0),
+                    "quantite": as_qty(r.quantite or 0),
                 }
                 for r in rows
             ],
@@ -1495,7 +1496,7 @@ class MgStockService:
                         entrees += q
                     elif typ == "SORTIE":
                         sorties += q
-            result.append({"label": label, "entrees": entrees, "sorties": sorties})
+            result.append({"label": label, "entrees": as_qty(entrees), "sorties": as_qty(sorties)})
         return result
 
     async def _conso_par_famille(self, *, agence_id: uuid.UUID | None = None) -> list[dict]:
@@ -1510,7 +1511,7 @@ class MgStockService:
         if agence_id:
             stmt = stmt.where(MgStockMouvement.agence_id == agence_id)
         rows = (await self.db.execute(stmt)).all()
-        return [{"label": r[0], "value": float(r[1] or 0)} for r in rows]
+        return [{"label": r[0], "value": as_qty(r[1] or 0)} for r in rows]
 
     async def _conso_par_agence(self) -> list[dict]:
         stmt = (
@@ -1521,7 +1522,7 @@ class MgStockService:
             .order_by(Agence.libelle)
         )
         rows = (await self.db.execute(stmt)).all()
-        return [{"label": r[0], "value": float(r[1] or 0)} for r in rows]
+        return [{"label": r[0], "value": as_qty(r[1] or 0)} for r in rows]
 
     async def _conso_par_mois(self, *, agence_id: uuid.UUID | None = None) -> list[dict]:
         year = datetime.now(timezone.utc).year
@@ -1538,4 +1539,4 @@ class MgStockService:
         if agence_id:
             stmt = stmt.where(MgStockMouvement.agence_id == agence_id)
         rows = (await self.db.execute(stmt)).all()
-        return [{"label": f"{int(r[0]):02d}/{year}", "value": float(r[1] or 0)} for r in rows]
+        return [{"label": f"{int(r[0]):02d}/{year}", "value": as_qty(r[1] or 0)} for r in rows]

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.nombres import Qty, QtyGe0, QtyPos
 
 
 class FamilleCreate(BaseModel):
@@ -37,12 +38,12 @@ class ArticleCreate(BaseModel):
     stockable: bool = True
     reference: str | None = None
     sous_famille: str | None = None
-    stock_min: Decimal = Decimal("0")
-    stock_max: Decimal | None = None
+    stock_min: Qty = 0
+    stock_max: Qty | None = None
     agence_id: UUID | None = None
     emplacement: str | None = None
     fournisseur_habituel: str | None = None
-    stock_initial: Decimal = Decimal("0")
+    stock_initial: Qty = 0
 
 
 class ArticleUpdate(BaseModel):
@@ -52,8 +53,8 @@ class ArticleUpdate(BaseModel):
     stockable: bool | None = None
     reference: str | None = None
     sous_famille: str | None = None
-    stock_min: Decimal | None = None
-    stock_max: Decimal | None = None
+    stock_min: Qty | None = None
+    stock_max: Qty | None = None
     agence_id: UUID | None = None
     emplacement: str | None = None
     fournisseur_habituel: str | None = None
@@ -71,9 +72,9 @@ class ArticleOut(BaseModel):
     stockable: bool = True
     reference: str | None = None
     sous_famille: str | None = None
-    stock_actuel: Decimal
-    stock_min: Decimal
-    stock_max: Decimal | None
+    stock_actuel: Qty
+    stock_min: Qty
+    stock_max: Qty | None
     agence_id: UUID | None
     emplacement: str | None
     fournisseur_habituel: str | None = None
@@ -86,17 +87,17 @@ class ArticleFicheOut(ArticleOut):
 
     famille_libelle: str | None = None
     agence_libelle: str | None = None
-    stock_initial: Decimal = Decimal("0")
-    total_entrees: Decimal = Decimal("0")
-    total_sorties: Decimal = Decimal("0")
-    total_ajustements: Decimal = Decimal("0")
+    stock_initial: Qty = 0
+    total_entrees: Qty = 0
+    total_sorties: Qty = 0
+    total_ajustements: Qty = 0
     total_inventaires: int = 0
 
 
 class MouvementCreate(BaseModel):
     article_id: UUID
     type_mouvement: str  # ENTREE | SORTIE | AJUSTEMENT | INVENTAIRE
-    quantite: Decimal
+    quantite: QtyPos
     agence_id: UUID | None = None
     departement: str | None = None
     motif: str | None = None
@@ -109,7 +110,7 @@ class MouvementCreate(BaseModel):
 
 class ReceptionLigneIn(BaseModel):
     ligne_id: UUID
-    quantite: Decimal = Field(gt=0)
+    quantite: QtyPos
     article_id: UUID | None = None
 
 
@@ -127,7 +128,7 @@ class MouvementOut(BaseModel):
     date_mouvement: datetime
     type_mouvement: str
     article_id: UUID
-    quantite: Decimal
+    quantite: Qty
     agence_id: UUID | None
     departement: str | None
     motif: str | None
@@ -139,14 +140,14 @@ class MouvementOut(BaseModel):
     initiateur_nom: str | None = None
     article_code: str | None = None
     article_designation: str | None = None
-    stock_disponible: Decimal | None = None
+    stock_disponible: Qty | None = None
 
 
 class DemandeLigneIn(BaseModel):
     article_id: UUID | None = None
     designation: str
-    quantite_demandee: Decimal = Field(gt=0)
-    quantite_accordee: Decimal | None = None
+    quantite_demandee: QtyPos
+    quantite_accordee: Qty | None = None
 
 
 class DemandeCreate(BaseModel):
@@ -176,8 +177,8 @@ class DemandeLigneOut(BaseModel):
     id: UUID
     article_id: UUID | None
     designation: str
-    quantite_demandee: Decimal
-    quantite_accordee: Decimal | None
+    quantite_demandee: Qty
+    quantite_accordee: Qty | None
     sort_order: int
 
 
@@ -202,7 +203,7 @@ class DashboardOut(BaseModel):
     articles_total: int
     articles_actifs: int
     articles_inactifs: int
-    stock_total_unites: float
+    stock_total_unites: Qty
     entrees_mois: int
     sorties_mois: int
     articles_crees_mois: int
@@ -221,11 +222,11 @@ class DashboardOut(BaseModel):
     conso_par_agence: list[dict]
     conso_par_mois: list[dict]
     periode_active: dict | None = None
-    stock_initial_periode: float = 0
-    entrees_qte_periode: float = 0
-    sorties_qte_periode: float = 0
-    ajustements_qte_periode: float = 0
-    stock_theorique_periode: float = 0
+    stock_initial_periode: Qty = 0
+    entrees_qte_periode: Qty = 0
+    sorties_qte_periode: Qty = 0
+    ajustements_qte_periode: Qty = 0
+    stock_theorique_periode: Qty = 0
     ajustements_mois: int = 0
     cloture_statut: str | None = None
     cloture_message: str | None = None
@@ -258,7 +259,7 @@ class ParametreUpdate(BaseModel):
 
 class InventaireLigneIn(BaseModel):
     id: UUID
-    stock_physique: Decimal = Field(ge=0)
+    stock_physique: QtyGe0
     observation: str | None = None
 
 
@@ -281,9 +282,9 @@ class InventaireLigneOut(BaseModel):
 
     id: UUID
     article_id: UUID
-    stock_theorique: Decimal
-    stock_physique: Decimal | None
-    ecart: Decimal | None
+    stock_theorique: Qty
+    stock_physique: Qty | None
+    ecart: Qty | None
     nature_ecart: str | None = None
     observation: str | None
     sort_order: int
@@ -314,8 +315,8 @@ class AlerteOut(BaseModel):
     article_id: UUID | None = None
     code: str | None = None
     designation: str | None = None
-    stock_actuel: Decimal | None = None
-    stock_min: Decimal | None = None
+    stock_actuel: Qty | None = None
+    stock_min: Qty | None = None
     niveau: str
     agence_id: UUID | None = None
     type_alerte: str = "STOCK"

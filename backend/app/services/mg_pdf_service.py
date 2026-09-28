@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
@@ -219,16 +219,14 @@ def _box(label: str, value: str, styles, *, min_h: float = 8 * mm, width: float 
 
 
 def _qty_int(value) -> str:
-    """Quantité affichée en entier (pas comme les prix décimaux)."""
-    if value is None:
+    """Quantité affichée en entier, sans décimales (pas comme les prix)."""
+    if value is None or value == "":
         return "—"
     try:
-        return str(int(value))
-    except (TypeError, ValueError):
-        try:
-            return str(int(float(value)))
-        except (TypeError, ValueError):
-            return "—"
+        number = Decimal(str(value))
+        return str(int(number.to_integral_value(rounding=ROUND_HALF_UP)))
+    except Exception:
+        return "—"
 
 
 def _plain_line(label: str, value: str, styles) -> Paragraph:
@@ -1090,8 +1088,8 @@ def pdf_demande_fourniture(demande) -> bytes:
             rows.append(
                 [
                     Paragraph(ligne.designation, styles["cell"]),
-                    f"{ligne.quantite_demandee}",
-                    f"{ligne.quantite_accordee if ligne.quantite_accordee is not None else ''}",
+                    _qty_int(ligne.quantite_demandee) if ligne.quantite_demandee is not None else "",
+                    _qty_int(ligne.quantite_accordee) if ligne.quantite_accordee is not None else "",
                 ]
             )
         table = Table(rows, colWidths=[110 * mm, 35 * mm, 35 * mm])
@@ -1122,21 +1120,6 @@ def pdf_demande_fourniture(demande) -> bytes:
 
 
 _PRIO_PDF = {"NORMALE": "Normale", "HAUTE": "Haute", "URGENTE": "Urgente", "URGENT": "Urgente"}
-
-
-class _DropToMiddle(Flowable):
-    """Décale le bloc métier vers le milieu de la page."""
-
-    def __init__(self):
-        super().__init__()
-        self._h = 0
-
-    def wrap(self, aw, ah):
-        self._h = min(78 * mm, max(18 * mm, ah * 0.32))
-        return aw, self._h
-
-    def draw(self):
-        return
 
 
 class _PushToBottom(Flowable):
@@ -1179,14 +1162,9 @@ def _visa_labels(raw: str | list[str] | None) -> list[str]:
 
 
 def _qty_label(value, unit: str | None) -> str:
-    if value is None or value == "":
+    text = "" if value is None or value == "" else _qty_int(value)
+    if text == "—":
         text = ""
-    else:
-        try:
-            number = Decimal(str(value))
-            text = str(int(number)) if number == number.to_integral() else f"{number.normalize()}"
-        except Exception:
-            text = str(value)
     unit_txt = (unit or "").strip()
     return f"{text} {unit_txt}".strip()
 
@@ -1360,27 +1338,45 @@ def pdf_employee_request(
             granted = getattr(it, "quantity_granted", None)
             granted_txt = "" if granted is None else _qty_label(granted, getattr(it, "unit", None))
             rows.append([
-                Paragraph(escape(description), styles["cell"]),
+                Paragraph(escape(description), styles["cell_center"]),
                 Paragraph(escape(_qty_label(it.quantity, getattr(it, "unit", None))), styles["cell_center"]),
                 Paragraph(escape(granted_txt), styles["cell_center"]),
             ])
+        n_items = len(rows) - 1
+        rows.append(["", "", ""])
+        # Cadre haut comme la fiche papier : colonnes séparées, zone vide en dessous, sans filets horizontaux.
+        spacer_h = max(20 * mm, 82 * mm - n_items * 7 * mm)
         usable = 182 * mm
         table = Table(
             rows,
             colWidths=[usable * 0.50, usable * 0.25, usable * 0.25],
+            rowHeights=[None] * (n_items + 1) + [spacer_h],
         )
+        ink = BEA_NAVY
         table.setStyle(
             TableStyle(
                 [
-                    ("BACKGROUND", (0, 0), (-1, 0), BEA_NAVY),
+                    ("BACKGROUND", (0, 0), (-1, 0), ink),
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                    ("ALIGN", (1, 1), (-1, -1), "CENTER"),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("GRID", (0, 0), (-1, -1), 0.7, BEA_NAVY),
-                    ("LEFTPADDING", (0, 1), (0, -1), 4),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, -2), "MIDDLE"),
+                    ("VALIGN", (0, -1), (-1, -1), "TOP"),
+                    ("BOX", (0, 0), (-1, -1), 0.8, ink),
+                    ("LINEBELOW", (0, 0), (-1, 0), 0.8, ink),
+                    ("LINEAFTER", (0, 0), (0, 0), 0.6, colors.white),
+                    ("LINEAFTER", (1, 0), (1, 0), 0.6, colors.white),
+                    ("LINEAFTER", (0, 1), (0, -1), 0.8, ink),
+                    ("LINEAFTER", (1, 1), (1, -1), 0.8, ink),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                    ("TOPPADDING", (0, 0), (-1, 0), 3),
-                    ("BOTTOMPADDING", (0, 0), (-1, 0), 3),
+                    ("TOPPADDING", (0, 0), (-1, 0), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 4),
+                    ("TOPPADDING", (0, 1), (-1, -2), 4),
+                    ("BOTTOMPADDING", (0, 1), (-1, -2), 2),
+                    ("TOPPADDING", (0, -1), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, -1), (-1, -1), 0),
+                    ("LEFTPADDING", (0, -1), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, -1), (-1, -1), 0),
                 ]
             )
         )
@@ -1413,7 +1409,7 @@ def pdf_employee_request(
         reserve = ((len(labels) + 1) // 2) * 36 * mm + 4 * mm
         return [
             header,
-            _DropToMiddle(),
+            Spacer(1, 32 * mm),
             Paragraph("Formulaire d'expression de besoin", title),
             Spacer(1, 4 * mm),
             ident,

@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.mg_ops import BonOut, TransitionIn
+from app.schemas.nombres import Qty, QtyPos
 
 __all__ = [
     "TransitionIn",
@@ -95,7 +96,7 @@ class DashboardAchatsOut(BaseModel):
 class DemandeLigneIn(BaseModel):
     designation: str = Field(min_length=1, max_length=255)
     description: str | None = None
-    quantite: Decimal = Field(gt=0)
+    quantite: QtyPos
     uom: str = "U"
     prix_estime: Decimal = Field(default=Decimal("0"), ge=0)
     article_id: UUID | None = None
@@ -219,7 +220,7 @@ class ConsultationOut(BaseModel):
 
 class DevisLigneIn(BaseModel):
     designation: str = Field(min_length=1, max_length=255)
-    quantite: Decimal = Field(gt=0)
+    quantite: QtyPos
     prix_unitaire: Decimal = Field(ge=0)
     remise_pct: Decimal = Field(default=Decimal("0"), ge=0)
     taux_tva: Decimal = Field(default=Decimal("0"), ge=0)
@@ -340,7 +341,7 @@ class BlOut(BaseModel):
 
 class ReceptionLigneIn(BaseModel):
     bc_ligne_id: UUID
-    quantite_recue: Decimal = Field(gt=0)
+    quantite_recue: QtyPos
     article_id: UUID | None = None
 
 
@@ -349,7 +350,7 @@ class ReceptionLigneOut(BaseModel):
 
     id: UUID
     bc_ligne_id: UUID
-    quantite_recue: Decimal
+    quantite_recue: Qty
     article_id: UUID | None
 
 
@@ -387,7 +388,7 @@ class ReceptionOut(BaseModel):
 
 class FactureLigneIn(BaseModel):
     designation: str = Field(min_length=1, max_length=255)
-    quantite: Decimal = Field(gt=0)
+    quantite: QtyPos
     prix_unitaire: Decimal = Field(ge=0)
 
 

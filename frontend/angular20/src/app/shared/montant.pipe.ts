@@ -3,7 +3,7 @@ import { Pipe, PipeTransform } from '@angular/core';
 /**
  * Règles BEA DIGITAL :
  * - Montant : 2 décimales, virgule, espace milliers (1 250,00)
- * - Quantité : entier, espace milliers (1 000)
+ * - Quantité, stock, entrée, sortie : entier sans séparateur (1000, 50000)
  * - Taux : 2 décimales + « % » (18,00 %)
  * - Null / vide : 0,00 (montant) ou 0 (quantité)
  */
@@ -77,10 +77,7 @@ export function formatMontant(
 }
 
 export function formatQuantite(value: number | string | null | undefined): string {
-  const q = quantiteEntiere(value);
-  const neg = q < 0;
-  const grouped = groupInt(String(Math.abs(q)));
-  return neg ? `-${grouped}` : grouped;
+  return String(quantiteEntiere(value));
 }
 
 export function formatTaux(value: number | string | null | undefined): string {

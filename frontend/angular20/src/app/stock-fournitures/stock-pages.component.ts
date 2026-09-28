@@ -704,14 +704,14 @@ export class StockAlertesComponent implements OnInit {
                     <option value="">—</option>
                     @for (a of articles(); track a.id) {
                       <option [value]="a.id">
-                        {{ a.code }} — {{ a.designation }} ({{ a.stock_actuel }})
+                        {{ a.code }} — {{ a.designation }} ({{ a.stock_actuel | quantite }})
                       </option>
                     }
                   </select>
                 </label>
                 <label>
                   Quantité
-                  <input type="number" formControlName="quantite" min="0.001" step="0.001" />
+                  <input type="number" formControlName="quantite" min="1" step="1" />
                 </label>
                 <label>
                   Agence
@@ -859,7 +859,7 @@ export class StockAlertesComponent implements OnInit {
                           <input
                             type="number"
                             min="0"
-                            step="0.001"
+                            step="1"
                             [value]="receptionQtyOf(l.id)"
                             (input)="setReceptionQty(l.id, $any($event.target).value)"
                             [attr.max]="resteLigne(l)"
@@ -928,7 +928,7 @@ export class StockFluxComponent implements OnInit {
 
   readonly form = this.fb.nonNullable.group({
     article_id: ['', Validators.required],
-    quantite: [1, [Validators.required, Validators.min(0.001)]],
+    quantite: [1, [Validators.required, Validators.min(1)]],
     agence_id: [''],
     motif: [''],
   });
@@ -1394,7 +1394,7 @@ export class StockSortiesComponent {}
                         <input
                           type="number"
                           min="0"
-                          step="0.001"
+                          step="1"
                           [value]="physiqueValue(l.id)"
                           (change)="setPhysique(l.id, $event)"
                         />

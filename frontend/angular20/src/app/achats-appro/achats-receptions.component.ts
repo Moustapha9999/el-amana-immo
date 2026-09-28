@@ -146,7 +146,7 @@ export class AchatsReceptionsComponent implements OnInit {
       bc_ligne_id: [bcLigneId],
       designation: [{ value: designation, disabled: true }],
       reste: [{ value: reste, disabled: true }],
-      quantite_recue: [reste > 0 ? reste : 0, [Validators.required, Validators.min(0.001)]],
+      quantite_recue: [reste > 0 ? reste : 0, [Validators.required, Validators.min(1)]],
     });
   }
 

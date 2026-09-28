@@ -305,7 +305,7 @@ export class EmpAccueilComponent implements OnInit {
               @for (it of items(); track $index; let i = $index) {
                 <div class="bea-emp-articles__row">
                   <input [(ngModel)]="it.description" [name]="'d'+i" placeholder="Désignation" required />
-                  <input type="number" min="0.001" step="0.001" [(ngModel)]="it.quantity" [name]="'q'+i" />
+                  <input type="number" min="1" step="1" [(ngModel)]="it.quantity" [name]="'q'+i" />
                   <input [(ngModel)]="it.unit" [name]="'u'+i" />
                   <select [(ngModel)]="it.article_id" [name]="'a'+i">
                     <option [ngValue]="null">Optionnel</option>
@@ -384,6 +384,9 @@ export class EmpAccueilComponent implements OnInit {
                       <td></td>
                     </tr>
                   }
+                  <tr class="bea-emp-paper__fill" aria-hidden="true">
+                    <td></td><td></td><td></td>
+                  </tr>
                 </tbody>
               </table>
               </div>
@@ -676,7 +679,7 @@ export class EmpNouvelleComponent implements OnInit {
               @for (it of editItems(); track $index; let i = $index) {
                 <div class="bea-emp__ligne">
                   <input [(ngModel)]="it.description" [name]="'ed'+i" />
-                  <input type="number" min="0.001" step="0.001" [(ngModel)]="it.quantity" [name]="'eq'+i" />
+                  <input type="number" min="1" step="1" [(ngModel)]="it.quantity" [name]="'eq'+i" />
                   <input [(ngModel)]="it.unit" [name]="'eu'+i" />
                   <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="removeEdit(i)">Retirer</button>
                 </div>

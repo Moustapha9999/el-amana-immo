@@ -8,12 +8,14 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.nombres import Qty, QtyPos
+
 
 class BcLigneIn(BaseModel):
     code_produit: str | None = None
     departement: str | None = None
     description: str = Field(min_length=1, max_length=255)
-    quantite: Decimal = Field(gt=0)
+    quantite: QtyPos
     uom: str = "U"
     prix_unitaire: Decimal = Field(ge=0)
     article_id: UUID | None = None
@@ -29,7 +31,7 @@ class BcLigneOut(BcLigneIn):
     prix_total: Decimal
     total_ttc: Decimal = Decimal("0")
     sort_order: int
-    quantite_recue: Decimal = Decimal("0")
+    quantite_recue: Qty = 0
 
 
 class BonCreate(BaseModel):

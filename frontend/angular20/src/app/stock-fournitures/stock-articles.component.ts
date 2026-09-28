@@ -195,12 +195,12 @@ interface Paginated<T> {
               @if (!editingId()) {
                 <label>
                   Stock initial
-                  <input type="number" formControlName="stock_initial" min="0" step="0.001" />
+                  <input type="number" formControlName="stock_initial" min="0" step="1" />
                 </label>
               }
               <label>
                 Stock minimum
-                <input type="number" formControlName="stock_min" min="0" step="0.001" />
+                <input type="number" formControlName="stock_min" min="0" step="1" />
               </label>
               <label>
                 Agence

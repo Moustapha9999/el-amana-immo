@@ -173,7 +173,7 @@
         @for (ctrl of lignes.controls; track $index; let i = $index) {
           <div class="bea-ach__grid" [formGroupName]="i">
             <label style="grid-column:1/-1">Désignation * <input formControlName="designation" /></label>
-            <label>Qté * <input type="number" formControlName="quantite" /></label>
+            <label>Qté * <input type="number" formControlName="quantite" min="1" step="1" /></label>
             <label>UOM <input formControlName="uom" /></label>
             <label>Prix estimé <input type="number" formControlName="prix_estime" /></label>
             @if (canEditForm() && lignes.length > 1) {

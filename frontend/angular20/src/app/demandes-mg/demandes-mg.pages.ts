@@ -6,6 +6,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
 import { downloadBlob } from '../demandes-employes/demandes-employe.models';
+import { MontantPipe, QuantitePipe, formatQuantite, quantiteEntiere } from '../shared/montant.pipe';
 
 interface Dash {
   a_traiter: number;
@@ -226,7 +227,7 @@ export class DmgDashboardComponent implements OnInit {
 @Component({
   selector: 'bea-dmg-inbox',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, FormsModule, MatIconModule, MgGedPanelComponent],
+  imports: [DatePipe, FormsModule, MatIconModule, MgGedPanelComponent, QuantitePipe],
   template: `
     <section class="bea-mg">
       <header class="bea-mg__head">
@@ -329,59 +330,79 @@ export class DmgDashboardComponent implements OnInit {
 
       @if (detail(); as d) {
         <div class="bea-mg__backdrop" (click)="detail.set(null)"></div>
-        <aside class="bea-mg__modal bea-mg__modal--lg" role="dialog">
+        <aside class="bea-mg__modal bea-mg__modal--lg bea-dmg-fiche" role="dialog" aria-labelledby="dmg-fiche-title">
           <div class="bea-mg__modal-head">
             <div>
               <p class="bea-stock-page__kicker">{{ d.request_number }}</p>
-              <h2>{{ d.title }}</h2>
+              <div class="bea-dmg-fiche__title">
+                <h2 id="dmg-fiche-title">{{ d.title }}</h2>
+                <span class="bea-emp-badge" [attr.data-status]="d.status">{{ label(d.status) }}</span>
+              </div>
             </div>
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="detail.set(null)">Retour</button>
           </div>
           <div class="bea-mg__modal-body">
-            <p>{{ d.requester_name }} · {{ d.source_espace_label }} · {{ d.agency_label }} · {{ label(d.status) }}</p>
-            <p>{{ d.description }}</p>
-            <h3>Quantités accordées</h3>
-            <p class="bea-dmg-grant__lead">Après vérification du stock, indiquez la quantité à accorder. Elle ne peut pas dépasser la quantité demandée.</p>
-            @if (grantError()) { <p class="bea-stock-page__error">{{ grantError() }}</p> }
-            @if (grantOk()) { <p class="bea-stock-page__ok">{{ grantOk() }}</p> }
-            <table class="bea-mg__table bea-dmg-grant">
-              <thead>
-                <tr>
-                  <th>Désignation</th>
-                  <th>Demandée</th>
-                  <th>Stock</th>
-                  <th>Accordée</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (it of grantLines; track it.id) {
-                  <tr>
-                    <td>{{ it.description }}</td>
-                    <td>{{ it.quantity }} {{ it.unit }}</td>
-                    <td [class.bea-dmg-grant__short]="stockShort(it)">{{ stockLabel(it) }}</td>
-                    <td>
-                      <input
-                        type="number"
-                        min="0"
-                        [max]="it.quantity"
-                        step="0.001"
-                        [(ngModel)]="it.granted"
-                        [name]="'g' + it.id"
-                        [readonly]="mode() === 'view'"
-                      />
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-            @if (mode() === 'edit') {
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="grantSaving()" (click)="saveGranted(d.id)">
-                Enregistrer les quantités
-              </button>
+            <ul class="bea-dmg-fiche__meta">
+              <li><mat-icon>person</mat-icon><span>{{ d.requester_name || '—' }}</span></li>
+              <li><mat-icon>apartment</mat-icon><span>{{ d.source_espace_label || '—' }}</span></li>
+              <li><mat-icon>location_on</mat-icon><span>{{ d.agency_label || '—' }}</span></li>
+              <li><mat-icon>flag</mat-icon><span>{{ prio(d.priority) }}</span></li>
+            </ul>
+            @if (d.description) {
+              <p class="bea-dmg-fiche__desc">{{ d.description }}</p>
             }
-            <label class="bea-mg__field">
-              <span>Commentaire</span>
-              <textarea [(ngModel)]="comment" name="comment" rows="2"></textarea>
+            <section class="bea-dmg-fiche__grant">
+              <h3>Quantités accordées</h3>
+              <p class="bea-dmg-grant__lead">Après vérification du stock, indiquez la quantité à accorder. Elle ne peut pas dépasser la quantité demandée.</p>
+              @if (grantError()) { <p class="bea-dmg-fiche__alert bea-dmg-fiche__alert--err">{{ grantError() }}</p> }
+              @if (grantOk()) { <p class="bea-dmg-fiche__alert bea-dmg-fiche__alert--ok">{{ grantOk() }}</p> }
+              <div class="bea-dmg-fiche__table">
+                <table class="bea-mg__table bea-dmg-grant">
+                  <thead>
+                    <tr>
+                      <th>Désignation</th>
+                      <th>Demandée</th>
+                      <th>Stock</th>
+                      <th>Accordée</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (it of grantLines; track it.id) {
+                      <tr>
+                        <td>{{ it.description }}</td>
+                        <td>{{ it.quantity | quantite }} {{ it.unit }}</td>
+                        <td [class.bea-dmg-grant__short]="stockShort(it)">{{ stockLabel(it) }}</td>
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            [max]="it.quantity"
+                            step="1"
+                            [(ngModel)]="it.granted"
+                            [name]="'g' + it.id"
+                            [readonly]="mode() === 'view'"
+                          />
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              @if (mode() === 'edit') {
+                <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="grantSaving()" (click)="saveGranted(d.id)">
+                  Enregistrer les quantités
+                </button>
+              }
+            </section>
+            <label class="bea-dmg-note">
+              <span><mat-icon>chat_bubble_outline</mat-icon> Commentaire</span>
+              <textarea
+                [(ngModel)]="comment"
+                name="comment"
+                rows="4"
+                placeholder="Précisez le motif ou la décision transmise au demandeur."
+              ></textarea>
+              <small>Ce texte accompagne l’action choisie en bas de la fiche. Il est obligatoire pour un refus.</small>
             </label>
             <bea-mg-ged moduleCode="demandes-mg" entity="MG_EMPLOYEE_REQUEST" [entityId]="d.id" [reference]="d.request_number" />
           </div>
@@ -418,9 +439,9 @@ export class DmgDashboardComponent implements OnInit {
           <div class="bea-mg__modal-body">
             <p>{{ confirmText(c) }}</p>
             @if (c.kind === 'reject') {
-              <label class="bea-mg__field">
+              <label class="bea-dmg-note bea-dmg-note--plain">
                 <span>Motif de refus</span>
-                <textarea [(ngModel)]="comment" name="motif" rows="3" required></textarea>
+                <textarea [(ngModel)]="comment" name="motif" rows="4" required placeholder="Indiquez pourquoi la demande est refusée."></textarea>
               </label>
             }
           </div>
@@ -495,26 +516,31 @@ export class DmgInboxComponent implements OnInit {
   open(id: string, nextMode: 'view' | 'edit' = 'view'): void {
     this.grantError.set('');
     this.grantOk.set('');
+    this.comment = '';
     this.api.get<RequestRow>(`/mg/requests/${id}`).subscribe({
       next: (r) => {
         this.mode.set(nextMode === 'edit' && this.canEdit(r) ? 'edit' : 'view');
         this.detail.set(r);
-        this.grantLines = r.items.map((it) => ({
-          id: it.id,
-          description: it.description,
-          quantity: it.quantity,
-          unit: it.unit,
-          article_id: it.article_id,
-          granted: it.quantity_granted ?? null,
-        }));
+        this.grantLines = r.items.map((it) => this.grantLine(it));
       },
       error: (e) => this.erreur.set(e?.error?.detail || 'Ouverture impossible'),
     });
   }
+  private grantLine(it: RequestRow['items'][number]): GrantLine {
+    const granted = it.quantity_granted;
+    return {
+      id: it.id,
+      description: it.description,
+      quantity: quantiteEntiere(it.quantity),
+      unit: it.unit,
+      article_id: it.article_id,
+      granted: granted === null || granted === undefined ? null : quantiteEntiere(granted),
+    };
+  }
   stockLabel(it: GrantLine): string {
     const hint = this.detail()?.stock_hints?.find((h) => h.article_id === it.article_id);
     if (!hint) return '—';
-    return `${hint.stock_actuel}${hint.available ? '' : ' · insuffisant'}`;
+    return `${formatQuantite(hint.stock_actuel)}${hint.available ? '' : ' · insuffisant'}`;
   }
   stockShort(it: GrantLine): boolean {
     const hint = this.detail()?.stock_hints?.find((h) => h.article_id === it.article_id);
@@ -528,19 +554,12 @@ export class DmgInboxComponent implements OnInit {
       item_id: it.id,
       quantity_granted: it.granted === null || it.granted === undefined || String(it.granted) === ''
         ? null
-        : Number(it.granted),
+        : quantiteEntiere(it.granted),
     }));
     this.api.post<RequestRow>(`/mg/requests/${id}/granted`, { lines }).subscribe({
       next: (r) => {
         this.detail.set(r);
-        this.grantLines = r.items.map((it) => ({
-          id: it.id,
-          description: it.description,
-          quantity: it.quantity,
-          unit: it.unit,
-          article_id: it.article_id,
-          granted: it.quantity_granted ?? null,
-        }));
+        this.grantLines = r.items.map((it) => this.grantLine(it));
         this.grantOk.set('Quantités accordées enregistrées. Elles figurent sur le PDF.');
         this.grantSaving.set(false);
       },
@@ -635,7 +654,7 @@ export class DmgInboxComponent implements OnInit {
 @Component({
   selector: 'bea-dmg-batches',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, MatIconModule, RouterLink],
+  imports: [FormsModule, MatIconModule, RouterLink, QuantitePipe, MontantPipe],
   template: `
     <section class="bea-mg">
       <header class="bea-mg__head">
@@ -680,7 +699,7 @@ export class DmgInboxComponent implements OnInit {
                   <td>{{ b.title }}</td>
                   <td>{{ b.request_count }}</td>
                   <td>{{ b.item_count }}</td>
-                  <td>{{ b.estimated_total }}</td>
+                  <td>{{ b.estimated_total | montant }}</td>
                   <td><span class="bea-emp-badge" [attr.data-status]="b.status === 'BROUILLON' ? 'BROUILLON' : 'VALIDEE'">{{ batchLabel(b.status) }}</span></td>
                   <td class="bea-mg__actions-cell">
                     <div class="bea-emp-actions">
@@ -760,7 +779,7 @@ export class DmgInboxComponent implements OnInit {
                 @for (it of b.items; track it.id) {
                   <tr>
                     <td>{{ it.description }}</td>
-                    <td>{{ it.quantity }}</td>
+                    <td>{{ it.quantity | quantite }}</td>
                     <td>
                       @if (b.status === 'BROUILLON') {
                         <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Retirer" (click)="removeItem(b.id, it.id)">

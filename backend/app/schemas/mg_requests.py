@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.nombres import Qty, QtyGe0, QtyPos
+
 
 class CategoryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -49,7 +51,7 @@ class CategoryIn(BaseModel):
 class RequestItemIn(BaseModel):
     article_id: UUID | None = None
     description: str = Field(min_length=1, max_length=255)
-    quantity: Decimal = Field(gt=0)
+    quantity: QtyPos
     unit: str = "U"
     estimated_unit_price: Decimal = Field(default=Decimal("0"), ge=0)
 
@@ -60,14 +62,14 @@ class RequestItemOut(BaseModel):
     id: UUID
     article_id: UUID | None
     description: str
-    quantity: Decimal
-    quantity_granted: Decimal | None = None
+    quantity: Qty
+    quantity_granted: Qty | None = None
     unit: str
     estimated_unit_price: Decimal
     estimated_total: Decimal
     stock_checked: bool
     stock_available: bool | None
-    stock_actuel: Decimal | None
+    stock_actuel: Qty | None
     status: str
 
 
@@ -110,7 +112,7 @@ class CommentIn(BaseModel):
 
 class GrantedLineIn(BaseModel):
     item_id: UUID
-    quantity_granted: Decimal | None = Field(default=None, ge=0)
+    quantity_granted: QtyGe0 | None = None
 
 
 class GrantedIn(BaseModel):
@@ -143,10 +145,10 @@ class RecategorizeIn(BaseModel):
 class StockHintOut(BaseModel):
     article_id: UUID
     designation: str
-    stock_actuel: Decimal
-    stock_min: Decimal | None
-    quantity: Decimal
-    after: Decimal
+    stock_actuel: Qty
+    stock_min: Qty | None
+    quantity: Qty
+    after: Qty
     available: bool
 
 
@@ -310,7 +312,7 @@ class ConsolidatedLineOut(BaseModel):
     key: str
     article_id: UUID | None
     description: str
-    quantity: Decimal
+    quantity: Qty
     estimated_total: Decimal
     request_count: int
 
@@ -323,7 +325,7 @@ class BatchItemOut(BaseModel):
     request_item_id: UUID
     article_id: UUID | None
     description: str
-    quantity: Decimal
+    quantity: Qty
     supplier_id: UUID | None
     estimated_unit_price: Decimal
     estimated_total: Decimal
