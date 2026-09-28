@@ -248,6 +248,124 @@ async def test_mine_dashboard_counts_from_real_statuses():
     assert any(i["statut"] == "A_COMPLETER" for i in out["insights"])
 
 
+def test_owner_sees_own_request_and_stranger_is_forbidden():
+    from app.services.request_access import require_owner
+
+    owner = _user()
+    other = _user(superuser=True)
+    row = _request(requester=owner.id)
+    require_owner(row, owner)
+    with pytest.raises(HTTPException) as exc:
+        require_owner(row, other)
+    assert exc.value.status_code == 403
+
+
+def test_visibility_matrix_owner_processor_and_other_department():
+    from app.services.request_access import can_read_request, visible_comments
+
+    ahmed = uuid4()
+    fatima = uuid4()
+    mohamed = uuid4()
+    assert can_read_request(
+        requester_id=ahmed, user_id=ahmed, target_espace="moyens-generaux", permission_codes=set()
+    )
+    assert not can_read_request(
+        requester_id=ahmed, user_id=fatima, target_espace="moyens-generaux", permission_codes={"mg.request.mine.view"}
+    )
+    assert can_read_request(
+        requester_id=ahmed,
+        user_id=mohamed,
+        target_espace="moyens-generaux",
+        permission_codes={"mg.request.view"},
+    )
+    assert not can_read_request(
+        requester_id=ahmed,
+        user_id=mohamed,
+        target_espace="rh",
+        permission_codes={"mg.request.view"},
+    )
+    internal = SimpleNamespace(visibility="INTERNAL", body="note interne")
+    shared = SimpleNamespace(visibility="SHARED", body="visible")
+    assert visible_comments([internal, shared], "owner") == [shared]
+    assert visible_comments([internal, shared], "processor") == [internal, shared]
+
+
+def test_search_filters_stay_inside_owner_scope():
+    svc = MgRequestsService(MagicMock())
+    mine = uuid4()
+    other = uuid4()
+    filters = svc._filters(
+        q=None, statut=None, category_id=None, agency_id=None,
+        requester_id=other, priority=None, mine=mine, source_espace="rh",
+    )
+    rendered = " ".join(str(f) for f in filters)
+    assert rendered.count("mg_employee_requests.requester_id") == 2
+    assert "source_espace_code" in rendered
+
+
+@pytest.mark.asyncio
+async def test_list_without_scope_is_forbidden():
+    svc = MgRequestsService(MagicMock())
+    with pytest.raises(HTTPException) as exc:
+        await svc.list_requests(source_espace="rh")
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_processor_cannot_validate_other_target():
+    db = MagicMock()
+    svc = MgRequestsService(db)
+    row = _request(statut="RECUE")
+    row.target_espace_code = "rh"
+    svc._load = AsyncMock(return_value=row)
+    with pytest.raises(HTTPException) as exc:
+        await svc.validate(row.id, _user(), "OK")
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_document_of_another_request_is_forbidden():
+    db = MagicMock()
+    svc = MgRequestsService(db)
+    owner = _user()
+    stranger = _user()
+    row = _request(requester=owner.id)
+    svc._load = AsyncMock(return_value=row)
+    with patch(
+        "app.services.permission_service.load_user_permission_codes",
+        AsyncMock(return_value={"ged.read", "mg.request.mine.view"}),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await svc.assert_document_access(
+                stranger, entity="MG_EMPLOYEE_REQUEST", entity_id=str(row.id),
+            )
+    assert exc.value.status_code == 403
+
+    with patch(
+        "app.services.permission_service.load_user_permission_codes",
+        AsyncMock(return_value={"ged.read"}),
+    ):
+        await svc.assert_document_access(owner, entity="MG_EMPLOYEE_REQUEST", entity_id=str(row.id))
+
+
+@pytest.mark.asyncio
+async def test_mg_agent_can_open_mg_target_not_rh_document():
+    db = MagicMock()
+    svc = MgRequestsService(db)
+    agent = _user()
+    row = _request(statut="RECUE")
+    svc._load = AsyncMock(return_value=row)
+    with patch(
+        "app.services.permission_service.load_user_permission_codes",
+        AsyncMock(return_value={"mg.request.view"}),
+    ):
+        await svc.assert_document_access(agent, entity="MG_EMPLOYEE_REQUEST", entity_id=str(row.id))
+        row.target_espace_code = "rh"
+        with pytest.raises(HTTPException) as exc:
+            await svc.assert_document_access(agent, entity="MG_EMPLOYEE_REQUEST", entity_id=str(row.id))
+    assert exc.value.status_code == 403
+
+
 def test_demandes_engine_covers_departments():
     from app.data.demandes_engine import DEMANDES_MODULE_CODES, DEMANDES_MODULES, PROCESSOR_MODULE_CODES
 

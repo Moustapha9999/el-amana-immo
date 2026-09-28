@@ -8,10 +8,11 @@ from app.api.deps import require_platform_permission
 from app.api.v1.endpoints.helpers import to_paginated
 from app.db.session import get_db
 from app.models import User
-from app.schemas.auth import RoleRead, UserCreate, UserRead, UserUpdate
+from app.schemas.auth import UserCreate, UserRead, UserUpdate
 from app.schemas.common import MessageResponse
 from app.schemas.plateforme import (
     CoreAdminResetAccess,
+    CoreAdminRoleOption,
     CoreAdminUserCreate,
     CoreAdminUserCreateResult,
     CoreAdminUserFiche,
@@ -120,7 +121,7 @@ async def list_admin_users(
     }
 
 
-@router.get("/users/roles", response_model=list[RoleRead])
+@router.get("/users/roles", response_model=list[CoreAdminRoleOption])
 async def list_admin_roles(
     _: User = Depends(_USERS_PERM),
     db: AsyncSession = Depends(get_db),

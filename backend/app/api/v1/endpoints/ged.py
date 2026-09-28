@@ -63,6 +63,11 @@ async def upload_document(
 ):
     try:
         from app.services.document_ingest_service import DocumentIngestService
+        from app.services.mg_requests_service import MgRequestsService
+
+        await MgRequestsService(db).assert_document_access(
+            user, entity=entity, entity_id=entity_id,
+        )
 
         row = await DocumentIngestService(db).ingest_document(
             file=file,
@@ -97,9 +102,12 @@ async def list_documents(
     module_code: str = Query(...),
     entity: str = Query(...),
     entity_id: str = Query(...),
-    _: User = Depends(require_permission("ged.read")),
+    user: User = Depends(require_permission("ged.read")),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.services.mg_requests_service import MgRequestsService
+
+    await MgRequestsService(db).assert_document_access(user, entity=entity, entity_id=entity_id)
     rows = await GedService(db).list_for_entity(
         module_code=module_code.strip().lower(),
         entity=entity.strip(),
@@ -111,11 +119,16 @@ async def list_documents(
 @router.get("/documents/{document_id}/download")
 async def download_document(
     document_id: UUID,
-    _: User = Depends(require_permission("ged.read")),
+    user: User = Depends(require_permission("ged.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         row = await GedService(db).get(document_id)
+        from app.services.mg_requests_service import MgRequestsService
+
+        await MgRequestsService(db).assert_document_access(
+            user, entity=row.entity, entity_id=row.entity_id,
+        )
         path = GedService(db).absolute_path(row.stored_path)
         if not path.exists():
             raise HTTPException(status_code=404, detail="Fichier introuvable sur le serveur")
@@ -136,6 +149,12 @@ async def delete_document(
     db: AsyncSession = Depends(get_db),
 ):
     try:
+        row = await GedService(db).get(document_id)
+        from app.services.mg_requests_service import MgRequestsService
+
+        await MgRequestsService(db).assert_document_access(
+            user, entity=row.entity, entity_id=row.entity_id,
+        )
         row = await GedService(db).soft_delete(document_id)
         await record_audit(
             db,

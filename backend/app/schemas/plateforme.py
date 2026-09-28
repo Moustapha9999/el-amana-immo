@@ -1,9 +1,11 @@
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
 from app.schemas.auth import UserRead
+from app.schemas.common import ORMModel
 
 
 class PlateformeModuleRead(BaseModel):
@@ -199,6 +201,13 @@ class CoreAdminDashboardRead(BaseModel):
     fuseau: str = "Africa/Nouakchott"
     app_name: str = "BEA DIGITAL"
     ops: dict | None = None
+
+
+class CoreAdminRoleOption(ORMModel):
+    id: UUID
+    code: str
+    label: str
+    description: str | None = None
 
 
 class CoreAdminUserCreate(BaseModel):

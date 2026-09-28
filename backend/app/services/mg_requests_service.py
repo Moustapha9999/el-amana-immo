@@ -44,6 +44,13 @@ from app.schemas.mg_stock import MouvementCreate
 from app.services.mg_achats_service import MgAchatsService
 from app.services.mg_requests_events import audit_request, notify_mg_roles, notify_requester
 from app.services.mg_stock_service import MgStockService
+from app.services.request_access import (
+    SCOPE_REQUIRED,
+    can_read_request,
+    require_owner,
+    require_target,
+    visible_comments,
+)
 
 EDITABLE = {"BROUILLON", "A_COMPLETER"}
 OPEN_FOR_MG = {"SOUMISE", "RECUE", "EN_ANALYSE"}
@@ -246,7 +253,9 @@ class MgRequestsService:
             )
         return hints
 
-    async def serialize(self, row: MgEmployeeRequest, *, with_stock: bool = False) -> RequestOut:
+    async def serialize(
+        self, row: MgEmployeeRequest, *, with_stock: bool = False, audience: str = "owner"
+    ) -> RequestOut:
         await self.db.refresh(row, ["items", "approvals", "category", "comments"])
         requester = await self.db.get(User, row.requester_id)
         agence = await self.db.get(Agence, row.agency_id)
@@ -258,7 +267,7 @@ class MgRequestsService:
             batch_number = batch.batch_number if batch else None
         hints = await self._stock_hints(row) if with_stock else []
         comments = []
-        for c in sorted(row.comments, key=lambda x: x.created_at):
+        for c in sorted(visible_comments(row.comments, audience), key=lambda x: x.created_at):
             author = await self.db.get(User, c.author_id)
             comments.append(
                 {
@@ -325,6 +334,33 @@ class MgRequestsService:
         if row is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Demande introuvable")
         return row
+
+    async def _load_for_processor(
+        self, request_id: uuid.UUID, *, target_espace: str = "moyens-generaux"
+    ) -> MgEmployeeRequest:
+        row = await self._load(request_id)
+        require_target(row, target_espace)
+        return row
+
+    async def assert_document_access(self, user: User, *, entity: str, entity_id: str) -> None:
+        """Même règle que la demande pour les pièces jointes (anti-IDOR)."""
+        if (entity or "").strip().upper() != "MG_EMPLOYEE_REQUEST":
+            return
+        try:
+            request_id = uuid.UUID(str(entity_id).strip())
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Demande non autorisée") from exc
+        row = await self._load(request_id)
+        from app.services.permission_service import load_user_permission_codes
+
+        codes = await load_user_permission_codes(self.db, user)
+        if not can_read_request(
+            requester_id=row.requester_id,
+            user_id=user.id,
+            target_espace=row.target_espace_code,
+            permission_codes=codes,
+        ):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Demande non autorisée")
 
     async def _approve(
         self, row: MgEmployeeRequest, user: User, action: str, comment: str | None = None
@@ -443,8 +479,8 @@ class MgRequestsService:
         self, request_id: uuid.UUID, data: RequestUpdate, user: User, *, owner_only: bool
     ) -> MgEmployeeRequest:
         row = await self._load(request_id)
-        if owner_only and row.requester_id != user.id:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Demande non autorisée")
+        if owner_only:
+            require_owner(row, user)
         if row.status not in EDITABLE:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Cette demande n’est plus modifiable")
         if data.agency_id is not None:
@@ -475,8 +511,7 @@ class MgRequestsService:
 
     async def submit(self, request_id: uuid.UUID, user: User) -> MgEmployeeRequest:
         row = await self._load(request_id)
-        if row.requester_id != user.id and not user.is_superuser:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Demande non autorisée")
+        require_owner(row, user)
         if row.status not in EDITABLE:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Soumission impossible")
         if not row.items:
@@ -502,8 +537,7 @@ class MgRequestsService:
 
     async def cancel(self, request_id: uuid.UUID, user: User, comment: str | None) -> MgEmployeeRequest:
         row = await self._load(request_id)
-        if row.requester_id != user.id and not user.is_superuser:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Demande non autorisée")
+        require_owner(row, user)
         if row.status in CLOSED or row.status in {"REGROUPEE", "ACHAT_EN_COURS", "COMMANDEE"}:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Cette demande ne peut plus être annulée")
         row.status = "ANNULEE"
@@ -514,7 +548,7 @@ class MgRequestsService:
         return await self._load(row.id)
 
     async def mg_cancel(self, request_id: uuid.UUID, user: User, comment: str | None) -> MgEmployeeRequest:
-        row = await self._load(request_id)
+        row = await self._load_for_processor(request_id)
         if row.status in CLOSED or row.status in {"REGROUPEE", "ACHAT_EN_COURS", "COMMANDEE"}:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Cette demande ne peut plus être désactivée")
         row.status = "ANNULEE"
@@ -530,7 +564,7 @@ class MgRequestsService:
         return await self._load(row.id)
 
     async def mg_delete(self, request_id: uuid.UUID, user: User) -> None:
-        row = await self._load(request_id)
+        row = await self._load_for_processor(request_id)
         if row.status in DELETE_LOCKED or row.batch_id or row.achat_demande_id:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
@@ -542,8 +576,7 @@ class MgRequestsService:
 
     async def delete_draft(self, request_id: uuid.UUID, user: User) -> None:
         row = await self._load(request_id)
-        if row.requester_id != user.id and not user.is_superuser:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Demande non autorisée")
+        require_owner(row, user)
         if row.status in DELETE_LOCKED or row.batch_id or row.achat_demande_id:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
@@ -569,12 +602,8 @@ class MgRequestsService:
         self, request_id: uuid.UUID, user: User, *, target_espace: str | None = None
     ) -> MgEmployeeRequest:
         row = await self._load(request_id)
-        if (
-            target_espace
-            and not user.is_superuser
-            and row.target_espace_code != target_espace
-        ):
-            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Demande hors de votre périmètre")
+        if target_espace:
+            require_target(row, target_espace)
         if row.status == "SOUMISE":
             await self.mark_received(row, user)
             await audit_request(self.db, user, "REQUEST_RECEIVED", "mg_employee_request", row.id)
@@ -585,7 +614,7 @@ class MgRequestsService:
     async def set_granted_quantities(
         self, request_id: uuid.UUID, user: User, data: GrantedIn
     ) -> MgEmployeeRequest:
-        row = await self._load(request_id)
+        row = await self._load_for_processor(request_id)
         if row.status in CLOSED:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Cette demande n’est plus modifiable")
         by_id = {it.id: it for it in row.items}
@@ -607,7 +636,7 @@ class MgRequestsService:
         return await self._load(request_id)
 
     async def request_info(self, request_id: uuid.UUID, user: User, comment: str | None) -> MgEmployeeRequest:
-        row = await self._load(request_id)
+        row = await self._load_for_processor(request_id)
         if row.status not in OPEN_FOR_MG | {"A_COMPLETER"}:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Complément impossible à ce stade")
         row.status = "A_COMPLETER"
@@ -623,7 +652,7 @@ class MgRequestsService:
         return await self._load(row.id)
 
     async def validate(self, request_id: uuid.UUID, user: User, comment: str | None) -> MgEmployeeRequest:
-        row = await self._load(request_id)
+        row = await self._load_for_processor(request_id)
         if row.status not in OPEN_FOR_MG:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Validation impossible à ce stade")
         row.status = "A_REGROUPER"
@@ -641,7 +670,7 @@ class MgRequestsService:
         return await self._load(row.id)
 
     async def reject(self, request_id: uuid.UUID, user: User, comment: str | None) -> MgEmployeeRequest:
-        row = await self._load(request_id)
+        row = await self._load_for_processor(request_id)
         if row.status in CLOSED or row.status in {"REGROUPEE", "ACHAT_EN_COURS", "COMMANDEE"}:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Refus impossible à ce stade")
         if not comment:
@@ -662,7 +691,7 @@ class MgRequestsService:
         return await self._load(row.id)
 
     async def serve_from_stock(self, request_id: uuid.UUID, user: User) -> MgEmployeeRequest:
-        row = await self._load(request_id)
+        row = await self._load_for_processor(request_id)
         if row.status not in GROUPABLE | OPEN_FOR_MG:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Service stock impossible à ce stade")
         stockable = [it for it in row.items if it.article_id]
@@ -762,6 +791,8 @@ class MgRequestsService:
         page: int = 1,
         size: int = 30,
     ) -> tuple[list[MgEmployeeRequest], int]:
+        if mine is None and not target_espace:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail=SCOPE_REQUIRED)
         filters = self._filters(
             q=q, statut=statut, category_id=category_id, agency_id=agency_id,
             requester_id=requester_id, priority=priority, mine=mine,
@@ -1166,7 +1197,7 @@ class MgRequestsService:
             ).all()
         }
         for rid in request_ids:
-            req = await self._load(rid)
+            req = await self._load_for_processor(rid)
             if req.status not in GROUPABLE and req.status != "REGROUPEE":
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
@@ -1371,19 +1402,40 @@ class MgRequestsService:
             out.employee_count = int(requesters or 0)
         return out
 
-    async def add_comment(self, request_id: uuid.UUID, user: User, body: str) -> MgEmployeeRequest:
-        row = await self._load(request_id)
+    async def add_comment(
+        self,
+        request_id: uuid.UUID,
+        user: User,
+        body: str,
+        *,
+        as_owner: bool = False,
+        target_espace: str | None = None,
+    ) -> MgEmployeeRequest:
+        if as_owner:
+            row = await self._load(request_id)
+            require_owner(row, user)
+        elif target_espace:
+            row = await self._load_for_processor(request_id, target_espace=target_espace)
+        else:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail=SCOPE_REQUIRED)
         text = (body or "").strip()
         if not text:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Commentaire obligatoire")
-        self.db.add(MgRequestComment(request_id=row.id, author_id=user.id, body=text[:4000]))
+        self.db.add(
+            MgRequestComment(
+                request_id=row.id,
+                author_id=user.id,
+                body=text[:4000],
+                visibility="SHARED",
+            )
+        )
         await self._approve(row, user, "COMMENTED", text)
         await audit_request(self.db, user, "REQUEST_UPDATED", "mg_employee_request", row.id)
         await self.db.commit()
         return await self._load(row.id)
 
     async def assign(self, request_id: uuid.UUID, user: User, assigned_to_id: uuid.UUID | None) -> MgEmployeeRequest:
-        row = await self._load(request_id)
+        row = await self._load_for_processor(request_id)
         if assigned_to_id is not None:
             assignee = await self.db.get(User, assigned_to_id)
             if assignee is None or getattr(assignee, "deleted_at", None):
@@ -1395,7 +1447,7 @@ class MgRequestsService:
         return await self._load(row.id)
 
     async def recategorize(self, request_id: uuid.UUID, user: User, category_id: uuid.UUID) -> MgEmployeeRequest:
-        row = await self._load(request_id)
+        row = await self._load_for_processor(request_id)
         if row.status in CLOSED:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Catégorisation impossible")
         cat = await self.db.get(MgRequestCategory, category_id)

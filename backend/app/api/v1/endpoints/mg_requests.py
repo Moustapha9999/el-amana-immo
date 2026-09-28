@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,6 +37,7 @@ from app.schemas.mg_requests import (
 from app.services.mg_pdf_service import pdf_employee_request
 from app.services.mg_requests_events import audit_request
 from app.services.mg_requests_service import MgRequestsService
+from app.services.request_access import require_owner, require_target
 
 me_router = APIRouter(prefix="/me/requests", tags=["demandes"])
 mg_router = APIRouter(prefix="/mg/requests", tags=["demandes-mg"])
@@ -51,8 +52,8 @@ def _source(request: Request) -> tuple[str, str]:
     return espace, module
 
 
-async def _serialize_many(svc: MgRequestsService, rows) -> list[RequestOut]:
-    return [await svc.serialize(r) for r in rows]
+async def _serialize_many(svc: MgRequestsService, rows, *, audience: str = "owner") -> list[RequestOut]:
+    return [await svc.serialize(r, audience=audience) for r in rows]
 
 
 @me_router.get("/categories", response_model=list[CategoryOut], dependencies=_me)
@@ -138,9 +139,8 @@ async def me_get(
 ):
     svc = MgRequestsService(db)
     row = await svc._load(request_id)
-    if row.requester_id != user.id and not user.is_superuser:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Demande non autorisée")
-    return await svc.serialize(row)
+    require_owner(row, user)
+    return await svc.serialize(row, audience="owner")
 
 
 @me_router.get("/{request_id}/pdf", dependencies=_me)
@@ -156,8 +156,7 @@ async def me_pdf(
 
     svc = MgRequestsService(db)
     row = await svc._load(request_id)
-    if row.requester_id != user.id and not user.is_superuser:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Demande non autorisée")
+    require_owner(row, user)
     requester = await db.get(User, row.requester_id)
     dept = await db.get(Departement, row.department_id) if row.department_id else None
     department_label = (department or "").strip() or (
@@ -233,10 +232,7 @@ async def me_comment(
     user: User = Depends(require_permission("mg.request.mine.update", "mg.request.mine.view")),
 ):
     svc = MgRequestsService(db)
-    row = await svc._load(request_id)
-    if row.requester_id != user.id and not user.is_superuser:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Demande non autorisée")
-    row = await svc.add_comment(request_id, user, data.body)
+    row = await svc.add_comment(request_id, user, data.body, as_owner=True)
     return await svc.serialize(row)
 
 
@@ -294,7 +290,10 @@ async def mg_list(
         requester_id=requester_id, priority=priority, source_espace=source_espace,
         target_espace="moyens-generaux", page=page, size=size,
     )
-    return RequestListOut(items=await _serialize_many(svc, rows), total=total, page=page, size=size)
+    return RequestListOut(
+        items=await _serialize_many(svc, rows, audience="processor"),
+        total=total, page=page, size=size,
+    )
 
 
 @mg_router.get("/{request_id}", response_model=RequestOut, dependencies=_mg)
@@ -305,7 +304,7 @@ async def mg_get(
 ):
     svc = MgRequestsService(db)
     row = await svc.get_mg(request_id, user, target_espace="moyens-generaux")
-    return await svc.serialize(row, with_stock=True)
+    return await svc.serialize(row, with_stock=True, audience="processor")
 
 
 @mg_router.get("/{request_id}/pdf", dependencies=_mg)
@@ -320,8 +319,7 @@ async def mg_pdf(
 
     svc = MgRequestsService(db)
     row = await svc._load(request_id)
-    if row.target_espace_code != "moyens-generaux" and not user.is_superuser:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Demande hors de votre périmètre")
+    require_target(row, "moyens-generaux")
     requester = await db.get(User, row.requester_id)
     dept = await db.get(Departement, row.department_id) if row.department_id else None
     department_label = (
@@ -353,7 +351,7 @@ async def mg_cancel(
 ):
     svc = MgRequestsService(db)
     row = await svc.mg_cancel(request_id, user, data.comment)
-    return await svc.serialize(row, with_stock=True)
+    return await svc.serialize(row, with_stock=True, audience="processor")
 
 
 @mg_router.delete("/{request_id}", response_model=MessageResponse, dependencies=_mg)
@@ -376,7 +374,7 @@ async def mg_granted(
 ):
     svc = MgRequestsService(db)
     row = await svc.set_granted_quantities(request_id, user, data)
-    return await svc.serialize(row, with_stock=True)
+    return await svc.serialize(row, with_stock=True, audience="processor")
 
 
 @mg_router.post("/{request_id}/request-info", response_model=RequestOut, dependencies=_mg)
@@ -388,7 +386,7 @@ async def mg_request_info(
 ):
     svc = MgRequestsService(db)
     row = await svc.request_info(request_id, user, data.comment)
-    return await svc.serialize(row, with_stock=True)
+    return await svc.serialize(row, with_stock=True, audience="processor")
 
 
 @mg_router.post("/{request_id}/validate", response_model=RequestOut, dependencies=_mg)
@@ -400,7 +398,7 @@ async def mg_validate(
 ):
     svc = MgRequestsService(db)
     row = await svc.validate(request_id, user, data.comment)
-    return await svc.serialize(row, with_stock=True)
+    return await svc.serialize(row, with_stock=True, audience="processor")
 
 
 @mg_router.post("/{request_id}/reject", response_model=RequestOut, dependencies=_mg)
@@ -412,7 +410,7 @@ async def mg_reject(
 ):
     svc = MgRequestsService(db)
     row = await svc.reject(request_id, user, data.comment)
-    return await svc.serialize(row)
+    return await svc.serialize(row, audience="processor")
 
 
 @mg_router.post("/{request_id}/serve", response_model=RequestOut, dependencies=_mg)
@@ -423,7 +421,7 @@ async def mg_serve(
 ):
     svc = MgRequestsService(db)
     row = await svc.serve_from_stock(request_id, user)
-    return await svc.serialize(row, with_stock=True)
+    return await svc.serialize(row, with_stock=True, audience="processor")
 
 
 @mg_router.post("/{request_id}/assign", response_model=RequestOut, dependencies=_mg)
@@ -435,7 +433,7 @@ async def mg_assign(
 ):
     svc = MgRequestsService(db)
     row = await svc.assign(request_id, user, data.assigned_to_id)
-    return await svc.serialize(row, with_stock=True)
+    return await svc.serialize(row, with_stock=True, audience="processor")
 
 
 @mg_router.post("/{request_id}/recategorize", response_model=RequestOut, dependencies=_mg)
@@ -447,7 +445,7 @@ async def mg_recategorize(
 ):
     svc = MgRequestsService(db)
     row = await svc.recategorize(request_id, user, data.category_id)
-    return await svc.serialize(row, with_stock=True)
+    return await svc.serialize(row, with_stock=True, audience="processor")
 
 
 @mg_router.post("/{request_id}/comments", response_model=RequestOut, dependencies=_mg)
@@ -458,8 +456,8 @@ async def mg_comment(
     user: User = Depends(require_permission("mg.request.view")),
 ):
     svc = MgRequestsService(db)
-    row = await svc.add_comment(request_id, user, data.body)
-    return await svc.serialize(row, with_stock=True)
+    row = await svc.add_comment(request_id, user, data.body, target_espace="moyens-generaux")
+    return await svc.serialize(row, with_stock=True, audience="processor")
 
 
 batch_router = APIRouter(prefix="/mg/batches", tags=["demandes-mg-batches"])
