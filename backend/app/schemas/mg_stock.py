@@ -108,6 +108,15 @@ class MouvementCreate(BaseModel):
     allow_negative: bool = False
 
 
+class MouvementUpdate(BaseModel):
+    date_mouvement: datetime | None = None
+    quantite: QtyPos | None = None
+    agence_id: UUID | None = None
+    departement: str | None = None
+    motif: str | None = None
+    observation: str | None = None
+
+
 class ReceptionLigneIn(BaseModel):
     ligne_id: UUID
     quantite: QtyPos
@@ -136,6 +145,11 @@ class MouvementOut(BaseModel):
     source_type: str | None
     source_id: UUID | None
     periode_id: UUID | None = None
+    periode_libelle: str | None = None
+    periode_debut: date | None = None
+    periode_fin: date | None = None
+    periode_cloturee: bool = False
+    quantite_modifiable: bool = False
     initiateur_id: UUID | None = None
     initiateur_nom: str | None = None
     article_code: str | None = None
@@ -270,6 +284,12 @@ class InventaireCreate(BaseModel):
     observation: str | None = None
     famille_id: UUID | None = None
     periode_id: UUID | None = None
+
+
+class InventaireUpdate(BaseModel):
+    libelle: str | None = Field(default=None, min_length=1, max_length=255)
+    date_debut: date | None = None
+    observation: str | None = None
 
 
 class InventaireTransition(BaseModel):

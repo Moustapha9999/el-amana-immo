@@ -3,6 +3,7 @@ import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface ReportJson {
   key: string;
@@ -40,9 +41,6 @@ interface ReportJson {
         <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="download('csv')">CSV</button>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
       @if (report(); as r) {
         @if (r.count === 0) {
           <div class="bea-ct-empty"><mat-icon>assessment</mat-icon><p>Aucune donnée pour ce rapport.</p></div>
@@ -73,7 +71,7 @@ export class ContratsRapportsComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   readonly filters = this.fb.nonNullable.group({ key: ['liste'] });
   readonly report = signal<ReportJson | null>(null);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
 
   ngOnInit(): void {
     this.load();

@@ -2,6 +2,7 @@
 import { RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../core/services/api.service';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface Missing {
   code: string;
@@ -26,7 +27,6 @@ interface Missing {
         </div>
         <span class="bea-mg__count">{{ rows().length }} a verifier</span>
       </header>
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
       <div class="bea-mg__panel">
         <div class="bea-mg__table-scroll">
           <table class="bea-mg__table">
@@ -59,7 +59,7 @@ interface Missing {
 export class ArchivesMissingComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly rows = signal<Missing[]>([]);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
 
   ngOnInit(): void {
     this.api.get<Missing[]>('/mg/archives/missing').subscribe({

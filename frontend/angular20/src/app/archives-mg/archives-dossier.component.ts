@@ -3,6 +3,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { DatePipe } from '@angular/common';
 import { ApiService } from '../core/services/api.service';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface Doc {
   id: string;
@@ -35,7 +36,6 @@ interface Dossier {
         </div>
         <a class="bea-mg__btn" routerLink="/archives-mg/documents"><mat-icon>arrow_back</mat-icon> Retour</a>
       </header>
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
       @if (d(); as dossier) {
         <div class="bea-mg__panel" style="margin-bottom:1rem">
           <div class="bea-mg__panel-top"><h2>Objets lies</h2><span class="bea-mg__count">{{ dossier.nodes.length }}</span></div>
@@ -75,7 +75,7 @@ export class ArchivesDossierComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
   readonly d = signal<Dossier | null>(null);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly title = signal('Dossier');
 
   ngOnInit(): void {

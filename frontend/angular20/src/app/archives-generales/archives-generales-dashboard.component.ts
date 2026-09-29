@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../core/services/api.service';
 import { ArchivesChartsComponent, ChartPoint, OcrSlice } from '../archives-mg/archives-charts.component';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface DashDoc {
   id: string;
@@ -83,9 +84,6 @@ interface Dashboard {
         </div>
       </header>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
 
       @if (d(); as dash) {
         <div class="bea-nf-kpi">
@@ -370,7 +368,7 @@ interface Dashboard {
 export class ArchivesGeneralesDashboardComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly d = signal<Dashboard | null>(null);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
 
   readonly ocr = computed(() => {
     const dash = this.d();

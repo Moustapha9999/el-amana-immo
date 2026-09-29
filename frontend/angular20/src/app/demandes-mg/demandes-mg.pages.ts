@@ -7,6 +7,7 @@ import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
 import { downloadBlob } from '../demandes-employes/demandes-employe.models';
 import { MontantPipe, QuantitePipe, formatQuantite, quantiteEntiere } from '../shared/montant.pipe';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface Dash {
   a_traiter: number;
@@ -237,8 +238,6 @@ export class DmgDashboardComponent implements OnInit {
           <p class="bea-mg__lead">Consulter, modifier les quantités accordées, traiter ou retirer une demande.</p>
         </div>
       </header>
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
-      @if (ok()) { <p class="bea-stock-page__ok">{{ ok() }}</p> }
       <form class="bea-mg__search" (ngSubmit)="load()">
         <label class="bea-mg__field bea-mg__field--grow">
           <mat-icon>search</mat-icon>
@@ -470,8 +469,8 @@ export class DmgInboxComponent implements OnInit {
   readonly grantSaving = signal(false);
   readonly grantError = signal('');
   readonly grantOk = signal('');
-  readonly erreur = signal('');
-  readonly ok = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly ok = feedbackSignal('success', '');
   grantLines: GrantLine[] = [];
   q = '';
   comment = '';
@@ -667,8 +666,6 @@ export class DmgInboxComponent implements OnInit {
           + Nouveau regroupement
         </button>
       </header>
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
-      @if (ok()) { <p class="bea-stock-page__ok">{{ ok() }}</p> }
       <form class="bea-mg__search" (ngSubmit)="q = q">
         <label class="bea-mg__field bea-mg__field--grow">
           <mat-icon>search</mat-icon>
@@ -831,8 +828,8 @@ export class DmgBatchesComponent implements OnInit {
   readonly detail = signal<BatchRow | null>(null);
   readonly mode = signal<'view' | 'edit'>('view');
   readonly pendingDelete = signal<BatchRow | null>(null);
-  readonly erreur = signal('');
-  readonly ok = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly ok = feedbackSignal('success', '');
   readonly selected = new Set<string>();
   title = '';
   period = '';

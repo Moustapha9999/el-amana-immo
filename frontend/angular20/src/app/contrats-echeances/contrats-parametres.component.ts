@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 import { HttpErrorResponse } from '@angular/common/http';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface Param {
   cle: string;
@@ -33,12 +34,6 @@ interface TypeContrat {
         <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/contrats-echeances/dashboard">Dashboard</a>
       </header>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
-      @if (msg()) {
-        <p class="bea-stock-page__ok">{{ msg() }}</p>
-      }
 
       <form class="bea-mg__panel bea-ct-panel bea-ct-section" (ngSubmit)="ajouterParam()">
         <div class="bea-mg__panel-top"><h2>Nouveau paramètre</h2></div>
@@ -128,8 +123,8 @@ export class ContratsParametresComponent implements OnInit {
   private readonly dialogs = inject(UiDialogService);
   readonly params = signal<Param[]>([]);
   readonly types = signal<TypeContrat[]>([]);
-  readonly erreur = signal<string | null>(null);
-  readonly msg = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
+  readonly msg = feedbackSignal('success', null);
   nouveauParam = { cle: '', valeur: '', libelle: '' };
   nouveauType = { code: '', libelle: '' };
 

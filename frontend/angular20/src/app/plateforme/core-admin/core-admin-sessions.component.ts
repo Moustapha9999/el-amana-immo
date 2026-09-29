@@ -13,6 +13,7 @@ import {
   sessionKindLabel,
   sessionStatusLabel,
 } from './core-admin-sessions.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
 
 @Component({
   selector: 'bea-core-admin-sessions',
@@ -88,9 +89,6 @@ import {
         </div>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (loading()) {
         <p class="bea-admin-dash__loading">Chargement des sessions…</p>
       } @else {
@@ -199,7 +197,7 @@ export class CoreAdminSessionsComponent implements OnInit {
 
   readonly loading = signal(true);
   readonly saving = signal(false);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly rows = signal<CoreAdminSessionRow[]>([]);
   readonly total = signal(0);
   readonly page = signal(1);

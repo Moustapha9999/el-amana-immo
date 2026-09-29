@@ -1420,3 +1420,158 @@ def pdf_employee_request(
         ]
 
     return _doc_buffer(body, with_logo=False)
+
+
+_PERIODICITE_PDF = {
+    "MENSUEL": "Mensuel",
+    "TRIMESTRIEL": "Trimestriel",
+    "SEMESTRIEL": "Semestriel",
+    "ANNUEL": "Annuel",
+    "UNIQUE": "Unique",
+}
+
+
+def _date_fr(value) -> str:
+    return value.strftime("%d/%m/%Y") if value else "—"
+
+
+def _section_table(title: str, pairs: list[tuple[str, str]], styles) -> list:
+    rows = []
+    for index in range(0, len(pairs), 2):
+        chunk = pairs[index:index + 2]
+        row = []
+        for label, value in chunk:
+            row.extend([
+                Paragraph(escape(label), styles["label"]),
+                Paragraph(escape(value or "—"), styles["value"]),
+            ])
+        if len(chunk) == 1:
+            row.extend(["", ""])
+        rows.append(row)
+    table = Table(rows, colWidths=[32 * mm, 59 * mm, 32 * mm, 59 * mm])
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (0, -1), BEA_FILL),
+                ("BACKGROUND", (2, 0), (2, -1), BEA_FILL),
+                ("GRID", (0, 0), (-1, -1), 0.4, BEA_LINE),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+    return [Paragraph(title, styles["bc_title"]), Spacer(1, 1.5 * mm), table, Spacer(1, 5 * mm)]
+
+
+def _list_table(title: str, headers: list[str], rows: list[list[str]], widths: list[float], styles) -> list:
+    if not rows:
+        return [Paragraph(title, styles["bc_title"]), Paragraph("Aucune ligne.", styles["meta"]), Spacer(1, 5 * mm)]
+    data = [[Paragraph(h, styles["header_cell"]) for h in headers]]
+    data.extend([[Paragraph(escape(c or "—"), styles["cell"]) for c in r] for r in rows])
+    table = Table(data, colWidths=widths, repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), BEA_NAVY),
+                ("GRID", (0, 0), (-1, -1), 0.4, BEA_LINE),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, BEA_FILL]),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    return [Paragraph(title, styles["bc_title"]), Spacer(1, 1.5 * mm), table, Spacer(1, 5 * mm)]
+
+
+def pdf_contrat(contrat) -> bytes:
+    """Fiche contrat : informations, parties, dates et montants, échéances, paiements."""
+    when = datetime.now(_TZ)
+    devise = contrat.devise or "MRU"
+
+    def body(styles):
+        mode = contrat.mode_paiement or "—"
+        if contrat.ref_paiement:
+            mode = f"{mode} — {contrat.ref_paiement}"
+        out = [
+            Paragraph(
+                f"{escape(BANQUE_EL_AMANA['raison_sociale'])} ({escape(BANQUE_EL_AMANA['sigle'])})",
+                styles["bank"],
+            ),
+            Paragraph(f"Fiche contrat {escape(contrat.reference)}", styles["title"]),
+            Paragraph(f"Édité le {format_export_datetime(when)}", styles["export_meta"]),
+        ]
+        out += _section_table(
+            "Informations",
+            [
+                ("Objet", contrat.titre),
+                ("N° contrat", contrat.numero_contrat or "—"),
+                ("Type", contrat.type_contrat or "—"),
+                ("Statut", contrat.statut),
+                ("Description", contrat.description or "—"),
+                ("Observation", contrat.observation or "—"),
+            ],
+            styles,
+        )
+        out += _section_table(
+            "Fournisseur, agence, responsable",
+            [
+                ("Fournisseur", contrat.fournisseur_snapshot or "—"),
+                ("Agence", contrat.agence_libelle_snapshot or "—"),
+                ("Responsable", contrat.responsable_nom or "—"),
+            ],
+            styles,
+        )
+        out += _section_table(
+            "Dates et montants",
+            [
+                ("Signature", _date_fr(contrat.date_signature)),
+                ("Début", _date_fr(contrat.date_debut)),
+                ("Fin", _date_fr(contrat.date_fin)),
+                ("Prochaine échéance", _date_fr(contrat.prochain_echeance)),
+                ("Montant HT", f"{money(contrat.montant_ht)} {devise}" if contrat.montant_ht is not None else "—"),
+                ("TVA", f"{money(contrat.taux_tva)} %" if contrat.taux_tva is not None else "—"),
+                ("Montant TTC", f"{money(contrat.montant)} {devise}" if contrat.montant is not None else "—"),
+                ("Périodicité", _PERIODICITE_PDF.get(contrat.periodicite, contrat.periodicite or "—")),
+                ("Mode de paiement", mode),
+                ("Alerte", f"{contrat.alerte_jours} jours avant échéance"),
+            ],
+            styles,
+        )
+        echeances = sorted(contrat.echeances or [], key=lambda e: e.date_prevue)
+        out += _list_table(
+            "Échéances",
+            ["Date prévue", "Type", "Montant", "Statut"],
+            [
+                [_date_fr(e.date_prevue), e.type_echeance, money(e.montant) if e.montant is not None else "—", e.statut]
+                for e in echeances
+            ],
+            [40 * mm, 60 * mm, 42 * mm, 40 * mm],
+            styles,
+        )
+        paiements = sorted(contrat.paiements or [], key=lambda p: p.date_prevue)
+        out += _list_table(
+            "Suivi des paiements",
+            ["Référence", "Date prévue", "Date réelle", "Prévu", "Payé", "Statut"],
+            [
+                [
+                    p.reference or "—",
+                    _date_fr(p.date_prevue),
+                    _date_fr(p.date_reelle),
+                    money(p.montant_prevu),
+                    money(p.montant_paye),
+                    p.statut,
+                ]
+                for p in paiements
+            ],
+            [32 * mm, 27 * mm, 27 * mm, 32 * mm, 32 * mm, 32 * mm],
+            styles,
+        )
+        out.append(
+            Table(
+                [[_visa_block("Visa Moyens Généraux", styles), _visa_block("Visa Direction", styles)]],
+                colWidths=[91 * mm, 91 * mm],
+            )
+        )
+        return out
+
+    return _doc_buffer(body)

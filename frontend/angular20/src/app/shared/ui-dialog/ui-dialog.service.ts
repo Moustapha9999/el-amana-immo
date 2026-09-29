@@ -3,11 +3,13 @@ import { MatDialog } from '@angular/material/dialog';
 import { Observable, map } from 'rxjs';
 import { UiConfirmDialogComponent } from './ui-confirm-dialog.component';
 import { UiFeedbackDialogComponent } from './ui-feedback-dialog.component';
+import { UiReasonDialogComponent } from './ui-reason-dialog.component';
 import {
   UI_DIALOG_PRESETS,
   UiConfirmData,
   UiDialogAction,
   UiFeedbackData,
+  UiReasonData,
 } from './ui-dialog.types';
 
 @Injectable({ providedIn: 'root' })
@@ -40,16 +42,35 @@ export class UiDialogService {
   }
 
   /** Confirmation typée (Ajout, Suppression, Comptabilisation…). */
-  confirmAction(action: UiDialogAction, message: string, title?: string): Observable<boolean> {
+  confirmAction(action: UiDialogAction, message: string, title?: string, hint?: string): Observable<boolean> {
+    return this.confirm(this.preset(action, message, title, hint));
+  }
+
+  /** Saisie d'un motif (rejet, annulation…). Émet le motif, ou null si l'utilisateur renonce. */
+  confirmWithReason(data: UiReasonData): Observable<string | null> {
+    return this.dialog
+      .open(UiReasonDialogComponent, {
+        data,
+        width: '30rem',
+        maxWidth: '94vw',
+        disableClose: true,
+        autoFocus: 'first-tabbable',
+      })
+      .afterClosed()
+      .pipe(map((v) => (typeof v === 'string' ? v : null)));
+  }
+
+  preset(action: UiDialogAction, message: string, title?: string, hint?: string): UiConfirmData {
     const preset = UI_DIALOG_PRESETS[action];
-    return this.confirm({
+    return {
       title: title ?? preset.title,
       message,
+      hint,
       confirmLabel: preset.confirmLabel,
-      cancelLabel: 'Annuler',
+      cancelLabel: action === 'depart' ? 'Rester' : 'Annuler',
       tone: preset.tone,
       icon: preset.icon,
-    });
+    };
   }
 
   /** Popup de succès typée. */

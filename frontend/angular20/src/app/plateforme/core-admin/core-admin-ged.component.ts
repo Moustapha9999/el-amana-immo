@@ -5,6 +5,7 @@ import { ApiService } from '../../core/services/api.service';
 import { DocumentViewerComponent } from '../../archives-generales/document-viewer.component';
 import { CoreAdminIconComponent } from './core-admin-icon.component';
 import { CoreAdminGedPage, coreAdminOpsError } from './core-admin-ops.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
 
 @Component({
   selector: 'bea-core-admin-ged',
@@ -65,9 +66,6 @@ import { CoreAdminGedPage, coreAdminOpsError } from './core-admin-ops.models';
         </div>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (loading()) {
         <p class="bea-admin-dash__loading">Chargement GED…</p>
       } @else {
@@ -135,7 +133,7 @@ export class CoreAdminGedComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
   readonly loading = signal(true);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly rows = signal<CoreAdminGedPage['items']>([]);
   readonly total = signal(0);
   readonly page = signal(1);

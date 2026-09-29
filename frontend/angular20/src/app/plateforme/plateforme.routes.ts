@@ -14,6 +14,7 @@ import {
   CoreAdminVersionsComponent,
 } from './core-admin/core-admin-control.component';
 import { CoreAdminDashboardComponent } from './core-admin/core-admin-dashboard.component';
+import { CoreAdminErrorsComponent } from './core-admin/core-admin-errors.component';
 import { CoreAdminDepartmentFicheComponent } from './core-admin/core-admin-department-fiche.component';
 import { CoreAdminDepartmentsComponent } from './core-admin/core-admin-departments.component';
 import { CoreAdminGedComponent } from './core-admin/core-admin-ged.component';
@@ -119,6 +120,7 @@ export const PLATEFORME_ROUTES: Routes = [
       { path: 'matrix', component: CoreAdminMatrixComponent },
       { path: 'sessions', component: CoreAdminSessionsComponent },
       { path: 'audit', component: CoreAdminAuditComponent },
+      { path: 'erreurs', component: CoreAdminErrorsComponent },
       { path: 'activity', component: CoreAdminActivityComponent },
       { path: 'alerts', component: CoreAdminAlertsComponent },
       { path: 'notifications', component: CoreAdminNotificationsComponent },

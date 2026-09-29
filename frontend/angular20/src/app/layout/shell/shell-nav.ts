@@ -286,13 +286,6 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
     },
     {
       section: 'Gestion',
-      label: 'Nouveau contrat',
-      path: '/contrats-echeances/nouveau',
-      icon: 'add_circle',
-      permissions: ['mg.contrats.create'],
-    },
-    {
-      section: 'Gestion',
       label: 'Échéances',
       path: '/contrats-echeances/echeances',
       icon: 'event',

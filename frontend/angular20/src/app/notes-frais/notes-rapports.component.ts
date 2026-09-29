@@ -3,6 +3,7 @@ import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface ReportJson {
   key: string;
@@ -48,9 +49,6 @@ interface ReportJson {
         <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="download('pdf')">PDF</button>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
 
       @if (report(); as r) {
         <div class="bea-mg__panel">
@@ -94,7 +92,7 @@ export class NotesRapportsComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
 
   readonly report = signal<ReportJson | null>(null);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
 
   readonly filters = this.fb.nonNullable.group({
     key: 'periode',

@@ -37,6 +37,7 @@ export const CORE_ADMIN_NAV: CoreAdminNavGroup[] = [
     items: [
       { label: 'Vue générale', path: '/admin/supervision', icon: 'monitor' },
       { label: 'Journal d’audit', path: '/admin/audit', icon: 'policy' },
+      { label: 'Erreurs API', path: '/admin/erreurs', icon: 'report' },
       { label: 'Activité', path: '/admin/activity', icon: 'history' },
       { label: 'Alertes', path: '/admin/alerts', icon: 'warning' },
     ],

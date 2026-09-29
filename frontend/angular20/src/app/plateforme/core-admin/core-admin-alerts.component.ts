@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { CoreAdminIconComponent } from './core-admin-icon.component';
 import { CoreAdminAlertPage, coreAdminOpsError } from './core-admin-ops.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
 
 @Component({
   selector: 'bea-core-admin-alerts',
@@ -71,9 +72,6 @@ import { CoreAdminAlertPage, coreAdminOpsError } from './core-admin-ops.models';
         </div>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (loading()) {
         <p class="bea-admin-dash__loading">Chargement des alertes…</p>
       } @else {
@@ -132,7 +130,7 @@ export class CoreAdminAlertsComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
   readonly loading = signal(true);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly rows = signal<CoreAdminAlertPage['items']>([]);
   readonly total = signal(0);
   readonly page = signal(1);

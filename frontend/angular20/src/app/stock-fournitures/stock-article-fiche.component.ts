@@ -6,6 +6,8 @@ import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 
 interface Famille {
   id: string;
@@ -85,12 +87,6 @@ type Tab = 'infos' | 'stock' | 'mouvements' | 'demandes' | 'documents';
         </div>
       </header>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
-      @if (msg()) {
-        <p class="bea-stock-page__ok">{{ msg() }}</p>
-      }
 
       @if (fiche(); as a) {
         <div class="bea-mg__panel" style="margin-bottom:1rem">
@@ -390,6 +386,7 @@ type Tab = 'infos' | 'stock' | 'mouvements' | 'demandes' | 'documents';
   `,
 })
 export class StockArticleFicheComponent implements OnInit {
+  readonly hasUnsavedChanges = unsavedChanges(() => this.form.dirty && !this.saving(), () => this.form);
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
@@ -401,8 +398,8 @@ export class StockArticleFicheComponent implements OnInit {
   readonly mouvements = signal<Mouvement[]>([]);
   readonly demandes = signal<Demande[]>([]);
   readonly tab = signal<Tab>('infos');
-  readonly erreur = signal('');
-  readonly msg = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly msg = feedbackSignal('success', '');
   readonly saving = signal(false);
 
   readonly tabs: { id: Tab; label: string; icon: string }[] = [

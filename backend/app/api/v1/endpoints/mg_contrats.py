@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +20,7 @@ from app.schemas.mg_ops import (
     ContratUpdate,
 )
 from app.services.mg_contrats_service import MgContratsService
+from app.services.mg_pdf_service import pdf_contrat
 
 router = APIRouter(prefix="/mg/contrats", tags=["mg-contrats"])
 _module = [Depends(require_module_access("contrats-echeances"))]
@@ -266,6 +267,20 @@ async def get_contrat(
     _: User = Depends(require_permission("mg.contrats.view")),
 ):
     return await MgContratsService(db).get_contrat(contrat_id)
+
+
+@router.get("/{contrat_id}/pdf", dependencies=_module)
+async def contrat_pdf(
+    contrat_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.contrats.view")),
+):
+    contrat = await MgContratsService(db).get_contrat(contrat_id)
+    return Response(
+        content=pdf_contrat(contrat),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="Contrat-{contrat.reference}.pdf"'},
+    )
 
 
 @router.patch("/{contrat_id}", response_model=ContratDetail, dependencies=_module)

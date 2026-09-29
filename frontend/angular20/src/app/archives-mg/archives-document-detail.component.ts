@@ -4,6 +4,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { ApiService } from '../core/services/api.service';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface Doc {
   id: string;
@@ -72,8 +73,6 @@ type Tab = 'info' | 'ocr' | 'relations' | 'versions' | 'historique';
         </div>
       </header>
 
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
-      @if (msg()) { <p class="bea-stock-page__ok">{{ msg() }}</p> }
       @if (loading()) { <p class="bea-stock-page__kicker">Chargement…</p> }
 
       @if (doc(); as d) {
@@ -417,8 +416,8 @@ export class ArchivesDocumentDetailComponent implements OnInit {
   readonly audit = signal<AuditEvent[]>([]);
   readonly tab = signal<Tab>('info');
   readonly loading = signal(true);
-  readonly erreur = signal<string | null>(null);
-  readonly msg = signal('');
+  readonly erreur = feedbackSignal('error', null);
+  readonly msg = feedbackSignal('success', '');
   readonly previewUrl = signal<string | null>(null);
   readonly previewStatus = signal<'loading' | 'file' | 'table' | 'empty'>('loading');
   readonly sheetTitle = signal('');

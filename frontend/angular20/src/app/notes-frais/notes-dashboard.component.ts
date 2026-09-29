@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../core/services/api.service';
 import { MontantPipe } from '../shared/montant.pipe';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface Dashboard {
   total: number;
@@ -48,9 +49,6 @@ interface Alerte {
         </div>
       </header>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
 
       @if (dash(); as d) {
         <div class="bea-nf-kpi">
@@ -130,7 +128,7 @@ export class NotesDashboardComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly dash = signal<Dashboard | null>(null);
   readonly alertes = signal<Alerte[]>([]);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
 
   ngOnInit(): void {
     this.api.get<Dashboard>('/mg/notes-frais/dashboard').subscribe({

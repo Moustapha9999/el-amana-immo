@@ -10,6 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from app.core.api_errors import error_body
 from app.services.security_policy_service import get_cached_security_policy
 
 
@@ -82,15 +83,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         ip = _client_ip(request)
         ok, remaining = _BUCKET.hit(f"{cat}:{ip}", limit=limit)
         if not ok:
+            message = "Trop de requêtes — réessayez dans une minute."
             return JSONResponse(
                 status_code=429,
-                content={
-                    "detail": {
-                        "code": "RATE_LIMITED",
-                        "message": "Trop de requêtes — réessayez dans une minute.",
-                        "category": cat,
-                    }
-                },
+                content=error_body(
+                    status_code=429,
+                    code="RATE_LIMITED",
+                    message=message,
+                    detail={"code": "RATE_LIMITED", "message": message, "category": cat},
+                ),
                 headers={"Retry-After": "60", "X-RateLimit-Limit": str(limit)},
             )
         response = await call_next(request)

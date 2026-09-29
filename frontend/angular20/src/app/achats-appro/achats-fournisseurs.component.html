@@ -68,8 +68,6 @@
       <button type="submit" class="bea-ach__btn bea-ach__btn--ghost">Filtrer</button>
     </form>
 
-    @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
-    @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
 
     <div class="bea-ach__panel">
       <div class="bea-ach__panel-top">
@@ -156,7 +154,6 @@
       </button>
     </header>
 
-    @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
 
     <form class="bea-ach__form" [formGroup]="form" (ngSubmit)="save()">
       <div class="bea-ach__panel">
@@ -250,8 +247,6 @@
         </div>
       </header>
 
-      @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
-      @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
 
       <div class="bea-ach__money">
         <div class="bea-ach__money-card"><span>BC</span><strong>{{ f.nb_bons | quantite }}</strong></div>

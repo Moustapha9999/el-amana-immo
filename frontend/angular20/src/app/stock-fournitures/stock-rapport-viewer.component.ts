@@ -4,6 +4,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { formatMontant, formatQuantite } from '../shared/montant.pipe';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface Col {
   key: string;
@@ -175,9 +176,6 @@ interface Famille {
         </div>
       }
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
 
       @if (preview(); as p) {
         <div class="bea-mg__panel">
@@ -237,7 +235,7 @@ export class StockRapportViewerComponent implements OnInit {
   readonly familles = signal<Famille[]>([]);
   readonly catalog = signal<CatalogItem[]>([]);
   readonly customColumns = signal<string[]>([]);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly loading = signal(false);
   readonly exporting = signal(false);
   readonly page = signal(1);

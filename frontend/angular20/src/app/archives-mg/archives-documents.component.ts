@@ -5,6 +5,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../core/services/api.service';
 import { PaginationComponent } from '../shared/pagination.component';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { FeedbackService } from '../core/feedback/feedback.service';
 
 interface Doc {
   id: string;
@@ -79,8 +81,6 @@ interface Paginated<T> {
         </button>
       </form>
 
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
-      @if (msg()) { <p class="bea-stock-page__ok">{{ msg() }}</p> }
 
       <div class="bea-mg__panel">
         <div class="bea-mg__table-scroll" [class.bea-corbeille__scroll]="trashMode()">
@@ -229,6 +229,7 @@ interface Paginated<T> {
 })
 export class ArchivesDocumentsComponent implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly feedback = inject(FeedbackService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -236,8 +237,8 @@ export class ArchivesDocumentsComponent implements OnInit {
   readonly page = signal(1);
   readonly total = signal(0);
   readonly pageSize = 50;
-  readonly erreur = signal<string | null>(null);
-  readonly msg = signal('');
+  readonly erreur = feedbackSignal('error', null);
+  readonly msg = feedbackSignal('success', '');
   readonly trashMode = signal(false);
   readonly pageTitle = signal('Tous les documents');
   readonly editing = signal<Doc | null>(null);
@@ -401,13 +402,22 @@ export class ArchivesDocumentsComponent implements OnInit {
   }
 
   softDelete(d: Doc): void {
-    this.api.delete(`/mg/archives/documents/${d.id}`).subscribe({
-      next: () => {
-        this.msg.set(`${d.filename} deplace dans la corbeille.`);
-        this.load();
-      },
-      error: () => this.erreur.set('Suppression refusee.'),
-    });
+    this.feedback
+      .confirm({
+        action: 'suppression',
+        message: `Mettre « ${d.filename} » à la corbeille ?`,
+        hint: 'Le document reste restaurable depuis la corbeille.',
+      })
+      .subscribe((ok) => {
+        if (!ok) return;
+        this.api.delete(`/mg/archives/documents/${d.id}`).subscribe({
+          next: () => {
+            this.msg.set(`${d.filename} déplacé dans la corbeille.`);
+            this.load();
+          },
+          error: () => this.erreur.set('Suppression refusée.'),
+        });
+      });
   }
 
   restore(d: Doc): void {

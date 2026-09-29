@@ -14,6 +14,7 @@ import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { ApiService } from '../core/services/api.service';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface EvolutionPoint {
   label: string;
@@ -154,9 +155,7 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
         </button>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      } @else if (loading()) {
+      @if (loading()) {
         <div class="bea-stock-dash__skeleton" aria-busy="true">
           @for (_ of [1, 2, 3, 4, 5, 6, 7, 8]; track _) {
             <div class="bea-stock-dash__skel"></div>
@@ -997,7 +996,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   readonly agences = signal<Agence[]>([]);
   readonly familles = signal<Famille[]>([]);
   readonly loading = signal(true);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
 
   readonly filters = this.fb.nonNullable.group({
     period: ['30j' as PeriodKey],

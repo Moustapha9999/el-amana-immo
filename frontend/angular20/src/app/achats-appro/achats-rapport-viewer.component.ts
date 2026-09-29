@@ -12,6 +12,7 @@ import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface Col {
   key: string;
@@ -66,8 +67,8 @@ export class AchatsRapportViewerComponent implements OnInit {
   readonly preview = signal<Preview | null>(null);
   readonly agences = signal<Agence[]>([]);
   readonly selected = signal<Set<string>>(new Set());
-  readonly erreur = signal('');
-  readonly msg = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly msg = feedbackSignal('success', '');
   readonly loading = signal(false);
   readonly exporting = signal(false);
   readonly page = signal(1);

@@ -13,6 +13,7 @@ import {
   catalogueStatutLabel,
   coreAdminCatalogueError,
 } from './core-admin-catalogue.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
 
 @Component({
   selector: 'bea-core-admin-modules',
@@ -87,9 +88,6 @@ import {
         </div>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (loading()) {
         <p class="bea-admin-dash__loading">Chargement des modules…</p>
       } @else {
@@ -191,7 +189,7 @@ export class CoreAdminModulesComponent implements OnInit {
   readonly page = signal(1);
   readonly loading = signal(true);
   readonly saving = signal(false);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
   readonly size = 20;
   readonly totalPages = computed(() => Math.max(1, Math.ceil(this.total() / this.size)));
   readonly filters = this.fb.nonNullable.group({ search: '', statut: 'tous', espace_id: 'tous' });

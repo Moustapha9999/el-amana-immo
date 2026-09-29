@@ -6,6 +6,7 @@ import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
 import { PaginationComponent } from '../shared/pagination.component';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface Famille {
   id: string;
@@ -84,12 +85,6 @@ interface Paginated<T> {
         </button>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
-      @if (msg()) {
-        <p class="bea-stock-page__ok">{{ msg() }}</p>
-      }
 
       <div class="bea-art__panel">
         <div class="bea-art__panel-top">
@@ -623,8 +618,8 @@ export class StockArticlesComponent implements OnInit {
   readonly total = signal(0);
   readonly pageSize = 50;
   readonly saving = signal(false);
-  readonly erreur = signal('');
-  readonly msg = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly msg = feedbackSignal('success', '');
   readonly modalErreur = signal('');
   readonly modalOpen = signal(false);
   readonly editingId = signal<string | null>(null);

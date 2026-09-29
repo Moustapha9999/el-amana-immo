@@ -254,6 +254,7 @@ class MgContrat(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     responsable_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
     mode_paiement: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    ref_paiement: Mapped[str | None] = mapped_column(String(120), nullable=True)
     contrat_precedent_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("mg_contrats.id"), nullable=True
     )

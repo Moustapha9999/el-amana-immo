@@ -9,6 +9,8 @@ import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
 import { MontantPipe } from '../shared/montant.pipe';
 import { PaginationComponent } from '../shared/pagination.component';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 
 interface Agence {
   id: string;
@@ -110,9 +112,6 @@ interface Paginated {
           <button type="submit" class="bea-mg__btn bea-mg__btn--primary">Filtrer</button>
         </form>
 
-        @if (erreur()) {
-          <p class="bea-stock-page__error">{{ erreur() }}</p>
-        }
 
         <div class="bea-mg__panel">
           <div class="bea-mg__panel-top">
@@ -203,12 +202,6 @@ interface Paginated {
           </div>
         </header>
 
-        @if (erreur()) {
-          <p class="bea-stock-page__error">{{ erreur() }}</p>
-        }
-        @if (msg()) {
-          <p class="bea-stock-page__ok">{{ msg() }}</p>
-        }
 
         <form class="bea-mg__panel" [formGroup]="form" (ngSubmit)="save()" style="overflow:visible">
           <div class="bea-mg__panel-top">
@@ -569,6 +562,7 @@ interface Paginated {
   `,
 })
 export class NotesListComponent implements OnInit {
+  readonly hasUnsavedChanges = unsavedChanges(() => this.mode() === 'create' && this.form.dirty && !this.saving(), () => this.form);
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly dialogs = inject(UiDialogService);
@@ -585,8 +579,8 @@ export class NotesListComponent implements OnInit {
   readonly pageSize = 10;
   readonly saving = signal(false);
   readonly deletingId = signal<string | null>(null);
-  readonly erreur = signal('');
-  readonly msg = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly msg = feedbackSignal('success', '');
   readonly pdfModal = signal(false);
   readonly pdfBusy = signal(false);
   readonly pdfErreur = signal('');

@@ -114,7 +114,13 @@ services:
       redis:
         condition: service_healthy
     entrypoint: ["celery"]
-    command: ["-A", "app.workers.celery_app", "worker", "--loglevel=info", "-Q", "default,celery"]
+    command: ["-A", "app.workers.celery_app", "worker", "-B", "--schedule", "/tmp/celerybeat-schedule", "--loglevel=info", "-Q", "default,celery"]
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME --timeout 5 | grep -q pong"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
     networks:
       - bea_internal
 

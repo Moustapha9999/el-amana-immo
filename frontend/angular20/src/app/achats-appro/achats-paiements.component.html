@@ -47,8 +47,6 @@
       </label>
     </form>
 
-    @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
-    @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
 
     <div class="bea-ach__panel">
       <div class="bea-ach__panel-top">
@@ -115,8 +113,6 @@
 
     <p class="bea-ach__note">Ce formulaire alimente uniquement le suivi interne.</p>
 
-    @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
-    @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
 
     <form class="bea-ach__form" [formGroup]="form" (ngSubmit)="save()">
       <div class="bea-ach__grid">

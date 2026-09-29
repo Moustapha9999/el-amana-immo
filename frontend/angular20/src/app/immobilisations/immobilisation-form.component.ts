@@ -1,4 +1,4 @@
-﻿import { DatePipe } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { MontantInputDirective } from '../shared/montant-input.directive';
 import { MontantPipe } from '../shared/montant.pipe';
 import { Component, computed, effect, inject, input, OnInit, signal } from '@angular/core';
@@ -23,6 +23,7 @@ import {
   MESSAGE_NON_AMORTISSABLE_EL_AMANA,
   isCompteNonAmortissable,
 } from './immobilisation.constants';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 
 type ImmoSection = 'fiche' | 'modifier' | 'amortissement' | 'reevaluation' | 'sortie' | 'pieces';
 
@@ -132,6 +133,7 @@ interface ImmobilisationDto {
   styleUrl: './immobilisation-form.component.css',
 })
 export class ImmobilisationFormComponent implements OnInit {
+  readonly hasUnsavedChanges = unsavedChanges(() => this.form.dirty && !this.saving(), () => this.form);
   readonly id = input<string | undefined>();
   /** Route `:section` — modifier | amortissement | reevaluation | sortie | pieces */
   readonly section = input<string | undefined>();

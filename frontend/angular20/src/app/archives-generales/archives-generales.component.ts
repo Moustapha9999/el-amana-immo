@@ -7,6 +7,8 @@ import { ApiService } from '../core/services/api.service';
 import { AuthService } from '../core/services/auth.service';
 import { PaginationComponent } from '../shared/pagination.component';
 import { DocumentViewerComponent, GedDoc } from './document-viewer.component';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { FeedbackService } from '../core/feedback/feedback.service';
 
 interface ListOut {
   items: GedDoc[];
@@ -126,8 +128,6 @@ interface CatalogueType {
         </div>
       }
 
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
-      @if (toast()) { <p class="bea-ag-toast">{{ toast() }}</p> }
       @if (ocrHint()) {
         <p class="bea-stock-page__kicker">Aucun plein texte — des documents sont encore en OCR.</p>
       }
@@ -362,10 +362,6 @@ interface CatalogueType {
       background-size: 200% 100%;
       animation: beaShimmer 1.1s linear infinite;
     }
-    .bea-ag-toast {
-      background: #ecfdf5; color: #166534; padding: 0.45rem 0.7rem;
-      border-radius: 0.4rem; animation: beaMenu 0.25s ease;
-    }
     .bea-modal {
       position: fixed; inset: 0; z-index: 70;
       background: rgb(15 23 42 / 45%);
@@ -398,7 +394,7 @@ interface CatalogueType {
     @keyframes beaPop { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: none; } }
     @keyframes beaShimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
     @media (prefers-reduced-motion: reduce) {
-      .bea-ag-row, .bea-ag-menu, .bea-modal, .bea-modal__card, .bea-ag-skel td, .bea-ag-toast { animation: none; }
+      .bea-ag-row, .bea-ag-menu, .bea-modal, .bea-modal__card, .bea-ag-skel td { animation: none; }
     }
   `,
 })
@@ -406,14 +402,14 @@ export class ArchivesGeneralesComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly auth = inject(AuthService);
+  private readonly feedback = inject(FeedbackService);
 
   readonly docs = signal<GedDoc[]>([]);
   readonly page = signal(1);
   readonly total = signal(0);
   readonly pageSize = 25;
   readonly loading = signal(false);
-  readonly erreur = signal<string | null>(null);
-  readonly toast = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
   readonly ocrHint = signal(false);
   readonly idleSearch = signal(false);
   readonly mode = signal<'documents' | 'recherche'>('documents');
@@ -774,8 +770,7 @@ export class ArchivesGeneralesComponent implements OnInit {
   }
 
   private flash(msg: string): void {
-    this.toast.set(msg);
-    setTimeout(() => this.toast.set(null), 2800);
+    this.feedback.success({ title: msg });
   }
 
   private loadFacets(): void {

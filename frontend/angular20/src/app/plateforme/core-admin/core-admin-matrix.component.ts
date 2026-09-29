@@ -10,6 +10,7 @@ import {
   coreAdminRbacError,
 } from './core-admin-rbac.models';
 import { CoreAdminIconComponent } from './core-admin-icon.component';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
 
 @Component({
   selector: 'bea-core-admin-matrix',
@@ -74,9 +75,6 @@ import { CoreAdminIconComponent } from './core-admin-icon.component';
         </div>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (loading()) {
         <p class="bea-admin-dash__loading">Chargement de la matrice…</p>
       } @else if (roles().length === 0 || permissions().length === 0) {
@@ -153,7 +151,7 @@ export class CoreAdminMatrixComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
 
   readonly loading = signal(true);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly roles = signal<CoreAdminRoleSummary[]>([]);
   readonly permissions = signal<CoreAdminPermissionSummary[]>([]);
   readonly grants = signal<Record<string, Set<string>>>({});

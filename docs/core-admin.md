@@ -48,7 +48,11 @@ Login 2 (module immobilisations)
 - API permissions : `/api/v1/plateforme/admin/permissions*` (`core.admin.permissions`).
 - API matrice : `/api/v1/plateforme/admin/matrix` (`core.admin.roles`).
 - API sessions : `/api/v1/plateforme/admin/sessions*` (`core.admin.sessions`).
-- API audit : `/api/v1/plateforme/admin/audit` (`core.admin.audit`).
+- API audit : `/api/v1/plateforme/admin/audit` (`core.admin.audit`) — recherche aussi par `request_id`.
+- API erreurs : `/api/v1/plateforme/admin/supervision/erreurs` (`core.admin.audit`) — écran `/admin/erreurs`,
+  table `api_error_events` (voir [feedback-bea-digital.md](feedback-bea-digital.md)).
+  Carte « Erreurs API (24 h) » sur le dashboard, purge 90 j et alerte de pic
+  5xx par tâches Celery (beat dans le worker).
 - Permission d’entrée : `core.admin.access`. Superuser : `*`.
 
 ### Permissions CORE ADMIN (catalogue)
@@ -187,6 +191,13 @@ local avant Alembic `20260918_core_admin_ops`).
   `kind=aujourd_hui|logins|mutations|core`.
 - Permission `core.admin.audit`. Lien vers la fiche utilisateur quand
   `user_id` est présent.
+- Actions sensibles comptées dans « Mutations » : `force_delete`
+  (suppression administrateur Stock & Fournitures — mouvement en période
+  clôturée, demande servie, inventaire ajusté ; `before` = état + mouvements
+  annulés, `after.motif` obligatoire) et `correction_date_import`
+  (correction des dates importées d’Excel). Filtrer par action pour les revoir.
+  La suppression administrateur exige `mg.stock.period.reopen` (ou
+  `mg.admin` / superuser), contrôlée côté API.
 
 ## Phases 8–10 — Menu restant
 

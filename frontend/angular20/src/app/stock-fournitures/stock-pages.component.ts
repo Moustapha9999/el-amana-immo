@@ -13,9 +13,17 @@ import {
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
+import { Observable, switchMap } from 'rxjs';
 import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
 import { PaginationComponent } from '../shared/pagination.component';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { FeedbackService } from '../core/feedback/feedback.service';
+import {
+  StockMouvementActions,
+  StockMouvementEditComponent,
+  StockMouvementRow,
+} from './stock-mouvement-edit.component';
 
 interface Article {
   id: string;
@@ -31,20 +39,9 @@ interface Article {
   agence_id?: string | null;
 }
 
-interface Mouvement {
-  id: string;
-  reference: string;
-  date_mouvement: string;
-  type_mouvement: string;
-  article_id: string;
-  quantite: number;
-  agence_id: string | null;
+interface Mouvement extends StockMouvementRow {
   departement: string | null;
-  motif: string | null;
-  observation: string | null;
   initiateur_nom?: string | null;
-  article_code?: string | null;
-  article_designation?: string | null;
   stock_disponible?: number | null;
 }
 
@@ -127,6 +124,20 @@ interface Inventaire {
   nb_surplus?: number;
   nb_manquant?: number;
 }
+
+const INVENTAIRE_STATUT_LABELS: Record<string, string> = {
+  BROUILLON: 'Brouillon',
+  OUVERT: 'Ouvert',
+  EN_COMPTAGE: 'En comptage',
+  EN_COURS: 'En comptage',
+  COMPTAGE_TERMINE: 'Comptage terminé',
+  EN_CONTROLE: 'En contrôle',
+  VALIDE: 'Validé',
+  AJUSTEMENTS_APPLIQUES: 'Ajustements appliqués',
+  CLOTURE: 'Clôturé',
+  REJETE: 'Rejeté',
+  ANNULE: 'Annulé',
+};
 
 interface PeriodeStock {
   id: string;
@@ -219,9 +230,6 @@ function downloadBlob(blob: Blob, filename: string): void {
         </button>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
 
       <div class="bea-mg__panel">
         <div class="bea-mg__panel-top">
@@ -260,7 +268,9 @@ function downloadBlob(blob: Blob, filename: string): void {
                   <button type="button" class="bea-mg__icon-btn" title="Voir" (click)="openDetail(a)">
                     <mat-icon>visibility</mat-icon>
                   </button>
-                </td>
+                  <a class="bea-mg__icon-btn" title="Modifier l’article (seuils, emplacement…)" [routerLink]="['/stock-fournitures/articles', a.id]">
+                    <mat-icon>edit</mat-icon>
+                  </a>                </td>
               </tr>
             } @empty {
               <tr>
@@ -330,7 +340,7 @@ export class StockEtatComponent implements OnInit {
   readonly page = signal(1);
   readonly total = signal(0);
   readonly pageSize = 50;
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
 
   readonly filters = this.fb.nonNullable.group({ q: '' });
 
@@ -437,9 +447,6 @@ export class StockEtatComponent implements OnInit {
         </label>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
 
       <div class="bea-mg__panel">
         <div class="bea-mg__panel-top">
@@ -472,6 +479,11 @@ export class StockEtatComponent implements OnInit {
                   <button type="button" class="bea-mg__icon-btn" title="Voir" (click)="openDetail(a)">
                     <mat-icon>visibility</mat-icon>
                   </button>
+                  @if (a.article_id) {
+                    <a class="bea-mg__icon-btn" title="Ajuster le seuil / modifier l’article" [routerLink]="['/stock-fournitures/articles', a.article_id]">
+                      <mat-icon>edit</mat-icon>
+                    </a>
+                  }
                 </td>
               </tr>
             } @empty {
@@ -522,7 +534,7 @@ export class StockAlertesComponent implements OnInit {
 
   readonly alertes = signal<Alerte[]>([]);
   readonly detail = signal<Alerte | null>(null);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly q = signal('');
 
   readonly filters = this.fb.nonNullable.group({ q: '' });
@@ -580,7 +592,7 @@ export class StockAlertesComponent implements OnInit {
 @Component({
   selector: 'bea-stock-flux',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, QuantitePipe, DatePipe, MatIconModule, PaginationComponent],
+  imports: [ReactiveFormsModule, QuantitePipe, DatePipe, MatIconModule, PaginationComponent, StockMouvementEditComponent],
   template: `
     <section class="bea-mg">
       <header class="bea-mg__head">
@@ -614,12 +626,6 @@ export class StockAlertesComponent implements OnInit {
         </label>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
-      @if (ok()) {
-        <p class="bea-stock-page__ok">{{ ok() }}</p>
-      }
 
       <div class="bea-mg__panel">
         <div class="bea-mg__panel-top">
@@ -653,6 +659,18 @@ export class StockAlertesComponent implements OnInit {
                 <td class="bea-mg__actions-cell">
                   <button type="button" class="bea-mg__icon-btn" title="Voir" (click)="openDetail(m)">
                     <mat-icon>visibility</mat-icon>
+                  </button>
+                  <button type="button" class="bea-mg__icon-btn" title="Modifier" (click)="editTarget.set(m)">
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                  <button
+                    type="button"
+                    class="bea-mg__icon-btn bea-mg__icon-btn--danger"
+                    [title]="m.quantite_modifiable ? 'Supprimer' : mouvementActions.peutSupprimer(m) ? 'Suppression administrateur (motif requis)' : 'Suppression impossible (période clôturée ou mouvement de workflow)'"
+                    [disabled]="!mouvementActions.peutSupprimer(m)"
+                    (click)="supprimer(m)"
+                  >
+                    <mat-icon>delete</mat-icon>
                   </button>
                 </td>
               </tr>
@@ -770,14 +788,26 @@ export class StockAlertesComponent implements OnInit {
             @if (d.observation) {
               <p>Observation : {{ d.observation }}</p>
             }
-            <p class="bea-stock-page__kicker" style="margin-top:0.75rem">
-              Les mouvements sont immuables — modification et suppression impossibles.
-            </p>
+            @if (d.periode_libelle) {
+              <p>Période : {{ d.periode_libelle }} {{ d.periode_cloturee ? '(clôturée)' : '(ouverte)' }}</p>
+            }
           </div>
           <footer class="bea-mg__modal-foot">
-            <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="closeDetail()">Fermer</button>
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="closeDetail()">Fermer</button>
+            <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="closeDetail(); editTarget.set(d)">
+              <mat-icon>edit</mat-icon> Modifier
+            </button>
           </footer>
         </div>
+      }
+
+      @if (editTarget(); as e) {
+        <bea-stock-mouvement-edit
+          [mouvement]="e"
+          [agences]="agences()"
+          (closed)="editTarget.set(null)"
+          (saved)="onEdited()"
+        />
       }
 
       @if (receptionOpen()) {
@@ -902,6 +932,7 @@ export class StockFluxComponent implements OnInit {
 
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
+  protected readonly mouvementActions = inject(StockMouvementActions);
 
   readonly articles = signal<Article[]>([]);
   readonly agences = signal<Agence[]>([]);
@@ -910,6 +941,7 @@ export class StockFluxComponent implements OnInit {
   readonly total = signal(0);
   readonly pageSize = 50;
   readonly detail = signal<Mouvement | null>(null);
+  readonly editTarget = signal<Mouvement | null>(null);
   readonly createOpen = signal(false);
   readonly receptionOpen = signal(false);
   readonly bonsReception = signal<BonReception[]>([]);
@@ -918,8 +950,8 @@ export class StockFluxComponent implements OnInit {
   readonly receptionMotif = signal('');
   readonly receptionQtyMap = signal<Record<string, number>>({});
   readonly receptionArticleMap = signal<Record<string, string>>({});
-  readonly erreur = signal('');
-  readonly ok = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly ok = feedbackSignal('success', '');
   readonly modalErreur = signal('');
   readonly saving = signal(false);
   readonly q = signal('');
@@ -1030,6 +1062,19 @@ export class StockFluxComponent implements OnInit {
 
   closeDetail(): void {
     this.detail.set(null);
+  }
+
+  onEdited(): void {
+    this.editTarget.set(null);
+    this.reload();
+    this.loadArticles();
+  }
+
+  supprimer(m: Mouvement): void {
+    this.mouvementActions.supprimer(m).subscribe(() => {
+      this.reload();
+      this.loadArticles();
+    });
   }
 
   resteLigne(l: BcLigneReception): number {
@@ -1239,12 +1284,6 @@ export class StockSortiesComponent {}
         </label>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
-      @if (ok()) {
-        <p class="bea-stock-page__ok">{{ ok() }}</p>
-      }
 
       <div class="bea-mg__panel">
         <div class="bea-mg__panel-top">
@@ -1268,21 +1307,39 @@ export class StockSortiesComponent {}
                 <td><code class="bea-mg__code">{{ inv.reference }}</code></td>
                 <td>{{ inv.libelle }}</td>
                 <td>{{ inv.date_debut | date: 'dd/MM/yyyy' }}</td>
-                <td><span class="bea-stock-badge">{{ inv.statut }}</span></td>
+                <td><span class="bea-stock-badge">{{ statutInvLabel(inv.statut) }}</span></td>
                 <td class="bea-mg__actions-cell">
                   <button type="button" class="bea-mg__icon-btn" title="Voir" (click)="ouvrir(inv.id, false)">
                     <mat-icon>visibility</mat-icon>
                   </button>
-                  @if (!inventaireLocked(inv.statut)) {
+                  @if (saisissable(inv.statut)) {
                     <button
                       type="button"
                       class="bea-mg__icon-btn bea-mg__icon-btn--warn"
-                      title="Éditer saisie"
+                      title="Saisir les comptages"
                       (click)="ouvrir(inv.id, true)"
                     >
-                      <mat-icon>edit</mat-icon>
+                      <mat-icon>fact_check</mat-icon>
                     </button>
                   }
+                  <button
+                    type="button"
+                    class="bea-mg__icon-btn"
+                    [title]="inventaireVerrouille(inv.statut) ? 'Campagne validée ou clôturée' : 'Modifier'"
+                    [disabled]="inventaireVerrouille(inv.statut)"
+                    (click)="openEdit(inv)"
+                  >
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                  <button
+                    type="button"
+                    class="bea-mg__icon-btn bea-mg__icon-btn--danger"
+                    [title]="!inventaireAjuste(inv.statut) ? 'Supprimer' : mouvementActions.canForce() ? 'Suppression administrateur (annule les ajustements, motif requis)' : 'Suppression impossible : ajustements déjà appliqués au stock'"
+                    [disabled]="inventaireAjuste(inv.statut) && !mouvementActions.canForce()"
+                    (click)="supprimer(inv)"
+                  >
+                    <mat-icon>delete</mat-icon>
+                  </button>
                 </td>
               </tr>
             } @empty {
@@ -1300,11 +1357,11 @@ export class StockSortiesComponent {}
 
       @if (createOpen()) {
         <div class="bea-mg__backdrop" (click)="closeCreate()" role="presentation"></div>
-        <div class="bea-mg__modal bea-mg__modal--sm" role="dialog" aria-modal="true" aria-label="Nouvelle campagne">
+        <div class="bea-mg__modal bea-mg__modal--sm" role="dialog" aria-modal="true" [attr.aria-label]="editInv() ? 'Modifier la campagne' : 'Nouvelle campagne'">
           <header class="bea-mg__modal-head">
             <div>
-              <p class="bea-stock-page__kicker">Création</p>
-              <h2>Nouvelle campagne</h2>
+              <p class="bea-stock-page__kicker">{{ editInv() ? 'Modification' : 'Création' }}</p>
+              <h2>{{ editInv() ? editInv()!.reference : 'Nouvelle campagne' }}</h2>
             </div>
             <button type="button" class="bea-mg__icon-btn" (click)="closeCreate()" title="Fermer">
               <mat-icon>close</mat-icon>
@@ -1326,6 +1383,12 @@ export class StockSortiesComponent {}
                     }
                   </select>
                 </label>
+                @if (editInv()) {
+                  <label class="bea-mg__span2">
+                    Observation
+                    <input formControlName="observation" />
+                  </label>
+                }
               </div>
               @if (modalErreur()) {
                 <p class="bea-stock-page__error">{{ modalErreur() }}</p>
@@ -1338,7 +1401,7 @@ export class StockSortiesComponent {}
                 class="bea-mg__btn bea-mg__btn--primary"
                 [disabled]="createForm.invalid || saving()"
               >
-                Créer
+                {{ editInv() ? 'Enregistrer' : 'Créer' }}
               </button>
             </footer>
           </form>
@@ -1359,7 +1422,7 @@ export class StockSortiesComponent {}
           </header>
           <div class="bea-mg__modal-body">
             <p>
-              Statut : <span class="bea-stock-badge">{{ d.statut }}</span>
+              Statut : <span class="bea-stock-badge">{{ statutInvLabel(d.statut) }}</span>
               — Début : {{ d.date_debut | date: 'dd/MM/yyyy' }}
               @if (d.date_fin) {
                 — Fin : {{ d.date_fin | date: 'dd/MM/yyyy' }}
@@ -1388,7 +1451,7 @@ export class StockSortiesComponent {}
                     <td>{{ l.famille_libelle || '—' }}</td>
                     <td>{{ l.stock_theorique | quantite }}</td>
                     <td>
-                      @if (inventaireLocked(d.statut) || !editMode()) {
+                      @if (!saisissable(d.statut) || !editMode()) {
                         {{ l.stock_physique | quantite }}
                       } @else {
                         <input
@@ -1409,7 +1472,11 @@ export class StockSortiesComponent {}
                   </tr>
                 } @empty {
                   <tr>
-                    <td colspan="6" class="bea-mg__empty">Aucune ligne.</td>
+                    <td colspan="6" class="bea-mg__empty">
+                      Aucune ligne à compter : aucun article stockable actif n’était rattaché au périmètre choisi
+                      à la création. Cette campagne ne peut pas aboutir — supprimez-la et recréez-la
+                      (« Toutes agences » ou une agence qui a des articles).
+                    </td>
                   </tr>
                 }
               </tbody>
@@ -1418,31 +1485,51 @@ export class StockSortiesComponent {}
 
             <bea-mg-ged moduleCode="stock-fournitures" entity="inventaire" [entityId]="d.id" />
           </div>
-          <footer class="bea-mg__modal-foot">
+          <footer class="bea-mg__modal-foot" style="flex-wrap:wrap">
+            <div style="display:flex;gap:.5rem;margin-right:auto">
+              @if (peutSupprimerInv(d)) {
+                <button type="button" class="bea-mg__btn bea-mg__btn--danger" (click)="supprimer(d)" [disabled]="saving()">
+                  <mat-icon>delete</mat-icon> Supprimer
+                </button>
+              }
+              @if (peutAnnulerInv(d) && d.lignes.length) {
+                <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="annulerInv()" [disabled]="saving()">
+                  Annuler la campagne
+                </button>
+              }
+            </div>
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="closeDetail()">Fermer</button>
-            @if (!inventaireLocked(d.statut) && editMode()) {
-              <button
-                type="button"
-                class="bea-mg__btn bea-mg__btn--ghost"
-                (click)="sauverSaisie()"
-                [disabled]="saving()"
-              >
-                Enregistrer saisie
-              </button>
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="transition('terminer')" [disabled]="saving()">
-                Terminer comptage
-              </button>
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="transition('valider')" [disabled]="saving()">
-                Valider
-              </button>
-              <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="cloturer()" [disabled]="saving()">
-                Clôturer &amp; ajuster
-              </button>
-            }
-            @if (!inventaireLocked(d.statut) && !editMode()) {
-              <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="editMode.set(true)">
-                Éditer saisie
-              </button>
+            @if (d.lignes.length) {
+              @if (saisissable(d.statut)) {
+                @if (editMode()) {
+                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="sauverSaisie()" [disabled]="saving()">
+                    Enregistrer la saisie
+                  </button>
+                  @if (peutTerminer(d.statut)) {
+                    <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="transition('terminer')" [disabled]="saving()">
+                      Terminer le comptage
+                    </button>
+                  } @else {
+                    <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="transition('valider')" [disabled]="saving()">
+                      Valider
+                    </button>
+                  }
+                } @else {
+                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="editMode.set(true)">
+                    <mat-icon>fact_check</mat-icon> Saisir les comptages
+                  </button>
+                  @if (peutValider(d.statut)) {
+                    <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="transition('valider')" [disabled]="saving()">
+                      Valider
+                    </button>
+                  }
+                }
+              }
+              @if (peutCloturer(d.statut)) {
+                <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="cloturer()" [disabled]="saving()">
+                  {{ d.statut === 'AJUSTEMENTS_APPLIQUES' ? 'Clôturer' : 'Appliquer les ajustements & clôturer' }}
+                </button>
+              }
             }
           </footer>
         </div>
@@ -1460,8 +1547,8 @@ export class StockInventairesComponent implements OnInit {
   readonly physiqueMap = signal<Record<string, number | ''>>({});
   readonly createOpen = signal(false);
   readonly editMode = signal(false);
-  readonly erreur = signal('');
-  readonly ok = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly ok = feedbackSignal('success', '');
   readonly modalErreur = signal('');
   readonly saving = signal(false);
   readonly q = signal('');
@@ -1471,7 +1558,112 @@ export class StockInventairesComponent implements OnInit {
   readonly createForm = this.fb.nonNullable.group({
     libelle: ['', Validators.required],
     agence_id: [''],
+    observation: [''],
   });
+  readonly editInv = signal<Inventaire | null>(null);
+  private readonly feedback = inject(FeedbackService);
+  protected readonly mouvementActions = inject(StockMouvementActions);
+
+  inventaireVerrouille(statut: string): boolean {
+    return ['VALIDE', 'AJUSTEMENTS_APPLIQUES', 'CLOTURE'].includes(statut);
+  }
+
+  /** Ajustements déjà passés au stock : suppression normale impossible. */
+  inventaireAjuste(statut: string): boolean {
+    return ['AJUSTEMENTS_APPLIQUES', 'CLOTURE'].includes(statut);
+  }
+
+  statutInvLabel(statut: string): string {
+    return INVENTAIRE_STATUT_LABELS[statut] ?? statut;
+  }
+
+  saisissable(statut: string): boolean {
+    return ['BROUILLON', 'OUVERT', 'EN_COMPTAGE', 'EN_COURS', 'COMPTAGE_TERMINE', 'EN_CONTROLE'].includes(statut);
+  }
+
+  peutTerminer(statut: string): boolean {
+    return ['BROUILLON', 'OUVERT', 'EN_COMPTAGE', 'EN_COURS'].includes(statut);
+  }
+
+  peutValider(statut: string): boolean {
+    return ['EN_CONTROLE', 'COMPTAGE_TERMINE'].includes(statut);
+  }
+
+  peutCloturer(statut: string): boolean {
+    return !['CLOTURE', 'REJETE', 'ANNULE'].includes(statut);
+  }
+
+  peutAnnulerInv(d: Inventaire): boolean {
+    return !['CLOTURE', 'AJUSTEMENTS_APPLIQUES', 'REJETE', 'ANNULE'].includes(d.statut);
+  }
+
+  peutSupprimerInv(d: Inventaire): boolean {
+    return !this.inventaireAjuste(d.statut) || this.mouvementActions.canForce();
+  }
+
+  openEdit(inv: Inventaire): void {
+    this.modalErreur.set('');
+    this.editInv.set(inv);
+    this.createForm.reset({ libelle: inv.libelle, agence_id: inv.agence_id ?? '', observation: inv.observation ?? '' });
+    this.createForm.controls.agence_id.disable();
+    this.createOpen.set(true);
+  }
+
+  supprimer(inv: Inventaire): void {
+    const apres = () => {
+      this.closeDetail();
+      this.reload();
+    };
+    if (this.inventaireAjuste(inv.statut)) {
+      if (!this.mouvementActions.canForce()) return;
+      this.mouvementActions
+        .supprimerForce({
+          path: `/mg/stock/inventaires/${inv.id}`,
+          reference: inv.reference,
+          message: `Supprimer la campagne ${inv.reference} — ${inv.libelle} (${this.statutInvLabel(inv.statut)}) ?`,
+          hint: 'Les ajustements de stock appliqués par cet inventaire seront annulés et les soldes recalculés (y compris périodes clôturées).',
+          successTitle: 'Campagne supprimée',
+        })
+        .subscribe(apres);
+      return;
+    }
+    this.feedback
+      .run(() => this.api.delete(`/mg/stock/inventaires/${inv.id}`), {
+        confirm: {
+          action: 'suppression',
+          message: `Supprimer la campagne ${inv.reference} — ${inv.libelle} ?`,
+          hint: 'Les comptages saisis seront perdus. Aucun ajustement de stock n’a été appliqué.',
+        },
+        loading: 'Suppression…',
+        errorTitle: 'Suppression refusée',
+        success: { title: 'Campagne supprimée', details: [{ label: 'Référence', value: inv.reference }] },
+      })
+      .subscribe(apres);
+  }
+
+  annulerInv(): void {
+    const d = this.detail();
+    if (!d) return;
+    this.feedback
+      .run(() => this.api.post<Inventaire>(`/mg/stock/inventaires/${d.id}/transition`, { action: 'annuler' }), {
+        confirm: {
+          action: 'annulation',
+          message: `Annuler la campagne ${d.reference} ?`,
+          hint: 'Elle restera consultable (statut Annulé). Aucun ajustement de stock ne sera appliqué.',
+        },
+        loading: 'Annulation…',
+        busy: this.saving,
+        errorTitle: 'Annulation refusée',
+        success: { title: 'Campagne annulée', details: [{ label: 'Référence', value: d.reference }] },
+      })
+      .subscribe((inv) => this.apresTransition(inv));
+  }
+
+  private apresTransition(inv: Inventaire): void {
+    this.detail.set(inv);
+    this.editMode.set(false);
+    this.reload();
+  }
 
   readonly filtered = computed(() => {
     const term = this.q().trim().toLowerCase();
@@ -1483,10 +1675,6 @@ export class StockInventairesComponent implements OnInit {
         i.statut.toLowerCase().includes(term),
     );
   });
-
-  inventaireLocked(statut: string): boolean {
-    return ['CLOTURE', 'REJETE', 'ANNULE', 'AJUSTEMENTS_APPLIQUES'].includes(statut);
-  }
 
   natureTone(nature: string | null | undefined): string {
     if (nature === 'MANQUANT') return 'epuise';
@@ -1522,7 +1710,9 @@ export class StockInventairesComponent implements OnInit {
 
   openCreate(): void {
     this.modalErreur.set('');
-    this.createForm.reset({ libelle: '', agence_id: '' });
+    this.editInv.set(null);
+    this.createForm.controls.agence_id.enable();
+    this.createForm.reset({ libelle: '', agence_id: '', observation: '' });
     this.createOpen.set(true);
   }
 
@@ -1537,25 +1727,53 @@ export class StockInventairesComponent implements OnInit {
 
   creer(): void {
     if (this.createForm.invalid) return;
-    this.saving.set(true);
-    this.modalErreur.set('');
-    this.erreur.set('');
+    const edit = this.editInv();
+    if (edit) {
+      const v = this.createForm.getRawValue();
+      this.feedback
+        .run(
+          () =>
+            this.api.patch<Inventaire>(`/mg/stock/inventaires/${edit.id}`, {
+              libelle: v.libelle,
+              observation: v.observation,
+            }),
+          {
+            loading: 'Enregistrement…',
+            busy: this.saving,
+            errorTitle: 'Modification refusée',
+            success: (inv) => ({ title: 'Campagne modifiée', details: [{ label: 'Référence', value: inv.reference }] }),
+          },
+        )
+        .subscribe(() => {
+          this.closeCreate();
+          this.editInv.set(null);
+          this.reload();
+        });
+      return;
+    }
     const v = this.createForm.getRawValue();
     const body: Record<string, unknown> = { libelle: v.libelle };
     if (v.agence_id) body['agence_id'] = v.agence_id;
-    this.api.post<Inventaire>('/mg/stock/inventaires', body).subscribe({
-      next: (inv) => {
-        this.saving.set(false);
-        this.ok.set(`Campagne ${inv.reference} créée.`);
+    if (v.observation) body['observation'] = v.observation;
+    this.feedback
+      .run(() => this.api.post<Inventaire>('/mg/stock/inventaires', body), {
+        loading: 'Création…',
+        busy: this.saving,
+        errorTitle: 'Création refusée',
+        errorHint: 'Vos saisies ont été conservées.',
+        success: (inv) => ({
+          title: 'Campagne créée',
+          details: [
+            { label: 'Référence', value: inv.reference },
+            { label: 'Lignes à compter', value: String(inv.lignes.length) },
+          ],
+        }),
+      })
+      .subscribe((inv) => {
         this.closeCreate();
         this.reload();
         this.ouvrir(inv.id, true);
-      },
-      error: (err) => {
-        this.saving.set(false);
-        this.modalErreur.set(err?.error?.detail || 'Création refusée.');
-      },
-    });
+      });
   }
 
   ouvrir(id: string, edit: boolean): void {
@@ -1595,70 +1813,83 @@ export class StockInventairesComponent implements OnInit {
       .map((l) => ({ id: l.id, stock_physique: this.physiqueMap()[l.id] as number }));
   }
 
+  /** Enregistre d'abord la saisie en cours (mode saisie uniquement), puis enchaîne l'action. */
+  private avecSaisie<T>(d: Inventaire, action: () => Observable<T>): Observable<T> {
+    const body = this.saisieBody();
+    if (!this.editMode() || !this.saisissable(d.statut) || !body.length) return action();
+    return this.api.patch<Inventaire>(`/mg/stock/inventaires/${d.id}/saisie`, body).pipe(switchMap(() => action()));
+  }
+
   sauverSaisie(): void {
     const d = this.detail();
     if (!d) return;
-    this.saving.set(true);
-    this.erreur.set('');
-    this.api.patch<Inventaire>(`/mg/stock/inventaires/${d.id}/saisie`, this.saisieBody()).subscribe({
-      next: (inv) => {
-        this.saving.set(false);
-        this.ok.set('Saisie enregistrée.');
+    this.feedback
+      .run(() => this.api.patch<Inventaire>(`/mg/stock/inventaires/${d.id}/saisie`, this.saisieBody()), {
+        loading: 'Enregistrement…',
+        busy: this.saving,
+        errorTitle: 'Saisie refusée',
+        errorHint: 'Vos comptages sont conservés à l’écran.',
+        success: { title: 'Saisie enregistrée', details: [{ label: 'Référence', value: d.reference }] },
+      })
+      .subscribe((inv) => {
         this.detail.set(inv);
         this.reload();
-      },
-      error: (err) => {
-        this.saving.set(false);
-        this.erreur.set(err?.error?.detail || 'Saisie refusée.');
-      },
-    });
+      });
   }
 
   cloturer(): void {
     const d = this.detail();
     if (!d) return;
-    this.saving.set(true);
-    this.erreur.set('');
-    this.api.patch<Inventaire>(`/mg/stock/inventaires/${d.id}/saisie`, this.saisieBody()).subscribe({
-      next: () => {
-        this.api.post<Inventaire>(`/mg/stock/inventaires/${d.id}/cloturer`, {}).subscribe({
-          next: (inv) => {
-            this.saving.set(false);
-            this.ok.set('Inventaire clôturé — ajustements journalisés.');
-            this.detail.set(inv);
-            this.editMode.set(false);
-            this.reload();
-          },
-          error: (err) => {
-            this.saving.set(false);
-            this.erreur.set(err?.error?.detail || 'Clôture refusée.');
-          },
-        });
-      },
-      error: (err) => {
-        this.saving.set(false);
-        this.erreur.set(err?.error?.detail || 'Saisie préalable refusée.');
-      },
-    });
+    const dejaAjuste = d.statut === 'AJUSTEMENTS_APPLIQUES';
+    this.feedback
+      .run(() => this.avecSaisie(d, () => this.api.post<Inventaire>(`/mg/stock/inventaires/${d.id}/cloturer`, {})), {
+        confirm: {
+          action: 'cloture',
+          message: `Clôturer la campagne ${d.reference} ?`,
+          hint: dejaAjuste
+            ? 'Les ajustements sont déjà appliqués ; la campagne passera au statut Clôturé.'
+            : 'Le stock de chaque article sera aligné sur le comptage physique (mouvements d’ajustement journalisés).',
+        },
+        loading: 'Clôture…',
+        busy: this.saving,
+        errorTitle: 'Clôture refusée',
+        success: (inv) => ({
+          title: 'Inventaire clôturé',
+          details: [
+            { label: 'Référence', value: inv.reference },
+            { label: 'Statut', value: this.statutInvLabel(inv.statut) },
+          ],
+        }),
+      })
+      .subscribe((inv) => this.apresTransition(inv));
   }
 
-  transition(action: string): void {
+  transition(action: 'terminer' | 'valider'): void {
     const d = this.detail();
     if (!d) return;
-    this.saving.set(true);
-    this.erreur.set('');
-    this.api.post<Inventaire>(`/mg/stock/inventaires/${d.id}/transition`, { action }).subscribe({
-      next: (inv) => {
-        this.saving.set(false);
-        this.ok.set(`Inventaire : ${inv.statut}.`);
-        this.detail.set(inv);
-        this.reload();
-      },
-      error: (err) => {
-        this.saving.set(false);
-        this.erreur.set(err?.error?.detail || 'Transition refusée.');
-      },
-    });
+    const post = () => this.api.post<Inventaire>(`/mg/stock/inventaires/${d.id}/transition`, { action });
+    this.feedback
+      .run(() => this.avecSaisie(d, post), {
+        confirm:
+          action === 'valider'
+            ? {
+                action: 'validation',
+                message: `Valider les comptages de ${d.reference} ?`,
+                hint: 'La saisie sera figée. Les ajustements de stock seront appliqués à la clôture.',
+              }
+            : undefined,
+        loading: action === 'valider' ? 'Validation…' : 'Enregistrement…',
+        busy: this.saving,
+        errorTitle: action === 'valider' ? 'Validation refusée' : 'Comptage non terminé',
+        success: (inv) => ({
+          title: action === 'valider' ? 'Comptages validés' : 'Comptage terminé',
+          details: [
+            { label: 'Référence', value: inv.reference },
+            { label: 'Statut', value: this.statutInvLabel(inv.statut) },
+          ],
+        }),
+      })
+      .subscribe((inv) => this.apresTransition(inv));
   }
 
   exportFile(format: 'xlsx' | 'pdf'): void {
@@ -1684,12 +1915,6 @@ export class StockInventairesComponent implements OnInit {
         </div>
       </header>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
-      @if (ok()) {
-        <p class="bea-stock-page__ok">{{ ok() }}</p>
-      }
 
       <section class="bea-mg__panel" style="margin-bottom:1rem">
         <div class="bea-mg__panel-top">
@@ -2205,8 +2430,8 @@ export class StockParametresComponent implements OnInit {
   readonly cloturePreview = signal<CloturePreview | null>(null);
   readonly clotureId = signal<string | null>(null);
   readonly reopenTarget = signal<PeriodeStock | null>(null);
-  readonly erreur = signal('');
-  readonly ok = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly ok = feedbackSignal('success', '');
   readonly modalErreur = signal('');
   readonly saving = signal(false);
 

@@ -2,10 +2,11 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text, event, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.request_context import current_request_id
 from app.db.base import Base
 from app.models.enums import TypeNotification
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
@@ -54,6 +55,13 @@ class AuditLog(Base, UUIDPrimaryKeyMixin):
     espace_code: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     module_code: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     session_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User | None"] = relationship(foreign_keys=[user_id])
+
+
+@event.listens_for(AuditLog, "before_insert")
+def _stamp_request_id(_mapper, _connection, target: AuditLog) -> None:
+    if not target.request_id:
+        target.request_id = current_request_id()

@@ -33,8 +33,10 @@ from app.schemas.mg_stock import (
     InventaireOut,
     InventaireLigneOut,
     InventaireTransition,
+    InventaireUpdate,
     MouvementCreate,
     MouvementOut,
+    MouvementUpdate,
     PeriodeOut,
     PeriodeReopenIn,
     RapportCustomExportIn,
@@ -437,6 +439,89 @@ async def create_mouvement(
     return (await svc.enrich_mouvements([mvt]))[0]
 
 
+_PERM_PAR_TYPE = {
+    "ENTREE": "mg.stock.entry",
+    "SORTIE": "mg.stock.exit",
+    "AJUSTEMENT": "mg.stock.adjust",
+    "INVENTAIRE": "mg.stock.inventory",
+}
+
+
+async def _mouvement_autorise(db: AsyncSession, user: User, mvt_id: UUID):
+    from sqlalchemy import select
+
+    from app.api.deps import load_user_permission_codes, user_has_permission_codes
+    from app.models.mg_stock import MgStockMouvement
+
+    mvt = await db.scalar(select(MgStockMouvement).where(MgStockMouvement.id == mvt_id))
+    if mvt is None:
+        raise HTTPException(404, detail="Mouvement introuvable")
+    needed = _PERM_PAR_TYPE.get(mvt.type_mouvement, "mg.stock.entry")
+    have = await load_user_permission_codes(db, user)
+    if not user_has_permission_codes(have, needed):
+        raise HTTPException(403, detail=f"Permission requise : {needed}")
+
+
+_PERM_SUPPRESSION_FORCEE = "mg.stock.period.reopen"
+
+
+async def _exiger_suppression_forcee(db: AsyncSession, user: User, motif: str | None) -> str:
+    from app.api.deps import load_user_permission_codes, user_has_permission_codes
+
+    have = await load_user_permission_codes(db, user)
+    if not user_has_permission_codes(have, _PERM_SUPPRESSION_FORCEE):
+        raise HTTPException(
+            403,
+            detail="Suppression administrateur réservée aux administrateurs du stock "
+            f"(permission {_PERM_SUPPRESSION_FORCEE}).",
+        )
+    motif = (motif or "").strip()
+    if len(motif) < 5:
+        raise HTTPException(400, detail="Motif obligatoire (5 caractères minimum).")
+    return motif
+
+
+@router.patch("/mouvements/{mvt_id}", response_model=MouvementOut, dependencies=_module)
+async def update_mouvement(
+    mvt_id: UUID,
+    body: MouvementUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    await _mouvement_autorise(db, user, mvt_id)
+    svc = MgStockService(db)
+    mvt, before = await svc.update_mouvement(mvt_id, body)
+    await audit_stock(
+        db, user, "update", "mg_stock_mouvement", mvt.id, request=request,
+        before=before, after=svc.mouvement_snapshot(mvt),
+    )
+    return (await svc.enrich_mouvements([mvt]))[0]
+
+
+@router.delete("/mouvements/{mvt_id}", status_code=204, dependencies=_module)
+async def delete_mouvement(
+    mvt_id: UUID,
+    request: Request,
+    force: bool = False,
+    motif: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if force:
+        motif = await _exiger_suppression_forcee(db, user, motif)
+        before = await MgStockService(db).force_delete_mouvement(mvt_id)
+        await audit_stock(
+            db, user, "force_delete", "mg_stock_mouvement", mvt_id, request=request,
+            before=before, after={"motif": motif},
+        )
+        return Response(status_code=204)
+    await _mouvement_autorise(db, user, mvt_id)
+    before = await MgStockService(db).delete_mouvement(mvt_id)
+    await audit_stock(db, user, "delete", "mg_stock_mouvement", mvt_id, request=request, before=before)
+    return Response(status_code=204)
+
+
 @router.get("/receptions/bons", response_model=list[BonOut], dependencies=_module)
 async def list_bons_reception(
     db: AsyncSession = Depends(get_db),
@@ -572,6 +657,26 @@ async def update_demande(
     user: User = Depends(require_permission("mg.stock.create")),
 ):
     return await MgStockService(db).update_demande(demande_id, body, user)
+
+
+@router.delete("/demandes/{demande_id}", status_code=204, dependencies=_module)
+async def delete_demande(
+    demande_id: UUID,
+    request: Request,
+    force: bool = False,
+    motif: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.create")),
+):
+    if force:
+        motif = await _exiger_suppression_forcee(db, user, motif)
+    demande, annules = await MgStockService(db).delete_demande(demande_id, force=force)
+    await audit_stock(
+        db, user, "force_delete" if force else "delete", "mg_demande_fourniture", demande.id, request=request,
+        before={"reference": demande.reference, "statut": demande.statut, "mouvements_annules": annules},
+        after={"motif": motif} if force else None,
+    )
+    return Response(status_code=204)
 
 
 @router.post("/demandes/{demande_id}/transition", response_model=DemandeOut, dependencies=_module)
@@ -840,6 +945,42 @@ async def get_inventaire(
     _: User = Depends(require_permission("mg.stock.view")),
 ):
     return _inventaire_out(await MgStockService(db).get_inventaire(inventaire_id))
+
+
+@router.patch("/inventaires/{inventaire_id}", response_model=InventaireOut, dependencies=_module)
+async def update_inventaire(
+    inventaire_id: UUID,
+    body: InventaireUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.inventory")),
+):
+    inv = await MgStockService(db).update_inventaire(inventaire_id, body)
+    await audit_stock(
+        db, user, "update", "mg_inventaire", inv.id, request=request,
+        after={"reference": inv.reference, "libelle": inv.libelle},
+    )
+    return _inventaire_out(inv)
+
+
+@router.delete("/inventaires/{inventaire_id}", status_code=204, dependencies=_module)
+async def delete_inventaire(
+    inventaire_id: UUID,
+    request: Request,
+    force: bool = False,
+    motif: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.inventory")),
+):
+    if force:
+        motif = await _exiger_suppression_forcee(db, user, motif)
+    inv, annules = await MgStockService(db).delete_inventaire(inventaire_id, force=force)
+    await audit_stock(
+        db, user, "force_delete" if force else "delete", "mg_inventaire", inv.id, request=request,
+        before={"reference": inv.reference, "statut": inv.statut, "mouvements_annules": annules},
+        after={"motif": motif} if force else None,
+    )
+    return Response(status_code=204)
 
 
 @router.patch("/inventaires/{inventaire_id}/saisie", response_model=InventaireOut, dependencies=_module)

@@ -4,8 +4,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router as api_v1_router
+from app.core.api_errors import install_error_handlers
 from app.core.config import get_settings
+from app.middleware.idempotency import IdempotencyMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.request_context import RequestContextMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 
 
@@ -48,8 +51,11 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         expose_headers=["*"],
     )
+    app.add_middleware(IdempotencyMiddleware)
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RequestContextMiddleware)
+    install_error_handlers(app)
 
     app.include_router(api_v1_router, prefix=settings.api_v1_prefix)
 
@@ -61,6 +67,36 @@ def create_app() -> FastAPI:
             "version": settings.app_version,
             "git_sha": settings.git_sha,
         }
+
+    @app.get("/health/ready")
+    async def health_ready():
+        import time
+
+        from fastapi.responses import JSONResponse
+        from sqlalchemy import text
+
+        from app.db.session import AsyncSessionLocal
+        from app.middleware.idempotency import _redis
+
+        checks: dict[str, dict] = {}
+        t0 = time.perf_counter()
+        try:
+            async with AsyncSessionLocal() as session:
+                await session.execute(text("SELECT 1"))
+            checks["database"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000, 1)}
+        except Exception:
+            checks["database"] = {"status": "ko"}
+        t0 = time.perf_counter()
+        try:
+            await _redis().ping()
+            checks["redis"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000, 1)}
+        except Exception:
+            checks["redis"] = {"status": "ko"}
+        ready = all(c["status"] == "ok" for c in checks.values())
+        return JSONResponse(
+            status_code=200 if ready else 503,
+            content={"status": "ok" if ready else "degraded", "version": settings.app_version, "checks": checks},
+        )
 
     @app.get("/version")
     async def version():

@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { CoreAdminIconComponent } from './core-admin-icon.component';
 import { CoreAdminNotificationPage, coreAdminOpsError } from './core-admin-ops.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
 
 @Component({
   selector: 'bea-core-admin-notifications',
@@ -114,9 +115,6 @@ import { CoreAdminNotificationPage, coreAdminOpsError } from './core-admin-ops.m
         </div>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (loading()) {
         <p class="bea-admin-dash__loading">Chargement du centre de notifications…</p>
       } @else {
@@ -233,7 +231,7 @@ export class CoreAdminNotificationsComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
   readonly loading = signal(true);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly rows = signal<CoreAdminNotificationPage['items']>([]);
   readonly total = signal(0);
   readonly page = signal(1);

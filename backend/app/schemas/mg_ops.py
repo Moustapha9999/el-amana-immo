@@ -216,7 +216,8 @@ class ContratCreate(BaseModel):
     prochain_echeance: date | None = None
     alerte_jours: int = 30
     responsable_id: UUID | None = None
-    mode_paiement: str | None = None
+    mode_paiement: str | None = Field(default=None, max_length=40)
+    ref_paiement: str | None = Field(default=None, max_length=120)
     observation: str | None = None
 
 
@@ -239,7 +240,8 @@ class ContratUpdate(BaseModel):
     prochain_echeance: date | None = None
     alerte_jours: int | None = None
     responsable_id: UUID | None = None
-    mode_paiement: str | None = None
+    mode_paiement: str | None = Field(default=None, max_length=40)
+    ref_paiement: str | None = Field(default=None, max_length=120)
     observation: str | None = None
 
 
@@ -269,6 +271,7 @@ class ContratOut(BaseModel):
     responsable_id: UUID | None = None
     responsable_nom: str | None = None
     mode_paiement: str | None = None
+    ref_paiement: str | None = None
     contrat_precedent_id: UUID | None = None
     statut: str
     observation: str | None = None

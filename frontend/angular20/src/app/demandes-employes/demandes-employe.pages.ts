@@ -6,6 +6,8 @@ import { MatIconModule } from '@angular/material/icon';
 import { DemandesContext } from '../demandes/demandes-context';
 import { ApiService } from '../core/services/api.service';
 import { AuthService } from '../core/services/auth.service';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import { FeedbackService } from '../core/feedback/feedback.service';
 import { DocumentViewerComponent } from '../archives-generales/document-viewer.component';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
 import {
@@ -30,6 +32,7 @@ import {
   statusLabel,
   VISA_OPTIONS,
 } from './demandes-employe.models';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 @Component({
   selector: 'bea-emp-accueil',
@@ -51,7 +54,6 @@ import {
         </a>
       </header>
 
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
 
       @if (dash(); as d) {
         <div class="bea-emp-kpi">
@@ -187,7 +189,7 @@ export class EmpAccueilComponent implements OnInit {
   private readonly router = inject(Router);
   readonly ctx = inject(DemandesContext);
   readonly dash = signal<MineDashboard | null>(null);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
 
   get prenom(): string {
     return (this.auth.user()?.full_name || '').trim().split(/\s+/)[0] || '';
@@ -229,8 +231,6 @@ export class EmpAccueilComponent implements OnInit {
         </div>
         <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="ctx.base() + '/demandes'">Mes demandes</a>
       </header>
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
-      @if (ok()) { <p class="bea-stock-page__ok">{{ ok() }}</p> }
 
       @if (!category()) {
         <h2 class="bea-emp__ask">Quelle demande souhaitez-vous adresser ?</h2>
@@ -408,6 +408,12 @@ export class EmpAccueilComponent implements OnInit {
   `,
 })
 export class EmpNouvelleComponent implements OnInit {
+  readonly hasUnsavedChanges = unsavedChanges(
+    () =>
+      !this.savedId() &&
+      !this.saving() &&
+      (!!this.title.trim() || !!this.description.trim() || this.items().some((i) => !!i.description.trim())),
+  );
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   readonly ctx = inject(DemandesContext);
@@ -420,8 +426,8 @@ export class EmpNouvelleComponent implements OnInit {
   readonly visaOptions = VISA_OPTIONS;
   readonly visas = signal<string[]>(['agence', 'mg']);
   readonly items = signal<ReqItem[]>([emptyItem()]);
-  readonly erreur = signal('');
-  readonly ok = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly ok = feedbackSignal('success', '');
   readonly saving = signal(false);
   readonly savedId = signal<string | null>(null);
   readonly savedNumber = signal('');
@@ -550,8 +556,6 @@ export class EmpNouvelleComponent implements OnInit {
           <mat-icon>add</mat-icon> Nouvelle demande
         </a>
       </header>
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
-      @if (ok()) { <p class="bea-stock-page__ok">{{ ok() }}</p> }
 
       <form class="bea-mg__search bea-emp-search" (ngSubmit)="$event.preventDefault(); load()">
         <label class="bea-mg__field bea-mg__field--grow">
@@ -849,8 +853,8 @@ export class EmpListeComponent implements OnInit {
   readonly pdfVisas = signal<string[]>(['agence', 'mg']);
   readonly visaOptions = VISA_OPTIONS;
   readonly loading = signal(true);
-  readonly erreur = signal('');
-  readonly ok = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly ok = feedbackSignal('success', '');
   readonly editItems = signal<ReqItem[]>([]);
   readonly statuts = ['BROUILLON', 'SOUMISE', 'RECUE', 'A_COMPLETER', 'A_REGROUPER', 'REFUSEE', 'SERVIE', 'ANNULEE'];
   q = '';
@@ -1044,8 +1048,6 @@ export class EmpNotifsComponent implements OnInit {
           <p class="bea-mg__lead">Pièces GED liées à vos demandes : voir, modifier, désactiver ou supprimer.</p>
         </div>
       </header>
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
-      @if (ok()) { <p class="bea-stock-page__ok">{{ ok() }}</p> }
 
       <div class="bea-mg__panel bea-emp-upload">
         <label class="bea-mg__field">
@@ -1136,14 +1138,15 @@ export class EmpNotifsComponent implements OnInit {
 })
 export class EmpDocsComponent implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly feedback = inject(FeedbackService);
   readonly ctx = inject(DemandesContext);
   readonly docs = signal<MineDocument[]>([]);
   readonly requests = signal<RequestRow[]>([]);
   readonly preview = signal<MineDocument | null>(null);
   readonly editDoc = signal<MineDocument | null>(null);
   readonly viewerId = signal<string | null>(null);
-  readonly erreur = signal('');
-  readonly ok = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly ok = feedbackSignal('success', '');
   uploadRequestId = '';
   editTitle = '';
   editDesc = '';
@@ -1205,10 +1208,15 @@ export class EmpDocsComponent implements OnInit {
     });
   }
   askDelete(d: MineDocument): void {
-    this.api.delete(`/ged/documents/${d.id}`).subscribe({
-      next: () => { this.ok.set('Document supprimé.'); this.reload(); },
-      error: () => this.erreur.set('Suppression refusée.'),
-    });
+    this.feedback
+      .confirm({ action: 'suppression', message: `Supprimer le document « ${d.title || d.filename} » ?` })
+      .subscribe((ok) => {
+        if (!ok) return;
+        this.api.delete(`/ged/documents/${d.id}`).subscribe({
+          next: () => { this.ok.set('Document supprimé.'); this.reload(); },
+          error: () => this.erreur.set('Suppression refusée.'),
+        });
+      });
   }
 }
 

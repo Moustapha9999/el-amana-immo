@@ -8,15 +8,35 @@ export type UiDialogAction =
   | 'validation'
   | 'comptabilisation'
   | 'cloture'
-  | 'ouverture';
+  | 'ouverture'
+  | 'soumission'
+  | 'rejet'
+  | 'annulation'
+  | 'archivage'
+  | 'restauration'
+  | 'suspension'
+  | 'reprise'
+  | 'renouvellement'
+  | 'expiration'
+  | 'depart';
 
 export interface UiConfirmData {
   title: string;
   message: string;
+  /** Précision affichée sous le message (conséquence de l'action). */
+  hint?: string;
   confirmLabel?: string;
   cancelLabel?: string;
   tone?: UiDialogTone;
   icon?: string;
+}
+
+export interface UiReasonData extends UiConfirmData {
+  reasonLabel?: string;
+  reasonPlaceholder?: string;
+  /** Défaut : true. */
+  required?: boolean;
+  maxLength?: number;
 }
 
 export interface UiFeedbackData {
@@ -86,5 +106,75 @@ export const UI_DIALOG_PRESETS: Record<
     successTitle: 'Ouverture effectuée',
     icon: 'lock_open',
     tone: 'primary',
+  },
+  soumission: {
+    title: 'Confirmer la soumission',
+    confirmLabel: 'Soumettre',
+    successTitle: 'Soumission effectuée',
+    icon: 'send',
+    tone: 'primary',
+  },
+  rejet: {
+    title: 'Rejeter',
+    confirmLabel: 'Rejeter',
+    successTitle: 'Rejet enregistré',
+    icon: 'block',
+    tone: 'danger',
+  },
+  annulation: {
+    title: 'Confirmer l’annulation',
+    confirmLabel: 'Annuler l’élément',
+    successTitle: 'Annulation effectuée',
+    icon: 'cancel',
+    tone: 'danger',
+  },
+  archivage: {
+    title: 'Confirmer l’archivage',
+    confirmLabel: 'Archiver',
+    successTitle: 'Archivage effectué',
+    icon: 'inventory_2',
+    tone: 'warn',
+  },
+  restauration: {
+    title: 'Confirmer la restauration',
+    confirmLabel: 'Restaurer',
+    successTitle: 'Restauration effectuée',
+    icon: 'restore',
+    tone: 'primary',
+  },
+  suspension: {
+    title: 'Confirmer la suspension',
+    confirmLabel: 'Suspendre',
+    successTitle: 'Suspension effectuée',
+    icon: 'pause_circle',
+    tone: 'warn',
+  },
+  reprise: {
+    title: 'Confirmer la reprise',
+    confirmLabel: 'Reprendre',
+    successTitle: 'Reprise effectuée',
+    icon: 'play_circle',
+    tone: 'primary',
+  },
+  renouvellement: {
+    title: 'Confirmer le renouvellement',
+    confirmLabel: 'Renouveler',
+    successTitle: 'Renouvellement préparé',
+    icon: 'autorenew',
+    tone: 'primary',
+  },
+  expiration: {
+    title: 'Marquer comme expiré',
+    confirmLabel: 'Marquer expiré',
+    successTitle: 'Statut mis à jour',
+    icon: 'event_busy',
+    tone: 'warn',
+  },
+  depart: {
+    title: 'Modifications non enregistrées',
+    confirmLabel: 'Quitter sans enregistrer',
+    successTitle: '',
+    icon: 'edit_off',
+    tone: 'warn',
   },
 };

@@ -641,6 +641,7 @@ class CoreAdminAuditRead(BaseModel):
     espace_code: str | None = None
     module_code: str | None = None
     session_id: str | None = None
+    request_id: str | None = None
     created_at: str | None = None
 
 
@@ -652,6 +653,48 @@ class CoreAdminAuditListRead(BaseModel):
     kpis: CoreAdminAuditKpis
     modules: list[str] = Field(default_factory=list)
     entities: list[str] = Field(default_factory=list)
+
+
+class CoreAdminErrorEventRead(BaseModel):
+    id: str
+    created_at: str | None = None
+    request_id: str | None = None
+    method: str
+    route: str
+    status_code: int
+    code: str | None = None
+    message: str | None = None
+    exception_type: str | None = None
+    user_id: str | None = None
+    user_email: str | None = None
+    user_full_name: str | None = None
+    module_code: str | None = None
+    ip_address: str | None = None
+    duration_ms: float | None = None
+
+
+class CoreAdminErrorKpis(BaseModel):
+    total: int
+    serveur: int
+    refus: int
+    conflits: int
+    validation: int
+
+
+class CoreAdminErrorTop(BaseModel):
+    label: str
+    count: int
+
+
+class CoreAdminErrorListRead(BaseModel):
+    items: list[CoreAdminErrorEventRead]
+    total: int
+    page: int
+    size: int
+    periode: str
+    kpis: CoreAdminErrorKpis
+    top_routes: list[CoreAdminErrorTop] = Field(default_factory=list)
+    top_codes: list[CoreAdminErrorTop] = Field(default_factory=list)
 
 
 class CoreAdminActivityKpis(BaseModel):

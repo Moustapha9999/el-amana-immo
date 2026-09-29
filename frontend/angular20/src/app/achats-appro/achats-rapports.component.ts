@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } 
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface CatalogItem {
   key: string;
@@ -37,7 +38,7 @@ export class AchatsRapportsComponent implements OnInit {
 
   readonly catalog = signal<CatalogItem[]>([]);
   readonly summary = signal<Summary | null>(null);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly loading = signal(true);
 
   readonly objets = computed(() => this.catalog().filter((c) => c.group === 'objets'));

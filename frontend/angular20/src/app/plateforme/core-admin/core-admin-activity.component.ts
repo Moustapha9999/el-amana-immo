@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { CoreAdminIconComponent } from './core-admin-icon.component';
 import { CoreAdminActivityPage, coreAdminOpsError } from './core-admin-ops.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
 
 @Component({
   selector: 'bea-core-admin-activity',
@@ -67,9 +68,6 @@ import { CoreAdminActivityPage, coreAdminOpsError } from './core-admin-ops.model
         </div>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (loading()) {
         <p class="bea-admin-dash__loading">Chargement de l’activité…</p>
       } @else {
@@ -136,7 +134,7 @@ export class CoreAdminActivityComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
   readonly loading = signal(true);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly rows = signal<CoreAdminActivityPage['items']>([]);
   readonly total = signal(0);
   readonly page = signal(1);

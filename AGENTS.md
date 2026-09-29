@@ -71,6 +71,16 @@ remplacement d’ORION.
   immobilisations = URLs racine figées ; tout nouveau module = `/{code}/...`
   (jamais réutiliser les segments root immo). Détail : `docs/frontend-plateforme.md`.
 
+## Retour utilisateur (feedback)
+
+- Tout nouveau code / module utilise le système transversal
+ (`docs/feedback-bea-digital.md`) : `FeedbackService` (`run` / `runWithReason`),
+ `UiDialogService` pour les confirmations, `unsavedChangesGuard` sur les
+ formulaires. Jamais `alert()` / `confirm()` / messages en haut de page.
+- Succès affiché **seulement** après confirmation backend.
+- Erreurs API au format standard (`backend/app/core/api_errors.py`) avec
+ `request_id` ; ne jamais loguer mot de passe, token, secret.
+
 ## Secrets
 
 Ne jamais committer `.env`, `.env.docker`, dumps, `storage/uploads`, backups.

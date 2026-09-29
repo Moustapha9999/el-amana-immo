@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../core/services/api.service';
 import { MontantPipe } from '../shared/montant.pipe';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface Dashboard {
   total: number;
@@ -34,9 +35,6 @@ interface Dashboard {
         </div>
       </header>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
 
       @if (dash(); as d) {
         @if (d.total === 0) {
@@ -90,7 +88,7 @@ interface Dashboard {
 export class ContratsDashboardComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly dash = signal<Dashboard | null>(null);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
 
   ngOnInit(): void {
     this.api.get<Dashboard>('/mg/contrats/dashboard').subscribe({

@@ -33,21 +33,6 @@ import { ArchiveDetailComponent } from './archives/archive-detail.component';
 import { ArchiveNatureComponent } from './archives/archive-nature.component';
 import { PLATEFORME_ROUTES } from './plateforme/plateforme.routes';
 import { LEGACY_ROOT_MODULE_CODE } from './plateforme/module-routing.contract';
-import { StockDashboardComponent } from './stock-fournitures/stock-dashboard.component';
-import { StockArticlesComponent } from './stock-fournitures/stock-articles.component';
-import { StockArticleFicheComponent } from './stock-fournitures/stock-article-fiche.component';
-import { StockMouvementsComponent } from './stock-fournitures/stock-mouvements.component';
-import { StockDemandesComponent } from './stock-fournitures/stock-demandes.component';
-import { StockRapportsComponent } from './stock-fournitures/stock-rapports.component';
-import { StockRapportViewerComponent } from './stock-fournitures/stock-rapport-viewer.component';
-import {
-  StockAlertesComponent,
-  StockEntreesComponent,
-  StockEtatComponent,
-  StockInventairesComponent,
-  StockParametresComponent,
-  StockSortiesComponent,
-} from './stock-fournitures/stock-pages.component';
 import { AchatsBonsComponent } from './achats-appro/achats-bons.component';
 import { AchatsDemandesComponent } from './achats-appro/achats-demandes.component';
 import { AchatsFournisseursComponent } from './achats-appro/achats-fournisseurs.component';
@@ -67,6 +52,7 @@ import { NotesRapportsComponent } from './notes-frais/notes-rapports.component';
 import { NotesParametresComponent } from './notes-frais/notes-parametres.component';
 import { ContratsDashboardComponent } from './contrats-echeances/contrats-dashboard.component';
 import { ContratsListComponent } from './contrats-echeances/contrats-list.component';
+import { withUnsavedChangesGuard } from './core/feedback/unsaved-changes.guard';
 import { ContratsParametresComponent } from './contrats-echeances/contrats-parametres.component';
 import { ContratsRapportsComponent } from './contrats-echeances/contrats-rapports.component';
 import {
@@ -112,7 +98,7 @@ import {
  * - Immobilisations = legacy-root (ShellComponent, paths inchangés).
  * - Modules MG / futurs = même ShellComponent + nav MODULE_SHELL_NAV, path préfixé.
  */
-export const routes: Routes = [
+export const routes: Routes = withUnsavedChangesGuard([
   { path: 'login', component: LoginComponent, canActivate: [guestGuard] },
   { path: 'forgot-password', redirectTo: 'login', pathMatch: 'full' },
   { path: 'reset-password', redirectTo: 'login', pathMatch: 'full' },
@@ -123,22 +109,22 @@ export const routes: Routes = [
     canActivate: [authGuard, moduleGuard('stock-fournitures')],
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
-      { path: 'dashboard', component: StockDashboardComponent },
-      { path: 'articles', component: StockArticlesComponent },
-      { path: 'articles/:id', component: StockArticleFicheComponent },
-      { path: 'stock', component: StockEtatComponent },
-      { path: 'entrees', component: StockEntreesComponent },
-      { path: 'sorties', component: StockSortiesComponent },
-      { path: 'mouvements', component: StockMouvementsComponent },
-      { path: 'journal', component: StockMouvementsComponent },
-      { path: 'demandes', component: StockDemandesComponent },
-      { path: 'demandes/nouvelle', component: StockDemandesComponent },
-      { path: 'demandes/:id', component: StockDemandesComponent },
-      { path: 'inventaires', component: StockInventairesComponent },
-      { path: 'alertes', component: StockAlertesComponent },
-      { path: 'rapports', component: StockRapportsComponent },
-      { path: 'rapports/:key', component: StockRapportViewerComponent },
-      { path: 'parametres', component: StockParametresComponent },
+      { path: 'dashboard', loadComponent: () => import('./stock-fournitures/stock-dashboard.component').then((m) => m.StockDashboardComponent) },
+      { path: 'articles', loadComponent: () => import('./stock-fournitures/stock-articles.component').then((m) => m.StockArticlesComponent) },
+      { path: 'articles/:id', loadComponent: () => import('./stock-fournitures/stock-article-fiche.component').then((m) => m.StockArticleFicheComponent) },
+      { path: 'stock', loadComponent: () => import('./stock-fournitures/stock-pages.component').then((m) => m.StockEtatComponent) },
+      { path: 'entrees', loadComponent: () => import('./stock-fournitures/stock-pages.component').then((m) => m.StockEntreesComponent) },
+      { path: 'sorties', loadComponent: () => import('./stock-fournitures/stock-pages.component').then((m) => m.StockSortiesComponent) },
+      { path: 'mouvements', loadComponent: () => import('./stock-fournitures/stock-mouvements.component').then((m) => m.StockMouvementsComponent) },
+      { path: 'journal', loadComponent: () => import('./stock-fournitures/stock-mouvements.component').then((m) => m.StockMouvementsComponent) },
+      { path: 'demandes', loadComponent: () => import('./stock-fournitures/stock-demandes.component').then((m) => m.StockDemandesComponent) },
+      { path: 'demandes/nouvelle', loadComponent: () => import('./stock-fournitures/stock-demandes.component').then((m) => m.StockDemandesComponent) },
+      { path: 'demandes/:id', loadComponent: () => import('./stock-fournitures/stock-demandes.component').then((m) => m.StockDemandesComponent) },
+      { path: 'inventaires', loadComponent: () => import('./stock-fournitures/stock-pages.component').then((m) => m.StockInventairesComponent) },
+      { path: 'alertes', loadComponent: () => import('./stock-fournitures/stock-pages.component').then((m) => m.StockAlertesComponent) },
+      { path: 'rapports', loadComponent: () => import('./stock-fournitures/stock-rapports.component').then((m) => m.StockRapportsComponent) },
+      { path: 'rapports/:key', loadComponent: () => import('./stock-fournitures/stock-rapport-viewer.component').then((m) => m.StockRapportViewerComponent) },
+      { path: 'parametres', loadComponent: () => import('./stock-fournitures/stock-pages.component').then((m) => m.StockParametresComponent) },
     ],
   },
   {
@@ -364,4 +350,4 @@ export const routes: Routes = [
     ],
   },
   { path: '**', redirectTo: 'accueil' },
-];
+]);

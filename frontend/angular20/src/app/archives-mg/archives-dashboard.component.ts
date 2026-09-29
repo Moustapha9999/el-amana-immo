@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } 
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { ArchivesChartsComponent, ChartPoint, OcrSlice } from './archives-charts.component';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface DashDoc {
   id: string;
@@ -49,9 +50,6 @@ interface Dashboard {
         </div>
       </header>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
 
       @if (d(); as dash) {
         <div class="bea-nf-kpi">
@@ -125,7 +123,7 @@ interface Dashboard {
 export class ArchivesDashboardComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly d = signal<Dashboard | null>(null);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
   readonly currentYear = new Date().getFullYear();
 
   readonly monthPoints = computed<ChartPoint[]>(() => {

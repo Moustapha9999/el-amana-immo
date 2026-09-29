@@ -7,6 +7,10 @@ import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
 import { QuantitePipe } from '../shared/montant.pipe';
 import { PaginationComponent } from '../shared/pagination.component';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import { FeedbackService } from '../core/feedback/feedback.service';
+import { StockMouvementActions } from './stock-mouvement-edit.component';
 
 interface Agence {
   id: string;
@@ -33,8 +37,11 @@ interface Demande {
     designation: string;
     quantite_demandee: number;
     quantite_accordee: number | null;
+    article_id?: string | null;
   }[];
 }
+
+const DEMANDE_SUPPRIMABLE = new Set(['BROUILLON', 'ANNULEE', 'REJETEE']);
 interface Paginated<T> {
   items: T[];
   total: number;
@@ -91,12 +98,6 @@ interface Paginated<T> {
           </button>
         </form>
 
-        @if (erreur()) {
-          <p class="bea-stock-page__error">{{ erreur() }}</p>
-        }
-        @if (msg()) {
-          <p class="bea-stock-page__ok">{{ msg() }}</p>
-        }
 
         <div class="bea-mg__panel">
           <div class="bea-mg__panel-top">
@@ -134,16 +135,24 @@ interface Paginated<T> {
                       >
                         <mat-icon>visibility</mat-icon>
                       </button>
-                      @if (d.statut === 'BROUILLON') {
-                        <button
-                          type="button"
-                          class="bea-mg__icon-btn"
-                          title="Éditer"
-                          (click)="goDetail(d.id)"
-                        >
-                          <mat-icon>edit</mat-icon>
-                        </button>
-                      }
+                      <button
+                        type="button"
+                        class="bea-mg__icon-btn"
+                        [title]="d.statut === 'BROUILLON' ? 'Modifier' : 'Modification possible uniquement en brouillon'"
+                        [disabled]="d.statut !== 'BROUILLON'"
+                        (click)="editer(d.id)"
+                      >
+                        <mat-icon>edit</mat-icon>
+                      </button>
+                      <button
+                        type="button"
+                        class="bea-mg__icon-btn bea-mg__icon-btn--danger"
+                        [title]="supprimable(d) ? 'Supprimer' : mouvementActions.canForce() ? 'Suppression administrateur (annule les sorties liées, motif requis)' : 'Annulez d’abord la demande pour la supprimer'"
+                        [disabled]="!supprimable(d) && !mouvementActions.canForce()"
+                        (click)="supprimer(d)"
+                      >
+                        <mat-icon>delete</mat-icon>
+                      </button>
                     </td>
                   </tr>
                 } @empty {
@@ -174,8 +183,8 @@ interface Paginated<T> {
       @if (mode() === 'create') {
         <header class="bea-mg__head">
           <div>
-            <p class="bea-stock-page__kicker">Création</p>
-            <h1>Nouvelle demande</h1>
+            <p class="bea-stock-page__kicker">{{ editRef() ? 'Modification' : 'Création' }}</p>
+            <h1>{{ editRef() ? 'Modifier ' + editRef() : 'Nouvelle demande' }}</h1>
           </div>
           <div class="bea-mg__actions">
             <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/stock-fournitures/demandes">
@@ -184,9 +193,6 @@ interface Paginated<T> {
           </div>
         </header>
 
-        @if (erreur()) {
-          <p class="bea-stock-page__error">{{ erreur() }}</p>
-        }
 
         <form class="bea-mg__panel" [formGroup]="form" (ngSubmit)="create()">
           <div class="bea-mg__panel-top">
@@ -268,7 +274,7 @@ interface Paginated<T> {
               <mat-icon>add</mat-icon> Ligne
             </button>
             <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="form.invalid || saving()">
-              Enregistrer brouillon
+              {{ saving() ? 'Enregistrement…' : editRef() ? 'Enregistrer les modifications' : 'Enregistrer brouillon' }}
             </button>
           </footer>
         </form>
@@ -287,12 +293,6 @@ interface Paginated<T> {
           </div>
         </header>
 
-        @if (erreur()) {
-          <p class="bea-stock-page__error">{{ erreur() }}</p>
-        }
-        @if (msg()) {
-          <p class="bea-stock-page__ok">{{ msg() }}</p>
-        }
 
         <article class="bea-mg__panel">
           <div class="bea-mg__panel-top">
@@ -356,6 +356,21 @@ interface Paginated<T> {
           </div>
           <footer class="bea-mg__modal-foot" style="flex-wrap:wrap;padding-bottom:1.15rem">
             @if (d.statut === 'BROUILLON') {
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="startEdit(d)">
+                <mat-icon>edit</mat-icon> Modifier
+              </button>
+            }
+            @if (supprimable(d) || mouvementActions.canForce()) {
+              <button type="button" class="bea-mg__btn bea-mg__btn--danger" (click)="supprimer(d)">
+                <mat-icon>delete</mat-icon> Supprimer
+              </button>
+            }
+            @if (d.statut === 'BROUILLON' || d.statut === 'SOUMIS') {
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="transition('annuler')">
+                Annuler la demande
+              </button>
+            }
+            @if (d.statut === 'BROUILLON') {
               <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="transition('soumettre')">
                 Soumettre
               </button>
@@ -398,12 +413,17 @@ interface Paginated<T> {
   `,
 })
 export class StockDemandesComponent implements OnInit {
+  readonly hasUnsavedChanges = unsavedChanges(() => this.mode() === 'create' && this.form.dirty && !this.saving(), () => this.form);
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly feedback = inject(FeedbackService);
+  protected readonly mouvementActions = inject(StockMouvementActions);
 
   readonly mode = signal<'list' | 'create' | 'detail'>('list');
+  readonly editId = signal<string | null>(null);
+  readonly editRef = signal<string | null>(null);
   readonly demandes = signal<Demande[]>([]);
   readonly current = signal<Demande | null>(null);
   readonly agences = signal<Agence[]>([]);
@@ -412,8 +432,8 @@ export class StockDemandesComponent implements OnInit {
   readonly total = signal(0);
   readonly pageSize = 50;
   readonly saving = signal(false);
-  readonly erreur = signal('');
-  readonly msg = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly msg = feedbackSignal('success', '');
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -444,8 +464,12 @@ export class StockDemandesComponent implements OnInit {
 
     this.route.paramMap.subscribe((params) => {
       const id = params.get('id');
+      this.editId.set(null);
+      this.editRef.set(null);
+      this.form.controls.agence_id.enable();
       if (this.router.url.endsWith('/nouvelle')) {
         this.mode.set('create');
+        this.resetForm();
         this.erreur.set('');
         return;
       }
@@ -493,6 +517,68 @@ export class StockDemandesComponent implements OnInit {
 
   goDetail(id: string): void {
     void this.router.navigate(['/stock-fournitures/demandes', id]);
+  }
+
+  editer(id: string): void {
+    void this.router.navigate(['/stock-fournitures/demandes', id], { queryParams: { edit: 1 } });
+  }
+
+  supprimable(d: Demande): boolean {
+    return DEMANDE_SUPPRIMABLE.has(d.statut);
+  }
+
+  private resetForm(): void {
+    this.lignes.clear();
+    this.lignes.push(this.newLigne());
+    this.form.reset({ agence_id: this.agences()[0]?.id ?? '', departement: '', fonction: '' });
+  }
+
+  startEdit(d: Demande): void {
+    this.editId.set(d.id);
+    this.editRef.set(d.reference);
+    this.lignes.clear();
+    for (const l of d.lignes) {
+      const ctrl = this.newLigne();
+      ctrl.reset({ designation: l.designation, quantite_demandee: Number(l.quantite_demandee), article_id: l.article_id ?? null });
+      this.lignes.push(ctrl);
+    }
+    if (!d.lignes.length) this.lignes.push(this.newLigne());
+    this.form.patchValue({ agence_id: d.agence_id, departement: d.departement ?? '', fonction: d.fonction ?? '' });
+    this.form.controls.agence_id.disable();
+    this.form.markAsPristine();
+    this.mode.set('create');
+  }
+
+  supprimer(d: Demande): void {
+    const apres = () => {
+      if (this.mode() === 'list') this.loadList();
+      else void this.router.navigate(['/stock-fournitures/demandes']);
+    };
+    if (!this.supprimable(d)) {
+      if (!this.mouvementActions.canForce()) return;
+      this.mouvementActions
+        .supprimerForce({
+          path: `/mg/stock/demandes/${d.id}`,
+          reference: d.reference,
+          message: `Supprimer la demande ${d.reference} (${this.statutLabel(d.statut)}) ?`,
+          hint: 'Les sorties de stock liées à cette demande seront annulées (stock réintégré, soldes recalculés y compris périodes clôturées).',
+          successTitle: 'Demande supprimée',
+        })
+        .subscribe(apres);
+      return;
+    }
+    this.feedback
+      .run(() => this.api.delete(`/mg/stock/demandes/${d.id}`), {
+        confirm: {
+          action: 'suppression',
+          message: `Supprimer la demande ${d.reference} ?`,
+          hint: 'La demande disparaîtra des listes (conservée dans l’audit).',
+        },
+        loading: 'Suppression…',
+        errorTitle: 'Suppression refusée',
+        success: { title: 'Demande supprimée', details: [{ label: 'Référence', value: d.reference }] },
+      })
+      .subscribe(apres);
   }
 
   newLigne() {
@@ -551,24 +637,56 @@ export class StockDemandesComponent implements OnInit {
   loadOne(id: string): void {
     this.erreur.set('');
     this.api.get<Demande>(`/mg/stock/demandes/${id}`).subscribe({
-      next: (d) => this.current.set(d),
+      next: (d) => {
+        this.current.set(d);
+        if (this.route.snapshot.queryParamMap.get('edit') && d.statut === 'BROUILLON') this.startEdit(d);
+      },
       error: () => this.erreur.set('Demande introuvable'),
     });
   }
 
   create(): void {
     if (this.form.invalid) return;
-    this.saving.set(true);
-    this.erreur.set('');
     const raw = this.form.getRawValue();
     const lignes = raw.lignes.map((l) => {
       const match = this.articles().find((a) => a.designation === l.designation);
       return {
         designation: l.designation,
         quantite_demandee: l.quantite_demandee,
-        article_id: match?.id ?? null,
+        article_id: match?.id ?? l.article_id ?? null,
       };
     });
+    const editId = this.editId();
+    if (editId) {
+      this.feedback
+        .run(
+          () =>
+            this.api.patch<Demande>(`/mg/stock/demandes/${editId}`, {
+              departement: raw.departement || null,
+              fonction: raw.fonction || null,
+              lignes,
+            }),
+          {
+            loading: 'Enregistrement…',
+            busy: this.saving,
+            errorTitle: 'Modification refusée',
+            errorHint: 'Vos saisies ont été conservées.',
+            success: (d) => ({ title: 'Demande modifiée', details: [{ label: 'Référence', value: d.reference }] }),
+          },
+        )
+        .subscribe((d) => {
+          this.form.markAsPristine();
+          this.form.controls.agence_id.enable();
+          this.editId.set(null);
+          this.editRef.set(null);
+          this.current.set(d);
+          this.mode.set('detail');
+          void this.router.navigate(['/stock-fournitures/demandes', d.id], { replaceUrl: true });
+        });
+      return;
+    }
+    this.saving.set(true);
+    this.erreur.set('');
     this.api
       .post<Demande>('/mg/stock/demandes', {
         agence_id: raw.agence_id,
@@ -592,6 +710,19 @@ export class StockDemandesComponent implements OnInit {
   transition(action: string): void {
     const d = this.current();
     if (!d) return;
+    if (action === 'annuler' || action === 'rejeter') {
+      this.feedback
+        .confirm({
+          action: action === 'annuler' ? 'annulation' : 'rejet',
+          message: `${action === 'annuler' ? 'Annuler' : 'Rejeter'} la demande ${d.reference} ?`,
+        })
+        .subscribe((ok) => ok && this.envoyerTransition(d, action));
+      return;
+    }
+    this.envoyerTransition(d, action);
+  }
+
+  private envoyerTransition(d: Demande, action: string): void {
     this.erreur.set('');
     this.api.post<Demande>(`/mg/stock/demandes/${d.id}/transition`, { action }).subscribe({
       next: (updated) => {

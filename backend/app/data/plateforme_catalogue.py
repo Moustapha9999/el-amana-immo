@@ -400,7 +400,7 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("mg.stock.export", "Exports / rapports stock", "stock-fournitures"),
     ("mg.stock.period.view", "Consultation des périodes de stock", "stock-fournitures"),
     ("mg.stock.period.close", "Clôture mensuelle de stock", "stock-fournitures"),
-    ("mg.stock.period.reopen", "Réouverture d'une période clôturée", "stock-fournitures"),
+    ("mg.stock.period.reopen", "Réouverture de période et suppression administrateur (périodes clôturées, workflows)", "stock-fournitures"),
     ("mg.stock.negative", "Autoriser un stock négatif (exception auditée)", "stock-fournitures"),
     ("mg.purchase.view", "Consultation achats / bons de commande", "achats-appro"),
     ("mg.purchase.create", "Création / modification BC, paramètres achats (TVA…)", "achats-appro"),

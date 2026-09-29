@@ -5,6 +5,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { PaginationComponent } from '../shared/pagination.component';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface Doc {
   id: string;
@@ -63,9 +64,6 @@ interface Paginated<T> {
         </button>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
 
       <div class="bea-mg__panel">
         <div class="bea-mg__panel-top">
@@ -146,7 +144,7 @@ export class ArchivesRegistreComponent implements OnInit {
   readonly page = signal(1);
   readonly total = signal(0);
   readonly pageSize = 50;
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
   moduleFilter = '';
   q = '';
 

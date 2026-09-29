@@ -10,6 +10,8 @@ import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 
 interface Agence {
   id: string;
@@ -65,6 +67,7 @@ type Mode = 'list' | 'form';
   styleUrl: './achats-ui.css',
 })
 export class AchatsReceptionsComponent implements OnInit {
+  readonly hasUnsavedChanges = unsavedChanges(() => this.mode() === 'form' && this.form.dirty && !this.saving(), () => this.form);
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -75,8 +78,8 @@ export class AchatsReceptionsComponent implements OnInit {
   readonly agences = signal<Agence[]>([]);
   readonly bons = signal<BonOpt[]>([]);
   readonly bonDetail = signal<BonDetail | null>(null);
-  readonly erreur = signal('');
-  readonly msg = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly msg = feedbackSignal('success', '');
   readonly mode = signal<Mode>('list');
   readonly id = signal<string | null>(null);
   readonly saving = signal(false);

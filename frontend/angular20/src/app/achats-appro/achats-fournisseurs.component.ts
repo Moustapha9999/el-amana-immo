@@ -12,6 +12,8 @@ import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 
 export interface FournisseurRow {
   id: string;
@@ -63,6 +65,7 @@ type FicheTab = 'infos' | 'contacts' | 'adresse' | 'conditions' | 'documents' | 
   styleUrl: './achats-ui.css',
 })
 export class AchatsFournisseursComponent implements OnInit {
+  readonly hasUnsavedChanges = unsavedChanges(() => this.mode() === 'form' && this.form.dirty && !this.saving(), () => this.form);
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -75,8 +78,8 @@ export class AchatsFournisseursComponent implements OnInit {
   readonly fiche = signal<FournisseurRow | null>(null);
   readonly editingId = signal<string | null>(null);
   readonly ficheTab = signal<FicheTab>('infos');
-  readonly erreur = signal('');
-  readonly msg = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly msg = feedbackSignal('success', '');
   readonly saving = signal(false);
   readonly confirm = signal<{ row: FournisseurRow; action: 'desactiver' | 'activer' | 'supprimer' } | null>(
     null,

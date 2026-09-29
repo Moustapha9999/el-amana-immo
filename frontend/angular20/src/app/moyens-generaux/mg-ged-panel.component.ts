@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, Input, OnChanges, inject, signal } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../core/services/api.service';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface GedDoc {
   id: string;
@@ -34,12 +35,6 @@ interface GedDoc {
       @if (!entityId) {
         <p class="bea-stock-page__kicker">Enregistrer d’abord la fiche pour attacher des fichiers.</p>
       } @else {
-        @if (msg()) {
-          <p class="bea-stock-page__ok">{{ msg() }}</p>
-        }
-        @if (erreur()) {
-          <p class="bea-stock-page__error">{{ erreur() }}</p>
-        }
         @if (uploading()) {
           <p class="bea-stock-page__kicker">Envoi en cours…</p>
         }
@@ -203,8 +198,8 @@ export class MgGedPanelComponent implements OnChanges {
 
   private readonly api = inject(ApiService);
   readonly docs = signal<GedDoc[]>([]);
-  readonly erreur = signal<string | null>(null);
-  readonly msg = signal('');
+  readonly erreur = feedbackSignal('error', null);
+  readonly msg = feedbackSignal('success', '');
   readonly dragging = signal(false);
   readonly uploading = signal(false);
 

@@ -15,6 +15,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.exceptions import AppError
 from app.models.auth import Agence, User
 from app.models.mg_ops import (
     MgContrat,
@@ -32,6 +33,7 @@ from app.services.notification_service import NotificationService
 from app.services.reporting_export import build_styled_pdf, export_now
 
 LOCKED = {"ARCHIVE", "ANNULE"}
+MODES_AVEC_REF = {"virement", "amanty"}
 TRANSITIONS: dict[str, tuple[set[str], str]] = {
     "soumettre": ({"BROUILLON", "EN_PREPARATION"}, "EN_VALIDATION"),
     "valider": ({"EN_VALIDATION"}, "ACTIF"),
@@ -146,14 +148,19 @@ class MgContratsService:
 
     def _check_dates(self, debut: date | None, fin: date | None) -> None:
         if debut and fin and fin < debut:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="La date de fin ne peut pas précéder la date de début")
+            raise AppError("La date de fin ne peut pas précéder la date de début", code="CONTRAT_DATES_INVALIDES")
+
+    def _ref_paiement(self, mode: str | None, ref: str | None) -> str | None:
+        if (mode or "").strip().lower() not in MODES_AVEC_REF:
+            return None
+        return (ref or "").strip() or None
 
     def _montants(self, ht: Decimal | None, taux: Decimal | None, montant: Decimal | None) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
         if ht is None:
             return None, taux, montant
         rate = taux if taux is not None else Decimal("0")
         if rate < 0 or ht < 0:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Montant ou TVA invalide")
+            raise AppError("Montant ou TVA invalide", code="CONTRAT_MONTANT_INVALIDE")
         ttc = (ht * (Decimal("1") + rate / Decimal("100"))).quantize(Decimal("0.01"))
         return ht, rate, ttc
 
@@ -161,19 +168,19 @@ class MgContratsService:
         if agence_id:
             ag = await self.db.get(Agence, agence_id)
             if not ag or ag.deleted_at is not None:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Agence introuvable")
+                raise AppError("Agence introuvable", code="REFERENCE_INTROUVABLE")
             contrat.agence_id = ag.id
             contrat.agence_libelle_snapshot = ag.libelle
         if fournisseur_id:
             fr = await self.db.get(Fournisseur, fournisseur_id)
             if not fr or fr.deleted_at is not None:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Fournisseur introuvable")
+                raise AppError("Fournisseur introuvable", code="REFERENCE_INTROUVABLE")
             contrat.fournisseur_id = fr.id
             contrat.fournisseur_snapshot = fr.raison_sociale
         if responsable_id:
             user = await self.db.get(User, responsable_id)
             if not user or user.deleted_at is not None:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Responsable introuvable")
+                raise AppError("Responsable introuvable", code="REFERENCE_INTROUVABLE")
             contrat.responsable_id = user.id
             contrat.responsable_nom = user.full_name
 
@@ -272,6 +279,7 @@ class MgContratsService:
             prochain_echeance=data.prochain_echeance or data.date_fin,
             alerte_jours=data.alerte_jours,
             mode_paiement=data.mode_paiement,
+            ref_paiement=self._ref_paiement(data.mode_paiement, data.ref_paiement),
             observation=data.observation,
             fournisseur_snapshot=data.fournisseur_snapshot,
             statut="BROUILLON",
@@ -304,7 +312,6 @@ class MgContratsService:
             "periodicite",
             "prochain_echeance",
             "alerte_jours",
-            "mode_paiement",
             "observation",
             "devise",
             "type_contrat",
@@ -313,6 +320,10 @@ class MgContratsService:
             val = getattr(data, field)
             if val is not None:
                 setattr(contrat, field, val.strip().upper() if field == "type_contrat" and isinstance(val, str) else val)
+        if "mode_paiement" in data.model_fields_set:
+            contrat.mode_paiement = (data.mode_paiement or "").strip() or None
+        if {"mode_paiement", "ref_paiement"} & data.model_fields_set:
+            contrat.ref_paiement = self._ref_paiement(contrat.mode_paiement, data.ref_paiement)
         if data.montant_ht is not None or data.taux_tva is not None:
             ht, taux, ttc = self._montants(
                 data.montant_ht if data.montant_ht is not None else contrat.montant_ht,
@@ -349,15 +360,15 @@ class MgContratsService:
     async def transition(self, contrat_id: uuid.UUID, action: str, user: User, commentaire: str | None = None) -> MgContrat:
         key = action.strip().lower()
         if key not in TRANSITIONS:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Action invalide")
+            raise AppError("Action invalide", code="ACTION_INVALIDE")
         allowed, new_statut = TRANSITIONS[key]
         contrat = await self._lock(contrat_id)
         if contrat.statut == new_statut:
             return contrat
         if contrat.statut not in allowed:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Transition impossible depuis {contrat.statut}")
+            raise AppError(f"Transition impossible depuis {contrat.statut}", code="TRANSITION_INVALIDE")
         if key == "rejeter" and not (commentaire or "").strip():
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Motif obligatoire")
+            raise AppError("Motif obligatoire", code="MOTIF_OBLIGATOIRE")
         old = contrat.statut
         contrat.statut = new_statut
         self._hist(contrat, key, user, old, new_statut, commentaire)
@@ -384,7 +395,7 @@ class MgContratsService:
     async def renouveler(self, contrat_id: uuid.UUID, user: User) -> MgContrat:
         src = await self._lock(contrat_id)
         if src.statut not in {"ACTIF", "EXPIRE"}:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Renouvellement possible pour un contrat actif ou expiré")
+            raise AppError("Renouvellement possible pour un contrat actif ou expiré", code="RENOUVELLEMENT_IMPOSSIBLE")
         child = await self.db.scalar(
             select(MgContrat.id).where(
                 MgContrat.contrat_precedent_id == src.id,
@@ -393,7 +404,7 @@ class MgContratsService:
             )
         )
         if child:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Un renouvellement existe déjà pour ce contrat")
+            raise AppError("Un renouvellement existe déjà pour ce contrat", code="RENOUVELLEMENT_EXISTANT")
         debut = (src.date_fin + timedelta(days=1)) if src.date_fin else date.today()
         fin = None
         if src.date_debut and src.date_fin:
@@ -421,6 +432,7 @@ class MgContratsService:
             prochain_echeance=fin,
             alerte_jours=src.alerte_jours,
             mode_paiement=src.mode_paiement,
+            ref_paiement=src.ref_paiement,
             contrat_precedent_id=src.id,
             statut="BROUILLON",
         )
@@ -431,7 +443,7 @@ class MgContratsService:
             await self.db.commit()
         except IntegrityError:
             await self.db.rollback()
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Un renouvellement existe déjà pour ce contrat")
+            raise AppError("Un renouvellement existe déjà pour ce contrat", code="RENOUVELLEMENT_EXISTANT")
         await self._audit(user, "contrats.renouveler", nouveau.id, after={"precedent": src.reference, "ref": nouveau.reference})
         await self.db.commit()
         return await self.get_contrat(nouveau.id)
@@ -500,14 +512,14 @@ class MgContratsService:
     async def add_paiement(self, contrat_id: uuid.UUID, data: dict, user: User) -> MgContrat:
         contrat = await self._lock(contrat_id)
         if contrat.statut in LOCKED:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Contrat non modifiable")
+            raise AppError("Contrat non modifiable", code="CONTRAT_NON_MODIFIABLE")
         ref = (data.get("reference") or "").strip()
         if ref and any((p.reference or "").strip() == ref for p in contrat.paiements):
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Cette référence de paiement existe déjà")
+            raise AppError("Cette référence de paiement existe déjà", code="REF_PAIEMENT_EXISTANTE")
         prevu = Decimal(str(data.get("montant_prevu") or 0))
         paye = Decimal(str(data.get("montant_paye") or 0))
         if prevu < 0 or paye < 0:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Montant invalide")
+            raise AppError("Montant invalide", code="MONTANT_INVALIDE")
         date_prevue = data["date_prevue"]
         statut = paiement_statut(
             date_prevue=date_prevue,
@@ -534,7 +546,7 @@ class MgContratsService:
             await self.db.commit()
         except IntegrityError:
             await self.db.rollback()
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Cette référence de paiement existe déjà")
+            raise AppError("Cette référence de paiement existe déjà", code="REF_PAIEMENT_EXISTANTE")
         await self._audit(user, "contrats.paiement", contrat.id, after={"statut": statut, "paye": str(paye)})
         await self.db.commit()
         return await self.get_contrat(contrat.id)
@@ -802,17 +814,17 @@ class MgContratsService:
     async def create_param(self, cle: str, valeur: str, libelle: str | None) -> MgContratParametre:
         key = cle.strip()
         if not key:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Clé obligatoire")
+            raise AppError("Clé obligatoire", code="CHAMP_OBLIGATOIRE")
         exists = await self.db.scalar(select(MgContratParametre.id).where(MgContratParametre.cle == key))
         if exists:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ce paramètre existe déjà")
+            raise AppError("Ce paramètre existe déjà", code="PARAMETRE_EXISTANT")
         row = MgContratParametre(cle=key, valeur=valeur, libelle=(libelle or "").strip() or None)
         self.db.add(row)
         try:
             await self.db.commit()
         except IntegrityError:
             await self.db.rollback()
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ce paramètre existe déjà")
+            raise AppError("Ce paramètre existe déjà", code="PARAMETRE_EXISTANT")
         await self.db.refresh(row)
         return row
 
@@ -827,14 +839,14 @@ class MgContratsService:
         key = code.strip().upper().replace(" ", "_")
         label = libelle.strip()
         if not key or not label:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Code et libellé obligatoires")
+            raise AppError("Code et libellé obligatoires", code="CHAMP_OBLIGATOIRE")
         row = MgContratType(code=key, libelle=label, actif=True)
         self.db.add(row)
         try:
             await self.db.commit()
         except IntegrityError:
             await self.db.rollback()
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ce type existe déjà")
+            raise AppError("Ce type existe déjà", code="PARAMETRE_EXISTANT")
         await self.db.refresh(row)
         return row
 

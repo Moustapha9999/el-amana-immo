@@ -13,6 +13,7 @@ import {
 import { MatIconModule } from '@angular/material/icon';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { ApiService } from '../core/services/api.service';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 export interface GedDoc {
   id: string;
@@ -79,9 +80,6 @@ type Tab = 'info' | 'ocr' | 'relations' | 'versions' | 'historique';
           </div>
         </header>
 
-        @if (erreur()) {
-          <p class="bea-stock-page__error">{{ erreur() }}</p>
-        }
 
         <div class="bea-viewer__body">
           <section class="bea-viewer__preview">
@@ -401,7 +399,7 @@ export class DocumentViewerComponent implements OnChanges {
   readonly relations = signal<GedDoc[]>([]);
   readonly versions = signal<GedDoc[]>([]);
   readonly audit = signal<AuditEvent[]>([]);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
   readonly tab = signal<Tab>('info');
   readonly zoom = signal(1);
   readonly rotation = signal(0);

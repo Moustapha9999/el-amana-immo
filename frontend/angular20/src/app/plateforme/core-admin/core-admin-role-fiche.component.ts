@@ -9,6 +9,8 @@ import {
   CoreAdminRoleOptions,
   coreAdminRbacError,
 } from './core-admin-rbac.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
+import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
 
 @Component({
   selector: 'bea-core-admin-role-fiche',
@@ -42,9 +44,6 @@ import {
         }
       </header>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (locked()) {
         <p class="bea-admin-note">
           Rôle système Immobilisations : code figé, suppression impossible. Les grants restent éditables (sauf
@@ -161,6 +160,7 @@ import {
   `,
 })
 export class CoreAdminRoleFicheComponent implements OnInit {
+  readonly hasUnsavedChanges = unsavedChanges(() => this.form.dirty && !this.saving(), () => this.form);
   private readonly api = inject(ApiService);
   private readonly dialogs = inject(BeaAdminDialogService);
   private readonly fb = inject(FormBuilder);
@@ -174,7 +174,7 @@ export class CoreAdminRoleFicheComponent implements OnInit {
   readonly roleId = signal<string | null>(null);
   readonly catalogue = signal<CoreAdminPermissionSummary[]>([]);
   readonly selected = signal<Set<string>>(new Set());
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
 
   readonly form = this.fb.nonNullable.group({
     code: ['', [Validators.required, Validators.minLength(2)]],

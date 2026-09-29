@@ -14,6 +14,8 @@ import {
   coreAdminApiError,
   groupAdminRoles,
 } from './core-admin-users.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
+import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
 
 @Component({
   selector: 'bea-core-admin-user-fiche',
@@ -122,9 +124,6 @@ import {
         }
       </header>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
 
       @if (!isCreate()) {
         <div class="bea-admin-kpis">
@@ -414,6 +413,7 @@ import {
   `,
 })
 export class CoreAdminUserFicheComponent implements OnInit {
+  readonly hasUnsavedChanges = unsavedChanges(() => this.form.dirty && !this.saving(), () => this.form);
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly dialogs = inject(BeaAdminDialogService);
@@ -432,7 +432,7 @@ export class CoreAdminUserFicheComponent implements OnInit {
   readonly selectedEspaces = signal<string[]>([]);
   readonly selectedModules = signal<string[]>([]);
   readonly saving = signal(false);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
   readonly isActive = computed(() => this.fiche()?.is_active !== false);
   readonly isSelf = computed(() => {
     const id = this.userId();

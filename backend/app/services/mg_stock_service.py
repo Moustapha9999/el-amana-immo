@@ -21,7 +21,10 @@ from app.models.mg_stock import (
     MgInventaireLigne,
     MgStockMouvement,
     MgStockParametre,
+    MgStockPeriode,
+    MgStockSolde,
 )
+from app.core.exceptions import AppError
 from app.schemas.nombres import as_qty
 from app.services.mg_stock_periodes import MgStockPeriodeService, nature_ecart
 from app.schemas.mg_stock import (
@@ -34,13 +37,23 @@ from app.schemas.mg_stock import (
     FamilleUpdate,
     InventaireCreate,
     InventaireLigneIn,
+    InventaireUpdate,
     MouvementCreate,
+    MouvementUpdate,
     ParametreCreate,
     ParametreUpdate,
     ReceptionBcIn,
 )
 
 MOUVEMENT_TYPES = frozenset({"ENTREE", "SORTIE", "AJUSTEMENT", "INVENTAIRE"})
+# Mouvements pilotés par un workflow : quantité / suppression via l'opération d'origine.
+WORKFLOW_SOURCES = {
+    "demande_fourniture": "une demande de fournitures",
+    "mg_employee_request": "une demande employé",
+    "inventaire": "un inventaire",
+    "achat_reception": "une réception de bon de commande",
+}
+INVENTAIRE_VERROUILLE = frozenset({"VALIDE", "AJUSTEMENTS_APPLIQUES", "CLOTURE"})
 DEMANDE_STATUTS = frozenset(
     {
         "BROUILLON",
@@ -287,6 +300,199 @@ class MgStockService:
         await self.db.refresh(mvt)
         return mvt
 
+    @staticmethod
+    def mouvement_snapshot(mvt: MgStockMouvement) -> dict:
+        return {
+            "reference": mvt.reference,
+            "type_mouvement": mvt.type_mouvement,
+            "date_mouvement": mvt.date_mouvement.isoformat() if mvt.date_mouvement else None,
+            "quantite": str(mvt.quantite),
+            "agence_id": str(mvt.agence_id) if mvt.agence_id else None,
+            "departement": mvt.departement,
+            "motif": mvt.motif,
+            "observation": mvt.observation,
+        }
+
+    async def _mouvement_locked(self, mvt_id: uuid.UUID) -> tuple[MgStockMouvement, MgStockPeriode | None]:
+        mvt = await self.db.scalar(
+            select(MgStockMouvement).where(MgStockMouvement.id == mvt_id).with_for_update()
+        )
+        if mvt is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Mouvement introuvable")
+        periode = await self.db.get(MgStockPeriode, mvt.periode_id) if mvt.periode_id else None
+        return mvt, periode
+
+    @staticmethod
+    def _assert_quantite_modifiable(mvt: MgStockMouvement, periode: MgStockPeriode | None, verbe: str) -> None:
+        participe = {"modifier": "modifiées", "supprimer": "supprimées"}.get(verbe, verbe)
+        origine = WORKFLOW_SOURCES.get(mvt.source_type or "")
+        if origine:
+            raise AppError(
+                f"Mouvement généré par {origine} : impossible de le {verbe} ici. "
+                "Passez par l’opération d’origine.",
+                code="MVT_WORKFLOW",
+            )
+        if mvt.type_mouvement not in {"ENTREE", "SORTIE"}:
+            raise AppError(
+                f"Seules les entrées et sorties peuvent être {participe}. Saisissez un nouvel ajustement.",
+                code="MVT_TYPE_VERROUILLE",
+            )
+        if periode is not None and periode.statut == "CLOTUREE":
+            raise AppError(
+                f"Période {periode.libelle} clôturée : impossible de {verbe} ce mouvement. "
+                "Rouvrez la période depuis les paramètres si nécessaire.",
+                code="PERIODE_CLOTUREE",
+            )
+
+    @staticmethod
+    def _effet(type_mouvement: str, quantite: Decimal) -> Decimal:
+        return quantite if type_mouvement == "ENTREE" else -quantite
+
+    async def _appliquer_effet(
+        self, mvt: MgStockMouvement, periode: MgStockPeriode | None, delta_qty: Decimal
+    ) -> None:
+        article = await self.db.scalar(
+            select(MgArticle).where(MgArticle.id == mvt.article_id).with_for_update()
+        )
+        if article is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Article introuvable")
+        current = Decimal(article.stock_actuel or 0)
+        new_stock = current + self._effet(mvt.type_mouvement, delta_qty)
+        if new_stock < 0:
+            raise AppError(
+                f"Opération refusée : le stock de {article.code} deviendrait négatif "
+                f"({as_qty(new_stock)}).",
+                code="STOCK_NEGATIF",
+            )
+        article.stock_actuel = new_stock
+        if periode is not None:
+            await MgStockPeriodeService(self.db).touch_solde(periode, article, mvt.type_mouvement, delta_qty)
+
+    async def update_mouvement(
+        self, mvt_id: uuid.UUID, data: MouvementUpdate
+    ) -> tuple[MgStockMouvement, dict]:
+        mvt, periode = await self._mouvement_locked(mvt_id)
+        before = self.mouvement_snapshot(mvt)
+        fields = data.model_dump(exclude_unset=True)
+
+        nouvelle_date = fields.get("date_mouvement")
+        if nouvelle_date is not None:
+            if nouvelle_date.tzinfo is None:
+                nouvelle_date = nouvelle_date.replace(tzinfo=timezone.utc)
+            jour = nouvelle_date.date()
+            if periode is not None and not (periode.date_debut <= jour <= periode.date_fin):
+                raise AppError(
+                    f"La date doit rester dans la période {periode.libelle} "
+                    f"({periode.date_debut:%d/%m/%Y} – {periode.date_fin:%d/%m/%Y}).",
+                    code="MVT_HORS_PERIODE",
+                )
+            mvt.date_mouvement = nouvelle_date
+
+        quantite = fields.get("quantite")
+        if quantite is not None and Decimal(quantite) != Decimal(mvt.quantite):
+            self._assert_quantite_modifiable(mvt, periode, "modifier")
+            await self._appliquer_effet(mvt, periode, Decimal(quantite) - Decimal(mvt.quantite))
+            mvt.quantite = Decimal(quantite)
+
+        for key in ("agence_id", "departement", "motif", "observation"):
+            if key in fields:
+                value = fields[key]
+                setattr(mvt, key, value.strip() or None if isinstance(value, str) else value)
+
+        await self.db.commit()
+        await self.db.refresh(mvt)
+        return mvt, before
+
+    async def delete_mouvement(self, mvt_id: uuid.UUID) -> dict:
+        mvt, periode = await self._mouvement_locked(mvt_id)
+        self._assert_quantite_modifiable(mvt, periode, "supprimer")
+        before = self.mouvement_snapshot(mvt)
+        await self._appliquer_effet(mvt, periode, -Decimal(mvt.quantite))
+        await self.db.delete(mvt)
+        await self.db.commit()
+        return before
+
+    async def _supprimer_force(self, mvt: MgStockMouvement) -> dict:
+        """Suppression administrateur : annule l'effet du mouvement, y compris en période clôturée.
+
+        Les soldes de la période du mouvement et de toutes les périodes suivantes
+        sont recalculés (report du stock initial).
+        """
+        if mvt.type_mouvement == "INVENTAIRE":
+            raise AppError(
+                "Un mouvement de type inventaire fixe le stock : il ne peut pas être annulé. "
+                "Saisissez un ajustement.",
+                code="MVT_TYPE_VERROUILLE",
+            )
+        qty = Decimal(mvt.quantite)
+        effet = -qty if mvt.type_mouvement == "SORTIE" else qty
+        article = await self.db.scalar(
+            select(MgArticle).where(MgArticle.id == mvt.article_id).with_for_update()
+        )
+        if article is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Article introuvable")
+        nouveau = Decimal(article.stock_actuel or 0) - effet
+        if nouveau < 0:
+            raise AppError(
+                f"Suppression refusée : le stock de {article.code} deviendrait négatif ({as_qty(nouveau)}). "
+                "Supprimez d’abord les sorties postérieures à cette entrée.",
+                code="STOCK_NEGATIF",
+            )
+        article.stock_actuel = nouveau
+
+        periode = await self.db.get(MgStockPeriode, mvt.periode_id) if mvt.periode_id else None
+        if periode is not None:
+            from app.services.mg_stock_periodes import compute_theorique
+
+            rows = (
+                await self.db.execute(
+                    select(MgStockSolde, MgStockPeriode)
+                    .join(MgStockPeriode, MgStockPeriode.id == MgStockSolde.periode_id)
+                    .where(
+                        MgStockSolde.article_id == article.id,
+                        MgStockPeriode.date_debut >= periode.date_debut,
+                    )
+                    .with_for_update(of=MgStockSolde)
+                )
+            ).all()
+            for solde, p in rows:
+                if p.id == periode.id:
+                    if mvt.type_mouvement == "ENTREE":
+                        solde.entrees = Decimal(solde.entrees or 0) - qty
+                    elif mvt.type_mouvement == "SORTIE":
+                        solde.sorties = Decimal(solde.sorties or 0) - qty
+                    else:
+                        solde.ajustements = Decimal(solde.ajustements or 0) - qty
+                else:
+                    solde.stock_initial = Decimal(solde.stock_initial or 0) - effet
+                solde.stock_theorique = compute_theorique(
+                    solde.stock_initial, solde.entrees, solde.sorties, solde.ajustements
+                )
+                if solde.stock_physique is not None:
+                    solde.ecart = Decimal(solde.stock_physique) - Decimal(solde.stock_theorique)
+                elif solde.stock_final is not None:
+                    solde.stock_final = Decimal(solde.stock_final) - effet
+        before = self.mouvement_snapshot(mvt)
+        await self.db.delete(mvt)
+        return before
+
+    async def force_delete_mouvement(self, mvt_id: uuid.UUID) -> dict:
+        mvt, _ = await self._mouvement_locked(mvt_id)
+        before = await self._supprimer_force(mvt)
+        await self.db.commit()
+        return before
+
+    async def _supprimer_mouvements_source(self, source_type: str, source_id: uuid.UUID) -> list[dict]:
+        mvts = (
+            await self.db.execute(
+                select(MgStockMouvement)
+                .where(MgStockMouvement.source_type == source_type, MgStockMouvement.source_id == source_id)
+                .order_by(MgStockMouvement.date_mouvement.desc())
+                .with_for_update()
+            )
+        ).scalars().all()
+        return [await self._supprimer_force(m) for m in mvts]
+
     async def list_bons_reception(self) -> list:
         """Bons VALIDE|PARTIEL disponibles pour réception stock."""
         from app.models.mg_ops import MgBonCommande
@@ -434,10 +640,19 @@ class MgStockService:
                 await self.db.execute(select(User).where(User.id.in_(initiateur_ids)))
             ).scalars().all()
             users = {u.id: u for u in rows}
+        periode_ids = {m.periode_id for m in mouvements if m.periode_id}
+        periodes: dict[uuid.UUID, MgStockPeriode] = {}
+        if periode_ids:
+            rows = (
+                await self.db.execute(select(MgStockPeriode).where(MgStockPeriode.id.in_(periode_ids)))
+            ).scalars().all()
+            periodes = {p.id: p for p in rows}
         out: list[dict] = []
         for m in mouvements:
             article = articles.get(m.article_id)
             initiateur = users.get(m.initiateur_id) if m.initiateur_id else None
+            periode = periodes.get(m.periode_id) if m.periode_id else None
+            cloturee = bool(periode and periode.statut == "CLOTUREE")
             out.append(
                 {
                     "id": m.id,
@@ -458,6 +673,15 @@ class MgStockService:
                     "article_designation": article.designation if article else None,
                     "stock_disponible": article.stock_actuel if article else None,
                     "periode_id": getattr(m, "periode_id", None),
+                    "periode_libelle": periode.libelle if periode else None,
+                    "periode_debut": periode.date_debut if periode else None,
+                    "periode_fin": periode.date_fin if periode else None,
+                    "periode_cloturee": cloturee,
+                    "quantite_modifiable": (
+                        not cloturee
+                        and m.type_mouvement in {"ENTREE", "SORTIE"}
+                        and (m.source_type or "") not in WORKFLOW_SOURCES
+                    ),
                 }
             )
         return out
@@ -505,6 +729,23 @@ class MgStockService:
             self._replace_lignes(demande, data.lignes)
         await self.db.commit()
         return await self.get_demande(demande_id)
+
+    async def delete_demande(self, demande_id: uuid.UUID, *, force: bool = False) -> tuple[MgDemandeFourniture, list[dict]]:
+        demande = await self.get_demande(demande_id, for_update=True)
+        if force:
+            annules = await self._supprimer_mouvements_source("demande_fourniture", demande.id)
+            demande.deleted_at = datetime.now(timezone.utc)
+            await self.db.commit()
+            return demande, annules
+        if demande.statut not in {"BROUILLON", "ANNULEE", "REJETEE"}:
+            raise AppError(
+                "Seules les demandes en brouillon, annulées ou rejetées peuvent être supprimées. "
+                "Annulez d’abord la demande.",
+                code="DEMANDE_NON_SUPPRIMABLE",
+            )
+        demande.deleted_at = datetime.now(timezone.utc)
+        await self.db.commit()
+        return demande, []
 
     async def transition_demande(
         self, demande_id: uuid.UUID, action: str, user: User, lignes: list[DemandeLigneIn] | None
@@ -616,7 +857,7 @@ class MgStockService:
         if for_update:
             stmt = stmt.with_for_update()
         demande = (await self.db.execute(stmt)).scalar_one_or_none()
-        if demande is None:
+        if demande is None or demande.deleted_at is not None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Demande introuvable")
         return demande
 
@@ -917,6 +1158,12 @@ class MgStockService:
         articles = await self._articles_inventaire(
             agence_id=data.agence_id, famille_id=data.famille_id
         )
+        if not articles:
+            raise AppError(
+                "Aucun article stockable actif pour ce périmètre (agence / famille) : "
+                "la campagne n’aurait aucune ligne à compter. Choisissez « Toutes agences » ou une autre agence.",
+                code="INVENTAIRE_VIDE",
+            )
         for i, article in enumerate(articles):
             theo = Decimal(article.stock_actuel or 0)
             self.db.add(
@@ -959,6 +1206,41 @@ class MgStockService:
         inv.statut = "EN_COMPTAGE"
         await self.db.commit()
         return await self.get_inventaire(inventaire_id)
+
+    async def update_inventaire(self, inventaire_id: uuid.UUID, data: InventaireUpdate) -> MgInventaire:
+        inv = await self.get_inventaire(inventaire_id)
+        if inv.statut in INVENTAIRE_VERROUILLE:
+            raise AppError("Inventaire validé ou clôturé : il n’est plus modifiable.", code="INVENTAIRE_VERROUILLE")
+        fields = data.model_dump(exclude_unset=True)
+        if fields.get("libelle"):
+            inv.libelle = fields["libelle"].strip()
+        if fields.get("date_debut"):
+            inv.date_debut = fields["date_debut"]
+        if "observation" in fields:
+            inv.observation = (fields["observation"] or "").strip() or None
+        await self.db.commit()
+        return await self.get_inventaire(inventaire_id)
+
+    async def delete_inventaire(self, inventaire_id: uuid.UUID, *, force: bool = False) -> tuple[MgInventaire, list[dict]]:
+        inv = await self.get_inventaire(inventaire_id)
+        if force:
+            annules = await self._supprimer_mouvements_source("inventaire", inv.id)
+            inv.deleted_at = datetime.now(timezone.utc)
+            await self.db.commit()
+            return inv, annules
+        nb_ajustements = await self.db.scalar(
+            select(func.count())
+            .select_from(MgStockMouvement)
+            .where(MgStockMouvement.source_type == "inventaire", MgStockMouvement.source_id == inv.id)
+        )
+        if nb_ajustements:
+            raise AppError(
+                "Les ajustements de cet inventaire ont déjà été appliqués au stock : suppression impossible.",
+                code="INVENTAIRE_VERROUILLE",
+            )
+        inv.deleted_at = datetime.now(timezone.utc)
+        await self.db.commit()
+        return inv, []
 
     async def cloturer_inventaire(self, inventaire_id: uuid.UUID, user: User) -> MgInventaire:
         """Chemin compact (UI existante) : saisie complète → ajustements → clôture."""
@@ -1324,6 +1606,11 @@ class MgStockService:
 
     @staticmethod
     def _require_lignes_comptees(inv: MgInventaire) -> None:
+        if not inv.lignes:
+            raise AppError(
+                "Campagne sans aucune ligne à compter : supprimez-la et recréez-la sur un périmètre contenant des articles.",
+                code="INVENTAIRE_VIDE",
+            )
         missing = [l for l in inv.lignes if l.stock_physique is None]
         if missing:
             raise HTTPException(

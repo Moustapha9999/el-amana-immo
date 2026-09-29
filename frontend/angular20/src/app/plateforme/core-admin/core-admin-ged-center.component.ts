@@ -6,6 +6,7 @@ import { DocumentViewerComponent } from '../../archives-generales/document-viewe
 import { ApiService } from '../../core/services/api.service';
 import { CoreAdminIconComponent } from './core-admin-icon.component';
 import { coreAdminOpsError } from './core-admin-ops.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
 
 interface HealthItem {
   code: string;
@@ -233,7 +234,6 @@ const scrollStyles = `
           <p>Chiffres lus dans la GED centrale. Un état n'est affiché qu'après un contrôle réel.</p>
         </div>
       </header>
-      @if (erreur()) { <p class="bea-admin-dash__error">{{ erreur() }}</p> }
       @if (data(); as d) {
         <div class="bea-admin-kpis">
           @for (card of cards(d); track card.label) {
@@ -276,7 +276,7 @@ const scrollStyles = `
 export class CoreAdminGedDashboardComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly data = signal<Overview | null>(null);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
 
   ngOnInit(): void {
     this.api.get<Overview>('/plateforme/admin/ged/overview').subscribe({
@@ -314,7 +314,6 @@ export class CoreAdminGedDashboardComponent implements OnInit {
   template: `
     <section class="bea-admin-dash">
       <header class="bea-admin-dash__head"><div><h1>Dossiers</h1><p>Même regroupement que les archives : espace, module, opération. Pas de seconde table.</p></div></header>
-      @if (erreur()) { <p class="bea-admin-dash__error">{{ erreur() }}</p> }
       <div class="bea-admin-panel bea-ged-scroll">
         @for (d of rows(); track d.espace_code + d.entity_id) {
           <article class="bea-ged-card">
@@ -330,7 +329,7 @@ export class CoreAdminGedDashboardComponent implements OnInit {
 export class CoreAdminGedDossiersComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly rows = signal<DossierRow[]>([]);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   ngOnInit(): void {
     this.api.get<DossierRow[]>('/plateforme/admin/ged/dossiers').subscribe({
       next: (rows) => this.rows.set(rows ?? []),
@@ -351,7 +350,6 @@ export class CoreAdminGedDossiersComponent implements OnInit {
           <p>Maximum {{ maxAttempts() }} passages (1 essai + 2 relances automatiques). Aucun retry infini.</p>
         </div>
       </header>
-      @if (erreur()) { <p class="bea-admin-dash__error">{{ erreur() }}</p> }
       <div class="bea-admin-kpis">
         @for (k of counts(); track k.key) {
           <button type="button" class="bea-admin-kpi" (click)="load(k.key)">
@@ -392,7 +390,7 @@ export class CoreAdminGedOcrComponent implements OnInit {
   readonly rows = signal<OcrRow[]>([]);
   readonly maxAttempts = signal(3);
   readonly counts = signal<{ key: string; label: string; value: number }[]>([]);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly viewerId = signal<string | null>(null);
 
   ngOnInit(): void { this.load('pending'); }
@@ -434,7 +432,6 @@ export class CoreAdminGedOcrComponent implements OnInit {
           <p>Disque local de la GED. Le chemin interne n'est pas affiché.</p>
         </div>
       </header>
-      @if (erreur()) { <p class="bea-admin-dash__error">{{ erreur() }}</p> }
       @if (data(); as d) {
         <div class="bea-admin-kpis">
           <article class="bea-admin-kpi">
@@ -489,7 +486,7 @@ export class CoreAdminGedOcrComponent implements OnInit {
 export class CoreAdminGedStorageComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly data = signal<StorageShape | null>(null);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly size = octets;
   readonly dept = espaceLabel;
   readonly mod = moduleLabel;
@@ -536,7 +533,6 @@ interface StorageShape {
           <p>{{ rows().length }} document(s). La suppression définitive demande la phrase CONFIRMER et reste journalisée.</p>
         </div>
       </header>
-      @if (erreur()) { <p class="bea-admin-dash__error">{{ erreur() }}</p> }
       @if (msg()) { <p class="bea-admin-note">{{ msg() }}</p> }
       <div class="bea-admin-panel bea-ged-scroll">
         @for (row of rows(); track row.id) {
@@ -574,7 +570,7 @@ interface StorageShape {
 export class CoreAdminGedTrashComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly rows = signal<TrashRow[]>([]);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly msg = signal('');
   readonly target = signal<TrashRow | null>(null);
   readonly dept = espaceLabel;
@@ -622,7 +618,6 @@ export class CoreAdminGedTrashComponent implements OnInit {
           <p>Règles branchées : opérations Moyens Généraux sans pièce dans la GED. Les autres départements ne sont pas inventés.</p>
         </div>
       </header>
-      @if (erreur()) { <p class="bea-admin-dash__error">{{ erreur() }}</p> }
       <div class="bea-admin-kpis">
         <article class="bea-admin-kpi" data-tone="alert">
           <span class="bea-admin-kpi__icon"><bea-admin-icon name="folder_off" /></span>
@@ -655,7 +650,7 @@ export class CoreAdminGedTrashComponent implements OnInit {
 export class CoreAdminGedMissingComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly rows = signal<MissingRow[]>([]);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly mod = moduleLabel;
   ngOnInit(): void {
     this.api.get<MissingRow[]>('/plateforme/admin/ged/manquants').subscribe({
@@ -677,7 +672,6 @@ export class CoreAdminGedMissingComponent implements OnInit {
           <p>{{ rows().length }} événement(s) lus dans le journal unique. Aucun second journal n'est tenu.</p>
         </div>
       </header>
-      @if (erreur()) { <p class="bea-admin-dash__error">{{ erreur() }}</p> }
       <div class="bea-ged-scroll bea-ged-time">
         @for (row of rows(); track row.id) {
           <div class="bea-ged-event" [attr.data-tone]="tone(row.action)">
@@ -696,7 +690,7 @@ export class CoreAdminGedMissingComponent implements OnInit {
 export class CoreAdminGedAuditComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly rows = signal<AuditRow[]>([]);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly label = actionLabel;
   readonly dept = espaceLabel;
   readonly mod = moduleLabel;
@@ -727,7 +721,6 @@ export class CoreAdminGedAuditComponent implements OnInit {
         <label class="bea-admin-field bea-admin-toolbar__search"><span>Recherche</span><input [(ngModel)]="q" name="q" placeholder="Nom, référence, contenu OCR…" /></label>
         <button type="submit" class="bea-admin-btn">Rechercher</button>
       </form>
-      @if (erreur()) { <p class="bea-admin-dash__error">{{ erreur() }}</p> }
       @if (!started()) {
         <p class="bea-admin-panel__empty">Saisissez un critère pour lancer la recherche.</p>
       } @else {
@@ -751,7 +744,7 @@ export class CoreAdminGedSearchComponent {
   q = '';
   readonly started = signal(false);
   readonly rows = signal<SearchRow[]>([]);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly viewerId = signal<string | null>(null);
 
   run(): void {

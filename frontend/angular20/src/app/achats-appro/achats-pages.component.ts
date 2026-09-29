@@ -13,6 +13,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
 import { SupplierSelectComponent } from './supplier-select.component';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 
 interface Dash {
   demandes_ouvertes: number;
@@ -83,9 +85,7 @@ interface Parametre {
         <div class="bea-ach__hero-glow" aria-hidden="true"></div>
       </header>
 
-      @if (erreur()) {
-        <p class="bea-ach__error">{{ erreur() }}</p>
-      } @else if (loading()) {
+      @if (loading()) {
         <div class="bea-ach__skeleton" aria-busy="true">
           @for (_ of [1, 2, 3, 4, 5, 6, 7, 8]; track _) {
             <div class="bea-ach__skel"></div>
@@ -197,7 +197,7 @@ export class AchatsDashboardComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly d = signal<Dash | null>(null);
   readonly loading = signal(true);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
 
   ngOnInit(): void {
     this.api.get<Dash>('/mg/achats/dashboard').subscribe({
@@ -267,9 +267,6 @@ export class AchatsDashboardComponent implements OnInit {
         </label>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-ach__error">{{ erreur() }}</p>
-      }
 
       <div class="bea-ach__panel">
         <div class="bea-ach__panel-top">
@@ -351,7 +348,7 @@ export class AchatsAlertesComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   readonly rows = signal<Alerte[]>([]);
   readonly detail = signal<Alerte | null>(null);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly q = signal('');
   readonly priorite = signal('');
   readonly filters = this.fb.nonNullable.group({ q: '', priorite: '' });
@@ -446,8 +443,6 @@ export class AchatsAlertesComponent implements OnInit {
         </div>
         <button type="button" class="bea-ach__btn" (click)="openCreate()"><mat-icon>add</mat-icon>Nouveau</button>
       </div>
-      @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
-      @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
       <div class="bea-ach__panel">
         <div class="bea-ach__panel-top">
           <h2>Référentiel de configuration</h2>
@@ -534,12 +529,13 @@ export class AchatsAlertesComponent implements OnInit {
   `,
 })
 export class AchatsParametresComponent implements OnInit {
+  readonly hasUnsavedChanges = unsavedChanges(() => this.form.dirty && !this.saving(), () => this.form);
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
 
   readonly rows = signal<Parametre[]>([]);
-  readonly erreur = signal('');
-  readonly msg = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly msg = feedbackSignal('success', '');
   readonly modalErreur = signal('');
   readonly saving = signal(false);
   readonly modal = signal<'create' | 'edit' | null>(null);

@@ -3,6 +3,8 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { FeedbackService } from '../core/feedback/feedback.service';
 
 interface Categorie {
   id: string;
@@ -33,12 +35,6 @@ interface Parametre {
         <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/notes-frais">Dashboard</a>
       </header>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
-      @if (msg()) {
-        <p class="bea-stock-page__ok">{{ msg() }}</p>
-      }
 
       <div class="bea-mg__panel">
         <div class="bea-mg__panel-top"><h2>Catégories</h2></div>
@@ -105,12 +101,13 @@ interface Parametre {
 })
 export class NotesParametresComponent implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly feedback = inject(FeedbackService);
   private readonly fb = inject(FormBuilder);
 
   readonly categories = signal<Categorie[]>([]);
   readonly parametres = signal<Parametre[]>([]);
-  readonly erreur = signal('');
-  readonly msg = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly msg = feedbackSignal('success', '');
 
   readonly catForm = this.fb.nonNullable.group({
     code: ['', Validators.required],
@@ -145,13 +142,26 @@ export class NotesParametresComponent implements OnInit {
   }
 
   deactivate(id: string): void {
-    this.api.delete(`/mg/notes-frais/categories/${id}`).subscribe({
-      next: () => {
-        this.msg.set('Catégorie désactivée.');
-        this.reload();
-      },
-      error: () => this.erreur.set('Désactivation refusée'),
-    });
+    const cat = this.categories().find((c) => c.id === id);
+    this.feedback
+      .confirm({
+        title: 'Désactiver la catégorie',
+        message: `Désactiver la catégorie « ${cat?.libelle ?? ''} » ?`,
+        hint: 'Elle ne sera plus proposée pour les nouvelles notes de frais.',
+        confirmLabel: 'Désactiver',
+        cancelLabel: 'Annuler',
+        tone: 'danger',
+      })
+      .subscribe((ok) => {
+        if (!ok) return;
+        this.api.delete(`/mg/notes-frais/categories/${id}`).subscribe({
+          next: () => {
+            this.msg.set('Catégorie désactivée.');
+            this.reload();
+          },
+          error: () => this.erreur.set('Désactivation refusée'),
+        });
+      });
   }
 
   saveParam(cle: string, valeur: string): void {

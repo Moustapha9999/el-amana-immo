@@ -36,6 +36,7 @@ def auth_http_error(
 async def _load_user_and_session(
     credentials: HTTPAuthorizationCredentials | None,
     db: AsyncSession,
+    request: Request | None = None,
 ) -> tuple[User, object, dict]:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise auth_http_error(status.HTTP_401_UNAUTHORIZED, "UNAUTHENTICATED", "Non authentifié")
@@ -69,6 +70,8 @@ async def _load_user_and_session(
     user = result.scalar_one_or_none()
     if user is None:
         raise auth_http_error(status.HTTP_401_UNAUTHORIZED, "USER_NOT_FOUND", "Utilisateur introuvable")
+    if request is not None:
+        request.state.bea_user_id = user.id
     return user, session, payload
 
 
@@ -89,7 +92,7 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    user, session, _ = await _load_user_and_session(credentials, db)
+    user, session, _ = await _load_user_and_session(credentials, db, request)
     kind = getattr(session, "kind", None) or SESSION_KIND_PLATFORM
     module_code = getattr(session, "module_code", None) if kind == SESSION_KIND_MODULE else None
     _bind_request_session(request, session, module_code=module_code)
@@ -101,7 +104,7 @@ async def get_platform_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    user, session, _ = await _load_user_and_session(credentials, db)
+    user, session, _ = await _load_user_and_session(credentials, db, request)
     kind = getattr(session, "kind", None) or SESSION_KIND_PLATFORM
     if kind != SESSION_KIND_PLATFORM:
         raise auth_http_error(
@@ -119,7 +122,7 @@ def require_module_access(module_code: str):
         credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
         db: AsyncSession = Depends(get_db),
     ) -> User:
-        user, session, _ = await _load_user_and_session(credentials, db)
+        user, session, _ = await _load_user_and_session(credentials, db, request)
         kind = getattr(session, "kind", None) or SESSION_KIND_PLATFORM
         if kind != SESSION_KIND_MODULE or session.module_code != module_code:
             raise auth_http_error(
@@ -167,7 +170,7 @@ def require_demandes_module():
         credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
         db: AsyncSession = Depends(get_db),
     ) -> User:
-        user, session, _ = await _load_user_and_session(credentials, db)
+        user, session, _ = await _load_user_and_session(credentials, db, request)
         kind = getattr(session, "kind", None) or SESSION_KIND_PLATFORM
         module_code = (session.module_code or "").strip().lower()
         if kind != SESSION_KIND_MODULE or not is_demandes_module(module_code):

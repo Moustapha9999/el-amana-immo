@@ -45,8 +45,6 @@
       </label>
     </form>
 
-    @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
-    @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
 
     <div class="bea-ach__panel">
       <div class="bea-ach__panel-top">
@@ -118,8 +116,6 @@
       </a>
     </header>
 
-    @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
-    @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
 
     <form class="bea-ach__form" [formGroup]="form" (ngSubmit)="save()">
       <div class="bea-ach__grid">

@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } 
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface CatalogItem {
   key: string;
@@ -33,9 +34,6 @@ interface Summary {
         </div>
       </header>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
 
       @if (summary(); as s) {
         <div class="bea-stock-dash__kpis" style="margin-bottom:1rem">
@@ -130,7 +128,7 @@ export class StockRapportsComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly catalog = signal<CatalogItem[]>([]);
   readonly summary = signal<Summary | null>(null);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
 
   readonly groups = computed(() => {
     const rows = this.catalog();

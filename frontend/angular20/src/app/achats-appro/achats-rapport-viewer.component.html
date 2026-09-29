@@ -163,12 +163,6 @@
     </div>
   </div>
 
-  @if (erreur()) {
-    <p class="bea-ach__error">{{ erreur() }}</p>
-  }
-  @if (msg()) {
-    <p class="bea-ach__ok">{{ msg() }}</p>
-  }
 
   @if (loading()) {
     <p class="bea-ach__kicker">Chargement…</p>

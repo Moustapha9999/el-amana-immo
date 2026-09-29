@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../core/services/api.service';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 @Component({
   selector: 'bea-archives-rapports',
@@ -17,8 +18,6 @@ import { ApiService } from '../core/services/api.service';
         </div>
       </header>
 
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
-      @if (msg()) { <p class="bea-stock-page__ok">{{ msg() }}</p> }
 
       <form class="bea-mg__search" (ngSubmit)="$event.preventDefault()">
         <label class="bea-mg__field">
@@ -133,8 +132,8 @@ export class ArchivesRapportsComponent implements OnInit {
   dateFin = '';
 
   readonly busy = signal(false);
-  readonly erreur = signal<string | null>(null);
-  readonly msg = signal('');
+  readonly erreur = feedbackSignal('error', null);
+  readonly msg = feedbackSignal('success', '');
 
   ngOnInit(): void {
     const mode = this.route.snapshot.data['archivesMode'] as 'mg' | 'general' | undefined;

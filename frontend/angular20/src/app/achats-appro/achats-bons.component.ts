@@ -6,6 +6,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
 import { SupplierSelectComponent } from './supplier-select.component';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 
 interface Agence {
   id: string;
@@ -60,8 +62,6 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
           <label class="bea-ach__field bea-ach__field--grow"><mat-icon>search</mat-icon><input formControlName="q" placeholder="Référence ou fournisseur…" (input)="applyFilters()" /></label>
           <label class="bea-ach__field"><mat-icon>filter_alt</mat-icon><select formControlName="statut" (change)="applyFilters()"><option value="">Tous les statuts</option><option value="BROUILLON">Brouillon</option><option value="SOUMIS">Soumis</option><option value="VISA_MG">Visa MG</option><option value="VISA_DR">Visa DR</option><option value="VALIDE">Validé</option><option value="PARTIEL">Partiel</option><option value="ANNULE">Annulé</option></select></label>
         </form>
-        @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
-        @if (msg()) { <p class="bea-ach__ok">{{ msg() }}</p> }
         <div class="bea-ach__panel">
           <div class="bea-ach__panel-top"><h2>Liste des bons</h2><span class="bea-ach__count">{{ filtered().length }} résultat(s)</span></div>
           <div class="bea-mg__table-scroll"><table class="bea-ach__table">
@@ -81,7 +81,6 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
         </div>
       } @else {
         <header class="bea-ach__head"><div><p class="bea-ach__kicker">{{ bonId() ? 'Fiche' : 'Création' }}</p><h1>{{ bonId() ? 'Bon de commande' : 'Nouveau bon de commande' }}</h1></div><a class="bea-ach__btn bea-ach__btn--ghost" routerLink="/achats-appro/bons"><mat-icon>arrow_back</mat-icon>Retour</a></header>
-        @if (erreur()) { <p class="bea-ach__error">{{ erreur() }}</p> }
         <form class="bea-ach__form" [formGroup]="form" (ngSubmit)="save()">
           <h2 class="bea-ach__kicker" style="font-size:0.9rem;color:#0f172a;text-transform:none;letter-spacing:0">Fournisseur</h2>
           <div class="bea-ach__grid">
@@ -228,6 +227,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
   `,
 })
 export class AchatsBonsComponent implements OnInit {
+  readonly hasUnsavedChanges = unsavedChanges(() => this.mode() === 'edit' && this.form.dirty, () => this.form);
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
@@ -245,8 +245,8 @@ export class AchatsBonsComponent implements OnInit {
     consultation_id?: string;
     comparaison_id?: string;
   } = {};
-  readonly erreur = signal<string | null>(null);
-  readonly msg = signal('');
+  readonly erreur = feedbackSignal('error', null);
+  readonly msg = feedbackSignal('success', '');
   readonly q = signal('');
   readonly statutFilter = signal('');
   readonly confirm = signal<{ row: Bon; action: 'desactiver' | 'supprimer' } | null>(null);

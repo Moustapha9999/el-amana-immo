@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { CoreAdminEspaceOption } from './core-admin-catalogue.models';
 import { CoreAdminIconComponent } from './core-admin-icon.component';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
 
 interface RequestType {
   id: string;
@@ -80,12 +81,6 @@ function blankExtra(): TypeExtra {
         <button type="button" class="bea-admin-btn" (click)="reset()">Nouveau type</button>
       </header>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
-      @if (ok()) {
-        <p class="bea-admin-dash__ok">{{ ok() }}</p>
-      }
 
       <div class="bea-demandes">
         <div class="bea-admin-panel bea-admin-users__list">
@@ -225,8 +220,8 @@ export class CoreAdminDemandesComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly types = signal<RequestType[]>([]);
   readonly espaces = signal<CoreAdminEspaceOption[]>([]);
-  readonly erreur = signal('');
-  readonly ok = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly ok = feedbackSignal('success', '');
   readonly saving = signal(false);
   readonly editingId = signal<string | null>(null);
   form: TypeForm = blankForm();

@@ -16,10 +16,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "mg_employee_request_items",
-        sa.Column("quantity_granted", sa.Numeric(18, 3), nullable=True),
-    )
+    cols = {c["name"] for c in sa.inspect(op.get_bind()).get_columns("mg_employee_request_items")}
+    if "quantity_granted" not in cols:
+        op.add_column(
+            "mg_employee_request_items",
+            sa.Column("quantity_granted", sa.Numeric(18, 3), nullable=True),
+        )
 
 
 def downgrade() -> None:

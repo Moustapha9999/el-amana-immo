@@ -7,6 +7,8 @@ import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../core/services/api.service';
 import { AuthService } from '../core/services/auth.service';
 import { DocumentViewerComponent, GedDoc } from './document-viewer.component';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { FeedbackService } from '../core/feedback/feedback.service';
 
 interface OcrDash {
   ocr: { pending: number; processing: number; done: number; failed: number; en_cours: number };
@@ -67,7 +69,6 @@ interface ActivityEvent {
           <h1>OCR & Traitement</h1>
         </div>
       </header>
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
       <div class="bea-nf-kpi">
         @for (k of kpis(); track k.key) {
           <button type="button" class="bea-nf-kpi__card" [class.active]="filter() === k.key" (click)="setFilter(k.key)">
@@ -146,7 +147,7 @@ export class ArchivesGeneralesOcrComponent implements OnInit {
   readonly filter = signal<'pending' | 'processing' | 'done' | 'failed'>('pending');
   readonly counts = signal({ pending: 0, processing: 0, done: 0, failed: 0 });
   readonly docs = signal<GedDoc[]>([]);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
   readonly viewerId = signal<string | null>(null);
   readonly trash = signal<GedDoc | null>(null);
 
@@ -259,7 +260,6 @@ export class ArchivesGeneralesOcrComponent implements OnInit {
           <h1>Documents manquants</h1>
         </div>
       </header>
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
       <p class="bea-ag-lead">{{ items().length }} opération(s) sans pièce dans la GED. Ajoutez le fichier ou ouvrez le dossier.</p>
       <div class="bea-ag-miss">
         @for (m of items(); track m.source_type + m.source_id; let i = $index) {
@@ -301,7 +301,7 @@ export class ArchivesGeneralesOcrComponent implements OnInit {
 export class ArchivesGeneralesManquantsComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly items = signal<MissingItem[]>([]);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
   ngOnInit(): void {
     this.api.get<MissingItem[]>('/doc-archives/general/manquants').subscribe({
       next: (rows) => this.items.set(rows ?? []),
@@ -323,7 +323,6 @@ export class ArchivesGeneralesManquantsComponent implements OnInit {
           <p class="bea-stock-page__kicker">{{ items().length }} document(s) avec une référence, un type ou un OCR incomplet.</p>
         </div>
       </header>
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
       <div class="bea-mg__panel">
         <table class="bea-mg__table">
           <thead><tr><th>Document</th><th>Motif</th><th>Département</th><th>Date</th><th></th></tr></thead>
@@ -396,7 +395,7 @@ export class ArchivesGeneralesManquantsComponent implements OnInit {
 export class ArchivesGeneralesVerifierComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly items = signal<VerifyItem[]>([]);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
   readonly viewerId = signal<string | null>(null);
   readonly editing = signal<GedDoc | null>(null);
   readonly trash = signal<GedDoc | null>(null);
@@ -471,7 +470,6 @@ export class ArchivesGeneralesVerifierComponent implements OnInit {
         </div>
       </header>
       <p class="bea-ag-lead">Même nom de fichier et même taille. Aucune suppression automatique.</p>
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
       <div class="bea-ag-dups">
         @for (g of groups(); track g.filename + g.size_bytes) {
           <article>
@@ -517,9 +515,10 @@ export class ArchivesGeneralesVerifierComponent implements OnInit {
   `,
 })
 export class ArchivesGeneralesDoublonsComponent implements OnInit {
+  private readonly feedback = inject(FeedbackService);
   private readonly api = inject(ApiService);
   readonly groups = signal<DupGroup[]>([]);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
   readonly viewerId = signal<string | null>(null);
   ngOnInit(): void {
     this.api.get<DupGroup[]>('/doc-archives/general/doublons').subscribe({
@@ -543,15 +542,24 @@ export class ArchivesGeneralesDoublonsComponent implements OnInit {
   }
 
   remove(d: GedDoc): void {
-    if (!confirm('Mettre ce doublon potentiel à la corbeille ?')) return;
-    this.api.delete(`/documents/${d.id}`).subscribe({
-      next: () => this.groups.update((groups) =>
-        groups
-          .map((g) => ({ ...g, documents: g.documents.filter((x) => x.id !== d.id) }))
-          .filter((g) => g.documents.length > 1),
-      ),
-      error: () => this.erreur.set('Suppression refusée.'),
-    });
+    this.feedback
+      .run(() => this.api.delete(`/documents/${d.id}`), {
+        confirm: {
+          action: 'suppression',
+          message: `Mettre le doublon potentiel « ${d.filename} » à la corbeille ?`,
+          hint: 'Le document reste restaurable depuis la corbeille.',
+        },
+        loading: 'Mise à la corbeille…',
+        errorTitle: 'Suppression refusée',
+        success: { title: 'Document mis à la corbeille', details: [{ label: 'Fichier', value: d.filename }] },
+      })
+      .subscribe(() =>
+        this.groups.update((groups) =>
+          groups
+            .map((g) => ({ ...g, documents: g.documents.filter((x) => x.id !== d.id) }))
+            .filter((g) => g.documents.length > 1),
+        ),
+      );
   }
 }
 
@@ -571,8 +579,6 @@ export class ArchivesGeneralesDoublonsComponent implements OnInit {
           <mat-icon>create_new_folder</mat-icon> Nouveau dossier
         </button>
       </header>
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
-      @if (toast()) { <p class="bea-ag-toast">{{ toast() }}</p> }
       <div class="bea-ag-folders">
         @for (d of items(); track d.entity + d.entity_id) {
           <article class="bea-ag-folder">
@@ -657,7 +663,6 @@ export class ArchivesGeneralesDoublonsComponent implements OnInit {
     .bea-ag-folder h2 { margin: 0; font-size: 1rem; }
     .bea-ag-folder p { margin: 0.15rem 0 0; color: #64748b; font-size: 0.84rem; }
     .bea-ag-icons { display: flex; gap: 0.15rem; }
-    .bea-ag-toast { background: #ecfdf5; color: #166534; padding: 0.45rem 0.7rem; border-radius: 0.4rem; }
     .bea-modal { position: fixed; inset: 0; background: rgb(15 23 42 / 45%); display: grid; place-items: center; z-index: 70; }
     .bea-modal__card { background: #fff; width: min(28rem, 92vw); border-radius: 0.75rem; padding: 1rem; display: grid; gap: 0.55rem; }
     .bea-modal__card h2 { margin: 0; }
@@ -671,8 +676,8 @@ export class ArchivesGeneralesDoublonsComponent implements OnInit {
 export class ArchivesGeneralesDossiersComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly items = signal<Dossier[]>([]);
-  readonly erreur = signal<string | null>(null);
-  readonly toast = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
+  readonly toast = feedbackSignal('success', null);
   readonly editing = signal<Dossier | null>(null);
   readonly removing = signal<Dossier | null>(null);
   readonly creating = signal(false);
@@ -798,7 +803,6 @@ export class ArchivesGeneralesDossiersComponent implements OnInit {
 
   private flash(msg: string): void {
     this.toast.set(msg);
-    setTimeout(() => this.toast.set(null), 2500);
   }
 }
 
@@ -858,8 +862,6 @@ export class ArchivesGeneralesDossiersComponent implements OnInit {
           </div>
         </aside>
       </div>
-      @if (result()) { <p class="bea-stock-page__ok">{{ result() }}</p> }
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
     </section>
   `,
   styles: `
@@ -892,8 +894,8 @@ export class ArchivesGeneralesNumeriserComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   readonly file = signal<File | null>(null);
   readonly busy = signal(false);
-  readonly erreur = signal<string | null>(null);
-  readonly result = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
+  readonly result = feedbackSignal('success', null);
   readonly dragOver = signal(false);
   readonly recents = signal<{ id: string; filename: string }[]>([]);
   espace = 'moyens-generaux';
@@ -977,7 +979,6 @@ export class ArchivesGeneralesNumeriserComponent implements OnInit {
         <div><p class="bea-stock-page__kicker">Activité</p><h1>Historique documentaire</h1></div>
         <a class="bea-mg__btn" routerLink="/archives-generales/dashboard">Dashboard</a>
       </header>
-      @if (erreur()) { <p class="bea-stock-page__error">{{ erreur() }}</p> }
       <ol class="bea-ag-feed">
         @for (ev of events(); track ev.id) {
           <li>
@@ -1022,7 +1023,7 @@ export class ArchivesGeneralesNumeriserComponent implements OnInit {
 export class ArchivesGeneralesActiviteComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly events = signal<ActivityEvent[]>([]);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
   readonly viewerId = signal<string | null>(null);
   ngOnInit(): void {
     this.api.get<{ activite_recente: ActivityEvent[] }>('/doc-archives/general/dashboard').subscribe({

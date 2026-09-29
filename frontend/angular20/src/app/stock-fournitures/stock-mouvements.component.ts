@@ -5,6 +5,12 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../core/services/api.service';
 import { PaginationComponent } from '../shared/pagination.component';
+import { feedbackSignal } from '../core/feedback/feedback-signal';
+import {
+  StockMouvementActions,
+  StockMouvementEditComponent,
+  StockMouvementRow,
+} from './stock-mouvement-edit.component';
 
 interface Article {
   id: string;
@@ -15,20 +21,9 @@ interface Agence {
   id: string;
   libelle: string;
 }
-interface Mouvement {
-  id: string;
-  reference: string;
-  date_mouvement: string;
-  type_mouvement: string;
-  article_id: string;
-  quantite: number;
-  agence_id: string | null;
-  motif: string | null;
-  observation: string | null;
+interface Mouvement extends StockMouvementRow {
   departement: string | null;
   initiateur_nom?: string | null;
-  article_code?: string | null;
-  article_designation?: string | null;
   stock_disponible?: number | null;
 }
 interface Paginated<T> {
@@ -41,7 +36,7 @@ interface Paginated<T> {
 @Component({
   selector: 'bea-stock-mouvements',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MatIconModule, DatePipe, QuantitePipe, PaginationComponent],
+  imports: [ReactiveFormsModule, MatIconModule, DatePipe, QuantitePipe, PaginationComponent, StockMouvementEditComponent],
   template: `
     <section class="bea-mg">
       <header class="bea-mg__head">
@@ -82,12 +77,6 @@ interface Paginated<T> {
         </button>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-stock-page__error">{{ erreur() }}</p>
-      }
-      @if (msg()) {
-        <p class="bea-stock-page__ok">{{ msg() }}</p>
-      }
 
       <div class="bea-mg__panel">
         <div class="bea-mg__panel-top">
@@ -125,6 +114,18 @@ interface Paginated<T> {
                   <td class="bea-mg__actions-cell">
                     <button type="button" class="bea-mg__icon-btn" title="Voir" (click)="openView(m)">
                       <mat-icon>visibility</mat-icon>
+                    </button>
+                    <button type="button" class="bea-mg__icon-btn" title="Modifier" (click)="editTarget.set(m)">
+                      <mat-icon>edit</mat-icon>
+                    </button>
+                    <button
+                      type="button"
+                      class="bea-mg__icon-btn bea-mg__icon-btn--danger"
+                      [title]="m.quantite_modifiable ? 'Supprimer' : mouvementActions.peutSupprimer(m) ? 'Suppression administrateur (motif requis)' : 'Suppression impossible (période clôturée, ajustement ou mouvement de workflow)'"
+                      [disabled]="!mouvementActions.peutSupprimer(m)"
+                      (click)="supprimer(m)"
+                    >
+                      <mat-icon>delete</mat-icon>
                     </button>
                   </td>
                 </tr>
@@ -269,12 +270,28 @@ interface Paginated<T> {
                 </label>
               }
             </div>
-            <p style="margin:0.85rem 0 0;font-size:0.8rem;color:#64748b">Les mouvements sont immuables.</p>
+            @if (m.periode_libelle) {
+              <p style="margin:0.85rem 0 0;font-size:0.8rem;color:#64748b">
+                Période {{ m.periode_libelle }} {{ m.periode_cloturee ? '(clôturée)' : '(ouverte)' }}
+              </p>
+            }
           </div>
           <footer class="bea-mg__modal-foot">
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="viewTarget.set(null)">Fermer</button>
+            <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="viewTarget.set(null); editTarget.set(m)">
+              <mat-icon>edit</mat-icon> Modifier
+            </button>
           </footer>
         </div>
+      }
+
+      @if (editTarget(); as e) {
+        <bea-stock-mouvement-edit
+          [mouvement]="e"
+          [agences]="agences()"
+          (closed)="editTarget.set(null)"
+          (saved)="editTarget.set(null); load()"
+        />
       }
     </section>
   `,
@@ -290,11 +307,13 @@ export class StockMouvementsComponent implements OnInit {
   readonly total = signal(0);
   readonly pageSize = 50;
   readonly saving = signal(false);
-  readonly erreur = signal('');
-  readonly msg = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly msg = feedbackSignal('success', '');
   readonly modalErreur = signal('');
   readonly createOpen = signal(false);
   readonly viewTarget = signal<Mouvement | null>(null);
+  readonly editTarget = signal<Mouvement | null>(null);
+  protected readonly mouvementActions = inject(StockMouvementActions);
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -424,6 +443,10 @@ export class StockMouvementsComponent implements OnInit {
 
   openView(m: Mouvement): void {
     this.viewTarget.set(m);
+  }
+
+  supprimer(m: Mouvement): void {
+    this.mouvementActions.supprimer(m).subscribe(() => this.load());
   }
 
   submit(): void {

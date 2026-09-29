@@ -10,6 +10,7 @@ import {
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { CoreAdminIconComponent } from './core-admin-icon.component';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
 
 export interface CoreAdminKpis {
   utilisateurs: number;
@@ -90,9 +91,6 @@ const CHART_COLORS = ['#1a5278', '#2874a6', '#3498db', '#5dade2', '#0f766e', '#b
         </div>
       </header>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
 
       @if (kpis(); as k) {
         <div class="bea-admin-kpis">
@@ -360,7 +358,8 @@ export class CoreAdminDashboardComponent implements OnInit {
   readonly activite = signal<CoreAdminActivity[]>([]);
   readonly etatList = signal<{ key: string; label: string; ok: boolean }[]>([]);
   readonly appName = signal('BEA DIGITAL');
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
+  readonly erreursApi = signal<{ total: number; serveur: number } | null>(null);
 
   readonly activiteBars = computed(() => this.buildBars(this.charts().activite_7j));
   readonly activite7jTotal = computed(() =>
@@ -386,6 +385,7 @@ export class CoreAdminDashboardComponent implements OnInit {
     { label: 'Sessions', hint: 'Révoquer un accès', path: '/admin/sessions', icon: 'devices' },
     { label: 'Audit', hint: 'Journal plateforme', path: '/admin/audit', icon: 'history' },
     { label: 'Alertes', hint: 'Échecs de connexion', path: '/admin/alerts', icon: 'warning' },
+    { label: 'Erreurs API', hint: 'Supervision technique', path: '/admin/erreurs', icon: 'report' },
     { label: 'Notifications', hint: 'File transversale', path: '/admin/notifications', icon: 'notifications' },
     { label: 'GED', hint: 'Documents CORE', path: '/admin/ged', icon: 'folder' },
     { label: 'Sécurité', hint: 'Politique auth', path: '/admin/security', icon: 'security' },
@@ -417,11 +417,33 @@ export class CoreAdminDashboardComponent implements OnInit {
       },
       error: () => this.erreur.set('Impossible de charger le dashboard CORE ADMIN.'),
     });
+    this.api
+      .get<{ kpis: { total: number; serveur: number } }>('/plateforme/admin/supervision/erreurs', {
+        periode: '24h',
+        size: 1,
+      })
+      .subscribe({
+        next: (data) => this.erreursApi.set(data.kpis),
+        error: () => this.erreursApi.set(null),
+      });
   }
 
   kpiCards(
     k: CoreAdminKpis,
   ): { label: string; value: string; hint?: string; path?: string; icon: string; tone: string }[] {
+    const erreurs = this.erreursApi();
+    const erreursCard = erreurs
+      ? [
+          {
+            label: 'Erreurs API (24 h)',
+            value: this.fmt(erreurs.total),
+            hint: `${this.fmt(erreurs.serveur)} erreur(s) serveur`,
+            path: '/admin/erreurs',
+            icon: 'report',
+            tone: erreurs.serveur > 0 ? 'alert' : 'actions',
+          },
+        ]
+      : [];
     return [
       {
         label: 'Utilisateurs',
@@ -482,6 +504,7 @@ export class CoreAdminDashboardComponent implements OnInit {
         icon: 'folder',
         tone: 'org',
       },
+      ...erreursCard,
     ];
   }
 
