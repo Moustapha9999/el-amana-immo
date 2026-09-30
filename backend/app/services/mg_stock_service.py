@@ -482,7 +482,7 @@ class MgStockService:
         await self.db.commit()
         return before
 
-    async def _supprimer_mouvements_source(self, source_type: str, source_id: uuid.UUID) -> list[dict]:
+    async def supprimer_mouvements_source(self, source_type: str, source_id: uuid.UUID) -> list[dict]:
         mvts = (
             await self.db.execute(
                 select(MgStockMouvement)
@@ -733,7 +733,7 @@ class MgStockService:
     async def delete_demande(self, demande_id: uuid.UUID, *, force: bool = False) -> tuple[MgDemandeFourniture, list[dict]]:
         demande = await self.get_demande(demande_id, for_update=True)
         if force:
-            annules = await self._supprimer_mouvements_source("demande_fourniture", demande.id)
+            annules = await self.supprimer_mouvements_source("demande_fourniture", demande.id)
             demande.deleted_at = datetime.now(timezone.utc)
             await self.db.commit()
             return demande, annules
@@ -1224,7 +1224,7 @@ class MgStockService:
     async def delete_inventaire(self, inventaire_id: uuid.UUID, *, force: bool = False) -> tuple[MgInventaire, list[dict]]:
         inv = await self.get_inventaire(inventaire_id)
         if force:
-            annules = await self._supprimer_mouvements_source("inventaire", inv.id)
+            annules = await self.supprimer_mouvements_source("inventaire", inv.id)
             inv.deleted_at = datetime.now(timezone.utc)
             await self.db.commit()
             return inv, annules

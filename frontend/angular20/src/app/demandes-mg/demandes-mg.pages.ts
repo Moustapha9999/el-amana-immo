@@ -96,9 +96,6 @@ const PRIO_LABEL: Record<string, string> = {
   URGENT: 'Urgente',
 };
 
-const DELETE_LOCKED = new Set([
-  'VALIDEE', 'A_REGROUPER', 'REGROUPEE', 'ACHAT_EN_COURS', 'COMMANDEE', 'SERVIE', 'CLOTUREE',
-]);
 const CLOSED = new Set(['REFUSEE', 'ANNULEE', 'SERVIE', 'CLOTUREE']);
 const TREATABLE = new Set(['SOUMISE', 'RECUE', 'EN_ANALYSE', 'A_COMPLETER']);
 
@@ -500,9 +497,7 @@ export class DmgInboxComponent implements OnInit {
     return ['SOUMISE', 'RECUE', 'EN_ANALYSE', 'VALIDEE', 'A_REGROUPER'].includes(status);
   }
   canCancel(r: RequestRow): boolean { return this.canEdit(r); }
-  canDelete(r: RequestRow): boolean {
-    return !DELETE_LOCKED.has(r.status) && !r.batch_id && !r.achat_demande_id;
-  }
+  canDelete(_r: RequestRow): boolean { return true; }
   load(): void {
     this.erreur.set('');
     const params: Record<string, string | number> = { page: 1, size: 50, q: this.q };
@@ -602,7 +597,14 @@ export class DmgInboxComponent implements OnInit {
     return 'Désactiver la demande';
   }
   confirmText(c: { kind: 'delete' | 'cancel' | 'reject'; row: RequestRow }): string {
-    if (c.kind === 'delete') return `La demande ${c.row.request_number} sera définitivement supprimée.`;
+    if (c.kind === 'delete') {
+      const extra: string[] = [];
+      if (c.row.status === 'SERVIE') extra.push('les sorties de stock associées seront annulées');
+      if (c.row.batch_id) extra.push('elle sera retirée de son regroupement');
+      if (c.row.achat_demande_id) extra.push('la demande d’achat liée reste dans Achats');
+      const suite = extra.length ? ` Attention : ${extra.join(', ')}.` : '';
+      return `La demande ${c.row.request_number} sera définitivement supprimée.${suite}`;
+    }
     if (c.kind === 'reject') return `La demande ${c.row.request_number} sera refusée. Le demandeur sera notifié.`;
     return `La demande ${c.row.request_number} sera désactivée. L’historique est conservé.`;
   }
@@ -710,10 +712,10 @@ export class DmgInboxComponent implements OnInit {
                         <button type="button" class="bea-mg__icon-btn bea-emp-icon--primary" title="Valider et créer la demande d’achat" (click)="validate(b.id)">
                           <mat-icon>shopping_cart</mat-icon>
                         </button>
-                        <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer" (click)="askDelete(b)">
-                          <mat-icon>delete</mat-icon>
-                        </button>
                       }
+                      <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer" (click)="askDelete(b)">
+                        <mat-icon>delete</mat-icon>
+                      </button>
                       @if (b.achat_demande_id) {
                         <a class="bea-mg__icon-btn" title="Voir la demande d’achat" [routerLink]="['/achats-appro/demandes', b.achat_demande_id]">
                           <mat-icon>open_in_new</mat-icon>
@@ -778,11 +780,9 @@ export class DmgInboxComponent implements OnInit {
                     <td>{{ it.description }}</td>
                     <td>{{ it.quantity | quantite }}</td>
                     <td>
-                      @if (b.status === 'BROUILLON') {
-                        <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Retirer" (click)="removeItem(b.id, it.id)">
-                          <mat-icon>close</mat-icon>
-                        </button>
-                      }
+                      <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Retirer" (click)="removeItem(b.id, it.id)">
+                        <mat-icon>close</mat-icon>
+                      </button>
                     </td>
                   </tr>
                 }
@@ -800,6 +800,7 @@ export class DmgInboxComponent implements OnInit {
             @if (b.achat_demande_id) {
               <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="['/achats-appro/demandes', b.achat_demande_id]">Voir DA</a>
             }
+            <button type="button" class="bea-mg__btn bea-mg__btn--danger" (click)="askDelete(b)">Supprimer</button>
           </div>
         </aside>
       }
@@ -810,6 +811,9 @@ export class DmgInboxComponent implements OnInit {
           <div class="bea-mg__modal-head"><h2>Supprimer le regroupement</h2></div>
           <div class="bea-mg__modal-body">
             <p>Le regroupement {{ b.batch_number }} sera supprimé. Les demandes qu’il contient redeviennent disponibles.</p>
+            @if (b.achat_demande_id) {
+              <p>La demande d’achat déjà créée n’est pas supprimée : elle reste dans Achats.</p>
+            }
           </div>
           <div class="bea-mg__modal-foot">
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="pendingDelete.set(null)">Annuler</button>

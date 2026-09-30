@@ -8,6 +8,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException, status
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -564,12 +565,14 @@ class MgRequestsService:
         return await self._load(row.id)
 
     async def mg_delete(self, request_id: uuid.UUID, user: User) -> None:
+        """Suppression MG quel que soit le statut : retrait des regroupements et annulation des sorties stock."""
         row = await self._load_for_processor(request_id)
-        if row.status in DELETE_LOCKED or row.batch_id or row.achat_demande_id:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail="Cette demande est déjà engagée et ne peut plus être supprimée.",
-            )
+        await self.db.execute(
+            sa_delete(MgProcurementBatchItem).where(MgProcurementBatchItem.request_id == row.id)
+        )
+        stock = MgStockService(self.db)
+        for it in row.items:
+            await stock.supprimer_mouvements_source("mg_employee_request", it.id)
         await audit_request(self.db, user, "REQUEST_DELETED", "mg_employee_request", row.id)
         await self.db.delete(row)
         await self.db.commit()
@@ -1245,18 +1248,22 @@ class MgRequestsService:
         await self.db.commit()
         return await self._load_batch(batch.id)
 
+    def _release_from_batch(self, req: MgEmployeeRequest, batch: MgProcurementBatch) -> None:
+        if req.batch_id == batch.id:
+            req.batch_id = None
+        if batch.achat_demande_id and req.achat_demande_id == batch.achat_demande_id:
+            req.achat_demande_id = None
+        if req.status in {"REGROUPEE", "ACHAT_EN_COURS", "COMMANDEE"}:
+            req.status = "A_REGROUPER"
+
     async def delete_batch(self, batch_id: uuid.UUID, user: User) -> None:
+        """Suppression quel que soit le statut ; la demande d'achat éventuelle reste dans Achats."""
         batch = await self._load_batch(batch_id)
-        if batch.status != "BROUILLON":
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Un regroupement validé ne peut pas être supprimé")
         request_ids = {it.request_id for it in batch.items}
         item_ids = {it.request_item_id for it in batch.items}
         for request_id in request_ids:
             req = await self._load(request_id)
-            if req.batch_id == batch.id:
-                req.batch_id = None
-                if req.status == "REGROUPEE":
-                    req.status = "A_REGROUPER"
+            self._release_from_batch(req, batch)
             for item in req.items:
                 if item.id in item_ids and item.status == "GROUPEE":
                     item.status = "OUVERT"
@@ -1287,21 +1294,19 @@ class MgRequestsService:
 
     async def remove_batch_item(self, batch_id: uuid.UUID, item_id: uuid.UUID, user: User) -> MgProcurementBatch:
         batch = await self._load_batch(batch_id)
-        if batch.status != "BROUILLON":
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Regroupement déjà validé")
         item = next((i for i in batch.items if i.id == item_id), None)
         if item is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Ligne introuvable")
         src = await self.db.get(MgEmployeeRequestItem, item.request_item_id)
-        if src:
+        if src and src.status == "GROUPEE":
             src.status = "OUVERT"
         req = await self._load(item.request_id)
         batch.items.remove(item)
         await self.db.flush()
         remaining = any(i.request_id == req.id for i in batch.items)
         if not remaining:
-            req.batch_id = None
-            req.status = "A_REGROUPER"
+            self._release_from_batch(req, batch)
+        await audit_request(self.db, user, "BATCH_ITEM_REMOVED", "mg_procurement_batch", batch.id)
         await self.db.commit()
         return await self._load_batch(batch.id)
 
