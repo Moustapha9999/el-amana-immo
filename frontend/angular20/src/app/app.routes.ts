@@ -14,7 +14,6 @@ import { CessionsComponent } from './cessions/cessions.component';
 import { CessionDetailComponent } from './cessions/cession-detail.component';
 import { RebutsComponent } from './rebuts/rebuts.component';
 import { RebutDetailComponent } from './rebuts/rebut-detail.component';
-import { UtilisateursComponent } from './utilisateurs/utilisateurs.component';
 import { AmortissementsComponent } from './amortissements/amortissements.component';
 import { CalculAmortissementsComponent } from './amortissements/calcul-amortissements.component';
 import { AmortissementDetailComponent } from './amortissements/amortissement-detail.component';
@@ -344,7 +343,8 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'reevaluations/:id', component: ReevaluationDetailComponent },
       { path: 'notifications', component: NotificationsComponent },
       { path: 'rapports', component: RapportsComponent },
-      { path: 'utilisateurs', component: UtilisateursComponent },
+      // Comptes gérés par CORE ADMIN ; l'URL reste réservée (anciens liens / favoris).
+      { path: 'utilisateurs', redirectTo: '/admin/users', pathMatch: 'full' },
       { path: 'audit', component: AuditComponent },
       { path: 'parametres', component: ParametresComponent },
     ],

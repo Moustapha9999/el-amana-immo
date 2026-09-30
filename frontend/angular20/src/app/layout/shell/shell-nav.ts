@@ -54,7 +54,6 @@ export const SHELL_NAV: ShellNavItem[] = [
   { section: 'Comptabilité', label: 'Rebuts', path: '/rebuts', icon: 'delete_outline' },
   { section: 'Comptabilité', label: 'Réévaluations', path: '/reevaluations', icon: 'trending_up' },
   { section: 'Administration', label: 'Rapports', path: '/rapports', icon: 'summarize' },
-  { section: 'Administration', label: 'Utilisateurs', path: '/utilisateurs', icon: 'group' },
   { section: 'Administration', label: 'Audit', path: '/audit', icon: 'policy' },
   { section: 'Administration', label: 'Paramètres', path: '/parametres', icon: 'tune' },
 ];

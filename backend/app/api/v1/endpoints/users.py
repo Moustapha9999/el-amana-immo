@@ -15,6 +15,20 @@ from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/users", tags=["users"])
 
+# API historique du module Immobilisations (plus de page dédiée : les comptes se gèrent
+# dans CORE ADMIN, /plateforme/admin/users). Périmètre limité aux habilités du module.
+MODULE_CODE = "immobilisations"
+
+
+async def _require_in_module(service: AuthService, user_id: UUID) -> None:
+    if await service.get_by_id(user_id, include_inactive=True) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur introuvable")
+    if not await service.has_module_access(user_id, MODULE_CODE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cet utilisateur n’a pas accès au module Immobilisations : gérez-le depuis CORE ADMIN.",
+        )
+
 
 async def _require_users_admin(
     user: User = Depends(get_current_user),
@@ -41,7 +55,7 @@ async def list_users(
     _: User = Depends(_require_users_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    items, total = await AuthService(db).list_users(page, size, search=search)
+    items, total = await AuthService(db).list_users(page, size, search=search, module_access=MODULE_CODE)
     return to_paginated(items, total, page, size, UserRead.model_validate)
 
 
@@ -111,8 +125,9 @@ async def update_user(
             detail="La gestion des mots de passe se fait via CORE ADMIN → Sécurité",
         )
     service = AuthService(db)
+    await _require_in_module(service, user_id)
     try:
-        user = await service.update_user(user_id, payload)
+        user = await service.update_user(user_id, payload, preserve_outside_module=MODULE_CODE)
     except ValueError as exc:
         detail = str(exc)
         code = (
@@ -141,6 +156,13 @@ async def delete_user(
     db: AsyncSession = Depends(get_db),
 ):
     service = AuthService(db)
+    await _require_in_module(service, user_id)
+    target = await service.get_by_id(user_id, include_inactive=True)
+    if target is not None and any(code != MODULE_CODE for code in target.module_codes):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cet utilisateur a accès à d’autres modules : sa suppression se fait depuis CORE ADMIN.",
+        )
     try:
         await service.soft_delete_user(user_id, actor_id=current.id)
     except ValueError as exc:

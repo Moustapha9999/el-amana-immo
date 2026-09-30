@@ -101,7 +101,11 @@ local avant Alembic `20260918_core_admin_ops`).
 
 ## Phase 2 — Utilisateurs
 
-Écran CORE ADMIN, **pas** `/utilisateurs` du module Immobilisations.
+Seul écran de gestion des comptes (`/admin/users`). Le module Immobilisations
+n’a plus de page Utilisateurs : l’ancienne URL `/utilisateurs` redirige ici.
+L’API historique `/api/v1/users` reste disponible, limitée aux utilisateurs
+ayant un accès actif (`user_module_acces.status = 'actif'`) au module
+`immobilisations`, sans pouvoir retirer leurs accès aux autres modules.
 
 - Liste : synthèse (total, actifs, inactifs, superusers, 2FA, jamais
   connectés), recherche (nom, e-mail, téléphone, rôle, département, module)
@@ -142,7 +146,6 @@ local avant Alembic `20260918_core_admin_ops`).
 ## Phase 4 — Rôles et permissions
 
 Écrans CORE ADMIN `/admin/roles` et `/admin/permissions`.
-**≠** `/utilisateurs` du module Immobilisations (Login 2).
 
 - Catalogue Python = seed des rôles / permissions **absents** uniquement.
   Libellés et `role_permissions` des rôles déjà créés ne sont plus
