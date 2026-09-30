@@ -104,6 +104,7 @@ export interface FactureRow {
   ecart_montant: boolean;
   observation?: string | null;
   lignes?: FactureLigne[];
+  nb_justificatifs?: number;
 }
 
 export interface ThreeWayMatch {
@@ -161,6 +162,7 @@ export class AchatsFacturesComponent implements OnInit {
   readonly proposition = signal<FactureProposition | null>(null);
   readonly receptions = signal<ReceptionOpt[]>([]);
   readonly chargementBc = signal(false);
+  readonly preuve = signal<File | null>(null);
   readonly fournisseurSel = signal('');
   readonly lignesVal = signal<{ quantite: number; prix_unitaire: number; taux_tva: number | null }[]>([]);
 
@@ -368,6 +370,28 @@ export class AchatsFacturesComponent implements OnInit {
     });
   }
 
+  choisirPreuve(ev: Event): void {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+    if (!['pdf', 'png', 'jpg', 'jpeg', 'webp'].includes(ext)) {
+      this.erreur.set('Pièce refusée : PDF ou image uniquement.');
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      this.erreur.set('Pièce trop volumineuse (25 Mo maximum).');
+      return;
+    }
+    this.preuve.set(file);
+  }
+
+  tailleFichier(bytes: number): string {
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} Ko`;
+    return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} Mo`;
+  }
+
   reprendreBc(): void {
     const bid = this.form.controls.bon_id.value;
     if (bid) this.onBon(bid);
@@ -494,11 +518,44 @@ export class AchatsFacturesComponent implements OnInit {
     const req = this.id()
       ? this.api.patch<FactureRow>(`/mg/achats/factures/${this.id()}`, body)
       : this.api.post<FactureRow>('/mg/achats/factures', body);
+    const creation = !this.id();
     req.subscribe({
       next: (f) => {
-        this.saving.set(false);
-        this.msg.set(this.id() ? 'Facture mise à jour.' : 'Facture créée.');
-        void this.router.navigateByUrl(`/achats-appro/factures/${f.id}`);
+        const fichier = creation ? this.preuve() : null;
+        if (!fichier) {
+          this.saving.set(false);
+          this.msg.set(creation ? 'Facture créée.' : 'Facture mise à jour.');
+          this.form.markAsPristine();
+          void this.router.navigateByUrl(`/achats-appro/factures/${f.id}`);
+          return;
+        }
+        this.api
+          .upload('/documents/from-operation', fichier, {
+            espace_code: 'moyens-generaux',
+            module_code: 'achats-appro',
+            source_type: 'achat_facture',
+            source_id: f.id,
+            doc_type: 'FACTURE_FOURNISSEUR',
+            title: `Facture fournisseur ${f.numero_fournisseur || f.reference}`,
+            reference: f.numero_fournisseur || f.reference,
+            date_document: f.date_facture,
+            fournisseur_id: f.fournisseur_id,
+          })
+          .subscribe({
+            next: () => {
+              this.saving.set(false);
+              this.preuve.set(null);
+              this.msg.set('Facture créée et facture fournisseur archivée.');
+              this.form.markAsPristine();
+              void this.router.navigateByUrl(`/achats-appro/factures/${f.id}`);
+            },
+            error: () => {
+              this.saving.set(false);
+              this.form.markAsPristine();
+              this.erreur.set('Facture créée, mais la pièce n’a pas pu être archivée : joignez-la depuis la fiche (permission ged.write ?).');
+              void this.router.navigateByUrl(`/achats-appro/factures/${f.id}`);
+            },
+          });
       },
       error: (err) => {
         this.saving.set(false);

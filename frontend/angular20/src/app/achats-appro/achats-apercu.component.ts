@@ -3,6 +3,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   HostListener,
+  OnDestroy,
   OnInit,
   computed,
   inject,
@@ -11,6 +12,7 @@ import {
   signal,
 } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { FeedbackService } from '../core/feedback/feedback.service';
@@ -637,6 +639,45 @@ function echeanceVue(dateEcheance: string | null | undefined, solde: boolean): E
   return { etat: diff <= 7 ? 'proche' : 'ok', label: `Dans ${diff} j` };
 }
 
+interface Justificatif {
+  id: string;
+  filename: string;
+  title: string | null;
+  mime_type: string | null;
+  size_bytes: number;
+  created_at: string | null;
+  ocr_status: string;
+  ocr_extrait: string | null;
+}
+
+interface DossierEtape {
+  id: string;
+  reference: string;
+  statut: string;
+  date_op: string | null;
+  montant: number | null;
+}
+
+interface FactureDossier {
+  justificatifs: Justificatif[];
+  demande: DossierEtape | null;
+  bon: DossierEtape | null;
+  receptions: DossierEtape[];
+  paiements: DossierEtape[];
+  autres_factures: DossierEtape[];
+  controles: { code: string; libelle: string; ok: boolean | null; detail: string | null }[];
+  evenements: { action: string; message: string | null; user_nom: string | null; created_at: string }[];
+  total_paye: number;
+  reste_a_payer: number;
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  create: 'Création',
+  update: 'Modification',
+  deactivate: 'Désactivation',
+  delete: 'Suppression',
+};
+
 function totalPaye(paiements: PaiementApercu[]): number {
   return paiements.filter((p) => p.statut === 'PAYE').reduce((s, p) => s + (Number(p.montant) || 0), 0);
 }
@@ -689,6 +730,55 @@ function totalPaye(paiements: PaiementApercu[]): number {
             </div>
           </div>
 
+          <section class="bea-apercu__card bea-preuve" [attr.data-etat]="dossier()?.justificatifs?.length ? 'ok' : 'manquante'">
+            <h3>
+              <mat-icon>{{ dossier()?.justificatifs?.length ? 'verified_user' : 'report' }}</mat-icon>
+              Facture du fournisseur (preuve)
+              <em>{{ dossier()?.justificatifs?.length ? dossier()!.justificatifs.length + ' pièce(s)' : 'Manquante' }}</em>
+            </h3>
+            @for (d of dossier()?.justificatifs ?? []; track d.id) {
+              <div class="bea-preuve__doc">
+                <mat-icon>{{ estImage(d) ? 'image' : 'picture_as_pdf' }}</mat-icon>
+                <div class="bea-preuve__meta">
+                  <strong>{{ d.title || d.filename }}</strong>
+                  <span>{{ d.filename }} · {{ taille(d.size_bytes) }}{{ d.created_at ? ' · ajoutée le ' + (d.created_at | date: 'dd/MM/yyyy HH:mm') : '' }}</span>
+                </div>
+                <small class="bea-preuve__ocr" [attr.data-status]="d.ocr_status">{{ ocrLabel(d.ocr_status) }}</small>
+                <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="voirPiece(d)" [disabled]="pieceBusy()">
+                  <mat-icon>{{ pieceOuverte()?.id === d.id ? 'visibility_off' : 'visibility' }}</mat-icon>
+                  {{ pieceOuverte()?.id === d.id ? 'Masquer' : 'Voir' }}
+                </button>
+                <button type="button" class="bea-ach__icon-btn" title="Télécharger" (click)="telechargerPiece(d)">
+                  <mat-icon>download</mat-icon>
+                </button>
+              </div>
+              @if (pieceOuverte()?.id === d.id && pieceUrl(); as url) {
+                <div class="bea-preuve__viewer">
+                  @if (estImage(d)) {
+                    <img [src]="url" [alt]="d.filename" />
+                  } @else {
+                    <iframe [src]="url" title="Facture fournisseur"></iframe>
+                  }
+                </div>
+              }
+              @if (d.ocr_extrait) {
+                <details class="bea-preuve__texte">
+                  <summary>Texte lu automatiquement (OCR)</summary>
+                  <p>{{ d.ocr_extrait }}</p>
+                </details>
+              }
+            } @empty {
+              <p class="bea-preuve__vide">
+                La facture papier / PDF remise par le fournisseur n'est pas encore rattachée. Sans preuve, le paiement ne devrait pas être engagé.
+              </p>
+            }
+            <label class="bea-ach__btn bea-preuve__ajout" [class.bea-ach__btn--ghost]="!!dossier()?.justificatifs?.length">
+              <mat-icon>{{ uploadBusy() ? 'hourglass_empty' : 'attach_file' }}</mat-icon>
+              {{ uploadBusy() ? 'Envoi…' : dossier()?.justificatifs?.length ? 'Ajouter une pièce' : 'Joindre la facture du fournisseur' }}
+              <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden (change)="joindre($event, f)" [disabled]="uploadBusy()" />
+            </label>
+          </section>
+
           <div class="bea-apercu__cards">
             <section class="bea-apercu__card">
               <h3><mat-icon>storefront</mat-icon> Fournisseur</h3>
@@ -734,6 +824,60 @@ function totalPaye(paiements: PaiementApercu[]): number {
               </div>
             </div>
           </section>
+
+          @if (dossier(); as d) {
+            <div class="bea-apercu__cards">
+              <section class="bea-apercu__card">
+                <h3><mat-icon>checklist</mat-icon> Points de contrôle <em>{{ nbControlesOk() }}/{{ d.controles.length }}</em></h3>
+                <ul class="bea-ctrl">
+                  @for (c of d.controles; track c.code) {
+                    <li [attr.data-ok]="c.ok === null ? 'na' : c.ok">
+                      <mat-icon>{{ c.ok === null ? 'radio_button_unchecked' : c.ok ? 'check_circle' : 'cancel' }}</mat-icon>
+                      <div>
+                        <span>{{ c.libelle }}</span>
+                        @if (c.detail) {
+                          <small>{{ c.detail }}</small>
+                        }
+                      </div>
+                    </li>
+                  }
+                </ul>
+              </section>
+              <section class="bea-apercu__card">
+                <h3><mat-icon>route</mat-icon> Parcours d'achat</h3>
+                <ol class="bea-parcours">
+                  <li [attr.data-fait]="!!d.demande">
+                    <span>Demande d'achat</span>
+                    <strong>{{ d.demande?.reference || 'Sans DA' }}</strong>
+                    @if (d.demande) { <small>{{ statutLabel(d.demande.statut) }} · {{ d.demande.date_op | date: 'dd/MM/yyyy' }}</small> }
+                  </li>
+                  <li [attr.data-fait]="!!d.bon">
+                    <span>Bon de commande</span>
+                    <strong>{{ d.bon?.reference || '—' }}</strong>
+                    @if (d.bon) { <small>{{ statutLabel(d.bon.statut) }} · {{ (d.bon.montant ?? 0) | montant }} {{ f.devise }}</small> }
+                  </li>
+                  <li [attr.data-fait]="d.receptions.length > 0">
+                    <span>Réception{{ d.receptions.length > 1 ? 's' : '' }}</span>
+                    <strong>{{ d.receptions.length ? referencesDe(d.receptions) : 'Aucune' }}</strong>
+                    @if (d.receptions.length) { <small>{{ statutLabel(d.receptions[0].statut) }} · {{ d.receptions[0].date_op | date: 'dd/MM/yyyy' }}</small> }
+                  </li>
+                  <li data-fait="true" data-courant="true">
+                    <span>Facture</span>
+                    <strong>{{ f.reference }}</strong>
+                    <small>{{ statutLabel(f.statut) }} · {{ f.montant_ttc | montant }} {{ f.devise }}</small>
+                  </li>
+                  <li [attr.data-fait]="d.reste_a_payer <= 0 && d.total_paye > 0">
+                    <span>Paiement</span>
+                    <strong>{{ d.paiements.length ? referencesDe(d.paiements) : 'Non engagé' }}</strong>
+                    <small>Payé {{ d.total_paye | montant }} · reste {{ d.reste_a_payer | montant }}</small>
+                  </li>
+                </ol>
+                @if (d.autres_factures.length) {
+                  <p class="bea-apercu__sum">Autres factures sur ce BC : {{ referencesDe(d.autres_factures) }}</p>
+                }
+              </section>
+            </div>
+          }
 
           <section class="bea-apercu__card">
             <h3><mat-icon>list_alt</mat-icon> Lignes facturées <em>{{ f.lignes.length }}</em></h3>
@@ -795,6 +939,21 @@ function totalPaye(paiements: PaiementApercu[]): number {
           @if (f.observation) {
             <p class="bea-apercu__note"><mat-icon>chat_bubble_outline</mat-icon><span>{{ f.observation }}</span></p>
           }
+
+          @if (dossier()?.evenements?.length) {
+            <section class="bea-apercu__card">
+              <h3><mat-icon>history</mat-icon> Historique <em>{{ dossier()!.evenements.length }}</em></h3>
+              <ul class="bea-histo">
+                @for (e of dossier()!.evenements; track $index) {
+                  <li>
+                    <time>{{ e.created_at | date: 'dd/MM/yyyy HH:mm' }}</time>
+                    <span>{{ actionLabel(e.action) }}{{ e.message ? ' — ' + e.message : '' }}</span>
+                    <small>{{ e.user_nom || 'Système' }}</small>
+                  </li>
+                }
+              </ul>
+            </section>
+          }
         </div>
 
         <footer class="bea-apercu__foot">
@@ -821,12 +980,23 @@ function totalPaye(paiements: PaiementApercu[]): number {
     }
   `,
 })
-export class AchatsFactureApercuComponent implements OnInit {
+export class AchatsFactureApercuComponent implements OnInit, OnDestroy {
   readonly factureId = input.required<string>();
   readonly closed = output<void>();
 
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
+  private readonly feedback = inject(FeedbackService);
+  private readonly sanitizer = inject(DomSanitizer);
+
+  readonly dossier = signal<FactureDossier | null>(null);
+  readonly pieceOuverte = signal<Justificatif | null>(null);
+  readonly pieceUrl = signal<SafeResourceUrl | null>(null);
+  readonly pieceBusy = signal(false);
+  readonly uploadBusy = signal(false);
+  private blobUrl: string | null = null;
+
+  readonly nbControlesOk = computed(() => (this.dossier()?.controles ?? []).filter((c) => c.ok === true).length);
 
   readonly facture = signal<FactureApercu | null>(null);
   readonly bon = signal<BonApercu | null>(null);
@@ -880,6 +1050,116 @@ export class AchatsFactureApercuComponent implements OnInit {
     this.api.get<PaiementApercu[]>('/mg/achats/paiements', { facture_id: id }).subscribe({
       next: (rows) => this.paiements.set(rows.filter((p) => p.facture_id === id)),
     });
+    this.chargerDossier();
+  }
+
+  ngOnDestroy(): void {
+    this.libererPiece();
+  }
+
+  private chargerDossier(): void {
+    this.api.get<FactureDossier>(`/mg/achats/factures/${this.factureId()}/dossier`).subscribe({
+      next: (d) => this.dossier.set(d),
+    });
+  }
+
+  private libererPiece(): void {
+    if (this.blobUrl) URL.revokeObjectURL(this.blobUrl);
+    this.blobUrl = null;
+    this.pieceUrl.set(null);
+  }
+
+  estImage(d: Justificatif): boolean {
+    return (d.mime_type ?? '').startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(d.filename);
+  }
+
+  taille(bytes: number): string {
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} Ko`;
+    return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} Mo`;
+  }
+
+  ocrLabel(s: string): string {
+    return { done: 'Lue (OCR)', processing: 'Lecture…', failed: 'OCR échoué' }[s] ?? 'OCR en attente';
+  }
+
+  actionLabel(a: string): string {
+    return ACTION_LABELS[a] ?? a;
+  }
+
+  referencesDe(etapes: DossierEtape[]): string {
+    return etapes.map((e) => e.reference).join(', ');
+  }
+
+  voirPiece(d: Justificatif): void {
+    if (this.pieceOuverte()?.id === d.id) {
+      this.pieceOuverte.set(null);
+      this.libererPiece();
+      return;
+    }
+    this.pieceBusy.set(true);
+    this.api.download(`/ged/documents/${d.id}/download`).subscribe({
+      next: (blob) => {
+        this.libererPiece();
+        const typed = blob.type ? blob : new Blob([blob], { type: this.estImage(d) ? 'image/*' : 'application/pdf' });
+        this.blobUrl = URL.createObjectURL(typed);
+        this.pieceUrl.set(this.sanitizer.bypassSecurityTrustResourceUrl(this.blobUrl));
+        this.pieceOuverte.set(d);
+        this.pieceBusy.set(false);
+      },
+      error: () => {
+        this.pieceBusy.set(false);
+        this.feedback.error({ title: 'Pièce illisible', message: 'Accès GED refusé ou fichier introuvable.' });
+      },
+    });
+  }
+
+  telechargerPiece(d: Justificatif): void {
+    this.api.download(`/ged/documents/${d.id}/download`).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = d.filename || 'facture-fournisseur';
+        a.click();
+        URL.revokeObjectURL(url);
+      },
+      error: () => this.feedback.error({ title: 'Téléchargement impossible', message: 'Accès GED refusé ou fichier introuvable.' }),
+    });
+  }
+
+  joindre(ev: Event, f: FactureApercu): void {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    if (!/\.(pdf|png|jpe?g|webp)$/i.test(file.name) || file.size > 25 * 1024 * 1024) {
+      this.feedback.error({ title: 'Pièce refusée', message: 'PDF ou image, 25 Mo maximum.' });
+      return;
+    }
+    this.uploadBusy.set(true);
+    this.api
+      .upload('/documents/from-operation', file, {
+        espace_code: 'moyens-generaux',
+        module_code: 'achats-appro',
+        source_type: 'achat_facture',
+        source_id: f.id,
+        doc_type: 'FACTURE_FOURNISSEUR',
+        title: `Facture fournisseur ${f.numero_fournisseur || f.reference}`,
+        reference: f.numero_fournisseur || f.reference,
+        date_document: f.date_facture,
+        fournisseur_id: f.fournisseur_id,
+      })
+      .subscribe({
+        next: () => {
+          this.uploadBusy.set(false);
+          this.feedback.success({ title: 'Pièce rattachée', message: `Facture fournisseur archivée pour ${f.reference}.` });
+          this.chargerDossier();
+        },
+        error: () => {
+          this.uploadBusy.set(false);
+          this.feedback.error({ title: 'Archivage refusé', message: 'Vérifiez la permission ged.write.' });
+        },
+      });
   }
 
   statutLabel(s: string): string {

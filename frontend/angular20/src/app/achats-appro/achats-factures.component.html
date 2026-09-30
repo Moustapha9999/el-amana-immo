@@ -60,6 +60,7 @@
               <th>TTC</th>
               <th>Statut</th>
               <th>3WM</th>
+              <th>Preuve</th>
               <th class="bea-ach__th-actions">Actions</th>
             </tr>
           </thead>
@@ -72,6 +73,15 @@
                 <td><span class="bea-ach__badge" [attr.data-statut]="r.statut">{{ r.statut }}</span></td>
                 <td>
                   <span class="bea-ach__badge" [attr.data-statut]="ecartStatut(r)">{{ ecartLabel(r) }}</span>
+                </td>
+                <td>
+                  @if (r.nb_justificatifs) {
+                    <span class="bea-ach__badge" data-statut="VALIDE" title="Facture fournisseur jointe">
+                      <mat-icon style="font-size:0.9rem;width:0.9rem;height:0.9rem;vertical-align:-2px">attach_file</mat-icon> {{ r.nb_justificatifs }}
+                    </span>
+                  } @else {
+                    <span class="bea-ach__badge" data-statut="ANOMALIE" title="Joindre la facture reçue du fournisseur">Manquante</span>
+                  }
                 </td>
                 <td class="bea-ach__actions">
                   <button type="button" class="bea-ach__icon-btn" title="Voir" (click)="open(r)">
@@ -87,7 +97,7 @@
               </tr>
             } @empty {
               <tr class="bea-ach__empty">
-                <td colspan="6">
+                <td colspan="7">
                   <mat-icon>request_quote</mat-icon>
                   <p>Aucune facture.</p>
                 </td>
@@ -143,6 +153,25 @@
         <label>Date échéance <input type="date" formControlName="date_echeance" /></label>
         <label style="grid-column:1/-1">Observation <textarea formControlName="observation" rows="2"></textarea></label>
       </div>
+
+      @if (!id()) {
+        <div class="bea-fac__preuve" [attr.data-ok]="preuve() ? 'true' : null">
+          <mat-icon>{{ preuve() ? 'task' : 'upload_file' }}</mat-icon>
+          <div>
+            <strong>Facture du fournisseur (preuve)</strong>
+            <span>{{ preuve() ? preuve()!.name + ' · ' + tailleFichier(preuve()!.size) : 'PDF ou photo de la facture reçue — archivée en GED et lue par OCR.' }}</span>
+          </div>
+          <label class="bea-ach__btn bea-ach__btn--ghost">
+            <mat-icon>attach_file</mat-icon> {{ preuve() ? 'Changer' : 'Joindre' }}
+            <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden (change)="choisirPreuve($event)" />
+          </label>
+          @if (preuve()) {
+            <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Retirer" (click)="preuve.set(null)">
+              <mat-icon>close</mat-icon>
+            </button>
+          }
+        </div>
+      }
 
       @if (chargementBc()) {
         <p class="bea-ach__note"><mat-icon>hourglass_empty</mat-icon> Récupération des détails du BC…</p>
@@ -302,7 +331,13 @@
 
     @if (id()) {
       <div style="margin-top:1rem">
-        <bea-mg-ged moduleCode="achats-appro" entity="achat_facture" [entityId]="id()!" />
+        <bea-mg-ged
+          moduleCode="achats-appro"
+          entity="achat_facture"
+          docType="FACTURE_FOURNISSEUR"
+          [entityId]="id()!"
+          [reference]="current()?.numero_fournisseur || current()?.reference || null"
+        />
       </div>
     }
   }

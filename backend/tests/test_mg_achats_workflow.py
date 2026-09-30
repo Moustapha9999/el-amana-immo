@@ -294,6 +294,51 @@ async def test_proposition_facture_deduit_le_deja_facture():
     assert p.nb_factures == 1
 
 
+def _facture_dossier(**kw):
+    base = dict(
+        id=uuid4(),
+        fournisseur_id=uuid4(),
+        numero_fournisseur="FAC0001",
+        montant_ttc=Decimal("61250"),
+        ecart_quantite=False,
+        ecart_montant=False,
+        date_echeance=None,
+    )
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+@pytest.mark.asyncio
+async def test_controles_facture_sans_preuve():
+    db = MagicMock()
+    db.scalar = AsyncMock(return_value=None)
+    svc = MgAchatsService(db)
+    bon = _bon_facturable()
+    c = {x.code: x for x in await svc._controles_facture(_facture_dossier(), bon, [], Decimal("61250"))}
+    assert c["JUSTIFICATIF"].ok is False
+    assert c["NUMERO"].ok is True
+    assert "OCR_MONTANT" not in c
+    assert c["RECEPTION"].ok is True
+    assert c["DOUBLON"].ok is True
+
+
+@pytest.mark.asyncio
+async def test_controles_facture_ocr_et_doublon():
+    db = MagicMock()
+    db.scalar = AsyncMock(return_value="FAC-20260001")
+    svc = MgAchatsService(db)
+    doc = SimpleNamespace(ocr_status="done", ocr_text="MAURITEL Facture N° FAC 0001 Total TTC : 61 250,00 MRU")
+    c = {
+        x.code: x
+        for x in await svc._controles_facture(_facture_dossier(), _bon_facturable(), [doc], Decimal("61250"))
+    }
+    assert c["JUSTIFICATIF"].ok is True
+    assert c["OCR_MONTANT"].ok is True
+    assert c["OCR_NUMERO"].ok is True
+    assert c["DOUBLON"].ok is False
+    assert "FAC-20260001" in c["DOUBLON"].detail
+
+
 def test_taux_tva_facture_repris_du_bc():
     svc = MgAchatsService(MagicMock())
     bon = _bon_facturable()

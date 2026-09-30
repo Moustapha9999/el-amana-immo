@@ -33,6 +33,7 @@ from app.models.mg_achats import (
     MgAchatReception,
     MgAchatReceptionLigne,
 )
+from app.models.ged import GedDocument
 from app.models.mg_ops import MgBcLigne, MgBonCommande
 from app.models.mg_stock import MgArticle
 from app.models.organisation import Fournisseur
@@ -47,8 +48,13 @@ from app.schemas.mg_achats import (
     DemandeUpdate,
     DevisCreate,
     DevisUpdate,
+    DossierControleOut,
+    DossierEtapeOut,
+    DossierEvenementOut,
     FactureCreate,
+    FactureDossierOut,
     FactureLigneIn,
+    JustificatifOut,
     FactureLigneProposee,
     FacturePropositionOut,
     FactureUpdate,
@@ -130,6 +136,10 @@ def _line_ht(qty: Decimal, pu: Decimal, remise_pct: Decimal = Decimal("0")) -> D
 
 def _line_ttc(ht: Decimal, taux_tva: Decimal = Decimal("0")) -> Decimal:
     return _money(ht * (Decimal("1") + Decimal(taux_tva or 0) / Decimal("100")))
+
+
+GED_MODULE_ACHATS = "achats-appro"
+GED_ENTITY_FACTURE = "achat_facture"
 
 
 def _cle_designation(v: str | None) -> str:
@@ -2400,6 +2410,240 @@ class MgAchatsService:
             qty_recue=qty_rec,
             qty_facturee=qty_fac if facture.lignes else None,
         )
+
+    async def justificatifs_facture(self, facture_ids: list[uuid.UUID]) -> dict[str, list[GedDocument]]:
+        if not facture_ids:
+            return {}
+        rows = (
+            await self.db.execute(
+                select(GedDocument)
+                .where(
+                    GedDocument.module_code == GED_MODULE_ACHATS,
+                    GedDocument.entity == GED_ENTITY_FACTURE,
+                    GedDocument.entity_id.in_([str(i) for i in facture_ids]),
+                    GedDocument.deleted_at.is_(None),
+                )
+                .order_by(GedDocument.created_at.desc())
+            )
+        ).scalars().all()
+        out: dict[str, list[GedDocument]] = {}
+        for d in rows:
+            out.setdefault(d.entity_id, []).append(d)
+        return out
+
+    async def dossier_facture(self, facture_id: uuid.UUID, *, avec_ocr: bool = True) -> FactureDossierOut:
+        facture = await self.get_facture(facture_id)
+        bon = await self.db.scalar(
+            select(MgBonCommande)
+            .options(selectinload(MgBonCommande.lignes))
+            .where(MgBonCommande.id == facture.bon_id)
+        )
+        docs = (await self.justificatifs_facture([facture.id])).get(str(facture.id), [])
+
+        demande = None
+        if bon is not None and bon.demande_id:
+            dem = await self.db.get(MgAchatDemande, bon.demande_id)
+            if dem is not None and dem.deleted_at is None:
+                demande = DossierEtapeOut(
+                    id=dem.id, reference=dem.reference, statut=dem.statut, date_op=dem.date_demande
+                )
+        receptions = [
+            DossierEtapeOut(id=r.id, reference=r.reference, statut=r.statut, date_op=r.date_reception)
+            for r in await self.list_receptions(bon_id=facture.bon_id)
+        ]
+        paiements_rows = [p for p in await self.list_paiements(facture_id=facture.id) if p.statut != "ANNULE"]
+        paiements = [
+            DossierEtapeOut(
+                id=p.id,
+                reference=p.reference,
+                statut=p.statut,
+                date_op=p.date_paiement or p.date_echeance,
+                montant=p.montant,
+            )
+            for p in paiements_rows
+        ]
+        autres = [
+            f
+            for f in await self.list_factures(bon_id=facture.bon_id)
+            if f.id != facture.id and f.statut != "ANNULEE"
+        ]
+        total_paye = _money(
+            sum((Decimal(p.montant or 0) for p in paiements_rows if p.statut == "PAYE"), Decimal("0"))
+        )
+        reste = _money(max(Decimal("0"), Decimal(facture.montant_ttc or 0) - total_paye))
+
+        controles = await self._controles_facture(facture, bon, docs, reste)
+
+        events = await self.list_evenements("facture", facture.id)
+        noms: dict[uuid.UUID, str] = {}
+        user_ids = {e.user_id for e in events if e.user_id}
+        if user_ids:
+            for u in (await self.db.execute(select(User).where(User.id.in_(user_ids)))).scalars():
+                noms[u.id] = u.full_name or u.email
+        return FactureDossierOut(
+            facture_id=facture.id,
+            justificatifs=[
+                JustificatifOut(
+                    id=d.id,
+                    filename=d.filename,
+                    title=d.title,
+                    mime_type=d.mime_type,
+                    size_bytes=d.size_bytes or 0,
+                    doc_type=d.doc_type,
+                    created_at=d.created_at,
+                    ocr_status=d.ocr_status or "pending",
+                    ocr_extrait=(" ".join((d.ocr_text or "").split())[:600] or None) if avec_ocr else None,
+                )
+                for d in docs
+            ],
+            demande=demande,
+            bon=(
+                DossierEtapeOut(
+                    id=bon.id,
+                    reference=bon.reference,
+                    statut=bon.statut,
+                    date_op=bon.date_bc,
+                    montant=bon.total_ttc,
+                )
+                if bon is not None
+                else None
+            ),
+            receptions=receptions,
+            paiements=paiements,
+            autres_factures=[
+                DossierEtapeOut(
+                    id=f.id, reference=f.reference, statut=f.statut, date_op=f.date_facture, montant=f.montant_ttc
+                )
+                for f in autres
+            ],
+            controles=controles,
+            evenements=[
+                DossierEvenementOut(
+                    action=e.action,
+                    message=e.message,
+                    user_nom=noms.get(e.user_id) if e.user_id else None,
+                    created_at=e.created_at,
+                )
+                for e in events
+            ],
+            total_paye=total_paye,
+            reste_a_payer=reste,
+        )
+
+    async def _controles_facture(
+        self, facture: MgAchatFacture, bon: MgBonCommande | None, docs: list[GedDocument], reste: Decimal
+    ) -> list[DossierControleOut]:
+        c: list[DossierControleOut] = []
+        c.append(
+            DossierControleOut(
+                code="JUSTIFICATIF",
+                libelle="Facture du fournisseur jointe",
+                ok=bool(docs),
+                detail=f"{len(docs)} pièce(s)" if docs else "Joindre la facture papier / PDF reçue du fournisseur",
+            )
+        )
+        numero = (facture.numero_fournisseur or "").strip()
+        c.append(
+            DossierControleOut(
+                code="NUMERO",
+                libelle="N° de facture fournisseur renseigné",
+                ok=bool(numero),
+                detail=numero or None,
+            )
+        )
+        ocr_docs = [d for d in docs if d.ocr_status == "done" and d.ocr_text]
+        if docs:
+            if ocr_docs:
+                texte = " ".join(d.ocr_text or "" for d in ocr_docs)
+                chiffres = re.sub(r"\D", "", texte)
+                montant = str(int(_money(facture.montant_ttc)))
+                trouve_montant = montant in chiffres
+                c.append(
+                    DossierControleOut(
+                        code="OCR_MONTANT",
+                        libelle="Montant TTC retrouvé dans la pièce",
+                        ok=trouve_montant,
+                        detail=format_montant(facture.montant_ttc)
+                        + (" lu sur la facture" if trouve_montant else " introuvable dans le texte lu"),
+                    )
+                )
+                if numero:
+                    compact = re.sub(r"\s", "", texte).lower()
+                    trouve_num = re.sub(r"\s", "", numero).lower() in compact
+                    c.append(
+                        DossierControleOut(
+                            code="OCR_NUMERO",
+                            libelle="N° fournisseur retrouvé dans la pièce",
+                            ok=trouve_num,
+                            detail=numero,
+                        )
+                    )
+            else:
+                c.append(
+                    DossierControleOut(
+                        code="OCR_MONTANT",
+                        libelle="Lecture automatique (OCR) de la pièce",
+                        ok=None,
+                        detail="Analyse en cours ou indisponible",
+                    )
+                )
+        c.append(
+            DossierControleOut(
+                code="QUANTITES",
+                libelle="Quantités conformes (BC / réception)",
+                ok=not facture.ecart_quantite,
+            )
+        )
+        c.append(
+            DossierControleOut(
+                code="MONTANT",
+                libelle="Montant conforme au BC",
+                ok=not facture.ecart_montant,
+                detail=(
+                    f"BC {format_montant(bon.total_ttc)} · facture {format_montant(facture.montant_ttc)}"
+                    if bon is not None
+                    else None
+                ),
+            )
+        )
+        recu = bon is not None and any(Decimal(l.quantite_recue or 0) > 0 for l in bon.lignes or [])
+        c.append(
+            DossierControleOut(
+                code="RECEPTION",
+                libelle="Marchandise réceptionnée",
+                ok=recu,
+                detail=None if recu else "Aucune quantité reçue sur le BC",
+            )
+        )
+        if numero:
+            doublon = await self.db.scalar(
+                select(MgAchatFacture.reference).where(
+                    MgAchatFacture.id != facture.id,
+                    MgAchatFacture.fournisseur_id == facture.fournisseur_id,
+                    func.lower(func.trim(MgAchatFacture.numero_fournisseur)) == numero.lower(),
+                    MgAchatFacture.statut != "ANNULEE",
+                    MgAchatFacture.deleted_at.is_(None),
+                )
+            )
+            c.append(
+                DossierControleOut(
+                    code="DOUBLON",
+                    libelle="Pas de doublon chez ce fournisseur",
+                    ok=doublon is None,
+                    detail=f"Même n° que {doublon}" if doublon else None,
+                )
+            )
+        if facture.date_echeance and reste > 0:
+            en_retard = facture.date_echeance < date.today()
+            c.append(
+                DossierControleOut(
+                    code="ECHEANCE",
+                    libelle="Échéance respectée",
+                    ok=not en_retard,
+                    detail=f"Reste {format_montant(reste)}" + (" — échéance dépassée" if en_retard else ""),
+                )
+            )
+        return c
 
     async def match_facture(self, facture_id: uuid.UUID) -> ThreeWayMatchOut:
         facture = await self.get_facture(facture_id)

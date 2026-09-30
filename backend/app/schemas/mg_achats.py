@@ -46,6 +46,8 @@ __all__ = [
     "FactureLigneOut",
     "FactureLigneProposee",
     "FacturePropositionOut",
+    "FactureDossierOut",
+    "JustificatifOut",
     "FactureCreate",
     "FactureUpdate",
     "FactureOut",
@@ -492,6 +494,57 @@ class FactureOut(BaseModel):
     ecart_montant: bool
     observation: str | None
     lignes: list[FactureLigneOut] = []
+    nb_justificatifs: int = 0
+
+
+class JustificatifOut(BaseModel):
+    id: UUID
+    filename: str
+    title: str | None = None
+    mime_type: str | None = None
+    size_bytes: int = 0
+    doc_type: str | None = None
+    created_at: datetime | None = None
+    ocr_status: str = "pending"
+    ocr_extrait: str | None = None
+
+
+class DossierEtapeOut(BaseModel):
+    id: UUID
+    reference: str
+    statut: str
+    date_op: date | None = None
+    montant: Decimal | None = None
+
+
+class DossierControleOut(BaseModel):
+    code: str
+    libelle: str
+    ok: bool | None  # None = non vérifiable (ex. OCR en cours)
+    detail: str | None = None
+
+
+class DossierEvenementOut(BaseModel):
+    action: str
+    message: str | None
+    user_nom: str | None
+    created_at: datetime
+
+
+class FactureDossierOut(BaseModel):
+    """Vision 360 d'une facture : preuve fournisseur, chaîne d'achat, contrôles, historique."""
+
+    facture_id: UUID
+    justificatifs: list[JustificatifOut]
+    demande: DossierEtapeOut | None
+    bon: DossierEtapeOut | None
+    receptions: list[DossierEtapeOut]
+    paiements: list[DossierEtapeOut]
+    autres_factures: list[DossierEtapeOut]
+    controles: list[DossierControleOut]
+    evenements: list[DossierEvenementOut]
+    total_paye: Decimal
+    reste_a_payer: Decimal
 
 
 class ThreeWayMatchOut(BaseModel):

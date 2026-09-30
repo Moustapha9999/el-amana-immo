@@ -33,6 +33,7 @@ from app.schemas.mg_achats import (
     EvenementOut,
     FactureCreate,
     FactureOut,
+    FactureDossierOut,
     FacturePropositionOut,
     FactureUpdate,
     FournisseurSummaryOut,
@@ -1125,7 +1126,12 @@ async def list_factures(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.purchase.view")),
 ):
-    return await MgAchatsService(db).list_factures(bon_id=bon_id)
+    svc = MgAchatsService(db)
+    rows = await svc.list_factures(bon_id=bon_id)
+    docs = await svc.justificatifs_facture([r.id for r in rows])
+    for r in rows:
+        r.nb_justificatifs = len(docs.get(str(r.id), []))
+    return rows
 
 
 @router.get(
@@ -1163,7 +1169,22 @@ async def get_facture(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.purchase.view")),
 ):
-    return await MgAchatsService(db).get_facture(facture_id)
+    svc = MgAchatsService(db)
+    row = await svc.get_facture(facture_id)
+    row.nb_justificatifs = len((await svc.justificatifs_facture([row.id])).get(str(row.id), []))
+    return row
+
+
+@router.get("/factures/{facture_id}/dossier", response_model=FactureDossierOut, dependencies=_module)
+async def dossier_facture(
+    facture_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.view")),
+):
+    from app.services.permission_service import load_user_permission_codes
+
+    lecture_ged = user.is_superuser or "ged.read" in await load_user_permission_codes(db, user)
+    return await MgAchatsService(db).dossier_facture(facture_id, avec_ocr=lecture_ged)
 
 
 @router.patch("/factures/{facture_id}", response_model=FactureOut, dependencies=_module)
