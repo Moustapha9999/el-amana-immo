@@ -6252,6 +6252,462 @@ button.bea-admin-kpi {
   color: #166534;
 }
 
+/* Consultation rapide d'un article (État du stock → Voir) */
+.bea-stock-view {
+  width: min(32rem, calc(100vw - 1.5rem));
+}
+.bea-stock-view__head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.bea-stock-view__head h2 {
+  overflow-wrap: anywhere;
+}
+.bea-stock-view__head code {
+  font-size: 0.75rem;
+  color: #1a5278;
+}
+.bea-stock-view__avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, #0b2545, #1a5278);
+  color: #fff;
+}
+.bea-stock-view__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.bea-stock-view__kpis {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 0.6rem;
+}
+.bea-stock-view__kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #f8fafc;
+}
+.bea-stock-view__kpi > span:first-child {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+.bea-stock-view__kpi strong {
+  font-size: 1.25rem;
+  color: #0f172a;
+}
+.bea-stock-view__kpi strong small {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+}
+.bea-stock-view__kpi--main {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+.bea-stock-view__kpi--main[data-niveau='faible'] {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+.bea-stock-view__kpi--main[data-niveau='epuise'] {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.bea-stock-view__kpi--main strong {
+  font-size: 1.6rem;
+}
+.bea-stock-view__kpi--main .bea-stock-badge {
+  align-self: flex-start;
+}
+.bea-stock-view__gauge-track {
+  position: relative;
+  height: 0.6rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+.bea-stock-view__gauge-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #16a34a;
+  transition: width 0.4s ease;
+}
+.bea-stock-view__gauge[data-niveau='faible'] .bea-stock-view__gauge-track i {
+  background: #f59e0b;
+}
+.bea-stock-view__gauge[data-niveau='epuise'] .bea-stock-view__gauge-track i {
+  background: #dc2626;
+}
+.bea-stock-view__gauge-track b {
+  position: absolute;
+  top: -0.2rem;
+  width: 2px;
+  height: 1rem;
+  background: #0f172a;
+  opacity: 0.55;
+}
+.bea-stock-view__gauge-legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+.bea-stock-view__infos {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0;
+}
+.bea-stock-view__infos > div {
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.65rem;
+  background: #f1f5f9;
+  min-width: 0;
+}
+.bea-stock-view__infos dt {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+}
+.bea-stock-view__infos dt mat-icon {
+  font-size: 0.95rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  color: #1a5278;
+}
+.bea-stock-view__infos dd {
+  margin: 0.2rem 0 0;
+  font-weight: 600;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+.bea-stock-view__foot {
+  flex-wrap: wrap;
+  padding-top: 0.25rem;
+}
+.bea-stock-view__infos--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.bea-stock-view__wide {
+  grid-column: 1 / -1;
+}
+.bea-stock-view__infos dd code {
+  font-size: 0.8rem;
+  color: #1a5278;
+}
+@media (max-width: 520px) {
+  .bea-stock-view__kpis,
+  .bea-stock-view__infos {
+    grid-template-columns: 1fr 1fr;
+  }
+  .bea-stock-view__kpi--main {
+    grid-column: 1 / -1;
+  }
+}
+
+.bea-stock-badge[data-niveau='warn'] {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+/* Consultation d'un mouvement (Entrées, Sorties, Journal) */
+.bea-mvt-view__avatar[data-type='ENTREE'] {
+  background: linear-gradient(135deg, #15803d, #22c55e);
+}
+.bea-mvt-view__avatar[data-type='SORTIE'] {
+  background: linear-gradient(135deg, #b91c1c, #ef4444);
+}
+.bea-mvt-view__avatar[data-type='AJUSTEMENT'] {
+  background: linear-gradient(135deg, #b45309, #f59e0b);
+}
+.bea-mvt-view__hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+.bea-mvt-view__hero[data-type='ENTREE'] {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+.bea-mvt-view__hero[data-type='SORTIE'] {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.bea-mvt-view__hero[data-type='AJUSTEMENT'] {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+.bea-mvt-view__hero > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.bea-mvt-view__hero span {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+.bea-mvt-view__hero > div:first-child strong {
+  font-size: 2rem;
+  line-height: 1.1;
+  color: #0f172a;
+}
+.bea-mvt-view__hero[data-type='ENTREE'] > div:first-child strong {
+  color: #15803d;
+}
+.bea-mvt-view__hero[data-type='SORTIE'] > div:first-child strong {
+  color: #b91c1c;
+}
+.bea-mvt-view__hero[data-type='AJUSTEMENT'] > div:first-child strong {
+  color: #b45309;
+}
+.bea-mvt-view__hero-side {
+  align-items: flex-end;
+  text-align: right;
+}
+.bea-mvt-view__hero-side strong {
+  font-size: 1.25rem;
+  color: #0f172a;
+}
+.bea-mvt-view__periode {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: #dcfce7;
+  color: #166534;
+}
+.bea-mvt-view__periode[data-cloturee='1'] {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.bea-mvt-view__note,
+.bea-alert-view__msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.75rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  background: #f1f5f9;
+  color: #334155;
+}
+.bea-mvt-view__note mat-icon,
+.bea-alert-view__msg mat-icon {
+  flex-shrink: 0;
+  font-size: 1.15rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  color: #64748b;
+}
+.bea-mvt-view__del {
+  margin-right: auto;
+}
+
+/* Alertes stock */
+.bea-alert-live {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #bae6fd;
+  border-radius: 0.85rem;
+  background: #f0f9ff;
+  color: #0c4a6e;
+  font-size: 0.85rem;
+}
+.bea-alert-live p {
+  flex: 1 1 18rem;
+  margin: 0;
+}
+.bea-alert-live__dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: #0ea5e9;
+  box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.6);
+  animation: bea-alert-pulse 2s infinite;
+}
+@keyframes bea-alert-pulse {
+  70% {
+    box-shadow: 0 0 0 0.55rem rgba(14, 165, 233, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(14, 165, 233, 0);
+  }
+}
+.bea-alert-live__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 600;
+  color: #166534;
+}
+.bea-alert-live__state--off {
+  color: #991b1b;
+}
+.bea-alert-live__state mat-icon {
+  font-size: 1.1rem;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+.bea-alert-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #075985;
+}
+.bea-alert-kind mat-icon {
+  font-size: 1rem;
+  width: 1rem;
+  height: 1rem;
+}
+.bea-alert-view__avatar[data-niveau='epuise'] {
+  background: linear-gradient(135deg, #b91c1c, #ef4444);
+}
+.bea-alert-view__avatar[data-niveau='faible'] {
+  background: linear-gradient(135deg, #b45309, #f59e0b);
+}
+.bea-alert-view__avatar[data-niveau='warn'] {
+  background: linear-gradient(135deg, #075985, #0ea5e9);
+}
+.bea-alert-view__msg[data-niveau='epuise'] {
+  background: #fef2f2;
+  color: #7f1d1d;
+}
+.bea-alert-view__msg[data-niveau='epuise'] mat-icon {
+  color: #dc2626;
+}
+.bea-alert-view__msg[data-niveau='faible'] {
+  background: #fffbeb;
+  color: #78350f;
+}
+.bea-alert-view__msg[data-niveau='faible'] mat-icon {
+  color: #d97706;
+}
+.bea-alert-view__msg[data-niveau='warn'] {
+  background: #f0f9ff;
+  color: #0c4a6e;
+}
+.bea-alert-view__msg[data-niveau='warn'] mat-icon {
+  color: #0284c7;
+}
+
+/* Consultation d'une campagne d'inventaire */
+.bea-inv-view__summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.bea-inv-view__summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #f8fafc;
+  min-width: 0;
+}
+.bea-inv-view__summary span:first-child {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+.bea-inv-view__summary strong {
+  font-size: 0.9rem;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+.bea-inv-view__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.bea-inv-view__counts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.bea-inv-view__counts mat-icon {
+  font-size: 1rem;
+  width: 1rem;
+  height: 1rem;
+}
+.bea-inv-view__counts [data-niveau='normal'] {
+  background: #dcfce7;
+  color: #166534;
+}
+.bea-inv-view__counts [data-niveau='faible'] {
+  background: #fef3c7;
+  color: #92400e;
+}
+.bea-inv-view__counts [data-niveau='epuise'] {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.bea-inv-view__ecart {
+  font-weight: 700;
+}
+.bea-inv-view__ecart[data-signe='plus'] {
+  color: #b45309;
+}
+.bea-inv-view__ecart[data-signe='moins'] {
+  color: #b91c1c;
+}
+.bea-inv-view__ecart[data-signe='zero'] {
+  color: #15803d;
+}
+.bea-inv-view__todo {
+  font-size: 0.78rem;
+  font-style: italic;
+  color: #94a3b8;
+}
+@media (max-width: 640px) {
+  .bea-inv-view__summary {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 .bea-stock-fiche {
   background: #fff;
   border: 1px solid #dbe3ee;

@@ -10,7 +10,9 @@ import {
   StockMouvementActions,
   StockMouvementEditComponent,
   StockMouvementRow,
+  StockMouvementViewComponent,
 } from './stock-mouvement-edit.component';
+import { StockAlertesWatcherService } from './stock-alertes-watcher.service';
 
 interface Article {
   id: string;
@@ -36,7 +38,15 @@ interface Paginated<T> {
 @Component({
   selector: 'bea-stock-mouvements',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MatIconModule, DatePipe, QuantitePipe, PaginationComponent, StockMouvementEditComponent],
+  imports: [
+    ReactiveFormsModule,
+    MatIconModule,
+    DatePipe,
+    QuantitePipe,
+    PaginationComponent,
+    StockMouvementEditComponent,
+    StockMouvementViewComponent,
+  ],
   template: `
     <section class="bea-mg">
       <header class="bea-mg__head">
@@ -121,7 +131,7 @@ interface Paginated<T> {
                     <button
                       type="button"
                       class="bea-mg__icon-btn bea-mg__icon-btn--danger"
-                      [title]="m.quantite_modifiable ? 'Supprimer' : mouvementActions.peutSupprimer(m) ? 'Suppression administrateur (motif requis)' : 'Suppression impossible (période clôturée, ajustement ou mouvement de workflow)'"
+                      [title]="m.quantite_modifiable ? 'Supprimer' : mouvementActions.peutSupprimer(m) ? 'Suppression administrateur (motif requis)' : 'Suppression impossible (période clôturée, inventaire ou mouvement de workflow)'"
                       [disabled]="!mouvementActions.peutSupprimer(m)"
                       (click)="supprimer(m)"
                     >
@@ -218,71 +228,14 @@ interface Paginated<T> {
       }
 
       @if (viewTarget(); as m) {
-        <div class="bea-mg__backdrop" (click)="viewTarget.set(null)" role="presentation"></div>
-        <div class="bea-mg__modal bea-mg__modal--sm" role="dialog" aria-modal="true" aria-label="Détail mouvement">
-          <header class="bea-mg__modal-head">
-            <div>
-              <p class="bea-stock-page__kicker">Consultation</p>
-              <h2>{{ m.reference }}</h2>
-            </div>
-            <button type="button" class="bea-mg__icon-btn" (click)="viewTarget.set(null)" title="Fermer">
-              <mat-icon>close</mat-icon>
-            </button>
-          </header>
-          <div class="bea-mg__modal-body">
-            <div class="bea-mg__grid">
-              <label>
-                Date
-                <input [value]="m.date_mouvement | date: 'short'" readonly />
-              </label>
-              <label>
-                Type
-                <input [value]="typeLabel(m.type_mouvement)" readonly />
-              </label>
-              <label class="bea-mg__span2">
-                Article
-                <input [value]="m.article_code || articleLabel(m.article_id)" readonly />
-              </label>
-              <label>
-                Initiateur
-                <input [value]="m.initiateur_nom || '—'" readonly />
-              </label>
-              <label>
-                Stock disponible
-                <input [value]="m.stock_disponible != null ? m.stock_disponible : '—'" readonly />
-              </label>
-              <label>
-                Quantité
-                <input [value]="m.quantite" readonly />
-              </label>
-              <label>
-                Agence
-                <input [value]="agenceLabel(m.agence_id)" readonly />
-              </label>
-              <label class="bea-mg__span2">
-                Motif
-                <input [value]="m.motif || '—'" readonly />
-              </label>
-              @if (m.observation) {
-                <label class="bea-mg__span2">
-                  Observation
-                  <input [value]="m.observation" readonly />
-                </label>
-              }
-            </div>
-            @if (m.periode_libelle) {
-              <p style="margin:0.85rem 0 0;font-size:0.8rem;color:#64748b">
-                Période {{ m.periode_libelle }} {{ m.periode_cloturee ? '(clôturée)' : '(ouverte)' }}
-              </p>
-            }
-          </div>
-          <footer class="bea-mg__modal-foot">
-            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="viewTarget.set(null)">Fermer</button>
-            <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="viewTarget.set(null); editTarget.set(m)">
-              <mat-icon>edit</mat-icon> Modifier
-            </button>
-          </footer>
-        </div>
+        <bea-stock-mouvement-view
+          [mouvement]="m"
+          [agence]="m.agence_id ? agenceLabel(m.agence_id) : null"
+          [peutSupprimer]="mouvementActions.peutSupprimer(m)"
+          (closed)="viewTarget.set(null)"
+          (modifier)="viewTarget.set(null); editTarget.set(m)"
+          (supprimer)="viewTarget.set(null); supprimer(m)"
+        />
       }
 
       @if (editTarget(); as e) {
@@ -290,7 +243,7 @@ interface Paginated<T> {
           [mouvement]="e"
           [agences]="agences()"
           (closed)="editTarget.set(null)"
-          (saved)="editTarget.set(null); load()"
+          (saved)="editTarget.set(null); apresMutation()"
         />
       }
     </section>
@@ -314,6 +267,7 @@ export class StockMouvementsComponent implements OnInit {
   readonly viewTarget = signal<Mouvement | null>(null);
   readonly editTarget = signal<Mouvement | null>(null);
   protected readonly mouvementActions = inject(StockMouvementActions);
+  private readonly alertesWatcher = inject(StockAlertesWatcherService);
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -446,7 +400,12 @@ export class StockMouvementsComponent implements OnInit {
   }
 
   supprimer(m: Mouvement): void {
-    this.mouvementActions.supprimer(m).subscribe(() => this.load());
+    this.mouvementActions.supprimer(m).subscribe(() => this.apresMutation());
+  }
+
+  apresMutation(): void {
+    this.load();
+    this.alertesWatcher.refresh(true);
   }
 
   submit(): void {
@@ -466,7 +425,7 @@ export class StockMouvementsComponent implements OnInit {
         this.saving.set(false);
         this.msg.set('Mouvement enregistré.');
         this.closeCreate();
-        this.load();
+        this.apresMutation();
       },
       error: (err) => {
         this.modalErreur.set(err?.error?.detail || 'Mouvement refusé');

@@ -177,22 +177,69 @@
     </form>
 
     @if (matchResult(); as m) {
-      <div class="bea-ach__panel" style="margin-top:1rem">
+      <div class="bea-ach__panel bea-ach__3wm" [attr.data-resultat]="m.resultat">
         <div class="bea-ach__panel-top">
-          <h2>Résultat contrôle 3 voies</h2>
+          <div class="bea-ach__3wm-title">
+            <span class="bea-ach__kpi-icon" [attr.data-tone]="m.resultat === 'CONFORME' ? 'teal' : 'danger'">
+              <mat-icon>{{ m.resultat === 'CONFORME' ? 'verified' : 'report' }}</mat-icon>
+            </span>
+            <div>
+              <h2>Résultat contrôle 3 voies</h2>
+              <p class="bea-ach__muted">Bon de commande · Réception · Facture</p>
+            </div>
+          </div>
           <span class="bea-ach__badge" [attr.data-statut]="m.resultat">{{ m.resultat }}</span>
         </div>
-        @if (m.detail) { <p>{{ m.detail }}</p> }
-        <div class="bea-ach__grid" style="margin-top:0.5rem">
-          <div><strong>BC TTC</strong><br />{{ m.bc_total_ttc ?? '—' }} MRU</div>
-          <div><strong>Facture TTC</strong><br />{{ m.facture_ttc ?? '—' }} MRU</div>
-          <div><strong>Qté commandée</strong><br />{{ m.qty_commandee ?? '—' }}</div>
-          <div><strong>Qté reçue</strong><br />{{ m.qty_recue ?? '—' }}</div>
-          <div><strong>Qté facturée</strong><br />{{ m.qty_facturee ?? '—' }}</div>
-          <div>
-            <strong>Écarts</strong><br />
-            Qté: {{ m.ecart_quantite ? 'Oui' : 'Non' }} · Montant: {{ m.ecart_montant ? 'Oui' : 'Non' }}
+
+        @if (matchDetails().length) {
+          <ul class="bea-ach__3wm-alert">
+            @for (d of matchDetails(); track $index) {
+              <li><mat-icon>error_outline</mat-icon>{{ d }}</li>
+            }
+          </ul>
+        }
+
+        <div class="bea-ach__3wm-cols">
+          <div class="bea-ach__3wm-card">
+            <p class="bea-ach__kicker"><mat-icon>receipt_long</mat-icon> Bon de commande</p>
+            <dl>
+              <div><dt>Qté commandée</dt><dd>{{ m.qty_commandee | quantite }}</dd></div>
+              <div><dt>Montant TTC</dt><dd>{{ m.bc_total_ttc | montant:'MRU' }}</dd></div>
+            </dl>
           </div>
+          <div class="bea-ach__3wm-card">
+            <p class="bea-ach__kicker"><mat-icon>inventory_2</mat-icon> Réception</p>
+            <dl>
+              <div><dt>Qté reçue</dt><dd>{{ m.qty_recue | quantite }}</dd></div>
+              <div><dt>Montant TTC</dt><dd class="bea-ach__3wm-na">—</dd></div>
+            </dl>
+          </div>
+          <div class="bea-ach__3wm-card bea-ach__3wm-card--facture">
+            <p class="bea-ach__kicker"><mat-icon>request_quote</mat-icon> Facture</p>
+            <dl>
+              <div>
+                <dt>Qté facturée</dt>
+                <dd [class.bea-ach__3wm-ko]="m.ecart_quantite">{{ m.qty_facturee | quantite }}</dd>
+              </div>
+              <div>
+                <dt>Montant TTC</dt>
+                <dd [class.bea-ach__3wm-ko]="m.ecart_montant">{{ m.facture_ttc | montant:'MRU' }}</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+
+        <div class="bea-ach__3wm-ecarts">
+          <span class="bea-ach__3wm-chip" [attr.data-ko]="m.ecart_quantite || null">
+            <mat-icon>{{ m.ecart_quantite ? 'close' : 'check' }}</mat-icon>
+            Écart quantité
+            <strong>{{ m.ecart_quantite ? ecartQuantiteLabel(m) : 'Aucun' }}</strong>
+          </span>
+          <span class="bea-ach__3wm-chip" [attr.data-ko]="m.ecart_montant || null">
+            <mat-icon>{{ m.ecart_montant ? 'close' : 'check' }}</mat-icon>
+            Écart montant
+            <strong>{{ m.ecart_montant ? ecartMontantLabel(m) : 'Aucun' }}</strong>
+          </span>
         </div>
       </div>
     }
@@ -222,5 +269,9 @@
         <button type="button" class="bea-ach__btn" (click)="confirmAction()">Confirmer</button>
       </footer>
     </div>
+  }
+
+  @if (apercuId(); as aid) {
+    <bea-achats-facture-apercu [factureId]="aid" (closed)="apercuId.set(null)" />
   }
 </section>

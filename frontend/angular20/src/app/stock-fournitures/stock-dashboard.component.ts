@@ -236,12 +236,12 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
               <em>Épuisé</em>
             </span>
           </a>
-          <a class="bea-stock-dash__kpi" routerLink="/stock-fournitures/demandes" style="--i:2">
+          <a class="bea-stock-dash__kpi" routerLink="/demandes-mg/a-traiter" style="--i:2">
             <span class="bea-stock-dash__kpi-icon" data-tone="blue">
               <mat-icon>assignment</mat-icon>
             </span>
             <span class="bea-stock-dash__kpi-meta">
-              <span>Demandes en attente</span>
+              <span>Demandes employés</span>
               <strong>{{ d.demandes_en_attente | quantite }}</strong>
               <em>À traiter</em>
             </span>

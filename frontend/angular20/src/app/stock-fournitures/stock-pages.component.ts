@@ -1,4 +1,4 @@
-import { DatePipe } from '@angular/common';
+import { DatePipe, LowerCasePipe } from '@angular/common';
 import { QuantitePipe } from '../shared/montant.pipe';
 import {
   ChangeDetectionStrategy,
@@ -23,7 +23,9 @@ import {
   StockMouvementActions,
   StockMouvementEditComponent,
   StockMouvementRow,
+  StockMouvementViewComponent,
 } from './stock-mouvement-edit.component';
+import { StockAlertesWatcherService } from './stock-alertes-watcher.service';
 
 interface Article {
   id: string;
@@ -296,31 +298,62 @@ function downloadBlob(blob: Blob, filename: string): void {
 
       @if (detail(); as d) {
         <div class="bea-mg__backdrop" (click)="closeDetail()" role="presentation"></div>
-        <div class="bea-mg__modal bea-mg__modal--sm" role="dialog" aria-modal="true" aria-label="Détail article">
+        <div class="bea-mg__modal bea-stock-view" role="dialog" aria-modal="true" aria-labelledby="stock-view-title">
           <header class="bea-mg__modal-head">
-            <div>
-              <p class="bea-stock-page__kicker">Consultation</p>
-              <h2>{{ d.code }}</h2>
+            <div class="bea-stock-view__head">
+              <span class="bea-stock-view__avatar"><mat-icon>inventory_2</mat-icon></span>
+              <div>
+                <p class="bea-stock-page__kicker">Consultation · <code>{{ d.code }}</code></p>
+                <h2 id="stock-view-title">{{ d.designation }}</h2>
+              </div>
             </div>
             <button type="button" class="bea-mg__icon-btn" (click)="closeDetail()" title="Fermer">
               <mat-icon>close</mat-icon>
             </button>
           </header>
-          <div class="bea-mg__modal-body">
-            <p><strong>{{ d.designation }}</strong></p>
-            <p>Stock actuel : {{ d.stock_actuel | quantite }} {{ d.uom }}</p>
-            <p>Stock minimum : {{ d.stock_min | quantite }}</p>
-            <p>
-              Niveau :
-              <span class="bea-stock-badge" [attr.data-niveau]="d.niveau">{{ d.niveau || '—' }}</span>
-            </p>
-            @if (d.emplacement) {
-              <p>Emplacement : {{ d.emplacement }}</p>
-            }
+          <div class="bea-mg__modal-body bea-stock-view__body">
+            <div class="bea-stock-view__kpis">
+              <div class="bea-stock-view__kpi bea-stock-view__kpi--main" [attr.data-niveau]="d.niveau">
+                <span>Stock actuel</span>
+                <strong>{{ d.stock_actuel | quantite }} <small>{{ d.uom }}</small></strong>
+                <span class="bea-stock-badge" [attr.data-niveau]="d.niveau">{{ d.niveau || '—' }}</span>
+              </div>
+              <div class="bea-stock-view__kpi">
+                <span>Minimum</span>
+                <strong>{{ d.stock_min | quantite }}</strong>
+              </div>
+              <div class="bea-stock-view__kpi">
+                <span>Maximum</span>
+                <strong>{{ d.stock_max != null ? (d.stock_max | quantite) : '—' }}</strong>
+              </div>
+            </div>
+
+            <div class="bea-stock-view__gauge" [attr.data-niveau]="d.niveau">
+              <div class="bea-stock-view__gauge-track">
+                <i [style.width.%]="gaugePct(d)"></i>
+                @if (minPct(d) !== null) {
+                  <b [style.left.%]="minPct(d)" title="Seuil minimum"></b>
+                }
+              </div>
+              <div class="bea-stock-view__gauge-legend">
+                <span>0</span>
+                <span>Seuil min. {{ d.stock_min | quantite }}</span>
+                <span>{{ gaugeMax(d) | quantite }}</span>
+              </div>
+            </div>
+
+            <dl class="bea-stock-view__infos">
+              <div><dt><mat-icon>category</mat-icon> Famille</dt><dd>{{ familleLabel(d.famille_id) }}</dd></div>
+              <div><dt><mat-icon>place</mat-icon> Emplacement</dt><dd>{{ d.emplacement || '—' }}</dd></div>
+              <div><dt><mat-icon>straighten</mat-icon> Unité</dt><dd>{{ d.uom }}</dd></div>
+            </dl>
           </div>
-          <footer class="bea-mg__modal-foot">
+          <footer class="bea-mg__modal-foot bea-stock-view__foot">
             <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/stock-fournitures/alertes" (click)="closeDetail()">
-              Voir alertes
+              <mat-icon>warning_amber</mat-icon> Alertes
+            </a>
+            <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="['/stock-fournitures/articles', d.id]" (click)="closeDetail()">
+              <mat-icon>edit</mat-icon> Ouvrir la fiche
             </a>
             <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="closeDetail()">Fermer</button>
           </footer>
@@ -403,6 +436,21 @@ export class StockEtatComponent implements OnInit {
     this.detail.set(null);
   }
 
+  gaugeMax(a: Article): number {
+    const max = Number(a.stock_max) || 0;
+    if (max > 0) return Math.max(max, Number(a.stock_actuel) || 0);
+    return Math.max((Number(a.stock_min) || 0) * 2, Number(a.stock_actuel) || 0, 1);
+  }
+
+  gaugePct(a: Article): number {
+    return Math.min(100, Math.round(((Number(a.stock_actuel) || 0) / this.gaugeMax(a)) * 100));
+  }
+
+  minPct(a: Article): number | null {
+    const min = Number(a.stock_min) || 0;
+    return min > 0 ? Math.min(100, Math.round((min / this.gaugeMax(a)) * 100)) : null;
+  }
+
   exportFile(format: 'xlsx' | 'pdf'): void {
     const q = this.filters.getRawValue().q.trim();
     const params: Record<string, string> = { format };
@@ -440,6 +488,29 @@ export class StockEtatComponent implements OnInit {
         </div>
       </header>
 
+      <div class="bea-alert-live">
+        <span class="bea-alert-live__dot" aria-hidden="true"></span>
+        <p>
+          <strong>Surveillance active.</strong>
+          Les nouvelles alertes s’affichent en pop-up sur tous les onglets du module (vérification toutes les 30 s).
+        </p>
+        @switch (watcher.notificationsNavigateur()) {
+          @case ('granted') {
+            <span class="bea-alert-live__state"><mat-icon>notifications_active</mat-icon> Notifications Windows activées</span>
+          }
+          @case ('denied') {
+            <span class="bea-alert-live__state bea-alert-live__state--off">
+              <mat-icon>notifications_off</mat-icon> Notifications bloquées par le navigateur
+            </span>
+          }
+          @case ('default') {
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="watcher.demanderNotificationsNavigateur()">
+              <mat-icon>notifications</mat-icon> Activer les notifications Windows
+            </button>
+          }
+        }
+      </div>
+
       <form class="bea-mg__search" [formGroup]="filters" (ngSubmit)="$event.preventDefault()">
         <label class="bea-mg__field bea-mg__field--grow">
           <mat-icon>search</mat-icon>
@@ -469,12 +540,18 @@ export class StockEtatComponent implements OnInit {
             @for (a of filtered(); track (a.type_alerte || '') + (a.article_id || a.code)) {
               <tr>
                 <td>
-                  <span class="bea-stock-badge" [attr.data-niveau]="a.niveau">{{ a.niveau }}</span>
+                  <span class="bea-stock-badge" [attr.data-niveau]="a.niveau">{{ niveauLabel(a) }}</span>
                 </td>
-                <td><code class="bea-mg__code">{{ a.code }}</code></td>
+                <td>
+                  @if (a.article_id) {
+                    <code class="bea-mg__code">{{ a.code }}</code>
+                  } @else {
+                    <span class="bea-alert-kind"><mat-icon>event_busy</mat-icon> Période</span>
+                  }
+                </td>
                 <td>{{ a.designation }}</td>
-                <td>{{ a.stock_actuel | quantite }}</td>
-                <td>{{ a.stock_min | quantite }}</td>
+                <td>{{ a.article_id ? (a.stock_actuel | quantite) : '—' }}</td>
+                <td>{{ a.article_id ? (a.stock_min | quantite) : '—' }}</td>
                 <td class="bea-mg__actions-cell">
                   <button type="button" class="bea-mg__icon-btn" title="Voir" (click)="openDetail(a)">
                     <mat-icon>visibility</mat-icon>
@@ -501,26 +578,74 @@ export class StockEtatComponent implements OnInit {
 
       @if (detail(); as d) {
         <div class="bea-mg__backdrop" (click)="closeDetail()" role="presentation"></div>
-        <div class="bea-mg__modal bea-mg__modal--sm" role="dialog" aria-modal="true" aria-label="Détail alerte">
+        <div class="bea-mg__modal bea-stock-view" role="dialog" aria-modal="true" aria-label="Détail alerte">
           <header class="bea-mg__modal-head">
-            <div>
-              <p class="bea-stock-page__kicker">Alerte</p>
-              <h2>{{ d.code }}</h2>
+            <div class="bea-stock-view__head">
+              <span class="bea-stock-view__avatar bea-alert-view__avatar" [attr.data-niveau]="d.niveau">
+                <mat-icon>{{ d.niveau === 'epuise' ? 'error' : d.niveau === 'faible' ? 'warning' : 'event_busy' }}</mat-icon>
+              </span>
+              <div>
+                <p class="bea-stock-page__kicker">
+                  Alerte · {{ niveauLabel(d) }}
+                  @if (d.article_id) {
+                    · <code>{{ d.code }}</code>
+                  }
+                </p>
+                <h2>{{ d.article_id ? d.designation : d.titre || 'Clôture de période' }}</h2>
+              </div>
             </div>
             <button type="button" class="bea-mg__icon-btn" (click)="closeDetail()" title="Fermer">
               <mat-icon>close</mat-icon>
             </button>
           </header>
-          <div class="bea-mg__modal-body">
-            <p><strong>{{ d.designation }}</strong></p>
-            <p>
-              Niveau :
-              <span class="bea-stock-badge" [attr.data-niveau]="d.niveau">{{ d.niveau }}</span>
-            </p>
-            <p>Stock actuel : {{ d.stock_actuel | quantite }}</p>
-            <p>Stock minimum : {{ d.stock_min | quantite }}</p>
+          <div class="bea-mg__modal-body bea-stock-view__body">
+            @if (d.article_id) {
+              <div class="bea-stock-view__kpis">
+                <div class="bea-stock-view__kpi bea-stock-view__kpi--main" [attr.data-niveau]="d.niveau">
+                  <span>Stock actuel</span>
+                  <strong>{{ d.stock_actuel | quantite }}</strong>
+                  <span class="bea-stock-badge" [attr.data-niveau]="d.niveau">{{ niveauLabel(d) }}</span>
+                </div>
+                <div class="bea-stock-view__kpi">
+                  <span>Seuil minimum</span>
+                  <strong>{{ d.stock_min | quantite }}</strong>
+                </div>
+                <div class="bea-stock-view__kpi">
+                  <span>À réapprovisionner</span>
+                  <strong>{{ aCommander(d) | quantite }}</strong>
+                </div>
+              </div>
+              <p class="bea-alert-view__msg" [attr.data-niveau]="d.niveau">
+                <mat-icon>{{ d.niveau === 'epuise' ? 'block' : 'trending_down' }}</mat-icon>
+                <span>
+                  @if (d.niveau === 'epuise') {
+                    Plus aucune unité disponible : les demandes employés sur cet article ne peuvent plus être servies.
+                  } @else {
+                    Le stock est passé sous le seuil minimum. Prévoyez un réapprovisionnement d’au moins
+                    {{ aCommander(d) | quantite }} unité(s) pour revenir au seuil.
+                  }
+                </span>
+              </p>
+            } @else {
+              <p class="bea-alert-view__msg" data-niveau="warn">
+                <mat-icon>info</mat-icon>
+                <span>{{ d.designation || d.message }}</span>
+              </p>
+            }
           </div>
-          <footer class="bea-mg__modal-foot">
+          <footer class="bea-mg__modal-foot bea-stock-view__foot">
+            @if (d.article_id) {
+              <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/stock-fournitures/entrees" (click)="closeDetail()">
+                <mat-icon>south_west</mat-icon> Saisir une entrée
+              </a>
+              <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="['/stock-fournitures/articles', d.article_id]" (click)="closeDetail()">
+                <mat-icon>edit</mat-icon> Modifier l’article
+              </a>
+            } @else {
+              <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/stock-fournitures/parametres" (click)="closeDetail()">
+                <mat-icon>settings</mat-icon> Gérer les périodes
+              </a>
+            }
             <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="closeDetail()">Fermer</button>
           </footer>
         </div>
@@ -531,8 +656,9 @@ export class StockEtatComponent implements OnInit {
 export class StockAlertesComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
+  protected readonly watcher = inject(StockAlertesWatcherService);
 
-  readonly alertes = signal<Alerte[]>([]);
+  readonly alertes = this.watcher.alertes;
   readonly detail = signal<Alerte | null>(null);
   readonly erreur = feedbackSignal('error', '');
   readonly q = signal('');
@@ -564,11 +690,17 @@ export class StockAlertesComponent implements OnInit {
   }
 
   load(): void {
-    this.erreur.set('');
-    this.api.get<Alerte[]>('/mg/stock/alertes').subscribe({
-      next: (rows) => this.alertes.set(rows),
-      error: () => this.erreur.set('Impossible de charger les alertes.'),
-    });
+    this.watcher.refresh(true);
+  }
+
+  niveauLabel(a: Alerte): string {
+    if (a.niveau === 'epuise') return 'Rupture';
+    if (a.niveau === 'faible') return 'Stock faible';
+    return 'Période';
+  }
+
+  aCommander(a: Alerte): number {
+    return Math.max(0, (Number(a.stock_min) || 0) - (Number(a.stock_actuel) || 0));
   }
 
   openDetail(a: Alerte): void {
@@ -592,7 +724,15 @@ export class StockAlertesComponent implements OnInit {
 @Component({
   selector: 'bea-stock-flux',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, QuantitePipe, DatePipe, MatIconModule, PaginationComponent, StockMouvementEditComponent],
+  imports: [
+    ReactiveFormsModule,
+    QuantitePipe,
+    DatePipe,
+    MatIconModule,
+    PaginationComponent,
+    StockMouvementEditComponent,
+    StockMouvementViewComponent,
+  ],
   template: `
     <section class="bea-mg">
       <header class="bea-mg__head">
@@ -760,45 +900,14 @@ export class StockAlertesComponent implements OnInit {
       }
 
       @if (detail(); as d) {
-        <div class="bea-mg__backdrop" (click)="closeDetail()" role="presentation"></div>
-        <div class="bea-mg__modal bea-mg__modal--sm" role="dialog" aria-modal="true" aria-label="Détail mouvement">
-          <header class="bea-mg__modal-head">
-            <div>
-              <p class="bea-stock-page__kicker">Consultation</p>
-              <h2>{{ d.reference }}</h2>
-            </div>
-            <button type="button" class="bea-mg__icon-btn" (click)="closeDetail()" title="Fermer">
-              <mat-icon>close</mat-icon>
-            </button>
-          </header>
-          <div class="bea-mg__modal-body">
-            <p>Date : {{ d.date_mouvement | date: 'dd/MM/yyyy HH:mm' }}</p>
-            <p>Type : {{ d.type_mouvement }}</p>
-            <p>Article : {{ d.article_code || articleLabel(d.article_id) }}</p>
-            <p>Initiateur : {{ d.initiateur_nom || '—' }}</p>
-            <p>
-              Stock disponible :
-              {{ d.stock_disponible | quantite }}
-            </p>
-            <p>
-              {{ d.type_mouvement === 'SORTIE' ? 'Quantité sortie' : 'Quantité entrée' }} :
-              {{ d.quantite | quantite }}
-            </p>
-            <p>Motif : {{ d.motif || '—' }}</p>
-            @if (d.observation) {
-              <p>Observation : {{ d.observation }}</p>
-            }
-            @if (d.periode_libelle) {
-              <p>Période : {{ d.periode_libelle }} {{ d.periode_cloturee ? '(clôturée)' : '(ouverte)' }}</p>
-            }
-          </div>
-          <footer class="bea-mg__modal-foot">
-            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="closeDetail()">Fermer</button>
-            <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="closeDetail(); editTarget.set(d)">
-              <mat-icon>edit</mat-icon> Modifier
-            </button>
-          </footer>
-        </div>
+        <bea-stock-mouvement-view
+          [mouvement]="d"
+          [agence]="agenceLabel(d.agence_id)"
+          [peutSupprimer]="mouvementActions.peutSupprimer(d)"
+          (closed)="closeDetail()"
+          (modifier)="closeDetail(); editTarget.set(d)"
+          (supprimer)="closeDetail(); supprimer(d)"
+        />
       }
 
       @if (editTarget(); as e) {
@@ -933,6 +1042,7 @@ export class StockFluxComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
   protected readonly mouvementActions = inject(StockMouvementActions);
+  private readonly alertesWatcher = inject(StockAlertesWatcherService);
 
   readonly articles = signal<Article[]>([]);
   readonly agences = signal<Agence[]>([]);
@@ -1016,6 +1126,11 @@ export class StockFluxComponent implements OnInit {
     return a ? `${a.code} — ${a.designation}` : id.slice(0, 8);
   }
 
+  agenceLabel(id: string | null): string | null {
+    if (!id) return null;
+    return this.agences().find((a) => a.id === id)?.libelle ?? null;
+  }
+
   onSearchInput(): void {
     this.q.set(this.filters.getRawValue().q);
   }
@@ -1066,15 +1181,17 @@ export class StockFluxComponent implements OnInit {
 
   onEdited(): void {
     this.editTarget.set(null);
-    this.reload();
-    this.loadArticles();
+    this.apresMutation();
   }
 
   supprimer(m: Mouvement): void {
-    this.mouvementActions.supprimer(m).subscribe(() => {
-      this.reload();
-      this.loadArticles();
-    });
+    this.mouvementActions.supprimer(m).subscribe(() => this.apresMutation());
+  }
+
+  private apresMutation(): void {
+    this.reload();
+    this.loadArticles();
+    this.alertesWatcher.refresh(true);
   }
 
   resteLigne(l: BcLigneReception): number {
@@ -1184,8 +1301,7 @@ export class StockFluxComponent implements OnInit {
         this.saving.set(false);
         this.ok.set(`Réception enregistrée (${res.mouvements_count} entrée(s)).`);
         this.closeReception();
-        this.reload();
-        this.loadArticles();
+        this.apresMutation();
       },
       error: (err) => {
         this.saving.set(false);
@@ -1211,8 +1327,7 @@ export class StockFluxComponent implements OnInit {
         this.saving.set(false);
         this.ok.set('Mouvement enregistré.');
         this.closeCreate();
-        this.reload();
-        this.loadArticles();
+        this.apresMutation();
       },
       error: (err) => {
         this.saving.set(false);
@@ -1256,7 +1371,7 @@ export class StockSortiesComponent {}
 @Component({
   selector: 'bea-stock-inventaires',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, QuantitePipe, DatePipe, MatIconModule, MgGedPanelComponent],
+  imports: [ReactiveFormsModule, QuantitePipe, DatePipe, LowerCasePipe, MatIconModule, MgGedPanelComponent],
   template: `
     <section class="bea-mg">
       <header class="bea-mg__head">
@@ -1325,8 +1440,7 @@ export class StockSortiesComponent {}
                   <button
                     type="button"
                     class="bea-mg__icon-btn"
-                    [title]="inventaireVerrouille(inv.statut) ? 'Campagne validée ou clôturée' : 'Modifier'"
-                    [disabled]="inventaireVerrouille(inv.statut)"
+                    [title]="inventaireVerrouille(inv.statut) ? 'Modifier le libellé / l’observation' : 'Modifier'"
                     (click)="openEdit(inv)"
                   >
                     <mat-icon>edit</mat-icon>
@@ -1386,8 +1500,14 @@ export class StockSortiesComponent {}
                 @if (editInv()) {
                   <label class="bea-mg__span2">
                     Observation
-                    <input formControlName="observation" />
+                    <textarea formControlName="observation" rows="3"></textarea>
                   </label>
+                  @if (inventaireVerrouille(editInv()!.statut)) {
+                    <p class="bea-mg__span2 bea-alert-view__msg" data-niveau="warn">
+                      <mat-icon>lock</mat-icon>
+                      <span>Campagne {{ statutInvLabel(editInv()!.statut) | lowercase }} : les comptages sont figés, seuls le libellé et l’observation sont modifiables.</span>
+                    </p>
+                  }
                 }
               </div>
               @if (modalErreur()) {
@@ -1412,26 +1532,51 @@ export class StockSortiesComponent {}
         <div class="bea-mg__backdrop" (click)="closeDetail()" role="presentation"></div>
         <div class="bea-mg__modal bea-mg__modal--lg" role="dialog" aria-modal="true" aria-label="Détail inventaire">
           <header class="bea-mg__modal-head">
-            <div>
-              <p class="bea-stock-page__kicker">{{ editMode() ? 'Saisie' : 'Consultation' }}</p>
-              <h2>{{ d.reference }} — {{ d.libelle }}</h2>
+            <div class="bea-stock-view__head">
+              <span class="bea-stock-view__avatar"><mat-icon>fact_check</mat-icon></span>
+              <div>
+                <p class="bea-stock-page__kicker">{{ editMode() ? 'Saisie des comptages' : 'Consultation' }} · <code>{{ d.reference }}</code></p>
+                <h2>{{ d.libelle }}</h2>
+              </div>
             </div>
             <button type="button" class="bea-mg__icon-btn" (click)="closeDetail()" title="Fermer">
               <mat-icon>close</mat-icon>
             </button>
           </header>
-          <div class="bea-mg__modal-body">
-            <p>
-              Statut : <span class="bea-stock-badge">{{ statutInvLabel(d.statut) }}</span>
-              — Début : {{ d.date_debut | date: 'dd/MM/yyyy' }}
-              @if (d.date_fin) {
-                — Fin : {{ d.date_fin | date: 'dd/MM/yyyy' }}
-              }
-              @if (d.nb_manquant || d.nb_surplus || d.nb_conforme) {
-                — Conforme {{ d.nb_conforme || 0 }} · Surplus {{ d.nb_surplus || 0 }} ·
-                Manquant {{ d.nb_manquant || 0 }}
-              }
-            </p>
+          <div class="bea-mg__modal-body bea-stock-view__body">
+            <div class="bea-inv-view__summary">
+              <div>
+                <span>Statut</span>
+                <strong><span class="bea-stock-badge" [attr.data-statut]="d.statut">{{ statutInvLabel(d.statut) }}</span></strong>
+              </div>
+              <div>
+                <span>Période</span>
+                <strong>
+                  {{ d.date_debut | date: 'dd/MM/yyyy' }}
+                  @if (d.date_fin) {
+                    → {{ d.date_fin | date: 'dd/MM/yyyy' }}
+                  }
+                </strong>
+              </div>
+              <div>
+                <span>Agence</span>
+                <strong>{{ agenceLabel(d.agence_id) }}</strong>
+              </div>
+              <div>
+                <span>Articles comptés</span>
+                <strong>{{ nbComptes(d) }} / {{ d.lignes.length }}</strong>
+              </div>
+            </div>
+            <div class="bea-inv-view__counts">
+              <span data-niveau="normal"><mat-icon>check_circle</mat-icon> {{ d.nb_conforme || 0 }} conforme(s)</span>
+              <span data-niveau="faible"><mat-icon>add_circle</mat-icon> {{ d.nb_surplus || 0 }} surplus</span>
+              <span data-niveau="epuise"><mat-icon>remove_circle</mat-icon> {{ d.nb_manquant || 0 }} manquant(s)</span>
+            </div>
+            @if (d.observation) {
+              <p class="bea-alert-view__msg" data-niveau="warn">
+                <mat-icon>chat_bubble_outline</mat-icon><span>{{ d.observation }}</span>
+              </p>
+            }
             <div class="bea-mg__table-scroll">
             <table class="bea-mg__table">
               <thead>
@@ -1463,11 +1608,17 @@ export class StockSortiesComponent {}
                         />
                       }
                     </td>
-                    <td>{{ l.ecart | quantite }}</td>
                     <td>
-                      <span class="bea-stock-badge" [attr.data-niveau]="natureTone(l.nature_ecart)">
-                        {{ l.nature_ecart || '—' }}
+                      <span class="bea-inv-view__ecart" [attr.data-signe]="(l.ecart || 0) > 0 ? 'plus' : (l.ecart || 0) < 0 ? 'moins' : 'zero'">
+                        {{ l.ecart == null ? '—' : ((l.ecart > 0 ? '+' : '') + (l.ecart | quantite)) }}
                       </span>
+                    </td>
+                    <td>
+                      @if (l.nature_ecart) {
+                        <span class="bea-stock-badge" [attr.data-niveau]="natureTone(l.nature_ecart)">{{ l.nature_ecart }}</span>
+                      } @else {
+                        <span class="bea-inv-view__todo">À compter</span>
+                      }
                     </td>
                   </tr>
                 } @empty {
@@ -1499,6 +1650,9 @@ export class StockSortiesComponent {}
               }
             </div>
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="closeDetail()">Fermer</button>
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="closeDetail(); openEdit(d)">
+              <mat-icon>edit</mat-icon> Modifier
+            </button>
             @if (d.lignes.length) {
               @if (saisissable(d.statut)) {
                 @if (editMode()) {
@@ -1562,6 +1716,7 @@ export class StockInventairesComponent implements OnInit {
   });
   readonly editInv = signal<Inventaire | null>(null);
   private readonly feedback = inject(FeedbackService);
+  private readonly alertesWatcher = inject(StockAlertesWatcherService);
   protected readonly mouvementActions = inject(StockMouvementActions);
 
   inventaireVerrouille(statut: string): boolean {
@@ -1663,6 +1818,7 @@ export class StockInventairesComponent implements OnInit {
     this.detail.set(inv);
     this.editMode.set(false);
     this.reload();
+    this.alertesWatcher.refresh(true);
   }
 
   readonly filtered = computed(() => {
@@ -1675,6 +1831,15 @@ export class StockInventairesComponent implements OnInit {
         i.statut.toLowerCase().includes(term),
     );
   });
+
+  agenceLabel(id: string | null | undefined): string {
+    if (!id) return 'Toutes les agences';
+    return this.agences().find((a) => a.id === id)?.libelle ?? '—';
+  }
+
+  nbComptes(d: Inventaire): number {
+    return d.lignes.filter((l) => l.stock_physique != null).length;
+  }
 
   natureTone(nature: string | null | undefined): string {
     if (nature === 'MANQUANT') return 'epuise';
@@ -2242,7 +2407,7 @@ export class StockInventairesComponent implements OnInit {
           </header>
           <div class="bea-mg__modal-body">
             <p>Articles : {{ prev.articles }}</p>
-            <p>Stock final : {{ prev.stock_final }}</p>
+            <p>Stock final : {{ prev.stock_final | quantite }}</p>
             <p>Articles avec écarts : {{ prev.articles_avec_ecarts }}</p>
             <p>Ajustements : {{ prev.ajustements }}</p>
             <p>Période suivante : {{ prev.periode_suivante }}</p>

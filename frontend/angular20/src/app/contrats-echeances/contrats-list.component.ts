@@ -1,4 +1,4 @@
-import { MontantPipe } from '../shared/montant.pipe';
+import { MontantPipe, TauxPipe } from '../shared/montant.pipe';
 import { ChangeDetectionStrategy, Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -230,7 +230,7 @@ interface Alerte {
 @Component({
   selector: 'bea-contrats-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MontantPipe, MgGedPanelComponent, MatIconModule],
+  imports: [ReactiveFormsModule, RouterLink, MontantPipe, TauxPipe, MgGedPanelComponent, MatIconModule],
   template: `
     <section class="bea-mg bea-nf bea-ct">
       <header class="bea-mg__head">
@@ -348,7 +348,7 @@ interface Alerte {
                 <div>
                   <span>Montant TTC</span>
                   <strong>{{ v.montant | montant }} {{ v.devise }}</strong>
-                  @if (v.montant_ht !== null) { <small>HT {{ v.montant_ht | montant }} · TVA {{ v.taux_tva ?? 0 }} %</small> }
+                  @if (v.montant_ht !== null) { <small>HT {{ v.montant_ht | montant }} · TVA {{ v.taux_tva | taux }}</small> }
                 </div>
                 <div>
                   <span>Période</span>

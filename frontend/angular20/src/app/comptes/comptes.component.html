@@ -1,4 +1,4 @@
-﻿<div class="cpt">
+<div class="cpt">
   <header class="cpt__hero">
     <div>
       <h1 class="cpt__title">Comptes par nature</h1>
@@ -161,7 +161,7 @@
                                 : '—'
                             }}
                           </td>
-                          <td class="cpt__num">{{ row.quantite }}</td>
+                          <td class="cpt__num">{{ row.quantite | quantite }}</td>
                           <td class="cpt__desig">
                             @if (row.immobilisation_id) {
                               <a
@@ -197,7 +197,7 @@
                     <tfoot>
                       <tr>
                         <td class="cpt__foot-label">Total</td>
-                        <td class="cpt__num">{{ g.totaux.quantite }}</td>
+                        <td class="cpt__num">{{ g.totaux.quantite | quantite }}</td>
                         <td></td>
                         <td class="cpt__num">
                           {{ g.totaux.valeur_acquisition | montant }}
@@ -251,7 +251,7 @@
                 <tfoot>
                   <tr>
                     <td class="cpt__foot-label">Total général</td>
-                    <td class="cpt__num">{{ d.totaux.quantite }}</td>
+                    <td class="cpt__num">{{ d.totaux.quantite | quantite }}</td>
                     <td></td>
                     <td class="cpt__num">{{ d.totaux.valeur_acquisition | montant }}</td>
                     <td class="cpt__num">—</td>

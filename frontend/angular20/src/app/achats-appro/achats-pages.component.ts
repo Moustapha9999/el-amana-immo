@@ -1,4 +1,4 @@
-import { MontantPipe, QuantitePipe } from '../shared/montant.pipe';
+import { MontantPipe, QuantitePipe, TauxPipe } from '../shared/montant.pipe';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -418,7 +418,7 @@ export class AchatsAlertesComponent implements OnInit {
 @Component({
   selector: 'bea-achats-parametres',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule, ReactiveFormsModule],
+  imports: [MatIconModule, ReactiveFormsModule, TauxPipe],
   template: `
     <section class="bea-ach">
       <header class="bea-ach__hero">
@@ -438,7 +438,7 @@ export class AchatsAlertesComponent implements OnInit {
           </div>
           <div class="bea-ach__kpi" style="--i:2">
             <span class="bea-ach__kpi-icon" data-tone="warn"><mat-icon>percent</mat-icon></span>
-            <span class="bea-ach__kpi-meta"><span>TVA défaut</span><strong>{{ tvaDefaut() }}%</strong><em>Appliquée aux BC</em></span>
+            <span class="bea-ach__kpi-meta"><span>TVA défaut</span><strong>{{ tvaDefaut() | taux }}</strong><em>Appliquée aux BC</em></span>
           </div>
         </div>
         <button type="button" class="bea-ach__btn" (click)="openCreate()"><mat-icon>add</mat-icon>Nouveau</button>

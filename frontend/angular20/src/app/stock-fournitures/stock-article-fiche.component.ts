@@ -137,6 +137,21 @@ type Tab = 'infos' | 'stock' | 'mouvements' | 'demandes' | 'documents';
             </div>
             <form class="bea-mg__modal-body" [formGroup]="form" (ngSubmit)="saveInfos()">
               <div class="bea-mg__grid">
+                <label>
+                  Code
+                  <input formControlName="code" />
+                </label>
+                <label>
+                  Stock actuel ({{ form.controls.uom.value }})
+                  <input type="number" formControlName="stock_actuel" min="0" step="1" />
+                </label>
+                @if (ecartStock() !== 0) {
+                  <label class="bea-mg__span2">
+                    Motif de la correction (optionnel)
+                    <input formControlName="motif_correction" placeholder="Ex. comptage physique, erreur de saisie…" />
+                    <small>L’écart ({{ ecartStock() > 0 ? '+' : '' }}{{ ecartStock() | quantite }}) sera enregistré comme ajustement dans le journal des mouvements.</small>
+                  </label>
+                }
                 <label class="bea-mg__span2">
                   Désignation
                   <input formControlName="designation" />
@@ -411,6 +426,9 @@ export class StockArticleFicheComponent implements OnInit {
   ];
 
   readonly form = this.fb.nonNullable.group({
+    code: ['', Validators.required],
+    stock_actuel: [0, [Validators.required, Validators.min(0)]],
+    motif_correction: [''],
     designation: ['', Validators.required],
     famille_id: ['', Validators.required],
     uom: ['U', Validators.required],
@@ -438,7 +456,10 @@ export class StockArticleFicheComponent implements OnInit {
     this.api.get<ArticleFiche>(`/mg/stock/articles/${id}`).subscribe({
       next: (a) => {
         this.fiche.set(a);
-        this.form.patchValue({
+        this.form.reset({
+          code: a.code,
+          stock_actuel: Number(a.stock_actuel) || 0,
+          motif_correction: '',
           designation: a.designation,
           famille_id: a.famille_id,
           uom: a.uom,
@@ -468,6 +489,12 @@ export class StockArticleFicheComponent implements OnInit {
       });
   }
 
+  ecartStock(): number {
+    const a = this.fiche();
+    if (!a) return 0;
+    return (Number(this.form.controls.stock_actuel.value) || 0) - (Number(a.stock_actuel) || 0);
+  }
+
   saveInfos(): void {
     const a = this.fiche();
     if (!a || this.form.invalid) return;
@@ -475,6 +502,7 @@ export class StockArticleFicheComponent implements OnInit {
     this.erreur.set('');
     const raw = this.form.getRawValue();
     const body: Record<string, unknown> = {
+      code: raw.code.trim(),
       designation: raw.designation,
       famille_id: raw.famille_id,
       uom: raw.uom,
@@ -483,6 +511,10 @@ export class StockArticleFicheComponent implements OnInit {
       emplacement: raw.emplacement || null,
       agence_id: raw.agence_id || null,
     };
+    if (this.ecartStock() !== 0) {
+      body['stock_actuel'] = Number(raw.stock_actuel);
+      body['motif_correction'] = raw.motif_correction.trim() || null;
+    }
     this.api.patch<ArticleFiche>(`/mg/stock/articles/${a.id}`, body).subscribe({
       next: () => {
         this.saving.set(false);

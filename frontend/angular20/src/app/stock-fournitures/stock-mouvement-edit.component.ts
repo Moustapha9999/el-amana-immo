@@ -17,6 +17,14 @@ import { ApiService } from '../core/services/api.service';
 import { AuthService } from '../core/services/auth.service';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import { QuantitePipe } from '../shared/montant.pipe';
+
+interface ArticleOption {
+  id: string;
+  code: string;
+  designation: string;
+  stock_actuel: number;
+}
 
 export interface StockMouvementRow {
   id: string;
@@ -118,6 +126,158 @@ export class StockMouvementActions {
   }
 }
 
+const TYPE_VIEW: Record<string, { label: string; icon: string; qte: string }> = {
+  ENTREE: { label: 'Entrée', icon: 'south_west', qte: 'Quantité entrée' },
+  SORTIE: { label: 'Sortie', icon: 'north_east', qte: 'Quantité sortie' },
+  AJUSTEMENT: { label: 'Ajustement', icon: 'tune', qte: 'Correction' },
+  INVENTAIRE: { label: 'Inventaire', icon: 'fact_check', qte: 'Stock compté' },
+};
+
+export function raisonVerrouMouvement(m: StockMouvementRow): string {
+  if (m.source_type && m.source_type !== 'usb_import' && m.source_type !== 'manuel') {
+    return 'mouvement généré par un workflow (demande, inventaire, réception) : modifiez l’opération d’origine.';
+  }
+  if (m.type_mouvement === 'INVENTAIRE') return 'un mouvement d’inventaire fixe le stock ; saisissez un ajustement.';
+  if (m.periode_cloturee) return 'période clôturée ; rouvrez-la depuis les paramètres.';
+  return '';
+}
+
+/** Fiche de consultation d'un mouvement (Entrées, Sorties, Journal). */
+@Component({
+  selector: 'bea-stock-mouvement-view',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [MatIconModule, DatePipe, QuantitePipe],
+  template: `
+    <div class="bea-mg__backdrop" (click)="closed.emit()" role="presentation"></div>
+    <div class="bea-mg__modal bea-stock-view bea-mvt-view" role="dialog" aria-modal="true" aria-label="Détail du mouvement">
+      <header class="bea-mg__modal-head">
+        <div class="bea-stock-view__head">
+          <span class="bea-stock-view__avatar bea-mvt-view__avatar" [attr.data-type]="m().type_mouvement">
+            <mat-icon>{{ vue().icon }}</mat-icon>
+          </span>
+          <div>
+            <p class="bea-stock-page__kicker">Consultation · {{ vue().label }}</p>
+            <h2>{{ m().reference }}</h2>
+          </div>
+        </div>
+        <button type="button" class="bea-mg__icon-btn" (click)="closed.emit()" title="Fermer">
+          <mat-icon>close</mat-icon>
+        </button>
+      </header>
+      <div class="bea-mg__modal-body bea-stock-view__body">
+        <div class="bea-mvt-view__hero" [attr.data-type]="m().type_mouvement">
+          <div>
+            <span>{{ vue().qte }}</span>
+            <strong>{{ signe() }}{{ absQte() | quantite }}</strong>
+          </div>
+          <div class="bea-mvt-view__hero-side">
+            <span>Stock actuel de l’article</span>
+            <strong>{{ m().stock_disponible != null ? (m().stock_disponible | quantite) : '—' }}</strong>
+          </div>
+        </div>
+
+        <dl class="bea-stock-view__infos bea-stock-view__infos--2">
+          <div class="bea-stock-view__wide">
+            <dt><mat-icon>inventory_2</mat-icon> Article</dt>
+            <dd>
+              <code>{{ m().article_code || '—' }}</code>
+              @if (m().article_designation) {
+                — {{ m().article_designation }}
+              }
+            </dd>
+          </div>
+          <div>
+            <dt><mat-icon>event</mat-icon> Date</dt>
+            <dd>{{ m().date_mouvement | date: 'dd/MM/yyyy HH:mm' }}</dd>
+          </div>
+          <div>
+            <dt><mat-icon>person</mat-icon> Initiateur</dt>
+            <dd>{{ m().initiateur_nom || '—' }}</dd>
+          </div>
+          <div>
+            <dt><mat-icon>apartment</mat-icon> Agence</dt>
+            <dd>{{ agence() || '—' }}</dd>
+          </div>
+          <div>
+            <dt><mat-icon>groups</mat-icon> Département</dt>
+            <dd>{{ m().departement || '—' }}</dd>
+          </div>
+          <div class="bea-stock-view__wide">
+            <dt><mat-icon>notes</mat-icon> Motif</dt>
+            <dd>{{ m().motif || '—' }}</dd>
+          </div>
+          @if (m().observation) {
+            <div class="bea-stock-view__wide">
+              <dt><mat-icon>chat_bubble_outline</mat-icon> Observation</dt>
+              <dd>{{ m().observation }}</dd>
+            </div>
+          }
+          @if (m().periode_libelle) {
+            <div class="bea-stock-view__wide">
+              <dt><mat-icon>date_range</mat-icon> Période</dt>
+              <dd>
+                {{ m().periode_libelle }}
+                <span class="bea-mvt-view__periode" [attr.data-cloturee]="m().periode_cloturee ? '1' : '0'">
+                  {{ m().periode_cloturee ? 'Clôturée' : 'Ouverte' }}
+                </span>
+              </dd>
+            </div>
+          }
+        </dl>
+
+        @if (!m().quantite_modifiable && verrou()) {
+          <p class="bea-mvt-view__note">
+            <mat-icon>lock</mat-icon>
+            <span>Article et quantité verrouillés : {{ verrou() }} Date, agence, motif et observation restent modifiables.</span>
+          </p>
+        }
+      </div>
+      <footer class="bea-mg__modal-foot bea-stock-view__foot">
+        @if (peutSupprimer()) {
+          <button type="button" class="bea-mg__btn bea-mg__btn--danger bea-mvt-view__del" (click)="supprimer.emit()">
+            <mat-icon>delete</mat-icon> Supprimer
+          </button>
+        }
+        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="closed.emit()">Fermer</button>
+        <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="modifier.emit()">
+          <mat-icon>edit</mat-icon> Modifier
+        </button>
+      </footer>
+    </div>
+  `,
+})
+export class StockMouvementViewComponent {
+  readonly m = input.required<StockMouvementRow & { initiateur_nom?: string | null; stock_disponible?: number | null }>({
+    alias: 'mouvement',
+  });
+  readonly agence = input<string | null>(null);
+  readonly peutSupprimer = input(false);
+  readonly closed = output<void>();
+  readonly modifier = output<void>();
+  readonly supprimer = output<void>();
+
+  vue() {
+    return TYPE_VIEW[this.m().type_mouvement] ?? { label: this.m().type_mouvement, icon: 'swap_vert', qte: 'Quantité' };
+  }
+
+  signe(): string {
+    const t = this.m().type_mouvement;
+    const q = Number(this.m().quantite) || 0;
+    if (t === 'ENTREE') return '+';
+    if (t === 'SORTIE') return '−';
+    if (t === 'AJUSTEMENT') return q > 0 ? '+' : q < 0 ? '−' : '';
+    return '';
+  }
+
+  absQte(): number {
+    return Math.abs(Number(this.m().quantite) || 0);
+  }
+
+  verrou(): string {
+    return raisonVerrouMouvement(this.m());
+  }
+}
+
 function toLocalInput(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
@@ -128,7 +288,7 @@ function toLocalInput(iso: string): string {
 @Component({
   selector: 'bea-stock-mouvement-edit',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MatIconModule, DatePipe],
+  imports: [ReactiveFormsModule, MatIconModule, DatePipe, QuantitePipe],
   template: `
     <div class="bea-mg__backdrop" (click)="fermer()" role="presentation"></div>
     <div class="bea-mg__modal" role="dialog" aria-modal="true" aria-label="Modifier le mouvement">
@@ -151,7 +311,9 @@ function toLocalInput(iso: string): string {
                 {{ mouvement().periode_cloturee ? '(clôturée)' : '(ouverte)' }} — la date doit rester entre le
                 {{ mouvement().periode_debut | date: 'dd/MM/yyyy' }} et le {{ mouvement().periode_fin | date: 'dd/MM/yyyy' }}.
                 @if (!mouvement().quantite_modifiable) {
-                  <br />Quantité verrouillée : {{ raisonVerrou() }}
+                  <br />Article et quantité verrouillés : {{ raisonVerrou() }}
+                } @else {
+                  <br />Changer l’article ou la quantité recalcule le stock et les soldes de la période.
                 }
               </span>
             </p>
@@ -159,7 +321,18 @@ function toLocalInput(iso: string): string {
           <div class="bea-mg__grid">
             <label class="bea-mg__span2">
               Article
-              <input [value]="(mouvement().article_code || '') + (mouvement().article_designation ? ' — ' + mouvement().article_designation : '')" readonly />
+              @if (mouvement().quantite_modifiable) {
+                <select formControlName="article_id">
+                  @if (!articles().length) {
+                    <option [value]="mouvement().article_id">{{ mouvement().article_code }} — {{ mouvement().article_designation }}</option>
+                  }
+                  @for (a of articles(); track a.id) {
+                    <option [value]="a.id">{{ a.code }} — {{ a.designation }} (stock {{ a.stock_actuel | quantite }})</option>
+                  }
+                </select>
+              } @else {
+                <input [value]="(mouvement().article_code || '') + (mouvement().article_designation ? ' — ' + mouvement().article_designation : '')" readonly />
+              }
             </label>
             <label>
               Date
@@ -171,8 +344,8 @@ function toLocalInput(iso: string): string {
               />
             </label>
             <label>
-              Quantité
-              <input type="number" formControlName="quantite" min="1" step="1" />
+              {{ ajustement() ? 'Correction (+ ajoute, − retire)' : 'Quantité' }}
+              <input type="number" formControlName="quantite" [attr.min]="ajustement() ? null : 1" step="1" />
             </label>
             <label>
               Agence
@@ -218,9 +391,11 @@ export class StockMouvementEditComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
 
   readonly saving = signal(false);
+  readonly articles = signal<ArticleOption[]>([]);
   readonly form = this.fb.nonNullable.group({
     date_mouvement: ['', Validators.required],
-    quantite: [1, [Validators.required, Validators.min(1)]],
+    article_id: ['', Validators.required],
+    quantite: [1, [Validators.required]],
     agence_id: [''],
     departement: [''],
     motif: [''],
@@ -232,13 +407,32 @@ export class StockMouvementEditComponent implements OnInit {
     const m = this.mouvement();
     this.form.reset({
       date_mouvement: toLocalInput(m.date_mouvement),
+      article_id: m.article_id,
       quantite: Number(m.quantite),
       agence_id: m.agence_id ?? '',
       departement: m.departement ?? '',
       motif: m.motif ?? '',
       observation: m.observation ?? '',
     });
-    if (!m.quantite_modifiable) this.form.controls.quantite.disable();
+    const q = this.form.controls.quantite;
+    q.addValidators(
+      this.ajustement()
+        ? (c) => (Number(c.value) === 0 ? { nul: true } : null)
+        : Validators.min(1),
+    );
+    q.updateValueAndValidity({ emitEvent: false });
+    if (!m.quantite_modifiable) {
+      q.disable();
+      this.form.controls.article_id.disable();
+      return;
+    }
+    this.api
+      .get<{ items: ArticleOption[] }>('/mg/stock/articles', { page: 1, size: 500 })
+      .subscribe({ next: (res) => this.articles.set(res.items) });
+  }
+
+  ajustement(): boolean {
+    return this.mouvement().type_mouvement === 'AJUSTEMENT';
   }
 
   @HostListener('document:keydown.escape')
@@ -254,15 +448,7 @@ export class StockMouvementEditComponent implements OnInit {
   }
 
   raisonVerrou(): string {
-    const m = this.mouvement();
-    if (m.source_type && m.source_type !== 'usb_import' && m.source_type !== 'manuel') {
-      return 'mouvement généré par un workflow (demande, inventaire, réception).';
-    }
-    if (m.type_mouvement !== 'ENTREE' && m.type_mouvement !== 'SORTIE') {
-      return 'seules les entrées et sorties sont modifiables en quantité.';
-    }
-    if (m.periode_cloturee) return 'période clôturée.';
-    return '';
+    return raisonVerrouMouvement(this.mouvement());
   }
 
   enregistrer(): void {
@@ -271,6 +457,7 @@ export class StockMouvementEditComponent implements OnInit {
     const c = this.form.controls;
     const body: Record<string, unknown> = {};
     if (c.date_mouvement.dirty) body['date_mouvement'] = `${c.date_mouvement.value}:00Z`;
+    if (c.article_id.enabled && c.article_id.value !== m.article_id) body['article_id'] = c.article_id.value;
     if (c.quantite.enabled && c.quantite.dirty) body['quantite'] = c.quantite.value;
     if (c.agence_id.dirty) body['agence_id'] = c.agence_id.value || null;
     if (c.departement.dirty) body['departement'] = c.departement.value;

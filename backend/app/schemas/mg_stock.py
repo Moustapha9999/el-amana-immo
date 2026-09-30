@@ -47,6 +47,7 @@ class ArticleCreate(BaseModel):
 
 
 class ArticleUpdate(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=40)
     designation: str | None = None
     famille_id: UUID | None = None
     uom: str | None = None
@@ -59,6 +60,9 @@ class ArticleUpdate(BaseModel):
     emplacement: str | None = None
     fournisseur_habituel: str | None = None
     is_active: bool | None = None
+    # Stock cible : l'écart est tracé par un mouvement AJUSTEMENT (jamais écrit directement).
+    stock_actuel: QtyGe0 | None = None
+    motif_correction: str | None = Field(default=None, max_length=255)
 
 
 class ArticleOut(BaseModel):
@@ -110,7 +114,9 @@ class MouvementCreate(BaseModel):
 
 class MouvementUpdate(BaseModel):
     date_mouvement: datetime | None = None
-    quantite: QtyPos | None = None
+    article_id: UUID | None = None
+    # Signée pour un AJUSTEMENT, strictement positive pour une entrée / sortie.
+    quantite: Qty | None = None
     agence_id: UUID | None = None
     departement: str | None = None
     motif: str | None = None

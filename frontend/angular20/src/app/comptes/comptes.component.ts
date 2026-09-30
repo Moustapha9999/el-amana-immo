@@ -1,5 +1,5 @@
 ﻿import { DatePipe } from '@angular/common';
-import { MontantPipe } from '../shared/montant.pipe';
+import { MontantPipe, QuantitePipe } from '../shared/montant.pipe';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -49,7 +49,7 @@ interface ComptesParNatureResponse {
 
 @Component({
   selector: 'app-comptes',
-  imports: [ReactiveFormsModule, MontantPipe, DatePipe, MatButtonModule, MatIconModule, RouterLink, PaginationComponent],
+  imports: [ReactiveFormsModule, MontantPipe, QuantitePipe, DatePipe, MatButtonModule, MatIconModule, RouterLink, PaginationComponent],
   templateUrl: './comptes.component.html',
   styleUrl: './comptes.component.css',
 })

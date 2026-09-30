@@ -12,6 +12,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import { AchatsBonApercuComponent, AchatsReceptionApercuComponent } from './achats-apercu.component';
 
 interface Agence {
   id: string;
@@ -62,7 +63,7 @@ type Mode = 'list' | 'form';
 @Component({
   selector: 'bea-achats-receptions',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MatIconModule],
+  imports: [ReactiveFormsModule, RouterLink, MatIconModule, AchatsBonApercuComponent, AchatsReceptionApercuComponent],
   templateUrl: './achats-receptions.component.html',
   styleUrl: './achats-ui.css',
 })
@@ -85,6 +86,8 @@ export class AchatsReceptionsComponent implements OnInit {
   readonly saving = signal(false);
   readonly q = signal('');
   readonly confirm = signal<{ row: ReceptionRow; action: 'desactiver' | 'supprimer' } | null>(null);
+  readonly apercuId = signal<string | null>(null);
+  readonly bonApercuId = signal<string | null>(null);
 
   readonly filters = this.fb.nonNullable.group({ q: '' });
   readonly form = this.fb.nonNullable.group({
@@ -211,7 +214,7 @@ export class AchatsReceptionsComponent implements OnInit {
   }
 
   open(r: ReceptionRow): void {
-    void this.router.navigateByUrl(`/achats-appro/receptions/${r.id}`);
+    this.apercuId.set(r.id);
   }
 
   askAction(row: ReceptionRow, action: 'desactiver' | 'supprimer'): void {

@@ -178,4 +178,8 @@
       </footer>
     </div>
   }
+
+  @if (apercuId(); as aid) {
+    <bea-achats-paiement-apercu [paiementId]="aid" (closed)="apercuId.set(null)" />
+  }
 </section>

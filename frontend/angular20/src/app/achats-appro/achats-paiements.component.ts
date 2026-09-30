@@ -13,6 +13,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import { AchatsPaiementApercuComponent } from './achats-apercu.component';
 
 interface FactureOpt {
   id: string;
@@ -41,7 +42,7 @@ type Mode = 'list' | 'form';
 @Component({
   selector: 'bea-achats-paiements',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MontantPipe, MatIconModule],
+  imports: [ReactiveFormsModule, RouterLink, MontantPipe, MatIconModule, AchatsPaiementApercuComponent],
   templateUrl: './achats-paiements.component.html',
   styleUrl: './achats-ui.css',
 })
@@ -61,6 +62,7 @@ export class AchatsPaiementsComponent implements OnInit {
   readonly id = signal<string | null>(null);
   readonly saving = signal(false);
   readonly q = signal('');
+  readonly apercuId = signal<string | null>(null);
   readonly confirm = signal<{ row: PaiementRow; action: 'desactiver' | 'supprimer' } | null>(null);
 
   readonly filters = this.fb.nonNullable.group({ q: '' });
@@ -158,7 +160,7 @@ export class AchatsPaiementsComponent implements OnInit {
   }
 
   open(r: PaiementRow): void {
-    void this.router.navigateByUrl(`/achats-appro/paiements/${r.id}`);
+    this.apercuId.set(r.id);
   }
 
   askAction(row: PaiementRow, action: 'desactiver' | 'supprimer'): void {

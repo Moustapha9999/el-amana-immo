@@ -58,7 +58,7 @@ Exports restent non paginés (plafond 500).
 | `/stock-fournitures/entrees` | Entrées de stock |
 | `/stock-fournitures/sorties` | Sorties de stock |
 | `/stock-fournitures/mouvements` / `journal` | Journal entrées/sorties |
-| `/stock-fournitures/demandes` | Expression de besoin (fiche digitalisée) |
+| `/stock-fournitures/demandes` | Ancienne fiche de besoin — **retirée du menu** : les besoins passent par les demandes employés (`/demandes-mg`, bouton « Servir le stock »). Route et API conservées pour les anciens liens. |
 | `/stock-fournitures/inventaires` | Campagnes d’inventaire (comptage / clôture) |
 | `/stock-fournitures/alertes` | Stock faible / épuisé |
 | `/stock-fournitures/rapports` | Conso mensuelle / annuelle / agence — JSON / CSV / Excel / PDF |

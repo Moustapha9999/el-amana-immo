@@ -67,7 +67,7 @@
               <tr [style.--i]="i">
                 <td><code class="bea-ach__code">{{ r.reference }}</code></td>
                 <td>
-                  <a [routerLink]="['/achats-appro/bons', r.bon_id]" class="bea-ach__code">{{ r.bon_reference || r.bon_id }}</a>
+                  <button type="button" class="bea-ach__code bea-apercu__link-btn" title="Voir le bon de commande" (click)="bonApercuId.set(r.bon_id)">{{ r.bon_reference || r.bon_id }}</button>
                 </td>
                 <td>{{ r.date_reception }}</td>
                 <td><span class="bea-ach__badge" [attr.data-statut]="r.statut">{{ r.statut }}</span></td>
@@ -170,6 +170,13 @@
         }
       </div>
     </form>
+  }
+
+  @if (apercuId(); as aid) {
+    <bea-achats-reception-apercu [receptionId]="aid" (closed)="apercuId.set(null)" />
+  }
+  @if (bonApercuId(); as bid) {
+    <bea-achats-bon-apercu [bonId]="bid" (closed)="bonApercuId.set(null)" />
   }
 
   @if (confirm(); as c) {

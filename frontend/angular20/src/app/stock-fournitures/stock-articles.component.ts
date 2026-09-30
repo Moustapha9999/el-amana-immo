@@ -169,7 +169,7 @@ interface Paginated<T> {
             <div class="bea-art__grid">
               <label>
                 Code
-                <input formControlName="code" [readonly]="!!editingId()" />
+                <input formControlName="code" />
               </label>
               <label class="bea-art__span2">
                 Désignation
@@ -192,6 +192,18 @@ interface Paginated<T> {
                   Stock initial
                   <input type="number" formControlName="stock_initial" min="0" step="1" />
                 </label>
+              } @else {
+                <label>
+                  Stock actuel
+                  <input type="number" formControlName="stock_actuel" min="0" step="1" />
+                </label>
+                @if (stockModifie()) {
+                  <label class="bea-art__span2">
+                    Motif de la correction (optionnel)
+                    <input formControlName="motif_correction" placeholder="Ex. comptage physique, erreur de saisie…" />
+                    <small>L’écart ({{ ecartStock() > 0 ? '+' : '' }}{{ ecartStock() | quantite }}) sera enregistré comme ajustement dans le journal des mouvements.</small>
+                  </label>
+                }
               }
               <label>
                 Stock minimum
@@ -623,6 +635,7 @@ export class StockArticlesComponent implements OnInit {
   readonly modalErreur = signal('');
   readonly modalOpen = signal(false);
   readonly editingId = signal<string | null>(null);
+  readonly stockOrigine = signal(0);
   readonly deleteTarget = signal<Article | null>(null);
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -639,6 +652,8 @@ export class StockArticlesComponent implements OnInit {
     famille_id: ['', Validators.required],
     uom: ['U', Validators.required],
     stock_initial: [0],
+    stock_actuel: [0, Validators.min(0)],
+    motif_correction: [''],
     stock_min: [0],
     agence_id: [''],
     emplacement: [''],
@@ -730,6 +745,7 @@ export class StockArticlesComponent implements OnInit {
 
   openEdit(a: Article): void {
     this.editingId.set(a.id);
+    this.stockOrigine.set(Number(a.stock_actuel) || 0);
     this.modalErreur.set('');
     this.msg.set('');
     this.form.reset({
@@ -738,19 +754,27 @@ export class StockArticlesComponent implements OnInit {
       famille_id: a.famille_id,
       uom: a.uom,
       stock_initial: 0,
+      stock_actuel: Number(a.stock_actuel) || 0,
+      motif_correction: '',
       stock_min: Number(a.stock_min),
       agence_id: a.agence_id || '',
       emplacement: a.emplacement || '',
       stockable: a.stockable !== false,
     });
-    this.form.controls.code.disable();
     this.modalOpen.set(true);
   }
 
   closeModal(): void {
     this.modalOpen.set(false);
     this.editingId.set(null);
-    this.form.controls.code.enable();
+  }
+
+  ecartStock(): number {
+    return (Number(this.form.controls.stock_actuel.value) || 0) - this.stockOrigine();
+  }
+
+  stockModifie(): boolean {
+    return !!this.editingId() && this.ecartStock() !== 0;
   }
 
   save(): void {
@@ -761,7 +785,8 @@ export class StockArticlesComponent implements OnInit {
     const id = this.editingId();
 
     if (id) {
-      const body = {
+      const body: Record<string, unknown> = {
+        code: raw.code.trim(),
         designation: raw.designation,
         famille_id: raw.famille_id,
         uom: raw.uom,
@@ -770,6 +795,10 @@ export class StockArticlesComponent implements OnInit {
         emplacement: raw.emplacement || null,
         stockable: raw.stockable,
       };
+      if (this.stockModifie()) {
+        body['stock_actuel'] = Number(raw.stock_actuel);
+        body['motif_correction'] = raw.motif_correction.trim() || null;
+      }
       this.api.patch<Article>(`/mg/stock/articles/${id}`, body).subscribe({
         next: () => {
           this.saving.set(false);

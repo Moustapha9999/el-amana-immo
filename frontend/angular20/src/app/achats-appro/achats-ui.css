@@ -268,6 +268,83 @@
 .bea-ach__badge[data-statut='ANOMALIE'],
 .bea-ach__badge[data-statut='RECUE'] { background: #fef3c7; color: #b45309; }
 .bea-ach__badge[data-statut='RECU'] { background: #dbeafe; color: #1d4ed8; }
+.bea-ach__badge[data-statut='CONFORME'] { background: #d1fae5; color: #047857; }
+
+/* Contrôle 3 voies (BC · réception · facture) */
+.bea-ach__3wm { margin-top: 1rem; border-left: 4px solid #10b981; }
+.bea-ach__3wm[data-resultat='ANOMALIE'] { border-left-color: #f59e0b; }
+.bea-ach__3wm-title { display: flex; align-items: center; gap: 0.7rem; }
+.bea-ach__3wm-title .bea-ach__muted { margin: 0.1rem 0 0; font-size: 0.76rem; }
+.bea-ach__3wm-alert {
+  list-style: none;
+  margin: 0 0 0.9rem;
+  padding: 0.6rem 0.8rem;
+  display: grid;
+  gap: 0.3rem;
+  border-radius: 0.65rem;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 0.84rem;
+}
+.bea-ach__3wm-alert li { display: flex; align-items: center; gap: 0.45rem; }
+.bea-ach__3wm-alert mat-icon { font-size: 1rem; width: 1rem; height: 1rem; flex: 0 0 auto; }
+.bea-ach__3wm-cols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.bea-ach__3wm-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.8rem;
+  padding: 0.75rem 0.9rem;
+  background: #f8fafc;
+}
+.bea-ach__3wm-card--facture { background: #fff; border-color: #cbd5e1; }
+.bea-ach__3wm-card .bea-ach__kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.55rem;
+  font-weight: 700;
+  color: #1a5278;
+}
+.bea-ach__3wm-card .bea-ach__kicker mat-icon { font-size: 1rem; width: 1rem; height: 1rem; }
+.bea-ach__3wm-card dl { margin: 0; display: grid; gap: 0.5rem; }
+.bea-ach__3wm-card dl > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.bea-ach__3wm-card dt { font-size: 0.78rem; color: #64748b; }
+.bea-ach__3wm-card dd {
+  margin: 0;
+  font-weight: 700;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bea-ach__3wm-card dd.bea-ach__3wm-ko { color: #b91c1c; }
+.bea-ach__3wm-card dd.bea-ach__3wm-na { color: #94a3b8; font-weight: 500; }
+.bea-ach__3wm-ecarts { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.85rem; }
+.bea-ach__3wm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+.bea-ach__3wm-chip[data-ko] { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+.bea-ach__3wm-chip mat-icon { font-size: 1rem; width: 1rem; height: 1rem; }
+.bea-ach__3wm-chip strong { font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) {
+  .bea-ach__3wm-cols { grid-template-columns: 1fr; }
+}
 .bea-ach__th-actions,
 .bea-ach__actions { text-align: right; white-space: nowrap; }
 .bea-ach__icon-btn {
@@ -623,3 +700,4 @@
   .bea-ach--no-print { display: none !important; }
   .bea-ach--print .bea-ach__panel { box-shadow: none; border: 0; }
 }
+

@@ -1,4 +1,4 @@
-import { MontantPipe, montantLigne } from '../shared/montant.pipe';
+import { MontantPipe, TauxPipe, montantLigne } from '../shared/montant.pipe';
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -6,6 +6,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
 import { SupplierSelectComponent } from './supplier-select.component';
+import { AchatsBonApercuComponent } from './achats-apercu.component';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 
@@ -44,7 +45,16 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
 @Component({
   selector: 'bea-achats-bons',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MontantPipe, MgGedPanelComponent, MatIconModule, SupplierSelectComponent],
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    MontantPipe,
+    TauxPipe,
+    MgGedPanelComponent,
+    MatIconModule,
+    SupplierSelectComponent,
+    AchatsBonApercuComponent,
+  ],
   template: `
     <section class="bea-ach">
       @if (mode() === 'list') {
@@ -70,7 +80,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
               @for (b of filtered(); track b.id; let i = $index) {
                 <tr [style.--i]="i"><td><code class="bea-ach__code">{{ b.reference }}</code></td><td>{{ b.date_bc }}</td><td>{{ b.fournisseur_raison_sociale || '—' }}</td><td>{{ b.total_ht | montant }} MRU</td><td><span class="bea-ach__badge" [attr.data-statut]="b.statut">{{ b.statut }}</span></td>
                   <td class="bea-ach__actions">
-                    <a class="bea-ach__icon-btn" title="Voir" [routerLink]="['/achats-appro/bons', b.id]"><mat-icon>visibility</mat-icon></a>
+                    <button type="button" class="bea-ach__icon-btn" title="Voir" (click)="apercuId.set(b.id)"><mat-icon>visibility</mat-icon></button>
                     <button type="button" class="bea-ach__icon-btn" title="Éditer" [disabled]="!canEdit(b)" (click)="edit(b)"><mat-icon>edit</mat-icon></button>
                     <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Désactiver" [disabled]="!canCancel(b)" (click)="askCancel(b, 'desactiver')"><mat-icon>block</mat-icon></button>
                     <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer" [disabled]="!canDelete(b)" (click)="askCancel(b, 'supprimer')"><mat-icon>delete</mat-icon></button>
@@ -167,7 +177,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
           </div>
           <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="addLigne()"><mat-icon>add</mat-icon>Ligne</button>
           <p class="bea-ach__kicker" style="margin:0.75rem 0 0.35rem;text-transform:none;letter-spacing:0;color:#64748b">
-            TVA appliquée : {{ tvaDefaut() }}% (paramètre <code class="bea-ach__code">tva_defaut</code>)
+            TVA appliquée : {{ tvaDefaut() | taux }} (paramètre <code class="bea-ach__code">tva_defaut</code>)
           </p>
           <div class="bea-ach__money" style="margin:0.35rem 0 0.75rem">
             <div class="bea-ach__money-card"><span>Prix total HT</span><strong>{{ totaux().ht | montant }} MRU</strong></div>
@@ -188,6 +198,9 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
             <bea-mg-ged moduleCode="achats-appro" entity="bon_commande" [entityId]="id" />
           }
         </form>
+      }
+      @if (apercuId(); as aid) {
+        <bea-achats-bon-apercu [bonId]="aid" (closed)="apercuId.set(null)" />
       }
       @if (confirm(); as c) {
         <div class="bea-ach__backdrop" (click)="confirm.set(null)"></div>
@@ -250,6 +263,7 @@ export class AchatsBonsComponent implements OnInit {
   readonly q = signal('');
   readonly statutFilter = signal('');
   readonly confirm = signal<{ row: Bon; action: 'desactiver' | 'supprimer' } | null>(null);
+  readonly apercuId = signal<string | null>(null);
   readonly pdfPrepOpen = signal(false);
   readonly pdfErreur = signal<string | null>(null);
   readonly pdfBusy = signal(false);

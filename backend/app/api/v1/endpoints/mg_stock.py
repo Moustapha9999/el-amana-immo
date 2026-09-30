@@ -278,10 +278,13 @@ async def update_article(
     user: User = Depends(require_permission("mg.stock.create")),
 ):
     svc = MgStockService(db)
-    article = await svc.update_article(article_id, body)
+    avant = await svc.get_article(article_id)
+    before = {"code": avant.code, "stock_actuel": str(avant.stock_actuel)}
+    article = await svc.update_article(article_id, body, user)
     await audit_stock(
         db, user, "update", "mg_article", article.id, request=request,
-        after={"code": article.code, "is_active": article.is_active},
+        before=before,
+        after={"code": article.code, "is_active": article.is_active, "stock_actuel": str(article.stock_actuel)},
     )
     return _article_out(svc, article)
 

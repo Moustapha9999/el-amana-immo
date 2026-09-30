@@ -100,13 +100,6 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
     },
     {
       section: 'Stock & Fournitures',
-      label: 'Demandes de fournitures',
-      path: '/stock-fournitures/demandes',
-      icon: 'assignment',
-      permissions: ['mg.stock.view', 'mg.stock.create', 'mg.stock.approve'],
-    },
-    {
-      section: 'Stock & Fournitures',
       label: 'Inventaire',
       path: '/stock-fournitures/inventaires',
       icon: 'fact_check',
@@ -177,13 +170,6 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
       path: '/achats-appro/bons',
       icon: 'request_quote',
       permissions: ['mg.purchase.view'],
-    },
-    {
-      section: 'Commande',
-      label: 'Nouveau BC',
-      path: '/achats-appro/nouveau',
-      icon: 'add_circle',
-      permissions: ['mg.purchase.create'],
     },
     {
       section: 'Aval',

@@ -53,6 +53,7 @@ WORKFLOW_SOURCES = {
     "inventaire": "un inventaire",
     "achat_reception": "une réception de bon de commande",
 }
+MOUVEMENTS_EDITABLES = frozenset({"ENTREE", "SORTIE", "AJUSTEMENT"})
 INVENTAIRE_VERROUILLE = frozenset({"VALIDE", "AJUSTEMENTS_APPLIQUES", "CLOTURE"})
 DEMANDE_STATUTS = frozenset(
     {
@@ -250,13 +251,39 @@ class MgStockService:
             "total_inventaires": by_type.get("INVENTAIRE", (Decimal("0"), 0))[1],
         }
 
-    async def update_article(self, article_id: uuid.UUID, data: ArticleUpdate) -> MgArticle:
-        article = await self.db.get(MgArticle, article_id)
+    async def update_article(
+        self, article_id: uuid.UUID, data: ArticleUpdate, user: User | None = None
+    ) -> MgArticle:
+        article = await self.db.scalar(select(MgArticle).where(MgArticle.id == article_id).with_for_update())
         if article is None or article.deleted_at is not None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Article introuvable")
         payload = data.model_dump(exclude_unset=True)
+        stock_cible = payload.pop("stock_actuel", None)
+        motif = (payload.pop("motif_correction", None) or "").strip()
+        if "code" in payload:
+            code = (payload["code"] or "").strip().upper()
+            if not code:
+                raise AppError("Le code article est obligatoire.", code="ARTICLE_CODE_REQUIS")
+            if code != article.code:
+                pris = await self.db.scalar(
+                    select(MgArticle.id).where(func.upper(MgArticle.code) == code, MgArticle.id != article.id)
+                )
+                if pris is not None:
+                    raise AppError(f"Le code {code} est déjà utilisé par un autre article.", code="ARTICLE_CODE_PRIS")
+            payload["code"] = code
         for key, value in payload.items():
             setattr(article, key, value)
+        if stock_cible is not None:
+            ecart = Decimal(stock_cible) - Decimal(article.stock_actuel or 0)
+            if ecart != 0:
+                await self._apply_mouvement(
+                    article=article,
+                    type_mouvement="AJUSTEMENT",
+                    quantite=ecart,
+                    agence_id=article.agence_id,
+                    initiateur=user,
+                    motif=motif or "Correction du stock depuis la fiche article",
+                )
         if data.is_active is False:
             article.deleted_at = datetime.now(timezone.utc)
             article.is_active = False
@@ -304,6 +331,7 @@ class MgStockService:
     def mouvement_snapshot(mvt: MgStockMouvement) -> dict:
         return {
             "reference": mvt.reference,
+            "article_id": str(mvt.article_id) if mvt.article_id else None,
             "type_mouvement": mvt.type_mouvement,
             "date_mouvement": mvt.date_mouvement.isoformat() if mvt.date_mouvement else None,
             "quantite": str(mvt.quantite),
@@ -332,9 +360,10 @@ class MgStockService:
                 "Passez par l’opération d’origine.",
                 code="MVT_WORKFLOW",
             )
-        if mvt.type_mouvement not in {"ENTREE", "SORTIE"}:
+        if mvt.type_mouvement not in MOUVEMENTS_EDITABLES:
             raise AppError(
-                f"Seules les entrées et sorties peuvent être {participe}. Saisissez un nouvel ajustement.",
+                f"Un mouvement d’inventaire fixe le stock : il ne peut pas être {participe[:-1]}. "
+                "Saisissez un ajustement.",
                 code="MVT_TYPE_VERROUILLE",
             )
         if periode is not None and periode.statut == "CLOTUREE":
@@ -346,7 +375,7 @@ class MgStockService:
 
     @staticmethod
     def _effet(type_mouvement: str, quantite: Decimal) -> Decimal:
-        return quantite if type_mouvement == "ENTREE" else -quantite
+        return -quantite if type_mouvement == "SORTIE" else quantite
 
     async def _appliquer_effet(
         self, mvt: MgStockMouvement, periode: MgStockPeriode | None, delta_qty: Decimal
@@ -356,6 +385,8 @@ class MgStockService:
         )
         if article is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Article introuvable")
+        if not getattr(article, "stockable", True):
+            raise AppError(f"Article {article.code} non stockable.", code="ARTICLE_NON_STOCKABLE")
         current = Decimal(article.stock_actuel or 0)
         new_stock = current + self._effet(mvt.type_mouvement, delta_qty)
         if new_stock < 0:
@@ -388,11 +419,27 @@ class MgStockService:
                 )
             mvt.date_mouvement = nouvelle_date
 
-        quantite = fields.get("quantite")
-        if quantite is not None and Decimal(quantite) != Decimal(mvt.quantite):
+        ancienne_qty = Decimal(mvt.quantite)
+        nouvelle_qty = Decimal(fields["quantite"]) if fields.get("quantite") is not None else ancienne_qty
+        nouvel_article = fields.get("article_id") or mvt.article_id
+        change_article = nouvel_article != mvt.article_id
+        if change_article or nouvelle_qty != ancienne_qty:
             self._assert_quantite_modifiable(mvt, periode, "modifier")
-            await self._appliquer_effet(mvt, periode, Decimal(quantite) - Decimal(mvt.quantite))
-            mvt.quantite = Decimal(quantite)
+            if mvt.type_mouvement == "AJUSTEMENT":
+                if nouvelle_qty == 0:
+                    raise AppError("Un ajustement ne peut pas être nul.", code="AJUSTEMENT_NUL")
+            elif nouvelle_qty <= 0:
+                raise AppError("La quantité doit être supérieure à 0.", code="QUANTITE_INVALIDE")
+            if change_article:
+                cible = await self.db.get(MgArticle, nouvel_article)
+                if cible is None or cible.deleted_at is not None:
+                    raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Article introuvable")
+                await self._appliquer_effet(mvt, periode, -ancienne_qty)
+                mvt.article_id = nouvel_article
+                await self._appliquer_effet(mvt, periode, nouvelle_qty)
+            else:
+                await self._appliquer_effet(mvt, periode, nouvelle_qty - ancienne_qty)
+            mvt.quantite = nouvelle_qty
 
         for key in ("agence_id", "departement", "motif", "observation"):
             if key in fields:
@@ -548,7 +595,7 @@ class MgStockService:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
                     detail=(
-                        f"Quantité {payload.quantite} > reste {reste} "
+                        f"Quantité {as_qty(payload.quantite)} > reste {as_qty(reste)} "
                         f"pour « {ligne.description} »"
                     ),
                 )
@@ -679,7 +726,7 @@ class MgStockService:
                     "periode_cloturee": cloturee,
                     "quantite_modifiable": (
                         not cloturee
-                        and m.type_mouvement in {"ENTREE", "SORTIE"}
+                        and m.type_mouvement in MOUVEMENTS_EDITABLES
                         and (m.source_type or "") not in WORKFLOW_SOURCES
                     ),
                 }
@@ -927,25 +974,28 @@ class MgStockService:
             crees_stmt = crees_stmt.where(MgArticle.famille_id == famille_id)
         articles_crees_mois = int(await self.db.scalar(crees_stmt) or 0)
 
+        from app.models.mg_requests import MgEmployeeRequest
+
+        # Les besoins arrivent par les demandes employés (reçues par Moyens Généraux).
         async def _count_demandes(statuts: list[str]) -> int:
             stmt = (
                 select(func.count())
-                .select_from(MgDemandeFourniture)
+                .select_from(MgEmployeeRequest)
                 .where(
-                    MgDemandeFourniture.deleted_at.is_(None),
-                    MgDemandeFourniture.statut.in_(statuts),
+                    MgEmployeeRequest.target_espace_code == "moyens-generaux",
+                    MgEmployeeRequest.status.in_(statuts),
                 )
             )
             if agence_id:
-                stmt = stmt.where(MgDemandeFourniture.agence_id == agence_id)
+                stmt = stmt.where(MgEmployeeRequest.agency_id == agence_id)
             return int(await self.db.scalar(stmt) or 0)
 
-        demandes_en_attente = await _count_demandes(
-            ["BROUILLON", "SOUMIS", "VISA_AGENCE", "VISA_MG", "PREPARATION", "ACCORDEE"]
+        demandes_en_attente = await _count_demandes(["SOUMISE", "RECUE", "EN_ANALYSE"])
+        demandes_en_cours = await _count_demandes(
+            ["A_COMPLETER", "VALIDEE", "A_REGROUPER", "REGROUPEE", "ACHAT_EN_COURS", "COMMANDEE"]
         )
-        demandes_en_cours = await _count_demandes(["PREPARATION", "SERVIE"])
-        demandes_validees = await _count_demandes(["ARCHIVEE", "CLOTUREE"])
-        demandes_rejetees = await _count_demandes(["REJETEE", "ANNULEE"])
+        demandes_validees = await _count_demandes(["SERVIE", "CLOTUREE"])
+        demandes_rejetees = await _count_demandes(["REFUSEE", "ANNULEE"])
 
         inv_stmt = (
             select(MgInventaire)
@@ -1209,9 +1259,12 @@ class MgStockService:
 
     async def update_inventaire(self, inventaire_id: uuid.UUID, data: InventaireUpdate) -> MgInventaire:
         inv = await self.get_inventaire(inventaire_id)
-        if inv.statut in INVENTAIRE_VERROUILLE:
-            raise AppError("Inventaire validé ou clôturé : il n’est plus modifiable.", code="INVENTAIRE_VERROUILLE")
         fields = data.model_dump(exclude_unset=True)
+        if inv.statut in INVENTAIRE_VERROUILLE and fields.get("date_debut"):
+            raise AppError(
+                "Inventaire validé ou clôturé : seuls le libellé et l’observation restent modifiables.",
+                code="INVENTAIRE_VERROUILLE",
+            )
         if fields.get("libelle"):
             inv.libelle = fields["libelle"].strip()
         if fields.get("date_debut"):
@@ -1645,7 +1698,8 @@ class MgStockService:
                     initiateur=user,
                     motif=f"Écart constaté lors de l'inventaire {inv.reference}",
                     observation=(
-                        f"théorique={ligne.stock_theorique} physique={physique} écart={ligne.ecart}"
+                        f"Théorique {as_qty(ligne.stock_theorique or 0)} · Physique {as_qty(physique)} · "
+                        f"Écart {as_qty(ligne.ecart):+d}"
                     ),
                     source_type="inventaire",
                     source_id=inv.id,

@@ -1,4 +1,11 @@
-import { MontantPipe } from '../shared/montant.pipe';
+import {
+  MontantPipe,
+  QuantitePipe,
+  formatMontant,
+  formatQuantite,
+  montantArrondi,
+  quantiteEntiere,
+} from '../shared/montant.pipe';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -13,6 +20,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
 import { SupplierSelectComponent } from './supplier-select.component';
+import { AchatsFactureApercuComponent } from './achats-apercu.component';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 
@@ -70,9 +78,11 @@ type Mode = 'list' | 'form';
     ReactiveFormsModule,
     RouterLink,
     MontantPipe,
+    QuantitePipe,
     MatIconModule,
     MgGedPanelComponent,
     SupplierSelectComponent,
+    AchatsFactureApercuComponent,
   ],
   templateUrl: './achats-factures.component.html',
   styleUrl: './achats-ui.css',
@@ -95,6 +105,7 @@ export class AchatsFacturesComponent implements OnInit {
   readonly matching = signal(false);
   readonly matchResult = signal<ThreeWayMatch | null>(null);
   readonly q = signal('');
+  readonly apercuId = signal<string | null>(null);
   readonly confirm = signal<{ row: FactureRow; action: 'desactiver' | 'supprimer' } | null>(null);
 
   readonly filters = this.fb.nonNullable.group({ q: '' });
@@ -123,6 +134,33 @@ export class AchatsFacturesComponent implements OnInit {
   readonly total = computed(() => this.rows().reduce((n, r) => n + Number(r.montant_ttc || 0), 0));
   readonly ecarts = computed(() => this.rows().filter((r) => r.ecart_quantite || r.ecart_montant).length);
   readonly canEditForm = computed(() => true);
+  readonly matchDetails = computed(() =>
+    (this.matchResult()?.detail ?? '')
+      .split(';')
+      .map((d) => d.trim())
+      .filter(Boolean),
+  );
+
+  /** Référence quantité : la réception si elle existe, sinon la commande (même règle que le backend). */
+  ecartQuantite(m: ThreeWayMatch): number {
+    const recue = quantiteEntiere(m.qty_recue);
+    const ref = recue > 0 ? recue : quantiteEntiere(m.qty_commandee);
+    return quantiteEntiere(m.qty_facturee) - ref;
+  }
+
+  ecartMontant(m: ThreeWayMatch): number {
+    return montantArrondi(montantArrondi(m.facture_ttc) - montantArrondi(m.bc_total_ttc));
+  }
+
+  ecartQuantiteLabel(m: ThreeWayMatch): string {
+    const d = this.ecartQuantite(m);
+    return `${d > 0 ? '+' : ''}${formatQuantite(d)}`;
+  }
+
+  ecartMontantLabel(m: ThreeWayMatch): string {
+    const d = this.ecartMontant(m);
+    return `${d > 0 ? '+' : ''}${formatMontant(d, 'MRU')}`;
+  }
 
   get lignes(): FormArray {
     return this.form.get('lignes') as FormArray;
@@ -206,7 +244,7 @@ export class AchatsFacturesComponent implements OnInit {
   }
 
   open(r: FactureRow): void {
-    void this.router.navigateByUrl(`/achats-appro/factures/${r.id}`);
+    this.apercuId.set(r.id);
   }
 
   ecartLabel(r: FactureRow): string {

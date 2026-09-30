@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.auth import Agence, User
+from app.schemas.nombres import as_qty
+from app.services.reporting_export import format_montant
 from app.models.mg_achats import (
     MgAchatBl,
     MgAchatComparaison,
@@ -2013,7 +2015,7 @@ class MgAchatsService:
             if qty > reste:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
-                    detail=f"Quantité {qty} > reste {reste} pour « {ligne.description} »",
+                    detail=f"Quantité {as_qty(qty)} > reste {as_qty(reste)} pour « {ligne.description} »",
                 )
             article_id = payload.article_id or ligne.article_id
             if ligne.stockable and article_id:
@@ -2230,13 +2232,13 @@ class MgAchatsService:
             # Facturé doit coller au reçu (idéalement) ou à la commande
             if qty_rec > 0 and qty_fac != qty_rec:
                 ecart_q = True
-                details.append(f"Qté facturée {qty_fac} ≠ reçue {qty_rec}")
+                details.append(f"Qté facturée {as_qty(qty_fac)} ≠ reçue {as_qty(qty_rec)}")
             elif qty_rec == 0 and qty_fac != qty_cmd:
                 ecart_q = True
-                details.append(f"Qté facturée {qty_fac} ≠ commandée {qty_cmd}")
+                details.append(f"Qté facturée {as_qty(qty_fac)} ≠ commandée {as_qty(qty_cmd)}")
         if abs(fac_ttc - bc_ttc) > Decimal("0.01"):
             ecart_m = True
-            details.append(f"Montant TTC facture {fac_ttc} ≠ BC {bc_ttc}")
+            details.append(f"Montant TTC facture {format_montant(fac_ttc)} ≠ BC {format_montant(bc_ttc)}")
         resultat = "ANOMALIE" if (ecart_q or ecart_m) else "CONFORME"
         return ThreeWayMatchOut(
             resultat=resultat,
