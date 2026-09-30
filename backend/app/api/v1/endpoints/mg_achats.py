@@ -11,9 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_module_access, require_permission
+from app.core.config import get_settings
 from app.models.auth import Agence, User
 from app.schemas.mg_achats import (
     AlerteOut,
+    AnnulationIn,
     BlCreate,
     BlOut,
     ComparaisonCreate,
@@ -36,6 +38,7 @@ from app.schemas.mg_achats import (
     FactureDossierOut,
     FacturePropositionOut,
     FactureUpdate,
+    FactureValiderIn,
     FournisseurSummaryOut,
     PaginatedBonsOut,
     PaiementCreate,
@@ -57,11 +60,18 @@ from app.schemas.mg_achats import (
 from app.schemas.mg_ops import BonCreate, BonOut, BonUpdate
 from app.schemas.organisation import FournisseurCreate, FournisseurRead, FournisseurUpdate
 from app.services.mg_achats_events import audit_achats, notify_achats_roles
+from app.services.mg_achats_regles import BC_ACTIONS_APPROBATION
 from app.services.mg_achats_service import MgAchatsService
+from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
 from app.services.mg_pdf_service import _bc_pdf_filename, pdf_bon_commande
 
 router = APIRouter(prefix="/mg/achats", tags=["mg-achats"])
 _module = [Depends(require_module_access("achats-appro"))]
+
+
+@router.get("/config", dependencies=_module)
+async def config_achats() -> dict[str, bool]:
+    return {"mode_test": get_settings().achats_mode_test}
 
 
 def _csv(rows: list[dict], headers: list[str]) -> Response:
@@ -917,7 +927,7 @@ async def update_bon(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.purchase.create")),
 ):
-    row = await MgAchatsService(db).update_bon(bon_id, body)
+    row = await MgAchatsService(db).update_bon(bon_id, body, user)
     await audit_achats(db, user, "update", "mg_bon_commande", row.id, request)
     return row
 
@@ -934,17 +944,35 @@ async def delete_bon(
     return row
 
 
+async def _exiger_droit_transition(db: AsyncSession, user: User, action: str) -> None:
+    """valider / rejeter / clôturer : mg.purchase.approve ; autres actions : mg.purchase.create."""
+    requis = "mg.purchase.approve" if action in BC_ACTIONS_APPROBATION else "mg.purchase.create"
+    if not user_has_permission_codes(await load_user_permission_codes(db, user), requis):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail=f"Permission « {requis} » requise pour l'action « {action} ».",
+        )
+
+
 @router.post("/bons/{bon_id}/transition", response_model=BonOut, dependencies=_module)
 async def transition_bon(
     bon_id: UUID,
     body: TransitionIn,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_permission("mg.purchase.approve")),
+    user: User = Depends(require_permission("mg.purchase.create", "mg.purchase.approve")),
 ):
-    row = await MgAchatsService(db).transition_bon(bon_id, body.action, user)
+    action = body.action.strip().lower()
+    await _exiger_droit_transition(db, user, action)
+    row = await MgAchatsService(db).transition_bon(bon_id, action, user, motif=body.motif)
     await audit_achats(
-        db, user, f"transition:{body.action}", "mg_bon_commande", row.id, request
+        db,
+        user,
+        f"transition:{action}",
+        "mg_bon_commande",
+        row.id,
+        request,
+        after={"statut": row.statut, "motif": body.motif} if body.motif else {"statut": row.statut},
     )
     await notify_achats_roles(
         db,
@@ -1117,6 +1145,20 @@ async def update_reception(
     return await svc.serialize_reception(row)
 
 
+@router.post("/receptions/{reception_id}/annuler", response_model=ReceptionOut, dependencies=_module)
+async def annuler_reception(
+    reception_id: UUID,
+    body: AnnulationIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.receive")),
+):
+    svc = MgAchatsService(db)
+    row = await svc.cancel_reception(reception_id, user, body.motif)
+    await audit_achats(db, user, "annuler", "mg_achat_reception", row.id, request, after={"motif": body.motif})
+    return await svc.serialize_reception(row)
+
+
 # --- Factures ---
 
 
@@ -1195,8 +1237,36 @@ async def update_facture(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.purchase.invoice")),
 ):
-    row = await MgAchatsService(db).update_facture(facture_id, body)
+    row = await MgAchatsService(db).update_facture(facture_id, body, user)
     await audit_achats(db, user, "update", "mg_achat_facture", row.id, request)
+    return row
+
+
+@router.post("/factures/{facture_id}/valider", response_model=FactureOut, dependencies=_module)
+async def valider_facture(
+    facture_id: UUID,
+    body: FactureValiderIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.approve")),
+):
+    row = await MgAchatsService(db).validate_invoice(facture_id, user, body.motif)
+    await audit_achats(
+        db, user, "valider", "mg_achat_facture", row.id, request, after={"statut": row.statut, "motif": body.motif}
+    )
+    return row
+
+
+@router.post("/factures/{facture_id}/annuler", response_model=FactureOut, dependencies=_module)
+async def annuler_facture(
+    facture_id: UUID,
+    body: AnnulationIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.invoice")),
+):
+    row = await MgAchatsService(db).cancel_invoice(facture_id, user, body.motif)
+    await audit_achats(db, user, "annuler", "mg_achat_facture", row.id, request, after={"motif": body.motif})
     return row
 
 
@@ -1265,8 +1335,21 @@ async def update_paiement(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.purchase.pay")),
 ):
-    row = await MgAchatsService(db).update_paiement(paiement_id, body)
+    row = await MgAchatsService(db).update_paiement(paiement_id, body, user)
     await audit_achats(db, user, "update", "mg_achat_paiement", row.id, request)
+    return row
+
+
+@router.post("/paiements/{paiement_id}/annuler", response_model=PaiementOut, dependencies=_module)
+async def annuler_paiement(
+    paiement_id: UUID,
+    body: AnnulationIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.purchase.pay")),
+):
+    row = await MgAchatsService(db).cancel_payment(paiement_id, user, body.motif)
+    await audit_achats(db, user, "annuler", "mg_achat_paiement", row.id, request, after={"motif": body.motif})
     return row
 
 
@@ -1301,13 +1384,14 @@ async def desactiver_entite(
     collection: str,
     entity_id: UUID,
     request: Request,
+    body: AnnulationIn | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.purchase.create")),
 ):
     kind = _ENTITY_KINDS.get(collection)
     if kind is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Ressource inconnue")
-    row = await MgAchatsService(db).deactivate_entity(kind, entity_id, user)
+    row = await MgAchatsService(db).deactivate_entity(kind, entity_id, user, body.motif if body else None)
     await audit_achats(db, user, "deactivate", f"mg_achat_{kind}", row.id, request)
     return row
 

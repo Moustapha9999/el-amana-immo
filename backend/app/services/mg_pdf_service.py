@@ -236,6 +236,29 @@ def _plain_line(label: str, value: str, styles) -> Paragraph:
     )
 
 
+def _moyen_paiement_detail(bon) -> str:
+    moyen = (bon.moyen_paiement or "").strip()
+    if not moyen:
+        return "—"
+    ref = (getattr(bon, "ref_paiement", None) or "").strip()
+    montant = getattr(bon, "montant_paiement", None)
+    detail = ""
+    if moyen == "Cash" and montant is not None:
+        detail = f"montant : {money(montant)} {bon.devise or 'MRU'}"
+    elif moyen == "Virement" and ref:
+        detail = f"compte : {ref}"
+    elif moyen == "Amanty" and ref:
+        detail = f"tél. : {ref}"
+    return escape(f"{moyen} — {detail}" if detail else moyen)
+
+
+def _taux_tva_label(bon) -> str:
+    taux = {Decimal(str(l.taux_tva or 0)) for l in (bon.lignes or [])}
+    if len(taux) != 1:
+        return ""
+    return f" ({money(taux.pop())} %)"
+
+
 def _visa_block(label: str, styles, *, zone_h: float = 16 * mm, width: float = 80 * mm) -> Table:
     """Libellé + zone de signature vide en dessous (sans texte « Signature / cachet »)."""
     zone = Table([[""]], colWidths=[width], rowHeights=[zone_h])
@@ -478,7 +501,7 @@ def pdf_bon_commande(
                 "",
             ],
             [
-                _plain_line("Moyen de paiement :", bon.moyen_paiement or "—", styles),
+                _plain_line("Moyen de paiement :", _moyen_paiement_detail(bon), styles),
                 "",
                 "",
             ],
@@ -556,7 +579,7 @@ def pdf_bon_commande(
                 Paragraph(f"<b>{money(bon.total_ht)}</b>", styles["cell_right"]),
             ],
             [
-                Paragraph("<b>Prix total (MRU) TVA</b>", styles["meta"]),
+                Paragraph(f"<b>Prix total (MRU) TVA{_taux_tva_label(bon)}</b>", styles["meta"]),
                 Paragraph(
                     f"<b>{money(getattr(bon, 'total_tva', None))}</b>",
                     styles["cell_right"],

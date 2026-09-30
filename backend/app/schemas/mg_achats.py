@@ -387,14 +387,22 @@ class ReceptionOut(BaseModel):
     statut: str
     observation: str | None
     created_by: UUID | None
+    annule_at: datetime | None = None
+    motif_annulation: str | None = None
     lignes: list[ReceptionLigneOut] = []
 
 
+class AnnulationIn(BaseModel):
+    motif: str | None = Field(default=None, max_length=1000)
+
+
 class FactureLigneIn(BaseModel):
+    # Lien prioritaire vers la ligne BC ; à défaut, rapprochement par désignation.
+    bc_ligne_id: UUID | None = None
     designation: str = Field(min_length=1, max_length=255)
     quantite: QtyPos
     prix_unitaire: Decimal = Field(ge=0)
-    # Non stocké : sert au calcul de la TVA (sinon taux de la ligne BC correspondante).
+    # Absent → taux de la ligne BC rapprochée.
     taux_tva: Decimal | None = Field(default=None, ge=0, le=100)
 
 
@@ -402,14 +410,19 @@ class FactureLigneOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    bc_ligne_id: UUID | None = None
     designation: str
     quantite: Decimal
     prix_unitaire: Decimal
+    taux_tva: Decimal = Decimal("0")
     total_ht: Decimal
+    montant_tva: Decimal = Decimal("0")
+    total_ttc: Decimal = Decimal("0")
     sort_order: int
 
 
 class FactureLigneProposee(BaseModel):
+    bc_ligne_id: UUID | None = None
     designation: str
     uom: str = "U"
     quantite: Decimal
@@ -493,8 +506,17 @@ class FactureOut(BaseModel):
     ecart_quantite: bool
     ecart_montant: bool
     observation: str | None
+    montant_paye: Decimal = Decimal("0")
+    reste_a_payer: Decimal = Decimal("0")
+    valide_at: datetime | None = None
+    motif_validation: str | None = None
     lignes: list[FactureLigneOut] = []
     nb_justificatifs: int = 0
+
+
+class FactureValiderIn(BaseModel):
+    # Obligatoire pour valider une facture en ANOMALIE (écart accepté).
+    motif: str | None = Field(default=None, max_length=1000)
 
 
 class JustificatifOut(BaseModel):
@@ -547,16 +569,34 @@ class FactureDossierOut(BaseModel):
     reste_a_payer: Decimal
 
 
+class RapprochementLigneOut(BaseModel):
+    designation: str
+    bc_ligne_id: UUID | None = None
+    quantite_commandee: Decimal
+    quantite_recue: Decimal
+    quantite_deja_facturee: Decimal
+    quantite_facturee: Decimal
+    prix_unitaire_bc: Decimal | None = None
+    prix_unitaire_facture: Decimal
+    taux_tva_bc: Decimal | None = None
+    taux_tva_facture: Decimal
+    ok: bool
+    motifs: list[str] = []
+
+
 class ThreeWayMatchOut(BaseModel):
     resultat: str  # CONFORME | ANOMALIE
     ecart_quantite: bool
     ecart_montant: bool
     detail: str | None = None
     bc_total_ttc: Decimal | None = None
+    # TTC attendu pour CETTE facture (quantités facturées × prix / TVA du BC).
+    attendu_ttc: Decimal | None = None
     facture_ttc: Decimal | None = None
     qty_commandee: Decimal | None = None
     qty_recue: Decimal | None = None
     qty_facturee: Decimal | None = None
+    lignes: list[RapprochementLigneOut] = []
 
 
 class PaiementCreate(BaseModel):
@@ -594,6 +634,7 @@ class PaiementOut(BaseModel):
     reference_paiement: str | None
     statut: str
     observation: str | None
+    annule_at: datetime | None = None
 
 
 class EvenementOut(BaseModel):

@@ -236,7 +236,7 @@ interface Paginated<T> {
                   </tr>
                 </thead>
                 <tbody>
-                  @for (ctrl of lignes.controls; track $index; let i = $index) {
+                  @for (ctrl of lignes.controls; track ctrl; let i = $index) {
                     <tr [formGroupName]="i">
                       <td>
                         <input

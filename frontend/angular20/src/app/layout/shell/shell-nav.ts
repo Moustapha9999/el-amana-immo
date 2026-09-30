@@ -152,13 +152,6 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
     },
     {
       section: 'Amont',
-      label: 'Demandes d’achat',
-      path: '/achats-appro/demandes',
-      icon: 'assignment',
-      permissions: ['mg.purchase.view', 'mg.purchase.demande'],
-    },
-    {
-      section: 'Amont',
       label: 'Fournisseurs',
       path: '/achats-appro/fournisseurs',
       icon: 'store',

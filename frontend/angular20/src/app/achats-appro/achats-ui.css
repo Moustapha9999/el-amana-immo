@@ -249,7 +249,7 @@
 }
 .bea-ach__badge[data-prio='URGENT'],
 .bea-ach__badge[data-statut='REJETEE'],
-.bea-ach__badge[data-statut='ANNULEE'] { background: #fee2e2; color: #b91c1c; }
+.bea-ach__badge[data-statut^='ANNULE'] { background: #fee2e2; color: #b91c1c; }
 .bea-ach__badge[data-statut='OUVERTE'],
 .bea-ach__badge[data-statut='SOUMISE'] { background: #fef3c7; color: #b45309; }
 .bea-ach__badge[data-statut='VALIDEE'],
@@ -260,10 +260,10 @@
 .bea-ach__badge[data-statut='ENVOYE'],
 .bea-ach__badge[data-statut='CLOTURE'],
 .bea-ach__badge[data-statut='CLOTUREE'],
-.bea-ach__badge[data-statut='PAYE'] { background: #d1fae5; color: #047857; }
+.bea-ach__badge[data-statut^='PAYE'] { background: #d1fae5; color: #047857; }
 .bea-ach__badge[data-statut='PARTIEL'],
-.bea-ach__badge[data-statut='VISA_MG'],
-.bea-ach__badge[data-statut='VISA_DR'],
+.bea-ach__badge[data-statut='PARTIELLEMENT_PAYEE'],
+.bea-ach__badge[data-statut='SOUMIS'],
 .bea-ach__badge[data-statut='A_PAYER'],
 .bea-ach__badge[data-statut='ANOMALIE'],
 .bea-ach__badge[data-statut='RECUE'] { background: #fef3c7; color: #b45309; }

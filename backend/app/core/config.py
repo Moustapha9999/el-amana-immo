@@ -84,6 +84,10 @@ class Settings(BaseSettings):
 
     cors_origins: str = Field(default="http://localhost", alias="CORS_ORIGINS")
 
+    # Phase de test Achats : lève les verrous de statut (modification / suppression en cascade).
+    # À couper (0) avant la mise en production.
+    achats_mode_test: bool = Field(default=False, alias="ACHATS_MODE_TEST")
+
     upload_dir: str = "storage/uploads"
     ged_dir: str = "storage/ged"
     backup_dir: str = Field(default="backups", alias="BACKUP_DIR")

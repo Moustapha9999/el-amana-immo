@@ -51,6 +51,8 @@ class BonCreate(BaseModel):
     incoterm: str | None = None
     conditions_paiement: str | None = None
     moyen_paiement: str | None = None
+    ref_paiement: str | None = Field(default=None, max_length=255)
+    montant_paiement: Decimal | None = Field(default=None, ge=0)
     demandeur_nom: str | None = None
     demandeur_date: date | None = None
     observation: str | None = None
@@ -83,6 +85,8 @@ class BonUpdate(BaseModel):
     incoterm: str | None = None
     conditions_paiement: str | None = None
     moyen_paiement: str | None = None
+    ref_paiement: str | None = Field(default=None, max_length=255)
+    montant_paiement: Decimal | None = Field(default=None, ge=0)
     demandeur_nom: str | None = None
     demandeur_date: date | None = None
     observation: str | None = None
@@ -119,6 +123,8 @@ class BonOut(BaseModel):
     incoterm: str | None
     conditions_paiement: str | None
     moyen_paiement: str | None
+    ref_paiement: str | None = None
+    montant_paiement: Decimal | None = None
     demandeur_nom: str | None
     demandeur_date: date | None
     statut: str
@@ -138,11 +144,18 @@ class BonOut(BaseModel):
     date_livraison_prevue: date | None = None
     pdf_version: int = 1
     observation: str | None
+    soumis_at: datetime | None = None
+    valide_at: datetime | None = None
+    envoye_at: datetime | None = None
+    cloture_at: datetime | None = None
+    annule_at: datetime | None = None
+    motif_annulation: str | None = None
     lignes: list[BcLigneOut] = []
 
 
 class TransitionIn(BaseModel):
     action: str
+    motif: str | None = Field(default=None, max_length=1000)
 
 
 class NoteLigneIn(BaseModel):

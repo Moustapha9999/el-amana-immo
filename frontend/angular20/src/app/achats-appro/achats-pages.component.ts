@@ -92,15 +92,7 @@ interface Parametre {
           }
         </div>
       } @else if (d(); as dash) {
-        <div class="bea-ach__kpis">
-          <a class="bea-ach__kpi" routerLink="/achats-appro/demandes" style="--i:0">
-            <span class="bea-ach__kpi-icon" data-tone="navy"><mat-icon>assignment</mat-icon></span>
-            <span class="bea-ach__kpi-meta">
-              <span>Demandes ouvertes</span>
-              <strong>{{ dash.demandes_ouvertes | quantite }}</strong>
-              <em>À traiter</em>
-            </span>
-          </a>
+        <div class="bea-ach__kpis bea-ach__kpis--3">
           <a class="bea-ach__kpi" routerLink="/achats-appro/bons" style="--i:1">
             <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>receipt_long</mat-icon></span>
             <span class="bea-ach__kpi-meta">
@@ -184,9 +176,9 @@ interface Parametre {
         </div>
 
         <nav class="bea-ach__shortcuts" aria-label="Raccourcis">
-          <a routerLink="/achats-appro/demandes/nouvelle"><mat-icon>add</mat-icon> Nouvelle demande</a>
           <a routerLink="/achats-appro/nouveau"><mat-icon>post_add</mat-icon> Nouveau BC</a>
           <a routerLink="/achats-appro/receptions/nouvelle"><mat-icon>inventory</mat-icon> Réception</a>
+          <a routerLink="/achats-appro/factures/nouvelle"><mat-icon>request_quote</mat-icon> Facture</a>
           <a routerLink="/achats-appro/rapports"><mat-icon>analytics</mat-icon> Rapports</a>
         </nav>
       }

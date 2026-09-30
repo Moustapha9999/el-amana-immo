@@ -235,6 +235,9 @@ class MgAchatReception(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Bas
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
+    annule_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    annule_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    motif_annulation: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     lignes: Mapped[list[MgAchatReceptionLigne]] = relationship(
         back_populates="reception", cascade="all, delete-orphan"
@@ -288,10 +291,21 @@ class MgAchatFacture(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base)
     ecart_quantite: Mapped[bool] = mapped_column(Boolean, default=False)
     ecart_montant: Mapped[bool] = mapped_column(Boolean, default=False)
     observation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Somme des paiements PAYE — toujours recalculée depuis mg_achat_paiements.
+    montant_paye: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    valide_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    valide_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    motif_validation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    annule_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    annule_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     lignes: Mapped[list[MgAchatFactureLigne]] = relationship(
         back_populates="facture", cascade="all, delete-orphan"
     )
+
+    @property
+    def reste_a_payer(self) -> Decimal:
+        return max(Decimal("0"), Decimal(self.montant_ttc or 0) - Decimal(self.montant_paye or 0))
 
 
 class MgAchatFactureLigne(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -300,10 +314,16 @@ class MgAchatFactureLigne(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     facture_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("mg_achat_factures.id", ondelete="CASCADE"), index=True
     )
+    bc_ligne_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_bc_lignes.id"), nullable=True, index=True
+    )
     designation: Mapped[str] = mapped_column(String(255))
     quantite: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("1"))
     prix_unitaire: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    taux_tva: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0"))
     total_ht: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    montant_tva: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    total_ttc: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
     facture: Mapped[MgAchatFacture] = relationship(back_populates="lignes")
@@ -327,6 +347,8 @@ class MgAchatPaiement(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base
     reference_paiement: Mapped[str | None] = mapped_column(String(120), nullable=True)
     statut: Mapped[str] = mapped_column(String(30), default="A_PAYER", index=True)
     observation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    annule_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    annule_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
 class MgAchatEvenement(UUIDPrimaryKeyMixin, Base):

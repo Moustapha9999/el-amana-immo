@@ -166,7 +166,7 @@
 
       <h2 class="bea-ach__kicker" style="font-size:0.9rem;color:#0f172a;text-transform:none;letter-spacing:0;margin-top:0.5rem">Lignes</h2>
       <div formArrayName="lignes">
-        @for (ctrl of lignes.controls; track $index; let i = $index) {
+        @for (ctrl of lignes.controls; track ctrl; let i = $index) {
           <div class="bea-ach__grid" [formGroupName]="i">
             <label style="grid-column:1/-1">Désignation * <input formControlName="designation" /></label>
             <label>Qté * <input type="number" formControlName="quantite" min="1" step="1" /></label>

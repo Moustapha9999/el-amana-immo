@@ -70,16 +70,16 @@
                 <td><code class="bea-ach__code">{{ r.reference }}</code></td>
                 <td>{{ r.montant | montant }} MRU</td>
                 <td>{{ r.date_echeance || '—' }}</td>
-                <td><span class="bea-ach__badge" [attr.data-statut]="r.statut">{{ r.statut }}</span></td>
+                <td><span class="bea-ach__badge" [attr.data-statut]="r.statut">{{ statutLabel(r.statut) }}</span></td>
                 <td class="bea-ach__actions">
                   <button type="button" class="bea-ach__icon-btn" title="Voir" (click)="open(r)">
                     <mat-icon>visibility</mat-icon>
                   </button>
-                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Désactiver" (click)="askAction(r, 'desactiver')">
+                  <a class="bea-ach__icon-btn" title="Fiche" [routerLink]="['/achats-appro/paiements', r.id]">
+                    <mat-icon>edit</mat-icon>
+                  </a>
+                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Annuler le paiement" [disabled]="r.statut === 'ANNULE' || saving()" (click)="annuler(r)">
                     <mat-icon>block</mat-icon>
-                  </button>
-                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer" (click)="askAction(r, 'supprimer')">
-                    <mat-icon>delete</mat-icon>
                   </button>
                 </td>
               </tr>
@@ -102,8 +102,13 @@
         <h1>{{ id() ? 'Paiement ' + (current()?.reference || '') : 'Nouveau suivi de paiement' }}</h1>
         @if (current(); as c) {
           <p class="bea-ach__muted">
-            <span class="bea-ach__badge" [attr.data-statut]="c.statut">{{ c.statut }}</span>
+            <span class="bea-ach__badge" [attr.data-statut]="c.statut">{{ statutLabel(c.statut) }}</span>
           </p>
+          @if (c.statut === 'ANNULE') {
+            <p class="bea-ach__muted">Paiement annulé : le motif est tracé dans l’observation et l’historique.</p>
+          } @else if (c.statut === 'PAYE') {
+            <p class="bea-ach__muted">Paiement effectué : montant et date figés. Pour corriger, annulez-le avec un motif.</p>
+          }
         }
       </div>
       <a class="bea-ach__btn bea-ach__btn--ghost" routerLink="/achats-appro/paiements">
@@ -119,24 +124,53 @@
         <label style="grid-column:1/-1">Facture *
           <select formControlName="facture_id">
             <option value="">— Choisir —</option>
-            @for (f of factures(); track f.id) {
+            @for (f of facturesPayables(); track f.id) {
               <option [value]="f.id">{{ factureLabel(f) }}</option>
             }
           </select>
         </label>
-        <label>Montant *<input type="number" formControlName="montant" step="0.01" /></label>
+        <label>Montant *<input type="number" formControlName="montant" step="0.01" [attr.max]="factureChoisie()?.reste_a_payer ?? null" />
+          @if (factureChoisie(); as f) {
+            @if (!id()) {
+              <small class="bea-ach__muted">Reste à payer : {{ f.reste_a_payer | montant }} MRU sur {{ f.montant_ttc | montant }} MRU</small>
+            }
+          }
+        </label>
         <label>Date échéance <input type="date" formControlName="date_echeance" /></label>
         <label>Date paiement <input type="date" formControlName="date_paiement" /></label>
-        <label>Mode de paiement
-          <select formControlName="mode_paiement">
+        <label>Moyen de paiement
+          <select formControlName="mode_paiement" (change)="onMoyenChange()">
             <option value="">— Choisir —</option>
-            <option value="VIREMENT">Virement</option>
-            <option value="CHEQUE">Chèque</option>
-            <option value="ESPECES">Espèces</option>
-            <option value="AUTRE">Autre</option>
+            <option value="Amanty">Amanty</option>
+            <option value="Virement">Virement</option>
+            <option value="Cash">Cash (espèces)</option>
+            <option [value]="autre">Autre…</option>
           </select>
+          @if (moyenBc(); as bc) {
+            <small class="bea-ach__muted">Désigné dans le BC {{ bc.bon }} : {{ bc.moyen }}</small>
+          }
         </label>
-        <label>Réf. paiement <input formControlName="reference_paiement" placeholder="N° chèque, virement…" /></label>
+        @switch (moyenChoisi()) {
+          @case ('Virement') {
+            <label>RIB / compte bénéficiaire
+              <input formControlName="reference_paiement" maxlength="120" placeholder="RIB, IBAN, banque, compte ailleurs…" />
+            </label>
+          }
+          @case ('Amanty') {
+            <label>N° de téléphone du transfert Amanty
+              <input type="tel" formControlName="reference_paiement" maxlength="120" placeholder="+222 …" />
+            </label>
+          }
+          @case (autre) {
+            <label>Autre moyen de paiement
+              <input formControlName="mode_paiement_autre" maxlength="80" placeholder="Saisir un autre moyen de paiement…" />
+            </label>
+            <label>Réf. paiement <input formControlName="reference_paiement" maxlength="120" placeholder="N° chèque, référence…" /></label>
+          }
+          @default {
+            <label>Réf. paiement <input formControlName="reference_paiement" maxlength="120" placeholder="N° de reçu, référence…" /></label>
+          }
+        }
         <label style="grid-column:1/-1">Observation <textarea formControlName="observation" rows="2"></textarea></label>
       </div>
       <div class="bea-ach__form-actions">
@@ -144,9 +178,16 @@
           <button type="submit" class="bea-ach__btn" [disabled]="saving()">
             <mat-icon>save</mat-icon> {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
           </button>
-          @if (id() && current()?.statut !== 'PAYE') {
-            <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="markPaid()">
+          @if (id()) {
+            <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="markPaid()">
               <mat-icon>task_alt</mat-icon> Marquer payé
+            </button>
+          }
+        }
+        @if (current(); as c) {
+          @if (c.statut !== 'ANNULE') {
+            <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="annuler(c)">
+              <mat-icon>block</mat-icon> Annuler le paiement
             </button>
           }
         }
@@ -157,26 +198,6 @@
         }
       </div>
     </form>
-  }
-
-  @if (confirm(); as c) {
-    <div class="bea-ach__backdrop" (click)="confirm.set(null)" role="presentation"></div>
-    <div class="bea-ach__modal" role="dialog" aria-modal="true">
-      <header class="bea-ach__modal-head">
-        <div>
-          <p class="bea-ach__kicker">Confirmation</p>
-          <h2>{{ c.action === 'supprimer' ? 'Supprimer' : 'Désactiver' }} le paiement ?</h2>
-        </div>
-        <button type="button" class="bea-ach__icon-btn" (click)="confirm.set(null)" title="Fermer">
-          <mat-icon>close</mat-icon>
-        </button>
-      </header>
-      <p><code class="bea-ach__code">{{ c.row.reference }}</code></p>
-      <footer class="bea-ach__modal-foot">
-        <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="confirm.set(null)">Retour</button>
-        <button type="button" class="bea-ach__btn" (click)="confirmAction()">Confirmer</button>
-      </footer>
-    </div>
   }
 
   @if (apercuId(); as aid) {

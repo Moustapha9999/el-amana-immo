@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -93,25 +93,23 @@ async def test_servir_deuxieme_clic_bloque_cas_6():
 async def test_reception_credit_qte_recue_cas_7():
     from app.schemas.mg_stock import ReceptionBcIn, ReceptionLigneIn
 
+    from app.services.mg_achats_service import MgAchatsService
+
     db = MagicMock()
     svc = MgStockService(db)
-    article = SimpleNamespace(id=uuid4(), code="A4", deleted_at=None, agence_id=None, stockable=True, stock_actuel=Decimal("0"))
-    ligne = SimpleNamespace(
-        id=uuid4(),
-        description="Papier",
-        quantite=Decimal("200"),
-        quantite_recue=Decimal("0"),
-        article_id=article.id,
-    )
-    bon = SimpleNamespace(id=uuid4(), reference="BC-1", statut="VALIDE", deleted_at=None, lignes=[ligne])
-    db.scalar = AsyncMock(side_effect=[bon, article, bon])
-    db.commit = AsyncMock()
-    svc._apply_mouvement = AsyncMock()
-    data = ReceptionBcIn(lignes=[ReceptionLigneIn(ligne_id=ligne.id, quantite=Decimal("180"))])
-    result = await svc.receive_from_bc(bon.id, data, MagicMock())
+    article_id = uuid4()
+    ligne_id = uuid4()
+    bon = SimpleNamespace(id=uuid4(), lignes=[])
+    db.scalar = AsyncMock(return_value=bon)
+    reception = SimpleNamespace(lignes=[SimpleNamespace(article_id=article_id)])
+    data = ReceptionBcIn(lignes=[ReceptionLigneIn(ligne_id=ligne_id, quantite=Decimal("180"), article_id=article_id)])
+    with patch.object(MgAchatsService, "create_reception", AsyncMock(return_value=reception)) as create:
+        result = await svc.receive_from_bc(bon.id, data, MagicMock())
+    # Voie Stock = réception Achats (une seule source de vérité, entrée de stock forcée).
+    payload = create.await_args.args[0]
+    assert create.await_args.kwargs["stocker_si_article"] is True
+    assert payload.lignes[0].bc_ligne_id == ligne_id and payload.lignes[0].quantite_recue == Decimal("180")
     assert result["mouvements_count"] == 1
-    assert ligne.quantite_recue == Decimal("180")
-    assert svc._apply_mouvement.await_args.kwargs["quantite"] == Decimal("180")
 
 
 @pytest.mark.asyncio
@@ -128,10 +126,15 @@ async def test_double_reception_bloquee_cas_8():
         quantite_recue=Decimal("180"),
         article_id=article_id,
     )
+    from app.services.mg_achats_service import MgAchatsService
+
     bon = SimpleNamespace(id=uuid4(), reference="BC-1", statut="PARTIEL", deleted_at=None, lignes=[ligne])
     db.scalar = AsyncMock(return_value=bon)
     data = ReceptionBcIn(lignes=[ReceptionLigneIn(ligne_id=ligne.id, quantite=Decimal("30"))])
-    with pytest.raises(HTTPException) as exc:
+    with (
+        patch.object(MgAchatsService, "get_bon", AsyncMock(return_value=bon)),
+        pytest.raises(HTTPException) as exc,
+    ):
         await svc.receive_from_bc(bon.id, data, MagicMock())
     assert exc.value.status_code == 400
     assert "reste" in exc.value.detail.lower()

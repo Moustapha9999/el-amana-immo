@@ -12,8 +12,10 @@ import {
   DestroyRef,
   OnInit,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -25,7 +27,19 @@ import { SupplierSelectComponent } from './supplier-select.component';
 import { AchatsFactureApercuComponent } from './achats-apercu.component';
 import { PIECES_ACCEPT, PIECES_FORMATS_LABEL, verifierPieceJointe } from '../shared/pieces-jointes';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { FeedbackService } from '../core/feedback/feedback.service';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import {
+  BC_STATUT_LABELS,
+  FACTURE_STATUT_LABELS,
+  bcFacturable,
+  calculerLigne,
+  chargerModeTest,
+  factureModifiable,
+  facturePayable,
+  modeTestAchats,
+  totaliser,
+} from './achats-circuit';
 
 interface BonOpt {
   id: string;
@@ -36,6 +50,7 @@ interface BonOpt {
 
 export interface FactureLigne {
   id?: string;
+  bc_ligne_id?: string | null;
   designation: string;
   quantite: number;
   prix_unitaire: number;
@@ -44,6 +59,7 @@ export interface FactureLigne {
 }
 
 interface LigneProposee {
+  bc_ligne_id: string | null;
   designation: string;
   uom: string;
   quantite: number;
@@ -76,11 +92,6 @@ export interface FactureProposition {
   message: string | null;
 }
 
-interface BcDetail {
-  id: string;
-  lignes: { description: string; taux_tva: number }[];
-}
-
 interface ReceptionOpt {
   id: string;
   reference: string;
@@ -106,6 +117,23 @@ export interface FactureRow {
   observation?: string | null;
   lignes?: FactureLigne[];
   nb_justificatifs?: number;
+  montant_paye?: number;
+  reste_a_payer?: number;
+  motif_validation?: string | null;
+}
+
+export interface RapprochementLigne {
+  designation: string;
+  quantite_commandee: number;
+  quantite_recue: number;
+  quantite_deja_facturee: number;
+  quantite_facturee: number;
+  prix_unitaire_bc: number | null;
+  prix_unitaire_facture: number;
+  taux_tva_bc: number | null;
+  taux_tva_facture: number;
+  ok: boolean;
+  motifs: string[];
 }
 
 export interface ThreeWayMatch {
@@ -114,10 +142,12 @@ export interface ThreeWayMatch {
   ecart_montant: boolean;
   detail?: string | null;
   bc_total_ttc?: number | null;
+  attendu_ttc?: number | null;
   facture_ttc?: number | null;
   qty_commandee?: number | null;
   qty_recue?: number | null;
   qty_facturee?: number | null;
+  lignes?: RapprochementLigne[];
 }
 
 type Mode = 'list' | 'form';
@@ -141,6 +171,7 @@ type Mode = 'list' | 'form';
 export class AchatsFacturesComponent implements OnInit {
   readonly hasUnsavedChanges = unsavedChanges(() => this.mode() === 'form' && this.form.dirty && !this.saving(), () => this.form);
   private readonly api = inject(ApiService);
+  private readonly feedback = inject(FeedbackService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
@@ -158,8 +189,6 @@ export class AchatsFacturesComponent implements OnInit {
   readonly matchResult = signal<ThreeWayMatch | null>(null);
   readonly q = signal('');
   readonly apercuId = signal<string | null>(null);
-  readonly confirm = signal<{ row: FactureRow; action: 'desactiver' | 'supprimer' } | null>(null);
-
   readonly proposition = signal<FactureProposition | null>(null);
   readonly receptions = signal<ReceptionOpt[]>([]);
   readonly chargementBc = signal(false);
@@ -184,18 +213,9 @@ export class AchatsFacturesComponent implements OnInit {
     return fid ? this.bons().filter((b) => !b.fournisseur_id || b.fournisseur_id === fid) : this.bons();
   });
 
-  readonly totaux = computed(() => {
-    let ht = 0;
-    let tva = 0;
-    for (const l of this.lignesVal()) {
-      const lht = montantArrondi(quantiteEntiere(l.quantite) * montantArrondi(l.prix_unitaire));
-      ht += lht;
-      tva += (lht * (Number(l.taux_tva) || 0)) / 100;
-    }
-    ht = montantArrondi(ht);
-    tva = montantArrondi(tva);
-    return { ht, tva, ttc: montantArrondi(ht + tva) };
-  });
+  readonly totaux = computed(() =>
+    totaliser(this.lignesVal().map((l) => calculerLigne(l.quantite, l.prix_unitaire, l.taux_tva))),
+  );
 
   /** Reste à facturer sur le BC (hors facture en cours) comparé au TTC saisi. */
   readonly ecartProposition = computed(() => {
@@ -219,7 +239,10 @@ export class AchatsFacturesComponent implements OnInit {
 
   readonly total = computed(() => this.rows().reduce((n, r) => n + Number(r.montant_ttc || 0), 0));
   readonly ecarts = computed(() => this.rows().filter((r) => r.ecart_quantite || r.ecart_montant).length);
-  readonly canEditForm = computed(() => true);
+  readonly canEditForm = computed(() => {
+    const c = this.current();
+    return !c || factureModifiable(c.statut);
+  });
   readonly matchDetails = computed(() =>
     (this.matchResult()?.detail ?? '')
       .split(';')
@@ -227,15 +250,34 @@ export class AchatsFacturesComponent implements OnInit {
       .filter(Boolean),
   );
 
-  /** Référence quantité : la réception si elle existe, sinon la commande (même règle que le backend). */
-  ecartQuantite(m: ThreeWayMatch): number {
-    const recue = quantiteEntiere(m.qty_recue);
-    const ref = recue > 0 ? recue : quantiteEntiere(m.qty_commandee);
-    return quantiteEntiere(m.qty_facturee) - ref;
+  statutLabel(s: string): string {
+    return FACTURE_STATUT_LABELS[s] ?? s;
   }
 
+  bcLabel(s: string): string {
+    return BC_STATUT_LABELS[s] ?? s;
+  }
+
+  payable(s: string): boolean {
+    return facturePayable(s);
+  }
+
+  pctRegle(f: FactureRow): number {
+    const ttc = Number(f.montant_ttc) || 0;
+    return ttc > 0 ? Math.min(100, Math.round(((Number(f.montant_paye) || 0) / ttc) * 100)) : 0;
+  }
+
+  /** Écart quantité ligne à ligne : somme des dépassements du reçu non encore facturé. */
+  ecartQuantite(m: ThreeWayMatch): number {
+    return (m.lignes ?? []).reduce((s, l) => {
+      const dispo = quantiteEntiere(l.quantite_recue) - quantiteEntiere(l.quantite_deja_facturee);
+      return s + Math.max(0, quantiteEntiere(l.quantite_facturee) - dispo);
+    }, 0);
+  }
+
+  /** TTC facture − TTC attendu pour les quantités de CETTE facture (pas le total du BC). */
   ecartMontant(m: ThreeWayMatch): number {
-    return montantArrondi(montantArrondi(m.facture_ttc) - montantArrondi(m.bc_total_ttc));
+    return montantArrondi(montantArrondi(m.facture_ttc) - montantArrondi(m.attendu_ttc ?? m.bc_total_ttc));
   }
 
   ecartQuantiteLabel(m: ThreeWayMatch): string {
@@ -252,12 +294,19 @@ export class AchatsFacturesComponent implements OnInit {
     return this.form.get('lignes') as FormArray;
   }
 
+  readonly modeTest = modeTestAchats;
+  readonly aValider = computed(() => ['BROUILLON', 'RECUE', 'ANOMALIE'].includes(this.current()?.statut ?? ''));
+  private readonly reappliquerVerrou = effect(() => {
+    if (!this.current()) return;
+    const editable = this.canEditForm();
+    untracked(() => (editable ? this.form.enable({ emitEvent: false }) : this.form.disable({ emitEvent: false })));
+  });
+
   ngOnInit(): void {
+    chargerModeTest(this.api);
     this.api.get<{ items: BonOpt[] }>('/mg/achats/bons', { page: '1', size: '100' }).subscribe({
       next: (r) =>
-        this.bons.set(
-          r.items.filter((b) => !['BROUILLON', 'ANNULE', 'ANNULEE', 'REJETEE'].includes(b.statut)),
-        ),
+        this.bons.set(r.items.filter((b) => bcFacturable(b.statut))),
     });
     this.form.controls.lignes.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.syncLignes());
     this.form.controls.fournisseur_id.valueChanges
@@ -281,6 +330,7 @@ export class AchatsFacturesComponent implements OnInit {
 
   newLigne(l?: Partial<FactureLigne>) {
     return this.fb.group({
+      bc_ligne_id: this.fb.control<string | null>(l?.bc_ligne_id ?? null),
       designation: this.fb.nonNullable.control(l?.designation ?? '', Validators.required),
       quantite: this.fb.nonNullable.control(Number(l?.quantite ?? 1), Validators.required),
       prix_unitaire: this.fb.nonNullable.control(Number(l?.prix_unitaire ?? 0), Validators.required),
@@ -359,16 +409,6 @@ export class AchatsFacturesComponent implements OnInit {
     this.api
       .get<FactureProposition>('/mg/achats/factures/proposition', { bon_id: f.bon_id, facture_id: f.id })
       .subscribe({ next: (p) => this.proposition.set(p) });
-    this.api.get<BcDetail>(`/mg/achats/bons/${f.bon_id}`).subscribe({
-      next: (b) => {
-        const taux = new Map(b.lignes.map((l) => [l.description.trim().toLowerCase(), Number(l.taux_tva) || 0]));
-        this.lignes.controls.forEach((ctrl) => {
-          const d = String(ctrl.get('designation')?.value ?? '').trim().toLowerCase();
-          if (taux.has(d)) ctrl.get('taux_tva')?.setValue(taux.get(d)!, { emitEvent: false });
-        });
-        this.syncLignes();
-      },
-    });
   }
 
   choisirPreuve(ev: Event): void {
@@ -399,7 +439,7 @@ export class AchatsFacturesComponent implements OnInit {
 
   totalLigne(i: number): number {
     const l = this.lignesVal()[i];
-    return l ? montantArrondi(quantiteEntiere(l.quantite) * montantArrondi(l.prix_unitaire)) : 0;
+    return l ? calculerLigne(l.quantite, l.prix_unitaire).ht : 0;
   }
 
   addLigne(): void {
@@ -462,33 +502,80 @@ export class AchatsFacturesComponent implements OnInit {
     return r.ecart_quantite || r.ecart_montant ? 'ANOMALIE' : 'VALIDE';
   }
 
-  askAction(row: FactureRow, action: 'desactiver' | 'supprimer'): void {
-    this.confirm.set({ row, action });
+  supprimer(row: FactureRow): void {
+    this.feedback
+      .run(() => this.api.delete(`/mg/achats/factures/${row.id}`), {
+        confirm: {
+          action: 'suppression',
+          message: `Mode test : la facture ${row.reference} et ses paiements seront supprimés ; ses quantités redeviennent facturables.`,
+        },
+        loading: 'Suppression…',
+        errorTitle: 'Suppression refusée',
+        success: { title: 'Facture supprimée', details: [{ label: 'Référence', value: row.reference }] },
+        busy: this.saving,
+      })
+      .subscribe({
+        next: () => {
+          if (this.mode() === 'form') void this.router.navigateByUrl('/achats-appro/factures');
+          else this.loadList();
+        },
+      });
   }
 
-  confirmAction(): void {
-    const c = this.confirm();
+  annuler(row: FactureRow): void {
+    this.feedback
+      .runWithReason((motif) => this.api.post<FactureRow>(`/mg/achats/factures/${row.id}/annuler`, { motif }), {
+        reason: {
+          title: `Annuler la facture ${row.reference}`,
+          message: 'La facture reste consultable ; ses quantités redeviennent facturables.',
+          hint: 'Refusé si un paiement est actif : annulez-le d’abord.',
+          reasonLabel: 'Motif d’annulation',
+          confirmLabel: 'Annuler la facture',
+          tone: 'danger',
+          icon: 'block',
+        },
+        loading: 'Annulation…',
+        errorTitle: 'Annulation refusée',
+        success: { title: 'Facture annulée', details: [{ label: 'Référence', value: row.reference }] },
+        busy: this.saving,
+      })
+      .subscribe({
+        next: (f) => {
+          if (this.mode() === 'form') this.loadOne(f.id);
+          else this.loadList();
+        },
+      });
+  }
+
+  /** Bon à payer. Une facture en anomalie exige un motif (écart accepté, tracé). */
+  valider(): void {
+    const c = this.current();
     if (!c) return;
-    const req =
-      c.action === 'supprimer'
-        ? this.api.delete(`/mg/achats/factures/${c.row.id}`)
-        : this.api.post(`/mg/achats/factures/${c.row.id}/desactiver`, {});
-    req.subscribe({
-      next: () => {
-        this.confirm.set(null);
-        this.msg.set(
-          c.action === 'supprimer'
-            ? `Facture ${c.row.reference} supprimée.`
-            : `Facture ${c.row.reference} désactivée.`,
-        );
-        if (this.mode() === 'form') void this.router.navigateByUrl('/achats-appro/factures');
-        else this.loadList();
-      },
-      error: (err) => {
-        this.confirm.set(null);
-        this.erreur.set(this.apiDetail(err, 'Action refusée.'));
-      },
-    });
+    const call = (motif?: string) => this.api.post<FactureRow>(`/mg/achats/factures/${c.id}/valider`, { motif });
+    const common = {
+      loading: 'Validation…',
+      errorTitle: 'Validation refusée',
+      success: (f: FactureRow) => ({ title: 'Facture validée', details: [{ label: 'Statut', value: this.statutLabel(f.statut) }] }),
+      busy: this.saving,
+    };
+    const run$ =
+      c.ecart_quantite || c.ecart_montant
+        ? this.feedback.runWithReason((motif) => call(motif), {
+            ...common,
+            reason: {
+              title: `Valider la facture ${c.reference} malgré l’écart`,
+              message: 'Le contrôle 3 voies signale un écart. Justifiez son acceptation.',
+              reasonLabel: 'Motif d’acceptation de l’écart',
+              confirmLabel: 'Valider',
+              tone: 'warn',
+              icon: 'report',
+            },
+          })
+        : this.feedback.run(() => call(), {
+            ...common,
+            confirm: { action: 'validation', message: `La facture ${c.reference} passe « à payer » et ne sera plus modifiable.` },
+          });
+    run$.subscribe({ next: (f) => this.loadOne(f.id) });
   }
 
   save(): void {
@@ -509,6 +596,7 @@ export class AchatsFacturesComponent implements OnInit {
       observation: v.observation.trim() || null,
       ...(this.id() ? {} : { reception_id: v.reception_id || null }),
       lignes: v.lignes.map((l) => ({
+        bc_ligne_id: l.bc_ligne_id || null,
         designation: l.designation.trim(),
         quantite: Number(l.quantite),
         prix_unitaire: Number(l.prix_unitaire),

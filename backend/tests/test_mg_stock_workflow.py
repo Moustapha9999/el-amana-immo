@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -32,6 +32,7 @@ def _ligne(
         quantite=quantite,
         quantite_recue=quantite_recue,
         article_id=article_id,
+        stockable=False,
     )
 
 
@@ -42,6 +43,8 @@ def _bon(*, statut: str = "VALIDE", lignes=None):
         statut=statut,
         deleted_at=None,
         lignes=lignes or [],
+        envoye_at=None,
+        agence_livraison_id=None,
     )
 
 
@@ -55,19 +58,39 @@ def _article(*, stock: Decimal = Decimal("0")):
     )
 
 
+def _voie_achats(bon, db):
+    """La voie Stock délègue à MgAchatsService.create_reception : on isole la base."""
+    from app.services.mg_achats_service import MgAchatsService
+
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+    return (
+        patch.object(MgAchatsService, "get_bon", AsyncMock(return_value=bon)),
+        patch.object(MgAchatsService, "_next_ref", AsyncMock(return_value="REC-1")),
+        patch.object(MgAchatsService, "_append_event", AsyncMock()),
+        patch.object(
+            MgAchatsService,
+            "get_reception",
+            AsyncMock(side_effect=lambda _id: SimpleNamespace(id=_id, lignes=[SimpleNamespace(article_id=uuid4())])),
+        ),
+        patch.object(MgStockService, "record_achat_reception", AsyncMock()),
+    )
+
+
 @pytest.mark.asyncio
 async def test_receive_from_bc_refuse_statut_brouillon():
     db = MagicMock()
     svc = MgStockService(db)
-    bon = _bon(statut="BROUILLON", lignes=[])
-    db.scalar = AsyncMock(return_value=bon)
-    data = ReceptionBcIn(
-        lignes=[ReceptionLigneIn(ligne_id=uuid4(), quantite=Decimal("1"))]
-    )
-    with pytest.raises(HTTPException) as exc:
+    article = _article()
+    ligne = _ligne(article_id=article.id)
+    bon = _bon(statut="BROUILLON", lignes=[ligne])
+    p = _voie_achats(bon, db)
+    data = ReceptionBcIn(lignes=[ReceptionLigneIn(ligne_id=ligne.id, quantite=Decimal("1"), article_id=article.id)])
+    with p[0], p[1], p[2], p[3], p[4], pytest.raises(HTTPException) as exc:
         await svc.receive_from_bc(bon.id, data, _user())
-    assert exc.value.status_code == 400
-    assert "incompatible" in exc.value.detail.lower()
+    assert exc.value.status_code == 409
+    assert "réception impossible" in exc.value.detail.lower()
 
 
 @pytest.mark.asyncio
@@ -77,25 +100,19 @@ async def test_receive_from_bc_partiel():
     article = _article()
     ligne = _ligne(quantite=Decimal("10"), article_id=article.id)
     bon = _bon(statut="VALIDE", lignes=[ligne])
-    # 1) load bon  2) lock article  3) reload bon
-    db.scalar = AsyncMock(side_effect=[bon, article, bon])
-    db.commit = AsyncMock()
-    svc._apply_mouvement = AsyncMock()
-
-    data = ReceptionBcIn(
-        lignes=[ReceptionLigneIn(ligne_id=ligne.id, quantite=Decimal("4"))]
-    )
-    result = await svc.receive_from_bc(bon.id, data, _user())
+    # 1) verrou article  2) rechargement BC pour la réponse
+    db.scalar = AsyncMock(side_effect=[article, bon])
+    p = _voie_achats(bon, db)
+    data = ReceptionBcIn(lignes=[ReceptionLigneIn(ligne_id=ligne.id, quantite=Decimal("4"), article_id=article.id)])
+    with p[0], p[1], p[2], p[3], p[4] as record:
+        result = await svc.receive_from_bc(bon.id, data, _user())
 
     assert result["mouvements_count"] == 1
     assert ligne.quantite_recue == Decimal("4")
     assert bon.statut == "PARTIEL"
-    svc._apply_mouvement.assert_awaited_once()
-    call_kw = svc._apply_mouvement.await_args.kwargs
-    assert call_kw["type_mouvement"] == "ENTREE"
-    assert call_kw["source_type"] == "bon_commande"
-    assert call_kw["source_id"] == bon.id
-    assert call_kw["quantite"] == Decimal("4")
+    record.assert_awaited_once()
+    assert record.await_args.kwargs["quantite"] == Decimal("4")
+    assert record.await_args.kwargs["article"] is article
 
 
 @pytest.mark.asyncio
@@ -105,14 +122,11 @@ async def test_receive_from_bc_complet_statut_recu():
     article = _article()
     ligne = _ligne(quantite=Decimal("5"), quantite_recue=Decimal("2"), article_id=article.id)
     bon = _bon(statut="PARTIEL", lignes=[ligne])
-    db.scalar = AsyncMock(side_effect=[bon, article, bon])
-    db.commit = AsyncMock()
-    svc._apply_mouvement = AsyncMock()
-
-    data = ReceptionBcIn(
-        lignes=[ReceptionLigneIn(ligne_id=ligne.id, quantite=Decimal("3"))]
-    )
-    result = await svc.receive_from_bc(bon.id, data, _user())
+    db.scalar = AsyncMock(side_effect=[article, bon])
+    p = _voie_achats(bon, db)
+    data = ReceptionBcIn(lignes=[ReceptionLigneIn(ligne_id=ligne.id, quantite=Decimal("3"), article_id=article.id)])
+    with p[0], p[1], p[2], p[3], p[4]:
+        result = await svc.receive_from_bc(bon.id, data, _user())
 
     assert result["mouvements_count"] == 1
     assert ligne.quantite_recue == Decimal("5")
@@ -126,12 +140,9 @@ async def test_receive_from_bc_refuse_quantite_superieure_reste():
     article = _article()
     ligne = _ligne(quantite=Decimal("10"), quantite_recue=Decimal("8"), article_id=article.id)
     bon = _bon(statut="PARTIEL", lignes=[ligne])
-    db.scalar = AsyncMock(return_value=bon)
-
-    data = ReceptionBcIn(
-        lignes=[ReceptionLigneIn(ligne_id=ligne.id, quantite=Decimal("5"))]
-    )
-    with pytest.raises(HTTPException) as exc:
+    p = _voie_achats(bon, db)
+    data = ReceptionBcIn(lignes=[ReceptionLigneIn(ligne_id=ligne.id, quantite=Decimal("5"), article_id=article.id)])
+    with p[0], p[1], p[2], p[3], p[4], pytest.raises(HTTPException) as exc:
         await svc.receive_from_bc(bon.id, data, _user())
     assert exc.value.status_code == 400
     assert "reste" in exc.value.detail.lower()
@@ -142,14 +153,11 @@ async def test_receive_from_bc_exige_article():
     db = MagicMock()
     svc = MgStockService(db)
     ligne = _ligne(article_id=None)
-    bon = _bon(statut="VALIDE", lignes=[ligne])
-    db.scalar = AsyncMock(return_value=bon)
+    db.scalar = AsyncMock(return_value=None)
 
-    data = ReceptionBcIn(
-        lignes=[ReceptionLigneIn(ligne_id=ligne.id, quantite=Decimal("1"))]
-    )
+    data = ReceptionBcIn(lignes=[ReceptionLigneIn(ligne_id=ligne.id, quantite=Decimal("1"))])
     with pytest.raises(HTTPException) as exc:
-        await svc.receive_from_bc(bon.id, data, _user())
+        await svc.receive_from_bc(uuid4(), data, _user())
     assert exc.value.status_code == 400
     assert "article" in exc.value.detail.lower()
 

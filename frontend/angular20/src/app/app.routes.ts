@@ -32,12 +32,8 @@ import { ArchiveDetailComponent } from './archives/archive-detail.component';
 import { ArchiveNatureComponent } from './archives/archive-nature.component';
 import { PLATEFORME_ROUTES } from './plateforme/plateforme.routes';
 import { LEGACY_ROOT_MODULE_CODE } from './plateforme/module-routing.contract';
-import { AchatsBonsComponent } from './achats-appro/achats-bons.component';
 import { AchatsDemandesComponent } from './achats-appro/achats-demandes.component';
 import { AchatsFournisseursComponent } from './achats-appro/achats-fournisseurs.component';
-import { AchatsFacturesComponent } from './achats-appro/achats-factures.component';
-import { AchatsPaiementsComponent } from './achats-appro/achats-paiements.component';
-import { AchatsReceptionsComponent } from './achats-appro/achats-receptions.component';
 import { AchatsRapportsComponent } from './achats-appro/achats-rapports.component';
 import { AchatsRapportViewerComponent } from './achats-appro/achats-rapport-viewer.component';
 import {
@@ -60,6 +56,13 @@ import {
   DmgDashboardComponent,
   DmgInboxComponent,
 } from './demandes-mg/demandes-mg.pages';
+
+const achatsBons = () => import('./achats-appro/achats-bons.component').then((m) => m.AchatsBonsComponent);
+const achatsReceptions = () =>
+  import('./achats-appro/achats-receptions.component').then((m) => m.AchatsReceptionsComponent);
+const achatsFactures = () => import('./achats-appro/achats-factures.component').then((m) => m.AchatsFacturesComponent);
+const achatsPaiements = () =>
+  import('./achats-appro/achats-paiements.component').then((m) => m.AchatsPaiementsComponent);
 
 const loadEmpAccueil = () =>
   import('./demandes-employes/demandes-employe.pages').then((m) => m.EmpAccueilComponent);
@@ -141,18 +144,18 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'fournisseurs', component: AchatsFournisseursComponent },
       { path: 'fournisseurs/nouveau', component: AchatsFournisseursComponent },
       { path: 'fournisseurs/:id', component: AchatsFournisseursComponent },
-      { path: 'bons', component: AchatsBonsComponent },
-      { path: 'nouveau', component: AchatsBonsComponent },
-      { path: 'bons/:id', component: AchatsBonsComponent },
-      { path: 'receptions', component: AchatsReceptionsComponent },
-      { path: 'receptions/nouvelle', component: AchatsReceptionsComponent },
-      { path: 'receptions/:id', component: AchatsReceptionsComponent },
-      { path: 'factures', component: AchatsFacturesComponent },
-      { path: 'factures/nouvelle', component: AchatsFacturesComponent },
-      { path: 'factures/:id', component: AchatsFacturesComponent },
-      { path: 'paiements', component: AchatsPaiementsComponent },
-      { path: 'paiements/nouveau', component: AchatsPaiementsComponent },
-      { path: 'paiements/:id', component: AchatsPaiementsComponent },
+      { path: 'bons', loadComponent: achatsBons },
+      { path: 'nouveau', loadComponent: achatsBons },
+      { path: 'bons/:id', loadComponent: achatsBons },
+      { path: 'receptions', loadComponent: achatsReceptions },
+      { path: 'receptions/nouvelle', loadComponent: achatsReceptions },
+      { path: 'receptions/:id', loadComponent: achatsReceptions },
+      { path: 'factures', loadComponent: achatsFactures },
+      { path: 'factures/nouvelle', loadComponent: achatsFactures },
+      { path: 'factures/:id', loadComponent: achatsFactures },
+      { path: 'paiements', loadComponent: achatsPaiements },
+      { path: 'paiements/nouveau', loadComponent: achatsPaiements },
+      { path: 'paiements/:id', loadComponent: achatsPaiements },
       { path: 'rapports', component: AchatsRapportsComponent },
       { path: 'rapports/:key', component: AchatsRapportViewerComponent },
       { path: 'parametres', component: AchatsParametresComponent },

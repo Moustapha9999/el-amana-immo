@@ -275,7 +275,7 @@ interface Paginated {
                   </tr>
                 </thead>
                 <tbody>
-                  @for (ctrl of lignes.controls; track $index; let i = $index) {
+                  @for (ctrl of lignes.controls; track ctrl; let i = $index) {
                     <tr [formGroupName]="i">
                       <td><input type="date" formControlName="date_depense" /></td>
                       <td><input formControlName="description" placeholder="Description" /></td>

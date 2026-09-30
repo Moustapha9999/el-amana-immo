@@ -64,6 +64,8 @@ export interface BonApercu {
   incoterm: string | null;
   conditions_paiement: string | null;
   moyen_paiement: string | null;
+  ref_paiement?: string | null;
+  montant_paiement?: number | null;
   type_achat: string;
   devise: string;
   total_ht: number;
@@ -89,18 +91,20 @@ interface ReceptionApercu {
 const STATUT_LABELS: Record<string, string> = {
   BROUILLON: 'Brouillon',
   SOUMIS: 'Soumis',
-  VISA_MG: 'Visa MG',
-  VISA_DR: 'Visa DR',
   VALIDE: 'Validé',
   ENVOYE: 'Envoyé',
-  PARTIEL: 'Partiel',
+  PARTIEL: 'Reçu partiel',
   RECU: 'Reçu',
   COMPLETE: 'Complète',
   RECUE: 'Reçue',
   ANOMALIE: 'Anomalie',
   CONFORME: 'Conforme',
+  VALIDEE: 'Validée',
   A_PAYER: 'À payer',
+  PARTIELLEMENT_PAYEE: 'Partiellement payée',
+  PAYEE: 'Payée',
   PAYE: 'Payé',
+  REJETEE: 'Rejeté',
   ANNULE: 'Annulé',
   ANNULEE: 'Annulée',
   CLOTURE: 'Clôturé',
@@ -200,6 +204,11 @@ export function statutAchatLabel(s: string | null | undefined): string {
               <h3><mat-icon>gavel</mat-icon> Conditions &amp; paiement</h3>
               <dl>
                 <div><dt>Moyen de paiement</dt><dd>{{ b.moyen_paiement || '—' }}</dd></div>
+                @if (b.moyen_paiement === 'Cash' && b.montant_paiement != null) {
+                  <div><dt>Montant en espèces</dt><dd>{{ b.montant_paiement | montant }} {{ b.devise }}</dd></div>
+                } @else if (b.ref_paiement) {
+                  <div><dt>{{ b.moyen_paiement === 'Amanty' ? 'Tél. Amanty' : 'RIB / compte' }}</dt><dd>{{ b.ref_paiement }}</dd></div>
+                }
                 <div><dt>Conditions de paiement</dt><dd>{{ b.conditions_paiement || '—' }}</dd></div>
                 <div><dt>Incoterm</dt><dd>{{ b.incoterm || '—' }}</dd></div>
                 <div><dt>Conditions</dt><dd>{{ b.conditions || '—' }}</dd></div>
@@ -1174,7 +1183,7 @@ export class AchatsFactureApercuComponent implements OnInit, OnDestroy {
 
   /** Une facture payée garde ses preuves (piste d'audit du paiement). */
   peutDetacher(f: FactureApercu): boolean {
-    return f.statut !== 'PAYE' && this.auth.canWriteGed();
+    return f.statut !== 'PAYEE' && this.auth.canWriteGed();
   }
 
   detacherPiece(d: Justificatif): void {

@@ -6,15 +6,17 @@ import json
 import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import get_settings
 from app.models.auth import Agence, User
 from app.schemas.nombres import as_qty
+from app.services import mg_achats_regles as R
 from app.services.reporting_export import format_montant
 from app.models.mg_achats import (
     MgAchatBl,
@@ -66,6 +68,7 @@ from app.schemas.mg_achats import (
     ReceptionCreate,
     ReceptionOut,
     ReceptionUpdate,
+    RapprochementLigneOut,
     ThreeWayMatchOut,
 )
 from app.schemas.mg_ops import BonCreate, BonUpdate
@@ -77,41 +80,17 @@ DEMANDE_TRANSITIONS = {
     "lancer_consultation": ("VALIDEE", "CONSULTATION"),
     "commander": ({"VALIDEE", "CONSULTATION"}, "COMMANDE"),
     "cloturer": ("COMMANDE", "CLOTUREE"),
-    "rejeter": (None, "REJETEE"),
-    "annuler": (None, "ANNULEE"),
+    "rejeter": ({"SOUMISE", "VALIDEE", "CONSULTATION"}, "REJETEE"),
+    # Une demande commandée se termine par la clôture ; on annule le BC, pas la demande.
+    "annuler": ({"BROUILLON", "SOUMISE", "VALIDEE", "CONSULTATION"}, "ANNULEE"),
 }
 
-BC_TRANSITIONS = {
-    "soumettre": ("BROUILLON", "SOUMIS"),
-    "visa_mg": ("SOUMIS", "VISA_MG"),
-    "visa_dr": ("VISA_MG", "VISA_DR"),
-    "valider": ("VISA_DR", "VALIDE"),
-    "envoyer": ("VALIDE", "ENVOYE"),
-    "cloturer": ("RECU", "CLOTURE"),
-    "rejeter": (None, "REJETEE"),
-    "annuler": (None, "ANNULEE"),
-}
+BC_TRANSITIONS = R.BC_TRANSITIONS
+BC_STATUTS_BL = R.BC_STATUTS_RECEPTION
+BC_STATUTS_RECEPTION = R.BC_STATUTS_RECEPTION
 
-BC_STATUTS_BL = {
-    "BROUILLON",
-    "SOUMIS",
-    "VISA_MG",
-    "VISA_DR",
-    "VALIDE",
-    "ENVOYE",
-    "PARTIEL",
-    "RECU",
-}
-BC_STATUTS_RECEPTION = {
-    "BROUILLON",
-    "SOUMIS",
-    "VISA_MG",
-    "VISA_DR",
-    "VALIDE",
-    "ENVOYE",
-    "PARTIEL",
-    "RECU",
-}
+DEMANDE_STATUTS_MODIFIABLES = frozenset({"BROUILLON", "SOUMISE"})
+DEMANDE_STATUTS_SUPPRIMABLES = frozenset({"BROUILLON", "REJETEE", "ANNULEE"})
 
 CONSULTATION_TRANSITIONS = {
     "ouvrir": ("BROUILLON", "OUVERTE"),
@@ -119,31 +98,17 @@ CONSULTATION_TRANSITIONS = {
     "annuler": (None, "ANNULEE"),
 }
 
-
-def _money(v: Decimal) -> Decimal:
-    return Decimal(v or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-
-def _qty(v: Decimal) -> Decimal:
-    return Decimal(v or 0).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+_money = R.arrondi_montant
+_qty = R.arrondi_quantite
+_cle_designation = R.cle_designation
 
 
 def _line_ht(qty: Decimal, pu: Decimal, remise_pct: Decimal = Decimal("0")) -> Decimal:
-    brut = _qty(qty) * _money(pu)
-    rem = brut * Decimal(remise_pct or 0) / Decimal("100")
-    return _money(brut - rem)
-
-
-def _line_ttc(ht: Decimal, taux_tva: Decimal = Decimal("0")) -> Decimal:
-    return _money(ht * (Decimal("1") + Decimal(taux_tva or 0) / Decimal("100")))
+    return R.calculer_ligne(qty, pu, remise_pct).ht
 
 
 GED_MODULE_ACHATS = "achats-appro"
 GED_ENTITY_FACTURE = "achat_facture"
-
-
-def _cle_designation(v: str | None) -> str:
-    return " ".join((v or "").lower().split())
 
 
 def _echeance_depuis_conditions(conditions: str | None, depart: date) -> date | None:
@@ -153,8 +118,10 @@ def _echeance_depuis_conditions(conditions: str | None, depart: date) -> date | 
 
 
 class MgAchatsService:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, *, mode_test: bool | None = None):
         self.db = db
+        # Phase de test (ACHATS_MODE_TEST=1) : verrous de statut levés, suppression en cascade.
+        self.mode_test = get_settings().achats_mode_test if mode_test is None else mode_test
 
     # --- Paramètres / numérotation ---
 
@@ -275,7 +242,7 @@ class MgAchatsService:
             MgBonCommande,
             MgBonCommande.deleted_at.is_(None),
             MgBonCommande.statut.in_(
-                ["BROUILLON", "SOUMIS", "VISA_MG", "VISA_DR", "VALIDE", "ENVOYE", "PARTIEL"]
+                ["BROUILLON", "SOUMIS", "VALIDE", "ENVOYE", "PARTIEL"]
             ),
         )
         bons_partiels = await _count(
@@ -1052,6 +1019,7 @@ class MgAchatsService:
         self, demande_id: uuid.UUID, data: DemandeUpdate, user: User
     ) -> MgAchatDemande:
         demande = await self.get_demande(demande_id)
+        self.assert_demande_editable(demande)
         if data.agence_id is not None:
             ag = await self.db.get(Agence, data.agence_id)
             if not ag or getattr(ag, "deleted_at", None) is not None or not ag.is_active:
@@ -1086,8 +1054,27 @@ class MgAchatsService:
         await self.db.commit()
         return await self.get_demande(demande.id)
 
+    @staticmethod
+    def assert_demande_editable(demande: MgAchatDemande) -> None:
+        if demande.statut not in DEMANDE_STATUTS_MODIFIABLES:
+            raise R.verrou(
+                f"Demande {demande.reference} au statut {demande.statut} : modification impossible "
+                "(seules les demandes en brouillon ou soumises sont modifiables)."
+            )
+
     async def delete_demande(self, demande_id: uuid.UUID, user: User) -> MgAchatDemande:
         demande = await self.get_demande(demande_id)
+        if demande.statut not in DEMANDE_STATUTS_SUPPRIMABLES:
+            raise R.verrou(
+                f"Demande {demande.reference} au statut {demande.statut} : suppression impossible, utilisez Annuler."
+            )
+        bc_lie = await self.db.scalar(
+            select(MgBonCommande.reference).where(
+                MgBonCommande.demande_id == demande.id, MgBonCommande.deleted_at.is_(None)
+            )
+        )
+        if bc_lie:
+            raise R.verrou(f"Demande {demande.reference} liée au bon de commande {bc_lie} : suppression impossible.")
         demande.is_active = False
         demande.deleted_at = datetime.now(timezone.utc)
         await self._append_event("demande", demande.id, "delete", demande.reference, user)
@@ -1693,41 +1680,63 @@ class MgAchatsService:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Bon de commande introuvable")
         return bon
 
-    def _apply_bc_lignes(self, bon: MgBonCommande, lignes) -> None:
-        bon.lignes.clear()
-        total_ht = Decimal("0")
-        total_tva = Decimal("0")
-        total_ttc = Decimal("0")
+    async def _lignes_bc_referencees(self, bon: MgBonCommande) -> set[uuid.UUID]:
+        ids = [lg.id for lg in bon.lignes if lg.id is not None]
+        if not ids:
+            return set()
+        rec = await self.db.scalars(
+            select(MgAchatReceptionLigne.bc_ligne_id).where(MgAchatReceptionLigne.bc_ligne_id.in_(ids))
+        )
+        fac = await self.db.scalars(
+            select(MgAchatFactureLigne.bc_ligne_id).where(MgAchatFactureLigne.bc_ligne_id.in_(ids))
+        )
+        return set(rec.all()) | set(fac.all())
+
+    async def _apply_bc_lignes(self, bon: MgBonCommande, lignes) -> None:
+        """Mise à jour en place (jamais DELETE + INSERT de lignes suivies)."""
+        existantes = sorted(bon.lignes, key=lambda lg: lg.sort_order or 0)
+        referencees = await self._lignes_bc_referencees(bon) if existantes else set()
+        if not self.mode_test and any(Decimal(lg.quantite_recue or 0) > 0 for lg in existantes):
+            raise R.verrou(
+                f"Bon {bon.reference} : des quantités ont déjà été reçues, les lignes ne peuvent plus être modifiées."
+            )
+        montants: list[R.MontantsLigne] = []
         for i, row in enumerate(lignes):
             remise = getattr(row, "remise_pct", None) or Decimal("0")
             tva = getattr(row, "taux_tva", None) or Decimal("0")
-            ht = _line_ht(row.quantite, row.prix_unitaire, remise)
-            ttc = _line_ttc(ht, tva)
-            tva_amt = _money(ttc - ht)
-            total_ht += ht
-            total_tva += tva_amt
-            total_ttc += ttc
-            bon.lignes.append(
-                MgBcLigne(
-                    code_produit=row.code_produit,
-                    departement=row.departement,
-                    description=row.description.strip(),
-                    quantite=row.quantite,
-                    quantite_recue=Decimal("0"),
-                    article_id=getattr(row, "article_id", None),
-                    uom=row.uom or "U",
-                    prix_unitaire=row.prix_unitaire,
-                    prix_total=ht,
-                    remise_pct=remise,
-                    taux_tva=tva,
-                    total_ttc=ttc,
-                    stockable=bool(getattr(row, "stockable", False)),
-                    sort_order=i,
+            m = R.calculer_ligne(row.quantite, row.prix_unitaire, remise, tva)
+            montants.append(m)
+            if i < len(existantes):
+                lg = existantes[i]
+                if _qty(row.quantite) < _qty(lg.quantite_recue):
+                    raise R.refus(
+                        f"« {lg.description} » : quantité {as_qty(row.quantite)} inférieure au déjà reçu "
+                        f"({as_qty(lg.quantite_recue)}). Supprimez d'abord la réception."
+                    )
+            else:
+                lg = MgBcLigne(quantite_recue=Decimal("0"))
+                bon.lignes.append(lg)
+            lg.code_produit = row.code_produit
+            lg.departement = row.departement
+            lg.description = row.description.strip()
+            lg.quantite = row.quantite
+            lg.article_id = getattr(row, "article_id", None)
+            lg.uom = row.uom or "U"
+            lg.prix_unitaire = row.prix_unitaire
+            lg.prix_total = m.ht
+            lg.remise_pct = remise
+            lg.taux_tva = tva
+            lg.total_ttc = m.ttc
+            lg.stockable = bool(getattr(row, "stockable", False))
+            lg.sort_order = i
+        for lg in existantes[len(lignes):]:
+            if lg.id in referencees:
+                raise R.verrou(
+                    f"La ligne « {lg.description} » est référencée par une réception ou une facture : suppression impossible."
                 )
-            )
-        bon.total_ht = _money(total_ht)
-        bon.total_tva = _money(total_tva)
-        bon.total_ttc = _money(total_ttc)
+            bon.lignes.remove(lg)
+        tot = R.totaliser(montants)
+        bon.total_ht, bon.total_tva, bon.total_ttc = tot.ht, tot.tva, tot.ttc
 
     async def _resolve_agence_snapshot(self, agence_id: uuid.UUID | None) -> str | None:
         if not agence_id:
@@ -1760,6 +1769,8 @@ class MgAchatsService:
             incoterm=data.incoterm or "N/A",
             conditions_paiement=data.conditions_paiement,
             moyen_paiement=data.moyen_paiement,
+            ref_paiement=(data.ref_paiement or "").strip() or None,
+            montant_paiement=data.montant_paiement,
             demandeur_nom=data.demandeur_nom,
             demandeur_date=data.demandeur_date,
             observation=data.observation,
@@ -1786,15 +1797,55 @@ class MgAchatsService:
         bon.agence_livraison_snapshot = await self._resolve_agence_snapshot(
             data.agence_livraison_id
         )
-        self._apply_bc_lignes(bon, data.lignes)
+        await self._apply_bc_lignes(bon, data.lignes)
         self.db.add(bon)
         await self.db.flush()
         await self._append_event("bon", bon.id, "create", bon.reference, user)
         await self.db.commit()
         return await self.get_bon(bon.id)
 
-    async def update_bon(self, bon_id: uuid.UUID, data: BonUpdate) -> MgBonCommande:
-        bon = await self.get_bon(bon_id)
+    @staticmethod
+    def _norm_champ(v):
+        if isinstance(v, str):
+            return v.strip() or None
+        if isinstance(v, Decimal):
+            return _money(v)
+        return v
+
+    def assert_bc_editable(self, bon: MgBonCommande, data: BonUpdate) -> None:
+        """Refuse toute modification d'un champ verrouillé par le statut du BC.
+
+        Le client envoie le formulaire complet : on ne refuse que les valeurs
+        réellement différentes de l'existant.
+        """
+        if self.mode_test:
+            return
+        champs = R.champs_bc_modifiables(bon.statut)
+        if champs is None:
+            return
+        if not champs:
+            raise R.verrou(f"Bon {bon.reference} au statut {bon.statut} : aucune modification possible.")
+        modifies: list[str] = []
+        for field in data.model_fields_set - {"lignes"} - champs:
+            new = self._norm_champ(getattr(data, field))
+            if new is None:
+                continue
+            if new != self._norm_champ(getattr(bon, field, None)):
+                modifies.append(field)
+        if data.lignes is not None:
+            actuelles = [R.signature_ligne_bc(lg) for lg in sorted(bon.lignes, key=lambda x: x.sort_order or 0)]
+            if [R.signature_ligne_bc(lg) for lg in data.lignes] != actuelles:
+                modifies.append("lignes")
+        if modifies:
+            raise R.verrou(
+                f"Bon {bon.reference} au statut {bon.statut} : champs verrouillés ({', '.join(sorted(modifies))}). "
+                "Seules la livraison, les contacts et les modalités de paiement restent modifiables."
+            )
+
+    async def update_bon(self, bon_id: uuid.UUID, data: BonUpdate, user: User | None = None) -> MgBonCommande:
+        bon = await self.get_bon(bon_id, for_update=True)
+        self.assert_bc_editable(bon, data)
+        brouillon = bon.statut == R.BC_BROUILLON
         for field in (
             "date_bc",
             "fournisseur_id",
@@ -1811,7 +1862,6 @@ class MgAchatsService:
             "conditions",
             "incoterm",
             "conditions_paiement",
-            "moyen_paiement",
             "demandeur_nom",
             "demandeur_date",
             "observation",
@@ -1826,6 +1876,13 @@ class MgAchatsService:
             val = getattr(data, field)
             if val is not None:
                 setattr(bon, field, val)
+        # Le détail dépend du moyen choisi : un null explicite efface l'ancienne valeur.
+        for field in ("moyen_paiement", "ref_paiement", "montant_paiement"):
+            if field in data.model_fields_set:
+                val = getattr(data, field)
+                if isinstance(val, str):
+                    val = val.strip() or None
+                setattr(bon, field, val)
         if data.agence_facturation_id is not None:
             bon.agence_facturation_id = data.agence_facturation_id
             bon.agence_facturation_snapshot = await self._resolve_agence_snapshot(
@@ -1836,49 +1893,112 @@ class MgAchatsService:
             bon.agence_livraison_snapshot = await self._resolve_agence_snapshot(
                 data.agence_livraison_id
             )
-        if data.lignes is not None:
-            self._apply_bc_lignes(bon, data.lignes)
+        if data.lignes is not None and (brouillon or self.mode_test):
+            await self._apply_bc_lignes(bon, data.lignes)
+            if bon.statut in R.BC_STATUTS_RECEPTION | {R.BC_RECU, R.BC_CLOTURE}:
+                bon.statut = R.statut_bc_selon_receptions(bon.lignes, envoye=bon.envoye_at is not None)
+        if user is not None:
+            await self._append_event("bon", bon.id, "update", bon.reference, user)
         await self.db.commit()
         return await self.get_bon(bon.id)
 
     async def delete_bon(self, bon_id: uuid.UUID, user: User) -> MgBonCommande:
-        """Suppression logique (hors liste) — autorisée quel que soit le statut."""
-        bon = await self.get_bon(bon_id)
+        """Suppression logique réservée aux brouillons ; sinon il faut annuler."""
+        bon = await self.get_bon(bon_id, for_update=True)
+        if self.mode_test:
+            return await self._supprimer_bon_cascade(bon, user)
+        if bon.statut != R.BC_BROUILLON:
+            raise R.verrou(
+                f"Bon {bon.reference} au statut {bon.statut} : suppression impossible, utilisez Annuler."
+            )
+        if await self._lignes_bc_referencees(bon):
+            raise R.verrou(f"Bon {bon.reference} référencé par une réception ou une facture : suppression impossible.")
         bon.deleted_at = datetime.now(timezone.utc)
         await self._append_event("bon", bon.id, "delete", bon.reference, user)
         await self.db.commit()
         return bon
 
-    async def transition_bon(self, bon_id: uuid.UUID, action: str, user: User) -> MgBonCommande:
-        bon = await self.get_bon(bon_id)
+    async def _bc_a_des_suites_actives(self, bon_id: uuid.UUID) -> str | None:
+        rec = await self.db.scalar(
+            select(MgAchatReception.reference).where(
+                MgAchatReception.bon_id == bon_id,
+                MgAchatReception.deleted_at.is_(None),
+                MgAchatReception.statut != "ANNULEE",
+            ).limit(1)
+        )
+        if rec:
+            return f"la réception {rec}"
+        fac = await self.db.scalar(
+            select(MgAchatFacture.reference).where(
+                MgAchatFacture.bon_id == bon_id,
+                MgAchatFacture.deleted_at.is_(None),
+                MgAchatFacture.statut != R.FAC_ANNULEE,
+            ).limit(1)
+        )
+        return f"la facture {fac}" if fac else None
+
+    async def transition_bon(
+        self, bon_id: uuid.UUID, action: str, user: User, *, motif: str | None = None
+    ) -> MgBonCommande:
+        bon = await self.get_bon(bon_id, for_update=True)
         key = action.strip().lower()
         if key not in BC_TRANSITIONS:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Action invalide")
+            raise R.refus(f"Action « {action} » invalide sur un bon de commande.")
         expected, new_statut = BC_TRANSITIONS[key]
-        if expected is not None:
-            if isinstance(expected, (set, frozenset)):
-                if bon.statut not in expected:
-                    raise HTTPException(
-                        status.HTTP_400_BAD_REQUEST,
-                        detail=f"Transition impossible depuis {bon.statut} (attendu : {', '.join(sorted(expected))})",
-                    )
-            elif bon.statut != expected:
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST,
-                    detail=f"Transition impossible depuis {bon.statut} (attendu : {expected})",
-                )
-        # Annulation / rejet : toujours possible (y compris après réception).
-        if key in {"rejeter", "annuler"} and bon.statut == new_statut:
-            return bon
+        if bon.statut not in expected:
+            raise R.verrou(
+                f"Transition « {key} » impossible depuis {bon.statut} (attendu : {', '.join(sorted(expected))})."
+            )
+        motif = (motif or "").strip() or None
+        if key in {"rejeter", "annuler"} and not motif:
+            raise R.refus("Un motif est obligatoire pour rejeter ou annuler un bon de commande.")
+        if key == "soumettre" and not bon.lignes:
+            raise R.refus("Impossible de soumettre un bon de commande sans ligne.")
+        if key == "annuler":
+            suite = await self._bc_a_des_suites_actives(bon.id)
+            if suite:
+                raise R.verrou(f"Bon {bon.reference} : annulation impossible, {suite} est active (annulez-la d'abord).")
         now = datetime.now(timezone.utc)
-        if key == "visa_mg":
-            bon.visa_mg_at, bon.visa_mg_by = now, user.id
-        if key == "visa_dr":
-            bon.visa_dr_at, bon.visa_dr_by = now, user.id
+        if key == "soumettre":
+            bon.soumis_at, bon.soumis_by = now, user.id
+        elif key == "retour_brouillon":
+            bon.soumis_at = bon.soumis_by = None
+        elif key == "valider":
+            bon.valide_at, bon.valide_by = now, user.id
+        elif key == "envoyer":
+            bon.envoye_at, bon.envoye_by = now, user.id
+        elif key == "cloturer":
+            bon.cloture_at, bon.cloture_by = now, user.id
+        elif key in {"rejeter", "annuler"}:
+            bon.annule_at, bon.annule_by = now, user.id
+            bon.motif_annulation = motif
+        ancien = bon.statut
         bon.statut = new_statut
-        await self._append_event("bon", bon.id, key, f"{bon.reference} → {new_statut}", user)
+        libelle = f"{bon.reference} : {ancien} → {new_statut}" + (f" — {motif}" if motif else "")
+        await self._append_event("bon", bon.id, key, libelle, user)
         await self.db.commit()
         return await self.get_bon(bon.id)
+
+    async def submit_bc(self, bon_id: uuid.UUID, user: User) -> MgBonCommande:
+        return await self.transition_bon(bon_id, "soumettre", user)
+
+    async def return_bc_to_draft(self, bon_id: uuid.UUID, user: User) -> MgBonCommande:
+        return await self.transition_bon(bon_id, "retour_brouillon", user)
+
+    async def validate_bc(self, bon_id: uuid.UUID, user: User) -> MgBonCommande:
+        return await self.transition_bon(bon_id, "valider", user)
+
+    async def send_bc(self, bon_id: uuid.UUID, user: User) -> MgBonCommande:
+        return await self.transition_bon(bon_id, "envoyer", user)
+
+    async def reject_bc(self, bon_id: uuid.UUID, user: User, motif: str | None) -> MgBonCommande:
+        return await self.transition_bon(bon_id, "rejeter", user, motif=motif)
+
+    async def cancel_bc(self, bon_id: uuid.UUID, user: User, motif: str | None) -> MgBonCommande:
+        return await self.transition_bon(bon_id, "annuler", user, motif=motif)
+
+    async def close_bc(self, bon_id: uuid.UUID, user: User) -> MgBonCommande:
+        return await self.transition_bon(bon_id, "cloturer", user)
 
     # --- BL ---
 
@@ -1995,15 +2115,25 @@ class MgAchatsService:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Réception introuvable")
         return row
 
-    async def create_reception(self, data: ReceptionCreate, user: User) -> MgAchatReception:
+    async def create_reception(
+        self, data: ReceptionCreate, user: User, *, stocker_si_article: bool = False
+    ) -> MgAchatReception:
+        """Réception (partielle ou totale) d'un BC validé / envoyé.
+
+        ``stocker_si_article`` : voie Stock — toute ligne portant un article
+        génère une entrée, même si la ligne BC n'est pas marquée stockable.
+        """
         from app.services.mg_stock_service import MgStockService
 
         bon = await self.get_bon(data.bon_id, for_update=True)
         if bon.statut not in BC_STATUTS_RECEPTION:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail=f"Réception impossible pour statut BC {bon.statut}",
+            raise R.verrou(
+                f"Réception impossible : le bon {bon.reference} est au statut {bon.statut} "
+                "(attendu : VALIDE, ENVOYE ou PARTIEL)."
             )
+        cumul: dict[uuid.UUID, Decimal] = {}
+        for payload in data.lignes:
+            cumul[payload.bc_ligne_id] = cumul.get(payload.bc_ligne_id, Decimal("0")) + _qty(payload.quantite_recue)
         if data.bl_id is not None:
             bl = await self.get_bl(data.bl_id)
             if bl.bon_id != bon.id:
@@ -2012,7 +2142,18 @@ class MgAchatsService:
                     detail="Le BL ne correspond pas au bon de commande",
                 )
         by_id = {lg.id: lg for lg in bon.lignes}
+        for lid, total in cumul.items():
+            ligne = by_id.get(lid)
+            if ligne is None:
+                raise R.refus(f"Ligne {lid} absente du bon {bon.reference}.")
+            reste = _qty(ligne.quantite) - _qty(ligne.quantite_recue)
+            if total > reste:
+                raise R.refus(
+                    f"Quantité reçue {as_qty(total)} > reste à recevoir {as_qty(max(reste, Decimal('0')))} "
+                    f"pour « {ligne.description} »."
+                )
         reception = MgAchatReception(
+            id=uuid.uuid4(),
             reference=await self._next_ref(
                 "prefix_reception", MgAchatReception, MgAchatReception.reference, "REC"
             ),
@@ -2027,22 +2168,11 @@ class MgAchatsService:
         stock_svc = MgStockService(self.db)
 
         for payload in data.lignes:
-            ligne = by_id.get(payload.bc_ligne_id)
-            if ligne is None:
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST,
-                    detail=f"Ligne {payload.bc_ligne_id} absente du bon",
-                )
-            deja = Decimal(ligne.quantite_recue or 0)
-            reste = Decimal(ligne.quantite or 0) - deja
-            qty = Decimal(payload.quantite_recue)
-            if qty > reste:
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST,
-                    detail=f"Quantité {as_qty(qty)} > reste {as_qty(reste)} pour « {ligne.description} »",
-                )
+            ligne = by_id[payload.bc_ligne_id]
+            deja = _qty(ligne.quantite_recue)
+            qty = _qty(payload.quantite_recue)
             article_id = payload.article_id or ligne.article_id
-            if ligne.stockable and article_id:
+            if article_id and (ligne.stockable or stocker_si_article):
                 article = await self.db.scalar(
                     select(MgArticle)
                     .where(MgArticle.id == article_id, MgArticle.deleted_at.is_(None))
@@ -2057,8 +2187,8 @@ class MgAchatsService:
                     quantite=qty,
                     agence_id=data.agence_id or article.agence_id or bon.agence_livraison_id,
                     initiateur=user,
-                    motif=f"Réception achat {bon.reference}",
-                    source_id=bon.id,
+                    motif=f"Réception achat {reception.reference} / {bon.reference}",
+                    source_id=reception.id,
                 )
                 if ligne.article_id is None:
                     ligne.article_id = article_id
@@ -2071,18 +2201,11 @@ class MgAchatsService:
                 )
             )
 
-        if all(Decimal(lg.quantite_recue or 0) >= Decimal(lg.quantite or 0) for lg in bon.lignes):
-            bon.statut = "RECU"
-            reception.statut = "COMPLETE"
-        else:
-            bon.statut = "PARTIEL"
-            reception.statut = "PARTIEL"
+        bon.statut = R.statut_bc_selon_receptions(bon.lignes, envoye=bon.envoye_at is not None)
+        reception.statut = "COMPLETE" if bon.statut == R.BC_RECU else "PARTIEL"
 
         self.db.add(reception)
         await self.db.flush()
-        for rl in reception.lignes:
-            # patch source_id after flush if stock mvts were created — already committed via flush
-            pass
         await self._append_event(
             "reception",
             reception.id,
@@ -2103,9 +2226,101 @@ class MgAchatsService:
             row.agence_id = data.agence_id
         if data.observation is not None:
             row.observation = data.observation
-        if data.statut is not None:
-            row.statut = data.statut.strip().upper()
+        if data.statut is not None and data.statut.strip().upper() != row.statut:
+            raise R.refus("Le statut d'une réception est calculé ; utilisez Annuler pour l'invalider.")
         await self._append_event("reception", row.id, "update", row.reference, user)
+        await self.db.commit()
+        return await self.get_reception(row.id)
+
+    async def _quantites_facturees(
+        self, bon_id: uuid.UUID, *, sauf_facture_id: uuid.UUID | None = None
+    ) -> dict[uuid.UUID, Decimal]:
+        """Quantités déjà facturées par ligne BC (factures actives uniquement)."""
+        stmt = (
+            select(MgAchatFactureLigne.bc_ligne_id, func.coalesce(func.sum(MgAchatFactureLigne.quantite), 0))
+            .join(MgAchatFacture, MgAchatFacture.id == MgAchatFactureLigne.facture_id)
+            .where(
+                MgAchatFacture.bon_id == bon_id,
+                MgAchatFacture.deleted_at.is_(None),
+                MgAchatFacture.statut != R.FAC_ANNULEE,
+                MgAchatFactureLigne.bc_ligne_id.is_not(None),
+            )
+            .group_by(MgAchatFactureLigne.bc_ligne_id)
+        )
+        if sauf_facture_id is not None:
+            stmt = stmt.where(MgAchatFacture.id != sauf_facture_id)
+        return {lid: _qty(q) for lid, q in (await self.db.execute(stmt)).all()}
+
+    async def _contrepasser_reception(
+        self, bon: MgBonCommande, row: MgAchatReception, user: User, libelle: str
+    ) -> None:
+        """Sortie de stock inverse + quantités reçues restituées au BC (row.lignes chargées)."""
+        from app.services.mg_stock_service import MgStockService
+
+        by_id = {lg.id: lg for lg in bon.lignes}
+        stock_svc = MgStockService(self.db)
+        for rl in row.lignes:
+            lg = by_id.get(rl.bc_ligne_id)
+            if lg is None:
+                continue
+            if rl.article_id:
+                article = await self.db.scalar(
+                    select(MgArticle).where(MgArticle.id == rl.article_id).with_for_update()
+                )
+                if article is not None:
+                    await stock_svc.annuler_achat_reception(
+                        article=article,
+                        quantite=_qty(rl.quantite_recue),
+                        agence_id=row.agence_id or article.agence_id,
+                        initiateur=user,
+                        motif=libelle,
+                        source_id=row.id,
+                        legacy_source_id=bon.id,
+                    )
+            lg.quantite_recue = max(Decimal("0"), _qty(lg.quantite_recue) - _qty(rl.quantite_recue))
+
+    async def cancel_reception(
+        self, reception_id: uuid.UUID, user: User, motif: str | None
+    ) -> MgAchatReception:
+        """Annulation par contre-passation : quantités reçues et stock sont restitués."""
+        motif = (motif or "").strip()
+        if not motif:
+            raise R.refus("Un motif est obligatoire pour annuler une réception.")
+        row = await self.get_reception(reception_id)
+        bon = await self.get_bon(row.bon_id, for_update=True)
+        row = await self.db.scalar(
+            select(MgAchatReception)
+            .options(selectinload(MgAchatReception.lignes))
+            .where(MgAchatReception.id == reception_id)
+            .with_for_update()
+        )
+        if row.statut == "ANNULEE":
+            raise R.verrou(f"La réception {row.reference} est déjà annulée.")
+        if bon.statut in R.BC_STATUTS_FIGES:
+            raise R.verrou(f"Bon {bon.reference} au statut {bon.statut} : réception non annulable.")
+        by_id = {lg.id: lg for lg in bon.lignes}
+        retrait: dict[uuid.UUID, Decimal] = {}
+        for rl in row.lignes:
+            retrait[rl.bc_ligne_id] = retrait.get(rl.bc_ligne_id, Decimal("0")) + _qty(rl.quantite_recue)
+        facture = await self._quantites_facturees(bon.id)
+        for lid, q in retrait.items():
+            lg = by_id.get(lid)
+            if lg is None:
+                continue
+            nouveau = _qty(lg.quantite_recue) - q
+            if facture.get(lid, Decimal("0")) > nouveau:
+                raise R.verrou(
+                    f"« {lg.description} » : {as_qty(facture[lid])} déjà facturé(s), l'annulation ramènerait "
+                    f"le reçu à {as_qty(max(nouveau, Decimal('0')))}. Annulez d'abord la facture."
+                )
+        await self._contrepasser_reception(bon, row, user, f"Annulation réception {row.reference} — {motif}")
+        now = datetime.now(timezone.utc)
+        row.statut = "ANNULEE"
+        row.annule_at, row.annule_by, row.motif_annulation = now, user.id, motif
+        bon.statut = R.statut_bc_selon_receptions(bon.lignes, envoye=bon.envoye_at is not None)
+        await self._append_event(
+            "reception", row.id, "annuler", f"{row.reference} annulée — BC {bon.statut} — {motif}", user
+        )
         await self.db.commit()
         return await self.get_reception(row.id)
 
@@ -2145,27 +2360,63 @@ class MgAchatsService:
         return (Decimal(bon.total_tva or 0) * Decimal("100") / ht).quantize(Decimal("0.01"))
 
     def _apply_facture_lignes(self, facture: MgAchatFacture, lignes, bon: MgBonCommande) -> None:
-        facture.lignes.clear()
-        total = Decimal("0")
-        tva = Decimal("0")
+        """Lignes rattachées au BC (id prioritaire), TVA arrondie par ligne, mise à jour en place."""
+        existantes = sorted(facture.lignes or [], key=lambda lg: lg.sort_order or 0)
+        montants: list[R.MontantsLigne] = []
         for i, row in enumerate(lignes):
-            ht = _line_ht(row.quantite, row.prix_unitaire)
-            taux = row.taux_tva if row.taux_tva is not None else self._taux_tva_bc(bon, row.designation)
-            total += ht
-            tva += ht * Decimal(taux) / Decimal("100")
-            facture.lignes.append(
-                MgAchatFactureLigne(
-                    designation=row.designation.strip(),
-                    quantite=row.quantite,
-                    prix_unitaire=row.prix_unitaire,
-                    total_ht=ht,
-                    sort_order=i,
-                )
-            )
+            bc = R.associer_ligne_bc(bon.lignes or [], row.bc_ligne_id, row.designation)
+            if row.taux_tva is not None:
+                taux = Decimal(row.taux_tva)
+            elif bc is not None:
+                taux = Decimal(bc.taux_tva or 0)
+            else:
+                taux = self._taux_tva_bc(bon, row.designation)
+            m = R.calculer_ligne(row.quantite, row.prix_unitaire, Decimal("0"), taux)
+            montants.append(m)
+            if i < len(existantes):
+                lg = existantes[i]
+            else:
+                lg = MgAchatFactureLigne()
+                facture.lignes.append(lg)
+            lg.bc_ligne_id = bc.id if bc is not None else None
+            lg.designation = row.designation.strip()
+            lg.quantite = _qty(row.quantite)
+            lg.prix_unitaire = _money(row.prix_unitaire)
+            lg.taux_tva = _money(taux)
+            lg.total_ht, lg.montant_tva, lg.total_ttc = m.ht, m.tva, m.ttc
+            lg.sort_order = i
+        for lg in existantes[len(lignes):]:
+            facture.lignes.remove(lg)
         if lignes:
-            facture.montant_ht = _money(total)
-            facture.montant_tva = _money(tva)
-            facture.montant_ttc = _money(facture.montant_ht + facture.montant_tva)
+            tot = R.totaliser(montants)
+            facture.montant_ht, facture.montant_tva, facture.montant_ttc = tot.ht, tot.tva, tot.ttc
+
+    async def recalculate_invoice_reconciliation(
+        self, bon: MgBonCommande, facture: MgAchatFacture, *, plafond: bool = True
+    ) -> R.Rapprochement:
+        """Plafond commandé (refus dur) puis rapprochement ligne à ligne (écarts stockés)."""
+        deja = await self._quantites_facturees(bon.id, sauf_facture_id=facture.id)
+        if plafond:
+            par_ligne: dict[uuid.UUID, Decimal] = {}
+            for fl in facture.lignes or []:
+                if fl.bc_ligne_id is not None:
+                    par_ligne[fl.bc_ligne_id] = par_ligne.get(fl.bc_ligne_id, Decimal("0")) + _qty(fl.quantite)
+            R.verifier_plafond_commande(bon.lignes or [], par_ligne, deja)
+        rap = R.rapprocher_facture(bon.lignes or [], facture.lignes or [], deja, facture.montant_ttc)
+        facture.ecart_quantite = rap.ecart_quantite
+        facture.ecart_montant = rap.ecart_montant
+        if facture.statut in (R.FAC_BROUILLON, R.FAC_RECUE, R.FAC_ANOMALIE):
+            facture.statut = R.FAC_ANOMALIE if rap.resultat == "ANOMALIE" else R.FAC_RECUE
+        return rap
+
+    def assert_facture_editable(self, facture: MgAchatFacture) -> None:
+        if self.mode_test and facture.statut != R.FAC_ANNULEE:
+            return
+        if facture.statut not in R.FACTURE_STATUTS_MODIFIABLES:
+            raise R.verrou(
+                f"Facture {facture.reference} au statut {facture.statut} : modification impossible "
+                "(une facture validée ou payée est figée)."
+            )
 
     async def _derniere_reception(self, bon_id: uuid.UUID) -> MgAchatReception | None:
         for rec in await self.list_receptions(bon_id=bon_id):
@@ -2176,45 +2427,39 @@ class MgAchatsService:
     async def propose_facture(
         self, bon_id: uuid.UUID, *, date_facture: date | None = None, exclure_facture_id: uuid.UUID | None = None
     ) -> FacturePropositionOut:
-        """Lignes à facturer = reçu (ou commandé si rien reçu) − déjà facturé sur ce BC."""
+        """Lignes à facturer = reçu (commandé si rien reçu) − déjà facturé, par ligne BC."""
         bon = await self.get_bon(bon_id)
         factures = [
             f
             for f in await self.list_factures(bon_id=bon.id)
-            if f.statut != "ANNULEE" and f.id != exclure_facture_id
+            if f.statut != R.FAC_ANNULEE and f.id != exclure_facture_id
         ]
-        deja: dict[str, Decimal] = {}
-        for f in factures:
-            for lg in f.lignes or []:
-                cle = _cle_designation(lg.designation)
-                deja[cle] = deja.get(cle, Decimal("0")) + Decimal(lg.quantite or 0)
+        deja = await self._quantites_facturees(bon.id, sauf_facture_id=exclure_facture_id)
+        rien_recu = not any(_qty(lg.quantite_recue) > 0 for lg in bon.lignes or [])
 
         lignes: list[FactureLigneProposee] = []
-        total_ht = Decimal("0")
-        total_tva = Decimal("0")
+        montants: list[R.MontantsLigne] = []
         for lg in sorted(bon.lignes or [], key=lambda x: x.sort_order or 0):
             cmd = _qty(lg.quantite)
             recu = _qty(lg.quantite_recue)
-            base = recu if recu > 0 else cmd
-            cle = _cle_designation(lg.description)
-            consomme = min(deja.get(cle, Decimal("0")), base)
-            deja[cle] = deja.get(cle, Decimal("0")) - consomme
+            base = cmd if rien_recu else recu
+            consomme = deja.get(lg.id, Decimal("0"))
             reste = base - consomme
             if reste <= 0:
                 continue
-            pu = _money(Decimal(lg.prix_unitaire or 0) * (Decimal("1") - Decimal(lg.remise_pct or 0) / Decimal("100")))
-            ht = _line_ht(reste, pu)
+            pu = R.prix_net(lg.prix_unitaire, lg.remise_pct)
             taux = Decimal(lg.taux_tva or 0)
-            total_ht += ht
-            total_tva += ht * taux / Decimal("100")
+            m = R.calculer_ligne(reste, pu, Decimal("0"), taux)
+            montants.append(m)
             lignes.append(
                 FactureLigneProposee(
+                    bc_ligne_id=lg.id,
                     designation=lg.description,
                     uom=lg.uom or "U",
                     quantite=reste,
                     prix_unitaire=pu,
                     taux_tva=taux,
-                    total_ht=ht,
+                    total_ht=m.ht,
                     quantite_commandee=cmd,
                     quantite_recue=recu,
                     quantite_deja_facturee=consomme,
@@ -2223,12 +2468,35 @@ class MgAchatsService:
 
         rec = await self._derniere_reception(bon.id)
         message = None
-        if not lignes:
+        attente: list[str] = []
+        attente_ttc: list[R.MontantsLigne] = []
+        for lg in sorted(bon.lignes or [], key=lambda x: x.sort_order or 0):
+            manque = _qty(lg.quantite) - _qty(lg.quantite_recue)
+            if manque > 0 and not rien_recu:
+                attente.append(f"{format(manque.normalize(), 'f')} × {lg.description}")
+                attente_ttc.append(
+                    R.calculer_ligne(manque, R.prix_net(lg.prix_unitaire, lg.remise_pct), Decimal("0"), Decimal(lg.taux_tva or 0))
+                )
+        if not lignes and attente:
+            message = (
+                "Tout ce qui a été reçu est déjà facturé. Reste à recevoir : "
+                f"{', '.join(attente)} ({format_montant(R.totaliser(attente_ttc).ttc)} MRU). "
+                "Enregistrez la réception de ces articles pour pouvoir les facturer."
+            )
+        elif not lignes:
             message = "Toutes les quantités de ce BC sont déjà facturées."
-        elif not any(_qty(lg.quantite_recue) > 0 for lg in bon.lignes or []):
-            message = "Aucune réception enregistrée : quantités proposées = quantités commandées."
-        total_ht = _money(total_ht)
-        total_tva = _money(total_tva)
+        elif attente:
+            message = (
+                f"Seules les quantités reçues sont proposées. Encore à recevoir : {', '.join(attente)} "
+                f"({format_montant(R.totaliser(attente_ttc).ttc)} MRU)."
+            )
+        elif rien_recu:
+            message = (
+                "Aucune réception enregistrée : quantités proposées = quantités commandées "
+                "(la facture sera signalée en anomalie tant que rien n'est reçu)."
+            )
+        tot = R.totaliser(montants)
+        total_ht, total_tva = tot.ht, tot.tva
         return FacturePropositionOut(
             bon_id=bon.id,
             bon_reference=bon.reference,
@@ -2251,7 +2519,13 @@ class MgAchatsService:
         )
 
     async def create_facture(self, data: FactureCreate, user: User) -> MgAchatFacture:
-        bon = await self.get_bon(data.bon_id)
+        # Verrou BC : deux factures simultanées ne peuvent pas dépasser le commandé.
+        bon = await self.get_bon(data.bon_id, for_update=True)
+        if bon.statut not in R.BC_STATUTS_FACTURATION:
+            raise R.verrou(
+                f"Facturation impossible : le bon {bon.reference} est au statut {bon.statut} "
+                "(il doit être validé)."
+            )
         fournisseur_id = data.fournisseur_id or bon.fournisseur_id
         if fournisseur_id is None:
             raise HTTPException(
@@ -2295,6 +2569,7 @@ class MgAchatsService:
             proposition = await self.propose_facture(bon.id, date_facture=data.date_facture)
             lignes = [
                 FactureLigneIn(
+                    bc_ligne_id=lg.bc_ligne_id,
                     designation=lg.designation,
                     quantite=lg.quantite,
                     prix_unitaire=lg.prix_unitaire,
@@ -2302,7 +2577,14 @@ class MgAchatsService:
                 )
                 for lg in proposition.lignes
             ]
+        if not lignes:
+            raise R.refus(
+                proposition.message
+                if not data.lignes and proposition.message
+                else f"Rien à facturer sur le bon {bon.reference} : toutes les quantités sont déjà facturées."
+            )
         row = MgAchatFacture(
+            id=uuid.uuid4(),
             reference=await self._next_ref(
                 "prefix_facture", MgAchatFacture, MgAchatFacture.reference, "FAC"
             ),
@@ -2319,96 +2601,142 @@ class MgAchatsService:
             montant_ttc=data.montant_ttc or Decimal("0"),
             devise=data.devise or bon.devise or "MRU",
             observation=data.observation,
-            statut="RECUE",
+            statut=R.FAC_RECUE,
         )
         self._apply_facture_lignes(row, lignes, bon)
-        for field in ("montant_ht", "montant_tva", "montant_ttc"):
-            if getattr(data, field) is not None:
-                setattr(row, field, getattr(data, field))
-        match = self.three_way_match(bon, row)
-        row.ecart_quantite = match.ecart_quantite
-        row.ecart_montant = match.ecart_montant
-        if match.resultat == "ANOMALIE":
-            row.statut = "ANOMALIE"
+        self._appliquer_entete_montants(row, data)
+        rap = await self.recalculate_invoice_reconciliation(bon, row)
         self.db.add(row)
         await self.db.flush()
         await self._append_event(
-            "facture", row.id, "create", f"{row.reference} ({match.resultat})", user
+            "facture", row.id, "create", f"{row.reference} ({rap.resultat})", user
         )
         await self.db.commit()
         return await self.get_facture(row.id)
 
+    @staticmethod
+    def _appliquer_entete_montants(row: MgAchatFacture, data) -> None:
+        """Montants saisis depuis la facture fournisseur ; à défaut, somme des lignes."""
+        fields = data.model_fields_set
+        for field in ("montant_ht", "montant_tva", "montant_ttc"):
+            if field in fields and getattr(data, field) is not None:
+                setattr(row, field, _money(getattr(data, field)))
+        if "montant_ttc" not in fields or data.montant_ttc is None:
+            if any(f in fields and getattr(data, f) is not None for f in ("montant_ht", "montant_tva")):
+                row.montant_ttc = _money(Decimal(row.montant_ht or 0) + Decimal(row.montant_tva or 0))
+
     async def update_facture(
-        self, facture_id: uuid.UUID, data: FactureUpdate
+        self, facture_id: uuid.UUID, data: FactureUpdate, user: User | None = None
     ) -> MgAchatFacture:
         row = await self.get_facture(facture_id)
-        for field in (
-            "numero_fournisseur",
-            "date_facture",
-            "date_echeance",
-            "montant_ht",
-            "montant_tva",
-            "montant_ttc",
-            "devise",
-            "statut",
-            "observation",
-        ):
+        bon = await self.get_bon(row.bon_id, for_update=True)
+        if data.statut is not None and data.statut.strip().upper() != row.statut:
+            raise R.refus(
+                "Le statut d'une facture est calculé : utilisez Valider, Annuler ou enregistrez un paiement."
+            )
+        self.assert_facture_editable(row)
+        for field in ("numero_fournisseur", "date_facture", "date_echeance", "devise", "observation"):
             val = getattr(data, field)
             if val is not None:
                 setattr(row, field, val)
-        bon = await self.get_bon(row.bon_id)
         if data.lignes is not None:
+            if not data.lignes:
+                raise R.refus("Une facture doit comporter au moins une ligne.")
             self._apply_facture_lignes(row, data.lignes, bon)
-            for field in ("montant_ht", "montant_tva", "montant_ttc"):
-                if getattr(data, field) is not None:
-                    setattr(row, field, getattr(data, field))
-        elif data.montant_ttc is None and (data.montant_ht is not None or data.montant_tva is not None):
-            row.montant_ttc = _money(Decimal(row.montant_ht or 0) + Decimal(row.montant_tva or 0))
-        match = self.three_way_match(bon, row)
-        row.ecart_quantite = match.ecart_quantite
-        row.ecart_montant = match.ecart_montant
-        if data.statut is None and row.statut in ("RECUE", "ANOMALIE"):
-            row.statut = "ANOMALIE" if match.resultat == "ANOMALIE" else "RECUE"
+        self._appliquer_entete_montants(row, data)
+        rap = await self.recalculate_invoice_reconciliation(bon, row)
+        if row.statut not in R.FACTURE_STATUTS_MODIFIABLES:
+            row.statut = R.statut_paiement_facture(row.montant_ttc, row.montant_paye)
+        if user is not None:
+            await self._append_event("facture", row.id, "update", f"{row.reference} ({rap.resultat})", user)
         await self.db.commit()
         return await self.get_facture(row.id)
 
-    def three_way_match(
-        self, bon: MgBonCommande, facture: MgAchatFacture
-    ) -> ThreeWayMatchOut:
-        qty_cmd = sum((Decimal(lg.quantite or 0) for lg in (bon.lignes or [])), Decimal("0"))
-        qty_rec = sum((Decimal(lg.quantite_recue or 0) for lg in (bon.lignes or [])), Decimal("0"))
-        qty_fac = sum(
-            (Decimal(lg.quantite or 0) for lg in (facture.lignes or [])), Decimal("0")
+    async def validate_invoice(
+        self, facture_id: uuid.UUID, user: User, motif: str | None = None
+    ) -> MgAchatFacture:
+        """Bon à payer. Une anomalie ne peut être acceptée qu'avec un motif tracé."""
+        row = await self.get_facture(facture_id)
+        bon = await self.get_bon(row.bon_id, for_update=True)
+        if row.statut not in R.FACTURE_STATUTS_MODIFIABLES:
+            raise R.verrou(f"Facture {row.reference} au statut {row.statut} : validation impossible.")
+        rap = await self.recalculate_invoice_reconciliation(bon, row)
+        motif = (motif or "").strip() or None
+        if rap.resultat == "ANOMALIE" and not motif:
+            raise R.refus(
+                "Facture en anomalie : un motif est obligatoire pour la valider ("
+                + "; ".join(rap.details[:3])
+                + ")."
+            )
+        row.valide_at, row.valide_by, row.motif_validation = datetime.now(timezone.utc), user.id, motif
+        row.statut = R.statut_paiement_facture(row.montant_ttc, row.montant_paye)
+        await self._append_event(
+            "facture",
+            row.id,
+            "valider",
+            f"{row.reference} → {row.statut}" + (f" (écart accepté : {motif})" if motif else ""),
+            user,
         )
+        await self.db.commit()
+        return await self.get_facture(row.id)
+
+    async def cancel_invoice(self, facture_id: uuid.UUID, user: User, motif: str | None) -> MgAchatFacture:
+        motif = (motif or "").strip()
+        if not motif:
+            raise R.refus("Un motif est obligatoire pour annuler une facture.")
+        row = await self.get_facture(facture_id)
+        await self.get_bon(row.bon_id, for_update=True)
+        if row.statut == R.FAC_ANNULEE:
+            raise R.verrou(f"La facture {row.reference} est déjà annulée.")
+        pay = await self.db.scalar(
+            select(MgAchatPaiement.reference).where(
+                MgAchatPaiement.facture_id == row.id,
+                MgAchatPaiement.deleted_at.is_(None),
+                MgAchatPaiement.statut != R.PAY_ANNULE,
+            ).limit(1)
+        )
+        if pay:
+            raise R.verrou(f"Facture {row.reference} : le paiement {pay} est actif, annulez-le d'abord.")
+        row.statut = R.FAC_ANNULEE
+        row.annule_at, row.annule_by = datetime.now(timezone.utc), user.id
+        row.observation = ((row.observation or "") + f"\n[Annulée] {motif}").strip()
+        await self._append_event("facture", row.id, "annuler", f"{row.reference} annulée — {motif}", user)
+        await self.db.commit()
+        return await self.get_facture(row.id)
+
+    async def three_way_match(self, bon: MgBonCommande, facture: MgAchatFacture) -> ThreeWayMatchOut:
+        """Lecture seule : rapprochement ligne à ligne de CETTE facture (facturation partielle)."""
+        qty_cmd = sum((_qty(lg.quantite) for lg in (bon.lignes or [])), Decimal("0"))
+        qty_rec = sum((_qty(lg.quantite_recue) for lg in (bon.lignes or [])), Decimal("0"))
+        bc_ttc = _money(bon.total_ttc or bon.total_ht or 0)
+        fac_ttc = _money(facture.montant_ttc)
         if not facture.lignes:
-            qty_fac = qty_cmd  # pas de lignes → on ne flaggue pas qty
-        bc_ttc = Decimal(bon.total_ttc or bon.total_ht or 0)
-        fac_ttc = Decimal(facture.montant_ttc or 0)
-        ecart_q = False
-        ecart_m = False
-        details: list[str] = []
-        if facture.lignes and qty_fac != qty_rec and qty_fac != qty_cmd:
-            # Facturé doit coller au reçu (idéalement) ou à la commande
-            if qty_rec > 0 and qty_fac != qty_rec:
-                ecart_q = True
-                details.append(f"Qté facturée {as_qty(qty_fac)} ≠ reçue {as_qty(qty_rec)}")
-            elif qty_rec == 0 and qty_fac != qty_cmd:
-                ecart_q = True
-                details.append(f"Qté facturée {as_qty(qty_fac)} ≠ commandée {as_qty(qty_cmd)}")
-        if abs(fac_ttc - bc_ttc) > Decimal("0.01"):
-            ecart_m = True
-            details.append(f"Montant TTC facture {format_montant(fac_ttc)} ≠ BC {format_montant(bc_ttc)}")
-        resultat = "ANOMALIE" if (ecart_q or ecart_m) else "CONFORME"
+            ecart_m = abs(fac_ttc - bc_ttc) > R.TOLERANCE
+            return ThreeWayMatchOut(
+                resultat="ANOMALIE" if ecart_m else "CONFORME",
+                ecart_quantite=False,
+                ecart_montant=ecart_m,
+                detail=f"Montant TTC facture {format_montant(fac_ttc)} ≠ BC {format_montant(bc_ttc)}" if ecart_m else None,
+                bc_total_ttc=bc_ttc,
+                attendu_ttc=bc_ttc,
+                facture_ttc=fac_ttc,
+                qty_commandee=qty_cmd,
+                qty_recue=qty_rec,
+            )
+        deja = await self._quantites_facturees(bon.id, sauf_facture_id=facture.id)
+        rap = R.rapprocher_facture(bon.lignes or [], facture.lignes, deja, fac_ttc)
         return ThreeWayMatchOut(
-            resultat=resultat,
-            ecart_quantite=ecart_q,
-            ecart_montant=ecart_m,
-            detail="; ".join(details) if details else None,
+            resultat=rap.resultat,
+            ecart_quantite=rap.ecart_quantite,
+            ecart_montant=rap.ecart_montant,
+            detail="; ".join(rap.details) if rap.details else None,
             bc_total_ttc=bc_ttc,
+            attendu_ttc=rap.attendu_ttc,
             facture_ttc=fac_ttc,
             qty_commandee=qty_cmd,
             qty_recue=qty_rec,
-            qty_facturee=qty_fac if facture.lignes else None,
+            qty_facturee=sum((_qty(lg.quantite) for lg in facture.lignes), Decimal("0")),
+            lignes=[RapprochementLigneOut(**vars(e)) for e in rap.lignes],
         )
 
     async def justificatifs_facture(self, facture_ids: list[uuid.UUID]) -> dict[str, list[GedDocument]]:
@@ -2468,11 +2796,12 @@ class MgAchatsService:
             if f.id != facture.id and f.statut != "ANNULEE"
         ]
         total_paye = _money(
-            sum((Decimal(p.montant or 0) for p in paiements_rows if p.statut == "PAYE"), Decimal("0"))
+            sum((Decimal(p.montant or 0) for p in paiements_rows if p.statut == R.PAY_PAYE), Decimal("0"))
         )
         reste = _money(max(Decimal("0"), Decimal(facture.montant_ttc or 0) - total_paye))
+        attendu = (await self.three_way_match(bon, facture)).attendu_ttc if bon is not None else None
 
-        controles = await self._controles_facture(facture, bon, docs, reste)
+        controles = await self._controles_facture(facture, bon, docs, reste, attendu)
 
         events = await self.list_evenements("facture", facture.id)
         noms: dict[uuid.UUID, str] = {}
@@ -2531,7 +2860,12 @@ class MgAchatsService:
         )
 
     async def _controles_facture(
-        self, facture: MgAchatFacture, bon: MgBonCommande | None, docs: list[GedDocument], reste: Decimal
+        self,
+        facture: MgAchatFacture,
+        bon: MgBonCommande | None,
+        docs: list[GedDocument],
+        reste: Decimal,
+        attendu_ttc: Decimal | None = None,
     ) -> list[DossierControleOut]:
         c: list[DossierControleOut] = []
         c.append(
@@ -2590,18 +2924,18 @@ class MgAchatsService:
         c.append(
             DossierControleOut(
                 code="QUANTITES",
-                libelle="Quantités conformes (BC / réception)",
+                libelle="Quantités conformes ligne à ligne (reçu non encore facturé)",
                 ok=not facture.ecart_quantite,
             )
         )
         c.append(
             DossierControleOut(
                 code="MONTANT",
-                libelle="Montant conforme au BC",
+                libelle="Prix, TVA et montant conformes au BC",
                 ok=not facture.ecart_montant,
                 detail=(
-                    f"BC {format_montant(bon.total_ttc)} · facture {format_montant(facture.montant_ttc)}"
-                    if bon is not None
+                    f"Attendu {format_montant(attendu_ttc)} · facture {format_montant(facture.montant_ttc)}"
+                    if attendu_ttc is not None
                     else None
                 ),
             )
@@ -2648,12 +2982,12 @@ class MgAchatsService:
     async def match_facture(self, facture_id: uuid.UUID) -> ThreeWayMatchOut:
         facture = await self.get_facture(facture_id)
         bon = await self.get_bon(facture.bon_id)
-        match = self.three_way_match(bon, facture)
-        facture.ecart_quantite = match.ecart_quantite
-        facture.ecart_montant = match.ecart_montant
-        if facture.statut in ("RECUE", "ANOMALIE"):
-            facture.statut = "ANOMALIE" if match.resultat == "ANOMALIE" else "RECUE"
-        await self.db.commit()
+        match = await self.three_way_match(bon, facture)
+        if facture.statut in R.FACTURE_STATUTS_MODIFIABLES:
+            facture.ecart_quantite = match.ecart_quantite
+            facture.ecart_montant = match.ecart_montant
+            facture.statut = R.FAC_ANOMALIE if match.resultat == "ANOMALIE" else R.FAC_RECUE
+            await self.db.commit()
         return match
 
     # --- Paiements ---
@@ -2680,49 +3014,235 @@ class MgAchatsService:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Paiement introuvable")
         return row
 
+    async def _facture_pour_paiement(self, facture_id: uuid.UUID) -> MgAchatFacture:
+        facture = await self.db.scalar(
+            select(MgAchatFacture)
+            .where(MgAchatFacture.id == facture_id, MgAchatFacture.deleted_at.is_(None))
+            .with_for_update()
+        )
+        if facture is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Facture introuvable")
+        return facture
+
+    async def _montant_engage(self, facture_id: uuid.UUID, *, sauf_id: uuid.UUID | None = None) -> Decimal:
+        """Paiements non annulés (payés ou programmés) de la facture."""
+        stmt = select(func.coalesce(func.sum(MgAchatPaiement.montant), 0)).where(
+            MgAchatPaiement.facture_id == facture_id,
+            MgAchatPaiement.deleted_at.is_(None),
+            MgAchatPaiement.statut != R.PAY_ANNULE,
+        )
+        if sauf_id is not None:
+            stmt = stmt.where(MgAchatPaiement.id != sauf_id)
+        return _money(await self.db.scalar(stmt))
+
+    async def recalculate_invoice_payment(self, facture: MgAchatFacture) -> None:
+        await self.db.flush()
+        paye = _money(
+            await self.db.scalar(
+                select(func.coalesce(func.sum(MgAchatPaiement.montant), 0)).where(
+                    MgAchatPaiement.facture_id == facture.id,
+                    MgAchatPaiement.deleted_at.is_(None),
+                    MgAchatPaiement.statut == R.PAY_PAYE,
+                )
+            )
+        )
+        facture.montant_paye = paye
+        if facture.statut in R.FACTURE_STATUTS_VALIDES:
+            facture.statut = R.statut_paiement_facture(facture.montant_ttc, paye)
+
     async def create_paiement(self, data: PaiementCreate, user: User) -> MgAchatPaiement:
-        facture = await self.get_facture(data.facture_id)
+        facture = await self._facture_pour_paiement(data.facture_id)
+        if facture.statut not in R.FACTURE_STATUTS_PAYABLES:
+            raise R.verrou(
+                f"Facture {facture.reference} au statut {facture.statut} : paiement impossible "
+                "(la facture doit être validée et non soldée)."
+            )
+        if data.fournisseur_id and data.fournisseur_id != facture.fournisseur_id:
+            raise R.refus("Le fournisseur du paiement doit être celui de la facture.")
+        R.verifier_montant_paiement(
+            data.montant, facture.montant_ttc, await self._montant_engage(facture.id)
+        )
+        mode, ref = (data.mode_paiement or "").strip(), (data.reference_paiement or "").strip()
+        if not mode or not ref:
+            bon = await self.db.get(MgBonCommande, facture.bon_id)
+            if bon is not None:
+                mode = mode or (bon.moyen_paiement or "").strip()
+                if not ref and mode == (bon.moyen_paiement or "").strip():
+                    ref = (bon.ref_paiement or "").strip()
         row = MgAchatPaiement(
             reference=await self._next_ref(
                 "prefix_paiement", MgAchatPaiement, MgAchatPaiement.reference, "PAY"
             ),
             facture_id=facture.id,
-            fournisseur_id=data.fournisseur_id or facture.fournisseur_id,
-            montant=data.montant,
+            fournisseur_id=facture.fournisseur_id,
+            montant=_money(data.montant),
             date_echeance=data.date_echeance or facture.date_echeance,
             date_paiement=data.date_paiement,
-            mode_paiement=data.mode_paiement,
-            reference_paiement=data.reference_paiement,
+            mode_paiement=mode[:80] or None,
+            reference_paiement=ref[:120] or None,
             observation=data.observation,
-            statut="PAYE" if data.date_paiement else "A_PAYER",
+            statut=R.PAY_PAYE if data.date_paiement else R.PAY_A_PAYER,
         )
         self.db.add(row)
-        await self.db.flush()
-        await self._append_event("paiement", row.id, "create", row.reference, user)
+        await self.recalculate_invoice_payment(facture)
+        await self._append_event(
+            "paiement",
+            row.id,
+            "create",
+            f"{row.reference} {format_montant(row.montant)} ({row.statut}) — facture {facture.reference} {facture.statut}",
+            user,
+        )
         await self.db.commit()
         await self.db.refresh(row)
         return row
 
     async def update_paiement(
-        self, paiement_id: uuid.UUID, data: PaiementUpdate
+        self, paiement_id: uuid.UUID, data: PaiementUpdate, user: User | None = None
     ) -> MgAchatPaiement:
         row = await self.get_paiement(paiement_id)
-        for field in (
-            "montant",
-            "date_echeance",
-            "date_paiement",
-            "mode_paiement",
-            "reference_paiement",
-            "statut",
-            "observation",
-        ):
+        facture = await self._facture_pour_paiement(row.facture_id)
+        row = await self.db.scalar(
+            select(MgAchatPaiement).where(MgAchatPaiement.id == paiement_id).with_for_update()
+        )
+        if row.statut == R.PAY_ANNULE:
+            raise R.verrou(f"Paiement {row.reference} annulé : modification impossible.")
+        if data.statut is not None:
+            cible = data.statut.strip().upper()
+            if cible == R.PAY_ANNULE:
+                raise R.refus("Utilisez Annuler (avec motif) pour annuler un paiement.")
+            if cible not in (row.statut, R.PAY_PAYE):
+                raise R.refus(f"Statut de paiement « {cible} » invalide.")
+        if row.statut == R.PAY_PAYE and self.mode_test:
+            if data.montant is not None and _money(data.montant) != _money(row.montant):
+                R.verifier_montant_paiement(
+                    data.montant, facture.montant_ttc, await self._montant_engage(facture.id, sauf_id=row.id)
+                )
+                row.montant = _money(data.montant)
+            if data.date_paiement is not None:
+                row.date_paiement = data.date_paiement
+        elif row.statut == R.PAY_PAYE:
+            if data.montant is not None and _money(data.montant) != _money(row.montant):
+                raise R.verrou(f"Paiement {row.reference} déjà payé : le montant est figé (annulez-le puis ressaisissez).")
+            if data.date_paiement is not None and data.date_paiement != row.date_paiement:
+                raise R.verrou(f"Paiement {row.reference} déjà payé : la date de paiement est figée.")
+        elif data.montant is not None and _money(data.montant) != _money(row.montant):
+            R.verifier_montant_paiement(
+                data.montant, facture.montant_ttc, await self._montant_engage(facture.id, sauf_id=row.id)
+            )
+            row.montant = _money(data.montant)
+        for field in ("date_echeance", "mode_paiement", "reference_paiement", "observation"):
             val = getattr(data, field)
             if val is not None:
                 setattr(row, field, val)
-        if data.date_paiement and row.statut == "A_PAYER":
-            row.statut = "PAYE"
+        passe_paye = row.statut == R.PAY_A_PAYER and (
+            data.date_paiement is not None or (data.statut or "").strip().upper() == R.PAY_PAYE
+        )
+        if passe_paye:
+            if facture.statut not in R.FACTURE_STATUTS_PAYABLES:
+                raise R.verrou(f"Facture {facture.reference} au statut {facture.statut} : paiement impossible.")
+            row.date_paiement = data.date_paiement or row.date_paiement or date.today()
+            row.statut = R.PAY_PAYE
+        await self.recalculate_invoice_payment(facture)
+        if user is not None:
+            await self._append_event(
+                "paiement", row.id, "update", f"{row.reference} ({row.statut}) — facture {facture.statut}", user
+            )
         await self.db.commit()
         await self.db.refresh(row)
+        return row
+
+    async def cancel_payment(self, paiement_id: uuid.UUID, user: User, motif: str | None) -> MgAchatPaiement:
+        motif = (motif or "").strip()
+        if not motif:
+            raise R.refus("Un motif est obligatoire pour annuler un paiement.")
+        row = await self.get_paiement(paiement_id)
+        facture = await self._facture_pour_paiement(row.facture_id)
+        if row.statut == R.PAY_ANNULE:
+            raise R.verrou(f"Le paiement {row.reference} est déjà annulé.")
+        row.statut = R.PAY_ANNULE
+        row.annule_at, row.annule_by = datetime.now(timezone.utc), user.id
+        row.observation = ((row.observation or "") + f"\n[Annulé] {motif}").strip()
+        await self.recalculate_invoice_payment(facture)
+        await self._append_event(
+            "paiement", row.id, "annuler", f"{row.reference} annulé — {motif} — facture {facture.statut}", user
+        )
+        await self.db.commit()
+        await self.db.refresh(row)
+        return row
+
+    # --- Mode test : suppression logique en cascade, quel que soit le statut ---
+
+    async def _supprimer_paiements(self, facture_id: uuid.UUID, user: User, now: datetime) -> None:
+        rows = (
+            await self.db.execute(
+                select(MgAchatPaiement).where(
+                    MgAchatPaiement.facture_id == facture_id, MgAchatPaiement.deleted_at.is_(None)
+                )
+            )
+        ).scalars().all()
+        for p in rows:
+            p.deleted_at = now
+            await self._append_event("paiement", p.id, "delete", f"{p.reference} (mode test)", user)
+
+    async def _supprimer_facture(self, facture: MgAchatFacture, user: User, now: datetime) -> None:
+        await self._supprimer_paiements(facture.id, user, now)
+        facture.deleted_at = now
+        await self._append_event("facture", facture.id, "delete", f"{facture.reference} (mode test)", user)
+
+    async def _supprimer_reception(
+        self, reception_id: uuid.UUID, bon: MgBonCommande, user: User, now: datetime
+    ) -> MgAchatReception:
+        row = await self.db.scalar(
+            select(MgAchatReception)
+            .options(selectinload(MgAchatReception.lignes))
+            .where(MgAchatReception.id == reception_id, MgAchatReception.deleted_at.is_(None))
+            .with_for_update()
+        )
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Réception introuvable")
+        if row.statut != "ANNULEE":
+            await self._contrepasser_reception(bon, row, user, f"Suppression réception {row.reference} (mode test)")
+        row.deleted_at = now
+        await self._append_event("reception", row.id, "delete", f"{row.reference} (mode test)", user)
+        return row
+
+    async def _supprimer_bon_cascade(self, bon: MgBonCommande, user: User) -> MgBonCommande:
+        now = datetime.now(timezone.utc)
+        for f in await self.list_factures(bon_id=bon.id):
+            await self._supprimer_facture(f, user, now)
+        rec_ids = (
+            await self.db.execute(
+                select(MgAchatReception.id).where(
+                    MgAchatReception.bon_id == bon.id, MgAchatReception.deleted_at.is_(None)
+                )
+            )
+        ).scalars().all()
+        for rid in rec_ids:
+            await self._supprimer_reception(rid, bon, user, now)
+        bon.deleted_at = now
+        await self._append_event("bon", bon.id, "delete", f"{bon.reference} + suites (mode test)", user)
+        await self.db.commit()
+        return bon
+
+    async def _supprimer_en_mode_test(self, kind: str, entity_id: uuid.UUID, user: User):
+        now = datetime.now(timezone.utc)
+        if kind == "paiement":
+            row = await self.get_paiement(entity_id)
+            facture = await self._facture_pour_paiement(row.facture_id)
+            row.deleted_at = now
+            await self._append_event("paiement", row.id, "delete", f"{row.reference} (mode test)", user)
+            await self.recalculate_invoice_payment(facture)
+        elif kind == "facture":
+            row = await self.get_facture(entity_id)
+            await self.get_bon(row.bon_id, for_update=True)
+            await self._supprimer_facture(row, user, now)
+        else:
+            rec = await self.get_reception(entity_id)
+            bon = await self.get_bon(rec.bon_id, for_update=True)
+            row = await self._supprimer_reception(entity_id, bon, user, now)
+            if bon.statut in R.BC_STATUTS_RECEPTION | {R.BC_RECU, R.BC_CLOTURE}:
+                bon.statut = R.statut_bc_selon_receptions(bon.lignes, envoye=bon.envoye_at is not None)
+        await self.db.commit()
         return row
 
     # --- Désactivation / suppression logique (toutes fiches) ---
@@ -2743,6 +3263,15 @@ class MgAchatsService:
             "facture": self.get_facture,
             "paiement": self.get_paiement,
         }
+        if kind in {"reception", "facture", "paiement"} and self.mode_test:
+            return await self._supprimer_en_mode_test(kind, entity_id, user)
+        if kind in {"reception", "facture", "paiement"}:
+            raise R.verrou(
+                "Suppression interdite : une réception, une facture ou un paiement s'annule "
+                "(avec motif) pour conserver la traçabilité."
+            )
+        if kind == "demande":
+            return await self.delete_demande(entity_id, user)
         getter = getters.get(kind)
         if getter is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Type inconnu")
@@ -2758,10 +3287,24 @@ class MgAchatsService:
         kind: str,
         entity_id: uuid.UUID,
         user: User,
+        motif: str | None = None,
     ):
-        """Désactivation métier : statut ANNULE(E) ou is_active=False (fournisseur)."""
+        """Désactivation métier : statut ANNULE(E) ou is_active=False (fournisseur).
+
+        Les pièces du circuit passent par leur annulation contrôlée (motif, contre-passation).
+        """
         if kind == "fournisseur":
             return await self.set_fournisseur_active(entity_id, False, user)
+        if kind == "bon":
+            return await self.cancel_bc(entity_id, user, motif)
+        if kind == "reception":
+            return await self.cancel_reception(entity_id, user, motif)
+        if kind == "facture":
+            return await self.cancel_invoice(entity_id, user, motif)
+        if kind == "paiement":
+            return await self.cancel_payment(entity_id, user, motif)
+        if kind == "demande":
+            return await self.transition_demande(entity_id, "annuler", user)
 
         getters = {
             "demande": (self.get_demande, "ANNULEE"),

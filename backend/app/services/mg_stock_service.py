@@ -549,92 +549,51 @@ class MgStockService:
             .options(selectinload(MgBonCommande.lignes))
             .where(
                 MgBonCommande.deleted_at.is_(None),
-                MgBonCommande.statut.in_(["VALIDE", "PARTIEL"]),
+                MgBonCommande.statut.in_(["VALIDE", "ENVOYE", "PARTIEL"]),
             )
             .order_by(MgBonCommande.date_bc.desc())
         )
         return list((await self.db.execute(stmt)).scalars().unique().all())
 
     async def receive_from_bc(self, bon_id: uuid.UUID, data: ReceptionBcIn, user: User) -> dict:
-        from app.models.mg_ops import MgBonCommande
-
-        bon = await self.db.scalar(
-            select(MgBonCommande)
-            .options(selectinload(MgBonCommande.lignes))
-            .where(MgBonCommande.id == bon_id, MgBonCommande.deleted_at.is_(None))
-            .with_for_update()
-        )
-        if bon is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Bon de commande introuvable")
-        if bon.statut not in {"VALIDE", "PARTIEL"}:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail=f"Statut incompatible pour réception ({bon.statut})",
-            )
-
-        by_id = {ligne.id: ligne for ligne in bon.lignes}
-        motif = data.motif or f"Réception {bon.reference}"
-        mouvements_count = 0
+        """Voie Stock : délègue à la réception Achats (une seule source de vérité)."""
+        from app.models.mg_ops import MgBcLigne, MgBonCommande
+        from app.schemas.mg_achats import ReceptionCreate, ReceptionLigneIn
+        from app.services.mg_achats_service import MgAchatsService
 
         for payload in data.lignes:
-            ligne = by_id.get(payload.ligne_id)
-            if ligne is None:
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST,
-                    detail=f"Ligne {payload.ligne_id} absente du bon",
+            if payload.article_id is None:
+                ligne_article = await self.db.scalar(
+                    select(MgBcLigne.article_id).where(MgBcLigne.id == payload.ligne_id)
                 )
-            article_id = payload.article_id or ligne.article_id
-            if article_id is None:
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST,
-                    detail=f"Article requis pour la ligne {ligne.description}",
-                )
-            deja = Decimal(ligne.quantite_recue or 0)
-            reste = Decimal(ligne.quantite or 0) - deja
-            if payload.quantite > reste:
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST,
-                    detail=(
-                        f"Quantité {as_qty(payload.quantite)} > reste {as_qty(reste)} "
-                        f"pour « {ligne.description} »"
-                    ),
-                )
-            article = await self.db.scalar(
-                select(MgArticle)
-                .where(MgArticle.id == article_id, MgArticle.deleted_at.is_(None))
-                .with_for_update()
-            )
-            if article is None:
-                raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Article introuvable")
-            if getattr(article, "stockable", True):
-                await self._apply_mouvement(
-                    article=article,
-                    type_mouvement="ENTREE",
-                    quantite=payload.quantite,
-                    agence_id=data.agence_id or article.agence_id,
-                    initiateur=user,
-                    motif=motif,
-                    source_type="bon_commande",
-                    source_id=bon.id,
-                )
-                mouvements_count += 1
-            ligne.quantite_recue = deja + Decimal(payload.quantite)
-            if ligne.article_id is None:
-                ligne.article_id = article_id
-
-        if all(
-            Decimal(lg.quantite_recue or 0) >= Decimal(lg.quantite or 0) for lg in bon.lignes
-        ):
-            bon.statut = "RECU"
-        else:
-            bon.statut = "PARTIEL"
-
-        await self.db.commit()
+                if ligne_article is None:
+                    raise HTTPException(
+                        status.HTTP_400_BAD_REQUEST,
+                        detail="Article requis pour chaque ligne réceptionnée en stock",
+                    )
+        reception = await MgAchatsService(self.db).create_reception(
+            ReceptionCreate(
+                bon_id=bon_id,
+                date_reception=datetime.now(timezone.utc).date(),
+                agence_id=data.agence_id,
+                observation=data.motif,
+                lignes=[
+                    ReceptionLigneIn(
+                        bc_ligne_id=p.ligne_id, quantite_recue=p.quantite, article_id=p.article_id
+                    )
+                    for p in data.lignes
+                ],
+            ),
+            user,
+            stocker_si_article=True,
+        )
+        mouvements_count = len([rl for rl in reception.lignes if rl.article_id])
         # Reload with lignes for response serialization
         bon = await self.db.scalar(
             select(MgBonCommande)
             .options(selectinload(MgBonCommande.lignes))
             .where(MgBonCommande.id == bon_id)
+            .execution_options(populate_existing=True)
         )
         return {"bon": bon, "mouvements_count": mouvements_count}
 
@@ -1505,6 +1464,47 @@ class MgStockService:
             source_id=source_id,
         )
 
+    async def annuler_achat_reception(
+        self,
+        *,
+        article: MgArticle,
+        quantite: Decimal,
+        agence_id: uuid.UUID | None,
+        initiateur: User | None,
+        motif: str | None,
+        source_id: uuid.UUID,
+        legacy_source_id: uuid.UUID | None = None,
+    ) -> MgStockMouvement | None:
+        """API publique : contre-mouvement (SORTIE) d'une réception achat annulée.
+
+        Sans entrée de stock d'origine, rien n'est mouvementé. ``legacy_source_id``
+        couvre les réceptions historiques rattachées au BC plutôt qu'à la réception.
+        Stock insuffisant → refus (jamais de stock négatif).
+        """
+        ids = [source_id] + ([legacy_source_id] if legacy_source_id else [])
+        entree = await self.db.scalar(
+            select(func.count())
+            .select_from(MgStockMouvement)
+            .where(
+                MgStockMouvement.source_type.in_(["achat_reception", "bon_commande"]),
+                MgStockMouvement.source_id.in_(ids),
+                MgStockMouvement.article_id == article.id,
+                MgStockMouvement.type_mouvement == "ENTREE",
+            )
+        )
+        if not entree or not getattr(article, "stockable", True):
+            return None
+        return await self._apply_mouvement(
+            article=article,
+            type_mouvement="SORTIE",
+            quantite=quantite,
+            agence_id=agence_id,
+            initiateur=initiateur,
+            motif=motif,
+            source_type="achat_reception_annulation",
+            source_id=source_id,
+        )
+
     async def _apply_mouvement(
         self,
         *,
@@ -1783,7 +1783,7 @@ class MgStockService:
                 .select_from(MgBonCommande)
                 .where(
                     MgBonCommande.deleted_at.is_(None),
-                    MgBonCommande.statut.in_(["VALIDE", "PARTIEL"]),
+                    MgBonCommande.statut.in_(["VALIDE", "ENVOYE", "PARTIEL"]),
                 )
             )
             or 0

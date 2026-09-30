@@ -1,5 +1,21 @@
-import { MontantPipe, TauxPipe, montantLigne } from '../shared/montant.pipe';
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { MontantPipe, TauxPipe } from '../shared/montant.pipe';
+import { FeedbackService } from '../core/feedback/feedback.service';
+import {
+  BC_ACTIONS,
+  BC_CHAMPS_LOGISTIQUES,
+  BC_STATUT_LABELS,
+  BcActionDef,
+  bcAnnulable,
+  bcEditable,
+  bcLignesEditables,
+  bcRecevable,
+  bcSupprimable,
+  calculerLigne,
+  chargerModeTest,
+  modeTestAchats,
+  totaliser,
+} from './achats-circuit';
+import { ChangeDetectionStrategy, Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -55,6 +71,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
     SupplierSelectComponent,
     AchatsBonApercuComponent,
   ],
+  styleUrl: './achats-bons.component.css',
   template: `
     <section class="bea-ach">
       @if (mode() === 'list') {
@@ -62,7 +79,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
         <div class="bea-ach__head">
           <div class="bea-ach__kpis" style="flex:1;margin:0">
             <div class="bea-ach__kpi" style="--i:0"><span class="bea-ach__kpi-icon" data-tone="navy"><mat-icon>draft</mat-icon></span><span class="bea-ach__kpi-meta"><span>Brouillons</span><strong>{{ count('BROUILLON') }}</strong><em>En rédaction</em></span></div>
-            <div class="bea-ach__kpi" style="--i:1"><span class="bea-ach__kpi-icon" data-tone="warn"><mat-icon>pending_actions</mat-icon></span><span class="bea-ach__kpi-meta"><span>En cours</span><strong>{{ enCours() }}</strong><em>Circuits de visa</em></span></div>
+            <div class="bea-ach__kpi" style="--i:1"><span class="bea-ach__kpi-icon" data-tone="warn"><mat-icon>pending_actions</mat-icon></span><span class="bea-ach__kpi-meta"><span>En cours</span><strong>{{ enCours() }}</strong><em>Soumis ou validés, non envoyés</em></span></div>
             <div class="bea-ach__kpi" style="--i:2"><span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>verified</mat-icon></span><span class="bea-ach__kpi-meta"><span>Validés</span><strong>{{ count('VALIDE') }}</strong><em>Commandes actives</em></span></div>
             <div class="bea-ach__kpi" style="--i:3"><span class="bea-ach__kpi-icon" data-tone="blue"><mat-icon>hourglass_bottom</mat-icon></span><span class="bea-ach__kpi-meta"><span>Partiels</span><strong>{{ count('PARTIEL') }}</strong><em>À compléter</em></span></div>
           </div>
@@ -70,7 +87,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
         </div>
         <form class="bea-ach__search" [formGroup]="filters">
           <label class="bea-ach__field bea-ach__field--grow"><mat-icon>search</mat-icon><input formControlName="q" placeholder="Référence ou fournisseur…" (input)="applyFilters()" /></label>
-          <label class="bea-ach__field"><mat-icon>filter_alt</mat-icon><select formControlName="statut" (change)="applyFilters()"><option value="">Tous les statuts</option><option value="BROUILLON">Brouillon</option><option value="SOUMIS">Soumis</option><option value="VISA_MG">Visa MG</option><option value="VISA_DR">Visa DR</option><option value="VALIDE">Validé</option><option value="PARTIEL">Partiel</option><option value="ANNULE">Annulé</option></select></label>
+          <label class="bea-ach__field"><mat-icon>filter_alt</mat-icon><select formControlName="statut" (change)="applyFilters()"><option value="">Tous les statuts</option>@for (s of statutOptions; track s[0]) {<option [value]="s[0]">{{ s[1] }}</option>}</select></label>
         </form>
         <div class="bea-ach__panel">
           <div class="bea-ach__panel-top"><h2>Liste des bons</h2><span class="bea-ach__count">{{ filtered().length }} résultat(s)</span></div>
@@ -78,19 +95,24 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
             <thead><tr><th>Réf.</th><th>Date</th><th>Fournisseur</th><th>Total HT</th><th>Statut</th><th class="bea-ach__th-actions">Actions</th></tr></thead>
             <tbody>
               @for (b of filtered(); track b.id; let i = $index) {
-                <tr [style.--i]="i"><td><code class="bea-ach__code">{{ b.reference }}</code></td><td>{{ b.date_bc }}</td><td>{{ b.fournisseur_raison_sociale || '—' }}</td><td>{{ b.total_ht | montant }} MRU</td><td><span class="bea-ach__badge" [attr.data-statut]="b.statut">{{ b.statut }}</span></td>
+                <tr [style.--i]="i"><td><code class="bea-ach__code">{{ b.reference }}</code></td><td>{{ b.date_bc }}</td><td>{{ b.fournisseur_raison_sociale || '—' }}</td><td>{{ b.total_ht | montant }} MRU</td><td><span class="bea-ach__badge" [attr.data-statut]="b.statut">{{ statutLabel(b.statut) }}</span></td>
                   <td class="bea-ach__actions">
                     <button type="button" class="bea-ach__icon-btn" title="Voir" (click)="apercuId.set(b.id)"><mat-icon>visibility</mat-icon></button>
-                    <button type="button" class="bea-ach__icon-btn" title="Éditer" [disabled]="!canEdit(b)" (click)="edit(b)"><mat-icon>edit</mat-icon></button>
-                    <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Désactiver" [disabled]="!canCancel(b)" (click)="askCancel(b, 'desactiver')"><mat-icon>block</mat-icon></button>
-                    <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer" [disabled]="!canDelete(b)" (click)="askCancel(b, 'supprimer')"><mat-icon>delete</mat-icon></button>
+                    <button type="button" class="bea-ach__icon-btn" [title]="canEdit(b) ? 'Éditer' : 'Bon figé (' + statutLabel(b.statut) + ')'" [disabled]="!canEdit(b)" (click)="edit(b)"><mat-icon>edit</mat-icon></button>
+                    <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Annuler le bon" [disabled]="!canCancel(b)" (click)="askCancel(b, 'desactiver')"><mat-icon>block</mat-icon></button>
+                    <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" [title]="modeTest() ? 'Supprimer (mode test : avec réceptions, factures et paiements)' : 'Supprimer (brouillon uniquement)'" [disabled]="!canDelete(b)" (click)="askCancel(b, 'supprimer')"><mat-icon>delete</mat-icon></button>
                   </td></tr>
               } @empty { <tr class="bea-ach__empty"><td colspan="6"><mat-icon>receipt_long</mat-icon><p>Aucun bon pour ces critères.</p></td></tr> }
             </tbody>
           </table></div>
         </div>
       } @else {
-        <header class="bea-ach__head"><div><p class="bea-ach__kicker">{{ bonId() ? 'Fiche' : 'Création' }}</p><h1>{{ bonId() ? 'Bon de commande' : 'Nouveau bon de commande' }}</h1></div><a class="bea-ach__btn bea-ach__btn--ghost" routerLink="/achats-appro/bons"><mat-icon>arrow_back</mat-icon>Retour</a></header>
+        <header class="bea-ach__head"><div><p class="bea-ach__kicker">{{ bonId() ? 'Fiche' : 'Création' }}</p><h1>{{ bonId() ? 'Bon de commande' : 'Nouveau bon de commande' }} @if (bonStatut(); as s) {<span class="bea-ach__badge" [attr.data-statut]="s">{{ statutLabel(s) }}</span>}</h1></div><a class="bea-ach__btn bea-ach__btn--ghost" routerLink="/achats-appro/bons"><mat-icon>arrow_back</mat-icon>Retour</a></header>
+        @if (verrou(); as v) {
+          <p class="bea-ach__lock"><mat-icon>lock</mat-icon>{{ v }}</p>
+        } @else if (modeTest() && bonStatut() && bonStatut() !== 'BROUILLON') {
+          <p class="bea-ach__lock"><mat-icon>science</mat-icon>Mode test : verrous levés, tout est modifiable (la quantité ne peut pas descendre sous le déjà reçu).</p>
+        }
         <form class="bea-ach__form" [formGroup]="form" (ngSubmit)="save()">
           <h2 class="bea-ach__kicker" style="font-size:0.9rem;color:#0f172a;text-transform:none;letter-spacing:0">Fournisseur</h2>
           <div class="bea-ach__grid">
@@ -134,7 +156,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
           <h2 class="bea-ach__kicker" style="font-size:0.9rem;color:#0f172a;text-transform:none;letter-spacing:0;margin-top:0.5rem">Conditions &amp; paiement</h2>
           <div class="bea-ach__grid">
             <div class="bea-ach__field-block">
-              <span class="bea-ach__field-label">Conditions</span>
+              <span>Conditions</span>
               <input type="hidden" formControlName="conditions" />
               @if (bonId(); as id) {
                 <label class="bea-ach__btn bea-ach__btn--ghost" style="cursor:pointer;display:inline-flex;align-items:center;gap:0.35rem;width:fit-content">
@@ -152,45 +174,92 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
             <label>Incoterm <input formControlName="incoterm" /></label>
             <label>Conditions de paiement <input formControlName="conditions_paiement" placeholder="Ex. 30 jours" /></label>
             <label>Moyen de paiement
-              <select formControlName="moyen_paiement_liste">
+              <select formControlName="moyen_paiement_liste" (change)="onMoyenChange()">
                 <option value="">— Choisir —</option>
                 <option value="Amanty">Amanty</option>
                 <option value="Virement">Virement</option>
-                <option value="Cash">Cash</option>
+                <option value="Cash">Cash (espèces)</option>
                 <option value="__autre__">Autre…</option>
               </select>
             </label>
-            <label>Autre moyen (si différent)
-              <input formControlName="moyen_paiement_autre" placeholder="Saisir un autre moyen de paiement…" />
-            </label>
+            @switch (form.controls.moyen_paiement_liste.value) {
+              @case ('Cash') {
+                <div class="bea-ach__pay-detail">
+                  <span class="bea-ach__pay-icon"><mat-icon>payments</mat-icon></span>
+                  <label>Montant remis en espèces <em>Optionnel</em>
+                    <span class="bea-ach__suffix">
+                      <input type="number" formControlName="montant_paiement" min="0" step="0.01" placeholder="Ex. 125 000" />
+                      <b>MRU</b>
+                    </span>
+                  </label>
+                </div>
+              }
+              @case ('Virement') {
+                <div class="bea-ach__pay-detail">
+                  <span class="bea-ach__pay-icon"><mat-icon>account_balance</mat-icon></span>
+                  <label>RIB / compte bénéficiaire <em>Optionnel</em>
+                    <input formControlName="ref_paiement" maxlength="255" placeholder="RIB, IBAN, banque, compte ailleurs…" />
+                  </label>
+                </div>
+              }
+              @case ('Amanty') {
+                <div class="bea-ach__pay-detail">
+                  <span class="bea-ach__pay-icon"><mat-icon>smartphone</mat-icon></span>
+                  <label>N° de téléphone du transfert Amanty <em>Optionnel</em>
+                    <input type="tel" formControlName="ref_paiement" maxlength="40" placeholder="+222 …" />
+                  </label>
+                </div>
+              }
+              @case ('__autre__') {
+                <label>Autre moyen de paiement
+                  <input formControlName="moyen_paiement_autre" placeholder="Saisir un autre moyen de paiement…" />
+                </label>
+              }
+            }
           </div>
-          <h2 style="margin:0.75rem 0 0.35rem;font-size:1rem">Lignes</h2>
-          <div formArrayName="lignes">
-            @for (ctrl of lignes.controls; track $index; let i = $index) {
-              <div class="bea-ach__grid" [formGroupName]="i">
-                <label>Description <input formControlName="description" /></label>
-                <label>Qté <input type="number" formControlName="quantite" min="1" step="1" /></label>
-                <label>PU <input type="number" formControlName="prix_unitaire" /></label>
-                <label>UOM <input formControlName="uom" /></label>
+          <h2 class="bea-ach__kicker" style="font-size:0.9rem;color:#0f172a;text-transform:none;letter-spacing:0;margin-top:0.5rem">Lignes</h2>
+          <div class="bea-ach__lines" formArrayName="lignes">
+            <div class="bea-ach__lines-head" aria-hidden="true">
+              <span>#</span><span>Description</span><span>Qté</span><span>UOM</span><span>PU (MRU)</span><span>Total HT</span><span></span>
+            </div>
+            @for (ctrl of lignes.controls; track ctrl; let i = $index) {
+              <div class="bea-ach__line" [formGroupName]="i">
+                <span class="bea-ach__line-num">{{ i + 1 }}</span>
+                <label><span class="bea-ach__line-label">Description</span><input formControlName="description" placeholder="Article, service…" /></label>
+                <label><span class="bea-ach__line-label">Qté</span><input type="number" formControlName="quantite" min="1" step="1" /></label>
+                <label><span class="bea-ach__line-label">UOM</span><input formControlName="uom" /></label>
+                <label><span class="bea-ach__line-label">PU (MRU)</span><input type="number" formControlName="prix_unitaire" min="0" step="0.01" /></label>
+                <span class="bea-ach__line-total"><span class="bea-ach__line-label">Total HT</span>{{ ligneHt(i) | montant }}</span>
+                <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Retirer la ligne" [disabled]="lignes.length <= 1 || !lignesEditables()" (click)="removeLigne(i)"><mat-icon>delete</mat-icon></button>
               </div>
             }
+            @if (lignesEditables()) {
+              <button type="button" class="bea-ach__btn bea-ach__btn--ghost bea-ach__lines-add" (click)="addLigne()"><mat-icon>add</mat-icon>Ajouter une ligne</button>
+            }
           </div>
-          <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="addLigne()"><mat-icon>add</mat-icon>Ligne</button>
-          <p class="bea-ach__kicker" style="margin:0.75rem 0 0.35rem;text-transform:none;letter-spacing:0;color:#64748b">
-            TVA appliquée : {{ tvaDefaut() | taux }} (paramètre <code class="bea-ach__code">tva_defaut</code>)
-          </p>
-          <div class="bea-ach__money" style="margin:0.35rem 0 0.75rem">
-            <div class="bea-ach__money-card"><span>Prix total HT</span><strong>{{ totaux().ht | montant }} MRU</strong></div>
-            <div class="bea-ach__money-card"><span>Prix total TVA</span><strong>{{ totaux().tva | montant }} MRU</strong></div>
-            <div class="bea-ach__money-card"><span>Prix total TTC</span><strong>{{ totaux().ttc | montant }} MRU</strong></div>
+          <div class="bea-ach__totals">
+            <label class="bea-ach__tva">TVA (%)
+              <span class="bea-ach__suffix">
+                <input type="number" formControlName="taux_tva" min="0" max="100" step="0.01" />
+                <b>%</b>
+              </span>
+              <small>Mettre 0 s'il n'y a pas de TVA.</small>
+            </label>
+            <div class="bea-ach__money">
+              <div class="bea-ach__money-card"><span>Prix total HT</span><strong>{{ totaux().ht | montant }} MRU</strong></div>
+              <div class="bea-ach__money-card"><span>TVA {{ totaux().rate | taux }}</span><strong>{{ totaux().tva | montant }} MRU</strong></div>
+              <div class="bea-ach__money-card"><span>Prix total TTC</span><strong>{{ totaux().ttc | montant }} MRU</strong></div>
+            </div>
           </div>
             <div class="bea-ach__form-actions">
-            <button type="submit" class="bea-ach__btn"><mat-icon>save</mat-icon>Enregistrer</button>
-            @if (nextTransition(); as next) {
-              <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="transition(next.action)">{{ next.label }}</button>
+            @if (!bonStatut() || editable()) {
+              <button type="submit" class="bea-ach__btn" [disabled]="busy()"><mat-icon>save</mat-icon>Enregistrer</button>
             }
-            @if (bonStatut() === 'VALIDE' || bonStatut() === 'PARTIEL' || bonStatut() === 'ENVOYE') {
-              <a class="bea-ach__btn" routerLink="/stock-fournitures/entrees"><mat-icon>inventory</mat-icon>Réception stock</a>
+            @for (t of actions(); track t.action) {
+              <button type="button" class="bea-ach__btn" [class.bea-ach__btn--ghost]="t.ghost" [disabled]="busy() || form.dirty" [title]="form.dirty ? 'Enregistrez d’abord vos modifications' : t.label" (click)="transition(t)"><mat-icon>{{ t.icon }}</mat-icon>{{ t.label }}</button>
+            }
+            @if (recevable()) {
+              <a class="bea-ach__btn" routerLink="/achats-appro/receptions/nouvelle" [queryParams]="{ bon_id: bonId() }"><mat-icon>inventory</mat-icon>Réceptionner</a>
             }
           </div>
             @if (bonId(); as id) {
@@ -201,10 +270,6 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
       }
       @if (apercuId(); as aid) {
         <bea-achats-bon-apercu [bonId]="aid" (closed)="apercuId.set(null)" />
-      }
-      @if (confirm(); as c) {
-        <div class="bea-ach__backdrop" (click)="confirm.set(null)"></div>
-        <div class="bea-ach__modal" role="dialog" aria-modal="true"><header class="bea-ach__modal-head"><div><p class="bea-ach__kicker">Confirmation</p><h2>{{ c.action === 'supprimer' ? 'Supprimer' : 'Désactiver' }} le bon ?</h2></div><button type="button" class="bea-ach__icon-btn" title="Fermer" (click)="confirm.set(null)"><mat-icon>close</mat-icon></button></header><p>Le bon <code class="bea-ach__code">{{ c.row.reference }}</code> {{ c.action === 'supprimer' ? 'sera retiré de la liste.' : 'sera annulé.' }}</p><footer class="bea-ach__modal-foot"><button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="confirm.set(null)">Retour</button><button type="button" class="bea-ach__btn" (click)="confirmCancel()">Confirmer</button></footer></div>
       }
       @if (pdfPrepOpen()) {
         <div class="bea-ach__backdrop" (click)="closePdfPrep()"></div>
@@ -242,6 +307,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
 export class AchatsBonsComponent implements OnInit {
   readonly hasUnsavedChanges = unsavedChanges(() => this.mode() === 'edit' && this.form.dirty, () => this.form);
   private readonly api = inject(ApiService);
+  private readonly feedback = inject(FeedbackService);
   private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -262,7 +328,8 @@ export class AchatsBonsComponent implements OnInit {
   readonly msg = feedbackSignal('success', '');
   readonly q = signal('');
   readonly statutFilter = signal('');
-  readonly confirm = signal<{ row: Bon; action: 'desactiver' | 'supprimer' } | null>(null);
+  readonly busy = signal(false);
+  readonly statutOptions = Object.entries(BC_STATUT_LABELS);
   readonly apercuId = signal<string | null>(null);
   readonly pdfPrepOpen = signal(false);
   readonly pdfErreur = signal<string | null>(null);
@@ -282,16 +349,21 @@ export class AchatsBonsComponent implements OnInit {
       (!q || b.reference.toLowerCase().includes(q) || (b.fournisseur_raison_sociale ?? '').toLowerCase().includes(q)),
     );
   });
-  readonly enCours = computed(() => this.bons().filter((b) => ['SOUMIS', 'VISA_MG', 'VISA_DR'].includes(b.statut)).length);
-  readonly nextTransition = computed(() => {
+  readonly enCours = computed(() => this.bons().filter((b) => ['SOUMIS', 'VALIDE'].includes(b.statut)).length);
+  readonly actions = computed(() => {
     const s = this.bonStatut();
-    const map: Record<string, { action: string; label: string }> = {
-      BROUILLON: { action: 'soumettre', label: 'Soumettre' },
-      SOUMIS: { action: 'visa_mg', label: 'Visa MG' },
-      VISA_MG: { action: 'visa_dr', label: 'Visa DR' },
-      VISA_DR: { action: 'valider', label: 'Valider' },
-    };
-    return s ? map[s] ?? null : null;
+    return s ? BC_ACTIONS[s] ?? [] : [];
+  });
+  readonly editable = computed(() => bcEditable(this.bonStatut()));
+  readonly lignesEditables = computed(() => bcLignesEditables(this.bonStatut()));
+  readonly recevable = computed(() => bcRecevable(this.bonStatut() ?? ''));
+  readonly modeTest = modeTestAchats;
+  readonly verrou = computed(() => {
+    const s = this.bonStatut();
+    if (!s || s === 'BROUILLON') return null;
+    if (modeTestAchats()) return null;
+    if (!bcEditable(s)) return `Bon ${this.statutLabel(s).toLowerCase()} : consultation seule, aucune modification possible.`;
+    return 'Bon engagé : lignes, fournisseur et montants sont verrouillés. Seules la livraison, les contacts et les modalités de paiement restent modifiables.';
   });
 
   readonly form = this.fb.nonNullable.group({
@@ -317,25 +389,61 @@ export class AchatsBonsComponent implements OnInit {
     conditions_paiement: [''],
     moyen_paiement_liste: [''],
     moyen_paiement_autre: [''],
+    ref_paiement: [''],
+    montant_paiement: [null as number | null, Validators.min(0)],
+    taux_tva: [0, [Validators.required, Validators.min(0), Validators.max(100)]],
     lignes: this.fb.array([this.newLigne()]),
   });
 
   readonly totaux = computed(() => {
     this.formTick();
-    const rate = this.tvaDefaut();
-    let ht = 0;
-    for (const row of this.lignes.getRawValue()) {
-      ht += montantLigne(row.quantite, row.prix_unitaire);
-    }
-    const tva = ht * (rate / 100);
-    return { ht, tva, ttc: ht + tva };
+    const rate = this.tauxTva();
+    const t = totaliser(this.lignes.getRawValue().map((row) => calculerLigne(row.quantite, row.prix_unitaire, rate)));
+    return { ...t, rate };
   });
+
+  statutLabel(s: string): string {
+    return BC_STATUT_LABELS[s] ?? s;
+  }
+
+  /** Miroir des verrous backend : désactive ce que le statut interdit de modifier. */
+  private appliquerVerrous(statut: string): void {
+    if (statut === 'BROUILLON' || modeTestAchats()) {
+      this.form.enable({ emitEvent: false });
+      return;
+    }
+    if (!bcEditable(statut)) {
+      this.form.disable({ emitEvent: false });
+      return;
+    }
+    for (const [name, ctrl] of Object.entries(this.form.controls)) {
+      if (BC_CHAMPS_LOGISTIQUES.includes(name)) ctrl.enable({ emitEvent: false });
+      else ctrl.disable({ emitEvent: false });
+    }
+  }
+
+  private tauxTva(): number {
+    const n = Number(this.form.controls.taux_tva.value);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+
+  ligneHt(i: number): number {
+    const row = this.lignes.at(i)?.getRawValue();
+    return row ? calculerLigne(row.quantite, row.prix_unitaire).ht : 0;
+  }
 
   get lignes(): FormArray {
     return this.form.get('lignes') as FormArray;
   }
 
+  private readonly reappliquerVerrous = effect(() => {
+    const s = this.bonStatut();
+    modeTestAchats();
+    if (s) untracked(() => this.appliquerVerrous(s));
+  });
+
   ngOnInit(): void {
+    chargerModeTest(this.api);
     this.form.valueChanges.subscribe(() => this.formTick.update((n) => n + 1));
     this.form.controls.fournisseur_id.valueChanges.subscribe((id) => this.fillFromSupplier(id));
     this.loadTvaDefaut();
@@ -408,6 +516,9 @@ export class AchatsBonsComponent implements OnInit {
         const row = rows.find((p) => p.cle === 'tva_defaut');
         const n = Number(row?.valeur ?? 0);
         this.tvaDefaut.set(Number.isFinite(n) ? n : 0);
+        if (!this.bonId() && this.form.controls.taux_tva.pristine) {
+          this.form.controls.taux_tva.setValue(this.tvaDefaut(), { emitEvent: false });
+        }
         this.formTick.update((x) => x + 1);
       },
     });
@@ -418,17 +529,31 @@ export class AchatsBonsComponent implements OnInit {
       description: ['', Validators.required],
       quantite: [1, Validators.required],
       prix_unitaire: [0, Validators.required],
-      taux_tva: [this.tvaDefaut()],
       uom: ['U'],
     });
   }
 
   private resolveMoyenPaiement(): string {
-    const autre = this.form.controls.moyen_paiement_autre.value.trim();
     const liste = this.form.controls.moyen_paiement_liste.value;
-    if (autre) return autre;
-    if (liste && liste !== '__autre__') return liste;
-    return '';
+    if (liste === '__autre__') return this.form.controls.moyen_paiement_autre.value.trim();
+    return liste;
+  }
+
+  private resolveDetailPaiement(): { ref_paiement: string | null; montant_paiement: number | null } {
+    const liste = this.form.controls.moyen_paiement_liste.value;
+    const ref = this.form.controls.ref_paiement.value.trim();
+    const montant = this.form.controls.montant_paiement.value;
+    return {
+      ref_paiement: (liste === 'Virement' || liste === 'Amanty') && ref ? ref : null,
+      montant_paiement:
+        liste === 'Cash' && montant !== null && `${montant}` !== '' && Number.isFinite(Number(montant))
+          ? Number(montant)
+          : null,
+    };
+  }
+
+  onMoyenChange(): void {
+    this.form.patchValue({ ref_paiement: '', montant_paiement: null, moyen_paiement_autre: '' });
   }
 
   private applyMoyenFromApi(value: string): void {
@@ -445,6 +570,13 @@ export class AchatsBonsComponent implements OnInit {
 
   addLigne(): void {
     this.lignes.push(this.newLigne());
+    this.form.markAsDirty();
+  }
+
+  removeLigne(i: number): void {
+    if (this.lignes.length <= 1) return;
+    this.lignes.removeAt(i);
+    this.form.markAsDirty();
   }
 
   applyFilters(): void {
@@ -457,16 +589,16 @@ export class AchatsBonsComponent implements OnInit {
     return this.bons().filter((b) => b.statut === statut).length;
   }
 
-  canEdit(_b: Bon): boolean {
-    return true;
+  canEdit(b: Bon): boolean {
+    return bcEditable(b.statut);
   }
 
-  canCancel(_b: Bon): boolean {
-    return true;
+  canCancel(b: Bon): boolean {
+    return bcAnnulable(b.statut);
   }
 
-  canDelete(_b: Bon): boolean {
-    return true;
+  canDelete(b: Bon): boolean {
+    return bcSupprimable(b.statut);
   }
 
   private apiDetail(err: unknown, fallback: string): string {
@@ -486,39 +618,45 @@ export class AchatsBonsComponent implements OnInit {
   }
 
   askCancel(row: Bon, action: 'desactiver' | 'supprimer'): void {
-    if (action === 'supprimer' ? this.canDelete(row) : this.canCancel(row)) {
-      this.confirm.set({ row, action });
+    if (action === 'supprimer') {
+      if (!this.canDelete(row)) return;
+      this.feedback
+        .run(() => this.api.delete(`/mg/achats/bons/${row.id}`), {
+          confirm: {
+            action: 'suppression',
+            message:
+              row.statut === 'BROUILLON'
+                ? `Le brouillon ${row.reference} sera retiré de la liste.`
+                : `Mode test : le bon ${row.reference} sera supprimé avec ses réceptions (stock restitué), factures et paiements.`,
+          },
+          loading: 'Suppression…',
+          errorTitle: 'Suppression refusée',
+          success: { title: 'Bon supprimé', details: [{ label: 'Référence', value: row.reference }] },
+          busy: this.busy,
+        })
+        .subscribe({ next: () => this.loadList() });
+      return;
     }
-  }
-
-  confirmCancel(): void {
-    const current = this.confirm();
-    if (!current) return;
-    const id = current.row.id;
-    const req =
-      current.action === 'supprimer'
-        ? this.api.delete(`/mg/achats/bons/${id}`)
-        : this.api.post(`/mg/achats/bons/${id}/transition`, { action: 'annuler' });
-    req.subscribe({
-      next: () => {
-        this.confirm.set(null);
-        this.msg.set(
-          current.action === 'supprimer'
-            ? `Bon ${current.row.reference} supprimé.`
-            : `Bon ${current.row.reference} annulé.`,
-        );
-        this.loadList();
-      },
-      error: (err) => {
-        this.confirm.set(null);
-        this.erreur.set(
-          this.apiDetail(
-            err,
-            current.action === 'supprimer' ? 'Suppression refusée.' : 'Annulation refusée.',
-          ),
-        );
-      },
-    });
+    if (!this.canCancel(row)) return;
+    this.feedback
+      .runWithReason(
+        (motif) => this.api.post(`/mg/achats/bons/${row.id}/transition`, { action: 'annuler', motif }),
+        {
+          reason: {
+            title: `Annuler le bon ${row.reference}`,
+            message: 'Le bon restera consultable avec son historique. Impossible si une réception ou une facture est active.',
+            reasonLabel: 'Motif d’annulation',
+            confirmLabel: 'Annuler le bon',
+            tone: 'danger',
+            icon: 'block',
+          },
+          loading: 'Annulation…',
+          errorTitle: 'Annulation refusée',
+          success: { title: 'Bon annulé', details: [{ label: 'Référence', value: row.reference }] },
+          busy: this.busy,
+        },
+      )
+      .subscribe({ next: () => this.loadList() });
   }
 
   loadList(): void {
@@ -533,6 +671,7 @@ export class AchatsBonsComponent implements OnInit {
       next: (b) => {
         this.bonStatut.set(b.statut);
         this.bonReference.set(b.reference);
+        this.form.enable({ emitEvent: false });
         this.parentIds = {
           ...(b.demande_id ? { demande_id: b.demande_id } : {}),
           ...(b.consultation_id ? { consultation_id: b.consultation_id } : {}),
@@ -561,22 +700,28 @@ export class AchatsBonsComponent implements OnInit {
           conditions_paiement: (b['conditions_paiement'] as string) ?? '',
         });
         this.applyMoyenFromApi((b['moyen_paiement'] as string) ?? '');
+        const montantPaiement = b['montant_paiement'];
+        this.form.patchValue({
+          ref_paiement: (b['ref_paiement'] as string) ?? '',
+          montant_paiement: montantPaiement === null || montantPaiement === undefined ? null : Number(montantPaiement),
+          taux_tva: b.lignes?.length ? Number(b.lignes[0].taux_tva ?? 0) : this.tvaDefaut(),
+        });
         this.lignes.clear();
-        const rate = this.tvaDefaut();
         const lignes = b.lignes?.length
           ? b.lignes
-          : [{ description: '', quantite: 1, prix_unitaire: 0, uom: 'U', taux_tva: rate }];
+          : [{ description: '', quantite: 1, prix_unitaire: 0, uom: 'U' }];
         for (const l of lignes) {
           this.lignes.push(
             this.fb.nonNullable.group({
               description: [l.description, Validators.required],
               quantite: [l.quantite, Validators.required],
               prix_unitaire: [l.prix_unitaire, Validators.required],
-              taux_tva: [rate],
               uom: [l.uom || 'U'],
             }),
           );
         }
+        this.appliquerVerrous(b.statut);
+        this.form.markAsPristine();
         this.formTick.update((n) => n + 1);
       },
       error: () => this.erreur.set('Bon introuvable.'),
@@ -586,8 +731,15 @@ export class AchatsBonsComponent implements OnInit {
   save(): void {
     if (this.form.invalid) return;
     const raw = this.form.getRawValue();
-    const { moyen_paiement_liste: _liste, moyen_paiement_autre: _autre, ...rest } = raw;
-    const rate = this.tvaDefaut();
+    const {
+      moyen_paiement_liste: _liste,
+      moyen_paiement_autre: _autre,
+      taux_tva: _taux,
+      ref_paiement: _ref,
+      montant_paiement: _montant,
+      ...rest
+    } = raw;
+    const rate = this.tauxTva();
     const body = {
       ...rest,
       date_livraison_prevue: raw.date_livraison_prevue || null,
@@ -595,26 +747,71 @@ export class AchatsBonsComponent implements OnInit {
       agence_facturation_id: raw.agence_facturation_id || null,
       agence_livraison_id: raw.agence_livraison_id || null,
       moyen_paiement: this.resolveMoyenPaiement() || null,
+      ...this.resolveDetailPaiement(),
       ...this.parentIds,
       lignes: raw.lignes.map((l) => ({ ...l, taux_tva: rate })),
     };
-    const req = this.bonId()
-      ? this.api.patch<Bon>(`/mg/achats/bons/${this.bonId()}`, body)
-      : this.api.post<Bon>('/mg/achats/bons', body);
-    req.subscribe({
-      next: (b) => void this.router.navigateByUrl(`/achats-appro/bons/${b.id}`),
-      error: (err) => this.erreur.set(this.apiDetail(err, 'Enregistrement impossible.')),
-    });
+    const id = this.bonId();
+    this.feedback
+      .run(
+        () => (id ? this.api.patch<Bon>(`/mg/achats/bons/${id}`, body) : this.api.post<Bon>('/mg/achats/bons', body)),
+        {
+          loading: 'Enregistrement…',
+          errorTitle: 'Enregistrement refusé',
+          errorHint: 'Vos données saisies ont été conservées.',
+          success: (b) => ({ title: 'Bon enregistré', details: [{ label: 'Référence', value: b.reference }] }),
+          busy: this.busy,
+          idempotent: !id,
+        },
+      )
+      .subscribe({
+        next: (b) => {
+          this.form.markAsPristine();
+          if (id) this.loadOne(id);
+          else void this.router.navigateByUrl(`/achats-appro/bons/${b.id}`);
+        },
+      });
   }
 
-  transition(action: string): void {
+  transition(t: BcActionDef): void {
     const id = this.bonId();
     if (!id) return;
-    this.erreur.set(null);
-    this.api.post(`/mg/achats/bons/${id}/transition`, { action }).subscribe({
-      next: () => this.loadOne(id),
-      error: (err) => this.erreur.set(this.apiDetail(err, 'Transition refusée.')),
-    });
+    const ref = this.bonReference() ?? '';
+    const call = (motif?: string) => this.api.post<Bon>(`/mg/achats/bons/${id}/transition`, { action: t.action, motif });
+    const common = {
+      loading: `${t.label}…`,
+      errorTitle: `${t.label} : refusé`,
+      success: (b: Bon) => ({
+        title: `Bon ${ref} : ${this.statutLabel(b.statut).toLowerCase()}`,
+        details: [{ label: 'Statut', value: this.statutLabel(b.statut) }],
+      }),
+      busy: this.busy,
+    };
+    const run$ = t.motif
+      ? this.feedback.runWithReason((motif) => call(motif), {
+          ...common,
+          reason: { title: `${t.label} le bon ${ref}`, message: 'Le motif est tracé dans l’historique du bon.', reasonLabel: 'Motif', confirmLabel: t.label, tone: 'danger', icon: t.icon },
+        })
+      : this.feedback.run(() => call(), {
+          ...common,
+          confirm: { title: `${t.label} le bon ${ref} ?`, message: this.messageTransition(t.action), confirmLabel: t.label, icon: t.icon },
+        });
+    run$.subscribe({ next: () => this.loadOne(id) });
+  }
+
+  private messageTransition(action: string): string {
+    switch (action) {
+      case 'soumettre':
+        return 'Le bon part en validation. Les lignes ne seront plus modifiables sauf retour en brouillon.';
+      case 'valider':
+        return 'Le bon devient engageant : lignes, fournisseur et montants seront figés.';
+      case 'envoyer':
+        return 'Le bon est marqué comme transmis au fournisseur.';
+      case 'cloturer':
+        return 'Le bon sera figé définitivement.';
+      default:
+        return 'Le bon revient en brouillon pour correction.';
+    }
   }
 
   openPdfPrep(): void {

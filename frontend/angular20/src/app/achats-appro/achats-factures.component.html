@@ -70,7 +70,7 @@
                 <td><code class="bea-ach__code">{{ r.reference }}</code></td>
                 <td>{{ r.date_facture }}</td>
                 <td>{{ r.montant_ttc | montant }} MRU</td>
-                <td><span class="bea-ach__badge" [attr.data-statut]="r.statut">{{ r.statut }}</span></td>
+                <td><span class="bea-ach__badge" [attr.data-statut]="r.statut">{{ statutLabel(r.statut) }}</span></td>
                 <td>
                   <span class="bea-ach__badge" [attr.data-statut]="ecartStatut(r)">{{ ecartLabel(r) }}</span>
                 </td>
@@ -87,12 +87,14 @@
                   <button type="button" class="bea-ach__icon-btn" title="Voir" (click)="open(r)">
                     <mat-icon>visibility</mat-icon>
                   </button>
-                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Désactiver" (click)="askAction(r, 'desactiver')">
+                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Annuler la facture" [disabled]="r.statut === 'ANNULEE' || saving()" (click)="annuler(r)">
                     <mat-icon>block</mat-icon>
                   </button>
-                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer" (click)="askAction(r, 'supprimer')">
-                    <mat-icon>delete</mat-icon>
-                  </button>
+                  @if (modeTest()) {
+                    <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer (mode test)" [disabled]="saving()" (click)="supprimer(r)">
+                      <mat-icon>delete</mat-icon>
+                    </button>
+                  }
                 </td>
               </tr>
             } @empty {
@@ -114,11 +116,17 @@
         <h1>{{ id() ? 'Facture ' + (current()?.reference || '') : 'Nouvelle facture' }}</h1>
         @if (current(); as c) {
           <p class="bea-ach__muted">
-            <span class="bea-ach__badge" [attr.data-statut]="c.statut">{{ c.statut }}</span>
+            <span class="bea-ach__badge" [attr.data-statut]="c.statut">{{ statutLabel(c.statut) }}</span>
             @if (c.ecart_quantite || c.ecart_montant) {
               <span class="bea-ach__badge" data-statut="ANOMALIE">Écart 3WM</span>
             }
+            @if (c.montant_paye !== undefined && c.statut !== 'ANNULEE') {
+              <span> · Payé {{ c.montant_paye | montant }} / {{ c.montant_ttc | montant }} MRU · reste {{ c.reste_a_payer | montant }} MRU ({{ pctRegle(c) }} %)</span>
+            }
           </p>
+          @if (c.motif_validation) {
+            <p class="bea-ach__muted">Écart accepté à la validation : {{ c.motif_validation }}</p>
+          }
         }
       </div>
       <a class="bea-ach__btn bea-ach__btn--ghost" routerLink="/achats-appro/factures">
@@ -136,7 +144,7 @@
           <select formControlName="bon_id">
             <option value="">{{ bonsFournisseur().length ? '— Choisir —' : 'Aucun BC facturable pour ce fournisseur' }}</option>
             @for (b of bonsFournisseur(); track b.id) {
-              <option [value]="b.id">{{ b.reference }} ({{ b.statut }})</option>
+              <option [value]="b.id">{{ b.reference }} ({{ bcLabel(b.statut) }})</option>
             }
           </select>
         </label>
@@ -206,7 +214,7 @@
         <div class="bea-fac__ligne bea-fac__ligne--head">
           <span>Désignation</span><span>Qté</span><span>PU HT</span><span>TVA %</span><span>Total HT</span><span></span>
         </div>
-        @for (ctrl of lignes.controls; track $index; let i = $index) {
+        @for (ctrl of lignes.controls; track ctrl; let i = $index) {
           <div class="bea-fac__ligne" [formGroupName]="i">
             <input formControlName="designation" placeholder="Désignation *" />
             <input type="number" formControlName="quantite" min="1" step="1" />
@@ -234,10 +242,10 @@
         <div><span>TVA</span><strong>{{ totaux().tva | montant }}</strong></div>
         <div class="bea-fac__totaux-main"><span>Total TTC</span><strong>{{ totaux().ttc | montant }} {{ proposition()?.devise || 'MRU' }}</strong></div>
         @if (ecartProposition(); as e) {
-          <div [attr.data-ko]="e.ecart !== 0 || null">
+          <div>
             <span>Reste à facturer sur le BC</span>
             <strong>{{ e.reste | montant }}</strong>
-            <em>{{ e.ecart === 0 ? 'Conforme au BC' : 'Écart ' + (e.ecart > 0 ? '+' : '') + (e.ecart | montant) }}</em>
+            <em>{{ e.ecart > 0 ? 'Dépasse le reste de ' + (e.ecart | montant) : !proposition()?.lignes?.length ? 'En attente de réception' : 'Facturation partielle possible' }}</em>
           </div>
         }
       </div>
@@ -252,6 +260,23 @@
           <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="matching()" (click)="match()">
             <mat-icon>fact_check</mat-icon> {{ matching() ? 'Contrôle…' : 'Contrôle 3 voies' }}
           </button>
+        }
+        @if (id() && aValider()) {
+          <button type="button" class="bea-ach__btn" [disabled]="saving() || form.dirty" [title]="form.dirty ? 'Enregistrez d’abord vos modifications' : 'Bon à payer'" (click)="valider()">
+            <mat-icon>verified</mat-icon> Valider (bon à payer)
+          </button>
+        }
+        @if (current(); as c) {
+          @if (modeTest()) {
+            <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="supprimer(c)">
+              <mat-icon>delete</mat-icon> Supprimer (mode test)
+            </button>
+          }
+          @if (payable(c.statut)) {
+            <a class="bea-ach__btn bea-ach__btn--ghost" routerLink="/achats-appro/paiements/nouveau" [queryParams]="{ facture_id: c.id }">
+              <mat-icon>payments</mat-icon> Payer
+            </a>
+          }
         }
         @if (current()?.bon_id; as bid) {
           <a class="bea-ach__btn bea-ach__btn--ghost" [routerLink]="['/achats-appro/bons', bid]">
@@ -289,7 +314,7 @@
             <p class="bea-ach__kicker"><mat-icon>receipt_long</mat-icon> Bon de commande</p>
             <dl>
               <div><dt>Qté commandée</dt><dd>{{ m.qty_commandee | quantite }}</dd></div>
-              <div><dt>Montant TTC</dt><dd>{{ m.bc_total_ttc | montant:'MRU' }}</dd></div>
+              <div><dt>TTC attendu (cette facture)</dt><dd>{{ m.attendu_ttc | montant:'MRU' }}</dd></div>
             </dl>
           </div>
           <div class="bea-ach__3wm-card">
@@ -326,6 +351,26 @@
             <strong>{{ m.ecart_montant ? ecartMontantLabel(m) : 'Aucun' }}</strong>
           </span>
         </div>
+
+        @if (m.lignes?.length) {
+          <div class="bea-mg__table-scroll"><table class="bea-ach__table">
+            <thead><tr><th>Ligne</th><th>Commandé</th><th>Reçu</th><th>Déjà facturé</th><th>Facturé</th><th>PU BC / facture</th><th>TVA BC / facture</th><th>Contrôle</th></tr></thead>
+            <tbody>
+              @for (l of m.lignes; track $index) {
+                <tr>
+                  <td>{{ l.designation }}</td>
+                  <td>{{ l.quantite_commandee | quantite }}</td>
+                  <td>{{ l.quantite_recue | quantite }}</td>
+                  <td>{{ l.quantite_deja_facturee | quantite }}</td>
+                  <td [class.bea-ach__3wm-ko]="!l.ok">{{ l.quantite_facturee | quantite }}</td>
+                  <td>{{ l.prix_unitaire_bc | montant }} / {{ l.prix_unitaire_facture | montant }}</td>
+                  <td>{{ l.taux_tva_bc ?? '—' }} / {{ l.taux_tva_facture }} %</td>
+                  <td><span class="bea-ach__badge" [attr.data-statut]="l.ok ? 'CONFORME' : 'ANOMALIE'">{{ l.ok ? 'Conforme' : l.motifs.join(' · ') }}</span></td>
+                </tr>
+              }
+            </tbody>
+          </table></div>
+        }
       </div>
     }
 
@@ -337,30 +382,10 @@
           docType="FACTURE_FOURNISSEUR"
           [entityId]="id()!"
           [reference]="current()?.numero_fournisseur || current()?.reference || null"
-          [lectureSeule]="current()?.statut === 'PAYE'"
+          [lectureSeule]="current()?.statut === 'PAYEE'"
         />
       </div>
     }
-  }
-
-  @if (confirm(); as c) {
-    <div class="bea-ach__backdrop" (click)="confirm.set(null)" role="presentation"></div>
-    <div class="bea-ach__modal" role="dialog" aria-modal="true">
-      <header class="bea-ach__modal-head">
-        <div>
-          <p class="bea-ach__kicker">Confirmation</p>
-          <h2>{{ c.action === 'supprimer' ? 'Supprimer' : 'Désactiver' }} la facture ?</h2>
-        </div>
-        <button type="button" class="bea-ach__icon-btn" (click)="confirm.set(null)" title="Fermer">
-          <mat-icon>close</mat-icon>
-        </button>
-      </header>
-      <p><code class="bea-ach__code">{{ c.row.reference }}</code></p>
-      <footer class="bea-ach__modal-foot">
-        <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="confirm.set(null)">Retour</button>
-        <button type="button" class="bea-ach__btn" (click)="confirmAction()">Confirmer</button>
-      </footer>
-    </div>
   }
 
   @if (apercuId(); as aid) {

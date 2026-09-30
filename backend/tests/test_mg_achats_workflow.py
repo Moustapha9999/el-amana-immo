@@ -40,6 +40,7 @@ def _bc_ligne(
     article_id=None,
     description: str = "Article",
     prix_unitaire: Decimal = Decimal("100"),
+    taux_tva: Decimal = Decimal("0"),
 ):
     return SimpleNamespace(
         id=uuid4(),
@@ -49,6 +50,10 @@ def _bc_ligne(
         stockable=stockable,
         article_id=article_id,
         prix_unitaire=prix_unitaire,
+        remise_pct=Decimal("0"),
+        taux_tva=taux_tva,
+        uom="U",
+        sort_order=0,
     )
 
 
@@ -63,6 +68,17 @@ def _bon(*, statut: str = "VALIDE", lignes=None, total_ttc: Decimal = Decimal("1
         total_ttc=total_ttc,
         agence_livraison_id=None,
         fournisseur_id=uuid4(),
+        envoye_at=None,
+    )
+
+
+def _fac_ligne(bc, quantite, prix_unitaire, taux_tva=Decimal("0")):
+    return SimpleNamespace(
+        bc_ligne_id=bc.id if bc is not None else None,
+        designation=bc.description if bc is not None else "Hors BC",
+        quantite=Decimal(quantite),
+        prix_unitaire=Decimal(prix_unitaire),
+        taux_tva=taux_tva,
     )
 
 
@@ -101,10 +117,12 @@ async def test_bc_envoyer_valide_to_envoye():
     svc.get_bon = AsyncMock(return_value=bon)
     svc._append_event = AsyncMock()
     db.commit = AsyncMock()
+    user = _user()
 
-    result = await svc.transition_bon(bon.id, "envoyer", _user())
+    result = await svc.transition_bon(bon.id, "envoyer", user)
     assert result.statut == "ENVOYE"
-    assert BC_TRANSITIONS["envoyer"] == ("VALIDE", "ENVOYE")
+    assert result.envoye_by == user.id and result.envoye_at is not None
+    assert BC_TRANSITIONS["envoyer"] == (frozenset({"VALIDE"}), "ENVOYE")
 
 
 @pytest.mark.asyncio
@@ -116,7 +134,7 @@ async def test_bc_envoyer_refuse_si_non_valide():
 
     with pytest.raises(HTTPException) as exc:
         await svc.transition_bon(bon.id, "envoyer", _user())
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 409
 
 
 @pytest.mark.asyncio
@@ -125,45 +143,29 @@ async def test_reception_partielle():
     svc = MgAchatsService(db)
     ligne = _bc_ligne(quantite=Decimal("10"), quantite_recue=Decimal("0"), stockable=False)
     bon = _bon(statut="ENVOYE", lignes=[ligne])
+    bon.envoye_at = object()
     svc.get_bon = AsyncMock(return_value=bon)
     svc._next_ref = AsyncMock(return_value="REC-20260001")
     svc._append_event = AsyncMock()
     db.add = MagicMock()
     db.flush = AsyncMock()
     db.commit = AsyncMock()
-    reception_id = uuid4()
-
-    async def _get_reception(_id):
-        return SimpleNamespace(
-            id=reception_id,
-            reference="REC-20260001",
-            bon_id=bon.id,
-            bl_id=None,
-            date_reception=None,
-            agence_id=None,
-            statut="PARTIEL",
-            observation=None,
-            created_by=None,
-            lignes=[],
-        )
-
-    svc.get_reception = AsyncMock(side_effect=_get_reception)
+    svc.get_reception = AsyncMock(side_effect=lambda _id: SimpleNamespace(id=_id, statut="PARTIEL"))
 
     with patch("app.services.mg_stock_service.MgStockService") as MockStock:
-        MockStock.return_value._apply_mouvement = AsyncMock()
+        MockStock.return_value.record_achat_reception = AsyncMock()
         data = ReceptionCreate(
             bon_id=bon.id,
             date_reception=__import__("datetime").date.today(),
-            lignes=[
-                ReceptionLigneIn(bc_ligne_id=ligne.id, quantite_recue=Decimal("4"))
-            ],
+            lignes=[ReceptionLigneIn(bc_ligne_id=ligne.id, quantite_recue=Decimal("4"))],
         )
         result = await svc.create_reception(data, _user())
 
     assert ligne.quantite_recue == Decimal("4")
     assert bon.statut == "PARTIEL"
     assert result.statut == "PARTIEL"
-    MockStock.return_value._apply_mouvement.assert_not_awaited()
+    MockStock.return_value.record_achat_reception.assert_not_awaited()
+    svc.get_bon.assert_awaited_with(bon.id, for_update=True)
 
 
 @pytest.mark.asyncio
@@ -186,47 +188,55 @@ async def test_reception_refuse_quantite_superieure_reste():
     assert "reste" in exc.value.detail.lower()
 
 
-def test_three_way_match_conforme():
-    db = MagicMock()
-    svc = MgAchatsService(db)
+def _svc_sans_deja():
+    svc = MgAchatsService(MagicMock())
+    svc._quantites_facturees = AsyncMock(return_value={})
+    return svc
+
+
+@pytest.mark.asyncio
+async def test_three_way_match_conforme():
+    svc = _svc_sans_deja()
     ligne = _bc_ligne(quantite=Decimal("2"), quantite_recue=Decimal("2"), prix_unitaire=Decimal("100"))
     bon = _bon(statut="RECU", lignes=[ligne], total_ttc=Decimal("200"))
-    facture = SimpleNamespace(
-        montant_ttc=Decimal("200"),
-        lignes=[
-            SimpleNamespace(quantite=Decimal("2"), prix_unitaire=Decimal("100")),
-        ],
-    )
-    match = svc.three_way_match(bon, facture)
+    facture = SimpleNamespace(id=uuid4(), montant_ttc=Decimal("200"), lignes=[_fac_ligne(ligne, 2, 100)])
+    match = await svc.three_way_match(bon, facture)
     assert match.resultat == "CONFORME"
     assert match.ecart_quantite is False
     assert match.ecart_montant is False
+    assert match.attendu_ttc == Decimal("200.00")
 
 
-def test_three_way_match_anomalie_montant():
-    db = MagicMock()
-    svc = MgAchatsService(db)
+@pytest.mark.asyncio
+async def test_three_way_match_anomalie_montant():
+    svc = _svc_sans_deja()
     ligne = _bc_ligne(quantite=Decimal("2"), quantite_recue=Decimal("2"))
     bon = _bon(statut="RECU", lignes=[ligne], total_ttc=Decimal("200"))
-    facture = SimpleNamespace(
-        montant_ttc=Decimal("250"),
-        lignes=[SimpleNamespace(quantite=Decimal("2"), prix_unitaire=Decimal("125"))],
-    )
-    match = svc.three_way_match(bon, facture)
+    facture = SimpleNamespace(id=uuid4(), montant_ttc=Decimal("250"), lignes=[_fac_ligne(ligne, 2, 125)])
+    match = await svc.three_way_match(bon, facture)
     assert match.resultat == "ANOMALIE"
     assert match.ecart_montant is True
+    assert match.lignes[0].ok is False
 
 
-def test_three_way_match_anomalie_quantite():
-    db = MagicMock()
-    svc = MgAchatsService(db)
+@pytest.mark.asyncio
+async def test_three_way_match_facture_partielle_conforme():
+    """7 facturés sur 10 reçus : facturation partielle, pas une anomalie."""
+    svc = _svc_sans_deja()
     ligne = _bc_ligne(quantite=Decimal("10"), quantite_recue=Decimal("10"))
     bon = _bon(statut="RECU", lignes=[ligne], total_ttc=Decimal("1000"))
-    facture = SimpleNamespace(
-        montant_ttc=Decimal("1000"),
-        lignes=[SimpleNamespace(quantite=Decimal("7"), prix_unitaire=Decimal("100"))],
-    )
-    match = svc.three_way_match(bon, facture)
+    facture = SimpleNamespace(id=uuid4(), montant_ttc=Decimal("700"), lignes=[_fac_ligne(ligne, 7, 100)])
+    match = await svc.three_way_match(bon, facture)
+    assert match.resultat == "CONFORME"
+
+
+@pytest.mark.asyncio
+async def test_three_way_match_anomalie_quantite():
+    svc = _svc_sans_deja()
+    ligne = _bc_ligne(quantite=Decimal("10"), quantite_recue=Decimal("5"))
+    bon = _bon(statut="PARTIEL", lignes=[ligne], total_ttc=Decimal("1000"))
+    facture = SimpleNamespace(id=uuid4(), montant_ttc=Decimal("700"), lignes=[_fac_ligne(ligne, 7, 100)])
+    match = await svc.three_way_match(bon, facture)
     assert match.resultat == "ANOMALIE"
     assert match.ecart_quantite is True
 
@@ -235,9 +245,7 @@ def _bon_facturable():
     l1 = _bc_ligne(description="Ramette A4", quantite=Decimal("40"), quantite_recue=Decimal("40"), prix_unitaire=Decimal("1500"))
     l2 = _bc_ligne(description="Stylo", quantite=Decimal("5"), quantite_recue=Decimal("0"), prix_unitaire=Decimal("250"))
     for i, (lg, tva) in enumerate(((l1, Decimal("16")), (l2, Decimal("0")))):
-        lg.remise_pct = Decimal("0")
         lg.taux_tva = tva
-        lg.uom = "U"
         lg.sort_order = i
     bon = _bon(statut="PARTIEL", lignes=[l1, l2], total_ttc=Decimal("70850"))
     bon.total_ht = Decimal("61250")
@@ -249,7 +257,7 @@ def _bon_facturable():
 
 
 @pytest.mark.asyncio
-async def test_proposition_facture_reprend_le_bc():
+async def test_proposition_facture_reprend_le_recu():
     from datetime import date
 
     svc = MgAchatsService(MagicMock())
@@ -259,32 +267,31 @@ async def test_proposition_facture_reprend_le_bc():
         patch.object(svc, "get_bon", AsyncMock(return_value=bon)),
         patch.object(svc, "list_factures", AsyncMock(return_value=[])),
         patch.object(svc, "list_receptions", AsyncMock(return_value=[rec])),
+        patch.object(svc, "_quantites_facturees", AsyncMock(return_value={})),
     ):
         p = await svc.propose_facture(bon.id, date_facture=date(2026, 9, 30))
 
     assert p.fournisseur_id == bon.fournisseur_id
     assert p.reception_id == rec.id
     assert p.date_echeance == date(2026, 10, 30)
-    assert [(lg.designation, lg.quantite) for lg in p.lignes] == [("Ramette A4", Decimal("40")), ("Stylo", Decimal("5"))]
-    assert p.montant_ht == Decimal("61250.00")
+    # Seul le reçu est proposé (le stylo n'est pas encore livré).
+    assert [(lg.designation, lg.quantite) for lg in p.lignes] == [("Ramette A4", Decimal("40"))]
+    assert p.lignes[0].bc_ligne_id == bon.lignes[0].id
+    assert p.montant_ht == Decimal("60000.00")
     assert p.montant_tva == Decimal("9600.00")
-    assert p.montant_ttc == Decimal("70850.00")
+    assert p.montant_ttc == Decimal("69600.00")
 
 
 @pytest.mark.asyncio
 async def test_proposition_facture_deduit_le_deja_facture():
     svc = MgAchatsService(MagicMock())
     bon = _bon_facturable()
-    deja = SimpleNamespace(
-        id=uuid4(),
-        statut="RECUE",
-        montant_ttc=Decimal("34800"),
-        lignes=[SimpleNamespace(designation="ramette  a4", quantite=Decimal("25"))],
-    )
+    deja = SimpleNamespace(id=uuid4(), statut="RECUE", montant_ttc=Decimal("34800"), lignes=[])
     with (
         patch.object(svc, "get_bon", AsyncMock(return_value=bon)),
         patch.object(svc, "list_factures", AsyncMock(return_value=[deja])),
         patch.object(svc, "list_receptions", AsyncMock(return_value=[])),
+        patch.object(svc, "_quantites_facturees", AsyncMock(return_value={bon.lignes[0].id: Decimal("25")})),
     ):
         p = await svc.propose_facture(bon.id)
 

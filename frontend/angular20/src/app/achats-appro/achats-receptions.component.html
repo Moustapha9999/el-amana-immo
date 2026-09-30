@@ -75,12 +75,14 @@
                   <button type="button" class="bea-ach__icon-btn" title="Voir" (click)="open(r)">
                     <mat-icon>visibility</mat-icon>
                   </button>
-                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Désactiver" (click)="askAction(r, 'desactiver')">
-                    <mat-icon>block</mat-icon>
+                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Annuler la réception (contre-passation)" [disabled]="r.statut === 'ANNULEE' || saving()" (click)="annuler(r)">
+                    <mat-icon>undo</mat-icon>
                   </button>
-                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer" (click)="askAction(r, 'supprimer')">
-                    <mat-icon>delete</mat-icon>
-                  </button>
+                  @if (modeTest()) {
+                    <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer (mode test)" [disabled]="saving()" (click)="supprimer(r)">
+                      <mat-icon>delete</mat-icon>
+                    </button>
+                  }
                 </td>
               </tr>
             } @empty {
@@ -142,7 +144,7 @@
           }
         </h2>
         <div formArrayName="lignes">
-          @for (ctrl of lignes.controls; track $index; let i = $index) {
+          @for (ctrl of lignes.controls; track ctrl; let i = $index) {
             <div class="bea-ach__grid" [formGroupName]="i">
               <label style="grid-column:1/-1">Article
                 <input formControlName="designation" />
@@ -163,10 +165,22 @@
           <mat-icon>{{ isFiche() ? 'save' : 'inventory' }}</mat-icon>
           {{ saving() ? 'Enregistrement…' : isFiche() ? 'Enregistrer' : 'Réceptionner' }}
         </button>
-        @if (current()?.bon_id; as bid) {
-          <a class="bea-ach__btn bea-ach__btn--ghost" [routerLink]="['/achats-appro/bons', bid]">
+        @if (current(); as c) {
+          <a class="bea-ach__btn bea-ach__btn--ghost" [routerLink]="['/achats-appro/bons', c.bon_id]">
             <mat-icon>receipt_long</mat-icon> Voir le BC
           </a>
+          @if (c.statut !== 'ANNULEE') {
+            <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="annuler(c)">
+              <mat-icon>undo</mat-icon> Annuler la réception
+            </button>
+          } @else {
+            <p class="bea-ach__muted">Annulée — {{ c.motif_annulation }}</p>
+          }
+          @if (modeTest()) {
+            <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="supprimer(c)">
+              <mat-icon>delete</mat-icon> Supprimer (mode test)
+            </button>
+          }
         }
       </div>
     </form>
@@ -179,23 +193,4 @@
     <bea-achats-bon-apercu [bonId]="bid" (closed)="bonApercuId.set(null)" />
   }
 
-  @if (confirm(); as c) {
-    <div class="bea-ach__backdrop" (click)="confirm.set(null)" role="presentation"></div>
-    <div class="bea-ach__modal" role="dialog" aria-modal="true">
-      <header class="bea-ach__modal-head">
-        <div>
-          <p class="bea-ach__kicker">Confirmation</p>
-          <h2>{{ c.action === 'supprimer' ? 'Supprimer' : 'Désactiver' }} la réception ?</h2>
-        </div>
-        <button type="button" class="bea-ach__icon-btn" (click)="confirm.set(null)" title="Fermer">
-          <mat-icon>close</mat-icon>
-        </button>
-      </header>
-      <p><code class="bea-ach__code">{{ c.row.reference }}</code></p>
-      <footer class="bea-ach__modal-foot">
-        <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="confirm.set(null)">Retour</button>
-        <button type="button" class="bea-ach__btn" (click)="confirmAction()">Confirmer</button>
-      </footer>
-    </div>
-  }
 </section>

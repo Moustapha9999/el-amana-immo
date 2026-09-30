@@ -12,16 +12,28 @@ import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { FeedbackService } from '../core/feedback/feedback.service';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import { formatMontant } from '../shared/montant.pipe';
 import { AchatsPaiementApercuComponent } from './achats-apercu.component';
+import { FACTURE_STATUT_LABELS, MOYEN_AUTRE, decomposerMoyen, facturePayable } from './achats-circuit';
 
 interface FactureOpt {
   id: string;
+  bon_id?: string;
   reference: string;
   montant_ttc: number;
+  montant_paye?: number;
+  reste_a_payer?: number;
   statut: string;
   date_echeance?: string | null;
 }
+
+export const PAIEMENT_STATUT_LABELS: Record<string, string> = {
+  A_PAYER: 'À payer',
+  PAYE: 'Payé',
+  ANNULE: 'Annulé',
+};
 
 export interface PaiementRow {
   id: string;
@@ -49,6 +61,7 @@ type Mode = 'list' | 'form';
 export class AchatsPaiementsComponent implements OnInit {
   readonly hasUnsavedChanges = unsavedChanges(() => this.mode() === 'form' && this.form.dirty && !this.saving(), () => this.form);
   private readonly api = inject(ApiService);
+  private readonly feedback = inject(FeedbackService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
@@ -63,8 +76,6 @@ export class AchatsPaiementsComponent implements OnInit {
   readonly saving = signal(false);
   readonly q = signal('');
   readonly apercuId = signal<string | null>(null);
-  readonly confirm = signal<{ row: PaiementRow; action: 'desactiver' | 'supprimer' } | null>(null);
-
   readonly filters = this.fb.nonNullable.group({ q: '' });
   readonly form = this.fb.nonNullable.group({
     facture_id: ['', Validators.required],
@@ -72,9 +83,15 @@ export class AchatsPaiementsComponent implements OnInit {
     date_echeance: [''],
     date_paiement: [''],
     mode_paiement: [''],
+    mode_paiement_autre: [''],
     reference_paiement: [''],
     observation: [''],
   });
+
+  readonly autre = MOYEN_AUTRE;
+  /** Moyen de paiement désigné dans le BC de la facture choisie. */
+  readonly moyenBc = signal<{ bon: string; moyen: string; ref: string } | null>(null);
+  readonly moyenChoisi = signal('');
 
   readonly filtered = computed(() => {
     const term = this.q().trim().toLowerCase();
@@ -88,29 +105,41 @@ export class AchatsPaiementsComponent implements OnInit {
     });
   });
 
-  readonly total = computed(() => this.rows().reduce((n, r) => n + Number(r.montant || 0), 0));
-  readonly pending = computed(() => this.rows().filter((r) => r.statut !== 'PAYE').length);
-  readonly canEditForm = computed(() => true);
+  readonly actifs = computed(() => this.rows().filter((r) => r.statut !== 'ANNULE'));
+  readonly total = computed(() => this.actifs().reduce((n, r) => n + Number(r.montant || 0), 0));
+  readonly pending = computed(() => this.actifs().filter((r) => r.statut === 'A_PAYER').length);
+  /** Un paiement effectué ou annulé est figé : on n'annule que par motif tracé. */
+  readonly canEditForm = computed(() => {
+    const c = this.current();
+    return !c || c.statut === 'A_PAYER';
+  });
+  readonly factureChoisie = signal<FactureOpt | null>(null);
+  readonly facturesPayables = computed(() => {
+    const courante = this.current()?.facture_id;
+    return this.factures().filter((f) => facturePayable(f.statut) || f.id === courante);
+  });
 
   ngOnInit(): void {
+    const factureParam = this.route.snapshot.queryParamMap.get('facture_id');
     this.api.get<FactureOpt[]>('/mg/achats/factures').subscribe({
-      next: (r) => this.factures.set(r.filter((f) => !['ANNULE'].includes(f.statut))),
+      next: (r) => {
+        this.factures.set(r);
+        if (factureParam && !this.id()) this.form.controls.facture_id.setValue(factureParam);
+      },
     });
+    this.form.controls.mode_paiement.valueChanges.subscribe((v) => this.moyenChoisi.set(v));
     this.form.controls.facture_id.valueChanges.subscribe((fid) => {
-      if (this.id()) return;
-      const f = this.factures().find((x) => x.id === fid);
-      if (f) {
-        this.form.patchValue(
-          {
-            montant: Number(f.montant_ttc),
-            date_echeance: f.date_echeance ?? '',
-          },
-          { emitEvent: false },
-        );
-      }
+      const f = this.facturesPayables().find((x) => x.id === fid) ?? null;
+      this.factureChoisie.set(f);
+      this.chargerMoyenBc(f, !this.id());
+      if (this.id() || !f) return;
+      this.form.patchValue(
+        { montant: Number(f.reste_a_payer ?? f.montant_ttc), date_echeance: f.date_echeance ?? '' },
+        { emitEvent: false },
+      );
     });
     const param = this.route.snapshot.paramMap.get('id');
-    if (this.router.url.endsWith('/nouveau') || param) {
+    if (this.router.url.split('?')[0].endsWith('/nouveau') || param) {
       this.mode.set('form');
       if (param) {
         this.id.set(param);
@@ -122,7 +151,47 @@ export class AchatsPaiementsComponent implements OnInit {
   }
 
   factureLabel(f: FactureOpt): string {
-    return `${f.reference} — ${f.montant_ttc} MRU (${f.statut})`;
+    const reste = formatMontant(f.reste_a_payer ?? f.montant_ttc, 'MRU');
+    return `${f.reference} — reste ${reste} (${FACTURE_STATUT_LABELS[f.statut] ?? f.statut})`;
+  }
+
+  statutLabel(s: string): string {
+    return PAIEMENT_STATUT_LABELS[s] ?? s;
+  }
+
+  /** Le moyen désigné dans le BC est repris d'office à la création ; il reste modifiable. */
+  private chargerMoyenBc(f: FactureOpt | null, appliquer: boolean): void {
+    this.moyenBc.set(null);
+    if (!f?.bon_id) return;
+    this.api
+      .get<{ reference: string; moyen_paiement: string | null; ref_paiement: string | null }>(`/mg/achats/bons/${f.bon_id}`)
+      .subscribe({
+        next: (b) => {
+          if (this.form.controls.facture_id.value !== f.id) return;
+          const moyen = (b.moyen_paiement ?? '').trim();
+          this.moyenBc.set(moyen ? { bon: b.reference, moyen, ref: (b.ref_paiement ?? '').trim() } : null);
+          if (appliquer && moyen) this.appliquerMoyen(moyen, (b.ref_paiement ?? '').trim());
+        },
+      });
+  }
+
+  private appliquerMoyen(valeur: string | null, ref: string | null): void {
+    const { liste, autre } = decomposerMoyen(valeur);
+    this.form.patchValue({ mode_paiement: liste, mode_paiement_autre: autre, reference_paiement: (ref ?? '').slice(0, 120) });
+  }
+
+  /** Changement manuel : la référence du BC (RIB / téléphone) ne vaut que pour le moyen du BC. */
+  onMoyenChange(): void {
+    const bc = this.moyenBc();
+    const v = this.form.controls.mode_paiement.value;
+    const memeQueBc = !!bc && decomposerMoyen(bc.moyen).liste === v && v !== MOYEN_AUTRE;
+    this.form.patchValue({ reference_paiement: memeQueBc ? bc!.ref.slice(0, 120) : '', mode_paiement_autre: '' });
+  }
+
+  private resoudreMoyen(): string | null {
+    const v = this.form.controls.mode_paiement.value;
+    if (v === MOYEN_AUTRE) return this.form.controls.mode_paiement_autre.value.trim() || null;
+    return v || null;
   }
 
   loadList(): void {
@@ -141,7 +210,8 @@ export class AchatsPaiementsComponent implements OnInit {
           montant: Number(p.montant),
           date_echeance: p.date_echeance ?? '',
           date_paiement: p.date_paiement ?? '',
-          mode_paiement: p.mode_paiement ?? '',
+          mode_paiement: decomposerMoyen(p.mode_paiement).liste,
+          mode_paiement_autre: decomposerMoyen(p.mode_paiement).autre,
           reference_paiement: p.reference_paiement ?? '',
           observation: p.observation ?? '',
         });
@@ -150,6 +220,7 @@ export class AchatsPaiementsComponent implements OnInit {
           this.form.enable({ emitEvent: false });
           this.form.controls.facture_id.disable({ emitEvent: false });
         }
+        this.form.markAsPristine();
       },
       error: (err) => this.erreur.set(this.apiDetail(err, 'Paiement introuvable.')),
     });
@@ -163,33 +234,28 @@ export class AchatsPaiementsComponent implements OnInit {
     this.apercuId.set(r.id);
   }
 
-  askAction(row: PaiementRow, action: 'desactiver' | 'supprimer'): void {
-    this.confirm.set({ row, action });
-  }
-
-  confirmAction(): void {
-    const c = this.confirm();
-    if (!c) return;
-    const req =
-      c.action === 'supprimer'
-        ? this.api.delete(`/mg/achats/paiements/${c.row.id}`)
-        : this.api.post(`/mg/achats/paiements/${c.row.id}/desactiver`, {});
-    req.subscribe({
-      next: () => {
-        this.confirm.set(null);
-        this.msg.set(
-          c.action === 'supprimer'
-            ? `Paiement ${c.row.reference} supprimé.`
-            : `Paiement ${c.row.reference} désactivé.`,
-        );
-        if (this.mode() === 'form') void this.router.navigateByUrl('/achats-appro/paiements');
-        else this.loadList();
-      },
-      error: (err) => {
-        this.confirm.set(null);
-        this.erreur.set(this.apiDetail(err, 'Action refusée.'));
-      },
-    });
+  annuler(row: PaiementRow): void {
+    this.feedback
+      .runWithReason((motif) => this.api.post<PaiementRow>(`/mg/achats/paiements/${row.id}/annuler`, { motif }), {
+        reason: {
+          title: `Annuler le paiement ${row.reference}`,
+          message: 'Le paiement reste consultable ; le reste à payer de la facture est recalculé.',
+          reasonLabel: 'Motif d’annulation',
+          confirmLabel: 'Annuler le paiement',
+          tone: 'danger',
+          icon: 'block',
+        },
+        loading: 'Annulation…',
+        errorTitle: 'Annulation refusée',
+        success: { title: 'Paiement annulé', details: [{ label: 'Référence', value: row.reference }] },
+        busy: this.saving,
+      })
+      .subscribe({
+        next: (p) => {
+          if (this.mode() === 'form') this.loadOne(p.id);
+          else this.loadList();
+        },
+      });
   }
 
   save(): void {
@@ -206,7 +272,7 @@ export class AchatsPaiementsComponent implements OnInit {
       montant: Number(v.montant),
       date_echeance: v.date_echeance || null,
       date_paiement: v.date_paiement || null,
-      mode_paiement: v.mode_paiement.trim() || null,
+      mode_paiement: this.resoudreMoyen(),
       reference_paiement: v.reference_paiement.trim() || null,
       observation: v.observation.trim() || null,
     };
@@ -218,14 +284,15 @@ export class AchatsPaiementsComponent implements OnInit {
           mode_paiement: body.mode_paiement,
           reference_paiement: body.reference_paiement,
           observation: body.observation,
-          statut: body.date_paiement ? 'PAYE' : undefined,
         })
       : this.api.post<PaiementRow>('/mg/achats/paiements', body);
     req.subscribe({
       next: (p) => {
         this.saving.set(false);
         this.msg.set(this.id() ? 'Suivi mis à jour.' : 'Suivi de paiement créé.');
-        void this.router.navigateByUrl(`/achats-appro/paiements/${p.id}`);
+        this.form.markAsPristine();
+        if (this.id()) this.loadOne(p.id);
+        else void this.router.navigateByUrl(`/achats-appro/paiements/${p.id}`);
       },
       error: (err) => {
         this.saving.set(false);

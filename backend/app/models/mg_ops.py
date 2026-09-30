@@ -51,13 +51,29 @@ class MgBonCommande(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     incoterm: Mapped[str | None] = mapped_column(String(60), nullable=True)
     conditions_paiement: Mapped[str | None] = mapped_column(String(120), nullable=True)
     moyen_paiement: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # RIB / compte (Virement) ou numéro de téléphone (Amanty).
+    ref_paiement: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Montant remis en espèces (Cash).
+    montant_paiement: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     demandeur_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
     demandeur_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     statut: Mapped[str] = mapped_column(String(30), default="BROUILLON", index=True)
+    # Historique (anciens visas MG / DR, remplacés par la signature papier) : lecture seule.
     visa_mg_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     visa_mg_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     visa_dr_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     visa_dr_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    soumis_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    soumis_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    valide_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    valide_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    envoye_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    envoye_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    cloture_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cloture_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    annule_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    annule_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    motif_annulation: Mapped[str | None] = mapped_column(Text, nullable=True)
     total_ht: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
     observation: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -90,7 +106,7 @@ class MgBonCommande(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     pdf_version: Mapped[int] = mapped_column(Integer, default=1)
 
     lignes: Mapped[list[MgBcLigne]] = relationship(
-        back_populates="bon", cascade="all, delete-orphan"
+        back_populates="bon", cascade="all, delete-orphan", order_by="MgBcLigne.sort_order"
     )
 
 

@@ -10,7 +10,9 @@ import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
+import { FeedbackService } from '../core/feedback/feedback.service';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { bcRecevable, chargerModeTest, modeTestAchats } from './achats-circuit';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 import { AchatsBonApercuComponent, AchatsReceptionApercuComponent } from './achats-apercu.component';
 
@@ -55,6 +57,7 @@ export interface ReceptionRow {
   agence_id?: string | null;
   statut: string;
   observation?: string | null;
+  motif_annulation?: string | null;
   lignes?: ReceptionLigne[];
 }
 
@@ -70,6 +73,7 @@ type Mode = 'list' | 'form';
 export class AchatsReceptionsComponent implements OnInit {
   readonly hasUnsavedChanges = unsavedChanges(() => this.mode() === 'form' && this.form.dirty && !this.saving(), () => this.form);
   private readonly api = inject(ApiService);
+  private readonly feedback = inject(FeedbackService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
@@ -85,7 +89,6 @@ export class AchatsReceptionsComponent implements OnInit {
   readonly id = signal<string | null>(null);
   readonly saving = signal(false);
   readonly q = signal('');
-  readonly confirm = signal<{ row: ReceptionRow; action: 'desactiver' | 'supprimer' } | null>(null);
   readonly apercuId = signal<string | null>(null);
   readonly bonApercuId = signal<string | null>(null);
 
@@ -116,15 +119,16 @@ export class AchatsReceptionsComponent implements OnInit {
     return this.form.get('lignes') as FormArray;
   }
 
+  readonly modeTest = modeTestAchats;
+
   ngOnInit(): void {
+    chargerModeTest(this.api);
     this.api.get<Agence[]>('/mg/achats/agences').subscribe({
       next: (r) => this.agences.set(r),
     });
     this.api.get<{ items: BonOpt[] }>('/mg/achats/bons', { page: '1', size: '100' }).subscribe({
       next: (r) =>
-        this.bons.set(
-          r.items.filter((b) => ['ENVOYE', 'PARTIEL', 'VALIDE', 'RECU'].includes(b.statut)),
-        ),
+        this.bons.set(r.items.filter((b) => bcRecevable(b.statut))),
     });
     this.form.controls.bon_id.valueChanges.subscribe((bonId) => {
       if (this.isFiche()) return;
@@ -135,12 +139,15 @@ export class AchatsReceptionsComponent implements OnInit {
       }
     });
     const param = this.route.snapshot.paramMap.get('id');
-    if (this.router.url.endsWith('/nouvelle') || param) {
+    if (this.router.url.split('?')[0].endsWith('/nouvelle') || param) {
       this.mode.set('form');
       if (param) {
         this.id.set(param);
         this.loadOne(param);
         this.form.disable({ emitEvent: false });
+      } else {
+        const bonId = this.route.snapshot.queryParamMap.get('bon_id');
+        if (bonId) this.form.controls.bon_id.setValue(bonId);
       }
     } else {
       this.loadList();
@@ -204,6 +211,12 @@ export class AchatsReceptionsComponent implements OnInit {
             }),
           );
         }
+        if (rec.statut !== 'ANNULEE') {
+          for (const c of [this.form.controls.date_reception, this.form.controls.agence_id, this.form.controls.observation]) {
+            c.enable({ emitEvent: false });
+          }
+        }
+        this.form.markAsPristine();
       },
       error: (err) => this.erreur.set(this.apiDetail(err, 'Réception introuvable.')),
     });
@@ -217,33 +230,50 @@ export class AchatsReceptionsComponent implements OnInit {
     this.apercuId.set(r.id);
   }
 
-  askAction(row: ReceptionRow, action: 'desactiver' | 'supprimer'): void {
-    this.confirm.set({ row, action });
+  supprimer(row: ReceptionRow): void {
+    this.feedback
+      .run(() => this.api.delete(`/mg/achats/receptions/${row.id}`), {
+        confirm: {
+          action: 'suppression',
+          message: `Mode test : la réception ${row.reference} sera supprimée, le stock contre-passé et les quantités rendues au BC.`,
+        },
+        loading: 'Suppression…',
+        errorTitle: 'Suppression refusée',
+        success: { title: 'Réception supprimée', details: [{ label: 'Référence', value: row.reference }] },
+        busy: this.saving,
+      })
+      .subscribe({
+        next: () => {
+          if (this.mode() === 'form') void this.router.navigateByUrl('/achats-appro/receptions');
+          else this.loadList();
+        },
+      });
   }
 
-  confirmAction(): void {
-    const c = this.confirm();
-    if (!c) return;
-    const req =
-      c.action === 'supprimer'
-        ? this.api.delete(`/mg/achats/receptions/${c.row.id}`)
-        : this.api.post(`/mg/achats/receptions/${c.row.id}/desactiver`, {});
-    req.subscribe({
-      next: () => {
-        this.confirm.set(null);
-        this.msg.set(
-          c.action === 'supprimer'
-            ? `Réception ${c.row.reference} supprimée.`
-            : `Réception ${c.row.reference} désactivée.`,
-        );
-        if (this.mode() === 'form') void this.router.navigateByUrl('/achats-appro/receptions');
-        else this.loadList();
-      },
-      error: (err) => {
-        this.confirm.set(null);
-        this.erreur.set(this.apiDetail(err, 'Action refusée.'));
-      },
-    });
+  /** Annulation = contre-passation (quantités reçues et stock restitués), jamais une suppression. */
+  annuler(row: ReceptionRow): void {
+    this.feedback
+      .runWithReason((motif) => this.api.post<ReceptionRow>(`/mg/achats/receptions/${row.id}/annuler`, { motif }), {
+        reason: {
+          title: `Annuler la réception ${row.reference}`,
+          message: 'Les quantités reçues seront retirées du BC et le stock contre-passé.',
+          hint: 'Refusé si ces quantités sont déjà facturées : annulez d’abord la facture.',
+          reasonLabel: 'Motif d’annulation',
+          confirmLabel: 'Annuler la réception',
+          tone: 'danger',
+          icon: 'undo',
+        },
+        loading: 'Annulation…',
+        errorTitle: 'Annulation refusée',
+        success: { title: 'Réception annulée', details: [{ label: 'Référence', value: row.reference }] },
+        busy: this.saving,
+      })
+      .subscribe({
+        next: (rec) => {
+          if (this.mode() === 'form') this.current.set(rec);
+          else this.loadList();
+        },
+      });
   }
 
   save(): void {

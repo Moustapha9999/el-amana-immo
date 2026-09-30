@@ -141,10 +141,33 @@ services:
     networks:
       - bea_internal
 
+  pgadmin:
+    # Administration de la base : http://localhost:5050
+    # Serveur à déclarer : hôte "postgres", port 5432, base bea_digital.
+    image: dpage/pgadmin4
+    pull_policy: missing
+    container_name: bea-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:?PGADMIN_DEFAULT_EMAIL manquant dans .env.docker}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?PGADMIN_DEFAULT_PASSWORD manquant dans .env.docker}
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - bea_internal
+
 volumes:
   postgres_data:
     # Volume unique BEA DIGITAL. Ne pas en créer un second.
     name: bea_postgres_data
+  pgadmin_data:
+    # Configuration pgAdmin uniquement (jamais les données PostgreSQL).
+    name: bea_pgadmin_data
 
 networks:
   bea_internal:
