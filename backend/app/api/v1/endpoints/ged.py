@@ -145,26 +145,38 @@ async def download_document(
 async def delete_document(
     document_id: UUID,
     request: Request,
+    reason: str | None = Query(None, max_length=500),
     user: User = Depends(require_permission("ged.write")),
     db: AsyncSession = Depends(get_db),
 ):
+    """Détache une pièce de sa fiche (corbeille GED, restaurable depuis CORE ADMIN)."""
     try:
-        row = await GedService(db).get(document_id)
+        from app.services.document_query_service import DocumentQueryService
         from app.services.mg_requests_service import MgRequestsService
 
+        row = await DocumentQueryService(db).get_accessible(document_id, user)
         await MgRequestsService(db).assert_document_access(
             user, entity=row.entity, entity_id=row.entity_id,
         )
-        row = await GedService(db).soft_delete(document_id)
+        row = await GedService(db).soft_delete(document_id, user_id=user.id, reason=reason)
         await record_audit(
             db,
             user=user,
-            action="ged_delete",
+            action="ged_detach",
             entity="ged_document",
             entity_id=str(row.id),
-            after={"filename": row.filename, "module_code": row.module_code},
+            after={
+                "filename": row.filename,
+                "module_code": row.module_code,
+                "entity": row.entity,
+                "entity_id": row.entity_id,
+                "reason": row.delete_reason,
+            },
             request=request,
+            espace_code=row.espace_code,
+            module_code=row.module_code,
         )
-        return MessageResponse(message="Document GED supprimé")
+        await db.commit()
+        return MessageResponse(message="Pièce détachée")
     except AppError as exc:
         raise_http_from_app(exc)

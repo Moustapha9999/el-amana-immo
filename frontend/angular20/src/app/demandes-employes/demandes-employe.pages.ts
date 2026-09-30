@@ -33,7 +33,7 @@ import {
   VISA_OPTIONS,
 } from './demandes-employe.models';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
-import { PIECES_ACCEPT, PIECES_FORMATS_LABEL, iconePiece, verifierPieceJointe } from '../shared/pieces-jointes';
+import { PIECES_ACCEPT, PIECES_FORMATS_LABEL, detacherReason, iconePiece, verifierPieceJointe } from '../shared/pieces-jointes';
 
 @Component({
   selector: 'bea-emp-accueil',
@@ -1088,7 +1088,9 @@ export class EmpNotifsComponent implements OnInit {
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="toggleArchive(d)">
                 {{ d.archived_at ? 'Réactiver' : 'Désactiver' }}
               </button>
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="askDelete(d)">Supprimer</button>
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="askDelete(d)" title="Détacher la pièce de la demande">
+                <mat-icon>link_off</mat-icon> Détacher
+              </button>
             </div>
           </article>
         }
@@ -1223,14 +1225,16 @@ export class EmpDocsComponent implements OnInit {
   }
   askDelete(d: MineDocument): void {
     this.feedback
-      .confirm({ action: 'suppression', message: `Supprimer le document « ${d.title || d.filename} » ?` })
-      .subscribe((ok) => {
-        if (!ok) return;
-        this.api.delete(`/ged/documents/${d.id}`).subscribe({
-          next: () => { this.ok.set('Document supprimé.'); this.reload(); },
-          error: () => this.erreur.set('Suppression refusée.'),
-        });
-      });
+      .runWithReason(
+        (motif) => this.api.delete(`/ged/documents/${d.id}?reason=${encodeURIComponent(motif)}`),
+        {
+          reason: detacherReason(d.title || d.filename),
+          loading: 'Détachement de la pièce…',
+          errorTitle: 'Détachement refusé',
+          success: { title: 'Pièce détachée', details: [{ label: 'Fichier', value: d.filename }] },
+        },
+      )
+      .subscribe(() => this.reload());
   }
 }
 

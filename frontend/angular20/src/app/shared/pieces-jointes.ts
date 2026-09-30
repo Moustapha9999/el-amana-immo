@@ -1,3 +1,5 @@
+import type { UiReasonData } from './ui-dialog/ui-dialog.types';
+
 /** Formats de pièces jointes acceptés dans toute la plateforme (miroir de backend/app/core/fichiers.py). */
 export const PIECES_EXTENSIONS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'tif', 'tiff'] as const;
 
@@ -38,4 +40,21 @@ export function verifierPieceJointe(file: File): string | null {
   if (file.size === 0) return 'Fichier vide.';
   if (file.size > PIECES_TAILLE_MAX) return 'Fichier trop volumineux (25 Mo maximum).';
   return null;
+}
+
+/** Dialogue commun « Détacher une pièce » (motif tracé dans l'audit). */
+export function detacherReason(nom: string): UiReasonData {
+  return {
+    title: 'Détacher la pièce',
+    message: `Détacher « ${nom} » de cette fiche ?`,
+    hint: 'La pièce passe à la corbeille GED : elle reste restaurable par un administrateur (CORE ADMIN).',
+    confirmLabel: 'Détacher',
+    cancelLabel: 'Annuler',
+    tone: 'danger',
+    icon: 'link_off',
+    reasonLabel: 'Motif (tracé dans l’audit)',
+    reasonPlaceholder: 'Ex. : mauvais fichier, doublon, version remplacée',
+    required: true,
+    maxLength: 500,
+  };
 }

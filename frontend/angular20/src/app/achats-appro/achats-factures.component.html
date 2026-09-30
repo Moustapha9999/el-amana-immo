@@ -337,6 +337,7 @@
           docType="FACTURE_FOURNISSEUR"
           [entityId]="id()!"
           [reference]="current()?.numero_fournisseur || current()?.reference || null"
+          [lectureSeule]="current()?.statut === 'PAYE'"
         />
       </div>
     }

@@ -1,8 +1,16 @@
-import { ChangeDetectionStrategy, Component, Input, OnChanges, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnChanges, Output, inject, signal } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../core/services/api.service';
+import { AuthService } from '../core/services/auth.service';
+import { FeedbackService } from '../core/feedback/feedback.service';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
-import { PIECES_ACCEPT, PIECES_FORMATS_LABEL, iconePiece, verifierPieceJointe } from '../shared/pieces-jointes';
+import {
+  PIECES_ACCEPT,
+  PIECES_FORMATS_LABEL,
+  detacherReason,
+  iconePiece,
+  verifierPieceJointe,
+} from '../shared/pieces-jointes';
 
 interface GedDoc {
   id: string;
@@ -60,6 +68,18 @@ interface GedDoc {
               >
                 <mat-icon>download</mat-icon>
               </button>
+              @if (peutDetacher()) {
+                <button
+                  type="button"
+                  class="bea-mg-ged__dl bea-mg-ged__detach"
+                  title="Détacher la pièce"
+                  [attr.aria-label]="'Détacher ' + d.filename"
+                  [disabled]="detaching() === d.id"
+                  (click)="detacher(d)"
+                >
+                  <mat-icon>link_off</mat-icon>
+                </button>
+              }
             </li>
           } @empty {
             <li class="bea-mg-ged__empty">Aucun document.</li>
@@ -173,6 +193,9 @@ interface GedDoc {
       border-color: #1a5278;
       background: #f0f7fc;
     }
+    .bea-mg-ged__detach { color: #b91c1c; }
+    .bea-mg-ged__detach:hover:not(:disabled) { border-color: #b91c1c; background: #fef2f2; }
+    .bea-mg-ged__detach:disabled { opacity: 0.5; cursor: wait; }
     .bea-mg-ged__dl mat-icon {
       font-size: 1rem;
       width: 1rem;
@@ -196,8 +219,15 @@ export class MgGedPanelComponent implements OnChanges {
   @Input() espaceCode = 'moyens-generaux';
   @Input() docType = 'JUSTIFICATIF';
   @Input() reference: string | null = null;
+  /** Fiche verrouillée (payée, clôturée…) : consultation seule. */
+  @Input() lectureSeule = false;
+  @Output() changed = new EventEmitter<void>();
 
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
+  private readonly feedback = inject(FeedbackService);
+  readonly detaching = signal<string | null>(null);
+  readonly peutDetacher = () => !this.lectureSeule && this.auth.canWriteGed();
   readonly docs = signal<GedDoc[]>([]);
   readonly erreur = feedbackSignal('error', null);
   readonly msg = feedbackSignal('success', '');
@@ -273,6 +303,29 @@ export class MgGedPanelComponent implements OnChanges {
       },
       error: () => this.erreur.set('Téléchargement impossible.'),
     });
+  }
+
+  detacher(doc: GedDoc): void {
+    this.detaching.set(doc.id);
+    this.feedback
+      .runWithReason(
+        (motif) => this.api.delete(`/ged/documents/${doc.id}?reason=${encodeURIComponent(motif)}`),
+        {
+          reason: detacherReason(doc.filename),
+          loading: 'Détachement de la pièce…',
+          errorTitle: 'Détachement refusé',
+          success: { title: 'Pièce détachée', details: [{ label: 'Fichier', value: doc.filename }] },
+        },
+      )
+      .subscribe({
+        next: () => {
+          this.detaching.set(null);
+          this.docs.update((list) => list.filter((d) => d.id !== doc.id));
+          this.changed.emit();
+        },
+        error: () => this.detaching.set(null),
+        complete: () => this.detaching.set(null),
+      });
   }
 
   onFile(ev: Event): void {

@@ -166,10 +166,15 @@ class GedService:
         )
         return list(result.scalars().all())
 
-    async def soft_delete(self, document_id: UUID) -> GedDocument:
+    async def soft_delete(
+        self, document_id: UUID, *, user_id: UUID | None = None, reason: str | None = None
+    ) -> GedDocument:
         from datetime import datetime, timezone
 
         row = await self.get(document_id)
         row.deleted_at = datetime.now(timezone.utc)
+        row.is_active = False
+        row.deleted_by_id = user_id
+        row.delete_reason = (reason or "").strip()[:500] or None
         await self.db.flush()
         return row

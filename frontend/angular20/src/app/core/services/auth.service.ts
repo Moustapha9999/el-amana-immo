@@ -57,6 +57,14 @@ export class AuthService {
     const codes = profile.permission_codes ?? [];
     return codes.includes('*') || codes.includes('mg.stock.period.reopen') || codes.includes('mg.admin');
   });
+  /** Joindre / détacher des pièces GED — contrôlé aussi côté backend (`ged.write`). */
+  readonly canWriteGed = computed(() => {
+    const profile = this.user();
+    if (!profile) return false;
+    if (profile.is_superuser) return true;
+    const codes = profile.permission_codes ?? [];
+    return codes.includes('*') || codes.includes('ged.write');
+  });
 
   private platformRefreshInFlight$: Observable<TokenPair> | null = null;
   private moduleRefreshInFlight$: Observable<TokenPair> | null = null;

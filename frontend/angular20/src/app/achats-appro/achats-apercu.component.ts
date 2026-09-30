@@ -15,12 +15,14 @@ import { MatIconModule } from '@angular/material/icon';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
+import { AuthService } from '../core/services/auth.service';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { MontantPipe, QuantitePipe } from '../shared/montant.pipe';
 import {
   PIECES_ACCEPT,
   PIECES_FORMATS_LABEL,
   PieceNature,
+  detacherReason,
   iconePiece,
   naturePiece,
   verifierPieceJointe,
@@ -765,6 +767,18 @@ function totalPaye(paiements: PaiementApercu[]): number {
                 <button type="button" class="bea-ach__icon-btn" title="Télécharger" (click)="telechargerPiece(d)">
                   <mat-icon>download</mat-icon>
                 </button>
+                @if (peutDetacher(f)) {
+                  <button
+                    type="button"
+                    class="bea-ach__icon-btn bea-preuve__detach"
+                    title="Détacher la pièce"
+                    [attr.aria-label]="'Détacher ' + d.filename"
+                    [disabled]="detaching() === d.id"
+                    (click)="detacherPiece(d)"
+                  >
+                    <mat-icon>link_off</mat-icon>
+                  </button>
+                }
               </div>
               @if (pieceOuverte()?.id === d.id && pieceUrl(); as url) {
                 <div class="bea-preuve__viewer">
@@ -1002,7 +1016,9 @@ export class AchatsFactureApercuComponent implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly feedback = inject(FeedbackService);
   private readonly sanitizer = inject(DomSanitizer);
+  private readonly auth = inject(AuthService);
 
+  readonly detaching = signal<string | null>(null);
   readonly dossier = signal<FactureDossier | null>(null);
   readonly pieceOuverte = signal<Justificatif | null>(null);
   readonly pieceUrl = signal<SafeResourceUrl | null>(null);
@@ -1154,6 +1170,36 @@ export class AchatsFactureApercuComponent implements OnInit, OnDestroy {
       },
       error: () => this.feedback.error({ title: 'Téléchargement impossible', message: 'Accès GED refusé ou fichier introuvable.' }),
     });
+  }
+
+  /** Une facture payée garde ses preuves (piste d'audit du paiement). */
+  peutDetacher(f: FactureApercu): boolean {
+    return f.statut !== 'PAYE' && this.auth.canWriteGed();
+  }
+
+  detacherPiece(d: Justificatif): void {
+    this.detaching.set(d.id);
+    this.feedback
+      .runWithReason(
+        (motif) => this.api.delete(`/ged/documents/${d.id}?reason=${encodeURIComponent(motif)}`),
+        {
+          reason: detacherReason(d.filename),
+          loading: 'Détachement de la pièce…',
+          errorTitle: 'Détachement refusé',
+          success: { title: 'Pièce détachée', details: [{ label: 'Fichier', value: d.filename }] },
+        },
+      )
+      .subscribe({
+        next: () => {
+          if (this.pieceOuverte()?.id === d.id) {
+            this.pieceOuverte.set(null);
+            this.libererPiece();
+          }
+          this.chargerDossier();
+        },
+        error: () => this.detaching.set(null),
+        complete: () => this.detaching.set(null),
+      });
   }
 
   joindre(ev: Event, f: FactureApercu): void {
