@@ -154,6 +154,11 @@ class MgNotesService:
             }
         )
 
+    def _is_notes_admin(self, user: User) -> bool:
+        if user.is_superuser:
+            return True
+        return any(p.code == "mg.notes.settings" for r in (user.roles or []) for p in (r.permissions or []))
+
     def _assert_access(self, note: MgNoteFrais, user: User) -> None:
         if self._can_supervise(user):
             return
@@ -396,7 +401,12 @@ class MgNotesService:
         return await self.get_note(note.id, user)
 
     def _assert_can_mutate(self, note: MgNoteFrais, user: User, *, deleting: bool) -> None:
-        """Brouillon / correction : le demandeur. Sinon : un superviseur, hors paiement et archive."""
+        """Brouillon / correction : le demandeur. Sinon : un superviseur, hors paiement et archive.
+
+        L'administrateur du module peut supprimer (soft delete audité) quel que soit le statut.
+        """
+        if deleting and self._is_notes_admin(user):
+            return
         if note.statut in MUTATION_LOCKED:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
@@ -599,77 +609,22 @@ class MgNotesService:
     async def enregistrer_paiement(
         self, note_id: uuid.UUID, data: PaiementIn, user: User
     ) -> MgNoteFrais:
-        perms = self._user_perms(user)
-        if "mg.notes.payment" not in perms:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Permission paiement requise")
+        """Compatibilité : crée un paiement dans `mg_note_frais_paiements`."""
+        from app.schemas.mg_notes import NotePaiementCreate
+        from app.services.mg_notes_paiements_service import MgNotesPaiementsService
 
-        note = await self._lock_note(note_id)
-        self._assert_access(note, user)
-
-        if note.statut not in {"MISE_EN_PAIEMENT", "PARTIELLEMENT_PAYEE"}:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail="Paiement possible uniquement après mise en paiement",
-            )
-
-        reste = note.total_mru - (note.montant_paye or Decimal("0"))
-        if data.montant > reste:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Montant supérieur au reste à payer")
-
-        partiel = await self.paiement_partiel_actif()
-        if data.montant < reste and not partiel:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail="Paiement partiel désactivé — régler le montant total",
-            )
-
-        old = note.statut
-        note.montant_paye = (note.montant_paye or Decimal("0")) + data.montant
-        note.date_paiement = data.date_paiement or date.today()
-        if data.mode_paiement:
-            note.mode_paiement = data.mode_paiement
-        if data.ref_paiement:
-            note.ref_paiement = data.ref_paiement
-        if data.commentaire:
-            note.commentaire_paiement = data.commentaire
-
-        if note.montant_paye >= note.total_mru:
-            note.statut = "PAYEE"
-            note.montant_paye = note.total_mru
-        else:
-            note.statut = "PARTIELLEMENT_PAYEE"
-
-        self._add_hist(
-            note,
-            action="payer",
-            from_statut=old,
-            to_statut=note.statut,
-            user=user,
-            commentaire=data.commentaire or f"Paiement {data.montant}",
-        )
-        await self.db.commit()
-        await audit_notes(
-            self.db,
+        await MgNotesPaiementsService(self.db).create(
+            NotePaiementCreate(
+                note_id=note_id,
+                date_paiement=data.date_paiement or date.today(),
+                montant=data.montant,
+                mode_paiement=data.mode_paiement or "Espèces",
+                reference=data.ref_paiement,
+                observation=data.commentaire,
+            ),
             user,
-            "notes.payer",
-            "note_frais",
-            note.id,
-            before={"statut": old, "paye": str(note.montant_paye - data.montant)},
-            after={"statut": note.statut, "paye": str(note.montant_paye)},
         )
-        await self.db.commit()
-        if note.demandeur_id:
-            await notify_notes_user(
-                self.db,
-                note.demandeur_id,
-                f"Note {note.reference}",
-                f"Paiement enregistré ({note.statut}).",
-                entity="note_frais",
-                entity_id=note.id,
-                actor=user,
-            )
-            await self.db.commit()
-        return await self.get_note(note.id, user)
+        return await self.get_note(note_id, user)
 
     # --- Catégories / paramètres ---
 

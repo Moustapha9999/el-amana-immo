@@ -6,7 +6,18 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -178,6 +189,63 @@ class MgNoteFrais(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     historique: Mapped[list["MgNoteFraisHistorique"]] = relationship(
         back_populates="note", cascade="all, delete-orphan", order_by="MgNoteFraisHistorique.created_at"
     )
+    paiements: Mapped[list["MgNoteFraisPaiement"]] = relationship(
+        back_populates="note", order_by="MgNoteFraisPaiement.date_paiement"
+    )
+
+    @property
+    def statut_paiement(self) -> str:
+        """Calculé depuis les montants : jamais saisi."""
+        if self.statut in {"ANNULEE", "REJETEE"}:
+            return "ANNULE"
+        total = self.total_mru or Decimal("0")
+        paye = self.montant_paye or Decimal("0")
+        if total > 0 and paye >= total:
+            return "PAYE"
+        if paye > 0:
+            return "PARTIEL"
+        return "NON_PAYE"
+
+
+class MgNoteFraisPaiement(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
+    """Paiement effectif d'une note : bénéficiaire, motif et montant dû restent sur la note."""
+
+    __tablename__ = "mg_note_frais_paiements"
+    __table_args__ = (
+        UniqueConstraint("numero", name="uq_mg_note_frais_paiements_numero"),
+        CheckConstraint("montant > 0", name="ck_mg_note_frais_paiements_montant_positif"),
+        CheckConstraint("statut IN ('VALIDE', 'ANNULE')", name="ck_mg_note_frais_paiements_statut"),
+    )
+
+    numero: Mapped[str] = mapped_column(String(40), index=True)
+    note_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_notes_frais.id", ondelete="RESTRICT"), index=True
+    )
+    date_paiement: Mapped[date] = mapped_column(Date, index=True)
+    montant: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    mode_paiement: Mapped[str] = mapped_column(String(40), index=True)
+    reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    numero_cheque: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    banque: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    compte: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    observation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    statut: Mapped[str] = mapped_column(String(20), default="VALIDE", index=True)
+    motif_annulation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    annule_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    annule_par_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    annule_par_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    created_by_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    updated_by_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    note: Mapped[MgNoteFrais] = relationship(back_populates="paiements")
 
 
 class MgNoteFraisLigne(UUIDPrimaryKeyMixin, TimestampMixin, Base):

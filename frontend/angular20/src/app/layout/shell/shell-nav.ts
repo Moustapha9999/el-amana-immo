@@ -226,10 +226,10 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
     },
     {
       section: 'Notes de frais',
-      label: 'Nouvelle note',
-      path: '/notes-frais/nouvelle',
-      icon: 'add_circle',
-      permissions: ['mg.notes.create'],
+      label: 'Paiements',
+      path: '/notes-frais/paiements',
+      icon: 'payments',
+      permissions: ['mg.notes.view'],
     },
     {
       section: 'Notes de frais',

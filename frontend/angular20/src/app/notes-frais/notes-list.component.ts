@@ -11,54 +11,30 @@ import { PaginationComponent } from '../shared/pagination.component';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import { NoteApercuComponent } from './note-apercu.component';
+import { PaiementFormComponent } from './paiement-form.component';
+import {
+  NOTE_STATUTS,
+  Note,
+  NotePaiement,
+  canPayNotes,
+  isNotePayable,
+  paiementReference,
+  statutPaiementLabel,
+  statutPaiementTone,
+  canDeleteNote,
+  canEditNote,
+  deleteNoteHint,
+  editNoteHint,
+  formatNoteApiError,
+  noteStatutLabel,
+  noteStatutTone,
+} from './notes-frais.shared';
 
 interface Agence {
   id: string;
   code: string;
   libelle: string;
-}
-interface Hist {
-  id: string;
-  action: string;
-  from_statut: string | null;
-  to_statut: string | null;
-  user_nom: string | null;
-  commentaire: string | null;
-  created_at: string | null;
-}
-interface Ligne {
-  id?: string;
-  date_depense: string;
-  description: string;
-  motif: string | null;
-  montant: number;
-  mode_reglement: string | null;
-  categorie_id: string | null;
-  categorie_libelle_snapshot: string | null;
-}
-interface Note {
-  id: string;
-  reference: string;
-  date_demande: string;
-  agence_id: string | null;
-  agence_libelle_snapshot: string | null;
-  demandeur_id: string | null;
-  demandeur_nom: string | null;
-  departement: string | null;
-  fonction: string | null;
-  objet: string | null;
-  periode_debut: string | null;
-  periode_fin: string | null;
-  devise: string;
-  statut: string;
-  total_mru: number;
-  montant_paye: number;
-  motif_rejet: string | null;
-  motif_correction: string | null;
-  observation: string | null;
-  pdf_version: number;
-  lignes: Ligne[];
-  historique: Hist[];
 }
 interface Paginated {
   items: Note[];
@@ -78,6 +54,8 @@ interface Paginated {
     MontantPipe,
     MgGedPanelComponent,
     PaginationComponent,
+    NoteApercuComponent,
+    PaiementFormComponent,
   ],
   template: `
     <section class="bea-mg bea-nf">
@@ -116,34 +94,51 @@ interface Paginated {
         <div class="bea-mg__panel">
           <div class="bea-mg__panel-top">
             <h2>Registre</h2>
-            <span class="bea-mg__count">{{ total() }} résultat(s)</span>
+            <span class="bea-mg__count">{{ total() }} résultat{{ total() > 1 ? 's' : '' }}</span>
           </div>
           <div class="bea-mg__table-scroll bea-nf__registre-scroll">
-            <table class="bea-mg__table">
+            <table class="bea-mg__table bea-nf-table">
               <thead>
                 <tr>
-                  <th>Réf</th>
+                  <th>Référence</th>
                   <th>Date</th>
                   <th>Demandeur</th>
                   <th>Intitulé</th>
-                  <th>Montant</th>
+                  <th class="is-num">Montant</th>
+                  <th class="is-num">Reste</th>
                   <th>Statut</th>
                   <th class="bea-mg__th-actions">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                @for (n of notes(); track n.id) {
-                  <tr>
-                    <td><code class="bea-mg__code">{{ n.reference }}</code></td>
-                    <td>{{ n.date_demande | date: 'shortDate' }}</td>
-                    <td>{{ n.demandeur_nom || '—' }}</td>
-                    <td>{{ n.agence_libelle_snapshot || '—' }}</td>
-                    <td>{{ n.total_mru | montant }}</td>
-                    <td><span class="bea-stock-badge">{{ statutLabel(n.statut) }}</span></td>
+                @for (n of notes(); track n.id; let i = $index) {
+                  <tr class="bea-nf-row" [style.animation-delay.ms]="i < 20 ? i * 35 : 0" (dblclick)="openApercu(n.id)">
+                    <td class="is-nowrap"><code class="bea-mg__code">{{ n.reference }}</code></td>
+                    <td class="is-nowrap">{{ n.date_demande | date: 'dd/MM/yyyy' }}</td>
+                    <td>
+                      <strong class="bea-nf-cell__main">{{ n.demandeur_nom || '—' }}</strong>
+                      @if (n.departement || n.fonction) {
+                        <small class="bea-nf-cell__sub">{{ n.departement || n.fonction }}</small>
+                      }
+                    </td>
+                    <td>
+                      <span class="bea-nf-cell__main">{{ n.agence_libelle_snapshot || '—' }}</span>
+                      @if (n.objet) { <small class="bea-nf-cell__sub">{{ n.objet }}</small> }
+                    </td>
+                    <td class="is-num is-nowrap"><strong>{{ n.total_mru | montant }}</strong></td>
+                    <td class="is-num is-nowrap" [class.bea-nf-cell--due]="n.total_mru - n.montant_paye > 0">
+                      {{ (n.total_mru - n.montant_paye) | montant }}
+                    </td>
+                    <td class="is-nowrap"><span class="bea-nf-badge" [attr.data-tone]="statutTone(n.statut)">{{ statutLabel(n.statut) }}</span></td>
                     <td class="bea-mg__actions-cell">
-                      <a class="bea-mg__icon-btn" [routerLink]="['/notes-frais/notes', n.id]" title="Voir">
+                      <button type="button" class="bea-mg__icon-btn" title="Voir le détail" (click)="openApercu(n.id)">
                         <mat-icon>visibility</mat-icon>
-                      </a>
+                      </button>
+                      @if (canPay() && isPayable(n)) {
+                        <button type="button" class="bea-mg__icon-btn bea-pay-btn" title="Payer" (click)="payerDepuisListe(n)">
+                          <mat-icon>payments</mat-icon>
+                        </button>
+                      }
                       @if (canEdit(n)) {
                         <a class="bea-mg__icon-btn" [routerLink]="['/notes-frais/notes', n.id]" title="Modifier">
                           <mat-icon>edit</mat-icon>
@@ -166,7 +161,7 @@ interface Paginated {
                   </tr>
                 } @empty {
                   <tr>
-                    <td colspan="7">
+                    <td colspan="8">
                       <div class="bea-mg__empty">
                         <mat-icon>receipt_long</mat-icon>
                         <p>Aucune note de frais.</p>
@@ -187,6 +182,10 @@ interface Paginated {
             />
           }
         </div>
+
+        @if (apercuId(); as id) {
+          <bea-note-apercu [noteId]="id" (closed)="apercuId.set(null)" (deleted)="onApercuDeleted()" />
+        }
       }
 
       @if (mode() === 'create' || mode() === 'detail') {
@@ -206,7 +205,7 @@ interface Paginated {
         <form class="bea-mg__panel" [formGroup]="form" (ngSubmit)="save()" style="overflow:visible">
           <div class="bea-mg__panel-top">
             <h2>Fiche note de frais</h2>
-            <span class="bea-stock-badge">{{ statutLabel(current()?.statut || 'BROUILLON') }}</span>
+            <span class="bea-nf-badge" [attr.data-tone]="statutTone(current()?.statut || 'BROUILLON')">{{ statutLabel(current()?.statut || 'BROUILLON') }}</span>
           </div>
           <div class="bea-mg__modal-body">
             <div class="bea-nf-fiche">
@@ -362,20 +361,19 @@ interface Paginated {
                   <button type="button" class="bea-mg__btn bea-mg__btn--danger" (click)="askReject()">Rejeter</button>
                 </div>
               }
-              @if (n.statut === 'VALIDEE') {
+              @if (isPayable(n)) {
                 <div class="bea-nf-actions__group">
                   <span class="bea-nf-actions__label">Paiement</span>
-                  <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="doTransition('mettre_en_paiement')">
-                    Mise en paiement
-                  </button>
-                </div>
-              }
-              @if (n.statut === 'MISE_EN_PAIEMENT' || n.statut === 'PARTIELLEMENT_PAYEE') {
-                <div class="bea-nf-actions__group">
-                  <span class="bea-nf-actions__label">Paiement</span>
-                  <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="openPaiement()">
-                    Enregistrer paiement
-                  </button>
+                  @if (n.statut === 'VALIDEE') {
+                    <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="doTransition('mettre_en_paiement')">
+                      Mise en paiement
+                    </button>
+                  }
+                  @if (canPay()) {
+                    <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="payerOpen.set(true)">
+                      <mat-icon>payments</mat-icon> Payer
+                    </button>
+                  }
                 </div>
               }
               @if (n.statut === 'PAYEE') {
@@ -406,11 +404,53 @@ interface Paginated {
 
         @if (current(); as n) {
           <div class="bea-mg__panel">
-            <div class="bea-mg__panel-top"><h2>Paiement</h2></div>
-            <div class="bea-mg__modal-body bea-mg__grid">
-              <label>Total <input [value]="n.total_mru | montant" readonly /></label>
-              <label>Payé <input [value]="n.montant_paye | montant" readonly /></label>
-              <label>Reste <input [value]="(n.total_mru - n.montant_paye) | montant" readonly /></label>
+            <div class="bea-mg__panel-top">
+              <h2>Paiements</h2>
+              <span class="bea-nf-badge" [attr.data-tone]="payTone(n.statut_paiement)">{{ payLabel(n.statut_paiement) }}</span>
+            </div>
+            <div class="bea-mg__modal-body">
+              <div class="bea-ct-view__kpis bea-pay-kpis">
+                <div><span>Montant initial</span><strong>{{ n.total_mru | montant }} MRU</strong></div>
+                <div><span>Total payé</span><strong>{{ n.montant_paye | montant }} MRU</strong></div>
+                <div [class.is-due]="n.total_mru - n.montant_paye > 0">
+                  <span>Solde restant</span><strong>{{ (n.total_mru - n.montant_paye) | montant }} MRU</strong>
+                </div>
+              </div>
+              @if (notePaiements().length) {
+                <div class="bea-nf-view__table">
+                  <table class="bea-mg__table bea-nf-table">
+                    <thead>
+                      <tr><th>N° paiement</th><th>Date</th><th>Mode</th><th>Référence</th><th class="is-num">Montant</th><th>Statut</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                      @for (p of notePaiements(); track p.id) {
+                        <tr [class.is-cancelled]="p.statut === 'ANNULE'">
+                          <td><code class="bea-mg__code">{{ p.numero }}</code></td>
+                          <td class="is-nowrap">{{ p.date_paiement | date: 'dd/MM/yyyy' }}</td>
+                          <td>{{ p.mode_paiement }}</td>
+                          <td>{{ paiementRef(p) }}</td>
+                          <td class="is-num is-nowrap">{{ p.montant | montant }}</td>
+                          <td><span class="bea-nf-badge" [attr.data-tone]="p.statut === 'ANNULE' ? 'danger' : 'ok'">{{ p.statut === 'ANNULE' ? 'Annulé' : 'Validé' }}</span></td>
+                          <td class="bea-mg__actions-cell">
+                            <a class="bea-mg__icon-btn" [routerLink]="['/notes-frais/paiements']" [queryParams]="{ voir: p.id }" title="Voir le paiement">
+                              <mat-icon>visibility</mat-icon>
+                            </a>
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              } @else {
+                <p class="bea-ct-view__none">Aucun paiement enregistré pour cette note.</p>
+              }
+              @if (isPayable(n) && canPay()) {
+                <div class="bea-pay-cta">
+                  <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="payerOpen.set(true)">
+                    <mat-icon>payments</mat-icon> Payer {{ (n.total_mru - n.montant_paye) | montant }} MRU
+                  </button>
+                </div>
+              }
             </div>
           </div>
 
@@ -448,67 +488,12 @@ interface Paginated {
         }
       }
 
-      @if (paiementModal()) {
-        <div class="bea-mg__backdrop" (click)="closePaiement()"></div>
-        <div
-          class="bea-mg__modal"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Enregistrer le paiement"
-        >
-          <div class="bea-mg__modal-head">
-            <div>
-              <p class="bea-stock-page__kicker">Paiement · {{ current()?.reference }}</p>
-              <h2>Enregistrer le paiement</h2>
-            </div>
-            <button type="button" class="bea-mg__icon-btn" (click)="closePaiement()" title="Fermer">
-              <mat-icon>close</mat-icon>
-            </button>
-          </div>
-          <form class="bea-mg__modal-body" [formGroup]="paiementForm" (ngSubmit)="confirmPaiement()">
-            <p style="margin:0 0 1rem;color:#64748b;font-size:0.9rem">
-              Le montant proposé correspond au reste à payer. Vous pouvez le confirmer ou le modifier.
-            </p>
-            <div class="bea-mg__grid">
-              <label>Total<input [value]="(current()?.total_mru || 0) | montant" readonly /></label>
-              <label>Déjà payé<input [value]="(current()?.montant_paye || 0) | montant" readonly /></label>
-              <label class="bea-mg__span2">
-                Reste à payer
-                <input [value]="resteAPayer() | montant" readonly />
-              </label>
-              <label class="bea-mg__span2">
-                Montant à enregistrer (MRU)
-                <input type="number" formControlName="montant" min="0.01" step="0.01" />
-              </label>
-              <label>
-                Mode de règlement
-                <select formControlName="mode_paiement">
-                  <option value="Espèces">Espèces</option>
-                  <option value="Carte">Carte</option>
-                  <option value="Virement">Virement</option>
-                  <option value="Chèque">Chèque</option>
-                  <option value="Amanty">Amanty</option>
-                </select>
-              </label>
-              <label>
-                Référence
-                <input formControlName="ref_paiement" placeholder="N° virement, chèque…" />
-              </label>
-            </div>
-            @if (paiementErreur()) {
-              <p class="bea-stock-page__error" style="margin-top:0.75rem">{{ paiementErreur() }}</p>
-            }
-            <footer class="bea-mg__modal-foot" style="padding:0.9rem 0 0">
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="closePaiement()">
-                Annuler
-              </button>
-              <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="paiementBusy()">
-                <mat-icon>payments</mat-icon>
-                {{ paiementBusy() ? 'Enregistrement…' : 'Enregistrer le paiement' }}
-              </button>
-            </footer>
-          </form>
-        </div>
+      @if (payerOpen()) {
+        <bea-paiement-form
+          [noteId]="payerNoteId()"
+          (closed)="closePayer()"
+          (saved)="onPaid()"
+        />
       }
 
       @if (pdfModal()) {
@@ -584,9 +569,15 @@ export class NotesListComponent implements OnInit {
   readonly pdfModal = signal(false);
   readonly pdfBusy = signal(false);
   readonly pdfErreur = signal('');
-  readonly paiementModal = signal(false);
-  readonly paiementBusy = signal(false);
-  readonly paiementErreur = signal('');
+  readonly payerOpen = signal(false);
+  readonly payerNote = signal<string | null>(null);
+  readonly payerNoteId = computed(() => this.payerNote() ?? this.current()?.id ?? null);
+  readonly notePaiements = signal<NotePaiement[]>([]);
+  readonly canPay = computed(() => canPayNotes(this.auth.user()));
+  readonly isPayable = isNotePayable;
+  readonly payLabel = statutPaiementLabel;
+  readonly payTone = statutPaiementTone;
+  readonly paiementRef = paiementReference;
 
   readonly pdfForm = this.fb.nonNullable.group({
     orientation: ['paysage' as 'portrait' | 'paysage'],
@@ -594,34 +585,11 @@ export class NotesListComponent implements OnInit {
     signataire2: ['Signature Directrice des Ressources'],
   });
 
-  readonly paiementForm = this.fb.nonNullable.group({
-    montant: [0, [Validators.required, Validators.min(0.01)]],
-    mode_paiement: ['Virement', Validators.required],
-    ref_paiement: [''],
-  });
-
-  readonly resteAPayer = computed(() => {
-    const n = this.current();
-    if (!n) return 0;
-    return Math.round((n.total_mru - (n.montant_paye || 0)) * 100) / 100;
-  });
-
-  readonly statuts = [
-    'BROUILLON',
-    'SOUMIS',
-    'EN_CONTROLE',
-    'CORRECTION_REQUISE',
-    'VISA_MG',
-    'VISA_DR',
-    'VALIDEE',
-    'MISE_EN_PAIEMENT',
-    'PARTIELLEMENT_PAYEE',
-    'PAYEE',
-    'CLOTUREE',
-    'ARCHIVEE',
-    'REJETEE',
-    'ANNULEE',
-  ];
+  readonly statuts = NOTE_STATUTS;
+  readonly apercuId = signal<string | null>(null);
+  readonly statutLabel = noteStatutLabel;
+  readonly statutTone = noteStatutTone;
+  readonly formatApiError = formatNoteApiError;
 
   readonly filters = this.fb.nonNullable.group({ q: '', statut: '' });
 
@@ -641,14 +609,6 @@ export class NotesListComponent implements OnInit {
     return this.form.get('lignes') as FormArray;
   }
 
-  private readonly mutationLocked = new Set([
-    'MISE_EN_PAIEMENT',
-    'PARTIELLEMENT_PAYEE',
-    'PAYEE',
-    'CLOTUREE',
-    'ARCHIVEE',
-  ]);
-
   editable = computed(() => {
     const n = this.current();
     if (!n) return true;
@@ -661,51 +621,31 @@ export class NotesListComponent implements OnInit {
   }
 
   canEdit(note: Note): boolean {
-    if (!this.canMutate() || this.mutationLocked.has(note.statut)) return false;
-    if (this.canSupervise()) return true;
-    return note.statut === 'BROUILLON' || note.statut === 'CORRECTION_REQUISE';
+    return canEditNote(this.auth.user(), note);
   }
 
   canDelete(note: Note): boolean {
-    if (!this.canMutate() || this.mutationLocked.has(note.statut)) return false;
-    const user = this.auth.user();
-    if (!user) return false;
-    if (this.canSupervise()) return true;
-    return note.statut === 'BROUILLON' && note.demandeur_id === user.id;
+    return canDeleteNote(this.auth.user(), note);
   }
 
   editHint(note: Note): string {
-    if (this.canEdit(note)) return 'Modifier';
-    if (this.mutationLocked.has(note.statut)) return 'Modification impossible après la mise en paiement';
-    return 'Modification réservée à l’administrateur';
+    return editNoteHint(this.auth.user(), note);
   }
 
   deleteHint(note: Note): string {
-    if (this.canDelete(note)) return 'Supprimer';
-    if (this.mutationLocked.has(note.statut)) return 'Suppression impossible après la mise en paiement';
-    return 'Suppression réservée à l’administrateur';
+    return deleteNoteHint(this.auth.user(), note);
   }
 
-  private canMutate(): boolean {
-    const user = this.auth.user();
-    if (!user) return false;
-    if (user.is_superuser) return true;
-    return (user.permission_codes ?? []).includes('mg.notes.create');
+  openApercu(id: string): void {
+    this.apercuId.set(id);
   }
 
-  private canSupervise(): boolean {
-    const user = this.auth.user();
-    if (!user) return false;
-    if (user.is_superuser) return true;
-    const codes = user.permission_codes ?? [];
-    return [
-      'mg.notes.control',
-      'mg.notes.approve',
-      'mg.notes.payment',
-      'mg.notes.archive',
-      'mg.notes.reject',
-      'mg.notes.settings',
-    ].some((code) => codes.includes(code));
+  onApercuDeleted(): void {
+    this.apercuId.set(null);
+    if (this.notes().length <= 1 && this.page() > 1) {
+      this.page.update((p) => p - 1);
+    }
+    this.loadList();
   }
 
   remove(note: Note): void {
@@ -774,26 +714,6 @@ export class NotesListComponent implements OnInit {
       this.mode.set('list');
       this.loadList();
     });
-  }
-
-  statutLabel(s: string): string {
-    const map: Record<string, string> = {
-      BROUILLON: 'Brouillon',
-      SOUMIS: 'Soumise',
-      EN_CONTROLE: 'En contrôle',
-      CORRECTION_REQUISE: 'Correction requise',
-      VISA_MG: 'Visa MG',
-      VISA_DR: 'Visa DR',
-      VALIDEE: 'Validée',
-      MISE_EN_PAIEMENT: 'Mise en paiement',
-      PARTIELLEMENT_PAYEE: 'Partiellement payée',
-      PAYEE: 'Payée',
-      CLOTUREE: 'Clôturée',
-      ARCHIVEE: 'Archivée',
-      REJETEE: 'Rejetée',
-      ANNULEE: 'Annulée',
-    };
-    return map[s] || s;
   }
 
   newLigne() {
@@ -890,6 +810,7 @@ export class NotesListComponent implements OnInit {
   }
 
   loadOne(id: string): void {
+    this.loadNotePaiements(id);
     this.api.get<Note>(`/mg/notes-frais/notes/${id}`).subscribe({
       next: (n) => {
         this.current.set(n);
@@ -946,22 +867,6 @@ export class NotesListComponent implements OnInit {
     };
   }
 
-  formatApiError(err: unknown, fallback: string): string {
-    const detail = (err as { error?: { detail?: unknown } })?.error?.detail;
-    if (typeof detail === 'string' && detail.trim()) return detail;
-    if (Array.isArray(detail)) {
-      const msgs = detail
-        .map((d) => {
-          if (typeof d === 'string') return d;
-          if (d && typeof d === 'object' && 'msg' in d) return String((d as { msg: string }).msg);
-          return '';
-        })
-        .filter(Boolean);
-      if (msgs.length) return msgs.join(' · ');
-    }
-    return fallback;
-  }
-
   save(): void {
     const raw = this.form.getRawValue();
     if (raw.intitule_mode === 'agence' && !raw.agence_id) {
@@ -1015,69 +920,66 @@ export class NotesListComponent implements OnInit {
   }
 
   askCorrection(): void {
-    const motif = window.prompt('Motif de la correction :');
-    if (!motif?.trim()) return;
-    this.doTransition('demander_correction', motif.trim());
+    this.dialogs
+      .confirmWithReason({
+        title: 'Demander une correction',
+        message: `La note « ${this.current()?.reference ?? ''} » sera renvoyée au demandeur.`,
+        confirmLabel: 'Demander la correction',
+        cancelLabel: 'Annuler',
+        tone: 'warn',
+        icon: 'edit_note',
+        reasonLabel: 'Motif de la correction',
+      })
+      .subscribe((motif) => {
+        if (motif?.trim()) this.doTransition('demander_correction', motif.trim());
+      });
   }
 
   askReject(): void {
-    const motif = window.prompt('Motif du rejet :');
-    if (!motif?.trim()) return;
-    this.doTransition('rejeter', motif.trim());
+    this.dialogs
+      .confirmWithReason({
+        title: 'Rejeter la note',
+        message: `La note « ${this.current()?.reference ?? ''} » sera rejetée.`,
+        confirmLabel: 'Rejeter',
+        cancelLabel: 'Annuler',
+        tone: 'danger',
+        icon: 'block',
+        reasonLabel: 'Motif du rejet',
+      })
+      .subscribe((motif) => {
+        if (motif?.trim()) this.doTransition('rejeter', motif.trim());
+      });
   }
 
-  openPaiement(): void {
-    const n = this.current();
-    if (!n) return;
-    this.paiementErreur.set('');
-    this.paiementForm.reset({
-      montant: this.resteAPayer(),
-      mode_paiement: 'Virement',
-      ref_paiement: '',
-    });
-    this.paiementModal.set(true);
+  /** « Payer » depuis une ligne du registre. */
+  payerDepuisListe(note: Note): void {
+    this.payerNote.set(note.id);
+    this.payerOpen.set(true);
   }
 
-  closePaiement(): void {
-    if (this.paiementBusy()) return;
-    this.paiementModal.set(false);
-    this.paiementErreur.set('');
+  closePayer(): void {
+    this.payerOpen.set(false);
+    this.payerNote.set(null);
   }
 
-  confirmPaiement(): void {
-    const n = this.current();
-    if (!n || this.paiementBusy()) return;
-    const raw = this.paiementForm.getRawValue();
-    const montant = Number(String(raw.montant).replace(',', '.'));
-    const reste = this.resteAPayer();
-    if (!(montant > 0)) {
-      this.paiementErreur.set('Indiquez un montant supérieur à 0.');
-      return;
-    }
-    if (montant > reste + 0.001) {
-      this.paiementErreur.set('Le montant dépasse le reste à payer.');
-      return;
-    }
-    this.paiementBusy.set(true);
-    this.paiementErreur.set('');
+  onPaid(): void {
+    const detailId = this.mode() === 'detail' ? this.current()?.id : null;
+    this.closePayer();
+    if (detailId) this.loadOne(detailId);
+    else this.loadList();
+  }
+
+  loadNotePaiements(noteId: string): void {
     this.api
-      .post<Note>(`/mg/notes-frais/notes/${n.id}/paiement`, {
-        montant,
-        mode_paiement: raw.mode_paiement,
-        ref_paiement: raw.ref_paiement.trim() || null,
+      .get<{ items: NotePaiement[] }>('/mg/notes-frais/paiements', {
+        note_id: noteId,
+        size: 100,
+        sort: 'date_paiement',
+        order: 'asc',
       })
       .subscribe({
-        next: (updated) => {
-          this.paiementBusy.set(false);
-          this.paiementModal.set(false);
-          this.current.set(updated);
-          this.msg.set('Paiement enregistré.');
-          this.loadOne(n.id);
-        },
-        error: (err) => {
-          this.paiementBusy.set(false);
-          this.paiementErreur.set(this.formatApiError(err, 'Paiement refusé'));
-        },
+        next: (r) => this.notePaiements.set(r.items),
+        error: () => this.notePaiements.set([]),
       });
   }
 

@@ -48,6 +48,7 @@ import {
 import { NotesListComponent } from './notes-frais/notes-list.component';
 import { NotesDashboardComponent } from './notes-frais/notes-dashboard.component';
 import { NotesRapportsComponent } from './notes-frais/notes-rapports.component';
+import { NotesPaiementsComponent } from './notes-frais/notes-paiements.component';
 import { NotesParametresComponent } from './notes-frais/notes-parametres.component';
 import { ContratsDashboardComponent } from './contrats-echeances/contrats-dashboard.component';
 import { ContratsListComponent } from './contrats-echeances/contrats-list.component';
@@ -167,6 +168,7 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'notes', component: NotesListComponent },
       { path: 'nouvelle', component: NotesListComponent },
       { path: 'notes/:id', component: NotesListComponent },
+      { path: 'paiements', component: NotesPaiementsComponent },
       { path: 'rapports', component: NotesRapportsComponent },
       { path: 'parametres', component: NotesParametresComponent },
     ],

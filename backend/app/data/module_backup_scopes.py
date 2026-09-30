@@ -128,6 +128,7 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
             "mg_note_frais_categories",
             "mg_note_frais_historique",
             "mg_note_frais_parametres",
+            "mg_note_frais_paiements",
         ],
     ),
     "contrats-echeances": make_module_scope(

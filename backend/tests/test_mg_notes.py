@@ -1,5 +1,6 @@
 """Notes de frais — catalogue, transitions, scopes."""
 
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import uuid4
@@ -14,8 +15,10 @@ from app.models.mg_ops import (
     MgNoteFraisCategorie,
     MgNoteFraisHistorique,
     MgNoteFraisLigne,
+    MgNoteFraisPaiement,
     MgNoteFraisParametre,
 )
+from app.services.mg_notes_paiements_service import check_mode_details, registre_out
 from app.services.mg_notes_service import NOTE_TRANSITIONS, MgNotesService
 
 
@@ -121,13 +124,65 @@ def test_demandeur_can_delete_own_draft():
     svc._assert_can_mutate(_note("BROUILLON", user.id), user, deleting=True)
 
 
-def test_paid_note_stays_locked_for_admin():
+def test_paid_note_stays_locked_for_admin_edit_but_deletable():
     svc = MgNotesService(db=MagicMock())
     admin = _user(superuser=True)
     note = _note("PAYEE", uuid4())
     with pytest.raises(HTTPException) as exc:
-        svc._assert_can_mutate(note, admin, deleting=True)
+        svc._assert_can_mutate(note, admin, deleting=False)
     assert exc.value.status_code == 400
+    svc._assert_can_mutate(note, admin, deleting=True)
+
+
+def _money_note(statut: str, total: str, paye: str) -> MgNoteFrais:
+    return MgNoteFrais(statut=statut, total_mru=Decimal(total), montant_paye=Decimal(paye))
+
+
+def test_statut_paiement_is_computed():
+    assert _money_note("VALIDEE", "150000", "0").statut_paiement == "NON_PAYE"
+    assert _money_note("PARTIELLEMENT_PAYEE", "150000", "100000").statut_paiement == "PARTIEL"
+    assert _money_note("PAYEE", "150000", "150000").statut_paiement == "PAYE"
+    assert _money_note("ANNULEE", "150000", "0").statut_paiement == "ANNULE"
+
+
+def test_registre_out_reads_the_note():
+    note = _money_note("PARTIELLEMENT_PAYEE", "150000", "100000")
+    note.id = uuid4()
+    note.reference = "NF-2026-0125"
+    note.demandeur_nom = "XXX"
+    note.objet = "Fournitures"
+    out = registre_out(note, 1)
+    assert out["solde"] == Decimal("50000")
+    assert out["beneficiaire"] == "XXX"
+    assert out["motif"] == "Fournitures"
+    assert out["statut_paiement"] == "PARTIEL"
+
+
+@pytest.mark.parametrize(
+    ("mode", "reference", "cheque", "ok"),
+    [
+        ("Espèces", None, None, True),
+        ("Chèque", None, None, False),
+        ("Chèque", None, "0012345", True),
+        ("Virement", None, None, False),
+        ("Virement", "VIR-889", None, True),
+        ("Amanty", None, None, False),
+        ("Bitcoin", "x", None, False),
+    ],
+)
+def test_mode_details(mode, reference, cheque, ok):
+    if ok:
+        check_mode_details(mode, reference=reference, numero_cheque=cheque)
+    else:
+        with pytest.raises(HTTPException):
+            check_mode_details(mode, reference=reference, numero_cheque=cheque)
+
+
+def test_paiements_table_linked_to_note():
+    fk = next(iter(MgNoteFraisPaiement.__table__.c.note_id.foreign_keys))
+    assert fk.column.table.name == "mg_notes_frais"
+    assert MgNoteFraisPaiement.__table__.c.note_id.nullable is False
+    assert "mg_note_frais_paiements" in MODULE_BACKUP_SCOPES["notes-frais"]["exclusive_tables"]
 
 
 def test_notes_front_routes():

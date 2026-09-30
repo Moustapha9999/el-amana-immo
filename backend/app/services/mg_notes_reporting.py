@@ -88,6 +88,7 @@ class MgNotesReporting:
                 in {"VALIDEE", "MISE_EN_PAIEMENT", "PARTIELLEMENT_PAYEE", "PAYEE", "CLOTUREE", "ARCHIVEE"}
             ]
 
+        row_notes: list[dict[str, str | None]] | None = None
         if report_key == "categorie":
             headers = ["Catégorie", "Nb lignes", "Montant"]
             buckets: dict[str, list[Any]] = {}
@@ -182,6 +183,14 @@ class MgNotesReporting:
                 ]
                 for n in notes
             ]
+            row_notes = [
+                {
+                    "id": str(n.id),
+                    "statut": n.statut,
+                    "demandeur_id": str(n.demandeur_id) if n.demandeur_id else None,
+                }
+                for n in notes
+            ]
 
         if fmt == "json":
             return {
@@ -189,6 +198,7 @@ class MgNotesReporting:
                 "title": REPORTS[report_key],
                 "headers": headers,
                 "rows": rows,
+                "notes": row_notes,
                 "count": len(rows),
             }
 

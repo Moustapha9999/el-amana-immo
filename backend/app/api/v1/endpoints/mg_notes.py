@@ -22,6 +22,13 @@ from app.schemas.mg_notes import (
     NoteCreate,
     NoteListOut,
     NoteOut,
+    NotePaiementAnnulation,
+    NotePaiementCreate,
+    NotePaiementListOut,
+    NotePaiementOut,
+    NotePaiementUpdate,
+    NotePayableListOut,
+    NoteRegistreOut,
     NoteUpdate,
     PaiementIn,
     ParametreIn,
@@ -29,6 +36,7 @@ from app.schemas.mg_notes import (
     ParametreUpdate,
     TransitionIn,
 )
+from app.services.mg_notes_paiements_service import MgNotesPaiementsService
 from app.services.mg_notes_reporting import MgNotesReporting
 from app.services.mg_notes_service import MgNotesService
 from app.services.mg_pdf_service import pdf_note_frais
@@ -258,6 +266,107 @@ async def note_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{note.reference}.pdf"'},
     )
+
+
+@router.get("/paiements/registres", response_model=NotePayableListOut, dependencies=_module)
+async def list_registres_payables(
+    q: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.notes.view")),
+):
+    return {"items": await MgNotesPaiementsService(db).list_payables(user, q=q, limit=limit)}
+
+
+@router.get("/paiements/registres/{note_id}", response_model=NoteRegistreOut, dependencies=_module)
+async def get_registre_paiement(
+    note_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.notes.view")),
+):
+    return await MgNotesPaiementsService(db).get_registre(note_id, user)
+
+
+@router.get("/paiements", response_model=NotePaiementListOut, dependencies=_module)
+async def list_paiements(
+    q: str | None = None,
+    statut: str | None = Query(None, pattern="^(VALIDE|ANNULE)$"),
+    mode_paiement: str | None = None,
+    beneficiaire: str | None = None,
+    note_id: UUID | None = None,
+    registre: str | None = None,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    sort: str = "date_paiement",
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.notes.view")),
+):
+    return await MgNotesPaiementsService(db).list_paiements(
+        user,
+        q=q,
+        statut=statut,
+        mode_paiement=mode_paiement,
+        beneficiaire=beneficiaire,
+        note_id=note_id,
+        registre=registre,
+        date_debut=date_debut,
+        date_fin=date_fin,
+        sort=sort,
+        order=order,
+        page=page,
+        size=size,
+    )
+
+
+@router.post("/paiements", response_model=NotePaiementOut, dependencies=_module)
+async def create_paiement(
+    body: NotePaiementCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.notes.payment")),
+):
+    return await MgNotesPaiementsService(db).create(body, user)
+
+
+@router.get("/paiements/{paiement_id}", response_model=NotePaiementOut, dependencies=_module)
+async def get_paiement(
+    paiement_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.notes.view")),
+):
+    return await MgNotesPaiementsService(db).get_paiement(paiement_id, user)
+
+
+@router.patch("/paiements/{paiement_id}", response_model=NotePaiementOut, dependencies=_module)
+async def update_paiement(
+    paiement_id: UUID,
+    body: NotePaiementUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.notes.payment")),
+):
+    return await MgNotesPaiementsService(db).update(paiement_id, body, user)
+
+
+@router.post("/paiements/{paiement_id}/annuler", response_model=NotePaiementOut, dependencies=_module)
+async def annuler_paiement(
+    paiement_id: UUID,
+    body: NotePaiementAnnulation,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.notes.payment")),
+):
+    return await MgNotesPaiementsService(db).cancel(paiement_id, body.motif, user)
+
+
+@router.delete("/paiements/{paiement_id}", dependencies=_module)
+async def delete_paiement(
+    paiement_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.notes.payment")),
+):
+    await MgNotesPaiementsService(db).delete(paiement_id, user)
+    return {"ok": True}
 
 
 @router.get("/rapports/{report_key}", dependencies=_module)
