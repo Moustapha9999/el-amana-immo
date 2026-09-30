@@ -136,7 +136,8 @@ async def test_core_admin_users_crud_activate_and_reset(client: AsyncClient):
             },
         )
         assert created.status_code == 201, created.text
-        payload = created.json()
+        assert created.json()["temporary_password"]
+        payload = created.json()["user"]
         created_id = payload["id"]
         assert payload["is_active"] is True
         assert payload["phone"] == "22000000"

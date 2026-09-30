@@ -39,6 +39,7 @@ export class AuditComponent implements OnInit {
   readonly total = signal(0);
   readonly page = signal(1);
   readonly pageSize = 50;
+  private lastQuery: Record<string, string> = {};
   readonly loading = signal(true);
   readonly exporting = signal(false);
   readonly error = signal<string | null>(null);
@@ -96,8 +97,11 @@ export class AuditComponent implements OnInit {
   load(): void {
     this.loading.set(true);
     this.error.set(null);
-    this.api.get<Paginated<AuditRow>>('/audit', this.filterParams()).subscribe({
+    const query = this.filterQuery();
+    const params = { ...query, page: String(this.page()), size: String(this.pageSize) };
+    this.api.get<Paginated<AuditRow>>('/audit', params).subscribe({
       next: (res) => {
+        this.lastQuery = query;
         this.rows.set(res.items);
         this.total.set(res.total);
         this.loading.set(false);
@@ -135,10 +139,7 @@ export class AuditComponent implements OnInit {
 
   exportExcel(): void {
     this.exporting.set(true);
-    const params = this.filterParams();
-    delete params['page'];
-    delete params['size'];
-    this.api.download('/reporting/audit/export', params).subscribe({
+    this.api.download('/reporting/audit/export', { ...this.lastQuery }).subscribe({
       next: (blob) => {
         this.exporting.set(false);
         const url = URL.createObjectURL(blob);
@@ -155,9 +156,9 @@ export class AuditComponent implements OnInit {
     });
   }
 
-  private filterParams(): Record<string, string> {
+  private filterQuery(): Record<string, string> {
     const f = this.filterForm.getRawValue();
-    const params: Record<string, string> = { page: String(this.page()), size: String(this.pageSize) };
+    const params: Record<string, string> = {};
     if (f.search.trim()) {
       params['search'] = f.search.trim();
     }

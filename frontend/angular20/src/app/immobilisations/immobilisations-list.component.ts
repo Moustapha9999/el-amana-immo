@@ -53,6 +53,7 @@ export class ImmobilisationsListComponent implements OnInit {
   readonly page = signal(1);
   readonly total = signal(0);
   readonly pageSize = 50;
+  private lastQuery: Record<string, string> = {};
   readonly displayedColumns = ['code', 'designation', 'famille', 'valeur', 'statut', 'actions'];
   readonly statutLabel = statutLabel;
 
@@ -77,22 +78,21 @@ export class ImmobilisationsListComponent implements OnInit {
 
   load(): void {
     const f = this.filterForm.getRawValue();
-    const params: Record<string, string | number> = {
-      page: this.page(),
-      size: this.pageSize,
-    };
+    const query: Record<string, string> = {};
     if (f.search.trim()) {
-      params['search'] = f.search.trim();
+      query['search'] = f.search.trim();
     }
     if (f.statut) {
-      params['statuts'] = f.statut;
+      query['statuts'] = f.statut;
     }
     if (f.famille) {
-      params['famille'] = f.famille;
+      query['famille'] = f.famille;
     }
+    const params: Record<string, string | number> = { ...query, page: this.page(), size: this.pageSize };
     this.loading.set(true);
     this.api.get<Paginated<ImmobilisationRow>>('/immobilisations', params).subscribe({
       next: (res) => {
+        this.lastQuery = query;
         this.rows.set(res.items);
         this.total.set(res.total);
         this.loading.set(false);
@@ -123,17 +123,7 @@ export class ImmobilisationsListComponent implements OnInit {
   }
 
   export(format: 'xlsx' | 'pdf'): void {
-    const f = this.filterForm.getRawValue();
-    const params: Record<string, string> = { format };
-    if (f.search.trim()) {
-      params['search'] = f.search.trim();
-    }
-    if (f.statut) {
-      params['statuts'] = f.statut;
-    }
-    if (f.famille) {
-      params['famille'] = f.famille;
-    }
+    const params: Record<string, string> = { ...this.lastQuery, format };
     this.exporting.set(format);
     this.api.download('/reporting/immobilisations/export', params).subscribe({
       next: (blob) => {

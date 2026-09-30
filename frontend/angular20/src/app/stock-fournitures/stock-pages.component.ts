@@ -712,7 +712,9 @@ export class StockAlertesComponent implements OnInit {
   }
 
   exportFile(format: 'xlsx' | 'pdf'): void {
-    this.api.download('/mg/stock/alertes/export', { format }).subscribe({
+    const params: Record<string, string> = { format };
+    if (this.q().trim()) params['q'] = this.q().trim();
+    this.api.download('/mg/stock/alertes/export', params).subscribe({
       next: (blob) => downloadBlob(blob, `alertes-stock.${format}`),
       error: () => this.erreur.set(`Export ${format.toUpperCase()} impossible (permission export ?)`),
     });
@@ -1337,11 +1339,10 @@ export class StockFluxComponent implements OnInit {
   }
 
   exportFile(format: 'xlsx' | 'pdf'): void {
+    const params: Record<string, string> = { format, type_mouvement: this.typeMouvement() };
+    if (this.q().trim()) params['q'] = this.q().trim();
     this.api
-      .download('/mg/stock/mouvements/export', {
-        format,
-        type_mouvement: this.typeMouvement(),
-      })
+      .download('/mg/stock/mouvements/export', params)
       .subscribe({
         next: (blob) =>
           downloadBlob(blob, `${this.typeMouvement().toLowerCase()}s-stock.${format}`),
@@ -2058,7 +2059,9 @@ export class StockInventairesComponent implements OnInit {
   }
 
   exportFile(format: 'xlsx' | 'pdf'): void {
-    this.api.download('/mg/stock/inventaires/export', { format }).subscribe({
+    const params: Record<string, string> = { format };
+    if (this.q().trim()) params['q'] = this.q().trim();
+    this.api.download('/mg/stock/inventaires/export', params).subscribe({
       next: (blob) => downloadBlob(blob, `inventaires-stock.${format}`),
       error: () => this.erreur.set(`Export ${format.toUpperCase()} impossible (permission export ?)`),
     });

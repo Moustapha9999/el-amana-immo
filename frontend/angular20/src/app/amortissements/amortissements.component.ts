@@ -54,6 +54,7 @@ export class AmortissementsComponent implements OnInit {
   readonly page = signal(1);
   readonly total = signal(0);
   readonly pageSize = 50;
+  private lastQuery: Record<string, string> = { statuts: DEFAULT_STATUTS };
   readonly statutLabel = statutLabel;
   readonly columns = ['code', 'designation', 'type', 'statut', 'valeur', 'actions'];
 
@@ -81,21 +82,23 @@ export class AmortissementsComponent implements OnInit {
 
   load(): void {
     const f = this.filterForm.getRawValue();
+    const query: Record<string, string> = { statuts: f.statut || DEFAULT_STATUTS };
+    if (f.search.trim()) {
+      query['search'] = f.search.trim();
+    }
+    if (f.famille) {
+      query['famille'] = f.famille;
+    }
     const params: Record<string, string | number> = {
+      ...query,
       page: this.page(),
       size: this.pageSize,
       amortissable: 'true',
-      statuts: f.statut || DEFAULT_STATUTS,
     };
-    if (f.search.trim()) {
-      params['search'] = f.search.trim();
-    }
-    if (f.famille) {
-      params['famille'] = f.famille;
-    }
     this.loading.set(true);
     this.api.get<Paginated<ImmoRow>>('/immobilisations', params).subscribe({
       next: (res) => {
+        this.lastQuery = query;
         this.rows.set(res.items);
         this.total.set(res.total);
         this.loading.set(false);
@@ -126,17 +129,7 @@ export class AmortissementsComponent implements OnInit {
   }
 
   export(format: 'xlsx' | 'pdf'): void {
-    const f = this.filterForm.getRawValue();
-    const params: Record<string, string> = {
-      format,
-      statuts: f.statut || DEFAULT_STATUTS,
-    };
-    if (f.search.trim()) {
-      params['search'] = f.search.trim();
-    }
-    if (f.famille) {
-      params['famille'] = f.famille;
-    }
+    const params: Record<string, string> = { ...this.lastQuery, format };
     this.exporting.set(format);
     this.api.download('/reporting/amortissements/export', params).subscribe({
       next: (blob) => {

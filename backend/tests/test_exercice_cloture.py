@@ -235,19 +235,16 @@ async def test_ouverture_cree_soldes_142_148_vnc_sans_68():
     )
     db.execute = AsyncMock(return_value=empty_exo)
 
-    from app.services import exercice_ouverture_service as mod
 
-    original = ExerciceClotureService
-    # Patch collect via instance method after construction inside ouvrir_suivant
     from app.services.exercice_cloture_service import ExerciceClotureService as ECS
 
+    original_collect = ECS._collect_snapshot_lines
     ECS._collect_snapshot_lines = cloture_collect  # type: ignore[method-assign]
 
     try:
         result = await svc.ouvrir_suivant()
     finally:
-        # restore not strictly needed in test process isolation
-        pass
+        ECS._collect_snapshot_lines = original_collect  # type: ignore[method-assign]
 
     assert result.annee_ouverture == 2026
     assert result.annee_source == 2025

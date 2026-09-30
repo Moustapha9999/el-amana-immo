@@ -45,8 +45,12 @@ interface ReportJson {
         <label class="bea-mg__field">
           <input type="number" formControlName="mois" placeholder="Mois" min="1" max="12" (change)="load()" />
         </label>
-        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="download('xlsx')">Excel</button>
-        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="download('pdf')">PDF</button>
+        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!report()" (click)="download('pdf')" title="Télécharger le rapport affiché">
+          <mat-icon>picture_as_pdf</mat-icon> PDF
+        </button>
+        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!report()" (click)="download('xlsx')" title="Télécharger le rapport affiché">
+          <mat-icon>table_view</mat-icon> Excel
+        </button>
       </form>
 
 
@@ -93,6 +97,8 @@ export class NotesRapportsComponent implements OnInit {
 
   readonly report = signal<ReportJson | null>(null);
   readonly erreur = feedbackSignal('error', '');
+  /** Rapport affiché : l'export reprend exactement celui-ci. */
+  private affiche: { key: string; params: Record<string, string | number> } | null = null;
 
   readonly filters = this.fb.nonNullable.group({
     key: 'periode',
@@ -115,8 +121,12 @@ export class NotesRapportsComponent implements OnInit {
   load(): void {
     this.erreur.set('');
     const key = this.filters.value.key || 'periode';
-    this.api.get<ReportJson>(`/mg/notes-frais/rapports/${key}`, this.params()).subscribe({
-      next: (r) => this.report.set(r),
+    const params = this.params();
+    this.api.get<ReportJson>(`/mg/notes-frais/rapports/${key}`, params).subscribe({
+      next: (r) => {
+        this.report.set(r);
+        this.affiche = { key, params };
+      },
       error: (err) => {
         this.report.set(null);
         this.erreur.set(err?.error?.detail || 'Rapport indisponible');
@@ -125,8 +135,9 @@ export class NotesRapportsComponent implements OnInit {
   }
 
   download(format: 'xlsx' | 'pdf'): void {
-    const key = this.filters.value.key || 'periode';
-    const params = { ...this.params(), format };
+    if (!this.affiche) return;
+    const key = this.affiche.key;
+    const params = { ...this.affiche.params, format };
     this.api.download(`/mg/notes-frais/rapports/${key}`, params).subscribe({
       next: (blob) => {
         const url = URL.createObjectURL(blob);

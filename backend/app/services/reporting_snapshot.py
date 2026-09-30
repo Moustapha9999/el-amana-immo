@@ -128,13 +128,13 @@ async def build_recap_from_snapshot(
     totaux = RecapAmortLigne(
         compte_immobilisation="",
         intitule="Total",
-        valeur_brute=_q(sum((l.valeur_brute for l in lignes), _zero())),
+        valeur_brute=_q(sum((lg.valeur_brute for lg in lignes), _zero())),
         compte_amortissement=None,
-        amorts_cumules_n1=_q(sum((l.amorts_cumules_n1 for l in lignes), _zero())),
-        cessions_annee=_q(sum((l.cessions_annee for l in lignes), _zero())),
-        dotations_annee=_q(sum((l.dotations_annee for l in lignes), _zero())),
-        amorts_cumules_n=_q(sum((l.amorts_cumules_n for l in lignes), _zero())),
-        vnc=_q(sum((l.vnc for l in lignes), _zero())),
+        amorts_cumules_n1=_q(sum((lg.amorts_cumules_n1 for lg in lignes), _zero())),
+        cessions_annee=_q(sum((lg.cessions_annee for lg in lignes), _zero())),
+        dotations_annee=_q(sum((lg.dotations_annee for lg in lignes), _zero())),
+        amorts_cumules_n=_q(sum((lg.amorts_cumules_n for lg in lignes), _zero())),
+        vnc=_q(sum((lg.vnc for lg in lignes), _zero())),
     )
     return RecapAmortissementResult(
         annee=annee,
@@ -151,7 +151,6 @@ async def build_soldes_from_snapshot(db: AsyncSession, annee: int) -> Soldes1486
         return None
 
     libelles = _libelles_plan()
-    nature_meta = _nature_meta_by_code()
     buckets: dict[str, dict] = {}
     for t in TYPES_IMMOBILISATION_EL_AMANA:
         if not t.get("amortissable"):
@@ -213,12 +212,12 @@ async def build_soldes_from_snapshot(db: AsyncSession, annee: int) -> Soldes1486
         annee=annee,
         date_arrete=date(annee, 12, 31),
         lignes=lignes,
-        total_148=_q(sum((l.solde_148 for l in lignes), _zero())),
-        total_148_n1=_q(sum((l.solde_148_n1 for l in lignes), _zero())),
-        total_68=_q(sum((l.solde_68 for l in lignes), _zero())),
-        total_valeur_brute=_q(sum((l.valeur_brute for l in lignes), _zero())),
-        total_vnc=_q(sum((l.vnc for l in lignes), _zero())),
-        nb_biens=sum((l.nb_biens for l in lignes), 0),
+        total_148=_q(sum((lg.solde_148 for lg in lignes), _zero())),
+        total_148_n1=_q(sum((lg.solde_148_n1 for lg in lignes), _zero())),
+        total_68=_q(sum((lg.solde_68 for lg in lignes), _zero())),
+        total_valeur_brute=_q(sum((lg.valeur_brute for lg in lignes), _zero())),
+        total_vnc=_q(sum((lg.vnc for lg in lignes), _zero())),
+        nb_biens=sum((lg.nb_biens for lg in lignes), 0),
     )
 
 

@@ -228,11 +228,20 @@
               mat-flat-button
               color="primary"
               type="button"
-              (click)="exportImmobilisations()"
+              (click)="exportImmobilisations('xlsx')"
               [disabled]="busy() !== null"
             >
               <mat-icon aria-hidden="true">table_view</mat-icon>
-              {{ busy() === 'immo' ? '…' : 'Excel' }}
+              {{ busy() === 'immo-xlsx' ? '…' : 'Excel' }}
+            </button>
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="exportImmobilisations('pdf')"
+              [disabled]="busy() !== null"
+            >
+              <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
+              {{ busy() === 'immo-pdf' ? '…' : 'PDF' }}
             </button>
           </div>
         </article>

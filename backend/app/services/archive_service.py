@@ -97,7 +97,7 @@ class ArchiveService:
         for f in dossier.fichiers or []:
             if f.nature_code or not f.lignes:
                 continue
-            counts = Counter(l.categorie_code for l in f.lignes if l.categorie_code)
+            counts = Counter(lg.categorie_code for lg in f.lignes if lg.categorie_code)
             if not counts:
                 continue
             f.nature_code = counts.most_common(1)[0][0]
@@ -306,10 +306,10 @@ class ArchiveService:
                 has_cloture.add(ligne.categorie_code)
         if has_cloture:
             lignes = [
-                l
-                for l in lignes
-                if l.categorie_code not in has_cloture
-                or (l.source_kind or "") == KIND_CLOTURE
+                lg
+                for lg in lignes
+                if lg.categorie_code not in has_cloture
+                or (lg.source_kind or "") == KIND_CLOTURE
             ]
 
         by_nature: dict[str, list[ArchiveLigne]] = defaultdict(list)
@@ -373,12 +373,12 @@ def _empty_totaux() -> dict:
 
 def _totaux(lignes: list[ArchiveLigne]) -> dict:
     t = _empty_totaux()
-    for l in lignes:
-        t["valeur_brute"] += l.valeur_brute or Decimal("0")
-        t["amt_n1"] += l.amt_n1 or Decimal("0")
-        t["dotation"] += l.dotation or Decimal("0")
-        t["amt_fin"] += l.amt_fin or Decimal("0")
-        t["vnc"] += l.vnc or Decimal("0")
+    for lg in lignes:
+        t["valeur_brute"] += lg.valeur_brute or Decimal("0")
+        t["amt_n1"] += lg.amt_n1 or Decimal("0")
+        t["dotation"] += lg.dotation or Decimal("0")
+        t["amt_fin"] += lg.amt_fin or Decimal("0")
+        t["vnc"] += lg.vnc or Decimal("0")
         t["nb_lignes"] += 1
     return t
 
@@ -416,7 +416,7 @@ def _sections_par_exercice(lignes: list[ArchiveLigne]) -> list[dict]:
     while i < len(years):
         y = years[i]
         y_lines = by_year[y]
-        only_reports = bool(y_lines) and all(getattr(l, "is_report", False) for l in y_lines)
+        only_reports = bool(y_lines) and all(getattr(lg, "is_report", False) for lg in y_lines)
         if only_reports and i + 1 < len(years):
             next_y = years[i + 1]
             merged[next_y].extend(y_lines)
@@ -466,8 +466,8 @@ def dossier_summary(dossier: ArchiveDossier) -> dict:
     for f in fichiers:
         if f.nature_code:
             natures.add(f.nature_code)
-        for l in f.lignes or []:
-            natures.add(l.categorie_code)
+        for lg in f.lignes or []:
+            natures.add(lg.categorie_code)
             nb_lignes += 1
     return {
         "nb_fichiers": len(fichiers),

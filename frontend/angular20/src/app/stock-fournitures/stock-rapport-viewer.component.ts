@@ -56,17 +56,11 @@ interface Famille {
           <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/stock-fournitures/rapports">
             <mat-icon>arrow_back</mat-icon> Catalogue
           </a>
-          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="exportFile('xlsx')" [disabled]="exporting()">
-            <mat-icon>table_view</mat-icon> Excel
-          </button>
-          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="exportFile('pdf')" [disabled]="exporting()">
+          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="exportFile('pdf')" [disabled]="exporting() || !preview()" [title]="exportLabel()">
             <mat-icon>picture_as_pdf</mat-icon> PDF
           </button>
-          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="exportFile('csv')" [disabled]="exporting()">
-            <mat-icon>description</mat-icon> CSV
-          </button>
-          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="print()">
-            <mat-icon>print</mat-icon> Imprimer
+          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="exportFile('xlsx')" [disabled]="exporting() || !preview()" [title]="exportLabel()">
+            <mat-icon>table_view</mat-icon> Excel
           </button>
         </div>
       </header>
@@ -255,6 +249,16 @@ export class StockRapportViewerComponent implements OnInit {
     dataset: ['etat_stock'],
   });
 
+  /** Requête de la liste affichée : l'export reprend exactement celle-ci, pas le formulaire en cours de saisie. */
+  private readonly affichee = signal<{ filters: Record<string, string>; dataset: string; columns: string[] } | null>(null);
+  readonly exportLabel = computed(() => {
+    const total = this.preview()?.total ?? 0;
+    const q = this.affichee();
+    const filtre = !!q && Object.keys(q.filters).some((k) => !['page', 'size', 'annee'].includes(k));
+    const lignes = `${total} ligne${total > 1 ? 's' : ''}`;
+    return filtre ? `Télécharger la liste filtrée (${lignes})` : `Télécharger la liste affichée (${lignes})`;
+  });
+
   readonly isCustom = computed(() => this.reportKey() === 'personnalise');
   readonly datasets = computed(() =>
     this.catalog().filter((c) => c.key !== 'personnalise' && c.columns?.length),
@@ -352,19 +356,22 @@ export class StockRapportViewerComponent implements OnInit {
     this.erreur.set('');
     this.loading.set(true);
     const key = this.reportKey();
+    const requete = {
+      filters: this.filterParams(),
+      dataset: this.filters.controls.dataset.value,
+      columns: [...this.customColumns()],
+    };
     if (key === 'personnalise') {
-      const v = this.filters.getRawValue();
       this.api
         .post<Preview>('/mg/stock/rapports/personnalise/preview', {
-          dataset: v.dataset,
-          columns: this.customColumns(),
-          filters: this.filterParams(),
+          ...requete,
           page: this.page(),
           size: this.size,
         })
         .subscribe({
           next: (p) => {
             this.preview.set(p);
+            this.affichee.set(requete);
             this.loading.set(false);
           },
           error: (err) => {
@@ -374,9 +381,10 @@ export class StockRapportViewerComponent implements OnInit {
         });
       return;
     }
-    this.api.get<Preview>(`/mg/stock/rapports/${key}/preview`, this.filterParams()).subscribe({
+    this.api.get<Preview>(`/mg/stock/rapports/${key}/preview`, requete.filters).subscribe({
       next: (p) => {
         this.preview.set(p);
+        this.affichee.set(requete);
         this.loading.set(false);
       },
       error: (err) => {
@@ -386,23 +394,25 @@ export class StockRapportViewerComponent implements OnInit {
     });
   }
 
-  exportFile(format: 'xlsx' | 'pdf' | 'csv'): void {
+  exportFile(format: 'xlsx' | 'pdf'): void {
+    const q = this.affichee();
+    if (!q) return;
     this.exporting.set(true);
     const key = this.reportKey();
+    const filters = { ...q.filters };
+    delete filters['page'];
+    delete filters['size'];
     const body = {
       format,
       scope: 'filtered',
-      filters: this.filterParams(),
-      columns: this.isCustom() ? this.customColumns() : null,
+      filters,
+      columns: this.isCustom() ? q.columns : null,
     };
     const path =
       key === 'personnalise'
         ? '/mg/stock/rapports/personnalise/export'
         : `/mg/stock/rapports/${key}/export`;
-    const payload =
-      key === 'personnalise'
-        ? { ...body, dataset: this.filters.controls.dataset.value }
-        : body;
+    const payload = key === 'personnalise' ? { ...body, dataset: q.dataset } : body;
     this.api.downloadPost(path, payload).subscribe({
       next: (blob) => {
         this.exporting.set(false);
@@ -415,13 +425,9 @@ export class StockRapportViewerComponent implements OnInit {
       },
       error: () => {
         this.exporting.set(false);
-        this.erreur.set(`Export ${format.toUpperCase()} impossible.`);
+        this.erreur.set(`Export ${format === 'pdf' ? 'PDF' : 'Excel'} impossible.`);
       },
     });
-  }
-
-  print(): void {
-    window.print();
   }
 
   rowId(row: Record<string, unknown>, index: number): string {

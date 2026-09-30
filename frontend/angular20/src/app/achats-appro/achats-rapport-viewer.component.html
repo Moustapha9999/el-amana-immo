@@ -130,35 +130,13 @@
   }
 
   <div class="bea-ach__export-bar bea-ach--no-print">
+    <span class="bea-ach__kicker" style="margin:0">{{ exportLabel() }}</span>
     <div class="bea-ach__export-group">
-      <span class="bea-ach__kicker" style="margin:0">Sélection ({{ selectedCount() }})</span>
-      <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="exporting() || selectedCount() === 0" (click)="export('pdf', 'selection')">
+      <button type="button" class="bea-ach__btn" [disabled]="exporting() || !preview()" (click)="export('pdf')">
         <mat-icon>picture_as_pdf</mat-icon> PDF
       </button>
-      <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="exporting() || selectedCount() === 0" (click)="export('xlsx', 'selection')">
+      <button type="button" class="bea-ach__btn" [disabled]="exporting() || !preview()" (click)="export('xlsx')">
         <mat-icon>table_view</mat-icon> Excel
-      </button>
-      @if (meta()?.csv_enabled !== false) {
-        <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="exporting() || selectedCount() === 0" (click)="export('csv', 'selection')">
-          <mat-icon>description</mat-icon> CSV
-        </button>
-      }
-    </div>
-    <div class="bea-ach__export-group">
-      <span class="bea-ach__kicker" style="margin:0">Tous les résultats filtrés</span>
-      <button type="button" class="bea-ach__btn" [disabled]="exporting()" (click)="export('pdf', 'filtered')">
-        <mat-icon>picture_as_pdf</mat-icon> PDF
-      </button>
-      <button type="button" class="bea-ach__btn" [disabled]="exporting()" (click)="export('xlsx', 'filtered')">
-        <mat-icon>table_view</mat-icon> Excel
-      </button>
-      @if (meta()?.csv_enabled !== false) {
-        <button type="button" class="bea-ach__btn" [disabled]="exporting()" (click)="export('csv', 'filtered')">
-          <mat-icon>description</mat-icon> CSV
-        </button>
-      }
-      <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="print()">
-        <mat-icon>print</mat-icon> Imprimer
       </button>
     </div>
   </div>
@@ -216,9 +194,6 @@
         <table class="bea-ach__table">
           <thead>
             <tr>
-              <th class="bea-ach--no-print">
-                <input type="checkbox" [checked]="allPageSelected()" (change)="toggleAllPage($any($event.target).checked)" />
-              </th>
               @for (c of p.columns; track c.key) {
                 <th>{{ c.label }}</th>
               }
@@ -227,13 +202,6 @@
           <tbody>
             @for (row of p.rows; track row['id']; let i = $index) {
               <tr [style.--i]="i">
-                <td class="bea-ach--no-print">
-                  <input
-                    type="checkbox"
-                    [checked]="selected().has(rowId(row))"
-                    (change)="toggleRow(rowId(row), $any($event.target).checked)"
-                  />
-                </td>
                 @for (c of p.columns; track c.key) {
                   <td>
                     @if (c.kind === 'money') {
@@ -248,7 +216,7 @@
               </tr>
             } @empty {
               <tr class="bea-ach__empty">
-                <td [attr.colspan]="p.columns.length + 1">
+                <td [attr.colspan]="p.columns.length">
                   <mat-icon>inbox</mat-icon>
                   <p>{{ p.empty_message || 'Aucune donnée ne correspond aux critères sélectionnés.' }}</p>
                 </td>

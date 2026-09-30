@@ -56,6 +56,7 @@ export class CessionsComponent implements OnInit {
   readonly total = signal(0);
   readonly page = signal(1);
   readonly pageSize = 50;
+  private lastQuery: Record<string, string> = {};
   readonly loading = signal(false);
   readonly exporting = signal<'xlsx' | 'pdf' | null>(null);
   readonly columns = ['date', 'code', 'reference', 'designation', 'prix', 'vnc', 'resultat', 'actions'];
@@ -85,19 +86,21 @@ export class CessionsComponent implements OnInit {
 
   load(): void {
     const f = this.filterForm.getRawValue();
-    const params: Record<string, string | number> = { page: this.page(), size: this.pageSize };
+    const query: Record<string, string> = {};
     if (f.date_debut) {
-      params['date_debut'] = f.date_debut;
+      query['date_debut'] = f.date_debut;
     }
     if (f.date_fin) {
-      params['date_fin'] = f.date_fin;
+      query['date_fin'] = f.date_fin;
     }
     if (f.search.trim()) {
-      params['search'] = f.search.trim();
+      query['search'] = f.search.trim();
     }
+    const params: Record<string, string | number> = { ...query, page: this.page(), size: this.pageSize };
     this.loading.set(true);
     this.api.get<Paginated<CessionRow>>('/cessions', params).subscribe({
       next: (res) => {
+        this.lastQuery = query;
         this.rows.set(res.items);
         this.total.set(res.total);
         this.loading.set(false);
@@ -126,17 +129,7 @@ export class CessionsComponent implements OnInit {
   }
 
   export(format: 'xlsx' | 'pdf'): void {
-    const f = this.filterForm.getRawValue();
-    const params: Record<string, string> = { format };
-    if (f.date_debut) {
-      params['date_debut'] = f.date_debut;
-    }
-    if (f.date_fin) {
-      params['date_fin'] = f.date_fin;
-    }
-    if (f.search.trim()) {
-      params['search'] = f.search.trim();
-    }
+    const params: Record<string, string> = { ...this.lastQuery, format };
     this.exporting.set(format);
     this.api.download('/reporting/cessions/export', params).subscribe({
       next: (blob) => {

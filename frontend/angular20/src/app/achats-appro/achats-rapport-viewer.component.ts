@@ -66,7 +66,14 @@ export class AchatsRapportViewerComponent implements OnInit {
   readonly meta = signal<CatalogItem | null>(null);
   readonly preview = signal<Preview | null>(null);
   readonly agences = signal<Agence[]>([]);
-  readonly selected = signal<Set<string>>(new Set());
+  /** Requête de la liste affichée : l'export reprend exactement celle-ci, pas le formulaire en cours de saisie. */
+  private readonly affichee = signal<{
+    filters: Record<string, string>;
+    dataset: string;
+    columns: string[];
+    sort_by: string | null;
+    sort_dir: string;
+  } | null>(null);
   readonly erreur = feedbackSignal('error', '');
   readonly msg = feedbackSignal('success', '');
   readonly loading = signal(false);
@@ -96,12 +103,12 @@ export class AchatsRapportViewerComponent implements OnInit {
 
   readonly isAnalyses = computed(() => this.reportKey() === 'analyses');
   readonly isCustom = computed(() => this.reportKey() === 'personnalise');
-  readonly selectedCount = computed(() => this.selected().size);
-  readonly allPageSelected = computed(() => {
-    const rows = this.preview()?.rows ?? [];
-    if (!rows.length) return false;
-    const sel = this.selected();
-    return rows.every((r) => sel.has(String(r['id'])));
+  readonly exportLabel = computed(() => {
+    const total = this.preview()?.total ?? 0;
+    const q = this.affichee();
+    const filtre = !!q && Object.keys(q.filters).some((k) => !['page', 'size', 'sort_by', 'sort_dir'].includes(k));
+    const lignes = `${total} ligne${total > 1 ? 's' : ''}`;
+    return filtre ? `Télécharger la liste filtrée (${lignes})` : `Télécharger la liste complète (${lignes})`;
   });
   readonly totalPages = computed(() => {
     const p = this.preview();
@@ -149,7 +156,6 @@ export class AchatsRapportViewerComponent implements OnInit {
     const item = this.catalogDatasets().find((c) => c.key === ds);
     this.customColumns.set(item?.columns.map((c) => c.key) ?? []);
     this.page.set(1);
-    this.selected.set(new Set());
     this.load();
   }
 
@@ -204,22 +210,26 @@ export class AchatsRapportViewerComponent implements OnInit {
     this.msg.set('');
     this.loading.set(true);
     const key = this.reportKey();
+    const v = this.filters.getRawValue();
+    const requete = {
+      filters: this.filterParams(),
+      dataset: v.dataset,
+      columns: [...this.customColumns()],
+      sort_by: v.sort_by || null,
+      sort_dir: v.sort_dir || 'desc',
+    };
 
     if (key === 'personnalise') {
-      const v = this.filters.getRawValue();
       this.api
         .post<Preview>('/mg/achats/rapports/personnalise/preview', {
-          dataset: v.dataset,
-          columns: this.customColumns(),
-          filters: this.filterParams(),
-          sort_by: v.sort_by || null,
-          sort_dir: v.sort_dir || 'desc',
+          ...requete,
           page: this.page(),
           size: this.size(),
         })
         .subscribe({
           next: (p) => {
             this.preview.set(p);
+            this.affichee.set(requete);
             this.loading.set(false);
           },
           error: (err) => {
@@ -232,10 +242,11 @@ export class AchatsRapportViewerComponent implements OnInit {
     }
 
     this.api
-      .get<Preview>(`/mg/achats/rapports/${key}/preview`, this.filterParams())
+      .get<Preview>(`/mg/achats/rapports/${key}/preview`, requete.filters)
       .subscribe({
         next: (p) => {
           this.preview.set(p);
+          this.affichee.set(requete);
           this.loading.set(false);
         },
         error: (err) => {
@@ -248,7 +259,6 @@ export class AchatsRapportViewerComponent implements OnInit {
 
   applyFilters(): void {
     this.page.set(1);
-    this.selected.set(new Set());
     this.load();
   }
 
@@ -257,24 +267,6 @@ export class AchatsRapportViewerComponent implements OnInit {
     if (next === this.page()) return;
     this.page.set(next);
     this.load();
-  }
-
-  toggleRow(id: string, checked: boolean): void {
-    const next = new Set(this.selected());
-    if (checked) next.add(id);
-    else next.delete(id);
-    this.selected.set(next);
-  }
-
-  toggleAllPage(checked: boolean): void {
-    const next = new Set(this.selected());
-    for (const r of this.preview()?.rows ?? []) {
-      const id = String(r['id'] ?? '');
-      if (!id) continue;
-      if (checked) next.add(id);
-      else next.delete(id);
-    }
-    this.selected.set(next);
   }
 
   formatKpi(key: string, value: unknown): string {
@@ -294,42 +286,27 @@ export class AchatsRapportViewerComponent implements OnInit {
     return v as string | number;
   }
 
-  rowId(row: Record<string, unknown>): string {
-    return String(row['id'] ?? '');
-  }
-
-  export(format: 'pdf' | 'xlsx' | 'csv', scope: 'selection' | 'filtered'): void {
+  export(format: 'pdf' | 'xlsx'): void {
     this.erreur.set('');
     this.msg.set('');
-    if (scope === 'selection' && this.selectedCount() === 0) {
-      this.erreur.set('Sélectionnez au moins une ligne.');
-      return;
-    }
+    const q = this.affichee();
+    if (!q) return;
     const key = this.reportKey();
-    const filters = this.filterParams();
+    const filters = { ...q.filters };
     delete filters['page'];
     delete filters['size'];
 
-    this.exporting.set(true);
-    const body: Record<string, unknown> = {
-      format,
-      scope,
-      ids: scope === 'selection' ? [...this.selected()] : [],
-      filters,
-    };
-
-    const path =
-      key === 'personnalise'
-        ? '/mg/achats/rapports/personnalise/export'
-        : `/mg/achats/rapports/${key}/export`;
-
+    const body: Record<string, unknown> = { format, scope: 'filtered', ids: [], filters };
     if (key === 'personnalise') {
-      body['dataset'] = this.filters.controls.dataset.value;
-      body['columns'] = this.customColumns();
-      body['sort_by'] = this.filters.controls.sort_by.value || null;
-      body['sort_dir'] = this.filters.controls.sort_dir.value || 'desc';
+      body['dataset'] = q.dataset;
+      body['columns'] = q.columns;
+      body['sort_by'] = q.sort_by;
+      body['sort_dir'] = q.sort_dir;
     }
+    const path =
+      key === 'personnalise' ? '/mg/achats/rapports/personnalise/export' : `/mg/achats/rapports/${key}/export`;
 
+    this.exporting.set(true);
     this.api.downloadPost(path, body).subscribe({
       next: (blob) => {
         this.exporting.set(false);
@@ -340,24 +317,16 @@ export class AchatsRapportViewerComponent implements OnInit {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `achats-${key}-${scope}.${format === 'xlsx' ? 'xlsx' : format}`;
+        a.download = `achats-${key}.${format}`;
         a.click();
         URL.revokeObjectURL(url);
-        this.msg.set(
-          scope === 'selection'
-            ? `Export ${format.toUpperCase()} de la sélection (${this.selectedCount()} ligne(s)).`
-            : `Export ${format.toUpperCase()} de tous les résultats filtrés.`,
-        );
+        this.msg.set(`${format === 'pdf' ? 'PDF' : 'Excel'} téléchargé : ${this.exportLabel().replace('Télécharger ', '')}.`);
       },
       error: (err) => {
         this.exporting.set(false);
-        this.erreur.set(this.apiDetail(err, `Export ${format.toUpperCase()} impossible.`));
+        this.erreur.set(this.apiDetail(err, `Export ${format === 'pdf' ? 'PDF' : 'Excel'} impossible.`));
       },
     });
-  }
-
-  print(): void {
-    window.print();
   }
 
   datasetColumns(): Col[] {

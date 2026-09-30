@@ -67,7 +67,7 @@ async def test_core_admin_matrix_read_and_toggle(client: AsyncClient):
 
     suffix = uuid4().hex[:8]
     perm_code = f"matrixmod.{suffix}"
-    role_code = f"matrix_role_{suffix}"
+    role_code = f"testmatrix.role_{suffix}"
     role_id = None
     perm_id = None
     try:

@@ -13,7 +13,6 @@ from decimal import Decimal
 from fastapi import HTTPException, status
 from sqlalchemy import extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.models.auth import User
 from app.models.mg_stock import (

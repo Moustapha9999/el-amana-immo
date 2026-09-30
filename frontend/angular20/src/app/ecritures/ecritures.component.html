@@ -9,13 +9,23 @@
         <mat-icon aria-hidden="true">refresh</mat-icon>
         Actualiser
       </button>
-      <button mat-stroked-button type="button" (click)="export('xlsx')" [disabled]="loading()">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('xlsx')"
+        [disabled]="loading() || exporting() !== null"
+      >
         <mat-icon aria-hidden="true">table_view</mat-icon>
-        Excel
+        {{ exporting() === 'xlsx' ? 'Excel…' : 'Excel' }}
       </button>
-      <button mat-stroked-button type="button" (click)="export('pdf')" [disabled]="loading()">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="export('pdf')"
+        [disabled]="loading() || exporting() !== null"
+      >
         <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
-        PDF
+        {{ exporting() === 'pdf' ? 'PDF…' : 'PDF' }}
       </button>
     </div>
   </header>

@@ -48,17 +48,7 @@ import { feedbackSignal } from '../core/feedback/feedback-signal';
         </label>
       </form>
 
-      <div class="bea-ag-exports" [class.bea-ag-exports--two]="mode === 'general'">
-        @if (mode !== 'general') {
-          <article>
-            <mat-icon>text_snippet</mat-icon>
-            <h2>CSV</h2>
-            <p>Liste filtrée, ouvrable dans un tableur.</p>
-            <button type="button" class="bea-ag-dl" (click)="exportFmt('csv')" [disabled]="busy()">
-              <mat-icon>download</mat-icon> Télécharger
-            </button>
-          </article>
-        }
+      <div class="bea-ag-exports bea-ag-exports--two">
         <article>
           <span class="bea-ag-exports__mark bea-ag-exports__mark--xls"><mat-icon>table_view</mat-icon></span>
           <h2>Excel</h2>
@@ -76,7 +66,7 @@ import { feedbackSignal } from '../core/feedback/feedback-signal';
           </button>
         </article>
       </div>
-      <p class="bea-stock-page__kicker">Les exports respectent vos permissions et les filtres actifs.</p>
+      <p class="bea-stock-page__kicker">Sans filtre, la liste complète est téléchargée ; avec des filtres, seulement les documents qui y correspondent.</p>
     </section>
   `,
   styles: `
@@ -143,7 +133,7 @@ export class ArchivesRapportsComponent implements OnInit {
     }
   }
 
-  exportFmt(format: string): void {
+  exportFmt(format: 'xlsx' | 'pdf'): void {
     this.busy.set(true);
     this.erreur.set(null);
     const params: Record<string, string> = { format, report_key: 'documents' };
@@ -163,7 +153,7 @@ export class ArchivesRapportsComponent implements OnInit {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `documents.${format === 'xlsx' ? 'xlsx' : format}`;
+        a.download = `documents.${format}`;
         a.click();
         URL.revokeObjectURL(url);
         this.msg.set('Export téléchargé.');

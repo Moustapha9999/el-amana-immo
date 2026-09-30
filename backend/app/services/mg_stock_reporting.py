@@ -6,7 +6,7 @@ import csv
 import io
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo

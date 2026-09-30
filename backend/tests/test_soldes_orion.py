@@ -1,6 +1,5 @@
 """Soldes Orion — natures non amortissables en famille 142."""
 
-from decimal import Decimal
 
 from app.data.el_amana_referentiel import COMPTES_NON_AMORTISSABLES_EL_AMANA
 from app.services.solde_compte_orion import COMPTES_ORION_142, ensure_compte_orion_autorise

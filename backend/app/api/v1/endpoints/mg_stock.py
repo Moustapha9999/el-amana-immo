@@ -45,7 +45,6 @@ from app.schemas.mg_stock import (
     ParametreCreate,
     ParametreOut,
     ParametreUpdate,
-    RapportConsoOut,
     ReceptionBcIn,
 )
 from app.services.mg_stock_events import audit_stock, notify_stock_roles, notify_stock_user
@@ -55,6 +54,14 @@ from app.services.mg_pdf_service import pdf_demande_fourniture
 router = APIRouter(prefix="/mg/stock", tags=["mg-stock"])
 
 _module = [Depends(require_module_access("stock-fournitures"))]
+
+
+def _filtre_texte(rows, q, champs):
+    """Même recherche « contient » que la liste affichée (export = ce que l'utilisateur voit)."""
+    terme = (q or "").strip().lower()
+    if not terme:
+        return rows
+    return [r for r in rows if any(terme in str(v or "").lower() for v in champs(r))]
 
 
 def _article_out(svc: MgStockService, article) -> ArticleOut:
@@ -90,9 +97,9 @@ def _inventaire_out(inv) -> InventaireOut:
         lignes.append(item)
     data = InventaireOut.model_validate(inv)
     data.lignes = lignes
-    data.nb_conforme = sum(1 for l in lignes if l.nature_ecart == "CONFORME")
-    data.nb_surplus = sum(1 for l in lignes if l.nature_ecart == "SURPLUS")
-    data.nb_manquant = sum(1 for l in lignes if l.nature_ecart == "MANQUANT")
+    data.nb_conforme = sum(1 for lg in lignes if lg.nature_ecart == "CONFORME")
+    data.nb_surplus = sum(1 for lg in lignes if lg.nature_ecart == "SURPLUS")
+    data.nb_manquant = sum(1 for lg in lignes if lg.nature_ecart == "MANQUANT")
     return data
 
 
@@ -312,13 +319,14 @@ async def deactivate_article(
 async def export_mouvements(
     type_mouvement: str | None = None,
     agence_id: UUID | None = None,
+    q: str | None = None,
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.stock.export")),
 ):
     svc = MgStockService(db)
     rows, _ = await svc.list_mouvements(
-        type_mouvement=type_mouvement, agence_id=agence_id, page=1, size=500
+        type_mouvement=type_mouvement, agence_id=agence_id, q=q, page=1, size=500
     )
     enriched = await svc.enrich_mouvements(rows)
     headers = [
@@ -386,6 +394,7 @@ async def list_mouvements(
     article_id: UUID | None = None,
     type_mouvement: str | None = None,
     agence_id: UUID | None = None,
+    q: str | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
@@ -396,6 +405,7 @@ async def list_mouvements(
         article_id=article_id,
         type_mouvement=type_mouvement,
         agence_id=agence_id,
+        q=q,
         page=page,
         size=size,
     )
@@ -562,13 +572,14 @@ async def list_demandes(
     statut: str | None = None,
     agence_id: UUID | None = None,
     article_id: UUID | None = None,
+    q: str | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.stock.view")),
 ):
     rows, total = await MgStockService(db).list_demandes(
-        statut=statut, agence_id=agence_id, article_id=article_id, page=page, size=size
+        statut=statut, agence_id=agence_id, article_id=article_id, q=q, page=page, size=size
     )
     return PaginatedResponse(items=rows, total=total, page=page, size=size)
 
@@ -577,12 +588,13 @@ async def list_demandes(
 async def export_demandes(
     statut: str | None = None,
     agence_id: UUID | None = None,
+    q: str | None = None,
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.stock.export")),
 ):
     rows, _ = await MgStockService(db).list_demandes(
-        statut=statut, agence_id=agence_id, page=1, size=500
+        statut=statut, agence_id=agence_id, q=q, page=1, size=500
     )
     headers = ["Référence", "Date", "Agence", "Département", "Demandeur", "Statut", "Lignes"]
     data_rows = [
@@ -782,11 +794,13 @@ async def list_alertes(
 @router.get("/alertes/export", dependencies=_module)
 async def export_alertes(
     agence_id: UUID | None = None,
+    q: str | None = None,
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.stock.export")),
 ):
     rows = await MgStockService(db).list_alertes(agence_id=agence_id)
+    rows = _filtre_texte(rows, q, lambda a: (a.get("code"), a.get("designation"), a.get("titre")))
     headers = ["Code", "Désignation", "Stock", "Min", "Niveau"]
     data_rows = [
         [
@@ -878,11 +892,13 @@ async def list_inventaires(
 @router.get("/inventaires/export", dependencies=_module)
 async def export_inventaires(
     statut: str | None = None,
+    q: str | None = None,
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.stock.export")),
 ):
     rows = await MgStockService(db).list_inventaires(statut=statut)
+    rows = _filtre_texte(rows, q, lambda i: (i.reference, i.libelle, i.statut))
     headers = ["Référence", "Libellé", "Date début", "Date fin", "Statut", "Lignes"]
     data_rows = [
         [

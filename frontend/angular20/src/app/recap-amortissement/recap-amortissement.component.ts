@@ -74,7 +74,8 @@ export class RecapAmortissementComponent implements OnInit {
   readonly loading = signal(false);
   readonly detailPage = signal(1);
   readonly detailPageSize = 50;
-  readonly exporting = signal<'xlsx' | 'pdf' | 'detail-xlsx' | 'detail-pdf' | null>(null);
+  readonly exporting = signal<'xlsx' | 'pdf' | null>(null);
+  private lastAnnee: number | null = null;
 
   /** Filtres locaux appliqués sur les données déjà chargées. */
   readonly localSearch = signal('');
@@ -133,6 +134,25 @@ export class RecapAmortissementComponent implements OnInit {
     });
   });
 
+  readonly filteredTotaux = computed<RecapLigne | null>(() => {
+    const d = this.data();
+    if (!d || (!this.localSearch().trim() && !this.localCompte().trim())) {
+      return d?.totaux ?? null;
+    }
+    const lignes = this.filteredLignes();
+    const sum = (pick: (l: RecapLigne) => number) =>
+      lignes.reduce((acc, l) => acc + (Number(pick(l)) || 0), 0);
+    return {
+      ...d.totaux,
+      valeur_brute: sum((l) => l.valeur_brute),
+      amorts_cumules_n1: sum((l) => l.amorts_cumules_n1),
+      cessions_annee: sum((l) => l.cessions_annee),
+      dotations_annee: sum((l) => l.dotations_annee),
+      amorts_cumules_n: sum((l) => l.amorts_cumules_n),
+      vnc: sum((l) => l.vnc),
+    };
+  });
+
   readonly filteredDetails = computed(() => {
     const details = this.data()?.details ?? [];
     const q = this.localSearch().trim().toLowerCase();
@@ -175,6 +195,7 @@ export class RecapAmortissementComponent implements OnInit {
     this.loading.set(true);
     this.api.get<RecapResponse>('/reporting/recap-amortissement', { annee }).subscribe({
       next: (res) => {
+        this.lastAnnee = annee;
         this.data.set(res);
         this.detailPage.set(1);
         this.applyLocalFilters();
@@ -202,28 +223,30 @@ export class RecapAmortissementComponent implements OnInit {
     this.applyLocalFilters();
   }
 
-  export(format: 'xlsx' | 'pdf', vue: 'synthese' | 'detail' = 'synthese'): void {
-    const annee = Number(this.filterForm.controls.annee.value);
+  export(format: 'xlsx' | 'pdf'): void {
+    const annee = this.lastAnnee;
     if (!annee) {
       return;
     }
-    const busyKey = vue === 'detail' ? (`detail-${format}` as const) : format;
-    this.exporting.set(busyKey);
+    const params: Record<string, string> = { annee: String(annee), format, vue: 'synthese' };
+    const search = this.localSearch().trim();
+    if (search) {
+      params['search'] = search;
+    }
+    const compte = this.localCompte().trim();
+    if (compte) {
+      params['compte'] = compte;
+    }
+    this.exporting.set(format);
     this.api
-      .download('/reporting/recap-amortissement/export', {
-        annee: String(annee),
-        format,
-        vue,
-      })
+      .download('/reporting/recap-amortissement/export', params)
       .subscribe({
         next: (blob) => {
           this.exporting.set(null);
           const ext = format === 'pdf' ? 'pdf' : 'xlsx';
-          const prefix =
-            vue === 'detail' ? 'detail-dotations-amortissement' : 'recap-amortissement';
           const a = document.createElement('a');
           a.href = URL.createObjectURL(blob);
-          a.download = `${prefix}-${annee}.${ext}`;
+          a.download = `recap-amortissement-${annee}.${ext}`;
           a.click();
           URL.revokeObjectURL(a.href);
         },

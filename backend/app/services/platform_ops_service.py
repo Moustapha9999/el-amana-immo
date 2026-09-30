@@ -5,8 +5,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import HTTPException, Request, status
-from sqlalchemy import func, select, text
+from fastapi import HTTPException, Request
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 

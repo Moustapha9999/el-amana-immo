@@ -33,6 +33,9 @@ class DocumentReportingService:
         q: str | None = None,
         general: bool = False,
         report_key: str = "documents",
+        entity: str | None = None,
+        entity_id: str | None = None,
+        agence_id: UUID | None = None,
     ) -> tuple[bytes, str, str]:
         rows, _total, _meta = await self.query.search(
             user=user,
@@ -43,6 +46,9 @@ class DocumentReportingService:
             date_debut=date_debut,
             date_fin=date_fin,
             q=q,
+            entity=entity,
+            entity_id=entity_id,
+            agence_id=agence_id,
             page=1,
             size=200,
             general=general or espace_code is None,

@@ -537,6 +537,8 @@ export class ArchivesGeneralesComponent implements OnInit {
   entity = '';
   entityId = '';
   agenceId = '';
+  /** Filtres de la liste affichée, repris tels quels par l'export. */
+  private filtresAffiches: Record<string, string> = {};
   metaTitle = '';
   metaType = '';
   metaRef = '';
@@ -610,16 +612,7 @@ export class ArchivesGeneralesComponent implements OnInit {
 
   exportAs(fmt: 'xlsx' | 'pdf'): void {
     this.exportOpen.set(false);
-    const params: Record<string, string> = { format: fmt, report_key: 'documents' };
-    if (this.espaceFilter) params['espace_code'] = this.espaceFilter;
-    if (this.moduleFilter) params['module_code'] = this.moduleFilter;
-    if (this.docType) params['doc_type'] = this.docType;
-    if (this.ocrStatus) params['ocr_status'] = this.ocrStatus;
-    if (this.q.trim()) params['q'] = this.q.trim();
-    if (this.year) {
-      params['date_debut'] = `${this.year}-01-01`;
-      params['date_fin'] = `${this.year}-12-31`;
-    }
+    const params: Record<string, string> = { ...this.filtresAffiches, format: fmt, report_key: 'documents' };
     this.api.download('/doc-archives/general/rapports/export', params).subscribe({
       next: (blob) => {
         const name = fmt === 'pdf' ? 'documents.pdf' : 'documents.xlsx';
@@ -808,6 +801,7 @@ export class ArchivesGeneralesComponent implements OnInit {
       this.total.set(0);
       this.loading.set(false);
       this.idleSearch.set(true);
+      this.filtresAffiches = {};
       return;
     }
     this.idleSearch.set(false);
@@ -833,6 +827,8 @@ export class ArchivesGeneralesComponent implements OnInit {
     }
     this.api.get<ListOut>('/doc-archives/general', params).subscribe({
       next: (res) => {
+        const { page: _p, size: _s, search_ocr: _o, ...filtres } = params;
+        this.filtresAffiches = Object.fromEntries(Object.entries(filtres).map(([k, v]) => [k, String(v)]));
         this.docs.set(res.items ?? []);
         this.total.set(res.total ?? 0);
         this.ocrHint.set(!!res.ocr_pending_hint && this.searchOcr);

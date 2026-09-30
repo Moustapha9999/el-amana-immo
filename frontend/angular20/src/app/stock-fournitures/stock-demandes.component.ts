@@ -436,6 +436,8 @@ export class StockDemandesComponent implements OnInit {
   readonly msg = feedbackSignal('success', '');
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Filtres de la liste affichée, repris tels quels par l'export. */
+  private filtresAffiches: Record<string, string> = {};
 
   readonly filters = this.fb.nonNullable.group({
     q: '',
@@ -500,19 +502,12 @@ export class StockDemandesComponent implements OnInit {
   }
 
   filtered(): Demande[] {
-    const q = (this.filters.value.q || '').trim().toLowerCase();
-    if (!q) return this.demandes();
-    return this.demandes().filter(
-      (d) =>
-        d.reference.toLowerCase().includes(q) ||
-        (d.agence_libelle_snapshot || '').toLowerCase().includes(q) ||
-        (d.demandeur_nom || '').toLowerCase().includes(q),
-    );
+    return this.demandes();
   }
 
   onSearchInput(): void {
     if (this.searchTimer) clearTimeout(this.searchTimer);
-    this.searchTimer = setTimeout(() => this.demandes.set([...this.demandes()]), 200);
+    this.searchTimer = setTimeout(() => this.applyFilters(), 280);
   }
 
   goDetail(id: string): void {
@@ -601,6 +596,7 @@ export class StockDemandesComponent implements OnInit {
     const v = this.filters.getRawValue();
     const params: Record<string, string> = {};
     if (v.statut) params['statut'] = v.statut;
+    if ((v.q || '').trim()) params['q'] = v.q.trim();
     return params;
   }
 
@@ -616,13 +612,15 @@ export class StockDemandesComponent implements OnInit {
 
   loadList(): void {
     this.erreur.set('');
+    const filtres = this.filterParams();
     const params: Record<string, string | number> = {
-      ...this.filterParams(),
+      ...filtres,
       page: this.page(),
       size: this.pageSize,
     };
     this.api.get<Paginated<Demande>>('/mg/stock/demandes', params).subscribe({
       next: (res) => {
+        this.filtresAffiches = filtres;
         this.demandes.set(res.items);
         this.total.set(res.total);
       },
@@ -734,7 +732,7 @@ export class StockDemandesComponent implements OnInit {
   }
 
   exportFile(format: 'xlsx' | 'pdf'): void {
-    const params = { ...this.filterParams(), format };
+    const params = { ...this.filtresAffiches, format };
     this.api.download('/mg/stock/demandes/export', params).subscribe({
       next: (blob) => {
         const url = URL.createObjectURL(blob);

@@ -168,6 +168,9 @@ async def archives_generales_export(
     date_debut: date | None = Query(None),
     date_fin: date | None = Query(None),
     q: str | None = Query(None),
+    entity: str | None = Query(None),
+    entity_id: str | None = Query(None),
+    agence_id: UUID | None = Query(None),
     user: User = Depends(
         require_permission("ged.export", "archives.general.view", "mg.archives.export")
     ),
@@ -184,6 +187,9 @@ async def archives_generales_export(
             date_debut=date_debut,
             date_fin=date_fin,
             q=q,
+            entity=entity,
+            entity_id=entity_id,
+            agence_id=agence_id,
             general=True,
             report_key=report_key,
         )

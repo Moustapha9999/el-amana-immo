@@ -2011,7 +2011,7 @@ class MgAchatsService:
                     status.HTTP_400_BAD_REQUEST,
                     detail="Le BL ne correspond pas au bon de commande",
                 )
-        by_id = {l.id: l for l in bon.lignes}
+        by_id = {lg.id: lg for lg in bon.lignes}
         reception = MgAchatReception(
             reference=await self._next_ref(
                 "prefix_reception", MgAchatReception, MgAchatReception.reference, "REC"
@@ -2071,7 +2071,7 @@ class MgAchatsService:
                 )
             )
 
-        if all(Decimal(l.quantite_recue or 0) >= Decimal(l.quantite or 0) for l in bon.lignes):
+        if all(Decimal(lg.quantite_recue or 0) >= Decimal(lg.quantite or 0) for lg in bon.lignes):
             bon.statut = "RECU"
             reception.statut = "COMPLETE"
         else:
@@ -2136,9 +2136,9 @@ class MgAchatsService:
     def _taux_tva_bc(bon: MgBonCommande, designation: str) -> Decimal:
         """Taux de la ligne BC de même désignation, sinon taux moyen du BC."""
         cle = _cle_designation(designation)
-        for l in bon.lignes or []:
-            if _cle_designation(l.description) == cle:
-                return Decimal(l.taux_tva or 0)
+        for lg in bon.lignes or []:
+            if _cle_designation(lg.description) == cle:
+                return Decimal(lg.taux_tva or 0)
         ht = Decimal(bon.total_ht or 0)
         if ht <= 0:
             return Decimal("0")
@@ -2185,32 +2185,32 @@ class MgAchatsService:
         ]
         deja: dict[str, Decimal] = {}
         for f in factures:
-            for l in f.lignes or []:
-                cle = _cle_designation(l.designation)
-                deja[cle] = deja.get(cle, Decimal("0")) + Decimal(l.quantite or 0)
+            for lg in f.lignes or []:
+                cle = _cle_designation(lg.designation)
+                deja[cle] = deja.get(cle, Decimal("0")) + Decimal(lg.quantite or 0)
 
         lignes: list[FactureLigneProposee] = []
         total_ht = Decimal("0")
         total_tva = Decimal("0")
-        for l in sorted(bon.lignes or [], key=lambda x: x.sort_order or 0):
-            cmd = _qty(l.quantite)
-            recu = _qty(l.quantite_recue)
+        for lg in sorted(bon.lignes or [], key=lambda x: x.sort_order or 0):
+            cmd = _qty(lg.quantite)
+            recu = _qty(lg.quantite_recue)
             base = recu if recu > 0 else cmd
-            cle = _cle_designation(l.description)
+            cle = _cle_designation(lg.description)
             consomme = min(deja.get(cle, Decimal("0")), base)
             deja[cle] = deja.get(cle, Decimal("0")) - consomme
             reste = base - consomme
             if reste <= 0:
                 continue
-            pu = _money(Decimal(l.prix_unitaire or 0) * (Decimal("1") - Decimal(l.remise_pct or 0) / Decimal("100")))
+            pu = _money(Decimal(lg.prix_unitaire or 0) * (Decimal("1") - Decimal(lg.remise_pct or 0) / Decimal("100")))
             ht = _line_ht(reste, pu)
-            taux = Decimal(l.taux_tva or 0)
+            taux = Decimal(lg.taux_tva or 0)
             total_ht += ht
             total_tva += ht * taux / Decimal("100")
             lignes.append(
                 FactureLigneProposee(
-                    designation=l.description,
-                    uom=l.uom or "U",
+                    designation=lg.description,
+                    uom=lg.uom or "U",
                     quantite=reste,
                     prix_unitaire=pu,
                     taux_tva=taux,
@@ -2225,7 +2225,7 @@ class MgAchatsService:
         message = None
         if not lignes:
             message = "Toutes les quantités de ce BC sont déjà facturées."
-        elif not any(_qty(l.quantite_recue) > 0 for l in bon.lignes or []):
+        elif not any(_qty(lg.quantite_recue) > 0 for lg in bon.lignes or []):
             message = "Aucune réception enregistrée : quantités proposées = quantités commandées."
         total_ht = _money(total_ht)
         total_tva = _money(total_tva)
@@ -2295,12 +2295,12 @@ class MgAchatsService:
             proposition = await self.propose_facture(bon.id, date_facture=data.date_facture)
             lignes = [
                 FactureLigneIn(
-                    designation=l.designation,
-                    quantite=l.quantite,
-                    prix_unitaire=l.prix_unitaire,
-                    taux_tva=l.taux_tva,
+                    designation=lg.designation,
+                    quantite=lg.quantite,
+                    prix_unitaire=lg.prix_unitaire,
+                    taux_tva=lg.taux_tva,
                 )
-                for l in proposition.lignes
+                for lg in proposition.lignes
             ]
         row = MgAchatFacture(
             reference=await self._next_ref(
@@ -2375,10 +2375,10 @@ class MgAchatsService:
     def three_way_match(
         self, bon: MgBonCommande, facture: MgAchatFacture
     ) -> ThreeWayMatchOut:
-        qty_cmd = sum((Decimal(l.quantite or 0) for l in (bon.lignes or [])), Decimal("0"))
-        qty_rec = sum((Decimal(l.quantite_recue or 0) for l in (bon.lignes or [])), Decimal("0"))
+        qty_cmd = sum((Decimal(lg.quantite or 0) for lg in (bon.lignes or [])), Decimal("0"))
+        qty_rec = sum((Decimal(lg.quantite_recue or 0) for lg in (bon.lignes or [])), Decimal("0"))
         qty_fac = sum(
-            (Decimal(l.quantite or 0) for l in (facture.lignes or [])), Decimal("0")
+            (Decimal(lg.quantite or 0) for lg in (facture.lignes or [])), Decimal("0")
         )
         if not facture.lignes:
             qty_fac = qty_cmd  # pas de lignes → on ne flaggue pas qty
@@ -2606,7 +2606,7 @@ class MgAchatsService:
                 ),
             )
         )
-        recu = bon is not None and any(Decimal(l.quantite_recue or 0) > 0 for l in bon.lignes or [])
+        recu = bon is not None and any(Decimal(lg.quantite_recue or 0) > 0 for lg in bon.lignes or [])
         c.append(
             DossierControleOut(
                 code="RECEPTION",

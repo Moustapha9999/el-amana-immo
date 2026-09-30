@@ -121,6 +121,7 @@ export class Soldes14868Component implements OnInit {
   readonly page = signal(1);
   readonly pageSize = 50;
   readonly viewMode = signal<'detail' | 'synthese'>('detail');
+  private lastQuery: Record<string, string> = {};
 
   readonly familleOptions: { value: FamilleCompte; label: string; hint: string }[] = [
     { value: '142', label: '142 — Immobilisations', hint: 'Valeur brute' },
@@ -225,9 +226,11 @@ export class Soldes14868Component implements OnInit {
       void this.dialogs.error('Exercice invalide').subscribe();
       return;
     }
+    const query = this.filterParams();
     this.loading.set(true);
-    this.api.get<Soldes14868Response>('/reporting/soldes-148-68', this.filterParams()).subscribe({
+    this.api.get<Soldes14868Response>('/reporting/soldes-148-68', query).subscribe({
       next: (res) => {
+        this.lastQuery = query;
         this.data.set(res);
         this.page.set(1);
         this.loading.set(false);
@@ -265,14 +268,13 @@ export class Soldes14868Component implements OnInit {
   }
 
   export(format: 'xlsx' | 'pdf'): void {
-    const annee = Number(this.filterForm.controls.annee.value);
-    if (!annee || annee < 2000 || annee > 2100) {
-      void this.dialogs.error('Exercice invalide').subscribe();
+    const annee = this.lastQuery['annee'];
+    if (!annee) {
       return;
     }
-    const famille = this.filterForm.controls.famille_compte.value;
+    const famille = this.lastQuery['famille_compte'];
     const params = {
-      ...this.filterParams(),
+      ...this.lastQuery,
       format,
       vue: this.viewMode(),
     };

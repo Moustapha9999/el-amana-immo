@@ -249,18 +249,20 @@
                   <col class="cpt__col-agence" />
                 </colgroup>
                 <tfoot>
-                  <tr>
-                    <td class="cpt__foot-label">Total général</td>
-                    <td class="cpt__num">{{ d.totaux.quantite | quantite }}</td>
-                    <td></td>
-                    <td class="cpt__num">{{ d.totaux.valeur_acquisition | montant }}</td>
-                    <td class="cpt__num">—</td>
-                    <td class="cpt__num">{{ d.totaux.amorts_cumules_n1 | montant }}</td>
-                    <td class="cpt__num">{{ d.totaux.dotations_annee | montant }}</td>
-                    <td class="cpt__num">{{ d.totaux.amorts_cumules_n | montant }}</td>
-                    <td class="cpt__num">{{ d.totaux.vnc | montant }}</td>
-                    <td></td>
-                  </tr>
+                  @if (filteredTotaux(); as t) {
+                    <tr>
+                      <td class="cpt__foot-label">Total général</td>
+                      <td class="cpt__num">{{ t.quantite | quantite }}</td>
+                      <td></td>
+                      <td class="cpt__num">{{ t.valeur_acquisition | montant }}</td>
+                      <td class="cpt__num">—</td>
+                      <td class="cpt__num">{{ t.amorts_cumules_n1 | montant }}</td>
+                      <td class="cpt__num">{{ t.dotations_annee | montant }}</td>
+                      <td class="cpt__num">{{ t.amorts_cumules_n | montant }}</td>
+                      <td class="cpt__num">{{ t.vnc | montant }}</td>
+                      <td></td>
+                    </tr>
+                  }
                 </tfoot>
               </table>
             </div>

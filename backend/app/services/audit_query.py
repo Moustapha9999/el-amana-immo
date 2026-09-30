@@ -102,7 +102,7 @@ async def list_audit_logs(
 
 async def list_audit_for_export(
     db: AsyncSession,
-    limit: int = 5000,
+    limit: int = 100_000,
     *,
     entity: str | None = None,
     action: str | None = None,

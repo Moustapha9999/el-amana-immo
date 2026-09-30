@@ -11,7 +11,6 @@ import os
 import re
 import sys
 import uuid
-from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -201,7 +200,6 @@ def parse_etat(rows: list[list[str]]) -> dict[str, dict]:
 def parse_journal(rows: list[list[str]], year: int, month: int) -> list[dict]:
     ref_col = None
     best = 0
-    scan = rows[:80] if len(rows) > 80 else rows
     width = max((len(r) for r in rows), default=0)
     counts = [0] * width
     for row in rows:

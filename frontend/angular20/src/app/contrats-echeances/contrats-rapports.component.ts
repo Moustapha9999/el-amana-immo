@@ -36,9 +36,12 @@ interface ReportJson {
             <option value="echeances">Échéances à 90 jours</option>
           </select>
         </label>
-        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="download('xlsx')">Excel</button>
-        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="download('pdf')">PDF</button>
-        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="download('csv')">CSV</button>
+        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!report()" (click)="download('pdf')" title="Télécharger le rapport affiché">
+          <mat-icon>picture_as_pdf</mat-icon> PDF
+        </button>
+        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!report()" (click)="download('xlsx')" title="Télécharger le rapport affiché">
+          <mat-icon>table_view</mat-icon> Excel
+        </button>
       </form>
 
       @if (report(); as r) {
@@ -86,14 +89,15 @@ export class ContratsRapportsComponent implements OnInit {
     });
   }
 
-  download(fmt: 'xlsx' | 'pdf' | 'csv'): void {
-    const key = this.filters.getRawValue().key;
+  download(fmt: 'xlsx' | 'pdf'): void {
+    const key = this.report()?.key;
+    if (!key) return;
     this.api.download(`/mg/contrats/rapports/${key}`, { fmt }).subscribe({
       next: (blob) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `contrats-${key}.${fmt === 'xlsx' ? 'xlsx' : fmt}`;
+        a.download = `contrats-${key}.${fmt}`;
         a.click();
         URL.revokeObjectURL(url);
       },

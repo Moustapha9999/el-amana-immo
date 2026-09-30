@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from uuid import UUID
 
 from sqlalchemy import insert, inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession

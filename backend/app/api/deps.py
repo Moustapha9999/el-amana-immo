@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.core.security import decode_token
 from app.data.demandes_engine import is_demandes_module
 from app.db.session import get_db
-from app.models import Permission, Role, User
+from app.models import Role, User
 from app.models.auth import SESSION_KIND_MODULE, SESSION_KIND_PLATFORM
 from app.services.auth_session_service import AuthSessionService
 from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
@@ -254,7 +254,6 @@ def require_platform_permission(*permission_codes: str):
         user: User = Depends(get_platform_user),
         db: AsyncSession = Depends(get_db),
     ) -> User:
-        from app.core.config import get_settings
         from app.services.security_policy_service import get_cached_security_policy
 
         have = await load_user_permission_codes(db, user)

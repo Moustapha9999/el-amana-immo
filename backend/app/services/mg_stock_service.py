@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy import Select, func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -623,7 +623,7 @@ class MgStockService:
                 ligne.article_id = article_id
 
         if all(
-            Decimal(l.quantite_recue or 0) >= Decimal(l.quantite or 0) for l in bon.lignes
+            Decimal(lg.quantite_recue or 0) >= Decimal(lg.quantite or 0) for lg in bon.lignes
         ):
             bon.statut = "RECU"
         else:
@@ -644,10 +644,23 @@ class MgStockService:
         article_id: uuid.UUID | None = None,
         type_mouvement: str | None = None,
         agence_id: uuid.UUID | None = None,
+        q: str | None = None,
         page: int = 1,
         size: int = 50,
     ) -> tuple[list[MgStockMouvement], int]:
         filters = []
+        if q and q.strip():
+            like = f"%{q.strip()}%"
+            articles = select(MgArticle.id).where(
+                or_(MgArticle.code.ilike(like), MgArticle.designation.ilike(like))
+            )
+            filters.append(
+                or_(
+                    MgStockMouvement.reference.ilike(like),
+                    MgStockMouvement.motif.ilike(like),
+                    MgStockMouvement.article_id.in_(articles),
+                )
+            )
         if article_id:
             filters.append(MgStockMouvement.article_id == article_id)
         if type_mouvement:
@@ -815,7 +828,7 @@ class MgStockService:
             if demande.statut != "VISA_AGENCE":
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Statut incompatible")
             if lignes:
-                by_des = {l.designation: l for l in lignes}
+                by_des = {lg.designation: lg for lg in lignes}
                 for row in demande.lignes:
                     src = by_des.get(row.designation)
                     if src and src.quantite_accordee is not None:
@@ -859,10 +872,20 @@ class MgStockService:
         statut: str | None = None,
         agence_id: uuid.UUID | None = None,
         article_id: uuid.UUID | None = None,
+        q: str | None = None,
         page: int = 1,
         size: int = 50,
     ) -> tuple[list[MgDemandeFourniture], int]:
         filters = [MgDemandeFourniture.deleted_at.is_(None)]
+        if q and q.strip():
+            like = f"%{q.strip()}%"
+            filters.append(
+                or_(
+                    MgDemandeFourniture.reference.ilike(like),
+                    MgDemandeFourniture.agence_libelle_snapshot.ilike(like),
+                    MgDemandeFourniture.demandeur_nom.ilike(like),
+                )
+            )
         if statut:
             s = statut.upper()
             if s in {"ARCHIVEE", "CLOTUREE"}:
@@ -1664,7 +1687,7 @@ class MgStockService:
                 "Campagne sans aucune ligne à compter : supprimez-la et recréez-la sur un périmètre contenant des articles.",
                 code="INVENTAIRE_VIDE",
             )
-        missing = [l for l in inv.lignes if l.stock_physique is None]
+        missing = [lg for lg in inv.lignes if lg.stock_physique is None]
         if missing:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,

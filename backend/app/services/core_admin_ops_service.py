@@ -420,7 +420,6 @@ class CoreAdminOpsService:
             return [], 0, empty_kpis
 
     async def ged_overview(self, user: User) -> dict:
-        from sqlalchemy import text
 
         from app.services.document_query_service import DocumentQueryService
 

@@ -270,6 +270,8 @@ export class StockMouvementsComponent implements OnInit {
   private readonly alertesWatcher = inject(StockAlertesWatcherService);
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Filtres de la liste affichée, repris tels quels par l'export. */
+  private filtresAffiches: Record<string, string> = {};
 
   readonly filters = this.fb.nonNullable.group({
     q: '',
@@ -322,29 +324,20 @@ export class StockMouvementsComponent implements OnInit {
   }
 
   filtered(): Mouvement[] {
-    const q = (this.filters.value.q || '').trim().toLowerCase();
-    if (!q) return this.mouvements();
-    return this.mouvements().filter(
-      (m) =>
-        m.reference.toLowerCase().includes(q) ||
-        (m.motif || '').toLowerCase().includes(q) ||
-        this.articleLabel(m.article_id).toLowerCase().includes(q),
-    );
+    return this.mouvements();
   }
 
   filterParams(): Record<string, string> {
     const v = this.filters.getRawValue();
     const params: Record<string, string> = {};
     if (v.type_mouvement) params['type_mouvement'] = v.type_mouvement;
+    if ((v.q || '').trim()) params['q'] = v.q.trim();
     return params;
   }
 
   onSearchInput(): void {
     if (this.searchTimer) clearTimeout(this.searchTimer);
-    this.searchTimer = setTimeout(() => {
-      /* client-side filter via filtered() — trigger CD by rewriting signal */
-      this.mouvements.set([...this.mouvements()]);
-    }, 200);
+    this.searchTimer = setTimeout(() => this.applyFilters(), 280);
   }
 
   applyFilters(): void {
@@ -359,13 +352,15 @@ export class StockMouvementsComponent implements OnInit {
 
   load(): void {
     this.erreur.set('');
+    const filtres = this.filterParams();
     const params: Record<string, string | number> = {
-      ...this.filterParams(),
+      ...filtres,
       page: this.page(),
       size: this.pageSize,
     };
     this.api.get<Paginated<Mouvement>>('/mg/stock/mouvements', params).subscribe({
       next: (res) => {
+        this.filtresAffiches = filtres;
         this.mouvements.set(res.items);
         this.total.set(res.total);
       },
@@ -435,7 +430,7 @@ export class StockMouvementsComponent implements OnInit {
   }
 
   exportFile(format: 'xlsx' | 'pdf'): void {
-    const params = { ...this.filterParams(), format };
+    const params = { ...this.filtresAffiches, format };
     this.api.download('/mg/stock/mouvements/export', params).subscribe({
       next: (blob) => {
         const url = URL.createObjectURL(blob);

@@ -16,7 +16,6 @@ from app.db.session import get_db
 from app.models import User
 from app.schemas.documents import (
     DocumentAuditEventOut,
-    DocumentDashboardOut,
     DocumentMetadataIn,
     DocumentListOut,
     DocumentOut,

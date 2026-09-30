@@ -17,9 +17,9 @@ if not _backend_root.joinpath("app").is_dir():
 if str(_backend_root) not in sys.path:
     sys.path.insert(0, str(_backend_root))
 
-from app.db.session import AsyncSessionLocal, engine
-from app.models import entities  # noqa: F401
-from app.services.agences_seed import seed_agences_el_amana
+from app.db.session import AsyncSessionLocal, engine  # noqa: E402
+from app.models import entities  # noqa: E402, F401
+from app.services.agences_seed import seed_agences_el_amana  # noqa: E402
 
 
 async def main() -> None:

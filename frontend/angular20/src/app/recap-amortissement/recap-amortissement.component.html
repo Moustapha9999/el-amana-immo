@@ -27,7 +27,7 @@
         mat-stroked-button
         type="button"
         (click)="export('xlsx')"
-        [disabled]="!data() || exporting() !== null || loading()"
+        [disabled]="!data() || filteredLignes().length === 0 || exporting() !== null || loading()"
       >
         <mat-icon aria-hidden="true">table_view</mat-icon>
         {{ exporting() === 'xlsx' ? 'Excel…' : 'Excel' }}
@@ -36,7 +36,7 @@
         mat-stroked-button
         type="button"
         (click)="export('pdf')"
-        [disabled]="!data() || exporting() !== null || loading()"
+        [disabled]="!data() || filteredLignes().length === 0 || exporting() !== null || loading()"
       >
         <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
         {{ exporting() === 'pdf' ? 'PDF…' : 'PDF' }}
@@ -123,7 +123,7 @@
                   {{ row.valeur_brute | montant }}
                 </td>
                 <td mat-footer-cell *matFooterCellDef class="rca__num rca__foot">
-                  {{ d.totaux.valeur_brute | montant }}
+                  {{ filteredTotaux()?.valeur_brute | montant }}
                 </td>
               </ng-container>
 
@@ -141,7 +141,7 @@
                   {{ row.amorts_cumules_n1 | montant }}
                 </td>
                 <td mat-footer-cell *matFooterCellDef class="rca__num rca__foot">
-                  {{ d.totaux.amorts_cumules_n1 | montant }}
+                  {{ filteredTotaux()?.amorts_cumules_n1 | montant }}
                 </td>
               </ng-container>
 
@@ -151,7 +151,7 @@
                   {{ row.cessions_annee | montant }}
                 </td>
                 <td mat-footer-cell *matFooterCellDef class="rca__num rca__foot">
-                  {{ d.totaux.cessions_annee | montant }}
+                  {{ filteredTotaux()?.cessions_annee | montant }}
                 </td>
               </ng-container>
 
@@ -161,7 +161,7 @@
                   {{ row.dotations_annee | montant }}
                 </td>
                 <td mat-footer-cell *matFooterCellDef class="rca__num rca__foot">
-                  {{ d.totaux.dotations_annee | montant }}
+                  {{ filteredTotaux()?.dotations_annee | montant }}
                 </td>
               </ng-container>
 
@@ -171,7 +171,7 @@
                   {{ row.amorts_cumules_n | montant }}
                 </td>
                 <td mat-footer-cell *matFooterCellDef class="rca__num rca__foot">
-                  {{ d.totaux.amorts_cumules_n | montant }}
+                  {{ filteredTotaux()?.amorts_cumules_n | montant }}
                 </td>
               </ng-container>
 
@@ -181,7 +181,7 @@
                   {{ row.vnc | montant }}
                 </td>
                 <td mat-footer-cell *matFooterCellDef class="rca__num rca__foot">
-                  {{ d.totaux.vnc | montant }}
+                  {{ filteredTotaux()?.vnc | montant }}
                 </td>
               </ng-container>
 
@@ -212,26 +212,6 @@
             <p class="app-explain rca__lead--inline">
               Total Dotations = somme des amortissements comptabilisés de l’exercice
             </p>
-          </div>
-          <div class="rca__hero-actions">
-            <button
-              mat-stroked-button
-              type="button"
-              (click)="export('xlsx', 'detail')"
-              [disabled]="!data() || exporting() !== null || loading()"
-            >
-              <mat-icon aria-hidden="true">table_view</mat-icon>
-              {{ exporting() === 'detail-xlsx' ? 'Excel…' : 'Excel' }}
-            </button>
-            <button
-              mat-stroked-button
-              type="button"
-              (click)="export('pdf', 'detail')"
-              [disabled]="!data() || exporting() !== null || loading()"
-            >
-              <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
-              {{ exporting() === 'detail-pdf' ? 'PDF…' : 'PDF' }}
-            </button>
           </div>
         </div>
         <div class="rca__table-wrap app-table-scroll">

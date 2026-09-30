@@ -639,6 +639,8 @@ export class StockArticlesComponent implements OnInit {
   readonly deleteTarget = signal<Article | null>(null);
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Filtres de la liste affichée, repris tels quels par l'export. */
+  private filtresAffiches: Record<string, string> = {};
 
   readonly filters = this.fb.nonNullable.group({
     q: '',
@@ -705,13 +707,15 @@ export class StockArticlesComponent implements OnInit {
 
   load(): void {
     this.erreur.set('');
+    const filtres = this.filterParams();
     const params: Record<string, string | number> = {
-      ...this.filterParams(),
+      ...filtres,
       page: this.page(),
       size: this.pageSize,
     };
     this.api.get<Paginated<Article>>('/mg/stock/articles', params).subscribe({
       next: (res) => {
+        this.filtresAffiches = filtres;
         this.articles.set(res.items);
         this.total.set(res.total);
       },
@@ -863,7 +867,7 @@ export class StockArticlesComponent implements OnInit {
   }
 
   exportFile(format: 'xlsx' | 'pdf'): void {
-    const params = { ...this.filterParams(), format };
+    const params = { ...this.filtresAffiches, format };
     this.api.download('/mg/stock/articles/export', params).subscribe({
       next: (blob) => {
         const url = URL.createObjectURL(blob);

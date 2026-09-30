@@ -4,14 +4,14 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from fastapi import HTTPException
 
+from app.core.exceptions import AppError
 from app.services.mg_contrats_service import MgContratsService, niveau_alerte, paiement_statut
 
 
 def test_date_fin_avant_debut_refusee():
     svc = MgContratsService(db=None)  # type: ignore[arg-type]
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AppError) as exc:
         svc._check_dates(date(2026, 9, 30), date(2026, 9, 1))
     assert exc.value.status_code == 400
 
@@ -83,5 +83,5 @@ def test_montants_ttc_recalcules():
 
 def test_montant_negatif_refuse():
     svc = MgContratsService(db=None)  # type: ignore[arg-type]
-    with pytest.raises(HTTPException):
+    with pytest.raises(AppError):
         svc._montants(Decimal("-1"), Decimal("18"), None)

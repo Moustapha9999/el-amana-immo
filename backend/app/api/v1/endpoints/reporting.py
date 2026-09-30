@@ -40,7 +40,6 @@ from app.services.reporting_snapshot import (
     resolve_comptes,
     resolve_consultation_soldes,
     resolve_recap,
-    resolve_soldes,
 )
 from app.models.enums import StatutImmobilisation
 from app.services.reporting_export import (
@@ -184,11 +183,24 @@ async def export_ecritures(
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     date_debut: date | None = None,
     date_fin: date | None = None,
+    search: str | None = None,
+    journal_code: str | None = None,
     _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = await list_ecritures_for_export(db, date_debut=date_debut, date_fin=date_fin)
-    subtitle = format_period_label(date_debut, date_fin)
+    rows = await list_ecritures_for_export(
+        db,
+        date_debut=date_debut,
+        date_fin=date_fin,
+        search=search,
+        journal_code=journal_code,
+    )
+    bits = [b for b in (format_period_label(date_debut, date_fin),) if b]
+    if journal_code and journal_code.strip():
+        bits.append(f"Journal : {journal_code.strip()}")
+    if search and search.strip():
+        bits.append(f"Recherche : {search.strip()}")
+    subtitle = " — ".join(bits) if bits else None
     if format == "pdf":
         content = ecritures_to_pdf(rows, subtitle=subtitle)
         media = "application/pdf"
@@ -426,6 +438,46 @@ async def download_import_template(_: User = Depends(require_permission("immobil
     )
 
 
+def _js_text(value: object) -> str:
+    """Rendu texte aligné sur ``String(v)`` côté front (montants JSON en nombres)."""
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else repr(value)
+    return str(value)
+
+
+def _filter_payload_lignes(
+    payload: dict,
+    *,
+    search: str | None,
+    search_keys: tuple[str, ...],
+    sum_keys: tuple[str, ...],
+    compte_key: str | None = None,
+    compte: str | None = None,
+) -> dict:
+    """Applique la recherche / le filtre compte de l'écran sur ``payload['lignes']``."""
+    q = (search or "").strip().lower()
+    compte = (compte or "").strip()
+    if not q and not (compte and compte_key):
+        return payload
+    lignes = [
+        ligne
+        for ligne in payload["lignes"]
+        if (not compte or not compte_key or ligne.get(compte_key) == compte)
+        and (not q or any(q in _js_text(ligne.get(k)).lower() for k in search_keys))
+    ]
+    totaux = dict(payload["totaux"])
+    for k in sum_keys:
+        totaux[k] = round(sum(float(ligne.get(k) or 0) for ligne in lignes), 2)
+    bits = [payload["subtitle"]]
+    if compte and compte_key:
+        bits.append(f"Compte : {compte}")
+    if q:
+        bits.append(f"Recherche : {search.strip()}")
+    return {**payload, "lignes": lignes, "totaux": totaux, "subtitle": " — ".join(bits)}
+
+
 def _recap_ligne_read(line) -> RecapAmortissementLigneRead:
     return RecapAmortissementLigneRead(
         compte_immobilisation=line.compte_immobilisation,
@@ -476,6 +528,8 @@ async def export_recap_amortissement(
     annee: int = Query(..., ge=2000, le=2100),
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     vue: str = Query("synthese", pattern="^(synthese|detail)$"),
+    search: str | None = Query(None, description="Recherche texte (vue synthèse, même règle que l'écran)"),
+    compte: str | None = Query(None, description="Compte immobilisation (vue synthèse)"),
     _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -536,6 +590,31 @@ async def export_recap_amortissement(
                 "vnc": float(result.totaux.vnc),
             },
         }
+        payload = _filter_payload_lignes(
+            payload,
+            search=search,
+            search_keys=(
+                "compte_immobilisation",
+                "intitule",
+                "compte_amortissement",
+                "valeur_brute",
+                "amorts_cumules_n1",
+                "cessions_annee",
+                "dotations_annee",
+                "amorts_cumules_n",
+                "vnc",
+            ),
+            sum_keys=(
+                "valeur_brute",
+                "amorts_cumules_n1",
+                "cessions_annee",
+                "dotations_annee",
+                "amorts_cumules_n",
+                "vnc",
+            ),
+            compte_key="compte_immobilisation",
+            compte=compte,
+        )
         if format == "pdf":
             content = recap_amortissement_to_pdf(payload)
             media = "application/pdf"
@@ -572,14 +651,14 @@ def _recap_immo_payload(result) -> dict:
         ),
         "lignes": [
             {
-                "compte": l.compte,
-                "intitule": l.intitule,
-                "valeurs_ouverture": float(l.valeurs_ouverture),
-                "acquisitions": float(l.acquisitions),
-                "cessions": float(l.cessions),
-                "valeurs_cloture": float(l.valeurs_cloture),
+                "compte": lg.compte,
+                "intitule": lg.intitule,
+                "valeurs_ouverture": float(lg.valeurs_ouverture),
+                "acquisitions": float(lg.acquisitions),
+                "cessions": float(lg.cessions),
+                "valeurs_cloture": float(lg.valeurs_cloture),
             }
-            for l in result.lignes
+            for lg in result.lignes
         ],
         "totaux": {
             "valeurs_ouverture": float(result.totaux.valeurs_ouverture),
@@ -606,7 +685,7 @@ async def get_recap_immobilisations(
         annee_ouverture=result.annee_ouverture,
         date_ouverture=result.date_ouverture.isoformat(),
         date_cloture=result.date_cloture.isoformat(),
-        lignes=[_recap_immo_ligne_read(l) for l in result.lignes],
+        lignes=[_recap_immo_ligne_read(lg) for lg in result.lignes],
         totaux=_recap_immo_ligne_read(result.totaux),
     )
 
@@ -615,6 +694,7 @@ async def get_recap_immobilisations(
 async def export_recap_immobilisations(
     annee: int = Query(..., ge=2001, le=2100),
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    search: str | None = Query(None, description="Recherche texte (même règle que l'écran)"),
     _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -622,7 +702,12 @@ async def export_recap_immobilisations(
         result = await build_recap_immobilisations(db, annee)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    payload = _recap_immo_payload(result)
+    payload = _filter_payload_lignes(
+        _recap_immo_payload(result),
+        search=search,
+        search_keys=("compte", "intitule", "valeurs_ouverture", "acquisitions", "cessions", "valeurs_cloture"),
+        sum_keys=("valeurs_ouverture", "acquisitions", "cessions", "valeurs_cloture"),
+    )
     if format == "pdf":
         content = recap_immobilisations_to_pdf(payload)
         media = "application/pdf"
@@ -742,11 +827,16 @@ async def export_comptes_par_nature(
     annee: int = Query(..., ge=2000, le=2100),
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     compte: str | None = Query(None),
+    search: str | None = Query(None, description="Recherche texte (même règle que l'écran)"),
     _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await resolve_comptes(db, annee, compte=compte)
+    from app.services.comptes_par_nature import filter_comptes_par_nature
+
+    result = filter_comptes_par_nature(await resolve_comptes(db, annee, compte=compte), search)
     payload = _comptes_par_nature_payload(result)
+    if search and search.strip():
+        payload["subtitle"] = f"{payload['subtitle']} — Recherche : {search.strip()}"
     suffix = f"-{result.compte_filtre}" if result.compte_filtre else ""
     if format == "pdf":
         content = comptes_par_nature_to_pdf(payload)

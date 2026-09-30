@@ -234,11 +234,11 @@ def test_three_way_match_anomalie_quantite():
 def _bon_facturable():
     l1 = _bc_ligne(description="Ramette A4", quantite=Decimal("40"), quantite_recue=Decimal("40"), prix_unitaire=Decimal("1500"))
     l2 = _bc_ligne(description="Stylo", quantite=Decimal("5"), quantite_recue=Decimal("0"), prix_unitaire=Decimal("250"))
-    for i, (l, tva) in enumerate(((l1, Decimal("16")), (l2, Decimal("0")))):
-        l.remise_pct = Decimal("0")
-        l.taux_tva = tva
-        l.uom = "U"
-        l.sort_order = i
+    for i, (lg, tva) in enumerate(((l1, Decimal("16")), (l2, Decimal("0")))):
+        lg.remise_pct = Decimal("0")
+        lg.taux_tva = tva
+        lg.uom = "U"
+        lg.sort_order = i
     bon = _bon(statut="PARTIEL", lignes=[l1, l2], total_ttc=Decimal("70850"))
     bon.total_ht = Decimal("61250")
     bon.total_tva = Decimal("9600")
@@ -265,7 +265,7 @@ async def test_proposition_facture_reprend_le_bc():
     assert p.fournisseur_id == bon.fournisseur_id
     assert p.reception_id == rec.id
     assert p.date_echeance == date(2026, 10, 30)
-    assert [(l.designation, l.quantite) for l in p.lignes] == [("Ramette A4", Decimal("40")), ("Stylo", Decimal("5"))]
+    assert [(lg.designation, lg.quantite) for lg in p.lignes] == [("Ramette A4", Decimal("40")), ("Stylo", Decimal("5"))]
     assert p.montant_ht == Decimal("61250.00")
     assert p.montant_tva == Decimal("9600.00")
     assert p.montant_ttc == Decimal("70850.00")

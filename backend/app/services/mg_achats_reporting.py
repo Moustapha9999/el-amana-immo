@@ -5,17 +5,15 @@ from __future__ import annotations
 import csv
 import io
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Callable, Sequence
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.utils import get_column_letter
-from sqlalchemy import Select, func, or_, select
+from openpyxl.styles import Font, PatternFill
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -39,7 +37,6 @@ from app.services.reporting_export import (
     export_now,
     format_export_datetime,
     format_period_label,
-    resolve_bea_logo_path,
 )
 
 _TZ = ZoneInfo("Africa/Nouakchott")

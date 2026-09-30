@@ -17,12 +17,12 @@ if not _backend_root.joinpath("app").is_dir():
 if str(_backend_root) not in sys.path:
     sys.path.insert(0, str(_backend_root))
 
-from sqlalchemy import select
+from sqlalchemy import select  # noqa: E402
 
-from app.db.session import AsyncSessionLocal, engine
-from app.models import ComptePlanComptable
-from app.models import entities  # noqa: F401
-from app.services.plan_comptable_seed import seed_plan_comptable_el_amana
+from app.db.session import AsyncSessionLocal, engine  # noqa: E402
+from app.models import ComptePlanComptable  # noqa: E402
+from app.models import entities  # noqa: E402, F401
+from app.services.plan_comptable_seed import seed_plan_comptable_el_amana  # noqa: E402
 
 
 async def main() -> None:
