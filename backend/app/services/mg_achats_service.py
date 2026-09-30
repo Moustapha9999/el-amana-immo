@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
@@ -47,6 +48,9 @@ from app.schemas.mg_achats import (
     DevisCreate,
     DevisUpdate,
     FactureCreate,
+    FactureLigneIn,
+    FactureLigneProposee,
+    FacturePropositionOut,
     FactureUpdate,
     PaiementCreate,
     PaiementUpdate,
@@ -126,6 +130,16 @@ def _line_ht(qty: Decimal, pu: Decimal, remise_pct: Decimal = Decimal("0")) -> D
 
 def _line_ttc(ht: Decimal, taux_tva: Decimal = Decimal("0")) -> Decimal:
     return _money(ht * (Decimal("1") + Decimal(taux_tva or 0) / Decimal("100")))
+
+
+def _cle_designation(v: str | None) -> str:
+    return " ".join((v or "").lower().split())
+
+
+def _echeance_depuis_conditions(conditions: str | None, depart: date) -> date | None:
+    """« 30 jours », « 45 j fin de mois »… → date de départ + N jours (sinon None)."""
+    m = re.search(r"(\d{1,3})\s*(?:jours?|j\b)", conditions or "", re.IGNORECASE)
+    return depart + timedelta(days=int(m.group(1))) if m else None
 
 
 class MgAchatsService:
@@ -2108,12 +2122,27 @@ class MgAchatsService:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Facture introuvable")
         return row
 
-    def _apply_facture_lignes(self, facture: MgAchatFacture, lignes) -> None:
+    @staticmethod
+    def _taux_tva_bc(bon: MgBonCommande, designation: str) -> Decimal:
+        """Taux de la ligne BC de même désignation, sinon taux moyen du BC."""
+        cle = _cle_designation(designation)
+        for l in bon.lignes or []:
+            if _cle_designation(l.description) == cle:
+                return Decimal(l.taux_tva or 0)
+        ht = Decimal(bon.total_ht or 0)
+        if ht <= 0:
+            return Decimal("0")
+        return (Decimal(bon.total_tva or 0) * Decimal("100") / ht).quantize(Decimal("0.01"))
+
+    def _apply_facture_lignes(self, facture: MgAchatFacture, lignes, bon: MgBonCommande) -> None:
         facture.lignes.clear()
         total = Decimal("0")
+        tva = Decimal("0")
         for i, row in enumerate(lignes):
             ht = _line_ht(row.quantite, row.prix_unitaire)
+            taux = row.taux_tva if row.taux_tva is not None else self._taux_tva_bc(bon, row.designation)
             total += ht
+            tva += ht * Decimal(taux) / Decimal("100")
             facture.lignes.append(
                 MgAchatFactureLigne(
                     designation=row.designation.strip(),
@@ -2125,12 +2154,107 @@ class MgAchatsService:
             )
         if lignes:
             facture.montant_ht = _money(total)
+            facture.montant_tva = _money(tva)
+            facture.montant_ttc = _money(facture.montant_ht + facture.montant_tva)
+
+    async def _derniere_reception(self, bon_id: uuid.UUID) -> MgAchatReception | None:
+        for rec in await self.list_receptions(bon_id=bon_id):
+            if rec.statut != "ANNULEE":
+                return rec
+        return None
+
+    async def propose_facture(
+        self, bon_id: uuid.UUID, *, date_facture: date | None = None, exclure_facture_id: uuid.UUID | None = None
+    ) -> FacturePropositionOut:
+        """Lignes à facturer = reçu (ou commandé si rien reçu) − déjà facturé sur ce BC."""
+        bon = await self.get_bon(bon_id)
+        factures = [
+            f
+            for f in await self.list_factures(bon_id=bon.id)
+            if f.statut != "ANNULEE" and f.id != exclure_facture_id
+        ]
+        deja: dict[str, Decimal] = {}
+        for f in factures:
+            for l in f.lignes or []:
+                cle = _cle_designation(l.designation)
+                deja[cle] = deja.get(cle, Decimal("0")) + Decimal(l.quantite or 0)
+
+        lignes: list[FactureLigneProposee] = []
+        total_ht = Decimal("0")
+        total_tva = Decimal("0")
+        for l in sorted(bon.lignes or [], key=lambda x: x.sort_order or 0):
+            cmd = _qty(l.quantite)
+            recu = _qty(l.quantite_recue)
+            base = recu if recu > 0 else cmd
+            cle = _cle_designation(l.description)
+            consomme = min(deja.get(cle, Decimal("0")), base)
+            deja[cle] = deja.get(cle, Decimal("0")) - consomme
+            reste = base - consomme
+            if reste <= 0:
+                continue
+            pu = _money(Decimal(l.prix_unitaire or 0) * (Decimal("1") - Decimal(l.remise_pct or 0) / Decimal("100")))
+            ht = _line_ht(reste, pu)
+            taux = Decimal(l.taux_tva or 0)
+            total_ht += ht
+            total_tva += ht * taux / Decimal("100")
+            lignes.append(
+                FactureLigneProposee(
+                    designation=l.description,
+                    uom=l.uom or "U",
+                    quantite=reste,
+                    prix_unitaire=pu,
+                    taux_tva=taux,
+                    total_ht=ht,
+                    quantite_commandee=cmd,
+                    quantite_recue=recu,
+                    quantite_deja_facturee=consomme,
+                )
+            )
+
+        rec = await self._derniere_reception(bon.id)
+        message = None
+        if not lignes:
+            message = "Toutes les quantités de ce BC sont déjà facturées."
+        elif not any(_qty(l.quantite_recue) > 0 for l in bon.lignes or []):
+            message = "Aucune réception enregistrée : quantités proposées = quantités commandées."
+        total_ht = _money(total_ht)
+        total_tva = _money(total_tva)
+        return FacturePropositionOut(
+            bon_id=bon.id,
+            bon_reference=bon.reference,
+            bon_statut=bon.statut,
+            fournisseur_id=bon.fournisseur_id,
+            fournisseur_raison_sociale=bon.fournisseur_raison_sociale,
+            reception_id=rec.id if rec else None,
+            reception_reference=rec.reference if rec else None,
+            date_echeance=_echeance_depuis_conditions(bon.conditions_paiement, date_facture or date.today()),
+            conditions_paiement=bon.conditions_paiement,
+            devise=bon.devise or "MRU",
+            lignes=lignes,
+            montant_ht=total_ht,
+            montant_tva=total_tva,
+            montant_ttc=_money(total_ht + total_tva),
+            bc_total_ttc=_money(Decimal(bon.total_ttc or bon.total_ht or 0)),
+            deja_facture_ttc=_money(sum((Decimal(f.montant_ttc or 0) for f in factures), Decimal("0"))),
+            nb_factures=len(factures),
+            message=message,
+        )
 
     async def create_facture(self, data: FactureCreate, user: User) -> MgAchatFacture:
         bon = await self.get_bon(data.bon_id)
+        fournisseur_id = data.fournisseur_id or bon.fournisseur_id
+        if fournisseur_id is None:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, detail="Fournisseur requis (le BC n'en a pas)"
+            )
+        if bon.fournisseur_id and fournisseur_id != bon.fournisseur_id:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"Le BC {bon.reference} appartient à un autre fournisseur",
+            )
         fr = await self.db.scalar(
             select(Fournisseur).where(
-                Fournisseur.id == data.fournisseur_id,
+                Fournisseur.id == fournisseur_id,
                 Fournisseur.deleted_at.is_(None),
             )
         )
@@ -2145,34 +2269,52 @@ class MgAchatsService:
                     status.HTTP_400_BAD_REQUEST,
                     detail="Le BL ne correspond pas au bon de commande",
                 )
-        if data.reception_id is not None:
-            rec = await self.get_reception(data.reception_id)
+        reception_id = data.reception_id
+        if reception_id is not None:
+            rec = await self.get_reception(reception_id)
             if rec.bon_id != bon.id:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
                     detail="La réception ne correspond pas au bon de commande",
                 )
+        else:
+            rec = await self._derniere_reception(bon.id)
+            reception_id = rec.id if rec else None
+        lignes = data.lignes
+        if not lignes:
+            proposition = await self.propose_facture(bon.id, date_facture=data.date_facture)
+            lignes = [
+                FactureLigneIn(
+                    designation=l.designation,
+                    quantite=l.quantite,
+                    prix_unitaire=l.prix_unitaire,
+                    taux_tva=l.taux_tva,
+                )
+                for l in proposition.lignes
+            ]
         row = MgAchatFacture(
             reference=await self._next_ref(
                 "prefix_facture", MgAchatFacture, MgAchatFacture.reference, "FAC"
             ),
             numero_fournisseur=data.numero_fournisseur,
-            fournisseur_id=data.fournisseur_id,
+            fournisseur_id=fournisseur_id,
             bon_id=bon.id,
             bl_id=data.bl_id,
-            reception_id=data.reception_id,
+            reception_id=reception_id,
             date_facture=data.date_facture,
-            date_echeance=data.date_echeance,
+            date_echeance=data.date_echeance
+            or _echeance_depuis_conditions(bon.conditions_paiement, data.date_facture),
             montant_ht=data.montant_ht or Decimal("0"),
             montant_tva=data.montant_tva or Decimal("0"),
             montant_ttc=data.montant_ttc or Decimal("0"),
-            devise=data.devise or "MRU",
+            devise=data.devise or bon.devise or "MRU",
             observation=data.observation,
             statut="RECUE",
         )
-        self._apply_facture_lignes(row, data.lignes)
-        if data.lignes and data.montant_ttc is None:
-            row.montant_ttc = _money(row.montant_ht + row.montant_tva)
+        self._apply_facture_lignes(row, lignes, bon)
+        for field in ("montant_ht", "montant_tva", "montant_ttc"):
+            if getattr(data, field) is not None:
+                setattr(row, field, getattr(data, field))
         match = self.three_way_match(bon, row)
         row.ecart_quantite = match.ecart_quantite
         row.ecart_montant = match.ecart_montant
@@ -2204,12 +2346,19 @@ class MgAchatsService:
             val = getattr(data, field)
             if val is not None:
                 setattr(row, field, val)
-        if data.lignes is not None:
-            self._apply_facture_lignes(row, data.lignes)
         bon = await self.get_bon(row.bon_id)
+        if data.lignes is not None:
+            self._apply_facture_lignes(row, data.lignes, bon)
+            for field in ("montant_ht", "montant_tva", "montant_ttc"):
+                if getattr(data, field) is not None:
+                    setattr(row, field, getattr(data, field))
+        elif data.montant_ttc is None and (data.montant_ht is not None or data.montant_tva is not None):
+            row.montant_ttc = _money(Decimal(row.montant_ht or 0) + Decimal(row.montant_tva or 0))
         match = self.three_way_match(bon, row)
         row.ecart_quantite = match.ecart_quantite
         row.ecart_montant = match.ecart_montant
+        if data.statut is None and row.statut in ("RECUE", "ANOMALIE"):
+            row.statut = "ANOMALIE" if match.resultat == "ANOMALIE" else "RECUE"
         await self.db.commit()
         return await self.get_facture(row.id)
 
@@ -2258,8 +2407,8 @@ class MgAchatsService:
         match = self.three_way_match(bon, facture)
         facture.ecart_quantite = match.ecart_quantite
         facture.ecart_montant = match.ecart_montant
-        if match.resultat == "ANOMALIE" and facture.statut == "RECUE":
-            facture.statut = "ANOMALIE"
+        if facture.statut in ("RECUE", "ANOMALIE"):
+            facture.statut = "ANOMALIE" if match.resultat == "ANOMALIE" else "RECUE"
         await self.db.commit()
         return match
 

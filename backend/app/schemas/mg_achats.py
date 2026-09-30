@@ -44,6 +44,8 @@ __all__ = [
     "ReceptionOut",
     "FactureLigneIn",
     "FactureLigneOut",
+    "FactureLigneProposee",
+    "FacturePropositionOut",
     "FactureCreate",
     "FactureUpdate",
     "FactureOut",
@@ -390,19 +392,59 @@ class FactureLigneIn(BaseModel):
     designation: str = Field(min_length=1, max_length=255)
     quantite: QtyPos
     prix_unitaire: Decimal = Field(ge=0)
+    # Non stocké : sert au calcul de la TVA (sinon taux de la ligne BC correspondante).
+    taux_tva: Decimal | None = Field(default=None, ge=0, le=100)
 
 
-class FactureLigneOut(FactureLigneIn):
+class FactureLigneOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    designation: str
+    quantite: Decimal
+    prix_unitaire: Decimal
     total_ht: Decimal
     sort_order: int
 
 
+class FactureLigneProposee(BaseModel):
+    designation: str
+    uom: str = "U"
+    quantite: Decimal
+    prix_unitaire: Decimal
+    taux_tva: Decimal
+    total_ht: Decimal
+    quantite_commandee: Decimal
+    quantite_recue: Decimal
+    quantite_deja_facturee: Decimal
+
+
+class FacturePropositionOut(BaseModel):
+    """Pré-remplissage d'une facture à partir du BC (fournisseur, réception, lignes, montants)."""
+
+    bon_id: UUID
+    bon_reference: str
+    bon_statut: str
+    fournisseur_id: UUID | None
+    fournisseur_raison_sociale: str | None
+    reception_id: UUID | None
+    reception_reference: str | None
+    date_echeance: date | None
+    conditions_paiement: str | None
+    devise: str
+    lignes: list[FactureLigneProposee]
+    montant_ht: Decimal
+    montant_tva: Decimal
+    montant_ttc: Decimal
+    bc_total_ttc: Decimal
+    deja_facture_ttc: Decimal
+    nb_factures: int
+    message: str | None = None
+
+
 class FactureCreate(BaseModel):
     numero_fournisseur: str | None = None
-    fournisseur_id: UUID
+    fournisseur_id: UUID | None = None
     bon_id: UUID
     bl_id: UUID | None = None
     reception_id: UUID | None = None

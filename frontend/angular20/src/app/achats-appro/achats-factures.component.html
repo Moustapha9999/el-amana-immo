@@ -124,9 +124,17 @@
         </label>
         <label>Bon de commande *
           <select formControlName="bon_id">
-            <option value="">— Choisir —</option>
-            @for (b of bons(); track b.id) {
+            <option value="">{{ bonsFournisseur().length ? '— Choisir —' : 'Aucun BC facturable pour ce fournisseur' }}</option>
+            @for (b of bonsFournisseur(); track b.id) {
               <option [value]="b.id">{{ b.reference }} ({{ b.statut }})</option>
+            }
+          </select>
+        </label>
+        <label>Réception
+          <select formControlName="reception_id">
+            <option value="">— Aucune —</option>
+            @for (r of receptions(); track r.id) {
+              <option [value]="r.id">{{ r.reference }} · {{ r.date_reception }}</option>
             }
           </select>
         </label>
@@ -136,17 +144,52 @@
         <label style="grid-column:1/-1">Observation <textarea formControlName="observation" rows="2"></textarea></label>
       </div>
 
+      @if (chargementBc()) {
+        <p class="bea-ach__note"><mat-icon>hourglass_empty</mat-icon> Récupération des détails du BC…</p>
+      } @else if (proposition(); as p) {
+        <div class="bea-fac__bc">
+          <div class="bea-fac__bc-head">
+            <mat-icon>request_quote</mat-icon>
+            <div>
+              <strong>{{ p.bon_reference }}</strong>
+              <span>{{ p.fournisseur_raison_sociale || '—' }}</span>
+            </div>
+            @if (canEditForm()) {
+              <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="reprendreBc()" title="Remplacer les lignes par celles du BC">
+                <mat-icon>sync</mat-icon> Reprendre du BC
+              </button>
+            }
+          </div>
+          <dl class="bea-fac__bc-grid">
+            <div><dt>Total BC TTC</dt><dd>{{ p.bc_total_ttc | montant }} {{ p.devise }}</dd></div>
+            <div><dt>Déjà facturé</dt><dd>{{ p.deja_facture_ttc | montant }} {{ p.devise }} <small>({{ p.nb_factures }} facture(s))</small></dd></div>
+            <div><dt>Réception</dt><dd>{{ p.reception_reference || 'Aucune' }}</dd></div>
+            <div><dt>Conditions de paiement</dt><dd>{{ p.conditions_paiement || '—' }}</dd></div>
+          </dl>
+          @if (p.message) {
+            <p class="bea-fac__bc-msg"><mat-icon>info</mat-icon> {{ p.message }}</p>
+          }
+        </div>
+      }
+
       <h2 class="bea-ach__kicker" style="font-size:0.9rem;color:#0f172a;text-transform:none;letter-spacing:0;margin-top:0.5rem">Lignes</h2>
-      <div formArrayName="lignes">
+      <div class="bea-fac__lignes" formArrayName="lignes">
+        <div class="bea-fac__ligne bea-fac__ligne--head">
+          <span>Désignation</span><span>Qté</span><span>PU HT</span><span>TVA %</span><span>Total HT</span><span></span>
+        </div>
         @for (ctrl of lignes.controls; track $index; let i = $index) {
-          <div class="bea-ach__grid" [formGroupName]="i">
-            <label style="grid-column:1/-1">Désignation * <input formControlName="designation" /></label>
-            <label>Qté * <input type="number" formControlName="quantite" min="1" step="1" /></label>
-            <label>PU HT * <input type="number" formControlName="prix_unitaire" step="0.01" /></label>
+          <div class="bea-fac__ligne" [formGroupName]="i">
+            <input formControlName="designation" placeholder="Désignation *" />
+            <input type="number" formControlName="quantite" min="1" step="1" />
+            <input type="number" formControlName="prix_unitaire" step="0.01" />
+            <input type="number" formControlName="taux_tva" min="0" max="100" step="0.01" placeholder="BC" />
+            <strong>{{ totalLigne(i) | montant }}</strong>
             @if (canEditForm() && lignes.length > 1) {
               <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Retirer" (click)="removeLigne(i)">
                 <mat-icon>delete</mat-icon>
               </button>
+            } @else {
+              <span></span>
             }
           </div>
         }
@@ -156,6 +199,19 @@
           <mat-icon>add</mat-icon> Ligne
         </button>
       }
+
+      <div class="bea-fac__totaux">
+        <div><span>Total HT</span><strong>{{ totaux().ht | montant }}</strong></div>
+        <div><span>TVA</span><strong>{{ totaux().tva | montant }}</strong></div>
+        <div class="bea-fac__totaux-main"><span>Total TTC</span><strong>{{ totaux().ttc | montant }} {{ proposition()?.devise || 'MRU' }}</strong></div>
+        @if (ecartProposition(); as e) {
+          <div [attr.data-ko]="e.ecart !== 0 || null">
+            <span>Reste à facturer sur le BC</span>
+            <strong>{{ e.reste | montant }}</strong>
+            <em>{{ e.ecart === 0 ? 'Conforme au BC' : 'Écart ' + (e.ecart > 0 ? '+' : '') + (e.ecart | montant) }}</em>
+          </div>
+        }
+      </div>
 
       <div class="bea-ach__form-actions">
         @if (canEditForm()) {

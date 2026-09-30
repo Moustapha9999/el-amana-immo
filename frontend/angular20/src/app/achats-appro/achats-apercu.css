@@ -354,7 +354,93 @@
   color: #64748b;
 }
 .bea-apercu__hint mat-icon { font-size: 1rem; width: 1rem; height: 1rem; }
+/* ── Formulaire facture : contexte BC, lignes, totaux ── */
+.bea-fac__bc {
+  margin: 0.75rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.85rem;
+  background: linear-gradient(135deg, #eff6ff, #fff);
+}
+.bea-fac__bc-head { display: flex; align-items: center; gap: 0.7rem; }
+.bea-fac__bc-head > mat-icon { color: #1a5278; }
+.bea-fac__bc-head > div { display: flex; flex: 1; flex-direction: column; }
+.bea-fac__bc-head strong { color: #0f172a; }
+.bea-fac__bc-head span { font-size: 0.82rem; color: #475569; }
+.bea-fac__bc-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0.7rem 0 0;
+}
+.bea-fac__bc-grid dt {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+.bea-fac__bc-grid dd { margin: 0.1rem 0 0; font-weight: 600; color: #0f172a; font-variant-numeric: tabular-nums; }
+.bea-fac__bc-grid small { font-weight: 500; color: #64748b; }
+.bea-fac__bc-msg {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0;
+  font-size: 0.82rem;
+  color: #b45309;
+}
+.bea-fac__bc-msg mat-icon { font-size: 1.1rem; width: 1.1rem; height: 1.1rem; }
+.bea-fac__lignes { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.5rem; }
+.bea-fac__ligne {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) 6rem 8rem 6rem 9rem 2.4rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+.bea-fac__ligne input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.55rem;
+  font: inherit;
+}
+.bea-fac__ligne > strong { text-align: right; font-variant-numeric: tabular-nums; color: #0f172a; }
+.bea-fac__ligne--head span {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+.bea-fac__ligne--head span:nth-child(5) { text-align: right; }
+.bea-fac__totaux {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin: 0.75rem 0;
+}
+.bea-fac__totaux > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 9rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.7rem;
+  background: #fff;
+}
+.bea-fac__totaux span { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; color: #64748b; }
+.bea-fac__totaux strong { font-size: 1.05rem; color: #0f172a; font-variant-numeric: tabular-nums; }
+.bea-fac__totaux em { font-size: 0.75rem; font-style: normal; font-weight: 600; color: #047857; }
+.bea-fac__totaux > div[data-ko] { border-color: #fcd34d; background: #fffbeb; }
+.bea-fac__totaux > div[data-ko] em { color: #b45309; }
+.bea-fac__totaux-main { border-color: #bfdbfe !important; background: #eff6ff !important; }
+.bea-fac__totaux-main strong { color: #1a5278; }
 @media (max-width: 760px) {
+  .bea-fac__bc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bea-fac__ligne { grid-template-columns: 1fr 1fr; }
   .bea-apercu__kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .bea-apercu__cards,
   .bea-apercu__match-grid { grid-template-columns: 1fr; }

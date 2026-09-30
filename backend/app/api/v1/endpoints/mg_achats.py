@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -32,6 +33,7 @@ from app.schemas.mg_achats import (
     EvenementOut,
     FactureCreate,
     FactureOut,
+    FacturePropositionOut,
     FactureUpdate,
     FournisseurSummaryOut,
     PaginatedBonsOut,
@@ -1124,6 +1126,23 @@ async def list_factures(
     _: User = Depends(require_permission("mg.purchase.view")),
 ):
     return await MgAchatsService(db).list_factures(bon_id=bon_id)
+
+
+@router.get(
+    "/factures/proposition",
+    response_model=FacturePropositionOut,
+    dependencies=_module,
+)
+async def propose_facture(
+    bon_id: UUID,
+    date_facture: date | None = None,
+    facture_id: UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.purchase.view")),
+):
+    return await MgAchatsService(db).propose_facture(
+        bon_id, date_facture=date_facture, exclure_facture_id=facture_id
+    )
 
 
 @router.post("/factures", response_model=FactureOut, dependencies=_module)

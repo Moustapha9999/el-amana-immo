@@ -9,11 +9,13 @@ import {
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   OnInit,
   computed,
   inject,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -36,7 +38,53 @@ export interface FactureLigne {
   designation: string;
   quantite: number;
   prix_unitaire: number;
+  taux_tva?: number | null;
   total_ht?: number;
+}
+
+interface LigneProposee {
+  designation: string;
+  uom: string;
+  quantite: number;
+  prix_unitaire: number;
+  taux_tva: number;
+  total_ht: number;
+  quantite_commandee: number;
+  quantite_recue: number;
+  quantite_deja_facturee: number;
+}
+
+export interface FactureProposition {
+  bon_id: string;
+  bon_reference: string;
+  bon_statut: string;
+  fournisseur_id: string | null;
+  fournisseur_raison_sociale: string | null;
+  reception_id: string | null;
+  reception_reference: string | null;
+  date_echeance: string | null;
+  conditions_paiement: string | null;
+  devise: string;
+  lignes: LigneProposee[];
+  montant_ht: number;
+  montant_tva: number;
+  montant_ttc: number;
+  bc_total_ttc: number;
+  deja_facture_ttc: number;
+  nb_factures: number;
+  message: string | null;
+}
+
+interface BcDetail {
+  id: string;
+  lignes: { description: string; taux_tva: number }[];
+}
+
+interface ReceptionOpt {
+  id: string;
+  reference: string;
+  date_reception: string;
+  statut: string;
 }
 
 export interface FactureRow {
@@ -45,6 +93,7 @@ export interface FactureRow {
   numero_fournisseur?: string | null;
   fournisseur_id: string;
   bon_id: string;
+  reception_id?: string | null;
   date_facture: string;
   date_echeance?: string | null;
   montant_ht: number;
@@ -93,6 +142,7 @@ export class AchatsFacturesComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly rows = signal<FactureRow[]>([]);
   readonly current = signal<FactureRow | null>(null);
@@ -108,15 +158,48 @@ export class AchatsFacturesComponent implements OnInit {
   readonly apercuId = signal<string | null>(null);
   readonly confirm = signal<{ row: FactureRow; action: 'desactiver' | 'supprimer' } | null>(null);
 
+  readonly proposition = signal<FactureProposition | null>(null);
+  readonly receptions = signal<ReceptionOpt[]>([]);
+  readonly chargementBc = signal(false);
+  readonly fournisseurSel = signal('');
+  readonly lignesVal = signal<{ quantite: number; prix_unitaire: number; taux_tva: number | null }[]>([]);
+
   readonly filters = this.fb.nonNullable.group({ q: '' });
   readonly form = this.fb.nonNullable.group({
     fournisseur_id: ['', Validators.required],
     bon_id: ['', Validators.required],
+    reception_id: [''],
     numero_fournisseur: [''],
     date_facture: [new Date().toISOString().slice(0, 10), Validators.required],
     date_echeance: [''],
     observation: [''],
     lignes: this.fb.array([this.newLigne()]),
+  });
+
+  readonly bonsFournisseur = computed(() => {
+    const fid = this.fournisseurSel();
+    return fid ? this.bons().filter((b) => !b.fournisseur_id || b.fournisseur_id === fid) : this.bons();
+  });
+
+  readonly totaux = computed(() => {
+    let ht = 0;
+    let tva = 0;
+    for (const l of this.lignesVal()) {
+      const lht = montantArrondi(quantiteEntiere(l.quantite) * montantArrondi(l.prix_unitaire));
+      ht += lht;
+      tva += (lht * (Number(l.taux_tva) || 0)) / 100;
+    }
+    ht = montantArrondi(ht);
+    tva = montantArrondi(tva);
+    return { ht, tva, ttc: montantArrondi(ht + tva) };
+  });
+
+  /** Reste à facturer sur le BC (hors facture en cours) comparé au TTC saisi. */
+  readonly ecartProposition = computed(() => {
+    const p = this.proposition();
+    if (!p) return null;
+    const reste = montantArrondi(Number(p.bc_total_ttc) - Number(p.deja_facture_ttc));
+    return { reste, ecart: montantArrondi(this.totaux().ttc - reste) };
   });
 
   readonly filtered = computed(() => {
@@ -169,8 +252,18 @@ export class AchatsFacturesComponent implements OnInit {
   ngOnInit(): void {
     this.api.get<{ items: BonOpt[] }>('/mg/achats/bons', { page: '1', size: '100' }).subscribe({
       next: (r) =>
-        this.bons.set(r.items.filter((b) => !['BROUILLON', 'ANNULE', 'REJETEE'].includes(b.statut))),
+        this.bons.set(
+          r.items.filter((b) => !['BROUILLON', 'ANNULE', 'ANNULEE', 'REJETEE'].includes(b.statut)),
+        ),
     });
+    this.form.controls.lignes.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.syncLignes());
+    this.form.controls.fournisseur_id.valueChanges
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((fid) => this.onFournisseur(fid));
+    this.form.controls.bon_id.valueChanges
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((bid) => this.onBon(bid));
+    this.syncLignes();
     const param = this.route.snapshot.paramMap.get('id');
     if (this.router.url.endsWith('/nouvelle') || param) {
       this.mode.set('form');
@@ -183,12 +276,106 @@ export class AchatsFacturesComponent implements OnInit {
     }
   }
 
-  newLigne() {
-    return this.fb.nonNullable.group({
-      designation: ['', Validators.required],
-      quantite: [1, Validators.required],
-      prix_unitaire: [0, Validators.required],
+  newLigne(l?: Partial<FactureLigne>) {
+    return this.fb.group({
+      designation: this.fb.nonNullable.control(l?.designation ?? '', Validators.required),
+      quantite: this.fb.nonNullable.control(Number(l?.quantite ?? 1), Validators.required),
+      prix_unitaire: this.fb.nonNullable.control(Number(l?.prix_unitaire ?? 0), Validators.required),
+      taux_tva: this.fb.control<number | null>(l?.taux_tva ?? null),
     });
+  }
+
+  private syncLignes(): void {
+    this.lignesVal.set(
+      this.lignes.getRawValue().map((l: { quantite: number; prix_unitaire: number; taux_tva: number | null }) => ({
+        quantite: Number(l.quantite) || 0,
+        prix_unitaire: Number(l.prix_unitaire) || 0,
+        taux_tva: l.taux_tva,
+      })),
+    );
+  }
+
+  private setLignes(lignes: Partial<FactureLigne>[]): void {
+    this.lignes.clear({ emitEvent: false });
+    for (const l of lignes.length ? lignes : [{}]) this.lignes.push(this.newLigne(l), { emitEvent: false });
+    this.syncLignes();
+  }
+
+  private onFournisseur(fid: string): void {
+    this.fournisseurSel.set(fid);
+    const bid = this.form.controls.bon_id.value;
+    const bon = this.bons().find((b) => b.id === bid);
+    if (bon?.fournisseur_id && fid && bon.fournisseur_id !== fid) {
+      this.form.controls.bon_id.setValue('');
+      return;
+    }
+    if (!bid && !this.id()) {
+      const candidats = this.bonsFournisseur();
+      if (candidats.length === 1) this.form.controls.bon_id.setValue(candidats[0].id);
+    }
+  }
+
+  /** Choix du BC : le backend propose fournisseur, réception, échéance et lignes restant à facturer. */
+  private onBon(bid: string): void {
+    this.proposition.set(null);
+    this.receptions.set([]);
+    if (!bid) return;
+    this.chargementBc.set(true);
+    this.api.get<ReceptionOpt[]>('/mg/achats/receptions', { bon_id: bid }).subscribe({
+      next: (rows) => this.receptions.set(rows.filter((r) => r.statut !== 'ANNULEE')),
+    });
+    const params: Record<string, string> = { bon_id: bid, date_facture: this.form.controls.date_facture.value };
+    if (this.id()) params['facture_id'] = this.id()!;
+    this.api.get<FactureProposition>('/mg/achats/factures/proposition', params).subscribe({
+      next: (p) => {
+        this.chargementBc.set(false);
+        this.proposition.set(p);
+        if (p.fournisseur_id && this.form.controls.fournisseur_id.value !== p.fournisseur_id) {
+          this.form.controls.fournisseur_id.setValue(p.fournisseur_id, { emitEvent: false });
+          this.fournisseurSel.set(p.fournisseur_id);
+        }
+        this.form.controls.reception_id.setValue(p.reception_id ?? '');
+        if (!this.form.controls.date_echeance.value && p.date_echeance) {
+          this.form.controls.date_echeance.setValue(p.date_echeance);
+        }
+        this.setLignes(p.lignes);
+        this.form.markAsDirty();
+      },
+      error: (err) => {
+        this.chargementBc.set(false);
+        this.erreur.set(this.apiDetail(err, 'Détails du BC indisponibles.'));
+      },
+    });
+  }
+
+  /** En modification : reprend le contexte du BC sans écraser les lignes saisies. */
+  private chargerContexteBc(f: FactureRow): void {
+    this.api.get<ReceptionOpt[]>('/mg/achats/receptions', { bon_id: f.bon_id }).subscribe({
+      next: (rows) => this.receptions.set(rows.filter((r) => r.statut !== 'ANNULEE')),
+    });
+    this.api
+      .get<FactureProposition>('/mg/achats/factures/proposition', { bon_id: f.bon_id, facture_id: f.id })
+      .subscribe({ next: (p) => this.proposition.set(p) });
+    this.api.get<BcDetail>(`/mg/achats/bons/${f.bon_id}`).subscribe({
+      next: (b) => {
+        const taux = new Map(b.lignes.map((l) => [l.description.trim().toLowerCase(), Number(l.taux_tva) || 0]));
+        this.lignes.controls.forEach((ctrl) => {
+          const d = String(ctrl.get('designation')?.value ?? '').trim().toLowerCase();
+          if (taux.has(d)) ctrl.get('taux_tva')?.setValue(taux.get(d)!, { emitEvent: false });
+        });
+        this.syncLignes();
+      },
+    });
+  }
+
+  reprendreBc(): void {
+    const bid = this.form.controls.bon_id.value;
+    if (bid) this.onBon(bid);
+  }
+
+  totalLigne(i: number): number {
+    const l = this.lignesVal()[i];
+    return l ? montantArrondi(quantiteEntiere(l.quantite) * montantArrondi(l.prix_unitaire)) : 0;
   }
 
   addLigne(): void {
@@ -211,27 +398,22 @@ export class AchatsFacturesComponent implements OnInit {
     this.api.get<FactureRow>(`/mg/achats/factures/${id}`).subscribe({
       next: (f) => {
         this.current.set(f);
-        this.form.patchValue({
-          fournisseur_id: f.fournisseur_id,
-          bon_id: f.bon_id,
-          numero_fournisseur: f.numero_fournisseur ?? '',
-          date_facture: f.date_facture,
-          date_echeance: f.date_echeance ?? '',
-          observation: f.observation ?? '',
-        });
-        this.lignes.clear();
-        const lignes = f.lignes?.length
-          ? f.lignes
-          : [{ designation: '', quantite: 1, prix_unitaire: 0 }];
-        for (const l of lignes) {
-          this.lignes.push(
-            this.fb.nonNullable.group({
-              designation: [l.designation, Validators.required],
-              quantite: [Number(l.quantite), Validators.required],
-              prix_unitaire: [Number(l.prix_unitaire), Validators.required],
-            }),
-          );
-        }
+        this.form.patchValue(
+          {
+            fournisseur_id: f.fournisseur_id,
+            bon_id: f.bon_id,
+            reception_id: f.reception_id ?? '',
+            numero_fournisseur: f.numero_fournisseur ?? '',
+            date_facture: f.date_facture,
+            date_echeance: f.date_echeance ?? '',
+            observation: f.observation ?? '',
+          },
+          { emitEvent: false },
+        );
+        this.fournisseurSel.set(f.fournisseur_id);
+        this.setLignes(f.lignes ?? []);
+        this.form.markAsPristine();
+        this.chargerContexteBc(f);
         if (!this.canEditForm()) this.form.disable({ emitEvent: false });
         else this.form.enable({ emitEvent: false });
       },
@@ -301,10 +483,12 @@ export class AchatsFacturesComponent implements OnInit {
       date_facture: v.date_facture,
       date_echeance: v.date_echeance || null,
       observation: v.observation.trim() || null,
+      ...(this.id() ? {} : { reception_id: v.reception_id || null }),
       lignes: v.lignes.map((l) => ({
         designation: l.designation.trim(),
         quantite: Number(l.quantite),
         prix_unitaire: Number(l.prix_unitaire),
+        taux_tva: l.taux_tva === null || l.taux_tva === undefined || `${l.taux_tva}` === '' ? null : Number(l.taux_tva),
       })),
     };
     const req = this.id()

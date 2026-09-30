@@ -229,3 +229,74 @@ def test_three_way_match_anomalie_quantite():
     match = svc.three_way_match(bon, facture)
     assert match.resultat == "ANOMALIE"
     assert match.ecart_quantite is True
+
+
+def _bon_facturable():
+    l1 = _bc_ligne(description="Ramette A4", quantite=Decimal("40"), quantite_recue=Decimal("40"), prix_unitaire=Decimal("1500"))
+    l2 = _bc_ligne(description="Stylo", quantite=Decimal("5"), quantite_recue=Decimal("0"), prix_unitaire=Decimal("250"))
+    for i, (l, tva) in enumerate(((l1, Decimal("16")), (l2, Decimal("0")))):
+        l.remise_pct = Decimal("0")
+        l.taux_tva = tva
+        l.uom = "U"
+        l.sort_order = i
+    bon = _bon(statut="PARTIEL", lignes=[l1, l2], total_ttc=Decimal("70850"))
+    bon.total_ht = Decimal("61250")
+    bon.total_tva = Decimal("9600")
+    bon.fournisseur_raison_sociale = "MAURITEL"
+    bon.conditions_paiement = "Paiement à 30 jours"
+    bon.devise = "MRU"
+    return bon
+
+
+@pytest.mark.asyncio
+async def test_proposition_facture_reprend_le_bc():
+    from datetime import date
+
+    svc = MgAchatsService(MagicMock())
+    bon = _bon_facturable()
+    rec = SimpleNamespace(id=uuid4(), reference="REC-1", statut="PARTIEL")
+    with (
+        patch.object(svc, "get_bon", AsyncMock(return_value=bon)),
+        patch.object(svc, "list_factures", AsyncMock(return_value=[])),
+        patch.object(svc, "list_receptions", AsyncMock(return_value=[rec])),
+    ):
+        p = await svc.propose_facture(bon.id, date_facture=date(2026, 9, 30))
+
+    assert p.fournisseur_id == bon.fournisseur_id
+    assert p.reception_id == rec.id
+    assert p.date_echeance == date(2026, 10, 30)
+    assert [(l.designation, l.quantite) for l in p.lignes] == [("Ramette A4", Decimal("40")), ("Stylo", Decimal("5"))]
+    assert p.montant_ht == Decimal("61250.00")
+    assert p.montant_tva == Decimal("9600.00")
+    assert p.montant_ttc == Decimal("70850.00")
+
+
+@pytest.mark.asyncio
+async def test_proposition_facture_deduit_le_deja_facture():
+    svc = MgAchatsService(MagicMock())
+    bon = _bon_facturable()
+    deja = SimpleNamespace(
+        id=uuid4(),
+        statut="RECUE",
+        montant_ttc=Decimal("34800"),
+        lignes=[SimpleNamespace(designation="ramette  a4", quantite=Decimal("25"))],
+    )
+    with (
+        patch.object(svc, "get_bon", AsyncMock(return_value=bon)),
+        patch.object(svc, "list_factures", AsyncMock(return_value=[deja])),
+        patch.object(svc, "list_receptions", AsyncMock(return_value=[])),
+    ):
+        p = await svc.propose_facture(bon.id)
+
+    assert p.lignes[0].quantite == Decimal("15")
+    assert p.lignes[0].quantite_deja_facturee == Decimal("25")
+    assert p.deja_facture_ttc == Decimal("34800.00")
+    assert p.nb_factures == 1
+
+
+def test_taux_tva_facture_repris_du_bc():
+    svc = MgAchatsService(MagicMock())
+    bon = _bon_facturable()
+    assert svc._taux_tva_bc(bon, "RAMETTE a4") == Decimal("16")
+    # Désignation inconnue → taux moyen du BC (9 600 / 61 250).
+    assert svc._taux_tva_bc(bon, "Autre") == Decimal("15.67")
