@@ -33,6 +33,7 @@ import {
   VISA_OPTIONS,
 } from './demandes-employe.models';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { PIECES_ACCEPT, PIECES_FORMATS_LABEL, iconePiece, verifierPieceJointe } from '../shared/pieces-jointes';
 
 @Component({
   selector: 'bea-emp-accueil',
@@ -1061,15 +1062,16 @@ export class EmpNotifsComponent implements OnInit {
         </label>
         <label class="bea-mg__btn bea-mg__btn--primary">
           <mat-icon>upload_file</mat-icon> Ajouter un fichier
-          <input type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.gif,.webp" (change)="onFile($event)" />
+          <input type="file" hidden [accept]="piecesAccept" (change)="onFile($event)" />
         </label>
+        <p class="bea-stock-page__kicker">{{ piecesFormats }} — 25 Mo max.</p>
       </div>
 
       <div class="bea-emp-docgrid">
         @for (d of docs(); track d.id; let i = $index) {
           <article class="bea-emp-doc" [class.is-off]="!!d.archived_at" [style.animation-delay.ms]="i * 40">
             <header>
-              <mat-icon>{{ isPdf(d) ? 'picture_as_pdf' : 'image' }}</mat-icon>
+              <mat-icon>{{ icone(d) }}</mat-icon>
               <div>
                 <strong>{{ d.title || d.filename }}</strong>
                 <code>{{ d.request_number }}</code>
@@ -1147,6 +1149,8 @@ export class EmpDocsComponent implements OnInit {
   readonly viewerId = signal<string | null>(null);
   readonly erreur = feedbackSignal('error', '');
   readonly ok = feedbackSignal('success', '');
+  readonly piecesAccept = PIECES_ACCEPT;
+  readonly piecesFormats = PIECES_FORMATS_LABEL;
   uploadRequestId = '';
   editTitle = '';
   editDesc = '';
@@ -1167,11 +1171,19 @@ export class EmpDocsComponent implements OnInit {
   isPdf(d: MineDocument): boolean {
     return (d.mime_type || '').includes('pdf') || (d.filename || '').toLowerCase().endsWith('.pdf');
   }
+  icone(d: MineDocument): string {
+    return iconePiece(d.filename || '');
+  }
   onFile(ev: Event): void {
     const file = (ev.target as HTMLInputElement).files?.[0];
     (ev.target as HTMLInputElement).value = '';
     if (!file || !this.uploadRequestId) {
       this.erreur.set('Choisissez d’abord une demande, puis un fichier.');
+      return;
+    }
+    const refus = verifierPieceJointe(file);
+    if (refus) {
+      this.erreur.set(refus);
       return;
     }
     const req = this.requests().find((r) => r.id === this.uploadRequestId);
@@ -1185,7 +1197,9 @@ export class EmpDocsComponent implements OnInit {
       reference: req?.request_number || '',
     }).subscribe({
       next: () => { this.ok.set('Document ajouté.'); this.reload(); },
-      error: () => this.erreur.set('Archivage refusé (permission ged.write ?).'),
+      error: (e) => this.erreur.set(
+        e?.status === 403 ? 'Archivage refusé (permission ged.write ?).' : (e?.error?.detail || 'Archivage impossible.'),
+      ),
     });
   }
   startEdit(d: MineDocument): void {

@@ -9,6 +9,7 @@ import { PaginationComponent } from '../shared/pagination.component';
 import { DocumentViewerComponent, GedDoc } from './document-viewer.component';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
 import { FeedbackService } from '../core/feedback/feedback.service';
+import { PIECES_ACCEPT, verifierPieceJointe } from '../shared/pieces-jointes';
 
 interface ListOut {
   items: GedDoc[];
@@ -271,7 +272,7 @@ interface CatalogueType {
         <form class="bea-modal__card" (ngSubmit)="saveVersion()">
           <header><h2>Nouvelle version</h2><button type="button" (click)="versionDoc.set(null)">×</button></header>
           <p>{{ d.filename }}</p>
-          <input type="file" (change)="onVersionFile($event)" accept=".pdf,.png,.jpg,.jpeg" />
+          <input type="file" (change)="onVersionFile($event)" [accept]="piecesAccept" />
           <label>Commentaire<input [(ngModel)]="versionComment" name="vc" /></label>
           <footer>
             <button type="button" class="bea-mg__btn" (click)="versionDoc.set(null)">Annuler</button>
@@ -400,6 +401,7 @@ interface CatalogueType {
 })
 export class ArchivesGeneralesComponent implements OnInit {
   private readonly api = inject(ApiService);
+  readonly piecesAccept = PIECES_ACCEPT;
   private readonly route = inject(ActivatedRoute);
   private readonly auth = inject(AuthService);
   private readonly feedback = inject(FeedbackService);
@@ -679,7 +681,16 @@ export class ArchivesGeneralesComponent implements OnInit {
   }
 
   onVersionFile(ev: Event): void {
-    this.versionFile = (ev.target as HTMLInputElement).files?.[0] ?? null;
+    const input = ev.target as HTMLInputElement;
+    const f = input.files?.[0] ?? null;
+    const refus = f ? verifierPieceJointe(f) : null;
+    if (refus) {
+      this.feedback.error({ title: 'Pièce refusée', message: refus });
+      input.value = '';
+      this.versionFile = null;
+      return;
+    }
+    this.versionFile = f;
   }
 
   saveVersion(): void {

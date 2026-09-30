@@ -23,9 +23,66 @@ def extract_text_from_file(path: Path, *, lang: str = "fra+eng") -> str:
         return _ocr_image(path, lang=lang)
     if suffix in {".txt", ".csv"}:
         return path.read_text(encoding="utf-8", errors="ignore")
-    # Office / zip : pas d'OCR — texte vide (statut done côté worker)
+    if suffix == ".docx":
+        return "\n".join(docx_paragraphs(path))
+    if suffix in {".xlsx", ".xls"}:
+        return _classeur_texte(path)
+    # .doc (Word 97-2003 binaire) : pas d'extracteur sans dépendance — texte vide (statut done côté worker)
     logger.info("OCR non applicable pour suffixe %s (%s)", suffix, path.name)
     return ""
+
+
+_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+
+def docx_paragraphs(path: Path, *, limite: int | None = None) -> list[str]:
+    """Paragraphes d'un .docx (corps + tableaux) via la bibliothèque standard."""
+    import zipfile
+    from xml.etree import ElementTree
+
+    with zipfile.ZipFile(path) as z:
+        xml = z.read("word/document.xml")
+    racine = ElementTree.fromstring(xml)
+    paragraphes: list[str] = []
+    for p in racine.iter(f"{_W}p"):
+        morceaux = []
+        for n in p.iter():
+            if n.tag == f"{_W}t" and n.text:
+                morceaux.append(n.text)
+            elif n.tag == f"{_W}tab":
+                morceaux.append("\t")
+        texte = "".join(morceaux).strip()
+        if texte:
+            paragraphes.append(texte)
+            if limite and len(paragraphes) >= limite:
+                break
+    return paragraphes
+
+
+def _classeur_texte(path: Path) -> str:
+    lignes: list[str] = []
+    if path.suffix.lower() == ".xlsx":
+        from openpyxl import load_workbook
+
+        wb = load_workbook(path, read_only=True, data_only=True)
+        try:
+            for ws in wb.worksheets:
+                for row in ws.iter_rows(values_only=True):
+                    cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
+                    if cells:
+                        lignes.append(" ".join(cells))
+        finally:
+            wb.close()
+    else:
+        import xlrd
+
+        book = xlrd.open_workbook(path)
+        for sheet in book.sheets():
+            for r in range(sheet.nrows):
+                cells = [str(v).strip() for v in sheet.row_values(r) if str(v).strip()]
+                if cells:
+                    lignes.append(" ".join(cells))
+    return "\n".join(lignes)
 
 
 def _extract_pdf(path: Path, *, lang: str) -> str:

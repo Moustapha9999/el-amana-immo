@@ -14,6 +14,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { ApiService } from '../core/services/api.service';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { iconePiece } from '../shared/pieces-jointes';
 
 export interface GedDoc {
   id: string;
@@ -128,10 +129,22 @@ type Tab = 'info' | 'ocr' | 'relations' | 'versions' | 'historique';
                     <p class="bea-stock-page__kicker">Aperçu limité aux premières lignes. Téléchargez le fichier pour le voir en entier.</p>
                   }
                 </div>
+              } @else if (previewStatus() === 'text') {
+                <div class="bea-viewer__sheet bea-viewer__doc" id="bea-viewer-sheet" [style.zoom]="zoom()">
+                  <p class="bea-viewer__sheet-title">{{ sheetTitle() }}</p>
+                  @for (row of sheetRows(); track $index) {
+                    <p>{{ row[0] }}</p>
+                  } @empty {
+                    <p>Document vide.</p>
+                  }
+                  @if (sheetTruncated()) {
+                    <p class="bea-stock-page__kicker">Aperçu limité. Téléchargez le fichier pour le voir en entier.</p>
+                  }
+                </div>
               } @else {
                 <div class="bea-viewer__sheet bea-mg__empty">
-                  <mat-icon>description</mat-icon>
-                  <p>Aperçu indisponible pour ce format.</p>
+                  <mat-icon>{{ iconeDoc(d) }}</mat-icon>
+                  <p>Aperçu indisponible pour ce format. Téléchargez-le pour l'ouvrir.</p>
                   <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="download()">Télécharger</button>
                 </div>
               }
@@ -278,6 +291,8 @@ type Tab = 'info' | 'ocr' | 'relations' | 'versions' | 'historique';
       white-space: nowrap;
     }
     .bea-viewer__sheet th { background: #f8fafc; }
+    .bea-viewer__doc { max-width: 52rem; margin: 0 auto; line-height: 1.55; font-size: 0.9rem; white-space: pre-wrap; }
+    .bea-viewer__doc p { margin: 0 0 0.55rem; }
     .bea-viewer__body {
       flex: 1;
       display: grid;
@@ -405,7 +420,7 @@ export class DocumentViewerComponent implements OnChanges {
   readonly rotation = signal(0);
   readonly previewUrl = signal<string | null>(null);
   readonly safePreview = signal<SafeResourceUrl | null>(null);
-  readonly previewStatus = signal<'loading' | 'file' | 'table' | 'empty'>('loading');
+  readonly previewStatus = signal<'loading' | 'file' | 'table' | 'text' | 'empty'>('loading');
   readonly sheetTitle = signal('');
   readonly sheetRows = signal<string[][]>([]);
   readonly sheetTruncated = signal(false);
@@ -441,6 +456,10 @@ export class DocumentViewerComponent implements OnChanges {
   fit(): void {
     this.zoom.set(1);
     this.rotation.set(0);
+  }
+
+  iconeDoc(d: GedDoc): string {
+    return iconePiece(d.filename);
   }
 
   isImage(d: GedDoc): boolean {
@@ -497,7 +516,7 @@ export class DocumentViewerComponent implements OnChanges {
 
   isSheet(d: GedDoc): boolean {
     const n = d.filename.toLowerCase();
-    return /\.(xlsx|xlsm|xls|csv)$/.test(n);
+    return /\.(xlsx|xlsm|xls|csv|docx)$/.test(n);
   }
 
   canPrint(): boolean {
@@ -606,14 +625,14 @@ export class DocumentViewerComponent implements OnChanges {
         `/documents/${d.id}/preview`,
       ).subscribe({
         next: (res) => {
-          if (res.kind !== 'table') {
+          if (res.kind !== 'table' && res.kind !== 'text') {
             this.previewStatus.set('empty');
             return;
           }
           this.sheetTitle.set(res.title || d.filename);
           this.sheetRows.set(res.rows ?? []);
           this.sheetTruncated.set(!!res.truncated);
-          this.previewStatus.set('table');
+          this.previewStatus.set(res.kind === 'text' ? 'text' : 'table');
         },
         error: () => {
           this.previewStatus.set('empty');

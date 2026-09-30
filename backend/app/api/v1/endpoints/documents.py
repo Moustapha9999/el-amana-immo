@@ -86,6 +86,19 @@ def spreadsheet_preview(path: Path, filename: str) -> dict:
                 cells = [_cell(c) for c in row[:max_cols]]
                 if any(cells):
                     rows.append(cells)
+    elif lower.endswith(".docx"):
+        from app.services.ocr_extract import docx_paragraphs
+
+        try:
+            paragraphes = docx_paragraphs(path, limite=400)
+        except Exception:
+            return {"kind": "none", "title": filename, "rows": [], "truncated": False}
+        return {
+            "kind": "text",
+            "title": filename,
+            "rows": [[p] for p in paragraphes],
+            "truncated": len(paragraphes) >= 400,
+        }
     else:
         return {"kind": "none", "title": filename, "rows": [], "truncated": False}
 

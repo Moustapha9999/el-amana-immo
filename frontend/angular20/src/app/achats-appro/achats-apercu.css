@@ -372,6 +372,9 @@
   background: #f8fafc;
 }
 .bea-preuve__doc > mat-icon { color: #dc2626; }
+.bea-preuve__doc > mat-icon[data-nature='word'] { color: #2563eb; }
+.bea-preuve__doc > mat-icon[data-nature='excel'] { color: #16a34a; }
+.bea-preuve__doc > mat-icon[data-nature='image'] { color: #7c3aed; }
 .bea-preuve__meta { display: flex; flex: 1; flex-direction: column; min-width: 0; }
 .bea-preuve__meta strong { overflow: hidden; font-size: 0.88rem; text-overflow: ellipsis; white-space: nowrap; }
 .bea-preuve__meta span { font-size: 0.75rem; color: #64748b; }

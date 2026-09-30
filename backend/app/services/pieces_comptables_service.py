@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import NotFoundError, ValidationError
+from app.core.fichiers import EXTENSIONS_AUTORISEES, valider_piece_jointe
 from app.models import Immobilisation, PieceJointe, User
 from app.models.enums import TypePieceComptable
 from app.storage.local_storage import LocalStorageService
@@ -26,35 +27,7 @@ def _parse_montant(value: str | None, fallback: Decimal | None) -> Decimal | Non
     except (InvalidOperation, ValueError) as exc:
         raise ValidationError("Montant de pièce invalide.") from exc
 
-ALLOWED_MIME_PREFIXES = ("image/",)
-ALLOWED_MIME_TYPES = {
-    "application/pdf",
-    # Excel
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-excel.sheet.macroenabled.12",
-    # Word
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-word.document.macroenabled.12",
-}
-ALLOWED_EXTENSIONS = {
-    ".pdf",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".webp",
-    ".tif",
-    ".tiff",
-    ".gif",
-    ".bmp",
-    ".xls",
-    ".xlsx",
-    ".xlsm",
-    ".doc",
-    ".docx",
-    ".docm",
-}
+ALLOWED_EXTENSIONS = EXTENSIONS_AUTORISEES
 
 TYPE_LABELS = {
     TypePieceComptable.FACTURE: "Facture",
@@ -82,18 +55,10 @@ class PiecesComptablesService:
         self.db = db
         self.storage = LocalStorageService()
 
-    def _validate_file(self, file: UploadFile) -> None:
-        name = (file.filename or "").lower()
-        ext = "." + name.rsplit(".", 1)[-1] if "." in name else ""
-        mime = (file.content_type or "").lower()
-        ok_ext = ext in ALLOWED_EXTENSIONS
-        ok_mime = bool(mime) and (
-            mime in ALLOWED_MIME_TYPES or any(mime.startswith(p) for p in ALLOWED_MIME_PREFIXES)
-        )
-        if not ok_ext and not ok_mime:
-            raise ValidationError(
-                "Formats acceptés : PDF, Excel (.xls, .xlsx), Word (.doc, .docx), images."
-            )
+    async def _validate_file(self, file: UploadFile) -> str:
+        content = await file.read()
+        await file.seek(0)
+        return valider_piece_jointe(file.filename, content)
 
     async def upload(
         self,
@@ -112,7 +77,7 @@ class PiecesComptablesService:
         if immo is None or immo.deleted_at is not None:
             raise NotFoundError("Immobilisation", str(immobilisation_id))
 
-        self._validate_file(file)
+        mime_type = await self._validate_file(file)
         tp = parse_type_piece(type_piece)
         journee = date_journee or immo.date_comptabilisation or immo.date_acquisition or date.today()
         montant_val = _parse_montant(montant, immo.valeur_brute)
@@ -125,9 +90,9 @@ class PiecesComptablesService:
             immobilisation_id=immobilisation_id,
             filename=file.filename or "piece",
             stored_path=relative,
-            mime_type=file.content_type,
+            mime_type=mime_type,
             size_bytes=size,
-            is_photo=is_photo or (file.content_type or "").startswith("image/"),
+            is_photo=is_photo or mime_type.startswith("image/"),
             type_piece=tp,
             date_journee=journee,
             reference=(reference or immo.numero_facture or "").strip() or None,

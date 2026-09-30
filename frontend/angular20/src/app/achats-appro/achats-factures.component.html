@@ -159,11 +159,11 @@
           <mat-icon>{{ preuve() ? 'task' : 'upload_file' }}</mat-icon>
           <div>
             <strong>Facture du fournisseur (preuve)</strong>
-            <span>{{ preuve() ? preuve()!.name + ' · ' + tailleFichier(preuve()!.size) : 'PDF ou photo de la facture reçue — archivée en GED et lue par OCR.' }}</span>
+            <span>{{ preuve() ? preuve()!.name + ' · ' + tailleFichier(preuve()!.size) : piecesFormats + ' de la facture reçue — archivée en GED et lue par OCR.' }}</span>
           </div>
           <label class="bea-ach__btn bea-ach__btn--ghost">
             <mat-icon>attach_file</mat-icon> {{ preuve() ? 'Changer' : 'Joindre' }}
-            <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden (change)="choisirPreuve($event)" />
+            <input type="file" [accept]="piecesAccept" hidden (change)="choisirPreuve($event)" />
           </label>
           @if (preuve()) {
             <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Retirer" (click)="preuve.set(null)">

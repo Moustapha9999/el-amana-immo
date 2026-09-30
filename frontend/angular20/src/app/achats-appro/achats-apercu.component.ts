@@ -17,6 +17,14 @@ import { Router } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { MontantPipe, QuantitePipe } from '../shared/montant.pipe';
+import {
+  PIECES_ACCEPT,
+  PIECES_FORMATS_LABEL,
+  PieceNature,
+  iconePiece,
+  naturePiece,
+  verifierPieceJointe,
+} from '../shared/pieces-jointes';
 
 interface BcLigne {
   id: string;
@@ -738,16 +746,22 @@ function totalPaye(paiements: PaiementApercu[]): number {
             </h3>
             @for (d of dossier()?.justificatifs ?? []; track d.id) {
               <div class="bea-preuve__doc">
-                <mat-icon>{{ estImage(d) ? 'image' : 'picture_as_pdf' }}</mat-icon>
+                <mat-icon [attr.data-nature]="nature(d)">{{ icone(d) }}</mat-icon>
                 <div class="bea-preuve__meta">
                   <strong>{{ d.title || d.filename }}</strong>
                   <span>{{ d.filename }} · {{ taille(d.size_bytes) }}{{ d.created_at ? ' · ajoutée le ' + (d.created_at | date: 'dd/MM/yyyy HH:mm') : '' }}</span>
                 </div>
                 <small class="bea-preuve__ocr" [attr.data-status]="d.ocr_status">{{ ocrLabel(d.ocr_status) }}</small>
-                <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="voirPiece(d)" [disabled]="pieceBusy()">
-                  <mat-icon>{{ pieceOuverte()?.id === d.id ? 'visibility_off' : 'visibility' }}</mat-icon>
-                  {{ pieceOuverte()?.id === d.id ? 'Masquer' : 'Voir' }}
-                </button>
+                @if (visualisable(d)) {
+                  <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="voirPiece(d)" [disabled]="pieceBusy()">
+                    <mat-icon>{{ pieceOuverte()?.id === d.id ? 'visibility_off' : 'visibility' }}</mat-icon>
+                    {{ pieceOuverte()?.id === d.id ? 'Masquer' : 'Voir' }}
+                  </button>
+                } @else {
+                  <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="telechargerPiece(d)" title="Ouvrir dans Word / Excel">
+                    <mat-icon>open_in_new</mat-icon> Ouvrir
+                  </button>
+                }
                 <button type="button" class="bea-ach__icon-btn" title="Télécharger" (click)="telechargerPiece(d)">
                   <mat-icon>download</mat-icon>
                 </button>
@@ -769,13 +783,13 @@ function totalPaye(paiements: PaiementApercu[]): number {
               }
             } @empty {
               <p class="bea-preuve__vide">
-                La facture papier / PDF remise par le fournisseur n'est pas encore rattachée. Sans preuve, le paiement ne devrait pas être engagé.
+                La facture remise par le fournisseur ({{ piecesFormats }}) n'est pas encore rattachée. Sans preuve, le paiement ne devrait pas être engagé.
               </p>
             }
             <label class="bea-ach__btn bea-preuve__ajout" [class.bea-ach__btn--ghost]="!!dossier()?.justificatifs?.length">
               <mat-icon>{{ uploadBusy() ? 'hourglass_empty' : 'attach_file' }}</mat-icon>
               {{ uploadBusy() ? 'Envoi…' : dossier()?.justificatifs?.length ? 'Ajouter une pièce' : 'Joindre la facture du fournisseur' }}
-              <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden (change)="joindre($event, f)" [disabled]="uploadBusy()" />
+              <input type="file" [accept]="piecesAccept" hidden (change)="joindre($event, f)" [disabled]="uploadBusy()" />
             </label>
           </section>
 
@@ -1069,8 +1083,23 @@ export class AchatsFactureApercuComponent implements OnInit, OnDestroy {
     this.pieceUrl.set(null);
   }
 
+  readonly piecesAccept = PIECES_ACCEPT;
+  readonly piecesFormats = PIECES_FORMATS_LABEL;
+
+  nature(d: Justificatif): PieceNature {
+    return naturePiece(d.filename, d.mime_type);
+  }
+
+  icone(d: Justificatif): string {
+    return iconePiece(d.filename, d.mime_type);
+  }
+
   estImage(d: Justificatif): boolean {
-    return (d.mime_type ?? '').startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(d.filename);
+    return this.nature(d) === 'image' && !/\.tiff?$/i.test(d.filename);
+  }
+
+  visualisable(d: Justificatif): boolean {
+    return this.nature(d) === 'pdf' || this.estImage(d);
   }
 
   taille(bytes: number): string {
@@ -1132,8 +1161,9 @@ export class AchatsFactureApercuComponent implements OnInit, OnDestroy {
     const file = input.files?.[0];
     input.value = '';
     if (!file) return;
-    if (!/\.(pdf|png|jpe?g|webp)$/i.test(file.name) || file.size > 25 * 1024 * 1024) {
-      this.feedback.error({ title: 'Pièce refusée', message: 'PDF ou image, 25 Mo maximum.' });
+    const refus = verifierPieceJointe(file);
+    if (refus) {
+      this.feedback.error({ title: 'Pièce refusée', message: refus });
       return;
     }
     this.uploadBusy.set(true);
@@ -1155,9 +1185,13 @@ export class AchatsFactureApercuComponent implements OnInit, OnDestroy {
           this.feedback.success({ title: 'Pièce rattachée', message: `Facture fournisseur archivée pour ${f.reference}.` });
           this.chargerDossier();
         },
-        error: () => {
+        error: (err: { status?: number; error?: { detail?: unknown } }) => {
           this.uploadBusy.set(false);
-          this.feedback.error({ title: 'Archivage refusé', message: 'Vérifiez la permission ged.write.' });
+          const detail = err?.error?.detail;
+          this.feedback.error({
+            title: 'Archivage refusé',
+            message: typeof detail === 'string' && err.status !== 403 ? detail : 'Vérifiez la permission ged.write.',
+          });
         },
       });
   }

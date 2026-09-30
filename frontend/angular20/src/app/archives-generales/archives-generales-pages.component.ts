@@ -9,6 +9,7 @@ import { AuthService } from '../core/services/auth.service';
 import { DocumentViewerComponent, GedDoc } from './document-viewer.component';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
 import { FeedbackService } from '../core/feedback/feedback.service';
+import { PIECES_ACCEPT, PIECES_FORMATS_LABEL, verifierPieceJointe } from '../shared/pieces-jointes';
 
 interface OcrDash {
   ocr: { pending: number; processing: number; done: number; failed: number; en_cours: number };
@@ -641,7 +642,7 @@ export class ArchivesGeneralesDoublonsComponent implements OnInit {
           <label>Module<input [(ngModel)]="moduleCode" name="module" required /></label>
           <label>Type<input [(ngModel)]="entity" name="entity" required /></label>
           <label>Référence<input [(ngModel)]="reference" name="reference" /></label>
-          <label>Premier document<input type="file" (change)="onCreateFile($event)" accept=".pdf,.png,.jpg,.jpeg" /></label>
+          <label>Premier document<input type="file" (change)="onCreateFile($event)" [accept]="piecesAccept" /></label>
           <footer>
             <button type="button" class="bea-mg__btn" (click)="creating.set(false)">Annuler</button>
             <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="!createFile || busy()">Créer</button>
@@ -675,6 +676,7 @@ export class ArchivesGeneralesDoublonsComponent implements OnInit {
 })
 export class ArchivesGeneralesDossiersComponent implements OnInit {
   private readonly api = inject(ApiService);
+  readonly piecesAccept = PIECES_ACCEPT;
   readonly items = signal<Dossier[]>([]);
   readonly erreur = feedbackSignal('error', null);
   readonly toast = feedbackSignal('success', null);
@@ -767,7 +769,16 @@ export class ArchivesGeneralesDossiersComponent implements OnInit {
   }
 
   onCreateFile(ev: Event): void {
-    this.createFile = (ev.target as HTMLInputElement).files?.[0] ?? null;
+    const input = ev.target as HTMLInputElement;
+    const f = input.files?.[0] ?? null;
+    const refus = f ? verifierPieceJointe(f) : null;
+    if (refus) {
+      this.erreur.set(refus);
+      input.value = '';
+      this.createFile = null;
+      return;
+    }
+    this.createFile = f;
   }
 
   create(): void {
@@ -826,9 +837,9 @@ export class ArchivesGeneralesDossiersComponent implements OnInit {
           (dragover)="onDrag($event, true)" (dragleave)="onDrag($event, false)" (drop)="onDrop($event)">
           <mat-icon class="bea-drop__ico">document_scanner</mat-icon>
           <h2>Importer un document</h2>
-          <p>Glissez un PDF, JPG ou PNG, ou parcourez vos fichiers. Le fichier est archivé, puis envoyé à l'OCR.</p>
+          <p>Glissez un fichier ({{ piecesFormats }}), ou parcourez vos fichiers. Le fichier est archivé, puis envoyé à l'OCR.</p>
           <div class="bea-drop__chips"><span>PDF</span><span>JPG</span><span>PNG</span></div>
-          <input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" (change)="onFile($event)" />
+          <input type="file" [accept]="piecesAccept" (change)="onFile($event)" />
           @if (file()) { <p class="bea-drop__file">{{ file()!.name }} · {{ file()!.size }} octets</p> }
           <label>Département
             <select [(ngModel)]="espace" name="espace" required>
@@ -890,6 +901,8 @@ export class ArchivesGeneralesDossiersComponent implements OnInit {
 })
 export class ArchivesGeneralesNumeriserComponent implements OnInit {
   private readonly api = inject(ApiService);
+  readonly piecesAccept = PIECES_ACCEPT;
+  readonly piecesFormats = PIECES_FORMATS_LABEL;
   private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   readonly file = signal<File | null>(null);
@@ -941,10 +954,9 @@ export class ArchivesGeneralesNumeriserComponent implements OnInit {
   submit(): void {
     const f = this.file();
     if (!f) return;
-    const ok = ['application/pdf', 'image/jpeg', 'image/png'];
-    const ext = f.name.toLowerCase();
-    if (!ok.includes(f.type) && !/\.(pdf|jpe?g|png)$/.test(ext)) {
-      this.erreur.set('Format refusé. PDF, JPG ou PNG uniquement.');
+    const refus = verifierPieceJointe(f);
+    if (refus) {
+      this.erreur.set(refus);
       return;
     }
     this.busy.set(true);
@@ -1059,7 +1071,7 @@ export class ArchivesGeneralesActiviteComponent implements OnInit {
         <article>
           <mat-icon>picture_as_pdf</mat-icon>
           <h2>Formats acceptés</h2>
-          <p>PDF, JPG, JPEG, PNG</p>
+          <p>PDF, Word (.doc, .docx), Excel (.xls, .xlsx) et images scannées (.jpg, .png, .tif) — 25 Mo max.</p>
         </article>
         <article>
           <mat-icon>lock</mat-icon>

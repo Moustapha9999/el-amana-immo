@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, Input, OnChanges, inject, signal } 
 import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../core/services/api.service';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { PIECES_ACCEPT, PIECES_FORMATS_LABEL, iconePiece, verifierPieceJointe } from '../shared/pieces-jointes';
 
 interface GedDoc {
   id: string;
@@ -28,7 +29,7 @@ interface GedDoc {
           <label class="bea-mg__btn bea-mg__btn--ghost bea-mg-ged__upload">
             <mat-icon>archive</mat-icon>
             Archiver
-            <input type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp" hidden (change)="onFile($event)" />
+            <input type="file" [accept]="accept" hidden (change)="onFile($event)" />
           </label>
         }
       </div>
@@ -40,12 +41,12 @@ interface GedDoc {
         }
         <div class="bea-mg-ged__drop" aria-label="Zone de dépôt de fichier">
           <mat-icon>upload_file</mat-icon>
-          <p>Glisser-déposer un PDF ou une image, ou utiliser Archiver.</p>
+          <p>Glisser-déposer un fichier ({{ formats }}), ou utiliser Archiver.</p>
         </div>
         <ul class="bea-mg-ged__list">
           @for (d of docs(); track d.id) {
             <li>
-              <mat-icon>description</mat-icon>
+              <mat-icon>{{ icone(d.filename) }}</mat-icon>
               <span>{{ d.filename }}</span>
               <small class="bea-ocr-badge" [attr.data-status]="d.ocr_status || 'pending'">
                 {{ ocrLabel(d.ocr_status) }}
@@ -203,14 +204,9 @@ export class MgGedPanelComponent implements OnChanges {
   readonly dragging = signal(false);
   readonly uploading = signal(false);
 
-  private readonly allowed = new Set([
-    'application/pdf',
-    'image/png',
-    'image/jpeg',
-    'image/jpg',
-    'image/gif',
-    'image/webp',
-  ]);
+  readonly accept = PIECES_ACCEPT;
+  readonly formats = PIECES_FORMATS_LABEL;
+  readonly icone = (nom: string) => iconePiece(nom);
 
   ngOnChanges(): void {
     this.reload();
@@ -288,14 +284,9 @@ export class MgGedPanelComponent implements OnChanges {
 
   private uploadFile(file: File): void {
     if (!this.entityId) return;
-    const suffix = file.name.split('.').pop()?.toLowerCase() || '';
-    const okExt = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp'].includes(suffix);
-    if (!okExt && file.type && !this.allowed.has(file.type)) {
-      this.erreur.set('Type de fichier non autorisé (PDF / images uniquement).');
-      return;
-    }
-    if (file.size > 25 * 1024 * 1024) {
-      this.erreur.set('Fichier trop volumineux (max 25 Mo).');
+    const refus = verifierPieceJointe(file);
+    if (refus) {
+      this.erreur.set(refus);
       return;
     }
     const fields: Record<string, string> = {
@@ -315,9 +306,12 @@ export class MgGedPanelComponent implements OnChanges {
         this.uploading.set(false);
         this.reload();
       },
-      error: () => {
+      error: (err: { status?: number; error?: { detail?: unknown; message?: unknown } }) => {
         this.uploading.set(false);
-        this.erreur.set('Archivage refusé (permission ged.write ?).');
+        const detail = err?.error?.detail ?? err?.error?.message;
+        this.erreur.set(
+          typeof detail === 'string' && err.status !== 403 ? detail : 'Archivage refusé (permission ged.write ?).',
+        );
       },
     });
   }

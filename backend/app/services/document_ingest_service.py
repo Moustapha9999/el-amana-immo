@@ -336,18 +336,13 @@ class DocumentIngestService:
     ) -> GedDocument:
         import uuid as uuid_mod
 
-        from app.services.ged_service import _ALLOWED_SUFFIXES, _MAX_BYTES
+        from app.core.fichiers import valider_piece_jointe
 
         original = Path(filename).name or "fichier"
         suffix = Path(original).suffix.lower()
-        if suffix and suffix not in _ALLOWED_SUFFIXES:
-            raise ValidationError(f"Type de fichier non autorisé ({suffix})")
-        if not content:
-            raise ValidationError("Fichier vide")
-        if len(content) > _MAX_BYTES:
-            raise ValidationError("Fichier trop volumineux (max 25 Mo)")
+        mime_type = valider_piece_jointe(original, content)
 
-        stored_name = f"{uuid_mod.uuid4().hex}{suffix or '.bin'}"
+        stored_name = f"{uuid_mod.uuid4().hex}{suffix}"
         rel = self.ged.relative_path(
             module_code=module_code,
             entity=entity,

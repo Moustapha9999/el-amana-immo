@@ -23,6 +23,7 @@ import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
 import { SupplierSelectComponent } from './supplier-select.component';
 import { AchatsFactureApercuComponent } from './achats-apercu.component';
+import { PIECES_ACCEPT, PIECES_FORMATS_LABEL, verifierPieceJointe } from '../shared/pieces-jointes';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 
@@ -375,17 +376,16 @@ export class AchatsFacturesComponent implements OnInit {
     const file = input.files?.[0];
     input.value = '';
     if (!file) return;
-    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-    if (!['pdf', 'png', 'jpg', 'jpeg', 'webp'].includes(ext)) {
-      this.erreur.set('Pièce refusée : PDF ou image uniquement.');
-      return;
-    }
-    if (file.size > 25 * 1024 * 1024) {
-      this.erreur.set('Pièce trop volumineuse (25 Mo maximum).');
+    const refus = verifierPieceJointe(file);
+    if (refus) {
+      this.erreur.set(refus);
       return;
     }
     this.preuve.set(file);
   }
+
+  readonly piecesAccept = PIECES_ACCEPT;
+  readonly piecesFormats = PIECES_FORMATS_LABEL;
 
   tailleFichier(bytes: number): string {
     if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} Ko`;
