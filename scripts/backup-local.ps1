@@ -26,7 +26,7 @@ function Get-EnvValue([string]$path, [string]$key, [string]$default) {
     return $default
 }
 
-$pgUser = Get-EnvValue $envFile "POSTGRES_USER" "immo_user"
+$pgUser = Get-EnvValue $envFile "POSTGRES_USER" "admin"
 $pgDb = Get-EnvValue $envFile "POSTGRES_DB" "bea_digital"
 
 New-Item -ItemType Directory -Force -Path "backups" | Out-Null

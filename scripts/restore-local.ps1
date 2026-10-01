@@ -45,7 +45,7 @@ function Get-EnvValue([string]$path, [string]$key, [string]$default) {
     return $default
 }
 
-$pgUser = Get-EnvValue $envFile "POSTGRES_USER" "immo_user"
+$pgUser = Get-EnvValue $envFile "POSTGRES_USER" "admin"
 $pgDb = Get-EnvValue $envFile "POSTGRES_DB" "bea_digital"
 
 Write-Host "Restauration de $dumpName dans PostgreSQL local..."

@@ -60,7 +60,7 @@ if ($pg -ne "healthy") {
 # Detect existing business data (preserve accountant saisies)
 $existingCount = $null
 try {
-    $pgUser = "immo_user"
+    $pgUser = "admin"
     $pgDb = "bea_digital"
     if (Test-Path -LiteralPath ".env.docker") {
         foreach ($line in Get-Content ".env.docker") {

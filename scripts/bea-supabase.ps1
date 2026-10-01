@@ -65,7 +65,7 @@ if ($isDocker) {
     $pgUser = Get-EnvValue $EnvFile "POSTGRES_USER"
     $pgPass = Get-EnvValue $EnvFile "POSTGRES_PASSWORD"
     $pgDb = Get-EnvValue $EnvFile "POSTGRES_DB"
-    if (-not $pgUser) { $pgUser = "immo_user" }
+    if (-not $pgUser) { $pgUser = "admin" }
     if (-not $pgDb) { $pgDb = "bea_digital" }
     if (-not $pgPass) { throw "POSTGRES_PASSWORD manquant dans $EnvFile" }
     $url = "postgresql+asyncpg://${pgUser}:${pgPass}@localhost:5432/${pgDb}"

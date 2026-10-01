@@ -60,7 +60,7 @@ Ce n’est **pas** le chemin prod / Comptabilité :
 ```powershell
 cd backend
 $env:PYTHONPATH = "."
-$env:DATABASE_URL = "postgresql+asyncpg://immo_user:MOT_DE_PASSE@localhost:5432/bea_digital"
+$env:DATABASE_URL = "postgresql+asyncpg://admin:MOT_DE_PASSE@localhost:5432/bea_digital"
 python scripts/init_db.py
 python scripts/seed_data.py
 ```
