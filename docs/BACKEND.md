@@ -46,7 +46,7 @@ Référentiel métier : `backend/app/data/el_amana_referentiel.py`.
 
 ```powershell
 cd backend
-$env:DATABASE_URL="postgresql+asyncpg://immo_user:immo_pass@localhost:5432/bea_digital"
+$env:DATABASE_URL="postgresql+asyncpg://admin:immo_pass@localhost:5432/bea_digital"
 python scripts/seed_data.py
 uvicorn app.main:app --reload
 ```

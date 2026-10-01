@@ -10,7 +10,7 @@ services:
     container_name: bea-postgres-dev
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-bea_digital}
-      POSTGRES_USER: ${POSTGRES_USER:-immo_user}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-immo_pass}
     ports:
       - "5433:5432"
@@ -18,7 +18,7 @@ services:
       - postgres_data_dev:/var/lib/postgresql/data
       - ./database/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-immo_user} -d ${POSTGRES_DB:-bea_digital}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-bea_digital}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -43,7 +43,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-immo_user}:${POSTGRES_PASSWORD:-immo_pass}@postgres:5432/${POSTGRES_DB:-bea_digital}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-immo_pass}@postgres:5432/${POSTGRES_DB:-bea_digital}
       DATABASE_SSL: "false"
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
@@ -71,7 +71,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-immo_user}:${POSTGRES_PASSWORD:-immo_pass}@postgres:5432/${POSTGRES_DB:-bea_digital}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-immo_pass}@postgres:5432/${POSTGRES_DB:-bea_digital}
       DATABASE_SSL: "false"
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2

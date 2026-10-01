@@ -41,7 +41,7 @@ if (-not (Test-Path -LiteralPath $envFile)) {
     throw ".env.docker introuvable. Copiez .env.docker.example vers .env.docker."
 }
 
-$dbUser = Get-DotEnvValue $envFile "POSTGRES_USER" "immo_user"
+$dbUser = Get-DotEnvValue $envFile "POSTGRES_USER" "admin"
 $dbName = Get-DotEnvValue $envFile "POSTGRES_DB" "bea_digital"
 
 $dumpPath = $DumpFile

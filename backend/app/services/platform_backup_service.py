@@ -73,7 +73,7 @@ def _pg_dsn() -> dict[str, str]:
     return {
         "host": parsed.hostname or "localhost",
         "port": str(parsed.port or 5432),
-        "user": unquote(parsed.username or "immo_user"),
+        "user": unquote(parsed.username or "admin"),
         "password": unquote(parsed.password or ""),
         "dbname": (parsed.path or "/bea_digital").lstrip("/") or "bea_digital",
     }

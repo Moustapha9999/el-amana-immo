@@ -24,7 +24,7 @@ dotenv_val() {
   printf '%s' "${line#*=}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^["'\'']//' -e 's/["'\'']$//'
 }
 
-DB_USER="$(dotenv_val POSTGRES_USER immo_user)"
+DB_USER="$(dotenv_val POSTGRES_USER admin)"
 DB_NAME="$(dotenv_val POSTGRES_DB bea_digital)"
 
 DUMP_ARG="${1:-}"

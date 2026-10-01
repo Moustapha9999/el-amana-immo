@@ -1,7 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import quote, unquote
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -58,7 +59,7 @@ class Settings(BaseSettings):
     api_docs_enabled: bool | None = Field(default=None, alias="API_DOCS_ENABLED")
 
     database_url: str = Field(
-        default="postgresql+asyncpg://immo_user:immo_pass@localhost:5432/bea_digital",
+        default="postgresql+asyncpg://admin:immo_pass@localhost:5432/bea_digital",
         alias="DATABASE_URL",
     )
     database_ssl: bool = Field(default=False, alias="DATABASE_SSL")
@@ -69,6 +70,20 @@ class Settings(BaseSettings):
     supabase_anon_key: str | None = Field(default=None, alias="SUPABASE_ANON_KEY")
     supabase_service_role_key: str | None = Field(default=None, alias="SUPABASE_SERVICE_ROLE_KEY")
     supabase_jwt_secret: str | None = Field(default=None, alias="SUPABASE_JWT_SECRET")
+
+    @field_validator("database_url")
+    @classmethod
+    def _encoder_identifiants(cls, url: str) -> str:
+        """docker-compose injecte POSTGRES_PASSWORD brut : « Exemple@Mdp1 » doit devenir « Exemple%40Mdp1 »."""
+        scheme, sep, rest = url.partition("://")
+        if not sep or "@" not in rest:
+            return url
+        userinfo, _, hostpart = rest.rpartition("@")
+        user, has_pwd, pwd = userinfo.partition(":")
+        encoded = quote(unquote(user), safe="")
+        if has_pwd:
+            encoded += ":" + quote(unquote(pwd), safe="")
+        return f"{scheme}://{encoded}@{hostpart}"
 
     @property
     def uses_supabase_host(self) -> bool:
