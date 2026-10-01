@@ -81,6 +81,11 @@
                   <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Annuler le paiement" [disabled]="r.statut === 'ANNULE' || saving()" (click)="annuler(r)">
                     <mat-icon>block</mat-icon>
                   </button>
+                  @if (modeTest()) {
+                    <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer (mode test)" [disabled]="saving()" (click)="supprimer(r)">
+                      <mat-icon>delete</mat-icon>
+                    </button>
+                  }
                 </td>
               </tr>
             } @empty {
@@ -106,7 +111,7 @@
           </p>
           @if (c.statut === 'ANNULE') {
             <p class="bea-ach__muted">Paiement annulé : le motif est tracé dans l’observation et l’historique.</p>
-          } @else if (c.statut === 'PAYE') {
+          } @else if (c.statut === 'PAYE' && !modeTest()) {
             <p class="bea-ach__muted">Paiement effectué : montant et date figés. Pour corriger, annulez-le avec un motif.</p>
           }
         }
@@ -188,6 +193,11 @@
           @if (c.statut !== 'ANNULE') {
             <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="annuler(c)">
               <mat-icon>block</mat-icon> Annuler le paiement
+            </button>
+          }
+          @if (modeTest()) {
+            <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="supprimer(c)">
+              <mat-icon>delete</mat-icon> Supprimer (mode test)
             </button>
           }
         }

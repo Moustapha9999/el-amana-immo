@@ -4,8 +4,10 @@ import {
   Component,
   OnInit,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -16,7 +18,14 @@ import { FeedbackService } from '../core/feedback/feedback.service';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 import { formatMontant } from '../shared/montant.pipe';
 import { AchatsPaiementApercuComponent } from './achats-apercu.component';
-import { FACTURE_STATUT_LABELS, MOYEN_AUTRE, decomposerMoyen, facturePayable } from './achats-circuit';
+import {
+  FACTURE_STATUT_LABELS,
+  MOYEN_AUTRE,
+  chargerModeTest,
+  decomposerMoyen,
+  facturePayable,
+  modeTestAchats,
+} from './achats-circuit';
 
 interface FactureOpt {
   id: string;
@@ -111,7 +120,20 @@ export class AchatsPaiementsComponent implements OnInit {
   /** Un paiement effectué ou annulé est figé : on n'annule que par motif tracé. */
   readonly canEditForm = computed(() => {
     const c = this.current();
-    return !c || c.statut === 'A_PAYER';
+    return !c || c.statut === 'A_PAYER' || (modeTestAchats() && c.statut !== 'ANNULE');
+  });
+  readonly modeTest = modeTestAchats;
+  private readonly reappliquerVerrou = effect(() => {
+    if (!this.current()) return;
+    const editable = this.canEditForm();
+    untracked(() => {
+      if (!editable) {
+        this.form.disable({ emitEvent: false });
+        return;
+      }
+      this.form.enable({ emitEvent: false });
+      this.form.controls.facture_id.disable({ emitEvent: false });
+    });
   });
   readonly factureChoisie = signal<FactureOpt | null>(null);
   readonly facturesPayables = computed(() => {
@@ -120,6 +142,7 @@ export class AchatsPaiementsComponent implements OnInit {
   });
 
   ngOnInit(): void {
+    chargerModeTest(this.api);
     const factureParam = this.route.snapshot.queryParamMap.get('facture_id');
     this.api.get<FactureOpt[]>('/mg/achats/factures').subscribe({
       next: (r) => {
@@ -232,6 +255,26 @@ export class AchatsPaiementsComponent implements OnInit {
 
   open(r: PaiementRow): void {
     this.apercuId.set(r.id);
+  }
+
+  supprimer(row: PaiementRow): void {
+    this.feedback
+      .run(() => this.api.delete(`/mg/achats/paiements/${row.id}`), {
+        confirm: {
+          action: 'suppression',
+          message: `Mode test : le paiement ${row.reference} sera supprimé et le reste à payer de la facture recalculé.`,
+        },
+        loading: 'Suppression…',
+        errorTitle: 'Suppression refusée',
+        success: { title: 'Paiement supprimé', details: [{ label: 'Référence', value: row.reference }] },
+        busy: this.saving,
+      })
+      .subscribe({
+        next: () => {
+          if (this.mode() === 'form') void this.router.navigateByUrl('/achats-appro/paiements');
+          else this.loadList();
+        },
+      });
   }
 
   annuler(row: PaiementRow): void {
