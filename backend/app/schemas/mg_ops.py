@@ -232,6 +232,8 @@ class ContratCreate(BaseModel):
     mode_paiement: str | None = Field(default=None, max_length=40)
     ref_paiement: str | None = Field(default=None, max_length=120)
     observation: str | None = None
+    reconduction: str = "AUCUNE"
+    preavis_jours: int | None = Field(default=None, ge=0, le=3650)
 
 
 class ContratUpdate(BaseModel):
@@ -256,6 +258,8 @@ class ContratUpdate(BaseModel):
     mode_paiement: str | None = Field(default=None, max_length=40)
     ref_paiement: str | None = Field(default=None, max_length=120)
     observation: str | None = None
+    reconduction: str | None = None
+    preavis_jours: int | None = Field(default=None, ge=0, le=3650)
 
 
 class ContratOut(BaseModel):
@@ -288,13 +292,19 @@ class ContratOut(BaseModel):
     contrat_precedent_id: UUID | None = None
     statut: str
     observation: str | None = None
+    reconduction: str = "AUCUNE"
+    preavis_jours: int | None = None
+    version: int = 1
+    etat: str
+    jours_restants: int | None = None
+    date_preavis: date | None = None
 
 
 class ContratEcheanceIn(BaseModel):
     type_echeance: str = "AUTRE"
     date_prevue: date
     date_reelle: date | None = None
-    montant: Decimal | None = None
+    montant: Decimal | None = Field(default=None, ge=0)
     responsable_nom: str | None = None
     commentaire: str | None = None
     statut: str | None = None
@@ -308,18 +318,30 @@ class ContratEcheanceOut(BaseModel):
     date_prevue: date
     date_reelle: date | None = None
     montant: Decimal | None = None
+    montant_paye: Decimal = Decimal("0")
     responsable_nom: str | None = None
     statut: str
     commentaire: str | None = None
 
 
 class ContratPaiementIn(BaseModel):
-    reference: str | None = None
-    date_prevue: date
+    reference: str | None = Field(default=None, max_length=40)
+    date_prevue: date | None = None
     date_reelle: date | None = None
-    montant_prevu: Decimal = Decimal("0")
-    montant_paye: Decimal = Decimal("0")
-    mode: str | None = None
+    montant_prevu: Decimal | None = Field(default=None, ge=0)
+    montant_paye: Decimal = Field(default=Decimal("0"), ge=0)
+    mode: str | None = Field(default=None, max_length=40)
+    commentaire: str | None = None
+    echeance_id: UUID | None = None
+
+
+class ContratPaiementUpdate(BaseModel):
+    reference: str | None = Field(default=None, max_length=40)
+    date_prevue: date | None = None
+    date_reelle: date | None = None
+    montant_prevu: Decimal | None = Field(default=None, ge=0)
+    montant_paye: Decimal | None = Field(default=None, ge=0)
+    mode: str | None = Field(default=None, max_length=40)
     commentaire: str | None = None
     echeance_id: UUID | None = None
 
@@ -328,6 +350,7 @@ class ContratPaiementOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    echeance_id: UUID | None = None
     reference: str | None = None
     date_prevue: date
     date_reelle: date | None = None
@@ -337,6 +360,41 @@ class ContratPaiementOut(BaseModel):
     statut: str
     mode: str | None = None
     commentaire: str | None = None
+
+
+class ContratAvenantIn(BaseModel):
+    objet: str = Field(min_length=1, max_length=255)
+    date_effet: date
+    type_avenant: str | None = None
+    nouveau_montant_ht: Decimal | None = Field(default=None, ge=0)
+    nouveau_taux_tva: Decimal | None = Field(default=None, ge=0, le=100)
+    nouvelle_date_fin: date | None = None
+    clauses: str | None = None
+    regenerer_echeancier: bool = False
+
+
+class ContratAvenantOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    numero: int
+    type_avenant: str
+    objet: str
+    date_effet: date
+    montant_ht_avant: Decimal | None = None
+    montant_ht_apres: Decimal | None = None
+    montant_ttc_avant: Decimal | None = None
+    montant_ttc_apres: Decimal | None = None
+    date_fin_avant: date | None = None
+    date_fin_apres: date | None = None
+    clauses: str | None = None
+    version_contrat: int
+    user_nom: str | None = None
+    created_at: datetime
+
+
+class ContratEcheancierIn(BaseModel):
+    remplacer: bool = False
 
 
 class ContratHistoriqueOut(BaseModel):
@@ -355,6 +413,7 @@ class ContratDetail(ContratOut):
     echeances: list[ContratEcheanceOut] = []
     paiements: list[ContratPaiementOut] = []
     historique: list[ContratHistoriqueOut] = []
+    avenants: list[ContratAvenantOut] = []
 
 
 class ContratTransitionIn(BaseModel):

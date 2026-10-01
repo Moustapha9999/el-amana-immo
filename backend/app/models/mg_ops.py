@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -342,16 +342,43 @@ class MgContrat(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     contrat_precedent_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("mg_contrats.id"), nullable=True
     )
+    reconduction: Mapped[str] = mapped_column(String(20), default="AUCUNE", server_default="AUCUNE")
+    preavis_jours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
     echeances: Mapped[list["MgContratEcheance"]] = relationship(
-        back_populates="contrat", cascade="all, delete-orphan"
+        back_populates="contrat", cascade="all, delete-orphan", order_by="MgContratEcheance.date_prevue"
     )
     paiements: Mapped[list["MgContratPaiement"]] = relationship(
-        back_populates="contrat", cascade="all, delete-orphan"
+        back_populates="contrat", cascade="all, delete-orphan", order_by="MgContratPaiement.date_prevue"
     )
     historique: Mapped[list["MgContratHistorique"]] = relationship(
-        back_populates="contrat", cascade="all, delete-orphan"
+        back_populates="contrat", cascade="all, delete-orphan", order_by="MgContratHistorique.created_at.desc()"
     )
+    avenants: Mapped[list["MgContratAvenant"]] = relationship(
+        back_populates="contrat", cascade="all, delete-orphan", order_by="MgContratAvenant.numero"
+    )
+
+    @property
+    def jours_restants(self) -> int | None:
+        return (self.date_fin - date.today()).days if self.date_fin else None
+
+    @property
+    def date_preavis(self) -> date | None:
+        if not self.date_fin or not self.preavis_jours:
+            return None
+        return self.date_fin - timedelta(days=self.preavis_jours)
+
+    @property
+    def etat(self) -> str:
+        """Statut affiché : distingue « échéance ≤ 30 j » et « date dépassée, encore actif »."""
+        jours = self.jours_restants
+        if self.statut == "ACTIF" and jours is not None:
+            if jours < 0:
+                return "DATE_DEPASSEE"
+            if jours <= 30:
+                return "ECHEANCE_30"
+        return self.statut
 
 
 class MgContratEcheance(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -369,6 +396,11 @@ class MgContratEcheance(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     commentaire: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     contrat: Mapped[MgContrat] = relationship(back_populates="echeances")
+    paiements: Mapped[list["MgContratPaiement"]] = relationship(back_populates="echeance")
+
+    @property
+    def montant_paye(self) -> Decimal:
+        return sum((p.montant_paye or Decimal("0") for p in self.paiements), Decimal("0"))
 
 
 class MgContratPaiement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -391,6 +423,34 @@ class MgContratPaiement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     commentaire: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     contrat: Mapped[MgContrat] = relationship(back_populates="paiements")
+    echeance: Mapped["MgContratEcheance | None"] = relationship(back_populates="paiements")
+
+
+class MgContratAvenant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "mg_contrat_avenants"
+    __table_args__ = (UniqueConstraint("contrat_id", "numero", name="uq_mg_contrat_avenants_numero"),)
+
+    contrat_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_contrats.id", ondelete="CASCADE"), index=True
+    )
+    numero: Mapped[int] = mapped_column(Integer)
+    type_avenant: Mapped[str] = mapped_column(String(30))
+    objet: Mapped[str] = mapped_column(String(255))
+    date_effet: Mapped[date] = mapped_column(Date)
+    montant_ht_avant: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    montant_ht_apres: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    montant_ttc_avant: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    montant_ttc_apres: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    date_fin_avant: Mapped[date | None] = mapped_column(Date, nullable=True)
+    date_fin_apres: Mapped[date | None] = mapped_column(Date, nullable=True)
+    clauses: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version_contrat: Mapped[int] = mapped_column(Integer, default=1)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    user_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    contrat: Mapped[MgContrat] = relationship(back_populates="avenants")
 
 
 class MgContratHistorique(UUIDPrimaryKeyMixin, TimestampMixin, Base):

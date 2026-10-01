@@ -8,6 +8,8 @@ l'extension seule ne suffit pas ; les documents à macros sont refusés.
 from __future__ import annotations
 
 import io
+import socket
+import struct
 import zipfile
 from pathlib import Path
 
@@ -70,6 +72,39 @@ def _ooxml_ok(ext: str, content: bytes) -> bool:
     return not any(n.lower().endswith("vbaproject.bin") for n in noms)
 
 
+def _clamd_instream(host: str, port: int, content: bytes) -> str:
+    with socket.create_connection((host, port), timeout=30) as sock:
+        sock.sendall(b"zINSTREAM\0")
+        for i in range(0, len(content), 64 * 1024):
+            chunk = content[i : i + 64 * 1024]
+            sock.sendall(struct.pack("!L", len(chunk)) + chunk)
+        sock.sendall(struct.pack("!L", 0))
+        reply = b""
+        while not reply.endswith(b"\0"):
+            data = sock.recv(4096)
+            if not data:
+                break
+            reply += data
+    return reply.rstrip(b"\0").decode("utf-8", "replace")
+
+
+def analyser_antivirus(content: bytes) -> None:
+    """Refuse le fichier si clamd (CLAMAV_HOST) détecte une menace ; fail-closed si configuré mais injoignable."""
+    from app.core.config import get_settings
+
+    s = get_settings()
+    if not s.clamav_host:
+        return
+    try:
+        reply = _clamd_instream(s.clamav_host, s.clamav_port, content)
+    except OSError as exc:
+        raise ValidationError("Analyse antivirale indisponible : dépôt refusé, réessayez plus tard.") from exc
+    if reply.endswith("FOUND"):
+        raise ValidationError("Fichier refusé : menace détectée par l'analyse antivirale.")
+    if not reply.endswith("OK"):
+        raise ValidationError("Analyse antivirale non concluante : dépôt refusé.")
+
+
 def valider_piece_jointe(filename: str | None, content: bytes) -> str:
     """Valide nom + contenu ; renvoie le type MIME normalisé (ne jamais faire confiance au client)."""
     ext = Path(filename or "").suffix.lower()
@@ -83,4 +118,5 @@ def valider_piece_jointe(filename: str | None, content: bytes) -> str:
         raise ValidationError(
             f"Le contenu du fichier ne correspond pas à son extension {ext} (fichier corrompu, renommé ou avec macros)."
         )
+    analyser_antivirus(content)
     return TYPES_MIME[ext]

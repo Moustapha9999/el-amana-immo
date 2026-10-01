@@ -295,7 +295,7 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
       label: 'Paramètres',
       path: '/contrats-echeances/parametres',
       icon: 'settings',
-      permissions: ['mg.contrats.manage'],
+      permissions: ['mg.contrats.settings'],
     },
   ],
   'archives-mg': [

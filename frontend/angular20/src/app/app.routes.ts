@@ -48,6 +48,7 @@ import { NotesPaiementsComponent } from './notes-frais/notes-paiements.component
 import { NotesParametresComponent } from './notes-frais/notes-parametres.component';
 import { ContratsDashboardComponent } from './contrats-echeances/contrats-dashboard.component';
 import { ContratsListComponent } from './contrats-echeances/contrats-list.component';
+import { ContratsFicheComponent } from './contrats-echeances/contrats-fiche.component';
 import { withUnsavedChangesGuard } from './core/feedback/unsaved-changes.guard';
 import { ContratsParametresComponent } from './contrats-echeances/contrats-parametres.component';
 import { ContratsRapportsComponent } from './contrats-echeances/contrats-rapports.component';
@@ -188,10 +189,10 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'echeances', component: ContratsListComponent },
       { path: 'paiements', component: ContratsListComponent },
       { path: 'renouvellements', component: ContratsListComponent },
-      { path: 'nouveau', component: ContratsListComponent },
+      { path: 'nouveau', component: ContratsFicheComponent },
       { path: 'rapports', component: ContratsRapportsComponent },
       { path: 'parametres', component: ContratsParametresComponent },
-      { path: ':id', component: ContratsListComponent },
+      { path: ':id', component: ContratsFicheComponent },
     ],
   },
   {

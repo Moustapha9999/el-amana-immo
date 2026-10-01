@@ -1,548 +1,266 @@
-import { MontantPipe, TauxPipe } from '../shared/montant.pipe';
-import { ChangeDetectionStrategy, Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, OnInit, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { describeApiErrorAsync } from '../core/feedback/api-error';
-import { FeedbackMessage, FeedbackService } from '../core/feedback/feedback.service';
+import { FeedbackService } from '../core/feedback/feedback.service';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 import { ApiService } from '../core/services/api.service';
-import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
-import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
-import { UiDialogAction } from '../shared/ui-dialog/ui-dialog.types';
+import { MontantPipe } from '../shared/montant.pipe';
+import {
+  ALERTE_TYPE_LABELS,
+  ARenouveler,
+  Alerte,
+  Contrat,
+  ContratsConfig,
+  ETATS_FILTRE,
+  EcheanceRow,
+  PaiementRow,
+  RECONDUCTION_LABELS,
+  RefItem,
+  STATUTS_CONTRAT,
+  TYPES_ECHEANCE,
+  aujourdhui,
+  dateFr,
+  joursLabel,
+  num,
+  statutLabel,
+  typeEcheanceLabel,
+} from './contrats.models';
 
-type TransitionAction = 'soumettre' | 'valider' | 'suspendre' | 'reprendre' | 'expirer' | 'archiver';
+type Mode = 'liste' | 'alertes' | 'echeances' | 'paiements' | 'renouvellements';
 
-const TRANSITIONS: Record<
-  TransitionAction,
-  { preset: UiDialogAction; question: string; hint: string; loading: string; success: string; errorTitle: string }
-> = {
-  soumettre: {
-    preset: 'soumission',
-    question: 'Soumettre pour validation le contrat',
-    hint: 'Après soumission, le contrat est envoyé au processus de validation.',
-    loading: 'Soumission…',
-    success: 'Contrat soumis avec succès',
-    errorTitle: 'Échec de la soumission',
-  },
-  valider: {
-    preset: 'validation',
-    question: 'Valider le contrat',
-    hint: 'Après validation, le contrat devient actif et ses échéances déclenchent des alertes.',
-    loading: 'Validation…',
-    success: 'Validation effectuée',
-    errorTitle: 'Échec de la validation',
-  },
-  suspendre: {
-    preset: 'suspension',
-    question: 'Suspendre le contrat',
-    hint: 'Le contrat reste consultable et pourra être repris à tout moment.',
-    loading: 'Suspension…',
-    success: 'Contrat suspendu',
-    errorTitle: 'Échec de la suspension',
-  },
-  reprendre: {
-    preset: 'reprise',
-    question: 'Reprendre le contrat',
-    hint: 'Le contrat redevient actif.',
-    loading: 'Reprise…',
-    success: 'Contrat repris',
-    errorTitle: 'Échec de la reprise',
-  },
-  expirer: {
-    preset: 'expiration',
-    question: 'Marquer comme expiré le contrat',
-    hint: 'Vous pourrez ensuite préparer un renouvellement ou l’archiver.',
-    loading: 'Mise à jour du statut…',
-    success: 'Contrat marqué expiré',
-    errorTitle: 'Échec de la mise à jour',
-  },
-  archiver: {
-    preset: 'archivage',
-    question: 'Archiver le contrat',
-    hint: 'Le contrat passera en lecture seule.',
-    loading: 'Archivage…',
-    success: 'Contrat archivé',
-    errorTitle: 'Échec de l’archivage',
-  },
+const TITRES: Record<Mode, { titre: string; sous: string }> = {
+  liste: { titre: 'Registre des contrats', sous: 'Recherche, filtres par statut, état, type et agence.' },
+  alertes: { titre: 'Alertes', sous: 'Fins de contrat, préavis, paiements dus ou en retard, fiches incomplètes.' },
+  echeances: { titre: 'Échéances', sous: 'Échéancier consolidé de tous les contrats : à venir, dues, en retard, payées.' },
+  paiements: { titre: 'Paiements', sous: 'Règlements enregistrés et rapprochement prévu / payé.' },
+  renouvellements: { titre: 'Renouvellements', sous: 'Contrats arrivant à terme : reconduction tacite ou expresse.' },
 };
 
-interface Contrat {
-  id: string;
-  reference: string;
-  titre: string;
-  numero_contrat: string | null;
-  description: string | null;
-  type_contrat: string;
-  fournisseur_id: string | null;
-  fournisseur_snapshot: string | null;
-  agence_id: string | null;
-  agence_libelle_snapshot: string | null;
-  responsable_id: string | null;
-  responsable_nom: string | null;
-  date_signature: string | null;
-  date_debut: string;
-  date_fin: string | null;
-  prochain_echeance: string | null;
-  montant: number | null;
-  montant_ht: number | null;
-  taux_tva: number | null;
-  devise: string;
-  periodicite: string;
-  mode_paiement: string | null;
-  ref_paiement: string | null;
-  alerte_jours: number;
-  observation: string | null;
-  statut: string;
-  contrat_precedent_id: string | null;
-  echeances?: Echeance[];
-  paiements?: Paiement[];
-  historique?: Hist[];
-}
-
-interface Echeance {
-  id: string;
-  type_echeance: string;
-  date_prevue: string;
-  montant: number | null;
-  statut: string;
-  commentaire: string | null;
-}
-
-interface Paiement {
-  id: string;
-  reference: string | null;
-  date_prevue: string;
-  date_reelle: string | null;
-  montant_prevu: number;
-  montant_paye: number;
-  statut: string;
-  mode: string | null;
-}
-
-interface Hist {
-  id: string;
-  action: string;
-  from_statut: string | null;
-  to_statut: string | null;
-  user_nom: string | null;
-  commentaire: string | null;
-  created_at: string;
-}
-
-const STATUT_LABELS: Record<string, string> = {
-  BROUILLON: 'Brouillon',
-  EN_PREPARATION: 'En préparation',
-  EN_VALIDATION: 'En validation',
-  ACTIF: 'Actif',
-  SUSPENDU: 'Suspendu',
-  EXPIRE: 'Expiré',
-  ARCHIVE: 'Archivé',
-  REJETE: 'Rejeté',
-  ANNULE: 'Annulé',
-  A_VENIR: 'À venir',
-  FAITE: 'Faite',
-  ANNULEE: 'Annulée',
-  EN_RETARD: 'En retard',
-  PAYE: 'Payé',
-  PARTIELLEMENT_PAYE: 'Partiellement payé',
-};
-
-const STATUT_AIDE: Record<string, string> = {
-  BROUILLON: 'Complétez la fiche puis soumettez-la pour validation.',
-  EN_PREPARATION: 'Complétez la fiche puis soumettez-la pour validation.',
-  EN_VALIDATION: 'En attente de validation : validez pour activer le contrat, ou rejetez-le avec un motif.',
-  ACTIF: 'Contrat en vigueur. Les échéances déclenchent des alertes ; à l’approche de la fin, préparez le renouvellement.',
-  SUSPENDU: 'Contrat temporairement suspendu. Reprenez-le pour le réactiver.',
-  EXPIRE: 'La date de fin est passée. Préparez un renouvellement ou archivez le contrat.',
-  ARCHIVE: 'Contrat archivé : consultation uniquement.',
-  REJETE: 'Contrat rejeté lors de la validation. Archivez-le ou annulez-le.',
-  ANNULE: 'Contrat annulé : consultation uniquement.',
-};
-
-const ETAPES = [
-  { code: 'BROUILLON', label: 'Brouillon' },
-  { code: 'EN_VALIDATION', label: 'Validation' },
-  { code: 'ACTIF', label: 'En vigueur' },
-  { code: 'FIN', label: 'Expiré / archivé' },
-] as const;
-
-const TYPES_ECHEANCE = [
-  { code: 'PAIEMENT', label: 'Paiement' },
-  { code: 'REVISION', label: 'Révision de prix' },
-  { code: 'PREAVIS', label: 'Préavis de résiliation' },
-  { code: 'RENOUVELLEMENT', label: 'Renouvellement' },
-  { code: 'FIN_CONTRAT', label: 'Fin de contrat' },
-  { code: 'AUTRE', label: 'Autre' },
-] as const;
-
-const PERIODICITE_LABELS: Record<string, string> = {
-  MENSUEL: 'Mensuel',
-  TRIMESTRIEL: 'Trimestriel',
-  SEMESTRIEL: 'Semestriel',
-  ANNUEL: 'Annuel',
-  UNIQUE: 'Paiement unique',
-};
-
-const ACTION_LABELS: Record<string, string> = {
-  creer: 'Création',
-  modifier: 'Modification',
-  supprimer: 'Suppression',
-  soumettre: 'Soumis pour validation',
-  valider: 'Validé',
-  rejeter: 'Rejeté',
-  suspendre: 'Suspendu',
-  reprendre: 'Repris',
-  expirer: 'Marqué expiré',
-  annuler: 'Annulé',
-  archiver: 'Archivé',
-  renouveler: 'Renouvellement',
-  echeance: 'Échéance ajoutée',
-  echeance_modifier: 'Échéance modifiée',
-  echeance_supprimer: 'Échéance supprimée',
-  paiement: 'Paiement enregistré',
-};
-
-const MODES_PAIEMENT = ['Espèces', 'Virement', 'Amanty', 'Chèque', 'Carte', 'Prélèvement'] as const;
-const MODES_AVEC_REF = new Set<string>(['Virement', 'Amanty']);
-
-interface RefItem {
-  id: string;
-  libelle?: string;
-  raison_sociale?: string;
-  code?: string;
-  full_name?: string;
-}
-
-interface Alerte {
-  type: string;
-  contrat_id: string;
-  reference: string;
-  titre: string;
-  fournisseur: string | null;
-  agence: string | null;
-  echeance: string | null;
-  jours: number | null;
-  niveau: string;
-  statut: string;
-}
+const SUPPRIMABLES = new Set(['BROUILLON', 'EN_PREPARATION', 'REJETE', 'ANNULE']);
 
 @Component({
   selector: 'bea-contrats-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MontantPipe, TauxPipe, MgGedPanelComponent, MatIconModule],
+  imports: [ReactiveFormsModule, RouterLink, MontantPipe, MatIconModule],
   template: `
     <section class="bea-mg bea-nf bea-ct">
       <header class="bea-mg__head">
         <div>
           <p class="bea-stock-page__kicker">Contrats &amp; échéances</p>
-          <h1>{{ titre() }}</h1>
+          <h1>{{ entete().titre }}</h1>
+          <p class="bea-ct-head__sub">
+            {{ entete().sous }}
+            @if (config()?.agence_scope; as s) { <span class="bea-ct-badge" data-tone="INFO">Périmètre : {{ s.libelle || 'votre agence' }}</span> }
+          </p>
         </div>
         <div class="bea-mg__actions">
-          @if (mode() === 'fiche' || mode() === 'nouveau') {
-            @if (fiche(); as c) {
-              <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="telechargement()" (click)="telechargerPdf(c)">
-                <mat-icon>download</mat-icon> {{ telechargement() ? 'Préparation…' : 'Télécharger le contrat (PDF)' }}
-              </button>
-            }
-            <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/contrats-echeances/liste">Retour liste</a>
-          } @else if (mode() === 'echeances') {
-            <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="ouvrirEcheance()">Nouvelle échéance</button>
-          } @else if (mode() === 'liste') {
-            <a class="bea-mg__btn bea-mg__btn--primary" routerLink="/contrats-echeances/nouveau">Nouveau contrat</a>
+          @if (mode() === 'liste' && cap().create) {
+            <a class="bea-mg__btn bea-mg__btn--primary" routerLink="/contrats-echeances/nouveau"><mat-icon>add</mat-icon> Nouveau contrat</a>
           }
+          @if (mode() === 'paiements' && cap().manage) {
+            <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="ouvrirPaiement()"><mat-icon>add</mat-icon> Nouveau paiement</button>
+          }
+          @if (mode() === 'alertes' && cap().manage) {
+            <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()" (click)="envoyerRappels()"><mat-icon>notifications_active</mat-icon> Envoyer les rappels</button>
+          }
+          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Actualiser" (click)="charger()"><mat-icon>refresh</mat-icon></button>
         </div>
       </header>
 
-      @if (mode() === 'liste' || mode() === 'renouvellements') {
-        <form class="bea-mg__search" [formGroup]="filtres" (ngSubmit)="loadListe()">
-          <label class="bea-mg__field">Recherche
-            <input formControlName="q" placeholder="Référence, objet, fournisseur, agence, responsable" />
+      @if (mode() === 'liste') {
+        <form class="bea-mg__search bea-ct-filters" [formGroup]="filtres" (ngSubmit)="appliquerFiltres()">
+          <label class="bea-mg__field bea-ct-filters__q">Recherche
+            <input formControlName="q" placeholder="Référence, objet, n° contrat, fournisseur, agence, responsable" />
           </label>
           <label class="bea-mg__field">Statut
-            <select formControlName="statut" (change)="loadListe()">
+            <select formControlName="statut" (change)="appliquerFiltres()">
               <option value="">Tous</option>
-              @for (s of statuts; track s) { <option [value]="s">{{ s }}</option> }
+              @for (s of statuts; track s) { <option [value]="s">{{ statut(s) }}</option> }
             </select>
           </label>
-          <label class="bea-mg__field">Échéance
-            <select formControlName="horizon" (change)="loadListe()">
+          <label class="bea-mg__field">État
+            <select formControlName="etat" (change)="appliquerFiltres()">
+              <option value="">Tous</option>
+              @for (e of etats; track e.code) { <option [value]="e.code">{{ e.label }}</option> }
+            </select>
+          </label>
+          <label class="bea-mg__field">Type
+            <select formControlName="type_contrat" (change)="appliquerFiltres()">
+              <option value="">Tous</option>
+              @for (t of types(); track t.code) { <option [value]="t.code">{{ t.libelle }}</option> }
+            </select>
+          </label>
+          @if (!config()?.agence_scope) {
+            <label class="bea-mg__field">Agence
+              <select formControlName="agence_id" (change)="appliquerFiltres()">
+                <option value="">Toutes</option>
+                @for (a of agences(); track a.id) { <option [value]="a.id">{{ a.libelle }}</option> }
+              </select>
+            </label>
+          }
+          <label class="bea-mg__field">Fin de contrat
+            <select formControlName="horizon" (change)="appliquerFiltres()">
               <option value="">Toutes</option>
-              <option value="retard">En retard</option>
+              <option value="retard">Date dépassée</option>
+              <option value="30">≤ 30 jours</option>
+              <option value="60">≤ 60 jours</option>
+              <option value="90">≤ 90 jours</option>
+            </select>
+          </label>
+          <div class="bea-ct-filters__btns">
+            <button type="submit" class="bea-mg__btn bea-mg__btn--ghost"><mat-icon>search</mat-icon> Filtrer</button>
+            @if (filtresActifs()) {
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="reinitialiser()">Réinitialiser</button>
+            }
+          </div>
+        </form>
+        <div class="bea-mg__table-scroll bea-ct-table-wrap">
+          <table class="bea-mg__table bea-ct-table">
+            <thead>
+              <tr>
+                <th>Référence</th><th>Objet</th><th>Fournisseur</th><th>Agence</th><th>Responsable</th>
+                <th>Fin</th><th class="is-num">Montant TTC</th><th>Statut</th><th class="is-actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (c of contrats(); track c.id; let i = $index) {
+                <tr class="bea-ct-row" [style.animation-delay.ms]="i < 20 ? i * 30 : 0">
+                  <td class="is-nowrap">
+                    <a class="bea-ct-link" [routerLink]="['/contrats-echeances', c.id]"><code class="bea-mg__code">{{ c.reference }}</code></a>
+                    <small class="bea-ct-sub">{{ typeLabel(c.type_contrat) }}{{ c.version > 1 ? ' · v' + c.version : '' }}</small>
+                  </td>
+                  <td class="is-wide">
+                    <strong class="bea-ct-strong">{{ c.titre }}</strong>
+                    @if (c.numero_contrat) { <small class="bea-ct-sub">N° {{ c.numero_contrat }}</small> }
+                  </td>
+                  <td class="is-wide">{{ c.fournisseur_snapshot || '—' }}</td>
+                  <td class="is-wide">{{ c.agence_libelle_snapshot || '—' }}</td>
+                  <td class="is-wide">{{ c.responsable_nom || '—' }}</td>
+                  <td class="is-nowrap">
+                    {{ date(c.date_fin) }}
+                    @if (c.jours_restants !== null && enVigueur(c.statut)) { <small class="bea-ct-sub" [class.bea-ct-neg]="c.jours_restants < 0">{{ jours(c.jours_restants) }}</small> }
+                  </td>
+                  <td class="is-nowrap is-num">{{ c.montant | montant }} {{ c.devise }}</td>
+                  <td class="is-nowrap"><span class="bea-ct-badge" [attr.data-tone]="c.etat">{{ statut(c.etat) }}</span></td>
+                  <td class="bea-mg__actions-cell is-nowrap">
+                    <a class="bea-mg__icon-btn" [routerLink]="['/contrats-echeances', c.id]" title="Ouvrir la fiche"><mat-icon>{{ cap().manage ? 'edit' : 'visibility' }}</mat-icon></a>
+                    @if (cap().manage && supprimable(c.statut)) {
+                      <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Retirer du registre" [disabled]="busy()" (click)="supprimerContrat(c)"><mat-icon>delete</mat-icon></button>
+                    }
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="9"><div class="bea-ct-empty"><mat-icon>description</mat-icon><p>{{ filtresActifs() ? 'Aucun contrat ne correspond aux filtres.' : 'Aucun contrat enregistré.' }}</p></div></td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (contrats().length) {
+          <p class="bea-ct-count">{{ contrats().length }} contrat{{ contrats().length > 1 ? 's' : '' }} · {{ totalListe() | montant }} TTC</p>
+        }
+      }
+
+      @if (mode() === 'alertes') {
+        <div class="bea-nf-kpi">
+          @for (n of niveaux; track n) {
+            <button type="button" class="bea-nf-kpi__card bea-ct-kpi-btn" [class.is-on]="filtreNiveau() === n" [attr.data-tone]="n" (click)="filtreNiveau.set(filtreNiveau() === n ? '' : n)">
+              <p>{{ statut(n) }}</p><strong>{{ compteNiveau(n) }}</strong>
+            </button>
+          }
+        </div>
+        <div class="bea-mg__search">
+          <label class="bea-mg__field">Type d’alerte
+            <select [value]="filtreType()" (change)="filtreType.set($any($event.target).value)">
+              <option value="">Tous</option>
+              @for (t of typesAlerte; track t[0]) { <option [value]="t[0]">{{ t[1] }}</option> }
+            </select>
+          </label>
+        </div>
+        <div class="bea-mg__table-scroll bea-ct-table-wrap">
+          <table class="bea-mg__table bea-ct-table">
+            <thead><tr><th>Niveau</th><th>Type</th><th>Contrat</th><th>Alerte</th><th>Responsable</th><th>Date</th><th class="is-actions">Actions</th></tr></thead>
+            <tbody>
+              @for (a of alertesFiltrees(); track $index; let i = $index) {
+                <tr class="bea-ct-row" [style.animation-delay.ms]="i < 20 ? i * 30 : 0">
+                  <td class="is-nowrap"><span class="bea-ct-badge" [attr.data-tone]="a.niveau">{{ statut(a.niveau) }}</span></td>
+                  <td class="is-nowrap">{{ typeAlerte(a.type) }}</td>
+                  <td class="is-wide"><code class="bea-mg__code">{{ a.reference }}</code><small class="bea-ct-sub">{{ a.titre }}{{ a.fournisseur ? ' · ' + a.fournisseur : '' }}</small></td>
+                  <td class="is-wide"><strong class="bea-ct-strong">{{ a.message }}</strong></td>
+                  <td class="is-wide">{{ a.responsable || '—' }}</td>
+                  <td class="is-nowrap">{{ date(a.echeance) }}@if (a.jours !== null) { <small class="bea-ct-sub" [class.bea-ct-neg]="a.jours < 0">{{ jours(a.jours) }}</small> }</td>
+                  <td class="bea-mg__actions-cell"><a class="bea-mg__icon-btn" [routerLink]="['/contrats-echeances', a.contrat_id]" title="Ouvrir le contrat"><mat-icon>open_in_new</mat-icon></a></td>
+                </tr>
+              } @empty {
+                <tr><td colspan="7"><div class="bea-ct-empty"><mat-icon>notifications_none</mat-icon><p>Aucune alerte en cours.</p></div></td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <p class="bea-ct-help"><mat-icon>schedule_send</mat-icon> Rappels automatiques quotidiens (7 h 30) aux responsables : au délai d’alerte du contrat, J-30, J-15, J-7, J-1, jour J, puis chaque semaine en cas de retard (notification + e-mail si configuré).</p>
+      }
+
+      @if (mode() === 'echeances') {
+        <div class="bea-nf-kpi">
+          <button type="button" class="bea-nf-kpi__card bea-ct-kpi-btn" data-tone="A_VENIR" [class.is-on]="filtreEcheance.value.statut === 'A_VENIR'" (click)="filtrerEcheancesStatut('A_VENIR')"><p>À venir</p><strong>{{ kpiEcheances().aVenir }}</strong></button>
+          <button type="button" class="bea-nf-kpi__card bea-ct-kpi-btn" data-tone="DUE" [class.is-on]="filtreEcheance.value.statut === 'DUE'" (click)="filtrerEcheancesStatut('DUE')"><p>Dues</p><strong>{{ kpiEcheances().dues }}</strong></button>
+          <button type="button" class="bea-nf-kpi__card bea-ct-kpi-btn" data-tone="EN_RETARD" [class.is-on]="filtreEcheance.value.statut === 'EN_RETARD'" (click)="filtrerEcheancesStatut('EN_RETARD')"><p>En retard</p><strong>{{ kpiEcheances().retard }}</strong><small>{{ kpiEcheances().resteRetard | montant }}</small></button>
+          <button type="button" class="bea-nf-kpi__card bea-ct-kpi-btn" data-tone="PAYEE" [class.is-on]="filtreEcheance.value.statut === 'PAYEE'" (click)="filtrerEcheancesStatut('PAYEE')"><p>Payées</p><strong>{{ kpiEcheances().payees }}</strong></button>
+        </div>
+        <form class="bea-mg__search" [formGroup]="filtreEcheance">
+          <label class="bea-mg__field">Horizon
+            <select formControlName="horizon" (change)="chargerEcheances()">
+              <option value="">Toutes</option>
+              <option value="retard">Passées</option>
               <option value="7">≤ 7 jours</option>
               <option value="30">≤ 30 jours</option>
               <option value="60">≤ 60 jours</option>
               <option value="90">≤ 90 jours</option>
             </select>
           </label>
-          <button type="submit" class="bea-mg__btn bea-mg__btn--ghost">Filtrer</button>
+          <label class="bea-mg__field">Statut
+            <select formControlName="statut" (change)="chargerEcheances()">
+              <option value="">Tous</option>
+              <option value="A_VENIR">À venir</option>
+              <option value="DUE">Due</option>
+              <option value="EN_RETARD">En retard</option>
+              <option value="PAYEE">Payée</option>
+              <option value="FAITE">Réalisée</option>
+              <option value="ANNULEE">Annulée</option>
+            </select>
+          </label>
+          <label class="bea-mg__field">Type
+            <select formControlName="type_echeance" (change)="chargerEcheances()">
+              <option value="">Tous</option>
+              @for (t of typesEcheance; track t.code) { <option [value]="t.code">{{ t.label }}</option> }
+            </select>
+          </label>
         </form>
         <div class="bea-mg__table-scroll bea-ct-table-wrap">
           <table class="bea-mg__table bea-ct-table">
-            <thead>
-              <tr>
-                <th>Référence</th><th>Objet</th><th>Fournisseur</th><th>Agence</th>
-                <th>Responsable</th><th>Période</th><th class="is-num">Montant TTC</th><th>Statut</th><th class="is-actions">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (c of contrats(); track c.id; let i = $index) {
-                <tr class="bea-ct-row" [style.animation-delay.ms]="i < 20 ? i * 35 : 0">
-                  <td class="is-nowrap">
-                    <code class="bea-mg__code">{{ c.reference }}</code>
-                    <small class="bea-ct-sub">{{ typeLabel(c.type_contrat) }}</small>
-                  </td>
-                  <td class="is-wide"><strong class="bea-ct-strong">{{ c.titre }}</strong></td>
-                  <td class="is-wide">{{ c.fournisseur_snapshot || '—' }}</td>
-                  <td class="is-wide">{{ c.agence_libelle_snapshot || '—' }}</td>
-                  <td class="is-wide">{{ c.responsable_nom || '—' }}</td>
-                  <td class="is-nowrap">
-                    {{ dateFr(c.date_debut) }}
-                    <small class="bea-ct-sub">au {{ dateFr(c.date_fin) }}</small>
-                  </td>
-                  <td class="is-nowrap is-num">{{ c.montant | montant }} {{ c.devise }}</td>
-                  <td class="is-nowrap"><span class="bea-ct-badge" [attr.data-tone]="c.statut">{{ statutLabel(c.statut) }}</span></td>
-                  <td class="bea-mg__actions-cell is-nowrap">
-                    <button type="button" class="bea-mg__icon-btn" title="Voir" (click)="voir(c)"><mat-icon>visibility</mat-icon></button>
-                    <a class="bea-mg__icon-btn" [routerLink]="['/contrats-echeances', c.id]" title="Modifier"><mat-icon>edit</mat-icon></a>
-                    <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer" (click)="supprimerContrat(c)">
-                      <mat-icon>delete</mat-icon>
-                    </button>
-                  </td>
-                </tr>
-              } @empty {
-                <tr>
-                  <td colspan="9">
-                    <div class="bea-ct-empty"><mat-icon>description</mat-icon><p>Aucun contrat enregistré.</p></div>
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        @if (contrats().length) {
-          <p class="bea-ct-count">{{ contrats().length }} contrat{{ contrats().length > 1 ? 's' : '' }}</p>
-        }
-      }
-
-      @if (apercuOuvert()) {
-        <div class="bea-mg__backdrop" (click)="fermerApercu()"></div>
-        <div class="bea-mg__modal bea-mg__modal--lg bea-ct-view" role="dialog" aria-modal="true" aria-labelledby="bea-ct-view-title">
-          @if (apercu(); as v) {
-            <header class="bea-ct-view__head">
-              <div>
-                <p class="bea-ct-view__kicker">
-                  <code class="bea-mg__code">{{ v.reference }}</code>
-                  <span class="bea-ct-badge" [attr.data-tone]="v.statut">{{ statutLabel(v.statut) }}</span>
-                </p>
-                <h2 id="bea-ct-view-title">{{ v.titre }}</h2>
-                <p class="bea-ct-view__sub">{{ typeLabel(v.type_contrat) }}{{ v.numero_contrat ? ' · N° ' + v.numero_contrat : '' }}</p>
-              </div>
-              <button type="button" class="bea-ct-view__close" title="Fermer" aria-label="Fermer" (click)="fermerApercu()">
-                <mat-icon>close</mat-icon>
-              </button>
-            </header>
-
-            <div class="bea-ct-view__body">
-              <div class="bea-ct-view__kpis">
-                <div>
-                  <span>Montant TTC</span>
-                  <strong>{{ v.montant | montant }} {{ v.devise }}</strong>
-                  @if (v.montant_ht !== null) { <small>HT {{ v.montant_ht | montant }} · TVA {{ v.taux_tva | taux }}</small> }
-                </div>
-                <div>
-                  <span>Période</span>
-                  <strong>{{ dateFr(v.date_debut) }} → {{ dateFr(v.date_fin) }}</strong>
-                  <small>{{ periodiciteLabel(v.periodicite) }}</small>
-                </div>
-                <div>
-                  <span>Prochaine échéance</span>
-                  <strong>{{ dateFr(v.prochain_echeance) }}</strong>
-                  @if (joursRestants(v.prochain_echeance); as j) { <small>{{ j }}</small> }
-                </div>
-              </div>
-
-              <section class="bea-ct-view__section">
-                <h3><mat-icon>groups</mat-icon> Parties</h3>
-                <dl class="bea-ct-view__dl">
-                  <div><dt>Fournisseur</dt><dd>{{ v.fournisseur_snapshot || '—' }}</dd></div>
-                  <div><dt>Agence</dt><dd>{{ v.agence_libelle_snapshot || '—' }}</dd></div>
-                  <div><dt>Responsable</dt><dd>{{ v.responsable_nom || '—' }}</dd></div>
-                </dl>
-              </section>
-
-              <section class="bea-ct-view__section">
-                <h3><mat-icon>event</mat-icon> Dates et paiement</h3>
-                <dl class="bea-ct-view__dl">
-                  <div><dt>Signature</dt><dd>{{ dateFr(v.date_signature) }}</dd></div>
-                  <div><dt>Mode de paiement</dt><dd>{{ v.mode_paiement || '—' }}</dd></div>
-                  @if (v.ref_paiement) {
-                    <div><dt>{{ v.mode_paiement === 'Amanty' ? 'Numéro Amanty' : 'Compte' }}</dt><dd>{{ v.ref_paiement }}</dd></div>
-                  }
-                  <div><dt>Alerte</dt><dd>{{ v.alerte_jours }} jours avant échéance</dd></div>
-                </dl>
-              </section>
-
-              @if (v.description || v.observation) {
-                <section class="bea-ct-view__section">
-                  <h3><mat-icon>notes</mat-icon> Description</h3>
-                  @if (v.description) { <p class="bea-ct-view__text">{{ v.description }}</p> }
-                  @if (v.observation) { <p class="bea-ct-view__text bea-ct-view__text--muted">{{ v.observation }}</p> }
-                </section>
-              }
-
-              <section class="bea-ct-view__section">
-                <h3><mat-icon>schedule</mat-icon> Échéances <small>{{ (v.echeances || []).length }}</small></h3>
-                @if ((v.echeances || []).length) {
-                  <ul class="bea-ct-view__rows">
-                    @for (e of v.echeances; track e.id) {
-                      <li>
-                        <strong>{{ dateFr(e.date_prevue) }}</strong>
-                        <span>{{ typeEcheanceLabel(e.type_echeance) }}</span>
-                        <span class="is-num">{{ e.montant | montant }}</span>
-                        <span class="bea-ct-badge" [attr.data-tone]="e.statut">{{ statutLabel(e.statut) }}</span>
-                      </li>
-                    }
-                  </ul>
-                } @else { <p class="bea-ct-view__none">Aucune échéance planifiée.</p> }
-              </section>
-
-              <section class="bea-ct-view__section">
-                <h3><mat-icon>payments</mat-icon> Paiements <small>{{ (v.paiements || []).length }}</small></h3>
-                @if ((v.paiements || []).length) {
-                  <ul class="bea-ct-view__rows">
-                    @for (p of v.paiements; track p.id) {
-                      <li>
-                        <strong>{{ dateFr(p.date_prevue) }}</strong>
-                        <span>{{ p.reference || '—' }}</span>
-                        <span class="is-num">{{ p.montant_paye | montant }} / {{ p.montant_prevu | montant }}</span>
-                        <span class="bea-ct-badge" [attr.data-tone]="p.statut">{{ statutLabel(p.statut) }}</span>
-                      </li>
-                    }
-                  </ul>
-                } @else { <p class="bea-ct-view__none">Aucun paiement suivi.</p> }
-              </section>
-            </div>
-
-            <footer class="bea-ct-view__foot">
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="fermerApercu()">Fermer</button>
-              <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="['/contrats-echeances', v.id]">
-                <mat-icon>edit</mat-icon> Ouvrir la fiche
-              </a>
-              <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="telechargement()" (click)="telechargerPdf(v)">
-                <mat-icon>download</mat-icon> {{ telechargement() ? 'Préparation…' : 'Télécharger PDF' }}
-              </button>
-            </footer>
-          } @else {
-            <div class="bea-ct-view__loading">
-              <span class="bea-ct-view__spinner"></span> Chargement du contrat…
-            </div>
-          }
-        </div>
-      }
-
-      @if (mode() === 'alertes') {
-        <div class="bea-mg__table-scroll bea-ct-table-wrap">
-          <table class="bea-mg__table bea-ct-table">
-            <thead>
-              <tr>
-                <th>Contrat</th><th>Alerte</th><th>Fournisseur</th><th>Agence</th>
-                <th>Échéance</th><th>Niveau</th><th>Statut</th><th class="is-actions">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (a of alertes(); track $index; let i = $index) {
-                <tr class="bea-ct-row" [style.animation-delay.ms]="i < 20 ? i * 35 : 0">
-                  <td class="is-wide">
-                    <code class="bea-mg__code">{{ a.reference }}</code>
-                    <small class="bea-ct-sub">{{ a.titre }}</small>
-                  </td>
-                  <td class="is-wide">{{ a.type }}</td>
-                  <td class="is-wide">{{ a.fournisseur || '—' }}</td>
-                  <td class="is-wide">{{ a.agence || '—' }}</td>
-                  <td class="is-nowrap">
-                    {{ dateFr(a.echeance) }}
-                    @if (a.jours !== null) { <small class="bea-ct-sub">{{ joursLabel(a.jours) }}</small> }
-                  </td>
-                  <td class="is-nowrap"><span class="bea-ct-badge" [attr.data-tone]="a.niveau">{{ a.niveau }}</span></td>
-                  <td class="is-nowrap"><span class="bea-ct-badge" [attr.data-tone]="a.statut">{{ statutLabel(a.statut) }}</span></td>
-                  <td class="bea-mg__actions-cell">
-                    <a class="bea-mg__icon-btn" [routerLink]="['/contrats-echeances', a.contrat_id]" title="Consulter"><mat-icon>visibility</mat-icon></a>
-                  </td>
-                </tr>
-              } @empty {
-                <tr>
-                  <td colspan="8">
-                    <div class="bea-ct-empty"><mat-icon>notifications_none</mat-icon><p>Aucune alerte.</p></div>
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-      }
-
-      @if (mode() === 'echeances') {
-        @if (echeanceOuverte()) {
-          <form class="bea-mg__panel bea-ct-panel bea-ct-section" [formGroup]="echeanceForm" (ngSubmit)="sauverEcheance()">
-            <div class="bea-mg__panel-top"><h2>{{ echeanceEditId() ? 'Modifier l’échéance' : 'Nouvelle échéance' }}</h2></div>
-            <div class="bea-mg__modal-body bea-ct-grid">
-              <label>Contrat
-                <select formControlName="contrat_id">
-                  <option value="">—</option>
-                  @for (c of contrats(); track c.id) { <option [value]="c.id">{{ c.reference }} — {{ c.titre }}</option> }
-                </select>
-              </label>
-              <label>Type <input formControlName="type_echeance" /></label>
-              <label>Date prévue <input type="date" formControlName="date_prevue" /></label>
-              <label>Date réelle <input type="date" formControlName="date_reelle" /></label>
-              <label>Montant <input type="number" formControlName="montant" /></label>
-              <label>Statut
-                <select formControlName="statut">
-                  <option value="A_VENIR">À venir</option>
-                  <option value="FAITE">Faite</option>
-                  <option value="ANNULEE">Annulée</option>
-                </select>
-              </label>
-              <label>Commentaire <input formControlName="commentaire" /></label>
-            </div>
-            <div class="bea-mg__actions" style="padding: 0 1rem 1rem">
-              <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="echeanceForm.invalid || echeanceBusy()">{{ echeanceBusy() ? 'Enregistrement…' : 'Enregistrer' }}</button>
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="fermerEcheance()">Fermer</button>
-            </div>
-          </form>
-        }
-        <div class="bea-mg__table-scroll bea-ct-table-wrap">
-          <table class="bea-mg__table bea-ct-table">
-            <thead><tr><th>Contrat</th><th>Type</th><th>Date prévue</th><th class="is-num">Montant</th><th>Statut</th><th class="is-actions">Actions</th></tr></thead>
+            <thead><tr><th>Date</th><th>Contrat</th><th>Type</th><th>Agence</th><th class="is-num">Montant</th><th class="is-num">Payé</th><th class="is-num">Reste</th><th>Statut</th><th class="is-actions">Actions</th></tr></thead>
             <tbody>
               @for (e of echeances(); track e.id; let i = $index) {
-                <tr class="bea-ct-row" [style.animation-delay.ms]="i < 20 ? i * 35 : 0">
-                  <td class="is-wide">
-                    <code class="bea-mg__code">{{ e.reference }}</code>
-                    <small class="bea-ct-sub">{{ e.titre }}</small>
-                  </td>
-                  <td class="is-wide">{{ typeEcheanceLabel(e.type_echeance) }}</td>
-                  <td class="is-nowrap">
-                    {{ dateFr(e.date_prevue) }}
-                    <small class="bea-ct-sub">{{ joursLabel(e.jours) }}</small>
-                  </td>
-                  <td class="is-nowrap is-num">{{ e.montant | montant }}</td>
-                  <td class="is-nowrap"><span class="bea-ct-badge" [attr.data-tone]="e.statut">{{ statutLabel(e.statut) }}</span></td>
-                  <td class="bea-mg__actions-cell">
-                    <a class="bea-mg__icon-btn" [routerLink]="['/contrats-echeances', e.contrat_id]" title="Consulter"><mat-icon>visibility</mat-icon></a>
-                    <button type="button" class="bea-mg__icon-btn" title="Modifier" (click)="modifierEcheance(e)"><mat-icon>edit</mat-icon></button>
-                    <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer" (click)="supprimerEcheance(e)">
-                      <mat-icon>delete</mat-icon>
-                    </button>
+                <tr class="bea-ct-row" [style.animation-delay.ms]="i < 20 ? i * 30 : 0">
+                  <td class="is-nowrap"><strong>{{ date(e.date_prevue) }}</strong><small class="bea-ct-sub" [class.bea-ct-neg]="e.jours < 0 && e.statut === 'EN_RETARD'">{{ jours(e.jours) }}</small></td>
+                  <td class="is-wide"><code class="bea-mg__code">{{ e.reference }}</code><small class="bea-ct-sub">{{ e.titre }}{{ e.fournisseur ? ' · ' + e.fournisseur : '' }}</small></td>
+                  <td class="is-nowrap">{{ typeEcheance(e.type_echeance) }}</td>
+                  <td class="is-wide">{{ e.agence || '—' }}</td>
+                  <td class="is-nowrap is-num">{{ e.montant === null ? '—' : (e.montant | montant) }}</td>
+                  <td class="is-nowrap is-num">{{ e.montant_paye | montant }}</td>
+                  <td class="is-nowrap is-num"><strong class="bea-ct-strong">{{ e.reste | montant }}</strong></td>
+                  <td class="is-nowrap"><span class="bea-ct-badge" [attr.data-tone]="e.statut">{{ statut(e.statut) }}</span></td>
+                  <td class="bea-mg__actions-cell is-nowrap">
+                    @if (cap().manage && e.type_echeance === 'PAIEMENT' && e.reste > 0 && regleable(e.contrat_statut)) {
+                      <button type="button" class="bea-mg__icon-btn" title="Régler cette échéance" (click)="regler(e)"><mat-icon>price_check</mat-icon></button>
+                    }
+                    <a class="bea-mg__icon-btn" [routerLink]="['/contrats-echeances', e.contrat_id]" title="Ouvrir le contrat"><mat-icon>open_in_new</mat-icon></a>
                   </td>
                 </tr>
               } @empty {
-                <tr>
-                  <td colspan="6">
-                    <div class="bea-ct-empty"><mat-icon>event</mat-icon><p>Aucune échéance.</p></div>
-                  </td>
-                </tr>
+                <tr><td colspan="9"><div class="bea-ct-empty"><mat-icon>event</mat-icon><p>Aucune échéance pour ces critères.</p><small>Les échéanciers sont générés automatiquement à la validation des contrats.</small></div></td></tr>
               }
             </tbody>
           </table>
@@ -552,9 +270,9 @@ interface Alerte {
       @if (mode() === 'paiements') {
         <div class="bea-nf-kpi">
           <article class="bea-nf-kpi__card"><p>Montant prévu</p><strong>{{ paiementsTotaux().prevu | montant }}</strong></article>
-          <article class="bea-nf-kpi__card"><p>Déjà payé</p><strong>{{ paiementsTotaux().paye | montant }}</strong></article>
-          <article class="bea-nf-kpi__card"><p>Reste à payer</p><strong>{{ paiementsTotaux().reste | montant }}</strong></article>
-          <article class="bea-nf-kpi__card"><p>Paiements en retard</p><strong>{{ paiementsTotaux().retard }}</strong></article>
+          <article class="bea-nf-kpi__card"><p>Montant versé</p><strong>{{ paiementsTotaux().paye | montant }}</strong></article>
+          <article class="bea-nf-kpi__card"><p>Écart (versé − prévu)</p><strong [class.bea-ct-neg]="paiementsTotaux().ecart < 0">{{ paiementsTotaux().ecart | montant }}</strong></article>
+          <article class="bea-nf-kpi__card" data-tone="EN_RETARD"><p>En retard</p><strong>{{ paiementsTotaux().retard }}</strong></article>
         </div>
         <div class="bea-mg__search">
           <label class="bea-mg__field">Statut
@@ -569,1014 +287,589 @@ interface Alerte {
         </div>
         <div class="bea-mg__table-scroll bea-ct-table-wrap">
           <table class="bea-mg__table bea-ct-table">
-            <thead>
-              <tr><th>Contrat</th><th>Réf. paiement</th><th>Date prévue</th><th class="is-num">Prévu</th><th class="is-num">Payé</th><th class="is-num">Reste</th><th>Statut</th><th class="is-actions">Actions</th></tr>
-            </thead>
+            <thead><tr><th>N° pièce</th><th>Contrat</th><th>Échéance</th><th>Payé le</th><th class="is-num">Prévu</th><th class="is-num">Versé</th><th class="is-num">Écart</th><th>Mode</th><th>Statut</th><th class="is-actions">Actions</th></tr></thead>
             <tbody>
               @for (p of paiements(); track p.id; let i = $index) {
-                <tr class="bea-ct-row" [style.animation-delay.ms]="i < 20 ? i * 35 : 0">
-                  <td class="is-wide">
-                    <code class="bea-mg__code">{{ p.reference }}</code>
-                    <small class="bea-ct-sub">{{ p.titre }}</small>
-                  </td>
-                  <td class="is-wide">{{ p.paiement_ref || '—' }}</td>
-                  <td class="is-nowrap">{{ dateFr(p.date_prevue) }}</td>
+                <tr class="bea-ct-row" [style.animation-delay.ms]="i < 20 ? i * 30 : 0">
+                  <td class="is-nowrap"><code class="bea-mg__code">{{ p.paiement_ref || '—' }}</code></td>
+                  <td class="is-wide"><code class="bea-mg__code">{{ p.reference }}</code><small class="bea-ct-sub">{{ p.titre }}{{ p.fournisseur ? ' · ' + p.fournisseur : '' }}</small></td>
+                  <td class="is-nowrap">{{ date(p.echeance_date || p.date_prevue) }}</td>
+                  <td class="is-nowrap">{{ date(p.date_reelle) }}</td>
                   <td class="is-nowrap is-num">{{ p.montant_prevu | montant }}</td>
-                  <td class="is-nowrap is-num">{{ p.montant_paye | montant }}</td>
-                  <td class="is-nowrap is-num"><strong class="bea-ct-strong">{{ p.reste | montant }}</strong></td>
-                  <td class="is-nowrap"><span class="bea-ct-badge" [attr.data-tone]="p.statut">{{ statutLabel(p.statut) }}</span></td>
-                  <td class="bea-mg__actions-cell">
-                    <a class="bea-mg__icon-btn" [routerLink]="['/contrats-echeances', p.contrat_id]" title="Consulter"><mat-icon>visibility</mat-icon></a>
+                  <td class="is-nowrap is-num"><strong class="bea-ct-strong">{{ p.montant_paye | montant }}</strong></td>
+                  <td class="is-nowrap is-num" [class.bea-ct-neg]="p.ecart < 0">{{ p.ecart | montant }}</td>
+                  <td class="is-nowrap">{{ p.mode || '—' }}</td>
+                  <td class="is-nowrap"><span class="bea-ct-badge" [attr.data-tone]="p.statut">{{ statut(p.statut) }}</span></td>
+                  <td class="bea-mg__actions-cell is-nowrap">
+                    @if (cap().manage && regleable(p.contrat_statut)) {
+                      <button type="button" class="bea-mg__icon-btn" title="Modifier" (click)="editerPaiement(p)"><mat-icon>edit</mat-icon></button>
+                      <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer" [disabled]="busy()" (click)="supprimerPaiement(p)"><mat-icon>delete</mat-icon></button>
+                    }
+                    <a class="bea-mg__icon-btn" [routerLink]="['/contrats-echeances', p.contrat_id]" title="Ouvrir le contrat"><mat-icon>open_in_new</mat-icon></a>
                   </td>
                 </tr>
               } @empty {
-                <tr>
-                  <td colspan="8">
-                    <div class="bea-ct-empty">
-                      <mat-icon>payments</mat-icon>
-                      <p>Aucun paiement{{ paiementStatut() ? ' pour ce statut' : '' }}.</p>
-                      <small>
-                        Les paiements se planifient et s’enregistrent depuis la fiche d’un contrat, onglet « Paiements ».
-                        <a routerLink="/contrats-echeances/liste">Ouvrir la liste des contrats</a>
-                      </small>
-                    </div>
-                  </td>
-                </tr>
+                <tr><td colspan="10"><div class="bea-ct-empty"><mat-icon>payments</mat-icon><p>Aucun paiement{{ paiementStatut() ? ' pour ce statut' : '' }}.</p><small>Réglez une échéance depuis l’onglet « Échéances » ou la fiche d’un contrat.</small></div></td></tr>
               }
             </tbody>
           </table>
         </div>
       }
 
-      @if (mode() === 'nouveau' || mode() === 'fiche') {
-        <form [formGroup]="form" (ngSubmit)="save()">
-          <div class="bea-mg__panel bea-ct-panel bea-ct-section">
-          <div class="bea-mg__panel-top"><h2>Informations</h2></div>
-          <div class="bea-mg__modal-body bea-ct-grid">
-            <label>Objet <input formControlName="titre" [attr.aria-invalid]="!!fieldError('titre')" />
-              @if (fieldError('titre'); as m) { <small class="bea-ct-field-error" role="alert">{{ m }}</small> }
-            </label>
-            <label>N° contrat <input formControlName="numero_contrat" /></label>
-            <label>Type
-              <select formControlName="type_contrat">
-                @for (t of types(); track t.code) { <option [value]="t.code">{{ t.libelle }}</option> }
+      @if (mode() === 'renouvellements') {
+        <div class="bea-mg__search">
+          <label class="bea-mg__field">Contrats arrivant à terme sous
+            <select [value]="horizonRenouv()" (change)="changerHorizon($any($event.target).value)">
+              <option value="30">30 jours</option>
+              <option value="60">60 jours</option>
+              <option value="90">90 jours</option>
+              <option value="180">6 mois</option>
+              <option value="365">1 an</option>
+            </select>
+          </label>
+        </div>
+        <div class="bea-mg__panel bea-ct-panel">
+          <div class="bea-mg__panel-top"><h2>À traiter <small>{{ aRenouveler().length }}</small></h2></div>
+          <div class="bea-mg__table-scroll bea-ct-table-wrap">
+            <table class="bea-mg__table bea-ct-table">
+              <thead><tr><th>Contrat</th><th>Fournisseur</th><th>Fin</th><th>Préavis</th><th>Reconduction</th><th class="is-num">Montant TTC</th><th>Statut</th><th class="is-actions">Actions</th></tr></thead>
+              <tbody>
+                @for (r of aRenouveler(); track r.id) {
+                  <tr class="bea-ct-row">
+                    <td class="is-wide"><code class="bea-mg__code">{{ r.reference }}</code><small class="bea-ct-sub">{{ r.titre }}</small></td>
+                    <td class="is-wide">{{ r.fournisseur || '—' }}</td>
+                    <td class="is-nowrap"><strong>{{ date(r.date_fin) }}</strong><small class="bea-ct-sub" [class.bea-ct-neg]="r.jours < 0">{{ jours(r.jours) }}</small></td>
+                    <td class="is-nowrap">{{ date(r.date_preavis) }}</td>
+                    <td class="is-nowrap"><span class="bea-ct-badge" [attr.data-tone]="r.reconduction === 'TACITE' ? 'INFO' : 'ATTENTION'">{{ reconduction(r.reconduction) }}</span></td>
+                    <td class="is-nowrap is-num">{{ r.montant | montant }} {{ r.devise }}</td>
+                    <td class="is-nowrap"><span class="bea-ct-badge" [attr.data-tone]="r.etat">{{ statut(r.etat) }}</span></td>
+                    <td class="bea-mg__actions-cell is-nowrap">
+                      @if (cap().manage) {
+                        <button type="button" class="bea-mg__btn bea-mg__btn--ghost bea-ct-btn-sm" [disabled]="busy()" (click)="reconduire(r)" title="Prolonge le même contrat d’une période identique"><mat-icon>update</mat-icon> Reconduire</button>
+                        <button type="button" class="bea-mg__btn bea-mg__btn--ghost bea-ct-btn-sm" [disabled]="busy()" (click)="renouveler(r)" title="Crée un nouveau contrat en brouillon"><mat-icon>autorenew</mat-icon> Renouveler</button>
+                      }
+                      <a class="bea-mg__icon-btn" [routerLink]="['/contrats-echeances', r.id]" title="Ouvrir"><mat-icon>open_in_new</mat-icon></a>
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="8"><div class="bea-ct-empty"><mat-icon>event_available</mat-icon><p>Aucun contrat n’arrive à terme sur cette période.</p></div></td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="bea-mg__panel bea-ct-panel">
+          <div class="bea-mg__panel-top"><h2>Contrats issus d’un renouvellement <small>{{ contrats().length }}</small></h2></div>
+          <div class="bea-mg__table-scroll bea-ct-table-wrap">
+            <table class="bea-mg__table bea-ct-table">
+              <thead><tr><th>Référence</th><th>Objet</th><th>Fournisseur</th><th>Période</th><th class="is-num">Montant TTC</th><th>Statut</th><th class="is-actions">Actions</th></tr></thead>
+              <tbody>
+                @for (c of contrats(); track c.id) {
+                  <tr class="bea-ct-row">
+                    <td class="is-nowrap"><code class="bea-mg__code">{{ c.reference }}</code></td>
+                    <td class="is-wide"><strong class="bea-ct-strong">{{ c.titre }}</strong></td>
+                    <td class="is-wide">{{ c.fournisseur_snapshot || '—' }}</td>
+                    <td class="is-nowrap">{{ date(c.date_debut) }}<small class="bea-ct-sub">au {{ date(c.date_fin) }}</small></td>
+                    <td class="is-nowrap is-num">{{ c.montant | montant }} {{ c.devise }}</td>
+                    <td class="is-nowrap"><span class="bea-ct-badge" [attr.data-tone]="c.etat">{{ statut(c.etat) }}</span></td>
+                    <td class="bea-mg__actions-cell is-nowrap">
+                      <a class="bea-mg__icon-btn" [routerLink]="['/contrats-echeances', c.id]" title="Ouvrir"><mat-icon>open_in_new</mat-icon></a>
+                      @if (c.contrat_precedent_id) {
+                        <a class="bea-mg__icon-btn" [routerLink]="['/contrats-echeances', c.contrat_precedent_id]" title="Contrat d’origine"><mat-icon>history</mat-icon></a>
+                      }
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="7"><div class="bea-ct-empty"><mat-icon>autorenew</mat-icon><p>Aucun renouvellement (reconduction expresse) enregistré.</p></div></td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+
+      @if (paiementOuvert()) {
+        <div class="bea-mg__backdrop" (click)="fermerPaiement()"></div>
+        <form class="bea-mg__modal bea-mg__modal--lg bea-ct-modal" role="dialog" aria-modal="true" aria-labelledby="bea-ct-pay-title" [formGroup]="paiementForm" (ngSubmit)="sauverPaiement()">
+          <header class="bea-ct-modal__head">
+            <h2 id="bea-ct-pay-title"><mat-icon>payments</mat-icon> {{ paiementEditId() ? 'Modifier le paiement' : 'Enregistrer un paiement' }}</h2>
+            <button type="button" class="bea-ct-view__close" aria-label="Fermer" (click)="fermerPaiement()"><mat-icon>close</mat-icon></button>
+          </header>
+          <div class="bea-ct-grid bea-ct-modal__body">
+            <label class="bea-ct-span2">Contrat *
+              <select formControlName="contrat_id" (change)="onContratPaiement()">
+                <option value="">— Sélectionner —</option>
+                @for (c of contratsPayables(); track c.id) { <option [value]="c.id">{{ c.reference }} — {{ c.titre }}</option> }
               </select>
             </label>
-            <label>Devise <input formControlName="devise" /></label>
-            <label>Description <input formControlName="description" /></label>
-            <label>Observation <input formControlName="observation" /></label>
-          </div>
-          </div>
-          <div class="bea-mg__panel bea-ct-panel bea-ct-section">
-          <div class="bea-mg__panel-top"><h2>Fournisseur, agence, responsable</h2></div>
-          <div class="bea-mg__modal-body bea-ct-grid">
-            <label>Fournisseur
-              <select formControlName="fournisseur_id">
+            <label class="bea-ct-span2">Échéance réglée
+              <select formControlName="echeance_id" (change)="onEcheancePaiement()">
+                <option value="">— Hors échéancier —</option>
+                @for (e of echeancesContrat(); track e.id) { <option [value]="e.id">{{ date(e.date_prevue) }} — reste {{ e.reste | montant }} {{ e.devise }}</option> }
+              </select>
+            </label>
+            <label>N° de pièce <input formControlName="reference" maxlength="40" placeholder="Facture, OV, chèque…" /></label>
+            <label>Mode
+              <select formControlName="mode">
                 <option value="">—</option>
-                @for (f of fournisseurs(); track f.id) { <option [value]="f.id">{{ f.raison_sociale }}</option> }
+                @for (m of config()?.modes_paiement ?? []; track m) { <option [value]="m">{{ m }}</option> }
               </select>
             </label>
-            <label>Agence
-              <select formControlName="agence_id">
-                <option value="">—</option>
-                @for (a of agences(); track a.id) { <option [value]="a.id">{{ a.libelle }}</option> }
-              </select>
-            </label>
-            <label>Responsable
-              <select formControlName="responsable_id">
-                <option value="">—</option>
-                @for (u of responsables(); track u.id) { <option [value]="u.id">{{ u.full_name }}</option> }
-              </select>
-            </label>
+            <label>Date prévue <input type="date" formControlName="date_prevue" /></label>
+            <label>Date de paiement <input type="date" formControlName="date_reelle" /></label>
+            <label>Montant prévu <input type="number" min="0" step="0.01" formControlName="montant_prevu" /></label>
+            <label>Montant versé * <input type="number" min="0" step="0.01" formControlName="montant_paye" /></label>
+            <label class="bea-ct-span2">Commentaire <input formControlName="commentaire" /></label>
           </div>
-          </div>
-          <div class="bea-mg__panel bea-ct-panel bea-ct-section">
-          <div class="bea-mg__panel-top"><h2>Dates et montants</h2></div>
-          <div class="bea-mg__modal-body bea-ct-grid">
-            <label>Signature <input type="date" formControlName="date_signature" /></label>
-            <label>Début <input type="date" formControlName="date_debut" [attr.aria-invalid]="!!fieldError('date_debut')" />
-              @if (fieldError('date_debut'); as m) { <small class="bea-ct-field-error" role="alert">{{ m }}</small> }
-            </label>
-            <label>Fin <input type="date" formControlName="date_fin" [attr.aria-invalid]="!!fieldError('date_fin')" />
-              @if (fieldError('date_fin'); as m) { <small class="bea-ct-field-error" role="alert">{{ m }}</small> }
-            </label>
-            <label>Montant HT <input type="number" formControlName="montant_ht" [attr.aria-invalid]="!!fieldError('montant_ht')" />
-              @if (fieldError('montant_ht'); as m) { <small class="bea-ct-field-error" role="alert">{{ m }}</small> }
-            </label>
-            <label>TVA % <input type="number" formControlName="taux_tva" /></label>
-            <label>Périodicité
-              <select formControlName="periodicite">
-                <option value="MENSUEL">Mensuel</option>
-                <option value="TRIMESTRIEL">Trimestriel</option>
-                <option value="SEMESTRIEL">Semestriel</option>
-                <option value="ANNUEL">Annuel</option>
-                <option value="UNIQUE">Unique</option>
-              </select>
-            </label>
-            <label>Mode de paiement
-              <select formControlName="mode_paiement" (change)="onModePaiementChange()">
-                <option value="">—</option>
-                @for (m of modesPaiement(); track m) { <option [value]="m">{{ m }}</option> }
-              </select>
-            </label>
-            @if (form.controls.mode_paiement.value === 'Virement') {
-              <label>Compte bénéficiaire (optionnel)
-                <input formControlName="ref_paiement" maxlength="120" placeholder="Ex. RIB / IBAN, banque" />
-              </label>
-            } @else if (form.controls.mode_paiement.value === 'Amanty') {
-              <label>Numéro / compte Amanty (optionnel)
-                <input formControlName="ref_paiement" maxlength="120" placeholder="Ex. 31004531" />
-              </label>
-            }
-            <label>Alerte (jours) <input type="number" formControlName="alerte_jours" /></label>
-          </div>
-          <p class="bea-ct-note">TTC recalculé par le serveur à l’enregistrement. Montant actuel : {{ fiche()?.montant | montant }} {{ fiche()?.devise || form.controls.devise.value }}</p>
-          <div class="bea-mg__actions" style="padding: 0 1rem 1rem">
-            <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="form.invalid || saving()" [attr.aria-busy]="saving()">
-              {{ saving() ? 'Enregistrement…' : contratId() ? 'Enregistrer' : 'Enregistrer brouillon' }}
-            </button>
-          </div>
-          </div>
+          <p class="bea-ct-help bea-ct-modal__help"><mat-icon>info</mat-icon> Joignez la preuve de paiement dans la fiche du contrat, onglet Documents (typologie « Preuve de paiement »).</p>
+          <footer class="bea-ct-modal__foot">
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="fermerPaiement()">Annuler</button>
+            <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="paiementForm.invalid || busy()"><mat-icon>save</mat-icon> {{ busy() ? 'Enregistrement…' : 'Enregistrer' }}</button>
+          </footer>
         </form>
-
-        @if (fiche(); as c) {
-          <div class="bea-mg__panel bea-ct-panel bea-ct-life">
-            <div class="bea-ct-life__head">
-              <div>
-                <h2>Statut du contrat</h2>
-                <p class="bea-ct-life__hint">
-                  <span class="bea-ct-badge" [attr.data-tone]="c.statut">{{ statutLabel(c.statut) }}</span>
-                  {{ statutAide(c.statut) }}
-                </p>
-              </div>
-            </div>
-            <ol class="bea-ct-steps" aria-label="Cycle de vie">
-              @for (s of etapes; track s.code; let i = $index) {
-                <li [class.is-done]="etapeIndex(c.statut) > i" [class.is-on]="etapeIndex(c.statut) === i">
-                  <span class="bea-ct-steps__dot">{{ i + 1 }}</span>{{ s.label }}
-                </li>
-              }
-            </ol>
-
-            <fieldset class="bea-ct-life__actions" [disabled]="actionEnCours()" [attr.aria-busy]="actionEnCours()">
-              <legend class="bea-ct-sr-only">Actions sur le contrat</legend>
-              <div class="bea-ct-life__group">
-                @if (c.statut === 'BROUILLON' || c.statut === 'EN_PREPARATION') {
-                  <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="transition('soumettre')"><mat-icon>send</mat-icon> Soumettre pour validation</button>
-                }
-                @if (c.statut === 'EN_VALIDATION') {
-                  <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="transition('valider')"><mat-icon>check_circle</mat-icon> Valider</button>
-                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="demanderMotif('rejeter')"><mat-icon>block</mat-icon> Rejeter</button>
-                }
-                @if (c.statut === 'ACTIF') {
-                  <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="renouveler()"><mat-icon>autorenew</mat-icon> Préparer le renouvellement</button>
-                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="transition('suspendre')"><mat-icon>pause_circle</mat-icon> Suspendre</button>
-                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="transition('expirer')"><mat-icon>event_busy</mat-icon> Marquer expiré</button>
-                }
-                @if (c.statut === 'SUSPENDU') {
-                  <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="transition('reprendre')"><mat-icon>play_circle</mat-icon> Reprendre</button>
-                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="transition('expirer')"><mat-icon>event_busy</mat-icon> Marquer expiré</button>
-                }
-                @if (c.statut === 'EXPIRE') {
-                  <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="renouveler()"><mat-icon>autorenew</mat-icon> Préparer le renouvellement</button>
-                }
-              </div>
-              <div class="bea-ct-life__group">
-                @if (c.statut === 'ACTIF' || c.statut === 'EXPIRE' || c.statut === 'SUSPENDU' || c.statut === 'REJETE') {
-                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="transition('archiver')"><mat-icon>inventory_2</mat-icon> Archiver</button>
-                }
-                @if (c.statut !== 'ARCHIVE' && c.statut !== 'ANNULE' && c.statut !== 'EXPIRE' && c.statut !== 'BROUILLON') {
-                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost bea-ct-danger" (click)="demanderMotif('annuler')"><mat-icon>cancel</mat-icon> Annuler le contrat</button>
-                }
-                @if (c.statut === 'BROUILLON') {
-                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost bea-ct-danger" (click)="supprimer()"><mat-icon>delete</mat-icon> Supprimer le brouillon</button>
-                }
-              </div>
-            </fieldset>
-
-            @if (c.contrat_precedent_id) {
-              <p class="bea-ct-note">Renouvellement d’un contrat précédent — <a class="bea-ct-link" [routerLink]="['/contrats-echeances', c.contrat_precedent_id]">ouvrir le contrat d’origine</a></p>
-            }
-          </div>
-
-          <div class="bea-mg__panel bea-ct-panel bea-ct-suivi">
-            <div class="bea-ct-suivi__head">
-              <h2>Suivi du contrat</h2>
-              <div class="bea-ct-tabs">
-                <button type="button" [class.is-on]="onglet() === 'echeances'" (click)="onglet.set('echeances')">
-                  <mat-icon>schedule</mat-icon> Échéances <small>{{ (c.echeances || []).length }}</small>
-                </button>
-                <button type="button" [class.is-on]="onglet() === 'paiements'" (click)="onglet.set('paiements')">
-                  <mat-icon>payments</mat-icon> Paiements <small>{{ (c.paiements || []).length }}</small>
-                </button>
-                <button type="button" [class.is-on]="onglet() === 'documents'" (click)="onglet.set('documents')">
-                  <mat-icon>folder</mat-icon> Documents
-                </button>
-                <button type="button" [class.is-on]="onglet() === 'historique'" (click)="onglet.set('historique')">
-                  <mat-icon>history</mat-icon> Historique
-                </button>
-              </div>
-            </div>
-
-            @if (onglet() === 'echeances') {
-              <div class="bea-ct-pane">
-                <p class="bea-ct-help"><mat-icon>info</mat-icon>
-                  Planifiez les dates clés du contrat (paiement, révision de prix, préavis, renouvellement…).
-                  Une alerte est envoyée {{ c.alerte_jours }} jours avant chaque échéance.
-                </p>
-                <form class="bea-ct-grid bea-ct-inline" [formGroup]="echeanceForm" (ngSubmit)="addEcheance()">
-                  <label>Type d’échéance
-                    <select formControlName="type_echeance">
-                      @for (t of typesEcheance; track t.code) { <option [value]="t.code">{{ t.label }}</option> }
-                    </select>
-                  </label>
-                  <label>Date prévue <input type="date" formControlName="date_prevue" /></label>
-                  <label>Montant (optionnel) <input type="number" formControlName="montant" /></label>
-                  <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="echeanceForm.invalid || echeanceBusy()">
-                    <mat-icon>{{ echeanceEditId() ? 'save' : 'add' }}</mat-icon>
-                    {{ echeanceBusy() ? 'Enregistrement…' : echeanceEditId() ? 'Enregistrer' : 'Ajouter' }}
-                  </button>
-                </form>
-                <ul class="bea-ct-list">
-                  @for (e of c.echeances || []; track e.id) {
-                    <li>
-                      <strong>{{ dateFr(e.date_prevue) }}</strong>
-                      <span>{{ typeEcheanceLabel(e.type_echeance) }}</span>
-                      <span class="bea-ct-badge" [attr.data-tone]="e.statut">{{ statutLabel(e.statut) }}</span>
-                      <span class="bea-ct-list__amount">{{ e.montant | montant }} {{ c.devise }}</span>
-                      <span class="bea-ct-list__tools">
-                        <button type="button" class="bea-mg__icon-btn" title="Modifier" (click)="editerEcheanceFiche(e)"><mat-icon>edit</mat-icon></button>
-                        <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer" (click)="supprimerEcheance(e)"><mat-icon>delete</mat-icon></button>
-                      </span>
-                    </li>
-                  } @empty { <li class="bea-ct-list__empty">Aucune échéance planifiée pour ce contrat.</li> }
-                </ul>
-              </div>
-            }
-            @if (onglet() === 'paiements') {
-              <div class="bea-ct-pane">
-                <p class="bea-ct-help"><mat-icon>info</mat-icon>
-                  Enregistrez ici les règlements prévus et effectués pour ce contrat afin de suivre ce qui reste à payer.
-                  C’est un suivi interne : aucun virement n’est exécuté depuis BEA DIGITAL.
-                </p>
-                <form class="bea-ct-grid bea-ct-inline" [formGroup]="paiementForm" (ngSubmit)="addPaiement()">
-                  <label>Référence (facture, OV…) <input formControlName="reference" /></label>
-                  <label>Date prévue <input type="date" formControlName="date_prevue" /></label>
-                  <label>Date de paiement <input type="date" formControlName="date_reelle" /></label>
-                  <label>Montant prévu <input type="number" formControlName="montant_prevu" /></label>
-                  <label>Montant payé <input type="number" formControlName="montant_paye" /></label>
-                  <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="paiementForm.invalid || paiementBusy()"><mat-icon>add</mat-icon> {{ paiementBusy() ? 'Enregistrement…' : 'Ajouter' }}</button>
-                </form>
-                <ul class="bea-ct-list">
-                  @for (p of c.paiements || []; track p.id) {
-                    <li>
-                      <strong>{{ dateFr(p.date_prevue) }}</strong>
-                      <span>{{ p.reference || 'Sans référence' }}</span>
-                      <span class="bea-ct-badge" [attr.data-tone]="p.statut">{{ statutLabel(p.statut) }}</span>
-                      <span class="bea-ct-list__amount">{{ p.montant_paye | montant }} / {{ p.montant_prevu | montant }} {{ c.devise }}</span>
-                    </li>
-                  } @empty { <li class="bea-ct-list__empty">Aucun paiement enregistré.</li> }
-                </ul>
-              </div>
-            }
-            @if (onglet() === 'documents') {
-              <div class="bea-ct-pane">
-                <p class="bea-ct-help"><mat-icon>info</mat-icon>
-                  Déposez le contrat signé (scan PDF), les avenants et les factures. Utilisez « Télécharger le contrat (PDF) » en haut de page pour obtenir la fiche générée.
-                </p>
-                <bea-mg-ged moduleCode="contrats-echeances" entity="contrat" docType="CONTRAT" [entityId]="c.id" [reference]="c.reference" />
-              </div>
-            }
-            @if (onglet() === 'historique') {
-              <div class="bea-ct-pane">
-                <ul class="bea-ct-list">
-                  @for (h of c.historique || []; track h.id) {
-                    <li>
-                      <strong>{{ dateHeureFr(h.created_at) }}</strong>
-                      <span>{{ actionLabel(h.action) }}</span>
-                      <span>{{ h.user_nom || '—' }}</span>
-                      @if (h.to_statut) { <span class="bea-ct-badge" [attr.data-tone]="h.to_statut">{{ statutLabel(h.to_statut) }}</span> }
-                      @if (h.commentaire) { <em class="bea-ct-list__comment">{{ h.commentaire }}</em> }
-                    </li>
-                  } @empty { <li class="bea-ct-list__empty">Aucun historique.</li> }
-                </ul>
-              </div>
-            }
-          </div>
-        }
       }
     </section>
   `,
 })
 export class ContratsListComponent implements OnInit {
-  readonly hasUnsavedChanges = unsavedChanges(
-    () => (this.mode() === 'nouveau' || this.mode() === 'fiche') && this.form.dirty && !this.saving(),
-    () => this.form,
-  );
+  readonly hasUnsavedChanges = unsavedChanges(() => this.paiementOuvert() && this.paiementForm.dirty && !this.busy(), () => this.paiementForm);
   private readonly api = inject(ApiService);
   private readonly feedback = inject(FeedbackService);
   private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly dialogs = inject(UiDialogService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  readonly statuts = ['BROUILLON', 'EN_PREPARATION', 'EN_VALIDATION', 'ACTIF', 'SUSPENDU', 'EXPIRE', 'ARCHIVE', 'REJETE', 'ANNULE'];
-  readonly mode = signal<'liste' | 'alertes' | 'echeances' | 'paiements' | 'renouvellements' | 'nouveau' | 'fiche'>('liste');
-  readonly titre = signal('Contrats');
+  readonly statuts = STATUTS_CONTRAT;
+  readonly etats = ETATS_FILTRE;
+  readonly typesEcheance = TYPES_ECHEANCE;
+  readonly niveaux = ['CRITIQUE', 'URGENT', 'ATTENTION', 'INFO'];
+  readonly typesAlerte = Object.entries(ALERTE_TYPE_LABELS);
+
+  readonly mode = signal<Mode>('liste');
+  readonly config = signal<ContratsConfig | null>(null);
   readonly contrats = signal<Contrat[]>([]);
   readonly alertes = signal<Alerte[]>([]);
-  readonly echeances = signal<Array<Echeance & { reference: string; titre: string; contrat_id: string; jours: number }>>([]);
-  readonly paiements = signal<Array<Paiement & { reference: string; titre: string; contrat_id: string; paiement_ref: string | null; reste: number }>>([]);
-  readonly paiementStatut = signal('');
-  readonly paiementsTotaux = computed(() =>
-    this.paiements().reduce(
-      (t, p) => ({
-        prevu: t.prevu + (p.montant_prevu || 0),
-        paye: t.paye + (p.montant_paye || 0),
-        reste: t.reste + (p.reste || 0),
-        retard: t.retard + (p.statut === 'EN_RETARD' ? 1 : 0),
-      }),
-      { prevu: 0, paye: 0, reste: 0, retard: 0 },
-    ),
-  );
-  readonly fiche = signal<Contrat | null>(null);
-  readonly contratId = signal<string | null>(null);
-  readonly saving = signal(false);
-  readonly actionEnCours = signal(false);
-  readonly echeanceBusy = signal(false);
-  readonly paiementBusy = signal(false);
-  readonly fieldErrors = signal<Record<string, string>>({});
-  readonly onglet = signal<'echeances' | 'paiements' | 'documents' | 'historique'>('echeances');
-  readonly apercuOuvert = signal(false);
-  readonly apercu = signal<Contrat | null>(null);
-  readonly telechargement = signal(false);
-  readonly etapes = ETAPES;
-  readonly typesEcheance = TYPES_ECHEANCE;
+  readonly echeances = signal<EcheanceRow[]>([]);
+  readonly paiements = signal<PaiementRow[]>([]);
+  readonly aRenouveler = signal<ARenouveler[]>([]);
   readonly types = signal<Array<{ code: string; libelle: string }>>([]);
-  readonly fournisseurs = signal<RefItem[]>([]);
   readonly agences = signal<RefItem[]>([]);
-  readonly responsables = signal<RefItem[]>([]);
+  readonly contratsPayables = signal<Contrat[]>([]);
+  readonly echeancesContrat = signal<EcheanceRow[]>([]);
+  readonly paiementStatut = signal('');
+  readonly horizonRenouv = signal('90');
+  readonly filtreNiveau = signal('');
+  readonly filtreType = signal('');
+  readonly busy = signal(false);
+  readonly paiementOuvert = signal(false);
+  readonly paiementEditId = signal<string | null>(null);
 
-  readonly filtres = this.fb.nonNullable.group({ q: [''], statut: [''], horizon: [''] });
-  readonly form = this.fb.nonNullable.group({
-    titre: ['', Validators.required],
-    numero_contrat: [''],
-    description: [''],
-    type_contrat: ['AUTRE'],
-    devise: ['MRU'],
-    fournisseur_id: [''],
-    agence_id: [''],
-    responsable_id: [''],
-    date_signature: [''],
-    date_debut: ['', Validators.required],
-    date_fin: [''],
-    montant_ht: [null as number | null],
-    taux_tva: [0],
-    periodicite: ['ANNUEL'],
-    mode_paiement: [''],
-    ref_paiement: [''],
-    alerte_jours: [30],
-    observation: [''],
+  readonly entete = computed(() => TITRES[this.mode()]);
+  readonly cap = computed(
+    () => this.config()?.capacites ?? { create: false, manage: false, validate: false, settings: false, export: false, ged_write: false },
+  );
+  readonly totalListe = computed(() => this.contrats().reduce((s, c) => s + num(c.montant), 0));
+  readonly alertesFiltrees = computed(() =>
+    this.alertes().filter((a) => (!this.filtreNiveau() || a.niveau === this.filtreNiveau()) && (!this.filtreType() || a.type === this.filtreType())),
+  );
+  readonly kpiEcheances = signal({ aVenir: 0, dues: 0, retard: 0, payees: 0, resteRetard: 0 });
+  readonly paiementsTotaux = computed(() => {
+    const rows = this.paiements();
+    const prevu = rows.reduce((s, p) => s + num(p.montant_prevu), 0);
+    const paye = rows.reduce((s, p) => s + num(p.montant_paye), 0);
+    return { prevu, paye, ecart: Math.round((paye - prevu) * 100) / 100, retard: rows.filter((p) => p.statut === 'EN_RETARD').length };
   });
-  readonly modesPaiement = signal<string[]>([...MODES_PAIEMENT]);
-  readonly echeanceOuverte = signal(false);
-  readonly echeanceEditId = signal<string | null>(null);
-  readonly echeanceForm = this.fb.nonNullable.group({
-    contrat_id: [''],
-    type_echeance: ['PAIEMENT'],
-    date_prevue: ['', Validators.required],
-    date_reelle: [''],
-    montant: [null as number | null],
-    statut: ['A_VENIR'],
-    commentaire: [''],
-  });
+
+  readonly filtres = this.fb.nonNullable.group({ q: [''], statut: [''], etat: [''], type_contrat: [''], agence_id: [''], horizon: [''] });
+  readonly filtreEcheance = this.fb.nonNullable.group({ horizon: [''], statut: [''], type_echeance: [''] });
   readonly paiementForm = this.fb.nonNullable.group({
+    contrat_id: ['', Validators.required],
+    echeance_id: [''],
     reference: [''],
-    date_prevue: ['', Validators.required],
-    date_reelle: [''],
-    montant_prevu: [0],
-    montant_paye: [0],
+    date_prevue: [''],
+    date_reelle: [aujourdhui()],
+    montant_prevu: [null as number | null, Validators.min(0)],
+    montant_paye: [0, [Validators.required, Validators.min(0)]],
+    mode: [''],
+    commentaire: [''],
   });
 
   ngOnInit(): void {
-    this.route.url.subscribe(() => this.sync());
-    this.route.queryParamMap.subscribe(() => this.sync());
+    this.api.get<ContratsConfig>('/mg/contrats/config').subscribe({ next: (c) => this.config.set(c), error: (e) => this.fail(e) });
+    this.api.get<Array<{ code: string; libelle: string }>>('/mg/contrats/types').subscribe({ next: (r) => this.types.set(r), error: () => undefined });
+    this.api.get<RefItem[]>('/mg/contrats/agences').subscribe({ next: (r) => this.agences.set(r), error: () => undefined });
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.sync());
   }
 
   private sync(): void {
-    const path = this.route.snapshot.routeConfig?.path ?? '';
-    const id = this.route.snapshot.paramMap.get('id');
-    this.fermerApercu();
-    this.fieldErrors.set({});
-    if (path === 'nouveau') {
-      this.mode.set('nouveau');
-      this.titre.set('Nouveau contrat');
-      this.contratId.set(null);
-      this.fiche.set(null);
-      this.form.reset({
-        titre: '', numero_contrat: '', description: '', type_contrat: 'AUTRE', devise: 'MRU',
-        fournisseur_id: '', agence_id: '', responsable_id: '', date_signature: '',
-        date_debut: new Date().toISOString().slice(0, 10), date_fin: '', montant_ht: null,
-        taux_tva: 0, periodicite: 'ANNUEL', mode_paiement: '', ref_paiement: '', alerte_jours: 30, observation: '',
-      });
-      this.modesPaiement.set([...MODES_PAIEMENT]);
-      this.loadRefs();
-      return;
-    }
-    if (id && path === ':id') {
-      this.mode.set('fiche');
-      this.contratId.set(id);
-      this.loadRefs();
-      this.loadOne(id);
-      return;
-    }
-    if (path === 'alertes') {
-      this.mode.set('alertes');
-      this.titre.set('Alertes');
-      this.api.get<Alerte[]>('/mg/contrats/alertes').subscribe({
-        next: (rows) => this.alertes.set(rows),
-        error: (e) => this.fail(e),
-      });
-      return;
-    }
-    if (path === 'echeances') {
-      this.mode.set('echeances');
-      this.titre.set('Échéances');
-      this.api.get<Array<Echeance & { reference: string; titre: string; contrat_id: string; jours: number }>>('/mg/contrats/echeances').subscribe({
-        next: (rows) => this.echeances.set(rows),
-        error: (e) => this.fail(e),
-      });
-      return;
-    }
-    if (path === 'paiements') {
-      this.mode.set('paiements');
-      this.titre.set('Paiements');
-      const statut = this.route.snapshot.queryParamMap.get('statut') || '';
-      this.paiementStatut.set(statut);
-      const params: Record<string, string> = {};
-      if (statut) params['statut'] = statut;
-      this.api.get<Array<Paiement & { reference: string; titre: string; contrat_id: string; paiement_ref: string | null; reste: number }>>('/mg/contrats/paiements', params).subscribe({
-        next: (rows) => this.paiements.set(rows),
-        error: (e) => this.fail(e),
-      });
-      return;
-    }
-    this.mode.set(path === 'renouvellements' ? 'renouvellements' : 'liste');
-    this.titre.set(path === 'renouvellements' ? 'Renouvellements' : 'Contrats');
+    const path = (this.route.snapshot.routeConfig?.path ?? 'liste') as Mode;
+    this.mode.set(path in TITRES ? path : 'liste');
+    this.fermerPaiement(true);
     const qp = this.route.snapshot.queryParamMap;
-    this.filtres.patchValue({
-      statut: qp.get('statut') || '',
-      horizon: qp.get('horizon') || '',
-    });
-    if (!this.types().length) {
-      this.api.get<Array<{ code: string; libelle: string }>>('/mg/contrats/types').subscribe({
-        next: (rows) => this.types.set(rows),
-        error: () => undefined,
+    if (this.mode() === 'liste') {
+      this.filtres.patchValue({
+        q: qp.get('q') || '',
+        statut: qp.get('statut') || '',
+        etat: qp.get('etat') || '',
+        type_contrat: qp.get('type') || '',
+        agence_id: qp.get('agence') || '',
+        horizon: qp.get('horizon') || '',
       });
     }
-    this.loadListe();
+    if (this.mode() === 'paiements') this.paiementStatut.set(qp.get('statut') || '');
+    if (this.mode() === 'echeances') {
+      this.filtreEcheance.patchValue({ statut: qp.get('statut') || '', horizon: qp.get('horizon') || '' });
+    }
+    if (this.mode() === 'alertes') this.filtreNiveau.set(qp.get('niveau') || '');
+    this.charger();
+  }
+
+  charger(): void {
+    switch (this.mode()) {
+      case 'liste':
+        this.chargerListe();
+        break;
+      case 'alertes':
+        this.api.get<Alerte[]>('/mg/contrats/alertes').subscribe({ next: (r) => this.alertes.set(r), error: (e) => this.fail(e) });
+        break;
+      case 'echeances':
+        this.chargerEcheances();
+        break;
+      case 'paiements':
+        this.chargerPaiements();
+        break;
+      case 'renouvellements':
+        this.api
+          .get<ARenouveler[]>('/mg/contrats/renouvellements/a-traiter', { horizon: this.horizonRenouv() })
+          .subscribe({ next: (r) => this.aRenouveler.set(r), error: (e) => this.fail(e) });
+        this.api.get<Contrat[]>('/mg/contrats', { renouveles: 'true' }).subscribe({ next: (r) => this.contrats.set(r), error: (e) => this.fail(e) });
+        break;
+    }
+  }
+
+  private chargerListe(): void {
+    const raw = this.filtres.getRawValue();
+    const params: Record<string, string> = {};
+    if (raw.q.trim()) params['q'] = raw.q.trim();
+    if (raw.statut) params['statut'] = raw.statut;
+    if (raw.etat) params['etat'] = raw.etat;
+    if (raw.type_contrat) params['type_contrat'] = raw.type_contrat;
+    if (raw.agence_id) params['agence_id'] = raw.agence_id;
+    if (raw.horizon) params['horizon'] = raw.horizon;
+    this.api.get<Contrat[]>('/mg/contrats', params).subscribe({ next: (r) => this.contrats.set(r), error: (e) => this.fail(e) });
+  }
+
+  appliquerFiltres(): void {
+    const raw = this.filtres.getRawValue();
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {
+        q: raw.q.trim() || null,
+        statut: raw.statut || null,
+        etat: raw.etat || null,
+        type: raw.type_contrat || null,
+        agence: raw.agence_id || null,
+        horizon: raw.horizon || null,
+      },
+    });
+  }
+
+  filtresActifs(): boolean {
+    return Object.values(this.filtres.getRawValue()).some((v) => !!String(v).trim());
+  }
+
+  reinitialiser(): void {
+    this.filtres.reset({ q: '', statut: '', etat: '', type_contrat: '', agence_id: '', horizon: '' });
+    this.appliquerFiltres();
+  }
+
+  chargerEcheances(): void {
+    const raw = this.filtreEcheance.getRawValue();
+    const params: Record<string, string> = {};
+    if (raw.horizon) params['horizon'] = raw.horizon;
+    if (raw.statut) params['statut'] = raw.statut;
+    if (raw.type_echeance) params['type_echeance'] = raw.type_echeance;
+    this.api.get<EcheanceRow[]>('/mg/contrats/echeances', params).subscribe({ next: (r) => this.echeances.set(r), error: (e) => this.fail(e) });
+    this.api.get<EcheanceRow[]>('/mg/contrats/echeances').subscribe({
+      next: (all) =>
+        this.kpiEcheances.set({
+          aVenir: all.filter((e) => e.statut === 'A_VENIR').length,
+          dues: all.filter((e) => e.statut === 'DUE').length,
+          retard: all.filter((e) => e.statut === 'EN_RETARD').length,
+          payees: all.filter((e) => e.statut === 'PAYEE').length,
+          resteRetard: all.filter((e) => e.statut === 'EN_RETARD').reduce((s, e) => s + num(e.reste), 0),
+        }),
+      error: () => undefined,
+    });
+  }
+
+  filtrerEcheancesStatut(statut: string): void {
+    const courant = this.filtreEcheance.controls.statut.value;
+    this.filtreEcheance.controls.statut.setValue(courant === statut ? '' : statut);
+    this.chargerEcheances();
+  }
+
+  private chargerPaiements(): void {
+    const params: Record<string, string> = {};
+    if (this.paiementStatut()) params['statut'] = this.paiementStatut();
+    this.api.get<PaiementRow[]>('/mg/contrats/paiements', params).subscribe({ next: (r) => this.paiements.set(r), error: (e) => this.fail(e) });
   }
 
   filtrerPaiements(statut: string): void {
     void this.router.navigate([], { relativeTo: this.route, queryParams: { statut: statut || null } });
   }
 
-  loadListe(): void {
-    const raw = this.filtres.getRawValue();
-    const params: Record<string, string> = {};
-    if (raw.q.trim()) params['q'] = raw.q.trim();
-    if (raw.statut) params['statut'] = raw.statut;
-    if (raw.horizon) params['horizon'] = raw.horizon;
-    if (this.mode() === 'renouvellements') params['renouveles'] = 'true';
-    this.api.get<Contrat[]>('/mg/contrats', params).subscribe({
-      next: (rows) => this.contrats.set(rows),
-      error: (e) => this.fail(e),
-    });
-  }
-
-  loadRefs(): void {
-    this.api.get<Array<{ code: string; libelle: string }>>('/mg/contrats/types').subscribe({
-      next: (rows) => this.types.set(rows),
-      error: () => undefined,
-    });
-    this.api.get<RefItem[]>('/mg/contrats/fournisseurs').subscribe({
-      next: (rows) => this.fournisseurs.set(rows),
-      error: () => undefined,
-    });
-    this.api.get<RefItem[]>('/mg/contrats/agences').subscribe({
-      next: (rows) => this.agences.set(rows),
-      error: () => undefined,
-    });
-    this.api.get<RefItem[]>('/mg/contrats/responsables').subscribe({
-      next: (rows) => this.responsables.set(rows),
-      error: () => undefined,
-    });
-  }
-
-  loadOne(id: string): void {
-    this.api.get<Contrat>(`/mg/contrats/${id}`).subscribe({
-      next: (c) => {
-        this.fiche.set(c);
-        this.titre.set(c.reference);
-        const mode = c.mode_paiement ?? '';
-        this.modesPaiement.set(
-          mode && !(MODES_PAIEMENT as readonly string[]).includes(mode) ? [...MODES_PAIEMENT, mode] : [...MODES_PAIEMENT],
-        );
-        this.form.patchValue({
-          titre: c.titre,
-          numero_contrat: c.numero_contrat ?? '',
-          description: c.description ?? '',
-          type_contrat: c.type_contrat || 'AUTRE',
-          devise: c.devise || 'MRU',
-          fournisseur_id: c.fournisseur_id ?? '',
-          agence_id: c.agence_id ?? '',
-          responsable_id: c.responsable_id ?? '',
-          date_signature: c.date_signature ?? '',
-          date_debut: c.date_debut,
-          date_fin: c.date_fin ?? '',
-          montant_ht: c.montant_ht,
-          taux_tva: c.taux_tva ?? 0,
-          periodicite: c.periodicite || 'ANNUEL',
-          mode_paiement: mode,
-          ref_paiement: c.ref_paiement ?? '',
-          alerte_jours: c.alerte_jours ?? 30,
-          observation: c.observation ?? '',
-        });
-        this.form.markAsPristine();
-      },
-      error: (e) => this.fail(e, 'Contrat introuvable'),
-    });
-  }
-
-  onModePaiementChange(): void {
-    if (!MODES_AVEC_REF.has(this.form.controls.mode_paiement.value)) {
-      this.form.controls.ref_paiement.setValue('');
-    }
-  }
-
-  save(): void {
-    if (this.form.invalid) {
-      this.form.markAllAsTouched();
-      this.feedback.warning({ title: 'Formulaire incomplet', message: 'Renseignez au minimum l’objet et la date de début.' });
-      return;
-    }
-    this.fieldErrors.set({});
-    const raw = this.form.getRawValue();
-    const body = {
-      ...raw,
-      fournisseur_id: raw.fournisseur_id || null,
-      agence_id: raw.agence_id || null,
-      responsable_id: raw.responsable_id || null,
-      date_signature: raw.date_signature || null,
-      date_fin: raw.date_fin || null,
-      numero_contrat: raw.numero_contrat || null,
-      description: raw.description || null,
-      mode_paiement: raw.mode_paiement || null,
-      ref_paiement: MODES_AVEC_REF.has(raw.mode_paiement) ? raw.ref_paiement.trim() || null : null,
-      observation: raw.observation || null,
-      montant_ht: raw.montant_ht,
-    };
-    const id = this.contratId();
-    this.feedback
-      .run(
-        () => (id ? this.api.patch<Contrat>(`/mg/contrats/${id}`, body) : this.api.post<Contrat>('/mg/contrats', body)),
-        {
-          loading: 'Enregistrement du contrat…',
-          busy: this.saving,
-          idempotent: !id,
-          errorTitle: 'Échec de l’enregistrement',
-          errorHint: 'Vos données saisies ont été conservées.',
-          onError: (e) => this.fieldErrors.set(e.fieldErrors),
-          success: (c) => ({
-            title: id ? 'Contrat mis à jour' : 'Contrat créé avec succès',
-            details: [
-              { label: 'Référence', value: c.reference },
-              { label: 'Objet', value: c.titre },
-              { label: 'Statut', value: this.statutLabel(c.statut) },
-            ],
-          }),
-        },
-      )
-      .subscribe((c) => {
-        this.form.markAsPristine();
-        if (id) {
-          this.fiche.set(c);
-        } else {
-          void this.router.navigateByUrl(`/contrats-echeances/${c.id}`);
-        }
-      });
-  }
-
-  transition(action: TransitionAction): void {
-    const c = this.fiche();
-    if (!c) return;
-    const cfg = TRANSITIONS[action];
-    this.feedback
-      .run(() => this.api.post<Contrat>(`/mg/contrats/${c.id}/transition`, { action, commentaire: null }), {
-        confirm: { action: cfg.preset, message: `${cfg.question} ${c.reference} « ${c.titre} » ?`, hint: cfg.hint },
-        loading: cfg.loading,
-        busy: this.actionEnCours,
-        errorTitle: cfg.errorTitle,
-        success: (res) => this.transitionSucces(res, cfg.success),
-      })
-      .subscribe((res) => this.fiche.set(res));
-  }
-
-  demanderMotif(action: 'annuler' | 'rejeter'): void {
-    const c = this.fiche();
-    if (!c) return;
-    const rejet = action === 'rejeter';
-    this.feedback
-      .runWithReason(
-        (motif) => this.api.post<Contrat>(`/mg/contrats/${c.id}/transition`, { action, commentaire: motif }),
-        {
-          reason: {
-            ...this.dialogs.preset(
-              rejet ? 'rejet' : 'annulation',
-              rejet
-                ? `Rejeter le contrat ${c.reference} « ${c.titre} » ?`
-                : `Annuler le contrat ${c.reference} « ${c.titre} » ?`,
-              rejet ? 'Rejeter le contrat' : 'Annuler le contrat',
-              rejet
-                ? 'Le responsable sera notifié du rejet et de son motif.'
-                : 'Le contrat passera en lecture seule. Cette action ne peut pas être annulée.',
-            ),
-            confirmLabel: rejet ? 'Rejeter' : 'Annuler le contrat',
-            cancelLabel: 'Retour',
-            reasonLabel: rejet ? 'Motif du rejet' : 'Motif de l’annulation',
-          },
-          loading: rejet ? 'Rejet en cours…' : 'Annulation en cours…',
-          busy: this.actionEnCours,
-          errorTitle: rejet ? 'Échec du rejet' : 'Échec de l’annulation',
-          success: (res) => this.transitionSucces(res, rejet ? 'Contrat rejeté' : 'Contrat annulé'),
-        },
-      )
-      .subscribe((res) => this.fiche.set(res));
-  }
-
-  renouveler(): void {
-    const c = this.fiche();
-    if (!c) return;
-    this.feedback
-      .run(() => this.api.post<Contrat>(`/mg/contrats/${c.id}/renouveler`, {}), {
-        confirm: {
-          action: 'renouvellement',
-          message: `Préparer le renouvellement du contrat ${c.reference} ?`,
-          hint: 'Un nouveau contrat en brouillon sera créé à partir de celui-ci, avec une période qui démarre le lendemain de la fin actuelle.',
-        },
-        loading: 'Préparation du renouvellement…',
-        busy: this.actionEnCours,
-        idempotent: true,
-        errorTitle: 'Échec du renouvellement',
-        success: (n) => ({
-          title: 'Renouvellement préparé',
-          message: 'Le nouveau contrat est en brouillon : vérifiez-le puis soumettez-le.',
-          details: [
-            { label: 'Nouvelle référence', value: n.reference },
-            { label: 'Issu de', value: c.reference },
-          ],
-        }),
-      })
-      .subscribe((n) => void this.router.navigateByUrl(`/contrats-echeances/${n.id}`));
-  }
-
-  supprimer(): void {
-    const c = this.fiche();
-    if (!c) return;
-    this.feedback
-      .run(() => this.api.delete(`/mg/contrats/${c.id}`), {
-        confirm: {
-          action: 'suppression',
-          message: `Supprimer le brouillon ${c.reference} ?`,
-          hint: 'Le contrat sera retiré du registre ; son historique reste conservé.',
-        },
-        loading: 'Suppression…',
-        busy: this.actionEnCours,
-        errorTitle: 'Échec de la suppression',
-        success: { title: 'Brouillon supprimé', details: [{ label: 'Référence', value: c.reference }] },
-      })
-      .subscribe(() => {
-        this.form.markAsPristine();
-        void this.router.navigateByUrl('/contrats-echeances/liste');
-      });
+  changerHorizon(h: string): void {
+    this.horizonRenouv.set(h);
+    this.charger();
   }
 
   supprimerContrat(c: Contrat): void {
     this.feedback
       .run(() => this.api.delete(`/mg/contrats/${c.id}`), {
-        confirm: {
-          action: 'suppression',
-          message: `Retirer le contrat ${c.reference} « ${c.titre} » du registre ?`,
-          hint: 'L’historique reste conservé en base.',
-        },
+        confirm: { action: 'suppression', message: `Retirer ${c.reference} « ${c.titre} » du registre ?`, hint: 'L’historique reste conservé (audit).' },
         loading: 'Suppression…',
+        busy: this.busy,
         errorTitle: 'Échec de la suppression',
         success: { title: 'Contrat retiré du registre', details: [{ label: 'Référence', value: c.reference }] },
       })
-      .subscribe(() => this.loadListe());
+      .subscribe(() => this.chargerListe());
   }
 
-  private transitionSucces(c: Contrat, title: string): FeedbackMessage {
-    return {
-      title,
-      message: this.statutAide(c.statut),
-      details: [
-        { label: 'Contrat', value: c.reference },
-        { label: 'Statut', value: this.statutLabel(c.statut) },
-      ],
-    };
-  }
-
-  ouvrirEcheance(): void {
-    this.echeanceEditId.set(null);
-    this.echeanceForm.reset({
-      contrat_id: '', type_echeance: 'PAIEMENT', date_prevue: '', date_reelle: '',
-      montant: null, statut: 'A_VENIR', commentaire: '',
-    });
-    this.echeanceOuverte.set(true);
-    if (!this.contrats().length) this.loadListe();
-  }
-
-  modifierEcheance(e: Echeance & { contrat_id: string; date_reelle?: string | null; commentaire?: string | null }): void {
-    this.echeanceEditId.set(e.id);
-    this.echeanceForm.patchValue({
-      contrat_id: e.contrat_id,
-      type_echeance: e.type_echeance,
-      date_prevue: e.date_prevue,
-      date_reelle: e.date_reelle ?? '',
-      montant: e.montant,
-      statut: e.statut,
-      commentaire: e.commentaire ?? '',
-    });
-    this.echeanceOuverte.set(true);
-    if (!this.contrats().length) this.loadListe();
-  }
-
-  fermerEcheance(): void {
-    this.echeanceOuverte.set(false);
-    this.echeanceEditId.set(null);
-  }
-
-  sauverEcheance(): void {
-    if (this.echeanceForm.invalid) return;
-    const raw = this.echeanceForm.getRawValue();
-    const body = {
-      type_echeance: raw.type_echeance,
-      date_prevue: raw.date_prevue,
-      date_reelle: raw.date_reelle || null,
-      montant: raw.montant,
-      statut: raw.statut,
-      commentaire: raw.commentaire || null,
-    };
-    const editId = this.echeanceEditId();
-    if (!editId && !raw.contrat_id) {
-      this.feedback.warning({ title: 'Contrat manquant', message: 'Choisissez le contrat concerné par cette échéance.' });
-      return;
-    }
+  envoyerRappels(): void {
     this.feedback
-      .run(
-        () =>
-          editId
-            ? this.api.patch(`/mg/contrats/echeances/${editId}`, body)
-            : this.api.post(`/mg/contrats/${raw.contrat_id}/echeances`, body),
-        {
-          loading: 'Enregistrement de l’échéance…',
-          busy: this.echeanceBusy,
-          idempotent: !editId,
-          errorTitle: 'Échec de l’enregistrement',
-          errorHint: 'Vos données saisies ont été conservées.',
-          success: {
-            title: editId ? 'Échéance mise à jour' : 'Échéance ajoutée',
-            details: [
-              { label: 'Type', value: this.typeEcheanceLabel(raw.type_echeance) },
-              { label: 'Date', value: this.dateFr(raw.date_prevue) },
-            ],
-          },
-        },
-      )
-      .subscribe(() => {
-        this.fermerEcheance();
-        this.sync();
-      });
-  }
-
-  editerEcheanceFiche(e: Echeance): void {
-    this.echeanceEditId.set(e.id);
-    this.echeanceForm.patchValue({
-      type_echeance: e.type_echeance,
-      date_prevue: e.date_prevue,
-      montant: e.montant,
-      statut: e.statut,
-      commentaire: e.commentaire ?? '',
-    });
-  }
-
-  supprimerEcheance(e: { id: string; type_echeance: string; date_prevue: string }): void {
-    this.feedback
-      .run(() => this.api.delete(`/mg/contrats/echeances/${e.id}`), {
+      .run(() => this.api.post<{ notifications: number; emails: number }>('/mg/contrats/alertes/envoyer', {}), {
         confirm: {
-          action: 'suppression',
-          message: `Supprimer l’échéance « ${this.typeEcheanceLabel(e.type_echeance)} » du ${this.dateFr(e.date_prevue)} ?`,
-          hint: 'Les alertes liées à cette échéance ne seront plus envoyées.',
+          action: 'enregistrement',
+          title: 'Envoyer les rappels',
+          message: 'Notifier maintenant les responsables des contrats en alerte ?',
+          hint: 'Un seul rappel par contrat, type d’alerte et responsable et par jour (pas de doublon).',
         },
-        loading: 'Suppression…',
-        busy: this.echeanceBusy,
-        errorTitle: 'Échec de la suppression',
-        success: { title: 'Échéance supprimée' },
-      })
-      .subscribe(() => this.sync());
-  }
-
-  addEcheance(): void {
-    const id = this.contratId();
-    if (!id || this.echeanceForm.invalid) return;
-    const raw = this.echeanceForm.getRawValue();
-    const body = {
-      type_echeance: raw.type_echeance,
-      date_prevue: raw.date_prevue,
-      date_reelle: raw.date_reelle || null,
-      montant: raw.montant,
-      statut: raw.statut,
-      commentaire: raw.commentaire || null,
-    };
-    const editId = this.echeanceEditId();
-    this.feedback
-      .run(
-        () =>
-          editId
-            ? this.api.patch<Contrat>(`/mg/contrats/echeances/${editId}`, body)
-            : this.api.post<Contrat>(`/mg/contrats/${id}/echeances`, body),
-        {
-          loading: 'Enregistrement de l’échéance…',
-          busy: this.echeanceBusy,
-          idempotent: !editId,
-          errorTitle: 'Échec de l’enregistrement',
-          errorHint: 'Vos données saisies ont été conservées.',
-          success: {
-            title: editId ? 'Échéance mise à jour' : 'Échéance ajoutée',
-            details: [
-              { label: 'Type', value: this.typeEcheanceLabel(raw.type_echeance) },
-              { label: 'Date', value: this.dateFr(raw.date_prevue) },
-            ],
-          },
-        },
-      )
-      .subscribe((c) => {
-        if (editId) this.loadOne(id);
-        else this.fiche.set(c);
-        this.echeanceEditId.set(null);
-        this.echeanceForm.reset({
-          contrat_id: '', type_echeance: 'PAIEMENT', date_prevue: '', date_reelle: '',
-          montant: null, statut: 'A_VENIR', commentaire: '',
-        });
-      });
-  }
-
-  addPaiement(): void {
-    const id = this.contratId();
-    if (!id || this.paiementForm.invalid) return;
-    const raw = this.paiementForm.getRawValue();
-    this.feedback
-      .run(
-        () =>
-          this.api.post<Contrat>(`/mg/contrats/${id}/paiements`, {
-            reference: raw.reference || null,
-            date_prevue: raw.date_prevue,
-            date_reelle: raw.date_reelle || null,
-            montant_prevu: raw.montant_prevu,
-            montant_paye: raw.montant_paye,
-          }),
-        {
-          loading: 'Enregistrement du paiement…',
-          busy: this.paiementBusy,
-          idempotent: true,
-          errorTitle: 'Échec de l’enregistrement',
-          errorHint: 'Vos données saisies ont été conservées.',
-          success: (c) => ({
-            title: 'Paiement enregistré',
-            details: [
-              { label: 'Date prévue', value: this.dateFr(raw.date_prevue) },
-              { label: 'Payé / prévu', value: `${raw.montant_paye} / ${raw.montant_prevu} ${c.devise}` },
-            ],
-          }),
-        },
-      )
-      .subscribe((c) => {
-        this.fiche.set(c);
-        this.paiementForm.reset({ reference: '', date_prevue: '', date_reelle: '', montant_prevu: 0, montant_paye: 0 });
-      });
-  }
-
-  voir(c: Contrat): void {
-    this.apercu.set(null);
-    this.apercuOuvert.set(true);
-    this.api.get<Contrat>(`/mg/contrats/${c.id}`).subscribe({
-      next: (detail) => this.apercu.set(detail),
-      error: (e) => {
-        this.apercuOuvert.set(false);
-        this.fail(e, 'Ouverture du contrat impossible');
-      },
-    });
-  }
-
-  @HostListener('document:keydown.escape')
-  fermerApercu(): void {
-    this.apercuOuvert.set(false);
-    this.apercu.set(null);
-  }
-
-  telechargerPdf(c: Contrat): void {
-    this.feedback
-      .run(() => this.api.download(`/mg/contrats/${c.id}/pdf`), {
-        loading: 'Préparation du PDF…',
-        busy: this.telechargement,
-        errorTitle: 'Téléchargement impossible',
-        success: (blob) => {
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `Contrat-${c.reference}.pdf`;
-          a.click();
-          URL.revokeObjectURL(url);
-          return { title: 'Téléchargement prêt', details: [{ label: 'Fichier', value: `Contrat-${c.reference}.pdf` }] };
-        },
+        loading: 'Envoi des rappels…',
+        busy: this.busy,
+        errorTitle: 'Échec de l’envoi',
+        success: (r) => ({
+          title: 'Rappels envoyés',
+          details: [
+            { label: 'Notifications', value: String(r.notifications) },
+            { label: 'E-mails', value: String(r.emails) },
+          ],
+        }),
       })
       .subscribe();
   }
 
-  fieldError(name: string): string | null {
-    return this.fieldErrors()[name] ?? null;
+  reconduire(r: ARenouveler): void {
+    this.feedback
+      .run(() => this.api.post<Contrat>(`/mg/contrats/${r.id}/reconduire`, {}), {
+        confirm: {
+          action: 'renouvellement',
+          title: 'Reconduction tacite',
+          message: `Reconduire ${r.reference} « ${r.titre} » pour une période identique ?`,
+          hint: 'Le même contrat est prolongé ; un avenant de reconduction est tracé et l’échéancier complété.',
+        },
+        loading: 'Reconduction…',
+        busy: this.busy,
+        idempotent: true,
+        errorTitle: 'Échec de la reconduction',
+        success: (c) => ({ title: 'Contrat reconduit', details: [{ label: 'Contrat', value: c.reference }, { label: 'Nouvelle fin', value: dateFr(c.date_fin) }] }),
+      })
+      .subscribe(() => this.charger());
   }
 
-  statutLabel(code: string | null | undefined): string {
-    return (code && STATUT_LABELS[code]) || code || '—';
+  renouveler(r: ARenouveler): void {
+    this.feedback
+      .run(() => this.api.post<Contrat>(`/mg/contrats/${r.id}/renouveler`, {}), {
+        confirm: {
+          action: 'renouvellement',
+          title: 'Reconduction expresse',
+          message: `Préparer un nouveau contrat à partir de ${r.reference} ?`,
+          hint: 'Un nouveau contrat en brouillon est créé pour la période suivante ; il suivra le circuit de validation.',
+        },
+        loading: 'Préparation…',
+        busy: this.busy,
+        idempotent: true,
+        errorTitle: 'Échec du renouvellement',
+        success: (n) => ({ title: 'Renouvellement préparé', details: [{ label: 'Nouvelle référence', value: n.reference }, { label: 'Issu de', value: r.reference }] }),
+      })
+      .subscribe((n) => void this.router.navigateByUrl(`/contrats-echeances/${n.id}`));
   }
 
-  statutAide(code: string): string {
-    return STATUT_AIDE[code] ?? '';
+  private chargerPayables(): void {
+    if (this.contratsPayables().length) return;
+    this.api.get<Contrat[]>('/mg/contrats').subscribe({
+      next: (rows) => this.contratsPayables.set(rows.filter((c) => this.regleable(c.statut))),
+      error: () => undefined,
+    });
   }
 
-  etapeIndex(statut: string): number {
-    switch (statut) {
-      case 'BROUILLON':
-      case 'EN_PREPARATION':
-        return 0;
-      case 'EN_VALIDATION':
-      case 'REJETE':
-        return 1;
-      case 'ACTIF':
-      case 'SUSPENDU':
-        return 2;
-      default:
-        return 3;
-    }
+  private chargerEcheancesContrat(contratId: string, selection?: string): void {
+    this.echeancesContrat.set([]);
+    if (!contratId) return;
+    this.api.get<EcheanceRow[]>('/mg/contrats/echeances', { contrat_id: contratId, type_echeance: 'PAIEMENT' }).subscribe({
+      next: (rows) => this.echeancesContrat.set(rows.filter((e) => e.reste > 0 || e.id === selection)),
+      error: () => undefined,
+    });
   }
 
-  typeLabel(code: string | null | undefined): string {
-    return this.types().find((t) => t.code === code)?.libelle ?? code ?? '—';
+  ouvrirPaiement(): void {
+    this.chargerPayables();
+    this.paiementEditId.set(null);
+    this.echeancesContrat.set([]);
+    this.paiementForm.reset({
+      contrat_id: '', echeance_id: '', reference: '', date_prevue: '', date_reelle: aujourdhui(),
+      montant_prevu: null, montant_paye: 0, mode: '', commentaire: '',
+    });
+    this.paiementForm.controls.contrat_id.enable();
+    this.paiementOuvert.set(true);
   }
 
-  typeEcheanceLabel(code: string): string {
-    return TYPES_ECHEANCE.find((t) => t.code === code)?.label ?? code;
+  regler(e: EcheanceRow): void {
+    this.chargerPayables();
+    this.paiementEditId.set(null);
+    this.paiementForm.reset({
+      contrat_id: e.contrat_id, echeance_id: e.id, reference: '', date_prevue: e.date_prevue, date_reelle: aujourdhui(),
+      montant_prevu: e.reste, montant_paye: e.reste, mode: '', commentaire: '',
+    });
+    this.paiementForm.controls.contrat_id.disable();
+    this.chargerEcheancesContrat(e.contrat_id, e.id);
+    this.paiementOuvert.set(true);
   }
 
-  periodiciteLabel(code: string): string {
-    return PERIODICITE_LABELS[code] ?? code;
+  editerPaiement(p: PaiementRow): void {
+    this.chargerPayables();
+    this.paiementEditId.set(p.id);
+    this.paiementForm.reset({
+      contrat_id: p.contrat_id, echeance_id: p.echeance_id ?? '', reference: p.paiement_ref ?? '', date_prevue: p.date_prevue,
+      date_reelle: p.date_reelle ?? '', montant_prevu: p.montant_prevu, montant_paye: p.montant_paye, mode: p.mode ?? '', commentaire: p.commentaire ?? '',
+    });
+    this.paiementForm.controls.contrat_id.disable();
+    this.chargerEcheancesContrat(p.contrat_id, p.echeance_id ?? undefined);
+    this.paiementOuvert.set(true);
   }
 
-  actionLabel(code: string): string {
-    return ACTION_LABELS[code] ?? code;
+  onContratPaiement(): void {
+    this.paiementForm.patchValue({ echeance_id: '' });
+    this.chargerEcheancesContrat(this.paiementForm.controls.contrat_id.value);
   }
 
-  dateFr(iso: string | null | undefined): string {
-    if (!iso) return '—';
-    const [y, m, d] = iso.slice(0, 10).split('-');
-    return d && m && y ? `${d}/${m}/${y}` : iso;
+  onEcheancePaiement(): void {
+    const e = this.echeancesContrat().find((x) => x.id === this.paiementForm.controls.echeance_id.value);
+    if (e) this.paiementForm.patchValue({ date_prevue: e.date_prevue, montant_prevu: e.reste, montant_paye: e.reste });
   }
 
-  dateHeureFr(iso: string): string {
-    const dt = new Date(iso);
-    if (Number.isNaN(dt.getTime())) return iso;
-    return dt.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+  fermerPaiement(force = false): void {
+    if (!this.paiementOuvert()) return;
+    if (!force && this.busy()) return;
+    this.paiementOuvert.set(false);
+    this.paiementForm.markAsPristine();
   }
 
-  joursLabel(jours: number | null | undefined): string {
-    if (jours === null || jours === undefined) return '';
-    if (jours === 0) return 'Aujourd’hui';
-    return jours > 0 ? `Dans ${jours} j` : `Retard ${-jours} j`;
+  sauverPaiement(): void {
+    if (this.paiementForm.invalid) return;
+    const raw = this.paiementForm.getRawValue();
+    const body = {
+      echeance_id: raw.echeance_id || null,
+      reference: raw.reference.trim() || null,
+      date_prevue: raw.date_prevue || null,
+      date_reelle: raw.date_reelle || null,
+      montant_prevu: raw.montant_prevu,
+      montant_paye: raw.montant_paye ?? 0,
+      mode: raw.mode || null,
+      commentaire: raw.commentaire || null,
+    };
+    const editId = this.paiementEditId();
+    this.feedback
+      .run(
+        () => (editId ? this.api.patch<Contrat>(`/mg/contrats/paiements/${editId}`, body) : this.api.post<Contrat>(`/mg/contrats/${raw.contrat_id}/paiements`, body)),
+        {
+          loading: 'Enregistrement du paiement…',
+          busy: this.busy,
+          idempotent: !editId,
+          errorTitle: 'Paiement refusé',
+          errorHint: 'Vos données saisies ont été conservées.',
+          success: (c) => ({
+            title: editId ? 'Paiement mis à jour' : 'Paiement enregistré',
+            details: [
+              { label: 'Contrat', value: c.reference },
+              { label: 'Montant versé', value: `${num(body.montant_paye).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} ${c.devise}` },
+            ],
+          }),
+        },
+      )
+      .subscribe(() => {
+        this.fermerPaiement(true);
+        this.charger();
+      });
   }
 
-  joursRestants(iso: string | null | undefined): string | null {
-    if (!iso) return null;
-    const cible = new Date(`${iso.slice(0, 10)}T00:00:00`);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const jours = Math.round((cible.getTime() - today.getTime()) / 86_400_000);
-    if (jours === 0) return 'Aujourd’hui';
-    return jours > 0 ? `Dans ${jours} jour${jours > 1 ? 's' : ''}` : `En retard de ${-jours} jour${jours < -1 ? 's' : ''}`;
+  supprimerPaiement(p: PaiementRow): void {
+    this.feedback
+      .run(() => this.api.delete(`/mg/contrats/paiements/${p.id}`), {
+        confirm: {
+          action: 'suppression',
+          message: `Supprimer le paiement ${p.paiement_ref || 'sans référence'} du contrat ${p.reference} ?`,
+          hint: 'L’échéance rattachée repasse en « à payer » ; l’opération est tracée.',
+        },
+        loading: 'Suppression…',
+        busy: this.busy,
+        errorTitle: 'Échec de la suppression',
+        success: { title: 'Paiement supprimé' },
+      })
+      .subscribe(() => this.chargerPaiements());
   }
 
-  private fail(err: unknown, title = 'Chargement impossible'): void {
-    void describeApiErrorAsync(err).then((info) => this.feedback.apiError(info, title));
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    this.fermerPaiement();
+  }
+
+  compteNiveau(n: string): number {
+    return this.alertes().filter((a) => a.niveau === n).length;
+  }
+
+  supprimable(statut: string): boolean {
+    return SUPPRIMABLES.has(statut);
+  }
+
+  enVigueur(statut: string): boolean {
+    return statut === 'ACTIF' || statut === 'SUSPENDU';
+  }
+
+  regleable(statut: string): boolean {
+    return statut === 'ACTIF' || statut === 'SUSPENDU' || statut === 'EXPIRE';
+  }
+
+  typeLabel(code: string): string {
+    return this.types().find((t) => t.code === code)?.libelle ?? code;
+  }
+
+  typeAlerte(code: string): string {
+    return ALERTE_TYPE_LABELS[code] ?? code;
+  }
+
+  typeEcheance(code: string): string {
+    return typeEcheanceLabel(code);
+  }
+
+  reconduction(code: string): string {
+    return RECONDUCTION_LABELS[code] ?? code;
+  }
+
+  statut(code: string | null | undefined): string {
+    return statutLabel(code);
+  }
+
+  date(iso: string | null | undefined): string {
+    return dateFr(iso);
+  }
+
+  jours(n: number | null | undefined): string {
+    return joursLabel(n);
+  }
+
+  private fail(err: unknown): void {
+    void describeApiErrorAsync(err).then((info) => this.feedback.apiError(info, 'Chargement impossible'));
   }
 }

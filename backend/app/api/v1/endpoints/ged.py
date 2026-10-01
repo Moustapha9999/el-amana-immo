@@ -34,6 +34,11 @@ class GedDocumentRead(BaseModel):
     size_bytes: int = 0
     created_at: object | None = None
     ocr_status: str | None = "pending"
+    title: str | None = None
+    doc_type: str | None = None
+    version: int = 1
+    parent_document_id: UUID | None = None
+    version_comment: str | None = None
 
     model_config = {"from_attributes": True}
 
