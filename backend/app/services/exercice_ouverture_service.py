@@ -9,7 +9,6 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import ValidationError
 from app.models import ExerciceComptable, Immobilisation, SoldeOuvertureImmobilisation, User

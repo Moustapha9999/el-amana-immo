@@ -63,12 +63,48 @@ class CentreCoutRead(CentreCoutCreate, ORMModel):
 
 
 class FournisseurCreate(BaseModel):
-    code: str
-    raison_sociale: str
-    contact: str | None = None
-    telephone: str | None = None
-    email: str | None = None
+    code: str = Field(min_length=1, max_length=30)
+    raison_sociale: str = Field(min_length=1, max_length=255)
+    nom_commercial: str | None = Field(default=None, max_length=255)
+    type_fournisseur: str = Field(default="FOURNITURE", max_length=40)
+    contact: str | None = Field(default=None, max_length=120)
+    contact_fonction: str | None = Field(default=None, max_length=120)
+    telephone: str | None = Field(default=None, max_length=40)
+    telephone_secondaire: str | None = Field(default=None, max_length=40)
+    email: str | None = Field(default=None, max_length=255)
+    site_web: str | None = Field(default=None, max_length=255)
     adresse: str | None = None
+    ville: str | None = Field(default=None, max_length=120)
+    pays: str = Field(default="Mauritanie", max_length=80)
+    nif: str | None = Field(default=None, max_length=60)
+    rc: str | None = Field(default=None, max_length=60)
+    devise_defaut: str = Field(default="MRU", max_length=10)
+    mode_paiement_defaut: str | None = Field(default=None, max_length=80)
+    delai_paiement_jours: int | None = Field(default=None, ge=0, le=3650)
+    conditions_commerciales: str | None = None
+
+
+class FournisseurUpdate(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=30)
+    raison_sociale: str | None = Field(default=None, min_length=1, max_length=255)
+    nom_commercial: str | None = Field(default=None, max_length=255)
+    type_fournisseur: str | None = Field(default=None, max_length=40)
+    contact: str | None = Field(default=None, max_length=120)
+    contact_fonction: str | None = Field(default=None, max_length=120)
+    telephone: str | None = Field(default=None, max_length=40)
+    telephone_secondaire: str | None = Field(default=None, max_length=40)
+    email: str | None = Field(default=None, max_length=255)
+    site_web: str | None = Field(default=None, max_length=255)
+    adresse: str | None = None
+    ville: str | None = Field(default=None, max_length=120)
+    pays: str | None = Field(default=None, max_length=80)
+    nif: str | None = Field(default=None, max_length=60)
+    rc: str | None = Field(default=None, max_length=60)
+    devise_defaut: str | None = Field(default=None, max_length=10)
+    mode_paiement_defaut: str | None = Field(default=None, max_length=80)
+    delai_paiement_jours: int | None = Field(default=None, ge=0, le=3650)
+    conditions_commerciales: str | None = None
+    is_active: bool | None = None
 
 
 class FournisseurRead(FournisseurCreate, ORMModel):

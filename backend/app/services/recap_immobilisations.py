@@ -169,10 +169,10 @@ async def build_recap_immobilisations(db: AsyncSession, annee: int) -> RecapImmo
     totaux = RecapImmoLigne(
         compte="",
         intitule="Total",
-        valeurs_ouverture=_q(sum((l.valeurs_ouverture for l in lignes), _zero())),
-        acquisitions=_q(sum((l.acquisitions for l in lignes), _zero())),
-        cessions=_q(sum((l.cessions for l in lignes), _zero())),
-        valeurs_cloture=_q(sum((l.valeurs_cloture for l in lignes), _zero())),
+        valeurs_ouverture=_q(sum((lg.valeurs_ouverture for lg in lignes), _zero())),
+        acquisitions=_q(sum((lg.acquisitions for lg in lignes), _zero())),
+        cessions=_q(sum((lg.cessions for lg in lignes), _zero())),
+        valeurs_cloture=_q(sum((lg.valeurs_cloture for lg in lignes), _zero())),
     )
 
     return RecapImmobilisationsResult(

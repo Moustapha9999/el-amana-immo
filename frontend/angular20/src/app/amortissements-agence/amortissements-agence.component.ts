@@ -80,6 +80,7 @@ export class AmortissementsAgenceComponent implements OnInit {
   readonly agences = signal<AgenceOption[]>([]);
   readonly categories = signal<CategorieOption[]>([]);
   readonly exercices = signal<number[]>([new Date().getFullYear()]);
+  private lastQuery: Record<string, string> = {};
 
   readonly trimestres = [
     { value: 1, label: 'T1 — 31/03' },
@@ -185,11 +186,13 @@ export class AmortissementsAgenceComponent implements OnInit {
       void this.dialogs.error('Exercice invalide').subscribe();
       return;
     }
+    const query = this.queryParams();
     this.loading.set(true);
     this.api
-      .get<VentilationResponse>('/reporting/amortissements-agence', this.queryParams())
+      .get<VentilationResponse>('/reporting/amortissements-agence', query)
       .subscribe({
         next: (res) => {
+          this.lastQuery = query;
           this.data.set(res);
           if (res.exercices_disponibles?.length) {
             this.exercices.set(res.exercices_disponibles);
@@ -233,16 +236,19 @@ export class AmortissementsAgenceComponent implements OnInit {
   }
 
   export(format: 'xlsx' | 'pdf'): void {
+    const annee = this.lastQuery['annee'];
+    if (!annee) {
+      return;
+    }
     this.exporting.set(format);
     this.api
       .download('/reporting/amortissements-agence/export', {
-        ...this.queryParams(),
+        ...this.lastQuery,
         format,
       })
       .subscribe({
         next: (blob) => {
           this.exporting.set(null);
-          const annee = this.filterForm.controls.annee.value;
           const a = document.createElement('a');
           a.href = URL.createObjectURL(blob);
           a.download = `amortissements-agence-${annee}.${format === 'pdf' ? 'pdf' : 'xlsx'}`;

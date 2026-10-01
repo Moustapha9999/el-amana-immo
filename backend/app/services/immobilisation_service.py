@@ -79,7 +79,7 @@ class ImmobilisationService:
         famille: str | None = None,
     ) -> tuple[list[Immobilisation], int]:
 
-        from sqlalchemy import String, cast, or_
+        from sqlalchemy import String, cast
 
         from app.core.pagination import page_offset
 

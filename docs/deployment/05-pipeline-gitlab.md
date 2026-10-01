@@ -21,7 +21,7 @@ backup → pull/recreate → migrate (si activé) → healthcheck → finalize
 |-------|---------|
 | validate | Présence `backend/`, `frontend/`, Dockerfiles |
 | test | `pytest` dans `backend/` ; build Angular |
-| security | Contrôles basiques secrets / fichiers sensibles ; Sonar optionnel si token |
+| security | Contrôles basiques secrets / fichiers sensibles |
 | build | `docker build` backend + frontend |
 | publish | Push registry sur tags `v*` (+ SHA) |
 | deploy_production | `when: manual`, runner tag `bea-prod` ; SSH → `backup-pre-deploy.sh` puis `deploy.sh` |

@@ -6,16 +6,19 @@ Modules CDC hors Stock : Achats, Notes de frais, Contrats, Archives.
 
 | Élément | Valeur |
 |---------|--------|
-| Entry | `/achats-appro/bons` |
+| Entry | `/achats-appro/dashboard` |
 | API | `/api/v1/mg/achats/...` |
-| Tables | `mg_bons_commande`, `mg_bc_lignes` |
-| Permissions | `mg.purchase.view\|create\|approve\|export` |
+| Tables | `mg_bons_commande`, `mg_bc_lignes`, `mg_achat_demandes`, `mg_achat_consultations`, `mg_achat_devis`, `mg_achat_comparaisons`, `mg_achat_bl`, `mg_achat_receptions`, `mg_achat_factures`, `mg_achat_paiements`, `mg_achat_parametres` |
+| Permissions | `mg.purchase.view\|create\|approve\|export\|receive\|invoice\|pay\|demande` |
+| Rôles CORE | `achats-appro.lecteur\|acheteur\|valideur\|admin` (+ GED pour admin) |
 
-Fiche papier : Bon de commande (fournisseur, lignes qty×PU, total HT, Visa Chef MG + Directrice Ressources).
+Cycle : demande → consultation → devis → comparaison (choix humain) → bon de commande → BL → réception (lignes stockables via `MgStockService.record_achat_reception`) → facture (contrôle 3 voies) → suivi de paiement (aucun virement).
 
-Workflow : `BROUILLON → SOUMIS → VISA_MG → VISA_DR → VALIDE` (+ REJETEE / ANNULEE).
+Workflow BC : `BROUILLON → SOUMIS → VISA_MG → VISA_DR → VALIDE` puis `ENVOYE` / `PARTIEL` / `RECU` (+ REJETEE / ANNULEE). Soft-delete BC ; édition hors `CLOTURE`.
 
-Référentiel `fournisseurs` (sélection) + snapshot figé sur le BC.
+PDF BC : signataires dynamiques (query `signataire_1` / `signataire_2`), fichier `Bon-Commande-00XXXX.pdf`, totaux HT/TVA/TTC (taux `tva_defaut`).
+
+Référentiel `fournisseurs` (sélection) + snapshot figé sur le BC. Paramètres CRUD (`tva_defaut`, préfixes, devise…) dans `mg_achat_parametres` / UI `/achats-appro/parametres`.
 
 ## Notes de frais (`notes-frais`)
 

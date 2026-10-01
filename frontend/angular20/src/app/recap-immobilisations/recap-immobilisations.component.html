@@ -27,7 +27,7 @@
         mat-stroked-button
         type="button"
         (click)="export('xlsx')"
-        [disabled]="!data() || exporting() !== null || loading()"
+        [disabled]="!data() || lignesFiltrees().length === 0 || exporting() !== null || loading()"
       >
         <mat-icon aria-hidden="true">table_view</mat-icon>
         {{ exporting() === 'xlsx' ? 'Excel…' : 'Excel' }}
@@ -36,7 +36,7 @@
         mat-stroked-button
         type="button"
         (click)="export('pdf')"
-        [disabled]="!data() || exporting() !== null || loading()"
+        [disabled]="!data() || lignesFiltrees().length === 0 || exporting() !== null || loading()"
       >
         <mat-icon aria-hidden="true">picture_as_pdf</mat-icon>
         {{ exporting() === 'pdf' ? 'PDF…' : 'PDF' }}
@@ -137,7 +137,7 @@
                   {{ row.valeurs_ouverture | montant }}
                 </td>
                 <td mat-footer-cell *matFooterCellDef class="rim__num rim__foot">
-                  {{ d.totaux.valeurs_ouverture | montant }}
+                  {{ totauxFiltres()?.valeurs_ouverture | montant }}
                 </td>
               </ng-container>
 
@@ -147,7 +147,7 @@
                   {{ row.acquisitions | montant }}
                 </td>
                 <td mat-footer-cell *matFooterCellDef class="rim__num rim__foot rim__foot--pos">
-                  {{ d.totaux.acquisitions | montant }}
+                  {{ totauxFiltres()?.acquisitions | montant }}
                 </td>
               </ng-container>
 
@@ -157,7 +157,7 @@
                   {{ row.cessions | montant }}
                 </td>
                 <td mat-footer-cell *matFooterCellDef class="rim__num rim__foot rim__foot--neg">
-                  {{ d.totaux.cessions | montant }}
+                  {{ totauxFiltres()?.cessions | montant }}
                 </td>
               </ng-container>
 
@@ -167,7 +167,7 @@
                   {{ row.valeurs_cloture | montant }}
                 </td>
                 <td mat-footer-cell *matFooterCellDef class="rim__num rim__foot">
-                  {{ d.totaux.valeurs_cloture | montant }}
+                  {{ totauxFiltres()?.valeurs_cloture | montant }}
                 </td>
               </ng-container>
 

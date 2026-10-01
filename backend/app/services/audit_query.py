@@ -49,6 +49,7 @@ def _audit_filters(
                 func.lower(AuditLog.action).like(term),
                 func.lower(AuditLog.entity).like(term),
                 func.lower(AuditLog.ip_address).like(term),
+                func.lower(AuditLog.request_id).like(term),
                 func.lower(User.email).like(term),
             )
         )
@@ -101,7 +102,7 @@ async def list_audit_logs(
 
 async def list_audit_for_export(
     db: AsyncSession,
-    limit: int = 5000,
+    limit: int = 100_000,
     *,
     entity: str | None = None,
     action: str | None = None,

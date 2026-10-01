@@ -1,0 +1,394 @@
+<section class="bea-ach">
+  @if (mode() === 'list') {
+    <header class="bea-ach__hero">
+      <p>Contrôle fournisseur</p>
+      <h1>Factures</h1>
+      <div class="bea-ach__hero-glow" aria-hidden="true"></div>
+    </header>
+
+    <div class="bea-ach__head">
+      <div class="bea-ach__kpis bea-ach__kpis--3" style="flex:1;margin:0">
+        <div class="bea-ach__kpi" style="--i:0">
+          <span class="bea-ach__kpi-icon" data-tone="navy"><mat-icon>request_quote</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>Total</span>
+            <strong>{{ rows().length }}</strong>
+            <em>Factures</em>
+          </span>
+        </div>
+        <div class="bea-ach__kpi" style="--i:1">
+          <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>payments</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>Montant TTC</span>
+            <strong>{{ total() | montant }}</strong>
+            <em>MRU</em>
+          </span>
+        </div>
+        <div class="bea-ach__kpi" style="--i:2" [attr.data-active]="ecarts() > 0 ? 'danger' : null">
+          <span class="bea-ach__kpi-icon" data-tone="danger"><mat-icon>warning</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>Écarts 3WM</span>
+            <strong>{{ ecarts() }}</strong>
+            <em>À régulariser</em>
+          </span>
+        </div>
+      </div>
+      <a class="bea-ach__btn" routerLink="/achats-appro/factures/nouvelle">
+        <mat-icon>add</mat-icon> Nouvelle
+      </a>
+    </div>
+
+    <form class="bea-ach__search" [formGroup]="filters">
+      <label class="bea-ach__field bea-ach__field--grow">
+        <mat-icon>search</mat-icon>
+        <input formControlName="q" placeholder="Référence, n° fournisseur…" (input)="search()" />
+      </label>
+    </form>
+
+
+    <div class="bea-ach__panel">
+      <div class="bea-ach__panel-top">
+        <h2>Factures fournisseurs</h2>
+        <span class="bea-ach__count">{{ filtered().length }} résultat(s)</span>
+      </div>
+      <div class="bea-mg__table-scroll">
+        <table class="bea-ach__table">
+          <thead>
+            <tr>
+              <th>Réf.</th>
+              <th>Date</th>
+              <th>TTC</th>
+              <th>Statut</th>
+              <th>3WM</th>
+              <th>Preuve</th>
+              <th class="bea-ach__th-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of filtered(); track r.id; let i = $index) {
+              <tr [style.--i]="i">
+                <td><code class="bea-ach__code">{{ r.reference }}</code></td>
+                <td>{{ r.date_facture }}</td>
+                <td>{{ r.montant_ttc | montant }} MRU</td>
+                <td><span class="bea-ach__badge" [attr.data-statut]="r.statut">{{ statutLabel(r.statut) }}</span></td>
+                <td>
+                  <span class="bea-ach__badge" [attr.data-statut]="ecartStatut(r)">{{ ecartLabel(r) }}</span>
+                </td>
+                <td>
+                  @if (r.nb_justificatifs) {
+                    <span class="bea-ach__badge" data-statut="VALIDE" title="Facture fournisseur jointe">
+                      <mat-icon style="font-size:0.9rem;width:0.9rem;height:0.9rem;vertical-align:-2px">attach_file</mat-icon> {{ r.nb_justificatifs }}
+                    </span>
+                  } @else {
+                    <span class="bea-ach__badge" data-statut="ANOMALIE" title="Joindre la facture reçue du fournisseur">Manquante</span>
+                  }
+                </td>
+                <td class="bea-ach__actions">
+                  <button type="button" class="bea-ach__icon-btn" title="Voir" (click)="open(r)">
+                    <mat-icon>visibility</mat-icon>
+                  </button>
+                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Annuler la facture" [disabled]="r.statut === 'ANNULEE' || saving()" (click)="annuler(r)">
+                    <mat-icon>block</mat-icon>
+                  </button>
+                  @if (modeTest()) {
+                    <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer (mode test)" [disabled]="saving()" (click)="supprimer(r)">
+                      <mat-icon>delete</mat-icon>
+                    </button>
+                  }
+                </td>
+              </tr>
+            } @empty {
+              <tr class="bea-ach__empty">
+                <td colspan="7">
+                  <mat-icon>request_quote</mat-icon>
+                  <p>Aucune facture.</p>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  } @else {
+    <header class="bea-ach__head">
+      <div>
+        <p class="bea-ach__kicker">{{ id() ? 'Fiche' : 'Création' }}</p>
+        <h1>{{ id() ? 'Facture ' + (current()?.reference || '') : 'Nouvelle facture' }}</h1>
+        @if (current(); as c) {
+          <p class="bea-ach__muted">
+            <span class="bea-ach__badge" [attr.data-statut]="c.statut">{{ statutLabel(c.statut) }}</span>
+            @if (c.ecart_quantite || c.ecart_montant) {
+              <span class="bea-ach__badge" data-statut="ANOMALIE">Écart 3WM</span>
+            }
+            @if (c.montant_paye !== undefined && c.statut !== 'ANNULEE') {
+              <span> · Payé {{ c.montant_paye | montant }} / {{ c.montant_ttc | montant }} MRU · reste {{ c.reste_a_payer | montant }} MRU ({{ pctRegle(c) }} %)</span>
+            }
+          </p>
+          @if (c.motif_validation) {
+            <p class="bea-ach__muted">Écart accepté à la validation : {{ c.motif_validation }}</p>
+          }
+        }
+      </div>
+      <a class="bea-ach__btn bea-ach__btn--ghost" routerLink="/achats-appro/factures">
+        <mat-icon>arrow_back</mat-icon> Retour
+      </a>
+    </header>
+
+
+    <form class="bea-ach__form" [formGroup]="form" (ngSubmit)="save()">
+      <div class="bea-ach__grid">
+        <label style="grid-column:1/-1">Fournisseur *
+          <bea-supplier-select formControlName="fournisseur_id" />
+        </label>
+        <label>Bon de commande *
+          <select formControlName="bon_id">
+            <option value="">{{ bonsFournisseur().length ? '— Choisir —' : 'Aucun BC facturable pour ce fournisseur' }}</option>
+            @for (b of bonsFournisseur(); track b.id) {
+              <option [value]="b.id">{{ b.reference }} ({{ bcLabel(b.statut) }})</option>
+            }
+          </select>
+        </label>
+        <label>Réception
+          <select formControlName="reception_id">
+            <option value="">— Aucune —</option>
+            @for (r of receptions(); track r.id) {
+              <option [value]="r.id">{{ r.reference }} · {{ r.date_reception }}</option>
+            }
+          </select>
+        </label>
+        <label>N° facture fournisseur <input formControlName="numero_fournisseur" /></label>
+        <label>Date facture *<input type="date" formControlName="date_facture" /></label>
+        <label>Date échéance <input type="date" formControlName="date_echeance" /></label>
+        <label style="grid-column:1/-1">Observation <textarea formControlName="observation" rows="2"></textarea></label>
+      </div>
+
+      @if (!id()) {
+        <div class="bea-fac__preuve" [attr.data-ok]="preuve() ? 'true' : null">
+          <mat-icon>{{ preuve() ? 'task' : 'upload_file' }}</mat-icon>
+          <div>
+            <strong>Facture du fournisseur (preuve)</strong>
+            <span>{{ preuve() ? preuve()!.name + ' · ' + tailleFichier(preuve()!.size) : piecesFormats + ' de la facture reçue — archivée en GED et lue par OCR.' }}</span>
+          </div>
+          <label class="bea-ach__btn bea-ach__btn--ghost">
+            <mat-icon>attach_file</mat-icon> {{ preuve() ? 'Changer' : 'Joindre' }}
+            <input type="file" [accept]="piecesAccept" hidden (change)="choisirPreuve($event)" />
+          </label>
+          @if (preuve()) {
+            <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Retirer" (click)="preuve.set(null)">
+              <mat-icon>close</mat-icon>
+            </button>
+          }
+        </div>
+      }
+
+      @if (chargementBc()) {
+        <p class="bea-ach__note"><mat-icon>hourglass_empty</mat-icon> Récupération des détails du BC…</p>
+      } @else if (proposition(); as p) {
+        <div class="bea-fac__bc">
+          <div class="bea-fac__bc-head">
+            <mat-icon>request_quote</mat-icon>
+            <div>
+              <strong>{{ p.bon_reference }}</strong>
+              <span>{{ p.fournisseur_raison_sociale || '—' }}</span>
+            </div>
+            @if (canEditForm()) {
+              <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="reprendreBc()" title="Remplacer les lignes par celles du BC">
+                <mat-icon>sync</mat-icon> Reprendre du BC
+              </button>
+            }
+          </div>
+          <dl class="bea-fac__bc-grid">
+            <div><dt>Total BC TTC</dt><dd>{{ p.bc_total_ttc | montant }} {{ p.devise }}</dd></div>
+            <div><dt>Déjà facturé</dt><dd>{{ p.deja_facture_ttc | montant }} {{ p.devise }} <small>({{ p.nb_factures }} facture(s))</small></dd></div>
+            <div><dt>Réception</dt><dd>{{ p.reception_reference || 'Aucune' }}</dd></div>
+            <div><dt>Conditions de paiement</dt><dd>{{ p.conditions_paiement || '—' }}</dd></div>
+          </dl>
+          @if (p.message) {
+            <p class="bea-fac__bc-msg"><mat-icon>info</mat-icon> {{ p.message }}</p>
+          }
+        </div>
+      }
+
+      <h2 class="bea-ach__kicker" style="font-size:0.9rem;color:#0f172a;text-transform:none;letter-spacing:0;margin-top:0.5rem">Lignes</h2>
+      <div class="bea-fac__lignes" formArrayName="lignes">
+        <div class="bea-fac__ligne bea-fac__ligne--head">
+          <span>Désignation</span><span>Qté</span><span>PU HT</span><span>TVA %</span><span>Total HT</span><span></span>
+        </div>
+        @for (ctrl of lignes.controls; track ctrl; let i = $index) {
+          <div class="bea-fac__ligne" [formGroupName]="i">
+            <input formControlName="designation" placeholder="Désignation *" />
+            <input type="number" formControlName="quantite" min="1" step="1" />
+            <input type="number" formControlName="prix_unitaire" step="0.01" />
+            <input type="number" formControlName="taux_tva" min="0" max="100" step="0.01" placeholder="BC" />
+            <strong>{{ totalLigne(i) | montant }}</strong>
+            @if (canEditForm() && lignes.length > 1) {
+              <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Retirer" (click)="removeLigne(i)">
+                <mat-icon>delete</mat-icon>
+              </button>
+            } @else {
+              <span></span>
+            }
+          </div>
+        }
+      </div>
+      @if (canEditForm()) {
+        <button type="button" class="bea-ach__btn bea-ach__btn--ghost" (click)="addLigne()">
+          <mat-icon>add</mat-icon> Ligne
+        </button>
+      }
+
+      <div class="bea-fac__totaux">
+        <div><span>Total HT</span><strong>{{ totaux().ht | montant }}</strong></div>
+        <div><span>TVA</span><strong>{{ totaux().tva | montant }}</strong></div>
+        <div class="bea-fac__totaux-main"><span>Total TTC</span><strong>{{ totaux().ttc | montant }} {{ proposition()?.devise || 'MRU' }}</strong></div>
+        @if (ecartProposition(); as e) {
+          <div>
+            <span>Reste à facturer sur le BC</span>
+            <strong>{{ e.reste | montant }}</strong>
+            <em>{{ e.ecart > 0 ? 'Dépasse le reste de ' + (e.ecart | montant) : !proposition()?.lignes?.length ? 'En attente de réception' : 'Facturation partielle possible' }}</em>
+          </div>
+        }
+      </div>
+
+      <div class="bea-ach__form-actions">
+        @if (canEditForm()) {
+          <button type="submit" class="bea-ach__btn" [disabled]="saving()">
+            <mat-icon>save</mat-icon> {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
+          </button>
+        }
+        @if (id()) {
+          <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="matching()" (click)="match()">
+            <mat-icon>fact_check</mat-icon> {{ matching() ? 'Contrôle…' : 'Contrôle 3 voies' }}
+          </button>
+        }
+        @if (id() && aValider()) {
+          <button type="button" class="bea-ach__btn" [disabled]="saving() || form.dirty" [title]="form.dirty ? 'Enregistrez d’abord vos modifications' : 'Bon à payer'" (click)="valider()">
+            <mat-icon>verified</mat-icon> Valider (bon à payer)
+          </button>
+        }
+        @if (current(); as c) {
+          @if (modeTest()) {
+            <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="supprimer(c)">
+              <mat-icon>delete</mat-icon> Supprimer (mode test)
+            </button>
+          }
+          @if (payable(c.statut)) {
+            <a class="bea-ach__btn bea-ach__btn--ghost" routerLink="/achats-appro/paiements/nouveau" [queryParams]="{ facture_id: c.id }">
+              <mat-icon>payments</mat-icon> Payer
+            </a>
+          }
+        }
+        @if (current()?.bon_id; as bid) {
+          <a class="bea-ach__btn bea-ach__btn--ghost" [routerLink]="['/achats-appro/bons', bid]">
+            <mat-icon>receipt_long</mat-icon> BC
+          </a>
+        }
+      </div>
+    </form>
+
+    @if (matchResult(); as m) {
+      <div class="bea-ach__panel bea-ach__3wm" [attr.data-resultat]="m.resultat">
+        <div class="bea-ach__panel-top">
+          <div class="bea-ach__3wm-title">
+            <span class="bea-ach__kpi-icon" [attr.data-tone]="m.resultat === 'CONFORME' ? 'teal' : 'danger'">
+              <mat-icon>{{ m.resultat === 'CONFORME' ? 'verified' : 'report' }}</mat-icon>
+            </span>
+            <div>
+              <h2>Résultat contrôle 3 voies</h2>
+              <p class="bea-ach__muted">Bon de commande · Réception · Facture</p>
+            </div>
+          </div>
+          <span class="bea-ach__badge" [attr.data-statut]="m.resultat">{{ m.resultat }}</span>
+        </div>
+
+        @if (matchDetails().length) {
+          <ul class="bea-ach__3wm-alert">
+            @for (d of matchDetails(); track $index) {
+              <li><mat-icon>error_outline</mat-icon>{{ d }}</li>
+            }
+          </ul>
+        }
+
+        <div class="bea-ach__3wm-cols">
+          <div class="bea-ach__3wm-card">
+            <p class="bea-ach__kicker"><mat-icon>receipt_long</mat-icon> Bon de commande</p>
+            <dl>
+              <div><dt>Qté commandée</dt><dd>{{ m.qty_commandee | quantite }}</dd></div>
+              <div><dt>TTC attendu (cette facture)</dt><dd>{{ m.attendu_ttc | montant:'MRU' }}</dd></div>
+            </dl>
+          </div>
+          <div class="bea-ach__3wm-card">
+            <p class="bea-ach__kicker"><mat-icon>inventory_2</mat-icon> Réception</p>
+            <dl>
+              <div><dt>Qté reçue</dt><dd>{{ m.qty_recue | quantite }}</dd></div>
+              <div><dt>Montant TTC</dt><dd class="bea-ach__3wm-na">—</dd></div>
+            </dl>
+          </div>
+          <div class="bea-ach__3wm-card bea-ach__3wm-card--facture">
+            <p class="bea-ach__kicker"><mat-icon>request_quote</mat-icon> Facture</p>
+            <dl>
+              <div>
+                <dt>Qté facturée</dt>
+                <dd [class.bea-ach__3wm-ko]="m.ecart_quantite">{{ m.qty_facturee | quantite }}</dd>
+              </div>
+              <div>
+                <dt>Montant TTC</dt>
+                <dd [class.bea-ach__3wm-ko]="m.ecart_montant">{{ m.facture_ttc | montant:'MRU' }}</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+
+        <div class="bea-ach__3wm-ecarts">
+          <span class="bea-ach__3wm-chip" [attr.data-ko]="m.ecart_quantite || null">
+            <mat-icon>{{ m.ecart_quantite ? 'close' : 'check' }}</mat-icon>
+            Écart quantité
+            <strong>{{ m.ecart_quantite ? ecartQuantiteLabel(m) : 'Aucun' }}</strong>
+          </span>
+          <span class="bea-ach__3wm-chip" [attr.data-ko]="m.ecart_montant || null">
+            <mat-icon>{{ m.ecart_montant ? 'close' : 'check' }}</mat-icon>
+            Écart montant
+            <strong>{{ m.ecart_montant ? ecartMontantLabel(m) : 'Aucun' }}</strong>
+          </span>
+        </div>
+
+        @if (m.lignes?.length) {
+          <div class="bea-mg__table-scroll"><table class="bea-ach__table">
+            <thead><tr><th>Ligne</th><th>Commandé</th><th>Reçu</th><th>Déjà facturé</th><th>Facturé</th><th>PU BC / facture</th><th>TVA BC / facture</th><th>Contrôle</th></tr></thead>
+            <tbody>
+              @for (l of m.lignes; track $index) {
+                <tr>
+                  <td>{{ l.designation }}</td>
+                  <td>{{ l.quantite_commandee | quantite }}</td>
+                  <td>{{ l.quantite_recue | quantite }}</td>
+                  <td>{{ l.quantite_deja_facturee | quantite }}</td>
+                  <td [class.bea-ach__3wm-ko]="!l.ok">{{ l.quantite_facturee | quantite }}</td>
+                  <td>{{ l.prix_unitaire_bc | montant }} / {{ l.prix_unitaire_facture | montant }}</td>
+                  <td>{{ l.taux_tva_bc ?? '—' }} / {{ l.taux_tva_facture }} %</td>
+                  <td><span class="bea-ach__badge" [attr.data-statut]="l.ok ? 'CONFORME' : 'ANOMALIE'">{{ l.ok ? 'Conforme' : l.motifs.join(' · ') }}</span></td>
+                </tr>
+              }
+            </tbody>
+          </table></div>
+        }
+      </div>
+    }
+
+    @if (id()) {
+      <div style="margin-top:1rem">
+        <bea-mg-ged
+          moduleCode="achats-appro"
+          entity="achat_facture"
+          docType="FACTURE_FOURNISSEUR"
+          [entityId]="id()!"
+          [reference]="current()?.numero_fournisseur || current()?.reference || null"
+          [lectureSeule]="current()?.statut === 'PAYEE'"
+        />
+      </div>
+    }
+  }
+
+  @if (apercuId(); as aid) {
+    <bea-achats-facture-apercu [factureId]="aid" (closed)="apercuId.set(null)" />
+  }
+</section>

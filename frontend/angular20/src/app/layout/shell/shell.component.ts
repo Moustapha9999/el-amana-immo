@@ -1,5 +1,8 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { filter } from 'rxjs/operators';
+import { StockAlertesWatcherService } from '../../stock-fournitures/stock-alertes-watcher.service';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatListModule } from '@angular/material/list';
@@ -47,6 +50,9 @@ export class ShellComponent implements OnInit {
   readonly clock = inject(SystemClockService);
   private readonly api = inject(ApiService);
   private readonly nav = inject(PlateformeContextService);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly stockAlertes = inject(StockAlertesWatcherService);
 
   readonly collapsed = signal(false);
   readonly tooltip = signal<SidebarTooltip | null>(null);
@@ -70,6 +76,18 @@ export class ShellComponent implements OnInit {
     }
     this.hydrateModuleContext(code);
     this.loadNotificationCount();
+    if (code === 'stock-fournitures') this.watchStockAlertes();
+  }
+
+  private watchStockAlertes(): void {
+    this.stockAlertes.start();
+    this.router.events
+      .pipe(
+        filter((e) => e instanceof NavigationEnd),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe(() => this.stockAlertes.refresh());
+    this.destroyRef.onDestroy(() => this.stockAlertes.stop());
   }
 
   toggleSidebar(): void {
@@ -136,6 +154,10 @@ export class ShellComponent implements OnInit {
   }
 
   unreadForPath(path: string): number | null {
+    if (path === '/stock-fournitures/alertes') {
+      const n = this.stockAlertes.count();
+      return n > 0 ? n : null;
+    }
     if (path !== '/notifications') {
       return null;
     }

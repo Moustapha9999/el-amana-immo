@@ -12,6 +12,7 @@ import { ApiService } from '../../core/services/api.service';
 import { BeaAdminDialogService } from './core-admin-dialog.service';
 import { CoreAdminIconComponent } from './core-admin-icon.component';
 import { coreAdminOpsError } from './core-admin-ops.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
 
 interface BackupRow {
   id: string;
@@ -77,9 +78,6 @@ const STATUT_OPTIONS = [
         </div>
       </header>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
 
       <div class="bea-admin-panels bea-admin-panels--equal">
         <section class="bea-admin-panel bea-admin-backups__card">
@@ -211,7 +209,7 @@ export class CoreAdminBackupsComponent implements OnInit {
 
   readonly loading = signal(true);
   readonly busy = signal(false);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly items = signal<BackupRow[]>([]);
   readonly dash = signal<{
     total: number;
@@ -309,12 +307,6 @@ export class CoreAdminBackupsComponent implements OnInit {
           <a class="bea-admin-btn bea-admin-btn--ghost" routerLink="/admin/backups">Sauvegardes</a>
         </div>
       </header>
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
-      @if (message()) {
-        <p class="bea-admin-dash__ok">{{ message() }}</p>
-      }
 
       <div class="bea-admin-recovery__note">
         <strong>Sécurité</strong>
@@ -439,8 +431,8 @@ export class CoreAdminRecoveryComponent implements OnInit {
       created_at?: string;
     }[]
   >([]);
-  readonly erreur = signal('');
-  readonly message = signal('');
+  readonly erreur = feedbackSignal('error', '');
+  readonly message = feedbackSignal('success', '');
 
   ngOnInit(): void {
     this.reload();
@@ -506,9 +498,6 @@ export class CoreAdminRecoveryComponent implements OnInit {
           Actualiser
         </button>
       </header>
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (data(); as d) {
         <div
           class="bea-admin-supervis__banner"
@@ -615,7 +604,7 @@ export class CoreAdminRecoveryComponent implements OnInit {
 export class CoreAdminSupervisionComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly data = signal<any>(null);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly healthKeys = [
     'application',
     'api',
@@ -692,9 +681,6 @@ const STATUT_LABELS: Record<string, string> = {
           <a class="bea-admin-btn bea-admin-btn--ghost" routerLink="/admin/versions">Versions</a>
         </div>
       </header>
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
 
       @if (items().length) {
         <div class="bea-admin-mstates__summary">
@@ -763,7 +749,7 @@ export class CoreAdminModuleStatesComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly dialogs = inject(BeaAdminDialogService);
   readonly items = signal<ModuleState[]>([]);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly saving = signal(false);
   readonly statuts = STATUT_OPTIONS;
 
@@ -853,9 +839,6 @@ export class CoreAdminModuleStatesComponent implements OnInit {
           >État des modules</a
         >
       </header>
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
 
       <section class="bea-admin-panel bea-admin-versions__card">
         <p class="bea-admin-versions__kicker">Cible</p>
@@ -932,7 +915,7 @@ export class CoreAdminVersionsComponent implements OnInit {
   readonly versions = signal<{ id: string; version: string; notes: string; created_at?: string }[]>(
     [],
   );
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly saving = signal(false);
   selectedId = '';
   version = '';

@@ -188,7 +188,7 @@
             <ng-container matColumnDef="qte">
               <th mat-header-cell *matHeaderCellDef>Qté</th>
               <td mat-cell *matCellDef="let row" class="arn__cell-qte">
-                {{ row.kind === 'line' && row.quantite != null ? row.quantite : '—' }}
+                {{ row.kind === 'line' && row.quantite != null ? (row.quantite | quantite) : '—' }}
               </td>
               <td mat-footer-cell *matFooterCellDef></td>
             </ng-container>

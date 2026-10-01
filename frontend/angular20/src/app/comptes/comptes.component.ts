@@ -1,5 +1,5 @@
 ﻿import { DatePipe } from '@angular/common';
-import { MontantPipe } from '../shared/montant.pipe';
+import { MontantPipe, QuantitePipe } from '../shared/montant.pipe';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -49,7 +49,7 @@ interface ComptesParNatureResponse {
 
 @Component({
   selector: 'app-comptes',
-  imports: [ReactiveFormsModule, MontantPipe, DatePipe, MatButtonModule, MatIconModule, RouterLink, PaginationComponent],
+  imports: [ReactiveFormsModule, MontantPipe, QuantitePipe, DatePipe, MatButtonModule, MatIconModule, RouterLink, PaginationComponent],
   templateUrl: './comptes.component.html',
   styleUrl: './comptes.component.css',
 })
@@ -89,12 +89,25 @@ export class ComptesComponent implements OnInit {
       return groupes;
     }
     return groupes
-      .map((g) => ({
-        ...g,
-        lignes: g.lignes.filter((row) => this.ligneMatches(row, q)),
-      }))
+      .map((g) => {
+        const lignes = g.lignes.filter((row) => this.ligneMatches(row, q));
+        return { ...g, lignes, totaux: this.sumLignes(lignes, g.totaux) };
+      })
       .filter((g) => g.lignes.length > 0);
   });
+
+  readonly filteredTotaux = computed(() => {
+    const d = this.data();
+    if (!d || !this.localSearch().trim()) {
+      return d?.totaux ?? null;
+    }
+    return this.sumLignes(
+      this.filteredGroupes().flatMap((g) => g.lignes),
+      d.totaux,
+    );
+  });
+
+  private lastQuery: Record<string, string> = {};
 
   ngOnInit(): void {
     this.load();
@@ -107,13 +120,14 @@ export class ComptesComponent implements OnInit {
       return;
     }
     const compte = (this.filterForm.controls.compte.value || '').trim();
-    const params: Record<string, string | number> = { annee };
+    const query: Record<string, string> = { annee: String(annee) };
     if (compte) {
-      params['compte'] = compte;
+      query['compte'] = compte;
     }
     this.loading.set(true);
-    this.api.get<ComptesParNatureResponse>('/reporting/comptes-par-nature', params).subscribe({
+    this.api.get<ComptesParNatureResponse>('/reporting/comptes-par-nature', query).subscribe({
       next: (res) => {
+        this.lastQuery = query;
         this.data.set(res);
         this.groupPages.set({});
         this.applyLocalSearch();
@@ -143,6 +157,20 @@ export class ComptesComponent implements OnInit {
 
   agenceLabel(row: CompteNatureLigne): string {
     return row.agence_libelle || row.agence_code || '—';
+  }
+
+  private sumLignes(lignes: CompteNatureLigne[], base: CompteNatureLigne): CompteNatureLigne {
+    const sum = (pick: (l: CompteNatureLigne) => number) =>
+      lignes.reduce((acc, l) => acc + (Number(pick(l)) || 0), 0);
+    return {
+      ...base,
+      quantite: sum((l) => l.quantite),
+      valeur_acquisition: sum((l) => l.valeur_acquisition),
+      amorts_cumules_n1: sum((l) => l.amorts_cumules_n1),
+      dotations_annee: sum((l) => l.dotations_annee),
+      amorts_cumules_n: sum((l) => l.amorts_cumules_n),
+      vnc: sum((l) => l.vnc),
+    };
   }
 
   private ligneMatches(row: CompteNatureLigne, q: string): boolean {
@@ -177,17 +205,15 @@ export class ComptesComponent implements OnInit {
   }
 
   export(format: 'xlsx' | 'pdf'): void {
-    const annee = Number(this.filterForm.controls.annee.value);
+    const annee = this.lastQuery['annee'];
     if (!annee) {
       return;
     }
-    const compte = (this.filterForm.controls.compte.value || '').trim();
-    const params: Record<string, string> = {
-      annee: String(annee),
-      format,
-    };
-    if (compte) {
-      params['compte'] = compte;
+    const compte = this.lastQuery['compte'] ?? '';
+    const params: Record<string, string> = { ...this.lastQuery, format };
+    const search = this.localSearch().trim();
+    if (search) {
+      params['search'] = search;
     }
     this.exporting.set(format);
     this.api.download('/reporting/comptes-par-nature/export', params).subscribe({

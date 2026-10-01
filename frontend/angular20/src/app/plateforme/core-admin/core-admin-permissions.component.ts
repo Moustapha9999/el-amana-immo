@@ -10,6 +10,7 @@ import {
   CoreAdminRbacKpis,
   coreAdminRbacError,
 } from './core-admin-rbac.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
 
 @Component({
   selector: 'bea-core-admin-permissions',
@@ -83,9 +84,6 @@ import {
         </div>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (loading()) {
         <p class="bea-admin-dash__loading">Chargement des permissions…</p>
       } @else {
@@ -198,7 +196,7 @@ export class CoreAdminPermissionsComponent implements OnInit {
   readonly page = signal(1);
   readonly loading = signal(true);
   readonly saving = signal(false);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
   readonly size = 20;
   readonly totalPages = computed(() => Math.max(1, Math.ceil(this.total() / this.size)));
   readonly filters = this.fb.nonNullable.group({ search: '', kind: 'tous', module: 'tous' });

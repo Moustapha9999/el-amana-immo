@@ -41,7 +41,7 @@ Détail : [conception-technique-stock.md](conception-technique-stock.md).
 
 | Module | Code | Entry | API |
 |--------|------|-------|-----|
-| Achats (BC) | `achats-appro` | `/achats-appro/bons` | `/api/v1/mg/achats` |
+| Achats | `achats-appro` | `/achats-appro/dashboard` | `/api/v1/mg/achats` |
 | Notes de frais | `notes-frais` | `/notes-frais/notes` | `/api/v1/mg/notes-frais` |
 | Contrats | `contrats-echeances` | `/contrats-echeances/liste` | `/api/v1/mg/contrats` |
 | Archives | `archives-mg` | `/archives-mg/registre` | `/api/v1/mg/archives` |

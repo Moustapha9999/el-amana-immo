@@ -68,7 +68,6 @@ export const PAGES_MODULE_IMMO: PageModuleImmo[] = [
   { prefix: '/rebuts', label: 'Rebuts' },
   { prefix: '/reevaluations', label: 'Réévaluations' },
   { prefix: '/rapports', label: 'Rapports' },
-  { prefix: '/utilisateurs', label: 'Utilisateurs' },
   { prefix: '/audit', label: 'Audit' },
   { prefix: '/parametres', label: 'Paramètres' },
 ];

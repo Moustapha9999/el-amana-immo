@@ -19,7 +19,8 @@ interface DashboardKpi {
 type BusyKey =
   | 'ecritures-xlsx'
   | 'ecritures-pdf'
-  | 'immo'
+  | 'immo-xlsx'
+  | 'immo-pdf'
   | 'template'
   | 'import'
   | 'import-banque'
@@ -122,8 +123,14 @@ export class RapportsComponent implements OnInit {
     this.runDownload(key, '/reporting/ecritures/export', `ecritures-bea-digital.${ext}`, params);
   }
 
-  exportImmobilisations(): void {
-    this.runDownload('immo', '/reporting/immobilisations/export', 'immobilisations-bea-digital.xlsx');
+  exportImmobilisations(format: 'xlsx' | 'pdf'): void {
+    const key: BusyKey = format === 'pdf' ? 'immo-pdf' : 'immo-xlsx';
+    this.runDownload(
+      key,
+      '/reporting/immobilisations/export',
+      `immobilisations-bea-digital.${format}`,
+      { format },
+    );
   }
 
   downloadImportTemplate(): void {

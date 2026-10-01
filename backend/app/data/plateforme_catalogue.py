@@ -28,9 +28,26 @@ DEFAULT_ESPACE_CODE = "comptabilite"
 DEFAULT_MODULE_CODE = "immobilisations"
 
 # Toujours (re)créés s’ils manquent. Le reste du catalogue = seed **bootstrap**
-# seulement : une suppression CORE ADMIN ne doit pas les faire revenir au refresh.
-SEED_LOCKED_ESPACE_CODES = frozenset({DEFAULT_ESPACE_CODE})
-SEED_LOCKED_MODULE_CODES = frozenset({DEFAULT_MODULE_CODE})
+# seulement (CORE ADMIN peut supprimer sans resurrection au refresh).
+SEED_LOCKED_ESPACE_CODES = frozenset(
+    {DEFAULT_ESPACE_CODE, "credit", "rh", "informatique", "moyens-generaux", "archives"}
+)
+SEED_LOCKED_MODULE_CODES = frozenset(
+    {
+        DEFAULT_MODULE_CODE,
+        "stock-fournitures",
+        "achats-appro",
+        "notes-frais",
+        "contrats-echeances",
+        "archives-mg",
+        "archives-generales",
+        "demandes-mg",
+        "demandes-comptabilite",
+        "demandes-credit",
+        "demandes-rh",
+        "demandes-informatique",
+    }
+)
 
 PLATEFORME_ESPACES: list[EspaceDef] = [
     {
@@ -49,7 +66,7 @@ PLATEFORME_ESPACES: list[EspaceDef] = [
         "label": "Crédit",
         "description": "Processus crédit autour d’ORION (dossiers, contrôles, workflows).",
         "route": "/credit",
-        "statut": "bientot",
+        "statut": "actif",
         "sort_order": 2,
     },
     {
@@ -57,7 +74,7 @@ PLATEFORME_ESPACES: list[EspaceDef] = [
         "label": "RH",
         "description": "Processus ressources humaines internes.",
         "route": "/rh",
-        "statut": "bientot",
+        "statut": "actif",
         "sort_order": 3,
     },
     {
@@ -65,7 +82,7 @@ PLATEFORME_ESPACES: list[EspaceDef] = [
         "label": "Informatique",
         "description": "Demandes, suivi et outils internes DSI.",
         "route": "/informatique",
-        "statut": "bientot",
+        "statut": "actif",
         "sort_order": 4,
     },
     {
@@ -75,6 +92,29 @@ PLATEFORME_ESPACES: list[EspaceDef] = [
         "route": "/achats",
         "statut": "bientot",
         "sort_order": 5,
+    },
+    {
+        "code": "moyens-generaux",
+        "label": "Moyens Généraux",
+        "description": (
+            "Achats, stock & fournitures, notes de frais, contrats et archives "
+            "documentaires — digitalisation des processus internes MG."
+        ),
+        "route": "/moyens-generaux",
+        "statut": "actif",
+        "sort_order": 6,
+    },
+    {
+        "code": "archives",
+        "label": "Archives",
+        "description": (
+            "Archive Générale BEA-DIGITAL — vue transverse sur la GED centrale, "
+            "recherche et OCR selon permissions."
+        ),
+        # Pas /archives : segment réservé Immobilisations (LEGACY_ROOT_PATH_SEGMENTS).
+        "route": "/archive-generale",
+        "statut": "actif",
+        "sort_order": 7,
     },
 ]
 
@@ -88,6 +128,18 @@ PLATEFORME_MODULES: list[ModuleDef] = [
             "archives et rapports."
         ),
         "entry_path": "/dashboard",
+        "statut": "actif",
+        "sort_order": 2,
+    },
+    {
+        "code": "demandes-comptabilite",
+        "espace_code": "comptabilite",
+        "label": "Demandes",
+        "description": (
+            "Déposer et suivre les demandes internes du département "
+            "(fournitures, matériel, achat) — routées vers le service destinataire."
+        ),
+        "entry_path": "/demandes-comptabilite/accueil",
         "statut": "actif",
         "sort_order": 1,
     },
@@ -129,6 +181,17 @@ PLATEFORME_MODULES: list[ModuleDef] = [
     },
     # --- Futurs (catalogue Étape 8 — statut bientôt, pas encore de shell métier) ---
     {
+        "code": "demandes-credit",
+        "espace_code": "credit",
+        "label": "Demandes",
+        "description": (
+            "Déposer et suivre les demandes internes du département Crédit."
+        ),
+        "entry_path": "/demandes-credit/accueil",
+        "statut": "actif",
+        "sort_order": 1,
+    },
+    {
         "code": "credit",
         "espace_code": "credit",
         "label": "Dossiers crédit",
@@ -138,15 +201,33 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         ),
         "entry_path": "/credit",
         "statut": "bientot",
+        "sort_order": 2,
+    },
+    {
+        "code": "demandes-rh",
+        "espace_code": "rh",
+        "label": "Demandes",
+        "description": "Déposer et suivre les demandes internes du département RH.",
+        "entry_path": "/demandes-rh/accueil",
+        "statut": "actif",
         "sort_order": 1,
     },
     {
         "code": "rh",
         "espace_code": "rh",
-        "label": "Demandes RH",
+        "label": "Congés & dossiers RH",
         "description": "Congés, absences et demandes administratives internes.",
         "entry_path": "/rh",
         "statut": "bientot",
+        "sort_order": 2,
+    },
+    {
+        "code": "demandes-informatique",
+        "espace_code": "informatique",
+        "label": "Demandes",
+        "description": "Déposer et suivre les demandes internes du département Informatique.",
+        "entry_path": "/demandes-informatique/accueil",
+        "statut": "actif",
         "sort_order": 1,
     },
     {
@@ -156,7 +237,7 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "description": "Incidents et demandes internes DSI (SLA, files, catégories).",
         "entry_path": "/tickets-si",
         "statut": "bientot",
-        "sort_order": 1,
+        "sort_order": 2,
     },
     {
         "code": "demandes-achat",
@@ -165,6 +246,93 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "description": "Demandes, validations et suivi documentaire des achats.",
         "entry_path": "/demandes-achat",
         "statut": "bientot",
+        "sort_order": 1,
+    },
+    # --- Moyens Généraux (CDC v1 — Phase 1 = stock-fournitures) ---
+    {
+        "code": "stock-fournitures",
+        "espace_code": "moyens-generaux",
+        "label": "Stock & Fournitures",
+        "description": (
+            "Articles, familles, entrées/sorties, demandes de fournitures, "
+            "états de stock et rapports de consommation."
+        ),
+        "entry_path": "/stock-fournitures/dashboard",
+        "statut": "actif",
+        "sort_order": 2,
+    },
+    {
+        "code": "demandes-mg",
+        "espace_code": "moyens-generaux",
+        "label": "Demandes",
+        "description": (
+            "Centre de traitement : recevoir les demandes des départements, "
+            "contrôler, regrouper, servir depuis le stock ou lancer un achat."
+        ),
+        "entry_path": "/demandes-mg/dashboard",
+        "statut": "actif",
+        "sort_order": 1,
+    },
+    {
+        "code": "achats-appro",
+        "espace_code": "moyens-generaux",
+        "label": "Achats & Approvisionnements",
+        "description": (
+            "Cycle d’achat : demandes, fournisseurs, "
+            "bons de commande (PDF signataires dynamiques, TVA/TTC via paramètres), "
+            "réceptions, factures, paiements, GED et rapports."
+        ),
+        "entry_path": "/achats-appro/dashboard",
+        "statut": "actif",
+        "sort_order": 3,
+    },
+    {
+        "code": "notes-frais",
+        "espace_code": "moyens-generaux",
+        "label": "Notes de Frais",
+        "description": (
+            "Saisie avec agence ou intitulé libre, validation, paiement, "
+            "modification et suppression hors paiement, fiche PDF A4 portrait ou paysage, "
+            "rapports Excel et PDF."
+        ),
+        "entry_path": "/notes-frais",
+        "statut": "actif",
+        "sort_order": 4,
+    },
+    {
+        "code": "contrats-echeances",
+        "espace_code": "moyens-generaux",
+        "label": "Contrats & Échéances",
+        "description": (
+            "Cycle de vie des contrats : fournisseur et agence du référentiel, "
+            "échéances, paiements suivis, alertes, renouvellement, GED et rapports."
+        ),
+        "entry_path": "/contrats-echeances/dashboard",
+        "statut": "actif",
+        "sort_order": 5,
+    },
+    {
+        "code": "archives-mg",
+        "espace_code": "moyens-generaux",
+        "label": "Archives",
+        "description": (
+            "Mémoire documentaire MG : registre GED, recherche, dossiers métier, "
+            "corbeille, documents manquants, rapports."
+        ),
+        "entry_path": "/archives-mg/dashboard",
+        "statut": "actif",
+        "sort_order": 6,
+    },
+    {
+        "code": "archives-generales",
+        "espace_code": "archives",
+        "label": "Archive Générale",
+        "description": (
+            "Centre documentaire transverse : recherche métadonnées + OCR, "
+            "tous départements selon permissions."
+        ),
+        "entry_path": "/archives-generales",
+        "statut": "actif",
         "sort_order": 1,
     },
 ]
@@ -176,6 +344,8 @@ CORE_PERMISSIONS: list[tuple[str, str, str]] = [
     ("plateforme.audit.read", "Consultation de l'audit plateforme", "plateforme"),
     ("ged.read", "Consultation GED", "ged"),
     ("ged.write", "Dépôt / suppression GED", "ged"),
+    ("ged.download", "Téléchargement GED", "ged"),
+    ("ged.export", "Export rapports GED", "ged"),
 ]
 
 # CORE ADMIN — catalogue seulement. Ne pas lier au rôle immo `administrateur`.
@@ -218,6 +388,72 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("immobilisations.amortissement", "Amortissements", "immobilisations"),
     ("immobilisations.reporting", "Reporting immobilisations", "immobilisations"),
     ("immobilisations.admin", "Administration du module", "immobilisations"),
+    # Stock & Fournitures (Moyens Généraux — Phase 1)
+    ("mg.stock.view", "Consultation stock & fournitures", "stock-fournitures"),
+    ("mg.stock.create", "Création articles / demandes", "stock-fournitures"),
+    ("mg.stock.entry", "Entrées de stock", "stock-fournitures"),
+    ("mg.stock.exit", "Sorties de stock", "stock-fournitures"),
+    ("mg.stock.adjust", "Ajustements de stock", "stock-fournitures"),
+    ("mg.stock.inventory", "Inventaire stock", "stock-fournitures"),
+    ("mg.stock.inventory.validate", "Validation / clôture d'inventaire", "stock-fournitures"),
+    ("mg.stock.approve", "Validation demandes de fournitures", "stock-fournitures"),
+    ("mg.stock.export", "Exports / rapports stock", "stock-fournitures"),
+    ("mg.stock.period.view", "Consultation des périodes de stock", "stock-fournitures"),
+    ("mg.stock.period.close", "Clôture mensuelle de stock", "stock-fournitures"),
+    ("mg.stock.period.reopen", "Réouverture de période et suppression administrateur (périodes clôturées, workflows)", "stock-fournitures"),
+    ("mg.stock.negative", "Autoriser un stock négatif (exception auditée)", "stock-fournitures"),
+    ("mg.purchase.view", "Consultation achats / bons de commande", "achats-appro"),
+    ("mg.purchase.create", "Création / modification BC, paramètres achats (TVA…)", "achats-appro"),
+    ("mg.purchase.approve", "Validation / visas bons de commande", "achats-appro"),
+    ("mg.purchase.export", "Exports achats et PDF bon de commande", "achats-appro"),
+    ("mg.purchase.receive", "Réceptions marchandises", "achats-appro"),
+    ("mg.purchase.invoice", "Factures fournisseurs / rapprochement", "achats-appro"),
+    ("mg.purchase.pay", "Paiements fournisseurs", "achats-appro"),
+    ("mg.purchase.demande", "Demandes d'achat", "achats-appro"),
+    ("mg.notes.view", "Consultation notes de frais", "notes-frais"),
+    ("mg.notes.create", "Création / modification notes de frais", "notes-frais"),
+    ("mg.notes.control", "Contrôle notes de frais", "notes-frais"),
+    ("mg.notes.approve", "Visas / validation notes de frais", "notes-frais"),
+    ("mg.notes.reject", "Rejet / annulation notes de frais", "notes-frais"),
+    ("mg.notes.payment", "Mise en paiement / paiement notes de frais", "notes-frais"),
+    ("mg.notes.archive", "Archivage notes de frais", "notes-frais"),
+    ("mg.notes.export", "Exports / rapports notes de frais", "notes-frais"),
+    ("mg.notes.settings", "Paramètres notes de frais", "notes-frais"),
+    ("mg.contrats.view", "Consultation contrats", "contrats-echeances"),
+    ("mg.contrats.create", "Création contrats", "contrats-echeances"),
+    ("mg.contrats.manage", "Gestion / alertes contrats", "contrats-echeances"),
+    ("mg.contrats.validate", "Validation / rejet / annulation contrats", "contrats-echeances"),
+    ("mg.contrats.settings", "Paramètres contrats", "contrats-echeances"),
+    ("mg.contrats.export", "Exports contrats", "contrats-echeances"),
+    ("mg.archives.view", "Consultation archives MG", "archives-mg"),
+    ("mg.archives.create", "Ajout / archivage manuel archives MG", "archives-mg"),
+    ("mg.archives.update", "Modification metadonnees archives MG", "archives-mg"),
+    ("mg.archives.download", "Telechargement archives MG", "archives-mg"),
+    ("mg.archives.export", "Exports archives MG", "archives-mg"),
+    ("mg.archives.archive", "Archivage automatique / manuel archives MG", "archives-mg"),
+    ("mg.archives.restore", "Restauration corbeille archives MG", "archives-mg"),
+    ("mg.archives.delete", "Purge definitive archives MG", "archives-mg"),
+    ("mg.archives.manage", "Parametres archives MG", "archives-mg"),
+    ("archives.general.view", "Consultation Archive Générale", "archives-generales"),
+    ("archives.general.download", "Téléchargement Archive Générale", "archives-generales"),
+    ("archives.general.ocr.retry", "Relance OCR Archive Générale", "archives-generales"),
+    ("mg.request.mine.view", "Consultation de mes demandes internes", "demandes"),
+    ("mg.request.mine.create", "Création de mes demandes internes", "demandes"),
+    ("mg.request.mine.update", "Modification de mes demandes internes", "demandes"),
+    ("mg.request.mine.cancel", "Annulation de mes demandes internes", "demandes"),
+    ("mg.request.view", "Consultation des demandes reçues (traitant)", "demandes-mg"),
+    ("mg.request.validate", "Validation des demandes", "demandes-mg"),
+    ("mg.request.reject", "Refus des demandes", "demandes-mg"),
+    ("mg.request.request_info", "Demande de complément", "demandes-mg"),
+    ("mg.request.group", "Regroupement des demandes", "demandes-mg"),
+    ("mg.request.serve", "Servir une demande depuis le stock", "demandes-mg"),
+    ("mg.request.assign", "Affectation d’une demande", "demandes-mg"),
+    ("mg.request.export", "Exports demandes", "demandes-mg"),
+    ("mg.request.admin", "Administration des types et du moteur Demandes", "demandes-mg"),
+    ("mg.batch.view", "Consultation des regroupements achats", "demandes-mg"),
+    ("mg.batch.create", "Création des regroupements achats", "demandes-mg"),
+    ("mg.batch.update", "Modification des regroupements achats", "demandes-mg"),
+    ("mg.batch.validate", "Validation des regroupements (création DA)", "demandes-mg"),
 ]
 
 # Rôles figés Login 2 / module Immobilisations (codes courts = legacy).
@@ -233,13 +469,77 @@ RBAC_ROLES: list[tuple[str, str, str]] = [
     ("comptable", "Comptable", "Opérations courantes du module"),
     ("auditeur", "Auditeur", "Consultation et reporting"),
     ("administrateur", "Administration", "Permissions immobilisations + utilisateurs plateforme"),
+    ("stock-fournitures.lecteur", "Stock — Lecteur", "Consultation stock & fournitures"),
+    ("stock-fournitures.magasinier", "Stock — Magasinier", "Entrées / sorties / articles"),
+    ("stock-fournitures.valideur", "Stock — Valideur", "Visas demandes de fournitures"),
+    ("stock-fournitures.admin", "Stock — Admin", "Administration stock & fournitures"),
+    ("achats-appro.lecteur", "Achats — Lecteur", "Consultation cycle d’achat et PDF"),
+    ("achats-appro.acheteur", "Achats — Acheteur", "Création BC, paramètres, réceptions, factures, PDF"),
+    ("achats-appro.valideur", "Achats — Valideur", "Visas BC, demandes et export PDF"),
+    ("achats-appro.admin", "Achats — Admin", "Administration complète achats MG + GED"),
+    ("notes-frais.lecteur", "Notes — Lecteur", "Consultation notes de frais"),
+    ("notes-frais.redacteur", "Notes — Rédacteur", "Création notes de frais"),
+    ("notes-frais.valideur", "Notes — Valideur", "Visas notes de frais"),
+    ("notes-frais.admin", "Notes — Admin", "Administration notes de frais"),
+    ("contrats-echeances.lecteur", "Contrats — Lecteur", "Consultation contrats"),
+    ("contrats-echeances.gestionnaire", "Contrats — Gestionnaire", "Création / alertes contrats"),
+    ("contrats-echeances.valideur", "Contrats — Valideur", "Validation, annulation, rapports et paramètres"),
+    ("contrats-echeances.admin", "Contrats — Admin", "Administration contrats"),
+    ("archives-mg.lecteur", "Archives MG — Lecteur", "Consultation archives MG"),
+    ("archives-mg.admin", "Archives MG — Admin", "Administration archives MG"),
+    ("archives-generales.lecteur", "Archive Générale — Lecteur", "Consultation Archive Générale"),
+    ("archives-generales.admin", "Archive Générale — Admin", "Administration Archive Générale"),
+    ("demandes-comptabilite.demandeur", "Demandes Comptabilité — Demandeur", "Dépôt et suivi de ses demandes"),
+    ("demandes-credit.demandeur", "Demandes Crédit — Demandeur", "Dépôt et suivi de ses demandes"),
+    ("demandes-rh.demandeur", "Demandes RH — Demandeur", "Dépôt et suivi de ses demandes"),
+    ("demandes-informatique.demandeur", "Demandes Informatique — Demandeur", "Dépôt et suivi de ses demandes"),
+    ("demandes-mg.demandeur", "Demandes MG — Demandeur", "Dépôt et suivi de ses propres demandes"),
+    ("demandes-mg.lecteur", "Demandes MG — Lecteur", "Consultation des demandes reçues"),
+    ("demandes-mg.gestionnaire", "Demandes MG — Gestionnaire", "Traitement et regroupement des demandes"),
+    ("demandes-mg.valideur", "Demandes MG — Valideur", "Validation / refus des demandes"),
+    ("demandes-mg.admin", "Demandes MG — Admin", "Administration des demandes employés"),
 ]
 
 # Codes courts réservés au module Immobilisations (ne pas créer pour Crédit / RH / …).
-IMMO_LEGACY_ROLE_CODES = frozenset(code for code, _label, _desc in RBAC_ROLES)
+IMMO_LEGACY_ROLE_CODES = frozenset(
+    {
+        "consultation",
+        "lecture_seule",
+        "creation",
+        "modification",
+        "validation",
+        "comptable",
+        "auditeur",
+        "administrateur",
+    }
+)
 
 _IMMO_ALL = tuple(
     code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "immobilisations"
+)
+_MG_STOCK_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "stock-fournitures"
+)
+_MG_ACHATS_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "achats-appro"
+)
+_MG_NOTES_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "notes-frais"
+)
+_MG_CONTRATS_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "contrats-echeances"
+)
+_MG_ARCHIVES_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "archives-mg"
+)
+_ARCHIVES_GENERALES_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "archives-generales"
+)
+_MG_REQUEST_EMP_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "demandes"
+)
+_MG_REQUEST_MG_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "demandes-mg"
 )
 _CORE_ADMIN = (
     "plateforme.users.read",
@@ -247,7 +547,10 @@ _CORE_ADMIN = (
     "plateforme.audit.read",
     "ged.read",
     "ged.write",
+    "ged.download",
+    "ged.export",
 )
+_GED_RW = ("ged.read", "ged.write", "ged.download", "ged.export")
 
 ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "consultation": ("immobilisations.read",),
@@ -267,6 +570,115 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "immobilisations.reporting",
     ),
     "administrateur": _IMMO_ALL + _CORE_ADMIN,
+    "stock-fournitures.lecteur": ("mg.stock.view", "mg.stock.period.view"),
+    "stock-fournitures.magasinier": (
+        "mg.stock.view",
+        "mg.stock.create",
+        "mg.stock.entry",
+        "mg.stock.exit",
+        "mg.stock.adjust",
+        "mg.stock.inventory",
+        "mg.stock.period.view",
+    ),
+    "stock-fournitures.valideur": (
+        "mg.stock.view",
+        "mg.stock.approve",
+        "mg.stock.inventory.validate",
+        "mg.stock.period.view",
+    ),
+    "stock-fournitures.admin": _MG_STOCK_ALL + _GED_RW,
+    "achats-appro.lecteur": ("mg.purchase.view", "mg.purchase.export"),
+    "achats-appro.acheteur": (
+        "mg.purchase.view",
+        "mg.purchase.create",
+        "mg.purchase.demande",
+        "mg.purchase.receive",
+        "mg.purchase.invoice",
+        "mg.purchase.export",
+    ),
+    "achats-appro.valideur": (
+        "mg.purchase.view",
+        "mg.purchase.approve",
+        "mg.purchase.demande",
+        "mg.purchase.export",
+    ),
+    "achats-appro.admin": _MG_ACHATS_ALL + _GED_RW,
+    "notes-frais.lecteur": ("mg.notes.view",),
+    "notes-frais.redacteur": ("mg.notes.view", "mg.notes.create", "mg.notes.export"),
+    "notes-frais.valideur": (
+        "mg.notes.view",
+        "mg.notes.control",
+        "mg.notes.approve",
+        "mg.notes.reject",
+        "mg.notes.export",
+    ),
+    "notes-frais.admin": _MG_NOTES_ALL + _GED_RW,
+    "contrats-echeances.lecteur": ("mg.contrats.view", "ged.read", "ged.download"),
+    "contrats-echeances.gestionnaire": (
+        "mg.contrats.view",
+        "mg.contrats.create",
+        "mg.contrats.manage",
+        "mg.contrats.export",
+        "ged.read",
+        "ged.write",
+        "ged.download",
+    ),
+    "contrats-echeances.valideur": (
+        "mg.contrats.view",
+        "mg.contrats.validate",
+        "mg.contrats.settings",
+        "mg.contrats.export",
+        "ged.read",
+        "ged.download",
+    ),
+    "contrats-echeances.admin": _MG_CONTRATS_ALL + _GED_RW,
+    "archives-mg.lecteur": (
+        "mg.archives.view",
+        "mg.archives.download",
+        "ged.read",
+        "ged.download",
+    ),
+    "archives-mg.admin": _MG_ARCHIVES_ALL + _GED_RW,
+    "archives-generales.lecteur": (
+        "archives.general.view",
+        "archives.general.download",
+        "ged.read",
+        "ged.download",
+    ),
+    "archives-generales.admin": _ARCHIVES_GENERALES_ALL + _GED_RW,
+    "demandes-comptabilite.demandeur": _MG_REQUEST_EMP_ALL + ("ged.read", "ged.write", "ged.download"),
+    "demandes-credit.demandeur": _MG_REQUEST_EMP_ALL + ("ged.read", "ged.write", "ged.download"),
+    "demandes-rh.demandeur": _MG_REQUEST_EMP_ALL + ("ged.read", "ged.write", "ged.download"),
+    "demandes-informatique.demandeur": _MG_REQUEST_EMP_ALL + ("ged.read", "ged.write", "ged.download"),
+    "demandes-mg.demandeur": _MG_REQUEST_EMP_ALL + ("ged.read", "ged.write", "ged.download"),
+    "demandes-mg.lecteur": ("mg.request.view", "mg.batch.view", "ged.read", "ged.download"),
+    "demandes-mg.gestionnaire": (
+        "mg.request.view",
+        "mg.request.request_info",
+        "mg.request.group",
+        "mg.request.serve",
+        "mg.request.assign",
+        "mg.request.export",
+        "mg.batch.view",
+        "mg.batch.create",
+        "mg.batch.update",
+        "ged.read",
+        "ged.write",
+        "ged.download",
+    ),
+    "demandes-mg.valideur": (
+        "mg.request.view",
+        "mg.request.validate",
+        "mg.request.reject",
+        "mg.request.request_info",
+        "mg.request.assign",
+        "mg.request.export",
+        "mg.batch.view",
+        "mg.batch.validate",
+        "ged.read",
+        "ged.download",
+    ),
+    "demandes-mg.admin": _MG_REQUEST_MG_ALL + _GED_RW,
 }
 
 SYSTEM_ROLE_CODES = frozenset(code for code, _label, _desc in RBAC_ROLES)

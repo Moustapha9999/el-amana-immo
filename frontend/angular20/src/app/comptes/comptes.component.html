@@ -1,4 +1,4 @@
-﻿<div class="cpt">
+<div class="cpt">
   <header class="cpt__hero">
     <div>
       <h1 class="cpt__title">Comptes par nature</h1>
@@ -161,7 +161,7 @@
                                 : '—'
                             }}
                           </td>
-                          <td class="cpt__num">{{ row.quantite }}</td>
+                          <td class="cpt__num">{{ row.quantite | quantite }}</td>
                           <td class="cpt__desig">
                             @if (row.immobilisation_id) {
                               <a
@@ -197,7 +197,7 @@
                     <tfoot>
                       <tr>
                         <td class="cpt__foot-label">Total</td>
-                        <td class="cpt__num">{{ g.totaux.quantite }}</td>
+                        <td class="cpt__num">{{ g.totaux.quantite | quantite }}</td>
                         <td></td>
                         <td class="cpt__num">
                           {{ g.totaux.valeur_acquisition | montant }}
@@ -249,18 +249,20 @@
                   <col class="cpt__col-agence" />
                 </colgroup>
                 <tfoot>
-                  <tr>
-                    <td class="cpt__foot-label">Total général</td>
-                    <td class="cpt__num">{{ d.totaux.quantite }}</td>
-                    <td></td>
-                    <td class="cpt__num">{{ d.totaux.valeur_acquisition | montant }}</td>
-                    <td class="cpt__num">—</td>
-                    <td class="cpt__num">{{ d.totaux.amorts_cumules_n1 | montant }}</td>
-                    <td class="cpt__num">{{ d.totaux.dotations_annee | montant }}</td>
-                    <td class="cpt__num">{{ d.totaux.amorts_cumules_n | montant }}</td>
-                    <td class="cpt__num">{{ d.totaux.vnc | montant }}</td>
-                    <td></td>
-                  </tr>
+                  @if (filteredTotaux(); as t) {
+                    <tr>
+                      <td class="cpt__foot-label">Total général</td>
+                      <td class="cpt__num">{{ t.quantite | quantite }}</td>
+                      <td></td>
+                      <td class="cpt__num">{{ t.valeur_acquisition | montant }}</td>
+                      <td class="cpt__num">—</td>
+                      <td class="cpt__num">{{ t.amorts_cumules_n1 | montant }}</td>
+                      <td class="cpt__num">{{ t.dotations_annee | montant }}</td>
+                      <td class="cpt__num">{{ t.amorts_cumules_n | montant }}</td>
+                      <td class="cpt__num">{{ t.vnc | montant }}</td>
+                      <td></td>
+                    </tr>
+                  }
                 </tfoot>
               </table>
             </div>

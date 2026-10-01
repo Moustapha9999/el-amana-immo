@@ -59,8 +59,8 @@ def _dossier_detail(d: ArchiveDossier) -> ArchiveDossierDetailRead:
     )
 
 
-def _ligne_to_read(l: ArchiveLigne) -> ArchiveLigneRead:
-    return ArchiveLigneRead.model_validate(l)
+def _ligne_to_read(lg: ArchiveLigne) -> ArchiveLigneRead:
+    return ArchiveLigneRead.model_validate(lg)
 
 
 def _totaux_read(t: dict) -> ArchiveTotauxRead:
@@ -315,13 +315,13 @@ async def list_acquisitions(
                 ArchiveNatureGroupeRead(
                     nature_code=g["nature_code"],
                     nature_label=g["nature_label"],
-                    lignes=[_ligne_to_read(l) for l in g["lignes"]],
+                    lignes=[_ligne_to_read(lg) for lg in g["lignes"]],
                     sections=[
                         ArchiveExerciceSectionRead(
                             annee=s["annee"],
                             label=s["label"],
                             ouverture=_totaux_read(s["ouverture"]) if s["ouverture"] else None,
-                            lignes=[_ligne_to_read(l) for l in s["lignes"]],
+                            lignes=[_ligne_to_read(lg) for lg in s["lignes"]],
                             totaux=_totaux_read(s["totaux"]),
                         )
                         for s in g.get("sections", [])

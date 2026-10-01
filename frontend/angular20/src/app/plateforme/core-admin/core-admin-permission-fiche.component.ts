@@ -8,6 +8,8 @@ import {
   CoreAdminRoleSummary,
   coreAdminRbacError,
 } from './core-admin-rbac.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
+import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
 
 @Component({
   selector: 'bea-core-admin-permission-fiche',
@@ -41,9 +43,6 @@ import {
         }
       </header>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (locked()) {
         <p class="bea-admin-note">Permission catalogue : code et module figés, suppression impossible.</p>
       }
@@ -122,6 +121,7 @@ import {
   `,
 })
 export class CoreAdminPermissionFicheComponent implements OnInit {
+  readonly hasUnsavedChanges = unsavedChanges(() => this.form.dirty && !this.saving(), () => this.form);
   private readonly api = inject(ApiService);
   private readonly dialogs = inject(BeaAdminDialogService);
   private readonly fb = inject(FormBuilder);
@@ -134,7 +134,7 @@ export class CoreAdminPermissionFicheComponent implements OnInit {
   readonly locked = signal(false);
   readonly permissionId = signal<string | null>(null);
   readonly roles = signal<CoreAdminRoleSummary[]>([]);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
 
   readonly form = this.fb.nonNullable.group({
     code: ['', [Validators.required, Validators.minLength(3)]],

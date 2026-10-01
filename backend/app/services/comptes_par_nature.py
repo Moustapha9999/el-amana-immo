@@ -222,3 +222,64 @@ async def build_comptes_par_nature(
         compte_filtre=compte_filtre,
         comptes_disponibles=comptes_disponibles,
     )
+
+
+def _search_text(value: object) -> str:
+    """Rendu texte aligné sur ``String(v)`` côté front (JSON : montants en nombres)."""
+    if value is None:
+        return ""
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        f = float(value)
+        return str(int(f)) if f.is_integer() else repr(f)
+    return str(value)
+
+
+def _ligne_matches(ligne: CompteNatureLigne, q: str) -> bool:
+    fields = (
+        ligne.code_inventaire,
+        ligne.designation,
+        ligne.date_acquisition,
+        ligne.quantite,
+        ligne.valeur_acquisition,
+        ligne.taux,
+        ligne.amorts_cumules_n1,
+        ligne.dotations_annee,
+        ligne.amorts_cumules_n,
+        ligne.vnc,
+        ligne.agence_code,
+        ligne.agence_libelle,
+    )
+    return any(q in _search_text(f).lower() for f in fields)
+
+
+def filter_comptes_par_nature(
+    result: ComptesParNatureResult, search: str | None
+) -> ComptesParNatureResult:
+    """Recherche texte de l'écran Comptes par nature : lignes filtrées, totaux recalculés."""
+    q = (search or "").strip().lower()
+    if not q:
+        return result
+    groupes: list[CompteNatureGroupe] = []
+    for g in result.groupes:
+        lignes = [ligne for ligne in g.lignes if _ligne_matches(ligne, q)]
+        if not lignes:
+            continue
+        groupes.append(
+            CompteNatureGroupe(
+                compte_immobilisation=g.compte_immobilisation,
+                intitule=g.intitule,
+                lignes=lignes,
+                totaux=_totaux_ligne(lignes, designation=g.totaux.designation),
+            )
+        )
+    all_lignes = [ligne for g in groupes for ligne in g.lignes]
+    return ComptesParNatureResult(
+        annee=result.annee,
+        date_arrete=result.date_arrete,
+        groupes=groupes,
+        totaux=_totaux_ligne(all_lignes, designation=result.totaux.designation),
+        compte_filtre=result.compte_filtre,
+        comptes_disponibles=result.comptes_disponibles,
+    )

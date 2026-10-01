@@ -84,6 +84,23 @@ class Settings(BaseSettings):
 
     cors_origins: str = Field(default="http://localhost", alias="CORS_ORIGINS")
 
+    # Phase de test Achats : lève les verrous de statut (modification / suppression en cascade).
+    # À couper (0) avant la mise en production.
+    achats_mode_test: bool = Field(default=False, alias="ACHATS_MODE_TEST")
+
+    # Envoi d'e-mails (rappels contrats…). Vide = notifications in-app uniquement.
+    smtp_host: str = Field(default="", alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, alias="SMTP_PORT")
+    smtp_user: str = Field(default="", alias="SMTP_USER")
+    smtp_password: str = Field(default="", alias="SMTP_PASSWORD")
+    smtp_from: str = Field(default="", alias="SMTP_FROM")
+    smtp_starttls: bool = Field(default=True, alias="SMTP_STARTTLS")
+    public_app_url: str = Field(default="http://localhost", alias="PUBLIC_APP_URL")
+
+    # Analyse antivirale des pièces jointes (clamd). Vide = désactivée.
+    clamav_host: str = Field(default="", alias="CLAMAV_HOST")
+    clamav_port: int = Field(default=3310, alias="CLAMAV_PORT")
+
     upload_dir: str = "storage/uploads"
     ged_dir: str = "storage/ged"
     backup_dir: str = Field(default="backups", alias="BACKUP_DIR")

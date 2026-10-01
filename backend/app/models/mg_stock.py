@@ -6,7 +6,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -29,11 +29,14 @@ class MgArticle(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __table_args__ = (UniqueConstraint("code", name="uq_mg_articles_code"),)
 
     code: Mapped[str] = mapped_column(String(40), index=True)
+    reference: Mapped[str | None] = mapped_column(String(80), nullable=True)
     designation: Mapped[str] = mapped_column(String(255))
     famille_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("mg_article_familles.id"), index=True
     )
+    sous_famille: Mapped[str | None] = mapped_column(String(120), nullable=True)
     uom: Mapped[str] = mapped_column(String(20), default="U")
+    stockable: Mapped[bool] = mapped_column(Boolean, default=True)
     stock_actuel: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("0"))
     stock_min: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("0"))
     stock_max: Mapped[Decimal | None] = mapped_column(Numeric(18, 3), nullable=True)
@@ -41,6 +44,7 @@ class MgArticle(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
         UUID(as_uuid=True), ForeignKey("agences.id"), nullable=True, index=True
     )
     emplacement: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    fournisseur_habituel: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     famille: Mapped[MgArticleFamille] = relationship(back_populates="articles")
     mouvements: Mapped[list[MgStockMouvement]] = relationship(back_populates="article")
@@ -67,8 +71,12 @@ class MgStockMouvement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     observation: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
     source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    periode_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_stock_periodes.id"), nullable=True, index=True
+    )
 
     article: Mapped[MgArticle] = relationship(back_populates="mouvements")
+    periode: Mapped[MgStockPeriode | None] = relationship(back_populates="mouvements")
 
 
 class MgDemandeFourniture(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
@@ -144,10 +152,22 @@ class MgInventaire(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     cloture_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
+    periode_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_stock_periodes.id"), nullable=True, index=True
+    )
+    valide_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    valide_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    ajustements_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ajustements_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
 
     lignes: Mapped[list[MgInventaireLigne]] = relationship(
         back_populates="inventaire", cascade="all, delete-orphan"
     )
+    periode: Mapped[MgStockPeriode | None] = relationship(back_populates="inventaires")
 
 
 class MgInventaireLigne(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -162,8 +182,73 @@ class MgInventaireLigne(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     stock_theorique: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("0"))
     stock_physique: Mapped[Decimal | None] = mapped_column(Numeric(18, 3), nullable=True)
     ecart: Mapped[Decimal | None] = mapped_column(Numeric(18, 3), nullable=True)
+    nature_ecart: Mapped[str | None] = mapped_column(String(20), nullable=True)
     observation: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sort_order: Mapped[int] = mapped_column(default=0)
 
     inventaire: Mapped[MgInventaire] = relationship(back_populates="lignes")
+    article: Mapped[MgArticle] = relationship()
+
+
+class MgStockPeriode(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Période mensuelle de stock — une seule ouverte par périmètre global."""
+
+    __tablename__ = "mg_stock_periodes"
+    __table_args__ = (UniqueConstraint("annee", "mois", name="uq_mg_stock_periodes_annee_mois"),)
+
+    annee: Mapped[int] = mapped_column(Integer, index=True)
+    mois: Mapped[int] = mapped_column(Integer, index=True)
+    libelle: Mapped[str] = mapped_column(String(80))
+    date_debut: Mapped[date] = mapped_column(Date)
+    date_fin: Mapped[date] = mapped_column(Date)
+    statut: Mapped[str] = mapped_column(String(20), default="OUVERTE", index=True)
+    agence_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agences.id"), nullable=True, index=True
+    )
+    periode_precedente_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_stock_periodes.id"), nullable=True
+    )
+    opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    opened_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    cloture_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cloture_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    reopen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reopen_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    reopen_motif: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    soldes: Mapped[list[MgStockSolde]] = relationship(
+        back_populates="periode", cascade="all, delete-orphan"
+    )
+    mouvements: Mapped[list[MgStockMouvement]] = relationship(back_populates="periode")
+    inventaires: Mapped[list[MgInventaire]] = relationship(back_populates="periode")
+
+
+class MgStockSolde(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Soldes article × période — report sans mouvement ENTREE artificiel."""
+
+    __tablename__ = "mg_stock_soldes"
+    __table_args__ = (UniqueConstraint("periode_id", "article_id", name="uq_mg_stock_soldes_periode_article"),)
+
+    periode_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_stock_periodes.id", ondelete="CASCADE"), index=True
+    )
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_articles.id"), index=True
+    )
+    stock_initial: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("0"))
+    entrees: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("0"))
+    sorties: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("0"))
+    ajustements: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("0"))
+    stock_theorique: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("0"))
+    stock_physique: Mapped[Decimal | None] = mapped_column(Numeric(18, 3), nullable=True)
+    ecart: Mapped[Decimal | None] = mapped_column(Numeric(18, 3), nullable=True)
+    stock_final: Mapped[Decimal | None] = mapped_column(Numeric(18, 3), nullable=True)
+
+    periode: Mapped[MgStockPeriode] = relationship(back_populates="soldes")
     article: Mapped[MgArticle] = relationship()

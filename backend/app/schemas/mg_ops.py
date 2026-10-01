@@ -8,14 +8,20 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.nombres import Qty, QtyPos
+
 
 class BcLigneIn(BaseModel):
     code_produit: str | None = None
     departement: str | None = None
     description: str = Field(min_length=1, max_length=255)
-    quantite: Decimal = Field(gt=0)
+    quantite: QtyPos
     uom: str = "U"
     prix_unitaire: Decimal = Field(ge=0)
+    article_id: UUID | None = None
+    remise_pct: Decimal = Field(default=Decimal("0"), ge=0)
+    taux_tva: Decimal = Field(default=Decimal("0"), ge=0)
+    stockable: bool = False
 
 
 class BcLigneOut(BcLigneIn):
@@ -23,7 +29,9 @@ class BcLigneOut(BcLigneIn):
 
     id: UUID
     prix_total: Decimal
+    total_ttc: Decimal = Decimal("0")
     sort_order: int
+    quantite_recue: Qty = 0
 
 
 class BonCreate(BaseModel):
@@ -43,9 +51,20 @@ class BonCreate(BaseModel):
     incoterm: str | None = None
     conditions_paiement: str | None = None
     moyen_paiement: str | None = None
+    ref_paiement: str | None = Field(default=None, max_length=255)
+    montant_paiement: Decimal | None = Field(default=None, ge=0)
     demandeur_nom: str | None = None
     demandeur_date: date | None = None
     observation: str | None = None
+    demande_id: UUID | None = None
+    consultation_id: UUID | None = None
+    comparaison_id: UUID | None = None
+    contrat_id: UUID | None = None
+    agence_facturation_id: UUID | None = None
+    agence_livraison_id: UUID | None = None
+    type_achat: str = "FOURNITURE"
+    devise: str = "MRU"
+    date_livraison_prevue: date | None = None
     lignes: list[BcLigneIn] = Field(default_factory=list)
 
 
@@ -66,9 +85,20 @@ class BonUpdate(BaseModel):
     incoterm: str | None = None
     conditions_paiement: str | None = None
     moyen_paiement: str | None = None
+    ref_paiement: str | None = Field(default=None, max_length=255)
+    montant_paiement: Decimal | None = Field(default=None, ge=0)
     demandeur_nom: str | None = None
     demandeur_date: date | None = None
     observation: str | None = None
+    demande_id: UUID | None = None
+    consultation_id: UUID | None = None
+    comparaison_id: UUID | None = None
+    contrat_id: UUID | None = None
+    agence_facturation_id: UUID | None = None
+    agence_livraison_id: UUID | None = None
+    type_achat: str | None = None
+    devise: str | None = None
+    date_livraison_prevue: date | None = None
     lignes: list[BcLigneIn] | None = None
 
 
@@ -93,16 +123,39 @@ class BonOut(BaseModel):
     incoterm: str | None
     conditions_paiement: str | None
     moyen_paiement: str | None
+    ref_paiement: str | None = None
+    montant_paiement: Decimal | None = None
     demandeur_nom: str | None
     demandeur_date: date | None
     statut: str
     total_ht: Decimal
+    total_tva: Decimal = Decimal("0")
+    total_ttc: Decimal = Decimal("0")
+    type_achat: str = "FOURNITURE"
+    devise: str = "MRU"
+    demande_id: UUID | None = None
+    consultation_id: UUID | None = None
+    comparaison_id: UUID | None = None
+    contrat_id: UUID | None = None
+    agence_facturation_id: UUID | None = None
+    agence_livraison_id: UUID | None = None
+    agence_facturation_snapshot: str | None = None
+    agence_livraison_snapshot: str | None = None
+    date_livraison_prevue: date | None = None
+    pdf_version: int = 1
     observation: str | None
+    soumis_at: datetime | None = None
+    valide_at: datetime | None = None
+    envoye_at: datetime | None = None
+    cloture_at: datetime | None = None
+    annule_at: datetime | None = None
+    motif_annulation: str | None = None
     lignes: list[BcLigneOut] = []
 
 
 class TransitionIn(BaseModel):
     action: str
+    motif: str | None = Field(default=None, max_length=1000)
 
 
 class NoteLigneIn(BaseModel):
@@ -161,27 +214,52 @@ class ContratCreate(BaseModel):
     titre: str = Field(min_length=1, max_length=255)
     fournisseur_id: UUID | None = None
     fournisseur_snapshot: str | None = None
+    agence_id: UUID | None = None
+    type_contrat: str = "AUTRE"
+    numero_contrat: str | None = None
+    description: str | None = None
+    date_signature: date | None = None
     date_debut: date
     date_fin: date | None = None
     montant: Decimal | None = None
+    montant_ht: Decimal | None = None
+    taux_tva: Decimal | None = None
+    devise: str = "MRU"
     periodicite: str = "ANNUEL"
     prochain_echeance: date | None = None
     alerte_jours: int = 30
+    responsable_id: UUID | None = None
+    mode_paiement: str | None = Field(default=None, max_length=40)
+    ref_paiement: str | None = Field(default=None, max_length=120)
     observation: str | None = None
+    reconduction: str = "AUCUNE"
+    preavis_jours: int | None = Field(default=None, ge=0, le=3650)
 
 
 class ContratUpdate(BaseModel):
     titre: str | None = None
     fournisseur_id: UUID | None = None
     fournisseur_snapshot: str | None = None
+    agence_id: UUID | None = None
+    type_contrat: str | None = None
+    numero_contrat: str | None = None
+    description: str | None = None
+    date_signature: date | None = None
     date_debut: date | None = None
     date_fin: date | None = None
     montant: Decimal | None = None
+    montant_ht: Decimal | None = None
+    taux_tva: Decimal | None = None
+    devise: str | None = None
     periodicite: str | None = None
     prochain_echeance: date | None = None
     alerte_jours: int | None = None
-    statut: str | None = None
+    responsable_id: UUID | None = None
+    mode_paiement: str | None = Field(default=None, max_length=40)
+    ref_paiement: str | None = Field(default=None, max_length=120)
     observation: str | None = None
+    reconduction: str | None = None
+    preavis_jours: int | None = Field(default=None, ge=0, le=3650)
 
 
 class ContratOut(BaseModel):
@@ -190,16 +268,157 @@ class ContratOut(BaseModel):
     id: UUID
     reference: str
     titre: str
-    fournisseur_id: UUID | None
-    fournisseur_snapshot: str | None
+    fournisseur_id: UUID | None = None
+    fournisseur_snapshot: str | None = None
+    agence_id: UUID | None = None
+    agence_libelle_snapshot: str | None = None
+    type_contrat: str = "AUTRE"
+    numero_contrat: str | None = None
+    description: str | None = None
+    date_signature: date | None = None
     date_debut: date
-    date_fin: date | None
-    montant: Decimal | None
-    periodicite: str
-    prochain_echeance: date | None
-    alerte_jours: int
+    date_fin: date | None = None
+    montant: Decimal | None = None
+    montant_ht: Decimal | None = None
+    taux_tva: Decimal | None = None
+    devise: str = "MRU"
+    periodicite: str = "ANNUEL"
+    prochain_echeance: date | None = None
+    alerte_jours: int = 30
+    responsable_id: UUID | None = None
+    responsable_nom: str | None = None
+    mode_paiement: str | None = None
+    ref_paiement: str | None = None
+    contrat_precedent_id: UUID | None = None
     statut: str
-    observation: str | None
+    observation: str | None = None
+    reconduction: str = "AUCUNE"
+    preavis_jours: int | None = None
+    version: int = 1
+    etat: str
+    jours_restants: int | None = None
+    date_preavis: date | None = None
+
+
+class ContratEcheanceIn(BaseModel):
+    type_echeance: str = "AUTRE"
+    date_prevue: date
+    date_reelle: date | None = None
+    montant: Decimal | None = Field(default=None, ge=0)
+    responsable_nom: str | None = None
+    commentaire: str | None = None
+    statut: str | None = None
+
+
+class ContratEcheanceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    type_echeance: str
+    date_prevue: date
+    date_reelle: date | None = None
+    montant: Decimal | None = None
+    montant_paye: Decimal = Decimal("0")
+    responsable_nom: str | None = None
+    statut: str
+    commentaire: str | None = None
+
+
+class ContratPaiementIn(BaseModel):
+    reference: str | None = Field(default=None, max_length=40)
+    date_prevue: date | None = None
+    date_reelle: date | None = None
+    montant_prevu: Decimal | None = Field(default=None, ge=0)
+    montant_paye: Decimal = Field(default=Decimal("0"), ge=0)
+    mode: str | None = Field(default=None, max_length=40)
+    commentaire: str | None = None
+    echeance_id: UUID | None = None
+
+
+class ContratPaiementUpdate(BaseModel):
+    reference: str | None = Field(default=None, max_length=40)
+    date_prevue: date | None = None
+    date_reelle: date | None = None
+    montant_prevu: Decimal | None = Field(default=None, ge=0)
+    montant_paye: Decimal | None = Field(default=None, ge=0)
+    mode: str | None = Field(default=None, max_length=40)
+    commentaire: str | None = None
+    echeance_id: UUID | None = None
+
+
+class ContratPaiementOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    echeance_id: UUID | None = None
+    reference: str | None = None
+    date_prevue: date
+    date_reelle: date | None = None
+    montant_prevu: Decimal
+    montant_paye: Decimal
+    devise: str
+    statut: str
+    mode: str | None = None
+    commentaire: str | None = None
+
+
+class ContratAvenantIn(BaseModel):
+    objet: str = Field(min_length=1, max_length=255)
+    date_effet: date
+    type_avenant: str | None = None
+    nouveau_montant_ht: Decimal | None = Field(default=None, ge=0)
+    nouveau_taux_tva: Decimal | None = Field(default=None, ge=0, le=100)
+    nouvelle_date_fin: date | None = None
+    clauses: str | None = None
+    regenerer_echeancier: bool = False
+
+
+class ContratAvenantOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    numero: int
+    type_avenant: str
+    objet: str
+    date_effet: date
+    montant_ht_avant: Decimal | None = None
+    montant_ht_apres: Decimal | None = None
+    montant_ttc_avant: Decimal | None = None
+    montant_ttc_apres: Decimal | None = None
+    date_fin_avant: date | None = None
+    date_fin_apres: date | None = None
+    clauses: str | None = None
+    version_contrat: int
+    user_nom: str | None = None
+    created_at: datetime
+
+
+class ContratEcheancierIn(BaseModel):
+    remplacer: bool = False
+
+
+class ContratHistoriqueOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    action: str
+    from_statut: str | None = None
+    to_statut: str | None = None
+    user_nom: str | None = None
+    commentaire: str | None = None
+    created_at: datetime
+
+
+class ContratDetail(ContratOut):
+    echeances: list[ContratEcheanceOut] = []
+    paiements: list[ContratPaiementOut] = []
+    historique: list[ContratHistoriqueOut] = []
+    avenants: list[ContratAvenantOut] = []
+
+
+class ContratTransitionIn(BaseModel):
+    action: str
+    commentaire: str | None = None
 
 
 class ArchiveDocOut(BaseModel):

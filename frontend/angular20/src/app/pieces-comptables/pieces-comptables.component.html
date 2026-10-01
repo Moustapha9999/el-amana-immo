@@ -91,13 +91,13 @@
         </div>
         <div class="pcs-field pcs-field--wide">
           <label class="pcs-field__label" for="pcs-file">
-            Fichier (Excel / PDF / image / Word)
+            Fichier ({{ piecesFormats }} — 25 Mo max.)
           </label>
           <input
             id="pcs-file"
             class="pcs-field__control pcs-field__file"
             type="file"
-            accept=".pdf,.xls,.xlsx,.xlsm,.doc,.docx,.docm,image/*,.tif,.tiff,.gif,.bmp"
+            [accept]="piecesAccept"
             (change)="onFileSelected($event)"
           />
         </div>

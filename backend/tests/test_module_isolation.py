@@ -57,7 +57,7 @@ async def test_require_module_access_rejects_wrong_module():
         id="s1",
     )
 
-    async def fake_load(credentials, db):
+    async def fake_load(credentials, db, request=None):
         return user, session, None
 
     import app.api.deps as deps

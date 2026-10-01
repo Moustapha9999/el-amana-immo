@@ -1,4 +1,4 @@
-"""CORE ADMIN — audit (Login 1, core.admin.audit)."""
+"""CORE ADMIN — audit et supervision des erreurs (Login 1, core.admin.audit)."""
 
 from datetime import date
 
@@ -8,8 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_platform_permission
 from app.db.session import get_db
 from app.models import User
-from app.schemas.plateforme import CoreAdminAuditListRead
+from app.schemas.plateforme import CoreAdminAuditListRead, CoreAdminErrorListRead
 from app.services.core_admin_audit_service import CoreAdminAuditService
+from app.services.core_admin_supervision_service import CoreAdminSupervisionService
 
 router = APIRouter(prefix="/plateforme/admin", tags=["core-admin"])
 
@@ -50,3 +51,18 @@ async def list_core_admin_audit(
         "modules": options["modules"],
         "entities": options["entities"],
     }
+
+
+@router.get("/supervision/erreurs", response_model=CoreAdminErrorListRead)
+async def list_core_admin_errors(
+    page: int = Query(1, ge=1),
+    size: int = Query(25, ge=1, le=100),
+    periode: str = Query("24h", pattern="^(24h|7j|30j)$"),
+    categorie: str | None = Query(None, pattern="^(serveur|refus|conflits|validation)$"),
+    search: str | None = None,
+    _: User = Depends(_AUDIT_PERM),
+    db: AsyncSession = Depends(get_db),
+):
+    return await CoreAdminSupervisionService(db).list_events(
+        page, size, periode=periode, categorie=categorie, search=search
+    )

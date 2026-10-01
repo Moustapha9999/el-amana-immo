@@ -29,10 +29,11 @@
     <nav class="app-shell__nav" (scroll)="hideTooltip()">
       @for (section of navSections(); track section.title) {
         <div class="app-shell__section">{{ section.title }}</div>
-        @for (item of section.items; track item.path) {
+        @for (item of section.items; track item.path + item.label) {
           <a
             class="app-shell__link"
             [routerLink]="item.path"
+            [queryParams]="item.queryParams || null"
             routerLinkActive="app-shell__link--active"
             [routerLinkActiveOptions]="{ exact: !!item.exact }"
             [attr.aria-label]="item.label"

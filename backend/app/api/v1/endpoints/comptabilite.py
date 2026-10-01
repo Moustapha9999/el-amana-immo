@@ -362,34 +362,18 @@ async def list_ecritures(
     _: User = Depends(require_permission("immobilisations.read")),
     db: AsyncSession = Depends(get_db),
 ):
-    from sqlalchemy import String, cast, or_
+    from app.services.reporting_service import ecriture_filters
 
-    filters = []
-    if date_debut is not None:
-        filters.append(EcritureComptable.date_ecriture >= date_debut)
-    if date_fin is not None:
-        filters.append(EcritureComptable.date_ecriture <= date_fin)
-    if journal_code and journal_code.strip():
-        filters.append(EcritureComptable.journal_code.ilike(journal_code.strip()))
-    if search and search.strip():
-        pattern = f"%{search.strip()}%"
-        filters.append(
-            or_(
-                EcritureComptable.libelle.ilike(pattern),
-                EcritureComptable.journal_code.ilike(pattern),
-                EcritureComptable.compte_debit.ilike(pattern),
-                EcritureComptable.compte_credit.ilike(pattern),
-                EcritureComptable.reference.ilike(pattern),
-                cast(EcritureComptable.montant, String).ilike(pattern),
-            )
-        )
+    filters = ecriture_filters(
+        date_debut=date_debut, date_fin=date_fin, search=search, journal_code=journal_code
+    )
 
     count = await db.execute(select(func.count()).select_from(EcritureComptable).where(*filters))
     total = int(count.scalar_one())
     result = await db.execute(
         select(EcritureComptable)
         .where(*filters)
-        .order_by(EcritureComptable.date_ecriture.desc())
+        .order_by(EcritureComptable.date_ecriture.desc(), EcritureComptable.created_at.desc())
         .offset(page_offset(page, size))
         .limit(size)
     )

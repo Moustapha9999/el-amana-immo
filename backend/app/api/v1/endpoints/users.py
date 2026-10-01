@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_platform_user
+from app.api.deps import get_current_user
 from app.api.v1.endpoints.helpers import to_paginated
 from app.core.temp_password import generate_temporary_password
 from app.db.session import get_db
@@ -15,16 +15,34 @@ from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/users", tags=["users"])
 
+# API historique du module Immobilisations (plus de page dédiée : les comptes se gèrent
+# dans CORE ADMIN, /plateforme/admin/users). Périmètre limité aux habilités du module.
+MODULE_CODE = "immobilisations"
 
-async def _require_platform_admin(
-    user: User = Depends(get_platform_user),
+
+async def _require_in_module(service: AuthService, user_id: UUID) -> None:
+    if await service.get_by_id(user_id, include_inactive=True) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur introuvable")
+    if not await service.has_module_access(user_id, MODULE_CODE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cet utilisateur n’a pas accès au module Immobilisations : gérez-le depuis CORE ADMIN.",
+        )
+
+
+async def _require_users_admin(
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Users métier : session plateforme + permission plateforme.users.admin."""
+    """Users métier : Login 1 (`plateforme.users.admin`) ou Login 2 (`administrateur`)."""
     from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
 
+    if user.is_superuser:
+        return user
     have = await load_user_permission_codes(db, user)
     if user_has_permission_codes(have, "plateforme.users.admin"):
+        return user
+    if {r.code for r in (user.roles or [])}.intersection({"administrateur"}):
         return user
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission refusée")
 
@@ -34,16 +52,16 @@ async def list_users(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     search: str | None = None,
-    _: User = Depends(_require_platform_admin),
+    _: User = Depends(_require_users_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    items, total = await AuthService(db).list_users(page, size, search=search)
+    items, total = await AuthService(db).list_users(page, size, search=search, module_access=MODULE_CODE)
     return to_paginated(items, total, page, size, UserRead.model_validate)
 
 
 @router.get("/roles", response_model=list[RoleRead])
 async def list_roles(
-    _: User = Depends(_require_platform_admin),
+    _: User = Depends(_require_users_admin),
     db: AsyncSession = Depends(get_db),
 ):
     return await AuthService(db).list_roles()
@@ -53,7 +71,7 @@ async def list_roles(
 async def create_user(
     payload: UserCreate,
     request: Request,
-    actor: User = Depends(_require_platform_admin),
+    actor: User = Depends(_require_users_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Création sans MDP libre : mot de passe temporaire serveur."""
@@ -83,7 +101,7 @@ async def create_user(
 @router.get("/{user_id}", response_model=UserRead)
 async def get_user(
     user_id: UUID,
-    _: User = Depends(_require_platform_admin),
+    _: User = Depends(_require_users_admin),
     db: AsyncSession = Depends(get_db),
 ):
     service = AuthService(db)
@@ -98,7 +116,7 @@ async def update_user(
     user_id: UUID,
     payload: UserUpdate,
     request: Request,
-    actor: User = Depends(_require_platform_admin),
+    actor: User = Depends(_require_users_admin),
     db: AsyncSession = Depends(get_db),
 ):
     if payload.password:
@@ -107,8 +125,9 @@ async def update_user(
             detail="La gestion des mots de passe se fait via CORE ADMIN → Sécurité",
         )
     service = AuthService(db)
+    await _require_in_module(service, user_id)
     try:
-        user = await service.update_user(user_id, payload)
+        user = await service.update_user(user_id, payload, preserve_outside_module=MODULE_CODE)
     except ValueError as exc:
         detail = str(exc)
         code = (
@@ -133,10 +152,17 @@ async def update_user(
 async def delete_user(
     user_id: UUID,
     request: Request,
-    current: User = Depends(_require_platform_admin),
+    current: User = Depends(_require_users_admin),
     db: AsyncSession = Depends(get_db),
 ):
     service = AuthService(db)
+    await _require_in_module(service, user_id)
+    target = await service.get_by_id(user_id, include_inactive=True)
+    if target is not None and any(code != MODULE_CODE for code in target.module_codes):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cet utilisateur a accès à d’autres modules : sa suppression se fait depuis CORE ADMIN.",
+        )
     try:
         await service.soft_delete_user(user_id, actor_id=current.id)
     except ValueError as exc:

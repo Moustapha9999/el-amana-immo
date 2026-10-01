@@ -24,6 +24,7 @@ import {
   sessionStatusLabel,
 } from './core-admin-sessions.models';
 import { SecurityUserHit, SecurityUserSearchComponent } from './security-user-search.component';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
 
 export type SecPageId =
   | 'vue'
@@ -164,9 +165,6 @@ const INCIDENT_STATUTS = ['ouvert', 'en_analyse', 'en_traitement', 'resolu', 'cl
         </div>
       </header>
 
-      @if (hubErreur()) {
-        <p class="bea-admin-dash__error">{{ hubErreur() }}</p>
-      }
 
       <div class="bea-sec-hub__grids">
         <div class="bea-sec-hub__grid bea-sec-hub__grid--top" role="list">
@@ -213,9 +211,6 @@ const INCIDENT_STATUTS = ['ouvert', 'en_analyse', 'en_traitement', 'resolu', 'cl
             </button>
           </header>
           <div class="bea-sec-overlay__body bea-sec-page">
-            @if (pageErreur()) {
-              <p class="bea-admin-dash__error">{{ pageErreur() }}</p>
-            }
 
             @switch (page) {
               @case ('vue') {
@@ -1216,8 +1211,8 @@ export class CoreAdminSecurityComponent implements OnInit {
   readonly checking = signal(false);
   readonly unlocking = signal('');
   readonly dossierLoading = signal(false);
-  readonly hubErreur = signal('');
-  readonly pageErreur = signal('');
+  readonly hubErreur = feedbackSignal('error', '');
+  readonly pageErreur = feedbackSignal('error', '');
 
   readonly overview = signal<SecurityOverview | null>(null);
   readonly security = signal<CoreAdminSecuritySettings | null>(null);

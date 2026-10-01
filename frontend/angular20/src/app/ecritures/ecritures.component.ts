@@ -44,6 +44,8 @@ export class EcrituresComponent implements OnInit {
   readonly page = signal(1);
   readonly pageSize = 50;
   readonly loading = signal(false);
+  readonly exporting = signal<'xlsx' | 'pdf' | null>(null);
+  private lastQuery: Record<string, string> = {};
   readonly displayedColumns = [
     'date_ecriture',
     'journal_code',
@@ -69,22 +71,28 @@ export class EcrituresComponent implements OnInit {
 
   load(): void {
     const f = this.filterForm.getRawValue();
-    const params: Record<string, string> = { page: String(this.page()), size: String(this.pageSize) };
+    const query: Record<string, string> = {};
     if (f.search.trim()) {
-      params['search'] = f.search.trim();
+      query['search'] = f.search.trim();
     }
     if (f.journal_code.trim()) {
-      params['journal_code'] = f.journal_code.trim();
+      query['journal_code'] = f.journal_code.trim();
     }
     if (f.date_debut) {
-      params['date_debut'] = f.date_debut;
+      query['date_debut'] = f.date_debut;
     }
     if (f.date_fin) {
-      params['date_fin'] = f.date_fin;
+      query['date_fin'] = f.date_fin;
     }
+    const params: Record<string, string> = {
+      ...query,
+      page: String(this.page()),
+      size: String(this.pageSize),
+    };
     this.loading.set(true);
     this.api.get<Paginated<EcritureRow>>('/ecritures', params).subscribe({
       next: (res) => {
+        this.lastQuery = query;
         this.rows.set(res.items);
         this.total.set(res.total);
         this.loading.set(false);
@@ -113,20 +121,16 @@ export class EcrituresComponent implements OnInit {
   }
 
   export(format: 'xlsx' | 'pdf'): void {
-    const f = this.filterForm.getRawValue();
-    const params: Record<string, string> = { format };
-    if (f.date_debut) {
-      params['date_debut'] = f.date_debut;
-    }
-    if (f.date_fin) {
-      params['date_fin'] = f.date_fin;
-    }
+    const params: Record<string, string> = { ...this.lastQuery, format };
+    this.exporting.set(format);
     this.api.download('/reporting/ecritures/export', params).subscribe({
       next: (blob) => {
+        this.exporting.set(null);
         const ext = format === 'pdf' ? 'pdf' : 'xlsx';
         this.saveBlob(blob, `ecritures-bea-digital.${ext}`);
       },
       error: () => {
+        this.exporting.set(null);
         void this.dialogs.error('Export impossible').subscribe();
       },
     });

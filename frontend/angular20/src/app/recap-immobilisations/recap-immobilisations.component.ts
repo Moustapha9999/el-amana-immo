@@ -83,6 +83,25 @@ export class RecapImmobilisationsComponent implements OnInit {
     );
   });
 
+  readonly totauxFiltres = computed<RecapImmoLigne | null>(() => {
+    const d = this.data();
+    if (!d || !this.localSearch().trim()) {
+      return d?.totaux ?? null;
+    }
+    const lignes = this.lignesFiltrees();
+    const sum = (pick: (l: RecapImmoLigne) => number) =>
+      lignes.reduce((acc, l) => acc + (Number(pick(l)) || 0), 0);
+    return {
+      ...d.totaux,
+      valeurs_ouverture: sum((l) => l.valeurs_ouverture),
+      acquisitions: sum((l) => l.acquisitions),
+      cessions: sum((l) => l.cessions),
+      valeurs_cloture: sum((l) => l.valeurs_cloture),
+    };
+  });
+
+  private lastAnnee: number | null = null;
+
   ngOnInit(): void {
     this.filterForm.controls.search.valueChanges.subscribe((v) => this.localSearch.set(v));
     this.load();
@@ -103,6 +122,7 @@ export class RecapImmobilisationsComponent implements OnInit {
     this.loading.set(true);
     this.api.get<RecapImmoResponse>('/reporting/recap-immobilisations', { annee }).subscribe({
       next: (res) => {
+        this.lastAnnee = Number(annee);
         this.data.set(res);
         this.loading.set(false);
       },
@@ -115,16 +135,18 @@ export class RecapImmobilisationsComponent implements OnInit {
   }
 
   export(format: 'xlsx' | 'pdf'): void {
-    const annee = Number(this.filterForm.controls.annee.value);
+    const annee = this.lastAnnee;
     if (!annee) {
       return;
     }
+    const params: Record<string, string> = { annee: String(annee), format };
+    const search = this.localSearch().trim();
+    if (search) {
+      params['search'] = search;
+    }
     this.exporting.set(format);
     this.api
-      .download('/reporting/recap-immobilisations/export', {
-        annee: String(annee),
-        format,
-      })
+      .download('/reporting/recap-immobilisations/export', params)
       .subscribe({
         next: (blob) => {
           this.exporting.set(null);

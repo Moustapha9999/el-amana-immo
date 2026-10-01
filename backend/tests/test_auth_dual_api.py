@@ -175,6 +175,29 @@ async def test_core_users_and_manifest_accept_platform_session(client: AsyncClie
 
 
 @pytest.mark.asyncio
+async def test_metier_users_accept_module_admin_session(client: AsyncClient):
+    """Login 2 administrateur peut gérer /api/v1/users (écran Utilisateurs immo)."""
+    login = await _login_platform(client)
+    if login.status_code != 200:
+        pytest.skip("Compte admin seed indisponible")
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    module_login = await client.post(
+        "/api/v1/auth/modules/immobilisations/login",
+        json={"email": "admin@el-amana.mr", "password": _admin_secret()},
+        headers=headers,
+    )
+    if module_login.status_code != 200:
+        pytest.skip("Login module indisponible (catalogue / grants)")
+    mod_headers = {"Authorization": f"Bearer {module_login.json()['access_token']}"}
+
+    roles = await client.get("/api/v1/users/roles", headers=mod_headers)
+    assert roles.status_code == 200, roles.text
+    users = await client.get("/api/v1/users?page=1&size=5", headers=mod_headers)
+    assert users.status_code == 200, users.text
+
+
+@pytest.mark.asyncio
 async def test_core_admin_dashboard_platform_only(client: AsyncClient):
     login = await _login_platform(client)
     if login.status_code != 200:

@@ -110,6 +110,8 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
             "mg_inventaires",
             "mg_inventaire_lignes",
             "mg_stock_parametres",
+            "mg_stock_periodes",
+            "mg_stock_soldes",
         ],
     ),
     "achats-appro": make_module_scope(
@@ -120,25 +122,59 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
     "notes-frais": make_module_scope(
         label="Notes de Frais",
         uploads_subdir="notes-frais",
-        exclusive_tables=["mg_notes_frais", "mg_note_frais_lignes"],
+        exclusive_tables=[
+            "mg_notes_frais",
+            "mg_note_frais_lignes",
+            "mg_note_frais_categories",
+            "mg_note_frais_historique",
+            "mg_note_frais_parametres",
+            "mg_note_frais_paiements",
+        ],
     ),
     "contrats-echeances": make_module_scope(
         label="Contrats & Échéances",
         uploads_subdir="contrats-echeances",
-        exclusive_tables=["mg_contrats"],
+        exclusive_tables=[
+            "mg_contrats",
+            "mg_contrat_echeances",
+            "mg_contrat_paiements",
+            "mg_contrat_historique",
+            "mg_contrat_types",
+            "mg_contrat_parametres",
+        ],
     ),
     "archives-mg": make_module_scope(
         label="Archives MG",
         uploads_subdir="archives-mg",
         exclusive_tables=[],
     ),
+    "demandes-mg": make_module_scope(
+        label="Demandes (MG — centre de traitement)",
+        exclusive_tables=[
+            "mg_request_categories",
+            "mg_employee_requests",
+            "mg_employee_request_items",
+            "mg_request_approvals",
+            "mg_request_comments",
+            "mg_procurement_batches",
+            "mg_procurement_batch_items",
+        ],
+    ),
+    "demandes-comptabilite": make_module_scope(
+        label="Demandes Comptabilité", exclusive_tables=[]
+    ),
+    "demandes-credit": make_module_scope(label="Demandes Crédit", exclusive_tables=[]),
+    "demandes-rh": make_module_scope(label="Demandes RH", exclusive_tables=[]),
+    "demandes-informatique": make_module_scope(
+        label="Demandes Informatique", exclusive_tables=[]
+    ),
 }
 
 ESPACE_MODULES: dict[str, list[str]] = {
-    "comptabilite": ["immobilisations"],
-    "credit": ["credit"],
-    "rh": ["rh"],
-    "informatique": ["tickets-si"],
+    "comptabilite": ["immobilisations", "demandes-comptabilite"],
+    "credit": ["credit", "demandes-credit"],
+    "rh": ["rh", "demandes-rh"],
+    "informatique": ["tickets-si", "demandes-informatique"],
     "achats": ["demandes-achat"],
     "moyens-generaux": [
         "stock-fournitures",
@@ -146,7 +182,9 @@ ESPACE_MODULES: dict[str, list[str]] = {
         "notes-frais",
         "contrats-echeances",
         "archives-mg",
+        "demandes-mg",
     ],
+    "archives": ["archives-generales"],
 }
 
 

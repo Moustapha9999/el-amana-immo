@@ -33,6 +33,12 @@ class GedDocumentRead(BaseModel):
     mime_type: str | None = None
     size_bytes: int = 0
     created_at: object | None = None
+    ocr_status: str | None = "pending"
+    title: str | None = None
+    doc_type: str | None = None
+    version: int = 1
+    parent_document_id: UUID | None = None
+    version_comment: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -61,7 +67,14 @@ async def upload_document(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        row = await GedService(db).upload(
+        from app.services.document_ingest_service import DocumentIngestService
+        from app.services.mg_requests_service import MgRequestsService
+
+        await MgRequestsService(db).assert_document_access(
+            user, entity=entity, entity_id=entity_id,
+        )
+
+        row = await DocumentIngestService(db).ingest_document(
             file=file,
             espace_code=espace_code.strip().lower(),
             module_code=module_code.strip().lower(),
@@ -80,6 +93,7 @@ async def upload_document(
                 "entity": row.entity,
                 "filename": row.filename,
                 "size_bytes": row.size_bytes,
+                "ocr_status": row.ocr_status,
             },
             request=request,
         )
@@ -93,9 +107,12 @@ async def list_documents(
     module_code: str = Query(...),
     entity: str = Query(...),
     entity_id: str = Query(...),
-    _: User = Depends(require_permission("ged.read")),
+    user: User = Depends(require_permission("ged.read")),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.services.mg_requests_service import MgRequestsService
+
+    await MgRequestsService(db).assert_document_access(user, entity=entity, entity_id=entity_id)
     rows = await GedService(db).list_for_entity(
         module_code=module_code.strip().lower(),
         entity=entity.strip(),
@@ -107,11 +124,16 @@ async def list_documents(
 @router.get("/documents/{document_id}/download")
 async def download_document(
     document_id: UUID,
-    _: User = Depends(require_permission("ged.read")),
+    user: User = Depends(require_permission("ged.read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         row = await GedService(db).get(document_id)
+        from app.services.mg_requests_service import MgRequestsService
+
+        await MgRequestsService(db).assert_document_access(
+            user, entity=row.entity, entity_id=row.entity_id,
+        )
         path = GedService(db).absolute_path(row.stored_path)
         if not path.exists():
             raise HTTPException(status_code=404, detail="Fichier introuvable sur le serveur")
@@ -128,20 +150,38 @@ async def download_document(
 async def delete_document(
     document_id: UUID,
     request: Request,
+    reason: str | None = Query(None, max_length=500),
     user: User = Depends(require_permission("ged.write")),
     db: AsyncSession = Depends(get_db),
 ):
+    """Détache une pièce de sa fiche (corbeille GED, restaurable depuis CORE ADMIN)."""
     try:
-        row = await GedService(db).soft_delete(document_id)
+        from app.services.document_query_service import DocumentQueryService
+        from app.services.mg_requests_service import MgRequestsService
+
+        row = await DocumentQueryService(db).get_accessible(document_id, user)
+        await MgRequestsService(db).assert_document_access(
+            user, entity=row.entity, entity_id=row.entity_id,
+        )
+        row = await GedService(db).soft_delete(document_id, user_id=user.id, reason=reason)
         await record_audit(
             db,
             user=user,
-            action="ged_delete",
+            action="ged_detach",
             entity="ged_document",
             entity_id=str(row.id),
-            after={"filename": row.filename, "module_code": row.module_code},
+            after={
+                "filename": row.filename,
+                "module_code": row.module_code,
+                "entity": row.entity,
+                "entity_id": row.entity_id,
+                "reason": row.delete_reason,
+            },
             request=request,
+            espace_code=row.espace_code,
+            module_code=row.module_code,
         )
-        return MessageResponse(message="Document GED supprimé")
+        await db.commit()
+        return MessageResponse(message="Pièce détachée")
     except AppError as exc:
         raise_http_from_app(exc)

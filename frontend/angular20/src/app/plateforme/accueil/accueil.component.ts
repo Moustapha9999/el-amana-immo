@@ -83,7 +83,22 @@ interface HubActivity {
             <p class="bea-plateforme__lead">{{ lead() }}</p>
           </div>
           @if (canAdmin()) {
-            <a class="bea-admin-btn" routerLink="/admin">CORE ADMIN</a>
+            <a class="bea-hub__core" routerLink="/admin">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                />
+                <path
+                  d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              CORE ADMIN
+            </a>
           }
         </header>
 
@@ -104,18 +119,23 @@ interface HubActivity {
             <h2>Départements accessibles</h2>
             <p>Ouvrez un département pour voir ses modules.</p>
           </div>
-          <div class="bea-card-grid">
+          <div class="bea-card-grid bea-card-grid--espaces">
             @for (espace of espaces(); track espace.id; let i = $index) {
               @if (ouvert(espace)) {
                 <a
                   class="bea-espace bea-espace--actif"
+                  [attr.data-espace]="espace.id"
                   [style.--bea-i]="i"
                   [routerLink]="espace.route"
                 >
                   <ng-container *ngTemplateOutlet="card; context: { $implicit: espace }" />
                 </a>
               } @else {
-                <div class="bea-espace bea-espace--bientot" [style.--bea-i]="i">
+                <div
+                  class="bea-espace bea-espace--bientot"
+                  [attr.data-espace]="espace.id"
+                  [style.--bea-i]="i"
+                >
                   <ng-container *ngTemplateOutlet="card; context: { $implicit: espace }" />
                 </div>
               }
@@ -257,84 +277,115 @@ interface HubActivity {
     </div>
 
     <ng-template #card let-espace>
-      <div class="bea-espace__top">
-        <span class="bea-espace__icon" aria-hidden="true">
-          @switch (espace.id) {
-            @case ('comptabilite') {
-              <svg viewBox="0 0 48 48" fill="none">
-                <rect x="8" y="28" width="8" height="12" rx="2" fill="currentColor" opacity=".4" />
-                <rect x="20" y="18" width="8" height="22" rx="2" fill="currentColor" opacity=".7" />
-                <rect x="32" y="10" width="8" height="30" rx="2" fill="currentColor" />
-              </svg>
-            }
-            @case ('credit') {
-              <svg viewBox="0 0 48 48" fill="none">
-                <circle cx="22" cy="16" r="7" fill="currentColor" opacity=".85" />
-                <path d="M10 38c1.5-8 7-12 12-12s10.5 4 12 12" fill="currentColor" opacity=".55" />
-              </svg>
-            }
-            @case ('rh') {
-              <svg viewBox="0 0 48 48" fill="none">
-                <circle cx="24" cy="18" r="7" fill="currentColor" />
-                <path d="M13 40c1.2-8 6-12 11-12s9.8 4 11 12" fill="currentColor" opacity=".7" />
-              </svg>
-            }
-            @case ('informatique') {
-              <svg viewBox="0 0 48 48" fill="none">
-                <rect x="9" y="14" width="22" height="12" rx="1.5" fill="currentColor" />
-                <path d="M14 34h12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
-              </svg>
-            }
-            @case ('achats') {
-              <svg viewBox="0 0 48 48" fill="none">
-                <path
-                  d="M8 14h6l3.2 16.5A3 3 0 0 0 20.1 33h13.2a3 3 0 0 0 2.9-2.2L40 18H16"
-                  stroke="currentColor"
-                  stroke-width="2.4"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            }
-            @default {
-              <svg viewBox="0 0 48 48" fill="none">
-                <rect x="10" y="10" width="28" height="28" rx="8" fill="currentColor" opacity=".2" />
-              </svg>
-            }
+      <span class="bea-espace__icon" aria-hidden="true">
+        @switch (espace.id) {
+          @case ('comptabilite') {
+            <svg viewBox="0 0 24 24" fill="none">
+              <rect x="3" y="13" width="4.2" height="8" rx="1.1" fill="currentColor" opacity=".4" />
+              <rect x="9.9" y="8" width="4.2" height="13" rx="1.1" fill="currentColor" opacity=".7" />
+              <rect x="16.8" y="3.2" width="4.2" height="17.8" rx="1.1" fill="currentColor" />
+            </svg>
           }
-        </span>
-        <div class="bea-espace__copy">
-          <div class="bea-espace__title-row">
-            <h2 class="bea-espace__title">{{ espace.titre }}</h2>
-            @if (espace.statut === 'actif') {
-              <span class="bea-badge bea-badge--actif">Disponible</span>
-            } @else {
-              <span class="bea-badge bea-badge--bientot">Bientôt</span>
-            }
-          </div>
-          <p class="bea-espace__text">{{ espace.description }}</p>
-          <p class="bea-espace__mods">
-            @if (espace.modules?.length) {
-              {{ espace.modules.length }} module{{ espace.modules.length > 1 ? 's' : '' }}
-              ·
-              {{ moduleTitles(espace) }}
-            } @else {
-              Aucun module
-            }
-          </p>
-        </div>
-      </div>
-      <span class="bea-espace__go" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none">
-          <path
-            d="M5 12h14M13 6l6 6-6 6"
-            stroke="currentColor"
-            stroke-width="2.2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
+          @case ('moyens-generaux') {
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 3.4 20.2 7.6v8.6L12 20.6 3.8 16.2V7.6L12 3.4Z" fill="currentColor" opacity=".18" />
+              <path
+                d="M12 3.4 20.2 7.6v8.6L12 20.6 3.8 16.2V7.6L12 3.4Z"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linejoin="round"
+              />
+              <path d="M12 12.1 20.2 7.6M12 12.1 3.8 7.6M12 12.1v8.5" stroke="currentColor" stroke-width="1.5" />
+            </svg>
+          }
+          @case ('archives') {
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M4.2 8.6h15.6v9.6a1.7 1.7 0 0 1-1.7 1.7H5.9a1.7 1.7 0 0 1-1.7-1.7V8.6Z" fill="currentColor" opacity=".18" />
+              <path
+                d="M3.2 5.4h17.6v3.4H3.2V5.4Z"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M4.2 8.8h15.6v9.4a1.7 1.7 0 0 1-1.7 1.7H5.9a1.7 1.7 0 0 1-1.7-1.7V8.8Z"
+                stroke="currentColor"
+                stroke-width="1.5"
+              />
+              <path d="M9.4 13.2h5.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+          }
+          @case ('credit') {
+            <svg viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="8" r="3.2" fill="currentColor" />
+              <path d="M5.5 19.2c.8-3.6 3.2-5.4 6.5-5.4s5.7 1.8 6.5 5.4" fill="currentColor" opacity=".55" />
+            </svg>
+          }
+          @case ('rh') {
+            <svg viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="8" r="3.1" fill="currentColor" />
+              <path d="M6 19c.6-3.4 2.8-5.2 6-5.2s5.4 1.8 6 5.2" fill="currentColor" opacity=".7" />
+            </svg>
+          }
+          @case ('informatique') {
+            <svg viewBox="0 0 24 24" fill="none">
+              <rect x="3.5" y="5.5" width="17" height="11" rx="1.6" fill="currentColor" opacity=".2" />
+              <rect x="3.5" y="5.5" width="17" height="11" rx="1.6" stroke="currentColor" stroke-width="1.5" />
+              <path d="M9 19.5h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+          }
+          @case ('employe') {
+            <svg viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="8" r="3.1" fill="currentColor" />
+              <path d="M5.5 19.2c.8-3.6 3.2-5.4 6.5-5.4s5.7 1.8 6.5 5.4" fill="currentColor" opacity=".55" />
+            </svg>
+          }
+          @case ('achats') {
+            <svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M4 6.5h2.4l1.7 9.2a1.6 1.6 0 0 0 1.6 1.3h7.4a1.6 1.6 0 0 0 1.55-1.2L20.2 8.2H7.2"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          }
+          @default {
+            <svg viewBox="0 0 24 24" fill="none">
+              <rect x="4" y="4" width="16" height="16" rx="4" fill="currentColor" opacity=".25" />
+            </svg>
+          }
+        }
       </span>
+      <h2 class="bea-espace__title">{{ espace.titre }}</h2>
+      <p class="bea-espace__mods">
+        @if (espace.modules?.length) {
+          {{ espace.modules.length }} module{{ espace.modules.length > 1 ? 's' : '' }}
+          ·
+          {{ moduleTitles(espace) }}
+        } @else {
+          Aucun module
+        }
+      </p>
+      <div class="bea-espace__foot">
+        @if (espace.statut === 'actif') {
+          <span class="bea-badge bea-badge--actif">Disponible</span>
+        } @else {
+          <span class="bea-badge bea-badge--bientot">Bientôt</span>
+        }
+        <span class="bea-espace__go" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path
+              d="M5 12h12M13 7l5 5-5 5"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </span>
+      </div>
     </ng-template>
   `,
 })

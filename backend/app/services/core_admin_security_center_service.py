@@ -154,7 +154,6 @@ class CoreAdminSecurityCenterService:
 
         snap = await CoreAdminOpsService(self.db).security_settings()
         kpis = await CoreAdminService(self.db).users_kpis()
-        now = datetime.now(timezone.utc)
         incidents_ouverts = 0
         incidents_critiques = 0
         try:

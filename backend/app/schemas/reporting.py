@@ -28,6 +28,7 @@ class AuditLogRead(ORMModel):
     entity: str
     entity_id: str | None
     ip_address: str | None
+    request_id: str | None = None
     espace_code: str | None = None
     module_code: str | None = None
     session_id: UUID | None = None

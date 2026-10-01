@@ -1,0 +1,196 @@
+<section class="bea-ach">
+  @if (mode() === 'list') {
+    <header class="bea-ach__hero">
+      <p>Contrôle physique</p>
+      <h1>Réceptions</h1>
+      <div class="bea-ach__hero-glow" aria-hidden="true"></div>
+    </header>
+
+    <div class="bea-ach__head">
+      <div class="bea-ach__kpis bea-ach__kpis--3" style="flex:1;margin:0">
+        <div class="bea-ach__kpi" style="--i:0">
+          <span class="bea-ach__kpi-icon" data-tone="navy"><mat-icon>inventory_2</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>Total</span>
+            <strong>{{ rows().length }}</strong>
+            <em>Réceptions</em>
+          </span>
+        </div>
+        <div class="bea-ach__kpi" style="--i:1">
+          <span class="bea-ach__kpi-icon" data-tone="warn"><mat-icon>pending</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>Partielles</span>
+            <strong>{{ partial() }}</strong>
+            <em>À compléter</em>
+          </span>
+        </div>
+        <div class="bea-ach__kpi" style="--i:2">
+          <span class="bea-ach__kpi-icon" data-tone="teal"><mat-icon>task_alt</mat-icon></span>
+          <span class="bea-ach__kpi-meta">
+            <span>Complètes</span>
+            <strong>{{ rows().length - partial() }}</strong>
+            <em>Contrôlées</em>
+          </span>
+        </div>
+      </div>
+      <a class="bea-ach__btn" routerLink="/achats-appro/receptions/nouvelle">
+        <mat-icon>add</mat-icon> Nouvelle
+      </a>
+    </div>
+
+    <form class="bea-ach__search" [formGroup]="filters">
+      <label class="bea-ach__field bea-ach__field--grow">
+        <mat-icon>search</mat-icon>
+        <input formControlName="q" placeholder="Référence ou BC…" (input)="search()" />
+      </label>
+    </form>
+
+
+    <div class="bea-ach__panel">
+      <div class="bea-ach__panel-top">
+        <h2>Réceptions enregistrées</h2>
+        <span class="bea-ach__count">{{ filtered().length }} résultat(s)</span>
+      </div>
+      <div class="bea-mg__table-scroll">
+        <table class="bea-ach__table">
+          <thead>
+            <tr>
+              <th>Réf.</th>
+              <th>BC</th>
+              <th>Date</th>
+              <th>Statut</th>
+              <th class="bea-ach__th-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of filtered(); track r.id; let i = $index) {
+              <tr [style.--i]="i">
+                <td><code class="bea-ach__code">{{ r.reference }}</code></td>
+                <td>
+                  <button type="button" class="bea-ach__code bea-apercu__link-btn" title="Voir le bon de commande" (click)="bonApercuId.set(r.bon_id)">{{ r.bon_reference || r.bon_id }}</button>
+                </td>
+                <td>{{ r.date_reception }}</td>
+                <td><span class="bea-ach__badge" [attr.data-statut]="r.statut">{{ r.statut }}</span></td>
+                <td class="bea-ach__actions">
+                  <button type="button" class="bea-ach__icon-btn" title="Voir" (click)="open(r)">
+                    <mat-icon>visibility</mat-icon>
+                  </button>
+                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Annuler la réception (contre-passation)" [disabled]="r.statut === 'ANNULEE' || saving()" (click)="annuler(r)">
+                    <mat-icon>undo</mat-icon>
+                  </button>
+                  @if (modeTest()) {
+                    <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer (mode test)" [disabled]="saving()" (click)="supprimer(r)">
+                      <mat-icon>delete</mat-icon>
+                    </button>
+                  }
+                </td>
+              </tr>
+            } @empty {
+              <tr class="bea-ach__empty">
+                <td colspan="5">
+                  <mat-icon>inventory_2</mat-icon>
+                  <p>Aucune réception.</p>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  } @else {
+    <header class="bea-ach__head">
+      <div>
+        <p class="bea-ach__kicker">{{ isFiche() ? 'Fiche' : 'Création' }}</p>
+        <h1>{{ isFiche() ? 'Réception ' + (current()?.reference || '') : 'Nouvelle réception' }}</h1>
+        @if (current(); as c) {
+          <p class="bea-ach__muted">
+            <span class="bea-ach__badge" [attr.data-statut]="c.statut">{{ c.statut }}</span>
+          </p>
+        }
+      </div>
+      <a class="bea-ach__btn bea-ach__btn--ghost" routerLink="/achats-appro/receptions">
+        <mat-icon>arrow_back</mat-icon> Retour
+      </a>
+    </header>
+
+
+    <form class="bea-ach__form" [formGroup]="form" (ngSubmit)="save()">
+      <div class="bea-ach__grid">
+        <label style="grid-column:1/-1">Bon de commande *
+          <select formControlName="bon_id">
+            <option value="">— Choisir —</option>
+            @for (b of bons(); track b.id) {
+              <option [value]="b.id">{{ b.reference }} ({{ b.statut }})</option>
+            }
+          </select>
+        </label>
+        <label>Date réception *<input type="date" formControlName="date_reception" /></label>
+        <label>Agence
+          <select formControlName="agence_id">
+            <option value="">— Par défaut —</option>
+            @for (a of agences(); track a.id) {
+              <option [value]="a.id">{{ a.libelle }}</option>
+            }
+          </select>
+        </label>
+        <label style="grid-column:1/-1">Observation <textarea formControlName="observation" rows="2"></textarea></label>
+      </div>
+
+      @if (lignes.length) {
+        <h2 class="bea-ach__kicker" style="font-size:0.9rem;color:#0f172a;text-transform:none;letter-spacing:0;margin-top:0.75rem">
+          Lignes à réceptionner
+          @if (bonDetail(); as bd) {
+            <span class="bea-ach__muted"> — BC {{ bd.reference }}</span>
+          }
+        </h2>
+        <div formArrayName="lignes">
+          @for (ctrl of lignes.controls; track ctrl; let i = $index) {
+            <div class="bea-ach__grid" [formGroupName]="i">
+              <label style="grid-column:1/-1">Article
+                <input formControlName="designation" />
+              </label>
+              <label>Reste à recevoir <input formControlName="reste" type="number" /></label>
+              <label>Qté reçue * <input type="number" formControlName="quantite_recue" min="1" step="1" /></label>
+            </div>
+          }
+        </div>
+      }
+
+      <div class="bea-ach__form-actions">
+        <button
+          type="submit"
+          class="bea-ach__btn"
+          [disabled]="saving() || (!isFiche() && !lignes.length)"
+        >
+          <mat-icon>{{ isFiche() ? 'save' : 'inventory' }}</mat-icon>
+          {{ saving() ? 'Enregistrement…' : isFiche() ? 'Enregistrer' : 'Réceptionner' }}
+        </button>
+        @if (current(); as c) {
+          <a class="bea-ach__btn bea-ach__btn--ghost" [routerLink]="['/achats-appro/bons', c.bon_id]">
+            <mat-icon>receipt_long</mat-icon> Voir le BC
+          </a>
+          @if (c.statut !== 'ANNULEE') {
+            <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="annuler(c)">
+              <mat-icon>undo</mat-icon> Annuler la réception
+            </button>
+          } @else {
+            <p class="bea-ach__muted">Annulée — {{ c.motif_annulation }}</p>
+          }
+          @if (modeTest()) {
+            <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="supprimer(c)">
+              <mat-icon>delete</mat-icon> Supprimer (mode test)
+            </button>
+          }
+        }
+      </div>
+    </form>
+  }
+
+  @if (apercuId(); as aid) {
+    <bea-achats-reception-apercu [receptionId]="aid" (closed)="apercuId.set(null)" />
+  }
+  @if (bonApercuId(); as bid) {
+    <bea-achats-bon-apercu [bonId]="bid" (closed)="bonApercuId.set(null)" />
+  }
+
+</section>

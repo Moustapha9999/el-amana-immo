@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_platform_permission
 from app.db.session import get_db
 from app.models import User
+from app.models.ged import GedDocument
 from app.schemas.plateforme import (
     CoreAdminActivityListRead,
     CoreAdminAlertListRead,
@@ -94,6 +95,147 @@ async def list_admin_notifications(
         user_id=user_id,
     )
     return {"items": items, "total": total, "page": page, "size": size, "kpis": kpis}
+
+
+@router.get("/ged/overview")
+async def ged_overview(
+    user: User = Depends(_SETTINGS),
+    db: AsyncSession = Depends(get_db),
+):
+    return await CoreAdminOpsService(db).ged_overview(user)
+
+
+@router.get("/ged/storage")
+async def ged_storage(
+    _: User = Depends(_SETTINGS),
+    db: AsyncSession = Depends(get_db),
+):
+    return await CoreAdminOpsService(db).ged_storage()
+
+
+@router.get("/ged/ocr")
+async def ged_ocr(
+    status: str | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(30, ge=1, le=100),
+    _: User = Depends(_SETTINGS),
+    db: AsyncSession = Depends(get_db),
+):
+    return await CoreAdminOpsService(db).ged_ocr(status=status, page=page, size=size)
+
+
+@router.get("/ged/trash")
+async def ged_trash(
+    page: int = Query(1, ge=1),
+    size: int = Query(30, ge=1, le=100),
+    _: User = Depends(_SETTINGS),
+    db: AsyncSession = Depends(get_db),
+):
+    return await CoreAdminOpsService(db).ged_trash(page, size)
+
+
+@router.get("/ged/audit")
+async def ged_audit(
+    page: int = Query(1, ge=1),
+    size: int = Query(40, ge=1, le=100),
+    _: User = Depends(_AUDIT),
+    db: AsyncSession = Depends(get_db),
+):
+    return await CoreAdminOpsService(db).ged_audit(page, size)
+
+
+@router.get("/ged/manquants")
+async def ged_missing(
+    _: User = Depends(_SETTINGS),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.mg_archives_service import MgArchivesService
+
+    rows = await MgArchivesService(db).list_missing(limit=100)
+    return [row.model_dump() for row in rows]
+
+
+@router.get("/ged/dossiers")
+async def ged_dossiers(
+    user: User = Depends(_SETTINGS),
+    db: AsyncSession = Depends(get_db),
+):
+    return await CoreAdminOpsService(db).ged_dossiers(user)
+
+
+@router.post("/ged/documents/{document_id}/restore")
+async def ged_restore(
+    document_id: str,
+    request: Request,
+    user: User = Depends(_SETTINGS),
+    db: AsyncSession = Depends(get_db),
+):
+    from uuid import UUID
+
+    from app.services.document_ingest_service import DocumentIngestService
+    from app.services.document_query_service import DocumentQueryService
+
+    doc_id = UUID(document_id)
+    await DocumentQueryService(db).get_accessible(doc_id, user, include_deleted=True)
+    row = await DocumentIngestService(db).restore(doc_id)
+    await record_audit(
+        db,
+        user=user,
+        action="document_restore",
+        entity="ged_document",
+        entity_id=str(row.id),
+        request=request,
+        espace_code=row.espace_code,
+        module_code=row.module_code,
+    )
+    await db.commit()
+    return {"id": str(row.id), "filename": row.filename}
+
+
+@router.post("/ged/documents/{document_id}/purge")
+async def ged_purge(
+    document_id: str,
+    payload: dict,
+    request: Request,
+    user: User = Depends(_SETTINGS),
+    db: AsyncSession = Depends(get_db),
+):
+    from uuid import UUID
+
+    from app.services.ged_service import GedService
+
+    if str(payload.get("confirmation_phrase") or "").strip().upper() != CONFIRM_PHRASE:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "CONFIRMATION_REQUIRED", "message": f'Tapez « {CONFIRM_PHRASE} » pour supprimer définitivement.'},
+        )
+    doc_id = UUID(document_id)
+    row = await db.get(GedDocument, doc_id)
+    if row is None or row.deleted_at is None:
+        raise HTTPException(status_code=409, detail="Seul un document de la corbeille peut être supprimé définitivement.")
+    path = GedService(db).absolute_path(row.stored_path)
+    filename = row.filename
+    espace = row.espace_code
+    module = row.module_code
+    await db.delete(row)
+    await record_audit(
+        db,
+        user=user,
+        action="archive_purge",
+        entity="ged_document",
+        entity_id=document_id,
+        request=request,
+        espace_code=espace,
+        module_code=module,
+        after={"filename": filename},
+    )
+    await db.commit()
+    try:
+        if path.is_file():
+            path.unlink()
+    except OSError:
+        pass
+    return {"ok": True}
 
 
 @router.get("/ged", response_model=CoreAdminGedListRead)

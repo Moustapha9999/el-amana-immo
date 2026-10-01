@@ -6,7 +6,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
 import { findNatureImmoOfficielle } from '../immobilisations/immobilisation.constants';
-import { MontantPipe } from '../shared/montant.pipe';
+import { MontantPipe, QuantitePipe } from '../shared/montant.pipe';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 import type {
   ArchiveAcquisitions,
@@ -37,7 +37,7 @@ export interface ArchiveDisplayRow {
 
 @Component({
   selector: 'app-archive-nature',
-  imports: [RouterLink, DatePipe, MontantPipe, MatButtonModule, MatIconModule, MatTableModule],
+  imports: [RouterLink, DatePipe, MontantPipe, QuantitePipe, MatButtonModule, MatIconModule, MatTableModule],
   templateUrl: './archive-nature.component.html',
   styleUrl: './archive-nature.component.css',
 })

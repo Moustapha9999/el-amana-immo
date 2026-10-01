@@ -13,25 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import NotFoundError, ValidationError
+from app.core.fichiers import EXTENSIONS_AUTORISEES, TAILLE_MAX, valider_piece_jointe
 from app.models.ged import GedDocument
 
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
-_MAX_BYTES = 25 * 1024 * 1024  # 25 Mo
-_ALLOWED_SUFFIXES = {
-    ".pdf",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".webp",
-    ".doc",
-    ".docx",
-    ".xls",
-    ".xlsx",
-    ".csv",
-    ".txt",
-    ".zip",
-}
+_MAX_BYTES = TAILLE_MAX
+_ALLOWED_SUFFIXES = EXTENSIONS_AUTORISEES
 
 
 def _safe_segment(value: str) -> str:
@@ -122,15 +109,10 @@ class GedService:
     ) -> GedDocument:
         original = Path(file.filename or "fichier").name
         suffix = Path(original).suffix.lower()
-        if suffix and suffix not in _ALLOWED_SUFFIXES:
-            raise ValidationError(f"Type de fichier non autorisé ({suffix})")
         content = await file.read()
-        if not content:
-            raise ValidationError("Fichier vide")
-        if len(content) > _MAX_BYTES:
-            raise ValidationError("Fichier trop volumineux (max 25 Mo)")
+        mime_type = valider_piece_jointe(original, content)
 
-        stored_name = f"{uuid.uuid4().hex}{suffix or '.bin'}"
+        stored_name = f"{uuid.uuid4().hex}{suffix}"
         rel = self.relative_path(
             module_code=module_code,
             entity=entity,
@@ -148,7 +130,7 @@ class GedService:
             entity_id=entity_id,
             filename=original,
             stored_path=rel,
-            mime_type=file.content_type,
+            mime_type=mime_type,
             size_bytes=len(content),
             uploaded_by_id=uploaded_by_id,
         )
@@ -184,10 +166,15 @@ class GedService:
         )
         return list(result.scalars().all())
 
-    async def soft_delete(self, document_id: UUID) -> GedDocument:
+    async def soft_delete(
+        self, document_id: UUID, *, user_id: UUID | None = None, reason: str | None = None
+    ) -> GedDocument:
         from datetime import datetime, timezone
 
         row = await self.get(document_id)
         row.deleted_at = datetime.now(timezone.utc)
+        row.is_active = False
+        row.deleted_by_id = user_id
+        row.delete_reason = (reason or "").strip()[:500] or None
         await self.db.flush()
         return row

@@ -13,7 +13,17 @@ from app.models import AuditLog, User
 from app.services.audit_query import list_audit_logs
 from app.services.core_admin_service import day_bounds_nouakchott, serialize_activity
 
-_MUTATION_ACTIONS = ("create", "update", "delete", "revoke", "revoke_all", "activate", "deactivate")
+_MUTATION_ACTIONS = (
+    "create",
+    "update",
+    "delete",
+    "force_delete",
+    "correction_date_import",
+    "revoke",
+    "revoke_all",
+    "activate",
+    "deactivate",
+)
 
 
 class CoreAdminAuditService:
@@ -63,6 +73,7 @@ class CoreAdminAuditService:
             "espace_code": row.espace_code,
             "module_code": row.module_code,
             "session_id": str(row.session_id) if row.session_id else None,
+            "request_id": row.request_id,
             "created_at": base["created_at"],
         }
 
@@ -130,6 +141,7 @@ class CoreAdminAuditService:
                         func.lower(AuditLog.action).like(term),
                         func.lower(AuditLog.entity).like(term),
                         func.lower(AuditLog.ip_address).like(term),
+                        func.lower(AuditLog.request_id).like(term),
                         func.lower(User.email).like(term),
                     )
                 )

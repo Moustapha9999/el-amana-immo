@@ -1,7 +1,9 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { describeApiErrorAsync } from '../../core/feedback/api-error';
+import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ApiService } from '../../core/services/api.service';
 import { CoreAdminIconComponent } from './core-admin-icon.component';
 import {
@@ -9,7 +11,6 @@ import {
   CoreAdminAuditPage,
   CoreAdminAuditRow,
   coreAdminAuditActionLabel,
-  coreAdminAuditError,
 } from './core-admin-audit.models';
 
 @Component({
@@ -52,7 +53,7 @@ import {
       <form class="bea-admin-toolbar bea-admin-toolbar--users" [formGroup]="filters" (ngSubmit)="search()">
         <label class="bea-admin-field bea-admin-toolbar__search">
           <span>Recherche</span>
-          <input type="search" formControlName="search" placeholder="E-mail, action, entité, IP…" />
+          <input type="search" formControlName="search" placeholder="E-mail, action, entité, IP, référence REQ-…" />
         </label>
         <label class="bea-admin-field">
           <span>Module</span>
@@ -99,9 +100,6 @@ import {
         </div>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (loading()) {
         <p class="bea-admin-dash__loading">Chargement de l’audit…</p>
       } @else {
@@ -123,6 +121,7 @@ import {
                     <th>Entité</th>
                     <th>Module</th>
                     <th>IP</th>
+                    <th>Référence</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -153,6 +152,15 @@ import {
                       </td>
                       <td>{{ row.module_code || '—' }}</td>
                       <td><code>{{ row.ip_address || '—' }}</code></td>
+                      <td>
+                        @if (row.request_id) {
+                          <button type="button" class="bea-admin-table__link bea-admin-audit__ref" title="Filtrer sur cette requête" (click)="filtrerRequete(row.request_id)">
+                            <code>{{ row.request_id }}</code>
+                          </button>
+                        } @else {
+                          —
+                        }
+                      </td>
                     </tr>
                   }
                 </tbody>
@@ -183,9 +191,10 @@ import {
 export class CoreAdminAuditComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
+  private readonly route = inject(ActivatedRoute);
+  private readonly feedback = inject(FeedbackService);
 
   readonly loading = signal(true);
-  readonly erreur = signal('');
   readonly rows = signal<CoreAdminAuditRow[]>([]);
   readonly total = signal(0);
   readonly page = signal(1);
@@ -207,6 +216,15 @@ export class CoreAdminAuditComponent implements OnInit {
   readonly totalPages = computed(() => Math.max(1, Math.ceil(this.total() / this.size())));
 
   ngOnInit(): void {
+    const search = this.route.snapshot.queryParamMap.get('search');
+    if (search) this.filters.patchValue({ search });
+    this.reload();
+  }
+
+  filtrerRequete(requestId: string): void {
+    this.kpiFilter.set(null);
+    this.filters.patchValue({ search: requestId });
+    this.page.set(1);
     this.reload();
   }
 
@@ -268,7 +286,6 @@ export class CoreAdminAuditComponent implements OnInit {
 
   private reload(): void {
     this.loading.set(true);
-    this.erreur.set('');
     const value = this.filters.getRawValue();
     const params: Record<string, string | number> = {
       page: this.page(),
@@ -312,7 +329,7 @@ export class CoreAdminAuditComponent implements OnInit {
       },
       error: (err) => {
         this.loading.set(false);
-        this.erreur.set(coreAdminAuditError(err, 'Impossible de charger l’audit.'));
+        void describeApiErrorAsync(err).then((info) => this.feedback.apiError(info, 'Impossible de charger l’audit'));
       },
     });
   }

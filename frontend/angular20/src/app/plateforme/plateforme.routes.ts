@@ -14,9 +14,21 @@ import {
   CoreAdminVersionsComponent,
 } from './core-admin/core-admin-control.component';
 import { CoreAdminDashboardComponent } from './core-admin/core-admin-dashboard.component';
+import { CoreAdminErrorsComponent } from './core-admin/core-admin-errors.component';
 import { CoreAdminDepartmentFicheComponent } from './core-admin/core-admin-department-fiche.component';
 import { CoreAdminDepartmentsComponent } from './core-admin/core-admin-departments.component';
 import { CoreAdminGedComponent } from './core-admin/core-admin-ged.component';
+import {
+  CoreAdminGedAuditComponent,
+  CoreAdminGedDashboardComponent,
+  CoreAdminGedDossiersComponent,
+  CoreAdminGedMissingComponent,
+  CoreAdminGedOcrComponent,
+  CoreAdminGedSearchComponent,
+  CoreAdminGedSettingsComponent,
+  CoreAdminGedStorageComponent,
+  CoreAdminGedTrashComponent,
+} from './core-admin/core-admin-ged-center.component';
 import { CoreAdminLayoutComponent } from './core-admin/core-admin-layout.component';
 import { CoreAdminMatrixComponent } from './core-admin/core-admin-matrix.component';
 import { CoreAdminModuleFicheComponent } from './core-admin/core-admin-module-fiche.component';
@@ -35,6 +47,7 @@ import {
 import { CoreAdminUserFicheComponent } from './core-admin/core-admin-user-fiche.component';
 import { CoreAdminUsersComponent } from './core-admin/core-admin-users.component';
 import { ModuleAccesComponent } from './module-acces/module-acces.component';
+import { CoreAdminDemandesComponent } from './core-admin/core-admin-demandes.component';
 
 export const PLATEFORME_ROUTES: Routes = [
   { path: 'accueil', component: AccueilComponent, canActivate: [authGuard] },
@@ -43,6 +56,37 @@ export const PLATEFORME_ROUTES: Routes = [
     component: EspaceHubComponent,
     canActivate: [authGuard],
     data: { espaceCode: 'comptabilite' },
+  },
+  {
+    path: 'moyens-generaux',
+    component: EspaceHubComponent,
+    canActivate: [authGuard],
+    data: { espaceCode: 'moyens-generaux' },
+  },
+  {
+    path: 'archive-generale',
+    component: EspaceHubComponent,
+    canActivate: [authGuard],
+    data: { espaceCode: 'archives' },
+  },
+  { path: 'employe', redirectTo: 'accueil', pathMatch: 'full' },
+  {
+    path: 'credit',
+    component: EspaceHubComponent,
+    canActivate: [authGuard],
+    data: { espaceCode: 'credit' },
+  },
+  {
+    path: 'rh',
+    component: EspaceHubComponent,
+    canActivate: [authGuard],
+    data: { espaceCode: 'rh' },
+  },
+  {
+    path: 'informatique',
+    component: EspaceHubComponent,
+    canActivate: [authGuard],
+    data: { espaceCode: 'informatique' },
   },
   { path: 'modules/:moduleCode/acces', component: ModuleAccesComponent, canActivate: [authGuard] },
   {
@@ -60,6 +104,7 @@ export const PLATEFORME_ROUTES: Routes = [
       { path: 'departments/nouveau', component: CoreAdminDepartmentFicheComponent },
       { path: 'departments/:id/modifier', component: CoreAdminDepartmentFicheComponent },
       { path: 'departments/:id', component: CoreAdminDepartmentFicheComponent },
+      { path: 'demandes', component: CoreAdminDemandesComponent },
       { path: 'modules', component: CoreAdminModulesComponent },
       { path: 'modules/nouveau', component: CoreAdminModuleFicheComponent },
       { path: 'modules/:id/modifier', component: CoreAdminModuleFicheComponent },
@@ -75,10 +120,20 @@ export const PLATEFORME_ROUTES: Routes = [
       { path: 'matrix', component: CoreAdminMatrixComponent },
       { path: 'sessions', component: CoreAdminSessionsComponent },
       { path: 'audit', component: CoreAdminAuditComponent },
+      { path: 'erreurs', component: CoreAdminErrorsComponent },
       { path: 'activity', component: CoreAdminActivityComponent },
       { path: 'alerts', component: CoreAdminAlertsComponent },
       { path: 'notifications', component: CoreAdminNotificationsComponent },
-      { path: 'ged', component: CoreAdminGedComponent },
+      { path: 'ged', component: CoreAdminGedDashboardComponent },
+      { path: 'ged/documents', component: CoreAdminGedComponent },
+      { path: 'ged/dossiers', component: CoreAdminGedDossiersComponent },
+      { path: 'ged/ocr', component: CoreAdminGedOcrComponent },
+      { path: 'ged/recherche', component: CoreAdminGedSearchComponent },
+      { path: 'ged/stockage', component: CoreAdminGedStorageComponent },
+      { path: 'ged/manquants', component: CoreAdminGedMissingComponent },
+      { path: 'ged/corbeille', component: CoreAdminGedTrashComponent },
+      { path: 'ged/audit', component: CoreAdminGedAuditComponent },
+      { path: 'ged/parametres', component: CoreAdminGedSettingsComponent },
       { path: 'general', component: CoreAdminGeneralComponent },
       { path: 'security', component: CoreAdminSecurityComponent },
       { path: 'maintenance', component: CoreAdminMaintenanceComponent },

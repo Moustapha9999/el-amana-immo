@@ -9,14 +9,81 @@ import { BeaAdminDialogService } from './core-admin-dialog.service';
 import {
   CoreAdminCatalogueEspace,
   CoreAdminRole,
+  CoreAdminRoleGroup,
   CoreAdminUserFiche,
   coreAdminApiError,
+  groupAdminRoles,
 } from './core-admin-users.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
+import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
 
 @Component({
   selector: 'bea-core-admin-user-fiche',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [DatePipe, ReactiveFormsModule, RouterLink],
+  styles: `
+    .bea-role-board {
+      align-items: start;
+      max-height: none;
+      overflow-y: visible;
+    }
+
+    .bea-role-board .bea-admin-grant {
+      min-height: 0;
+      max-height: 32rem;
+    }
+
+    .bea-role-group__espace {
+      margin: 0 0 0.35rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--bea-ink-muted);
+    }
+
+    .bea-role {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.45rem;
+      width: 100%;
+      margin: 0.35rem 0 0;
+      padding: 0.45rem 0.55rem;
+      border: 1px solid transparent;
+      border-radius: 0.55rem;
+      cursor: pointer;
+    }
+
+    .bea-role input {
+      margin-top: 0.15rem;
+      flex: 0 0 auto;
+    }
+
+    .bea-role--on {
+      border-color: #b9d6ec;
+      background: #e7f1f8;
+    }
+
+    .bea-role__name {
+      display: block;
+      font-size: 0.86rem;
+      font-weight: 650;
+      color: var(--bea-brand-900);
+    }
+
+    .bea-role__sens {
+      display: block;
+      margin-top: 0.12rem;
+      font-size: 0.75rem;
+      line-height: 1.35;
+      font-weight: 400;
+      color: var(--bea-ink-muted);
+    }
+
+    .bea-role:has(input:disabled) {
+      cursor: default;
+    }
+  `,
   template: `
     <section class="bea-admin-dash">
       <header class="bea-admin-dash__head bea-admin-users__head">
@@ -57,9 +124,6 @@ import {
         }
       </header>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
 
       @if (!isCreate()) {
         <div class="bea-admin-kpis">
@@ -179,19 +243,50 @@ import {
 
         <section class="bea-admin-panel">
           <h2>Rôles</h2>
-          <div class="bea-admin-checks">
-            @for (role of roles(); track role.id) {
-              <label class="bea-admin-check" [class.bea-admin-check--on]="roleSelected(role.code)">
-                <input
-                  type="checkbox"
-                  [checked]="roleSelected(role.code)"
-                  [disabled]="isView()"
-                  (change)="toggleRole(role.code, isChecked($event))"
-                />
-                {{ role.label }}
-              </label>
-            }
-          </div>
+          <p class="bea-admin-panel__hint">
+            Une colonne correspond à un module, dans son département. Le profil indique le sens du rôle :
+            consulter, déposer, traiter, valider ou administrer.
+          </p>
+          @if (roleGroups().length === 0) {
+            <p class="bea-admin-panel__empty">Aucun rôle disponible.</p>
+          } @else {
+            <div class="bea-admin-grants bea-role-board">
+              @for (group of roleGroups(); track group.key) {
+                <fieldset class="bea-admin-grant" [class.bea-admin-grant--on]="groupSelectedCount(group) > 0">
+                  <legend>{{ group.title }}</legend>
+                  @if (group.espace) {
+                    <p class="bea-role-group__espace">{{ group.espace }}</p>
+                  }
+                  <div class="bea-admin-grant__meter">
+                    <div class="bea-admin-grant__meter-track">
+                      <div class="bea-admin-grant__meter-fill" [style.width.%]="groupSelectedPct(group)"></div>
+                    </div>
+                    <span class="bea-admin-grant__meter-label">
+                      {{ groupSelectedCount(group) }}/{{ group.roles.length }}
+                    </span>
+                  </div>
+                  <div class="bea-admin-grant__list">
+                    @for (item of group.roles; track item.role.id) {
+                      <label class="bea-role" [class.bea-role--on]="roleSelected(item.role.code)">
+                        <input
+                          type="checkbox"
+                          [checked]="roleSelected(item.role.code)"
+                          [disabled]="isView()"
+                          (change)="toggleRole(item.role.code, isChecked($event))"
+                        />
+                        <span>
+                          <span class="bea-role__name">{{ item.profil }}</span>
+                          @if (item.role.description) {
+                            <span class="bea-role__sens">{{ item.role.description }}</span>
+                          }
+                        </span>
+                      </label>
+                    }
+                  </div>
+                </fieldset>
+              }
+            </div>
+          }
         </section>
 
         <div class="bea-admin-form__actions">
@@ -318,6 +413,7 @@ import {
   `,
 })
 export class CoreAdminUserFicheComponent implements OnInit {
+  readonly hasUnsavedChanges = unsavedChanges(() => this.form.dirty && !this.saving(), () => this.form);
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly dialogs = inject(BeaAdminDialogService);
@@ -331,11 +427,12 @@ export class CoreAdminUserFicheComponent implements OnInit {
   readonly fiche = signal<CoreAdminUserFiche | null>(null);
   readonly roles = signal<CoreAdminRole[]>([]);
   readonly catalogue = signal<CoreAdminCatalogueEspace[]>([]);
+  readonly roleGroups = computed(() => groupAdminRoles(this.roles(), this.catalogue()));
   readonly selectedRoles = signal<string[]>([]);
   readonly selectedEspaces = signal<string[]>([]);
   readonly selectedModules = signal<string[]>([]);
   readonly saving = signal(false);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
   readonly isActive = computed(() => this.fiche()?.is_active !== false);
   readonly isSelf = computed(() => {
     const id = this.userId();
@@ -391,6 +488,17 @@ export class CoreAdminUserFicheComponent implements OnInit {
 
   roleSelected(code: string): boolean {
     return this.selectedRoles().includes(code);
+  }
+
+  groupSelectedCount(group: CoreAdminRoleGroup): number {
+    return group.roles.filter((item) => this.roleSelected(item.role.code)).length;
+  }
+
+  groupSelectedPct(group: CoreAdminRoleGroup): number {
+    if (!group.roles.length) {
+      return 0;
+    }
+    return Math.round((this.groupSelectedCount(group) / group.roles.length) * 100);
   }
 
   isChecked(event: Event): boolean {

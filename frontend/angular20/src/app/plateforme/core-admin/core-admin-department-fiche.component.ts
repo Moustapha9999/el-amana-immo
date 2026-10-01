@@ -10,6 +10,8 @@ import {
   catalogueStatutLabel,
   coreAdminCatalogueError,
 } from './core-admin-catalogue.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
+import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
 
 @Component({
   selector: 'bea-core-admin-department-fiche',
@@ -48,9 +50,6 @@ import {
         }
       </header>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (locked()) {
         <p class="bea-admin-note">Département système : code et route figés, suppression et désactivation impossibles.</p>
       }
@@ -161,6 +160,7 @@ import {
   `,
 })
 export class CoreAdminDepartmentFicheComponent implements OnInit {
+  readonly hasUnsavedChanges = unsavedChanges(() => this.form.dirty && !this.saving(), () => this.form);
   private readonly api = inject(ApiService);
   private readonly dialogs = inject(BeaAdminDialogService);
   private readonly fb = inject(FormBuilder);
@@ -174,7 +174,7 @@ export class CoreAdminDepartmentFicheComponent implements OnInit {
   readonly isActive = signal(true);
   readonly espaceId = signal<string | null>(null);
   readonly modules = signal<CoreAdminModuleSummary[]>([]);
-  readonly erreur = signal<string | null>(null);
+  readonly erreur = feedbackSignal('error', null);
   readonly statut = signal('bientot');
 
   readonly form = this.fb.nonNullable.group({

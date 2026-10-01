@@ -20,6 +20,7 @@ export interface CoreAdminAuditRow {
   espace_code?: string | null;
   module_code?: string | null;
   session_id?: string | null;
+  request_id?: string | null;
   created_at?: string | null;
 }
 
@@ -38,6 +39,14 @@ const ACTION_LABELS: Record<string, string> = {
   create: 'Création',
   update: 'Modification',
   delete: 'Suppression',
+  force_delete: 'Suppression administrateur',
+  correction_date_import: 'Correction de date (import)',
+  login_platform: 'Connexion plateforme',
+  logout_platform: 'Déconnexion plateforme',
+  login_module: 'Connexion module',
+  logout_module: 'Déconnexion module',
+  logout: 'Déconnexion',
+  login_failed: 'Échec de connexion',
   revoke: 'Révocation',
   revoke_all: 'Révocation globale',
   deactivate: 'Désactivation',

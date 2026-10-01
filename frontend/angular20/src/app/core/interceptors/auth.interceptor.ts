@@ -1,7 +1,7 @@
-import { HttpErrorResponse, HttpInterceptorFn, HttpRequest } from '@angular/common/http';
+import { HttpErrorResponse, HttpEvent, HttpHandlerFn, HttpInterceptorFn, HttpRequest } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { catchError, switchMap, throwError } from 'rxjs';
+import { Observable, catchError, switchMap, throwError } from 'rxjs';
 import { AuthService } from '../services/auth.service';
 
 function isModuleLoginUrl(url: string): boolean {
@@ -52,6 +52,14 @@ function attachBearer(req: HttpRequest<unknown>, token: string | null): HttpRequ
   return req.clone({ setHeaders: { Authorization: `Bearer ${token}` } });
 }
 
+function redirectModuleLogin(auth: AuthService, router: Router, returnUrl: string): void {
+  const moduleCode = auth.moduleCode ?? 'immobilisations';
+  auth.clearModuleSession();
+  void router.navigate(['/modules', moduleCode, 'acces'], {
+    queryParams: { returnUrl },
+  });
+}
+
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
   const router = inject(Router);
@@ -86,87 +94,104 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
           return throwError(() => err);
         }
       }
+
+      // Session plateforme requise / expirée : jamais un refresh module.
+      if (code === 'PLATFORM_SESSION_EXPIRED') {
+        const platformToken = auth.platformAccessToken;
+        const usedModuleToken =
+          !isPlatformApi(req.url) && !!auth.moduleAccessToken && platformToken !== auth.moduleAccessToken;
+        if (usedModuleToken && platformToken) {
+          return next(attachBearer(req, platformToken)).pipe(
+            catchError((retryErr: unknown) => {
+              if (!(retryErr instanceof HttpErrorResponse) || retryErr.status !== 401) {
+                return throwError(() => retryErr);
+              }
+              return refreshPlatformOrLogout(auth, req, next, retryErr);
+            }),
+          );
+        }
+        return refreshPlatformOrLogout(auth, req, next, err);
+      }
+
       const usedModule =
         !isPlatformApi(req.url) || code === 'MODULE_AUTH_REQUIRED' || code === 'MODULE_SESSION_EXPIRED';
 
       if (code === 'MODULE_AUTH_REQUIRED' || (usedModule && !auth.moduleRefreshToken)) {
-        const moduleCode = auth.moduleCode ?? 'immobilisations';
-        auth.clearModuleSession();
-        const returnUrl = router.url?.startsWith('/modules/') ? '/dashboard' : router.url;
-        void router.navigate(['/modules', moduleCode, 'acces'], {
-          queryParams: { returnUrl },
-        });
+        redirectModuleLogin(
+          auth,
+          router,
+          router.url?.startsWith('/modules/') ? '/dashboard' : router.url,
+        );
         return throwError(() => err);
       }
 
       if (usedModule && (code === 'MODULE_SESSION_EXPIRED' || !isPlatformApi(req.url))) {
         if (!auth.moduleRefreshToken) {
-          const moduleCode = auth.moduleCode ?? 'immobilisations';
-          auth.clearModuleSession();
-          void router.navigate(['/modules', moduleCode, 'acces'], {
-            queryParams: { returnUrl: router.url },
-          });
+          redirectModuleLogin(auth, router, router.url);
           return throwError(() => err);
         }
+        // catchError UNIQUEMENT sur le refresh — pas sur le retry HTTP
+        // (sinon un 401 métier type PLATFORM_SESSION_EXPIRED déconnecte Login 1).
         return auth.refreshModuleTokens().pipe(
-          switchMap(() => {
-            const nextToken = auth.moduleAccessToken;
-            if (!nextToken) {
-              const moduleCode = auth.moduleCode ?? 'immobilisations';
-              auth.clearModuleSession();
-              void router.navigate(['/modules', moduleCode, 'acces'], {
-                queryParams: { returnUrl: router.url },
-              });
-              return throwError(() => err);
-            }
-            return next(attachBearer(req, nextToken));
-          }),
           catchError((refreshErr: unknown) => {
             const refreshCode =
               refreshErr instanceof HttpErrorResponse ? authErrorCode(refreshErr) : null;
             if (refreshCode === 'PLATFORM_SESSION_EXPIRED') {
               auth.logoutPlatform({ reason: 'session' });
             } else {
-              const moduleCode = auth.moduleCode ?? 'immobilisations';
-              auth.clearModuleSession();
-              void router.navigate(['/modules', moduleCode, 'acces'], {
-                queryParams: { returnUrl: router.url },
-              });
+              redirectModuleLogin(auth, router, router.url);
             }
             return throwError(() => err);
+          }),
+          switchMap(() => {
+            const nextToken = auth.moduleAccessToken;
+            if (!nextToken) {
+              redirectModuleLogin(auth, router, router.url);
+              return throwError(() => err);
+            }
+            return next(attachBearer(req, nextToken));
           }),
         );
       }
 
-      if (!auth.platformRefreshToken) {
-        auth.logoutPlatform({ reason: 'session' });
-        return throwError(() => err);
-      }
-
-      return auth.refreshPlatformTokens().pipe(
-        switchMap(() => {
-          const nextToken = auth.platformAccessToken;
-          if (!nextToken) {
-            auth.logoutPlatform({ reason: 'session' });
-            return throwError(() => err);
-          }
-          return next(attachBearer(req, nextToken));
-        }),
-        catchError((refreshErr: unknown) => {
-          if (isModuleLoginUrl(req.url) && refreshErr instanceof HttpErrorResponse) {
-            const retryCode = authErrorCode(refreshErr);
-            const stillPlatformLost =
-              retryCode === 'PLATFORM_SESSION_EXPIRED' ||
-              retryCode === 'TOKEN_INVALID' ||
-              retryCode === 'UNAUTHENTICATED';
-            if (!stillPlatformLost) {
-              return throwError(() => refreshErr);
-            }
-          }
-          auth.logoutPlatform({ reason: 'session' });
-          return throwError(() => err);
-        }),
-      );
+      return refreshPlatformOrLogout(auth, req, next, err);
     }),
   );
 };
+
+function refreshPlatformOrLogout(
+  auth: AuthService,
+  req: HttpRequest<unknown>,
+  next: HttpHandlerFn,
+  err: HttpErrorResponse,
+): Observable<HttpEvent<unknown>> {
+  if (!auth.platformRefreshToken) {
+    auth.logoutPlatform({ reason: 'session' });
+    return throwError(() => err);
+  }
+
+  return auth.refreshPlatformTokens().pipe(
+    catchError((refreshErr: unknown) => {
+      if (isModuleLoginUrl(req.url) && refreshErr instanceof HttpErrorResponse) {
+        const retryCode = authErrorCode(refreshErr);
+        const stillPlatformLost =
+          retryCode === 'PLATFORM_SESSION_EXPIRED' ||
+          retryCode === 'TOKEN_INVALID' ||
+          retryCode === 'UNAUTHENTICATED';
+        if (!stillPlatformLost) {
+          return throwError(() => refreshErr);
+        }
+      }
+      auth.logoutPlatform({ reason: 'session' });
+      return throwError(() => err);
+    }),
+    switchMap(() => {
+      const nextToken = auth.platformAccessToken;
+      if (!nextToken) {
+        auth.logoutPlatform({ reason: 'session' });
+        return throwError(() => err);
+      }
+      return next(attachBearer(req, nextToken));
+    }),
+  );
+}

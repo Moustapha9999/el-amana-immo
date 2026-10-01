@@ -96,10 +96,12 @@ async def test_core_admin_rbac_platform_only(client: AsyncClient):
     assert admin["locked"] is True
     assert "kpis" in body
 
-    perms = await client.get("/api/v1/plateforme/admin/permissions?page=1&size=50", headers=headers)
-    assert perms.status_code == 200, perms.text
-    assert any(row["code"] == "immobilisations.read" for row in perms.json()["items"])
-    assert any(row["code"] == "core.admin.roles" for row in perms.json()["items"])
+    for code in ("immobilisations.read", "core.admin.roles"):
+        perms = await client.get(
+            f"/api/v1/plateforme/admin/permissions?page=1&size=100&search={code}", headers=headers
+        )
+        assert perms.status_code == 200, perms.text
+        assert any(row["code"] == code for row in perms.json()["items"]), code
 
     module_login = await client.post(
         "/api/v1/auth/modules/immobilisations/login",

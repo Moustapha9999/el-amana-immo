@@ -1,6 +1,6 @@
-﻿import { DatePipe } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { MontantInputDirective } from '../shared/montant-input.directive';
-import { MontantPipe } from '../shared/montant.pipe';
+import { MontantPipe, formatMontant } from '../shared/montant.pipe';
 import { Component, computed, effect, inject, input, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -23,6 +23,7 @@ import {
   MESSAGE_NON_AMORTISSABLE_EL_AMANA,
   isCompteNonAmortissable,
 } from './immobilisation.constants';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 
 type ImmoSection = 'fiche' | 'modifier' | 'amortissement' | 'reevaluation' | 'sortie' | 'pieces';
 
@@ -132,6 +133,7 @@ interface ImmobilisationDto {
   styleUrl: './immobilisation-form.component.css',
 })
 export class ImmobilisationFormComponent implements OnInit {
+  readonly hasUnsavedChanges = unsavedChanges(() => this.form.dirty && !this.saving(), () => this.form);
   readonly id = input<string | undefined>();
   /** Route `:section` — modifier | amortissement | reevaluation | sortie | pieces */
   readonly section = input<string | undefined>();
@@ -838,14 +840,14 @@ export class ImmobilisationFormComponent implements OnInit {
               const mv = Number(res.cession.moins_value) || 0;
               let resultatMsg = 'cession à l’équilibre';
               if (pv > 0) {
-                resultatMsg = `plus-value ${pv.toFixed(2)} MRU`;
+                resultatMsg = `plus-value ${formatMontant(pv, 'MRU')}`;
               } else if (mv > 0) {
-                resultatMsg = `moins-value ${mv.toFixed(2)} MRU`;
+                resultatMsg = `moins-value ${formatMontant(mv, 'MRU')}`;
               }
               void this.dialogs
                 .successAction(
                   'cloture',
-                  `Cession enregistrée — VNC ${res.cession.vnc}, ${resultatMsg}, ${res.ecriture_ids.length} écriture(s)`,
+                  `Cession enregistrée — VNC ${formatMontant(res.cession.vnc, 'MRU')}, ${resultatMsg}, ${res.ecriture_ids.length} écriture(s)`,
                 )
                 .subscribe();
             },
@@ -915,7 +917,7 @@ export class ImmobilisationFormComponent implements OnInit {
               void this.dialogs
                 .successAction(
                   'cloture',
-                  `Rebut enregistré — VNC ${res.rebut.vnc}, ${res.ecriture_ids.length} écriture(s)`,
+                  `Rebut enregistré — VNC ${formatMontant(res.rebut.vnc, 'MRU')}, ${res.ecriture_ids.length} écriture(s)`,
                 )
                 .subscribe();
             },

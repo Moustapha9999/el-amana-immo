@@ -7,6 +7,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { MontantPipe } from '../shared/montant.pipe';
+import { PIECES_ACCEPT, PIECES_FORMATS_LABEL, verifierPieceJointe } from '../shared/pieces-jointes';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 import { PieceComptable } from './piece-comptable.model';
 import { PieceDetailDialogComponent } from './piece-detail-dialog.component';
@@ -50,6 +51,8 @@ export class PiecesComptablesComponent implements OnInit {
   readonly immobilisations = signal<ImmoOption[]>([]);
   /** Pré-sélection depuis l'onglet Pièces d'une immobilisation. */
   readonly linkedImmoId = signal<string | null>(null);
+  readonly piecesAccept = PIECES_ACCEPT;
+  readonly piecesFormats = PIECES_FORMATS_LABEL;
 
   readonly filterForm = this.fb.nonNullable.group({
     date_journee: [new Date().toISOString().slice(0, 10)],
@@ -166,7 +169,15 @@ export class PiecesComptablesComponent implements OnInit {
   onFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     const files = input.files;
-    this.selectedFile = files && files.length > 0 ? files[0] : null;
+    const file = files && files.length > 0 ? files[0] : null;
+    const refus = file ? verifierPieceJointe(file) : null;
+    if (refus) {
+      input.value = '';
+      this.selectedFile = null;
+      void this.dialogs.error(refus).subscribe();
+      return;
+    }
+    this.selectedFile = file;
   }
 
   upload(): void {
@@ -177,7 +188,7 @@ export class PiecesComptablesComponent implements OnInit {
     }
     if (!this.selectedFile) {
       void this.dialogs
-        .error('Sélectionnez un fichier (Excel, PDF, image ou Word)')
+        .error(`Sélectionnez un fichier (${PIECES_FORMATS_LABEL})`)
         .subscribe();
       return;
     }

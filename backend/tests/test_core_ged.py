@@ -12,6 +12,8 @@ def test_core_permissions_are_in_catalogue():
         "plateforme.audit.read",
         "ged.read",
         "ged.write",
+        "ged.download",
+        "ged.export",
     }
     functional = {row[0] for row in FUNCTIONAL_PERMISSIONS}
     assert codes.issubset(functional)
@@ -29,6 +31,26 @@ def test_ged_relative_path_is_posix_and_safe():
     )
     assert path == "immobilisations/immobilisation/id-with-slash/facture.pdf"
     assert "\\" not in path
+
+
+async def test_ged_detach_trace_motif_et_auteur():
+    import uuid
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    db = MagicMock()
+    db.flush = AsyncMock()
+    svc = GedService(db)
+    row = SimpleNamespace(deleted_at=None, is_active=True, deleted_by_id=None, delete_reason=None)
+    svc.get = AsyncMock(return_value=row)
+    auteur = uuid.uuid4()
+
+    await svc.soft_delete(uuid.uuid4(), user_id=auteur, reason="  mauvais fichier  ")
+
+    assert row.deleted_at is not None
+    assert row.is_active is False
+    assert row.deleted_by_id == auteur
+    assert row.delete_reason == "mauvais fichier"
 
 
 def test_ged_absolute_path_rejects_traversal(tmp_path, monkeypatch):

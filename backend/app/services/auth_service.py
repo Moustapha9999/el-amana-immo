@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -9,6 +9,7 @@ from app.core.password_policy import validate_password_policy
 from app.core.security import get_password_hash, verify_password
 from app.data.plateforme_catalogue import DEFAULT_ESPACE_CODE, DEFAULT_MODULE_CODE
 from app.models import PasswordHistory, Role, User
+from app.models.associations import user_module_acces_table
 from app.models.plateforme import PlateformeEspace, PlateformeModule
 from app.schemas.auth import UserCreate, UserUpdate
 from app.services.auth_session_service import AuthSessionService
@@ -55,6 +56,16 @@ _USER_OPTIONS = (
     selectinload(User.espaces),
     selectinload(User.modules),
 )
+
+
+def module_access_clause(module_code: str):
+    """Habilitation active (`user_module_acces.status = 'actif'`) au module `module_code`."""
+    return exists().where(
+        user_module_acces_table.c.user_id == User.id,
+        user_module_acces_table.c.module_id == PlateformeModule.id,
+        PlateformeModule.code == module_code,
+        user_module_acces_table.c.status == "actif",
+    )
 
 
 class AuthService:
@@ -123,9 +134,22 @@ class AuthService:
         await access.set_user_access(user, espace_codes or [], module_codes or [])
         return await self.get_by_id(user.id)  # type: ignore[return-value]
 
+    async def has_module_access(self, user_id: UUID, module_code: str) -> bool:
+        found = await self.db.scalar(
+            select(User.id).where(User.id == user_id, module_access_clause(module_code))
+        )
+        return found is not None
+
     async def update_user(
-        self, user_id: UUID, payload: UserUpdate, *, include_inactive: bool = False
+        self,
+        user_id: UUID,
+        payload: UserUpdate,
+        *,
+        include_inactive: bool = False,
+        preserve_outside_module: str | None = None,
     ) -> User:
+        """`preserve_outside_module` : seuls ce module (et son espace) peuvent être retirés ;
+        les autres accès existants sont conservés."""
         user = await self.get_by_id(user_id, include_inactive=include_inactive)
         if user is None:
             raise ValueError("Utilisateur introuvable")
@@ -161,11 +185,14 @@ class AuthService:
             await access.ensure_catalogue()
             current_e = list(user.espace_codes)
             current_m = list(user.module_codes)
-            await access.set_user_access(
-                user,
-                data["espace_codes"] if "espace_codes" in data and data["espace_codes"] is not None else current_e,
-                data["module_codes"] if "module_codes" in data and data["module_codes"] is not None else current_m,
-            )
+            wanted_e = data["espace_codes"] if "espace_codes" in data and data["espace_codes"] is not None else current_e
+            wanted_m = data["module_codes"] if "module_codes" in data and data["module_codes"] is not None else current_m
+            if preserve_outside_module:
+                scoped = await access.get_module(preserve_outside_module)
+                scoped_espace = scoped.espace.code if scoped and scoped.espace else None
+                wanted_m = sorted(set(wanted_m) | {c for c in current_m if c != preserve_outside_module})
+                wanted_e = sorted(set(wanted_e) | {c for c in current_e if c != scoped_espace})
+            await access.set_user_access(user, wanted_e, wanted_m)
 
         await self.db.flush()
         refreshed = await self.get_by_id(user.id, include_inactive=True)
@@ -235,10 +262,13 @@ class AuthService:
         profil: str = "tous",
         totp: str = "tous",
         connexion: str = "tous",
+        module_access: str | None = None,
     ) -> tuple[list[User], int]:
         from app.core.pagination import page_offset
 
         filters = [User.deleted_at.is_(None)]
+        if module_access:
+            filters.append(module_access_clause(module_access))
         if statut == "actif":
             filters.append(User.is_active.is_(True))
         elif statut == "inactif":

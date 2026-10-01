@@ -8,6 +8,7 @@ import {
   CoreAdminMaintenanceSettings,
   coreAdminOpsError,
 } from './core-admin-ops.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
 
 export { CoreAdminSecurityComponent } from './core-admin-security-center.component';
 
@@ -27,9 +28,6 @@ export { CoreAdminSecurityComponent } from './core-admin-security-center.compone
           <a class="bea-admin-btn bea-admin-btn--ghost" routerLink="/admin/maintenance">Maintenance</a>
         </div>
       </header>
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (loading()) {
         <p class="bea-admin-dash__loading">Chargement…</p>
       } @else if (data(); as d) {
@@ -56,7 +54,7 @@ export { CoreAdminSecurityComponent } from './core-admin-security-center.compone
 export class CoreAdminGeneralComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly loading = signal(true);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly data = signal<CoreAdminGeneralSettings | null>(null);
 
   ngOnInit(): void {
@@ -93,9 +91,6 @@ export class CoreAdminGeneralComponent implements OnInit {
           >
         </div>
       </header>
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (loading()) {
         <p class="bea-admin-dash__loading">Chargement…</p>
       } @else if (data(); as d) {
@@ -189,7 +184,7 @@ export class CoreAdminMaintenanceComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly dialogs = inject(BeaAdminDialogService);
   readonly loading = signal(true);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly data = signal<CoreAdminMaintenanceSettings | null>(null);
   readonly control = signal<{ global: any } | null>(null);
   globalEnabled = false;

@@ -2,21 +2,23 @@ import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
+import { DocumentViewerComponent } from '../../archives-generales/document-viewer.component';
 import { CoreAdminIconComponent } from './core-admin-icon.component';
 import { CoreAdminGedPage, coreAdminOpsError } from './core-admin-ops.models';
+import { feedbackSignal } from '../../core/feedback/feedback-signal';
 
 @Component({
   selector: 'bea-core-admin-ged',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, ReactiveFormsModule, CoreAdminIconComponent],
+  imports: [DatePipe, ReactiveFormsModule, CoreAdminIconComponent, DocumentViewerComponent],
   template: `
     <section class="bea-admin-dash">
       <header class="bea-admin-dash__head">
         <div>
-          <h1>GED</h1>
+          <h1>Documents GED</h1>
           <p>
-            Table <code>ged_documents</code> réservée — pas encore branchée aux modules. Les pièces immo restent hors
-            GED.
+            Administration de la table unique <code>ged_documents</code>. Cette liste n'est pas le registre
+            Archive Générale. Les pièces immobilisations restent hors GED.
           </p>
         </div>
       </header>
@@ -38,7 +40,9 @@ import { CoreAdminGedPage, coreAdminOpsError } from './core-admin-ops.models';
           }
         </div>
         @if (k.reservee) {
-          <p class="bea-admin-note">GED en lecture seule pour l’instant — upload métier à brancher module par module.</p>
+          <p class="bea-admin-note">
+            Vue CORE ADMIN en lecture seule — dépôt métier via Document Service / Archives.
+          </p>
         }
       }
 
@@ -62,9 +66,6 @@ import { CoreAdminGedPage, coreAdminOpsError } from './core-admin-ops.models';
         </div>
       </form>
 
-      @if (erreur()) {
-        <p class="bea-admin-dash__error">{{ erreur() }}</p>
-      }
       @if (loading()) {
         <p class="bea-admin-dash__loading">Chargement GED…</p>
       } @else {
@@ -86,6 +87,7 @@ import { CoreAdminGedPage, coreAdminOpsError } from './core-admin-ops.models';
                     <th>Entité</th>
                     <th>Taille</th>
                     <th>Créé</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -97,6 +99,9 @@ import { CoreAdminGedPage, coreAdminOpsError } from './core-admin-ops.models';
                       <td class="bea-admin-table__clip">{{ row.entity }} · {{ row.entity_id }}</td>
                       <td>{{ row.size_bytes }} o</td>
                       <td>{{ row.created_at | date: 'dd/MM/yyyy HH:mm' : 'Africa/Nouakchott' }}</td>
+                      <td>
+                        <button type="button" class="bea-admin-btn bea-admin-btn--ghost" (click)="viewerId.set(row.id)">Voir</button>
+                      </td>
                     </tr>
                   }
                 </tbody>
@@ -117,6 +122,10 @@ import { CoreAdminGedPage, coreAdminOpsError } from './core-admin-ops.models';
         </div>
       }
     </section>
+    <bea-document-viewer [documentId]="viewerId()" (closed)="viewerId.set(null)" (openRelated)="viewerId.set($event)" />
+  `,
+  styles: `
+    .bea-admin-table-wrap { max-height: min(28rem, calc(100dvh - 22rem)); overflow: auto; }
   `,
 })
 export class CoreAdminGedComponent implements OnInit {
@@ -124,13 +133,14 @@ export class CoreAdminGedComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
   readonly loading = signal(true);
-  readonly erreur = signal('');
+  readonly erreur = feedbackSignal('error', '');
   readonly rows = signal<CoreAdminGedPage['items']>([]);
   readonly total = signal(0);
   readonly page = signal(1);
   readonly size = 20;
   readonly kpis = signal<CoreAdminGedPage['kpis'] | null>(null);
   readonly filters = this.fb.nonNullable.group({ search: '' });
+  readonly viewerId = signal<string | null>(null);
   readonly totalPages = computed(() => Math.max(1, Math.ceil(this.total() / this.size)));
 
   ngOnInit(): void {
