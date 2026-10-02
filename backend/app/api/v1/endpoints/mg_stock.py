@@ -56,6 +56,7 @@ from app.schemas.mg_stock import (
     ReceptionBcIn,
 )
 from app.services.mg_inventaire_import import InventaireImportService
+from app.services.mg_inventaire_reference import InventaireReferenceService
 from app.services.mg_inventaire_service import MgInventaireService
 from app.services.mg_stock_events import audit_stock, notify_stock_roles, notify_stock_user
 from app.services.mg_stock_service import MgStockService
@@ -1170,6 +1171,58 @@ async def ajustements_inventaire(
     user: User = Depends(require_permission("mg.stock.view")),
 ):
     return await (await _inventaires(db, user)).ajustements(inventaire_id)
+
+
+def _reference_out(analyse: dict) -> dict:
+    return {
+        **analyse,
+        "lignes": [{k: v for k, v in lg.items() if not k.startswith("_")} for lg in analyse["lignes"]],
+    }
+
+
+@router.post("/inventaires/{inventaire_id}/reference/analyse", dependencies=_module)
+async def analyser_reference_inventaire(
+    inventaire_id: UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.inventory")),
+):
+    svc = await _inventaires(db, user)
+    analyse = await InventaireReferenceService(svc).analyser(
+        inventaire_id, await file.read(), file.filename or "reference.xlsx"
+    )
+    return _reference_out(analyse)
+
+
+@router.post("/inventaires/{inventaire_id}/reference", dependencies=_module)
+async def charger_reference_inventaire(
+    inventaire_id: UUID,
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.inventory")),
+):
+    svc = await _inventaires(db, user)
+    inv, analyse = await InventaireReferenceService(svc).charger(
+        inventaire_id, await file.read(), file.filename or "reference.xlsx", request=request
+    )
+    return {"inventaire": await _inventaire_out(svc, inv), "analyse": _reference_out(analyse)}
+
+
+@router.get("/inventaires/{inventaire_id}/rapprochement", dependencies=_module)
+async def rapprochement_inventaire(
+    inventaire_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.view")),
+):
+    svc = await _inventaires(db, user)
+    controles = await svc.controles(inventaire_id)
+    return {
+        "controles": controles,
+        "ok": all(c["ok"] for c in controles),
+        "en_attente": any(c["en_attente"] for c in controles),
+        "registre_ecarts": await svc.registre_ecarts(inventaire_id),
+    }
 
 
 @router.get("/inventaires/{inventaire_id}/export", dependencies=_module)

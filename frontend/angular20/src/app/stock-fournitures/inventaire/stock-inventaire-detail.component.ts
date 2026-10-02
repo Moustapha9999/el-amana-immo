@@ -37,6 +37,7 @@ import {
   MSG_VERROU,
   PERM,
   Paginated,
+  Rapprochement,
   RefOption,
   STATUT_ICONS,
   STATUT_LABELS,
@@ -62,6 +63,35 @@ interface ArticleOption {
   designation: string;
 }
 
+interface ReferenceAnalyse {
+  fichier: string;
+  source_officielle: string | null;
+  date_comptage: string | null;
+  calcul: Record<string, number>;
+  mouvements: Record<string, number>;
+  registre_ecarts: { code: string; ecart: number }[];
+  anomalies: string[];
+  bloquant: boolean;
+}
+
+const CHAMPS_SOURCE: { cle: string; label: string }[] = [
+  { cle: 'categorie', label: 'Catégorie' },
+  { cle: 'statut_agence', label: 'Statut agence' },
+  { cle: 'stock_initial', label: 'Stock initial' },
+  { cle: 'entrees', label: 'Entrées' },
+  { cle: 'sorties', label: 'Sorties' },
+  { cle: 'stock_final_theorique', label: 'Stock final théorique' },
+  { cle: 'verifie', label: 'Vérifié' },
+  { cle: 'stock_physique', label: 'Stock physique constaté' },
+  { cle: 'ecart', label: 'Écart (banque)' },
+  { cle: 'statut_inventaire', label: 'Statut inventaire' },
+  { cle: 'stock_actuel_agence', label: 'Stock actuel agence' },
+  { cle: 'consommation', label: 'Consommation (sorties)' },
+  { cle: 'alerte', label: 'Alerte stock' },
+  { cle: 'observations', label: 'Observations' },
+  { cle: 'decision', label: 'Décision' },
+];
+
 const KPIS: { id: LigneFiltre; label: string; icon: string; cle: keyof InventaireStats; ton?: string }[] = [
   { id: '', label: 'Articles', icon: 'inventory_2', cle: 'total' },
   { id: 'compte', label: 'Comptés', icon: 'task_alt', cle: 'comptes' },
@@ -76,7 +106,7 @@ const KPIS: { id: LigneFiltre; label: string; icon: string; cle: keyof Inventair
   selector: 'bea-stock-inventaire-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, DatePipe, MatIconModule, RouterLink, PaginationComponent, MgGedPanelComponent],
-  styleUrl: './inventaire.css',
+  styleUrls: ['./inventaire.css', './inventaire-rappro.css'],
   template: `
     <section class="bea-mg">
       <a class="inv-back" routerLink="/stock-fournitures/inventaires"><mat-icon>arrow_back</mat-icon> Inventaires</a>
@@ -108,6 +138,12 @@ const KPIS: { id: LigneFiltre; label: string; icon: string; cle: keyof Inventair
               }
               @if (peutModifier()) {
                 <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="ouvrirEdition()"><mat-icon>edit</mat-icon> Modifier</button>
+              }
+              @if (saisieOuverte() && !d.nb_ajustements) {
+                <label class="bea-mg__btn bea-mg__btn--ghost" title="Classeur de rapprochement (Inventaire_Reference, Mouvements_A_Appliquer, Ecarts_Banque, Controle, Meta)">
+                  <mat-icon>account_balance</mat-icon> Référence banque
+                  <input type="file" accept=".xlsx" hidden (change)="choisirReference($event)" />
+                </label>
               }
               @switch (d.statut) {
                 @case ('BROUILLON') {
@@ -178,6 +214,66 @@ const KPIS: { id: LigneFiltre; label: string; icon: string; cle: keyof Inventair
           <div class="inv-banner" data-ton="info"><mat-icon>rule</mat-icon><span>Comptage soumis au contrôle : vérifiez les écarts avant validation. Les corrections restent possibles pour le valideur.</span></div>
         }
 
+        @if (d.stats.rapprochement) {
+          <div class="bea-mg__panel inv-rappro">
+            <div class="bea-mg__panel-top">
+              <h2><mat-icon>account_balance</mat-icon> Rapprochement sur la référence banque</h2>
+              @if (rappro(); as r) {
+                <span class="inv-badge" [attr.data-ligne]="r.ok ? 'CONFORME' : r.en_attente ? 'NON_COMPTE' : 'ECART_NEGATIF'">
+                  {{ r.ok ? 'Contrôles conformes' : r.en_attente ? 'Contrôles en attente des ajustements' : 'Contrôle(s) en échec' }}
+                </span>
+              }
+            </div>
+            <p class="inv-rappro__source">
+              Source officielle : <strong>{{ meta()?.source_officielle || '—' }}</strong>
+              · plan : {{ meta()?.fichier || '—' }}
+              · inventaire au {{ meta()?.date_inventaire || '—' }} · comptage du {{ meta()?.date_comptage || '—' }}
+            </p>
+            <div class="inv-rappro__flux">
+              <div><span>Stock système avant rapprochement</span><strong>{{ nombre(d.stats.total_systeme) }}</strong></div>
+              <div data-ton="neg"><span>Ajustements ({{ d.nb_ajustements || d.stats.ajustements_prevus }})</span><strong>{{ signe(d.stats.ajustement_net) }}</strong></div>
+              <div data-ton="ok"><span>Stock actuel banque (retenu)</span><strong>{{ nombre(d.stats.total_retenu) }}</strong></div>
+              <div><span>Stock physique compté</span><strong>{{ nombre(d.stats.total_physique) }}</strong></div>
+              <div [attr.data-ton]="d.stats.ecart_a_regulariser ? 'pos' : 'ok'"><span>Écart physique restant</span><strong>{{ signe(d.stats.ecart_a_regulariser) }}</strong></div>
+            </div>
+            @if (rappro()?.registre_ecarts?.length) {
+              <h3 class="inv-section-title">Écarts d’inventaire à régulariser (non intégrés au stock)</h3>
+              <div class="bea-mg__table-scroll">
+                <table class="bea-mg__table">
+                  <thead><tr><th>Article</th><th class="inv-num">Théorique banque</th><th class="inv-num">Physique</th><th class="inv-num">Stock retenu</th><th class="inv-num">Écart</th><th>Statut</th><th>Décision</th></tr></thead>
+                  <tbody>
+                    @for (e of rappro()!.registre_ecarts; track e.ligne_id) {
+                      <tr>
+                        <td><strong>{{ e.code }}</strong> — {{ e.designation }}</td>
+                        <td class="inv-num">{{ e.theorique_reference }}</td>
+                        <td class="inv-num">{{ e.stock_physique }}</td>
+                        <td class="inv-num">{{ e.stock_retenu }}</td>
+                        <td class="inv-num"><span class="inv-ecart" [attr.data-signe]="ton(e.ecart)">{{ signe(e.ecart) }}</span></td>
+                        <td><span class="inv-badge" data-ligne="ECART_POSITIF">À régulariser</span></td>
+                        <td>{{ e.decision }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+            @if (rappro(); as r) {
+              <details class="inv-rappro__controles" [open]="!r.ok && !r.en_attente">
+                <summary>Contrôles de clôture ({{ nbControlesOk() }} / {{ r.controles.length }} conformes)</summary>
+                <ul>
+                  @for (c of r.controles; track c.code) {
+                    <li [attr.data-etat]="c.ok ? 'ok' : c.en_attente ? 'attente' : 'ko'">
+                      <mat-icon>{{ c.ok ? 'check_circle' : c.en_attente ? 'schedule' : 'cancel' }}</mat-icon>
+                      <span>{{ c.libelle }}</span>
+                      <small>attendu {{ c.attendu }} · obtenu {{ c.obtenu }}</small>
+                    </li>
+                  }
+                </ul>
+              </details>
+            }
+          </div>
+        }
+
         <div class="inv-kpis">
           @for (k of kpis; track k.id; let i = $index) {
             <button type="button" class="inv-kpi" [style.--i]="i" [attr.data-ton]="k.ton" [attr.data-actif]="filtre() === k.id" (click)="choisirFiltre(k.id)">
@@ -212,6 +308,10 @@ const KPIS: { id: LigneFiltre; label: string; icon: string; cle: keyof Inventair
               <option value="negatif">Écarts négatifs</option>
               <option value="positif">Écarts positifs</option>
               <option value="exclu">Exclus</option>
+              <option value="ajustement">Avec ajustement de stock</option>
+              @if (d.stats.rapprochement) {
+                <option value="a_regulariser">Écarts à régulariser</option>
+              }
             </select>
             <span class="bea-mg__count">{{ total() }} ligne(s)</span>
             @if (saisieOuverte() && peut('saisie') && (d.statut === 'BROUILLON' || d.statut === 'EN_COURS')) {
@@ -247,9 +347,16 @@ const KPIS: { id: LigneFiltre; label: string; icon: string; cle: keyof Inventair
                     </td>
                     <td class="inv-col-opt">{{ l.famille_libelle || '—' }}</td>
                     <td class="inv-num">
-                      {{ l.stock_theorique }}
-                      @if (l.stock_theorique_source != null && l.stock_theorique_source !== l.stock_theorique) {
-                        <br /><small style="color:#92400e" title="Théorique du fichier importé">fichier : {{ l.stock_theorique_source }}</small>
+                      @if (l.stock_cible != null) {
+                        {{ l.theorique_reference }}
+                        @if (l.stock_theorique !== l.theorique_reference) {
+                          <br /><small style="color:#92400e" title="Stock BEA DIGITAL figé avant rapprochement">système : {{ l.stock_theorique }}</small>
+                        }
+                      } @else {
+                        {{ l.stock_theorique }}
+                        @if (l.stock_theorique_source != null && l.stock_theorique_source !== l.stock_theorique) {
+                          <br /><small style="color:#92400e" title="Théorique du fichier importé">fichier : {{ l.stock_theorique_source }}</small>
+                        }
                       }
                     </td>
                     <td class="inv-num">
@@ -282,9 +389,23 @@ const KPIS: { id: LigneFiltre; label: string; icon: string; cle: keyof Inventair
                         {{ l.stock_physique ?? '—' }}
                       }
                     </td>
-                    <td class="inv-num"><span class="inv-ecart" [attr.data-signe]="ton(l.ecart)">{{ l.ecart == null ? '—' : signe(l.ecart) }}</span></td>
+                    <td class="inv-num">
+                      <span class="inv-ecart" [attr.data-signe]="ton(l.ecart)">{{ l.ecart == null ? '—' : signe(l.ecart) }}</span>
+                      @if (l.stock_cible != null && l.ajustement_prevu) {
+                        <br /><small title="Ajustement de stock vers le stock retenu ({{ l.stock_cible }})">ajust. {{ signe(l.ajustement_prevu) }}</small>
+                      }
+                    </td>
                     <td class="inv-num inv-col-opt">{{ l.ecart == null ? '—' : pourcentage(l.ecart_pourcentage) }}</td>
-                    <td class="inv-col-opt"><span class="inv-badge" [attr.data-ligne]="l.statut_ligne">{{ ligneLabel(l.statut_ligne) }}</span></td>
+                    <td class="inv-col-opt">
+                      @if (l.ancienne_agence) {
+                        <span class="inv-badge" data-ligne="EXCLU">Ancienne agence</span>
+                      } @else {
+                        <span class="inv-badge" [attr.data-ligne]="l.statut_ligne">{{ ligneLabel(l.statut_ligne) }}</span>
+                      }
+                      @if (l.a_regulariser) {
+                        <span class="inv-badge" data-ligne="ECART_POSITIF" title="Écart physique non intégré au stock">À régulariser</span>
+                      }
+                    </td>
                     <td class="bea-mg__actions-cell">
                       <button type="button" class="bea-mg__icon-btn" title="Détail de la ligne" (click)="ouvrirLigne(l)"><mat-icon>chevron_right</mat-icon></button>
                     </td>
@@ -371,16 +492,34 @@ const KPIS: { id: LigneFiltre; label: string; icon: string; cle: keyof Inventair
               <dt>Famille</dt><dd>{{ s.famille_libelle || '—' }}</dd>
               <dt>Unité</dt><dd>{{ s.unite || '—' }}</dd>
               <dt>Emplacement</dt><dd>{{ s.emplacement || '—' }}</dd>
-              <dt>Stock théorique (figé)</dt><dd>{{ s.stock_theorique }}</dd>
+              <dt>Stock système (figé)</dt><dd>{{ s.stock_theorique }}</dd>
               @if (s.stock_theorique_source != null) {
-                <dt>Théorique du fichier</dt><dd>{{ s.stock_theorique_source }}</dd>
+                <dt>{{ s.stock_cible != null || s.ancienne_agence ? 'Théorique banque' : 'Théorique du fichier' }}</dt><dd>{{ s.stock_theorique_source }}</dd>
               }
               <dt>Stock physique</dt><dd>{{ s.stock_physique ?? '—' }}</dd>
               <dt>Écart</dt><dd><span class="inv-ecart" [attr.data-signe]="ton(s.ecart)">{{ s.ecart == null ? '—' : signe(s.ecart) }}</span></dd>
+              @if (s.stock_cible != null) {
+                <dt>Stock retenu (banque)</dt><dd>{{ s.stock_cible }}</dd>
+                <dt>Ajustement de stock</dt><dd><span class="inv-ecart" [attr.data-signe]="ton(s.ajustement_prevu)">{{ signe(s.ajustement_prevu) }}</span></dd>
+                <dt>Écart à régulariser</dt><dd>{{ s.ecart_a_regulariser ? signe(s.ecart_a_regulariser) + ' — non intégré au stock' : '—' }}</dd>
+              }
               <dt>Écart %</dt><dd>{{ s.ecart == null ? '—' : pourcentage(s.ecart_pourcentage) }}</dd>
               <dt>Compté par</dt><dd>{{ s.compte_par_nom || '—' }}</dd>
               <dt>Compté le</dt><dd>{{ (s.compte_at | date: 'dd/MM/yyyy HH:mm') || '—' }}</dd>
             </dl>
+
+            @if (s.donnees_source; as src) {
+              <div>
+                <h3 class="inv-section-title">Référence banque (historique, non rejoué)</h3>
+                <dl>
+                  @for (c of champsSource; track c.cle) {
+                    @if (src[c.cle] != null && src[c.cle] !== '') {
+                      <dt>{{ c.label }}</dt><dd>{{ src[c.cle] }}</dd>
+                    }
+                  }
+                </dl>
+              </div>
+            }
 
             @if (saisieOuverte()) {
               <div>
@@ -570,6 +709,10 @@ export class StockInventaireDetailComponent implements OnInit {
   readonly articles = signal<ArticleOption[]>([]);
   readonly historique = signal<InventaireHistorique[]>([]);
   readonly ajustements = signal<Ajustement[]>([]);
+  readonly rappro = signal<Rapprochement | null>(null);
+  readonly meta = computed(() => this.inv()?.import_meta?.rapprochement ?? null);
+  readonly nbControlesOk = computed(() => this.rappro()?.controles.filter((c) => c.ok).length ?? 0);
+  readonly champsSource = CHAMPS_SOURCE;
   readonly enCours = signal(false);
 
   readonly brouillons = signal<Partial<Record<string, string>>>({});
@@ -687,6 +830,10 @@ export class StockInventaireDetailComponent implements OnInit {
       return ` · ${avant} → ${apres}${a['ecart'] != null ? ` (écart ${signe(a['ecart'] as number)})` : ''}${statut}`;
     }
     if (a['motif']) return ` · motif : ${a['motif']}`;
+    if (h.action === 'rapprochement') {
+      return ` · stock ${a['stock_avant']} → ${a['stock_apres']} (${signe(a['variation'] as number)}, ${a['ajustements']} ajustement(s)) · contrôle ${a['controle']}`;
+    }
+    if (h.action === 'chargement_reference') return ` · ${a['fichier'] ?? ''} · comptage du ${a['date_comptage'] ?? '—'}`;
     if (h.action === 'generer_ajustements' && a['ajustements'] != null) return ` · ${a['ajustements']} mouvement(s)`;
     if (h.action === 'import_excel' && a['fichier']) return ` · ${a['fichier']}`;
     return '';
@@ -697,6 +844,7 @@ export class StockInventaireDetailComponent implements OnInit {
       next: (inv) => {
         this.inv.set(inv);
         if (inv.nb_ajustements) this.chargerAjustements();
+        if (inv.stats.rapprochement) this.chargerRapprochement();
       },
       error: () => {
         this.feedback.error({ title: 'Inventaire introuvable' });
@@ -740,6 +888,63 @@ export class StockInventaireDetailComponent implements OnInit {
     this.api
       .get<Ajustement[]>(`/mg/stock/inventaires/${this.id()}/ajustements`)
       .subscribe({ next: (a) => this.ajustements.set(a) });
+  }
+
+  chargerRapprochement(): void {
+    this.api
+      .get<Rapprochement>(`/mg/stock/inventaires/${this.id()}/rapprochement`)
+      .subscribe({ next: (r) => this.rappro.set(r) });
+  }
+
+  nombre(n: number | null | undefined): string {
+    return n == null ? '—' : Number(n).toLocaleString('fr-FR');
+  }
+
+  choisirReference(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    const url = `/mg/stock/inventaires/${this.id()}/reference`;
+    this.feedback
+      .run(() => this.api.upload<ReferenceAnalyse>(`${url}/analyse`, file), {
+        loading: 'Analyse de la référence…',
+        busy: this.enCours,
+        errorTitle: 'Référence illisible',
+        success: () => null,
+      })
+      .subscribe((a) => {
+        if (a.bloquant) {
+          this.feedback.error({
+            title: 'Référence refusée — aucune donnée modifiée',
+            message: a.anomalies.slice(0, 8).join('\n') + (a.anomalies.length > 8 ? `\n… ${a.anomalies.length - 8} autre(s)` : ''),
+          });
+          return;
+        }
+        const c = a.calcul;
+        this.feedback
+          .run(() => this.api.upload<{ inventaire: Inventaire }>(url, file), {
+            confirm: {
+              title: 'Charger la référence banque',
+              message:
+                `${c['references']} références (${c['agence_actuelle']} agence actuelle, ${c['ancienne_agence']} ancienne agence). ` +
+                `Stock système ${this.nombre(c['stock_systeme'])} → stock retenu ${this.nombre(c['stock_final'])} ` +
+                `(${c['nb_mouvements']} ajustement(s), ${signe(c['variation'])}). Physique ${this.nombre(c['stock_physique'])}.`,
+              hint:
+                (a.registre_ecarts.length
+                  ? `Écart(s) à régulariser conservés sans mouvement : ${a.registre_ecarts.map((e) => `${e.code} ${signe(e.ecart)}`).join(', ')}. `
+                  : '') + 'Les comptages de l’inventaire sont remplacés par ceux de la banque ; aucun mouvement n’est créé à cette étape.',
+              confirmLabel: 'Charger',
+              tone: 'warn',
+              icon: 'account_balance',
+            },
+            loading: 'Chargement de la référence…',
+            busy: this.enCours,
+            errorTitle: 'Chargement refusé',
+            success: () => ({ title: 'Référence banque chargée', details: [{ label: 'Fichier', value: a.fichier }] }),
+          })
+          .subscribe((r) => this.apresTransition(r.inventaire));
+      });
   }
 
   choisirFiltre(f: LigneFiltre): void {
@@ -964,6 +1169,7 @@ export class StockInventaireDetailComponent implements OnInit {
     this.chargerLignes();
     this.chargerHistorique();
     if (inv.nb_ajustements) this.chargerAjustements();
+    if (inv.stats.rapprochement) this.chargerRapprochement();
     this.alertes.refresh(true);
   }
 
@@ -1063,13 +1269,17 @@ export class StockInventaireDetailComponent implements OnInit {
   genererAjustements(): void {
     const d = this.inv();
     if (!d) return;
-    const n = d.stats.ecarts_negatifs + d.stats.ecarts_positifs;
+    const s = d.stats;
     this.feedback
       .run(() => this.post('generer_ajustements'), {
         confirm: {
           title: 'Générer les ajustements de stock',
-          message: `Créer ${n} mouvement(s) d’ajustement pour ${d.reference} (écart net ${signe(d.stats.ecart_net)}) ?`,
-          hint: 'Chaque article en écart reçoit un mouvement AJUSTEMENT égal à l’écart constaté (physique − théorique). Opération unique et irréversible.',
+          message: `Créer ${s.ajustements_prevus} mouvement(s) d’ajustement pour ${d.reference} (variation ${signe(s.ajustement_net)}) ?`,
+          hint: s.rapprochement
+            ? `Le stock BEA DIGITAL passera de ${this.nombre(s.total_systeme)} au stock retenu par la banque (${this.nombre(s.total_retenu)}). ` +
+              (s.ecart_a_regulariser ? `L’écart physique ${signe(s.ecart_a_regulariser)} reste à régulariser, sans mouvement. ` : '') +
+              'Les articles d’ancienne agence sont archivés sans mouvement. Opération unique et irréversible.'
+            : 'Chaque article en écart reçoit un mouvement AJUSTEMENT égal à l’écart constaté (physique − théorique). Opération unique et irréversible.',
           confirmLabel: 'Générer',
           tone: 'warn',
           icon: 'published_with_changes',

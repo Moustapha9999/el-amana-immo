@@ -27,10 +27,14 @@ from app.services.mg_inventaire_service import (
     PERM_SAISIE,
     PERM_VALIDATION,
     MgInventaireService,
+    ajustement_ligne,
+    ecart_a_regulariser,
     ecart_pourcentage,
     periode_label,
     statut_ligne,
+    theorique_reference,
 )
+from app.services.mg_inventaire_reference import InventaireReferenceService
 
 TOUTES = {PERM_SAISIE, PERM_VALIDATION, PERM_AJUSTEMENT, PERM_GESTION}
 
@@ -50,7 +54,7 @@ def _inv(statut="EN_COURS", **kw):
     data = dict(
         id=uuid4(), reference="INV-2026-09-001", statut=statut, date_debut=date(2026, 9, 30),
         date_fin=None, agence_id=None, famille_id=None, periode_id=None, ajustements_at=None,
-        validation_forcee=False, valide_at=None, valide_by=None, motif_annulation=None,
+        validation_forcee=False, valide_at=None, valide_by=None, motif_annulation=None, import_meta=None,
     )
     data.update(kw)
     return SimpleNamespace(**data)
@@ -110,7 +114,7 @@ def _ligne(statut="NON_COMPTE", theo=Decimal("10"), phys=None):
     return SimpleNamespace(
         id=uuid4(), article_id=uuid4(), stock_theorique=theo, stock_physique=phys, ecart=None,
         nature_ecart=None, statut_comptage=statut, observation=None, compte_par=None, compte_at=None,
-        updated_at=None,
+        updated_at=None, stock_cible=None, stock_theorique_source=None, donnees_source=None,
     )
 
 
@@ -254,7 +258,7 @@ async def test_ajustements_generes_une_seule_fois():
     assert inv.statut == "AJUSTE" and inv.ajustements_at is not None
     with pytest.raises(AppError) as exc:
         await svc.transition(inv.id, "generer_ajustements")
-    assert exc.value.message == "Les ajustements de cet inventaire ont déjà été générés."
+    assert exc.value.message == "Les ajustements de cet inventaire ont déjà été appliqués."
     svc._generer_ajustements.assert_awaited_once()
 
 
@@ -295,6 +299,161 @@ async def test_archiver_apres_ajustement():
     svc = _svc(inv=inv)
     await svc.transition(inv.id, "archiver")
     assert inv.statut == "ARCHIVE"
+
+
+# --------------------------------------------------------------------------- rapprochement banque
+
+
+def test_b0028_ajustement_vers_stock_retenu_et_ecart_a_regulariser():
+    ligne = _ligne("COMPTE", theo=Decimal("29"), phys=Decimal("85"))
+    ligne.stock_theorique_source = Decimal("84")
+    ligne.stock_cible = Decimal("84")
+    assert theorique_reference(ligne) == 84
+    assert ajustement_ligne(ligne) == 55
+    assert ecart_a_regulariser(ligne) == 1
+
+
+def test_ligne_sans_cible_ajuste_au_physique():
+    ligne = _ligne("COMPTE", theo=Decimal("2415"), phys=Decimal("1915"))
+    ligne.stock_theorique_source = Decimal("1900")
+    assert theorique_reference(ligne) == 2415
+    assert ajustement_ligne(ligne) == -500
+    assert ecart_a_regulariser(ligne) is None
+    assert ajustement_ligne(_ligne("EXCLU", theo=Decimal("21"))) is None
+
+
+@pytest.mark.asyncio
+async def test_saisie_ligne_rapprochee_ecart_vs_theorique_banque():
+    inv = _inv("EN_COURS")
+    ligne = _ligne(theo=Decimal("29"))
+    ligne.stock_theorique_source = Decimal("84")
+    ligne.stock_cible = Decimal("84")
+    svc = _saisie_svc(inv, ligne)
+    await svc.saisir_ligne(inv.id, ligne.id, InventaireLigneSaisie(stock_physique=85))
+    assert ligne.ecart == 1
+
+
+@pytest.mark.asyncio
+async def test_archivage_bloque_si_controle_rapprochement_en_echec():
+    inv = _inv("AJUSTE", import_meta={"rapprochement": {"mouvements": {}}})
+    svc = _svc(inv=inv)
+    svc.controles = AsyncMock(return_value=[
+        {"code": "stock_final", "libelle": "Stock final BEA DIGITAL", "attendu": 8930, "obtenu": 9175, "ok": False},
+    ])
+    with pytest.raises(AppError) as exc:
+        await svc.transition(inv.id, "archiver")
+    assert exc.value.code == "RAPPROCHEMENT_CONTROLES" and inv.statut == "AJUSTE"
+    svc.controles = AsyncMock(return_value=[{"code": "stock_final", "libelle": "x", "attendu": 1, "obtenu": 1, "ok": True}])
+    await svc.transition(inv.id, "archiver")
+    assert inv.statut == "ARCHIVE"
+
+
+@pytest.mark.asyncio
+async def test_ajustements_refuses_si_mouvements_deja_existants():
+    inv = _inv("VALIDE")
+    svc = _svc(inv=inv)
+    svc.nb_ajustements = AsyncMock(return_value=17)
+    svc._generer_ajustements = AsyncMock()
+    with pytest.raises(AppError) as exc:
+        await svc.transition(inv.id, "generer_ajustements")
+    assert exc.value.code == "INVENTAIRE_DEJA_AJUSTE"
+    svc._generer_ajustements.assert_not_awaited()
+
+
+REF_ENTETES = [
+    "N°", "Fiche", "Article (libellé de la fiche)", "Réf.", "Catégorie", "Statut agence", "Stock initial",
+    "Entrées", "Sorties", "Stock final théorique", "Vérifié (OK)", "Stock physique constaté",
+    "Écart (physique − théorique)", "Statut inventaire", "Stock actuel agence", "Consommation (sorties)",
+    "Alerte stock", "Observations",
+]
+
+
+def _reference_xlsx(*, plan_b0028=55, controle_variation=54, ancien_dans_plan=False, inventaire="INV-2026-09-004"):
+    wb = Workbook()
+    wb.active.title = "LisezMoi"
+    ws = wb.create_sheet("Inventaire_Reference")
+    ws.append(REF_ENTETES)
+    ws.append([1, 1, "Agrafeuse 24/6", "B0001", "Petit matériel", "Agence actuelle", 22, 0, 2, 20, "OK", 20, 0,
+               "Conforme", 20, 2, "OK", None])
+    ws.append([2, 1, "Rame de Papiers", "B0028", "Papeterie", "Agence actuelle", 100, 0, 16, 84, "OK", 85, 1,
+               "Écart en plus", 84, 16, "OK", None])
+    ws.append([3, 1, "Cartouche 12 A", "C0002", "Consommables", "Ancienne agence", 21, 0, 0, 21, "Non (X)", None,
+               None, None, None, 0, None, None])
+    ws = wb.create_sheet("Mouvements_A_Appliquer")
+    ws.append(["Réf.", "Article", "Stock BEA actuel", "Stock final théorique banque", "Stock actuel agence banque",
+               "Stock physique banque", "Écart physique vs théorique banque", "Ajustement à appliquer",
+               "Type mouvement", "Source"])
+    ws.append(["B0001", "Agrafeuse 24/6", 21, 20, 20, 20, 0, -1, "AJUSTEMENT", "Inventaire bancaire Septembre 2026"])
+    ws.append(["B0028", "Rame de Papiers", 29, 84, 84, 85, 1, plan_b0028, "AJUSTEMENT",
+               "Inventaire bancaire Septembre 2026"])
+    if ancien_dans_plan:
+        ws.append(["C0002", "Cartouche 12 A", 21, 21, 0, 0, 0, -21, "AJUSTEMENT", "x"])
+    ws.append(["TOTAL", None, None, 104, 104, 105, 1, 54, None, None])
+    ws = wb.create_sheet("Ecarts_Banque")
+    ws.append(["Réf.", "Article", "Stock final théorique banque", "Stock physique", "Écart", "Statut", "Décision"])
+    ws.append(["B0028", "Rame de Papiers", 84, 85, 1, "Écart en plus", "À régulariser séparément"])
+    ws = wb.create_sheet("Controle")
+    ws.append(["Contrôle", "Résultat", "Attendu / interprétation"])
+    for libelle, valeur in [
+        ("Références bancaires", 3), ("Articles agence actuelle", 2), ("Ancienne agence", 1),
+        ("Erreurs formule banque", 0), ("Stock actuel agence banque", 104),
+        ("Stock physique agence actuelle", 105), ("Écart physique non régularisé", 1),
+        ("Ajustement total vers stock actuel banque", controle_variation), ("Nombre de mouvements à appliquer", 2),
+    ]:
+        ws.append([libelle, valeur, str(valeur)])
+    ws = wb.create_sheet("Meta")
+    ws.append(["Clé", "Valeur"])
+    for cle, valeur in [("Source autoritaire", "Inventaire_Stocks.xlsx"), ("Inventaire", inventaire),
+                        ("Date inventaire", "30/09/2026"), ("Comptage bancaire", "02/10/2026")]:
+        ws.append([cle, valeur])
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _reference_svc():
+    inv = _inv("EN_COURS", reference="INV-2026-09-004")
+    svc = _svc(inv=inv)
+    rows = []
+    for code, systeme in (("B0001", 21), ("B0028", 29), ("C0002", 21)):
+        ligne = _ligne("COMPTE", theo=Decimal(systeme))
+        rows.append((ligne, SimpleNamespace(id=ligne.article_id, code=code, stock_actuel=Decimal(systeme))))
+    result = MagicMock()
+    result.all.return_value = rows
+    svc.db.execute = AsyncMock(return_value=result)
+    return inv, InventaireReferenceService(svc)
+
+
+@pytest.mark.asyncio
+async def test_reference_banque_conforme():
+    inv, ref = _reference_svc()
+    analyse = await ref.analyser(inv.id, _reference_xlsx(), "ref.xlsx")
+    assert analyse["anomalies"] == [] and not analyse["bloquant"]
+    assert analyse["mouvements"] == {"B0001": -1, "B0028": 55}
+    c = analyse["calcul"]
+    assert (c["references"], c["agence_actuelle"], c["ancienne_agence"]) == (3, 2, 1)
+    assert (c["stock_systeme"], c["stock_final"], c["stock_physique"], c["ecart_restant"]) == (50, 104, 105, 1)
+    assert analyse["registre_ecarts"] == [{"code": "B0028", "ecart": 1}]
+    assert analyse["date_comptage"] == "02/10/2026"
+    ancien = next(lg for lg in analyse["lignes"] if lg["code"] == "C0002")
+    assert ancien["ancienne_agence"] and ancien["ajustement"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kwargs, extrait",
+    [
+        ({"plan_b0028": 56, "controle_variation": 55}, "B0028"),
+        ({"controle_variation": -854}, "variation"),
+        ({"ancien_dans_plan": True, "controle_variation": 33}, "ancienne agence"),
+        ({"inventaire": "INV-2026-08-001"}, "INV-2026-08-001"),
+    ],
+)
+async def test_reference_banque_incoherente_bloque(kwargs, extrait):
+    inv, ref = _reference_svc()
+    analyse = await ref.analyser(inv.id, _reference_xlsx(**kwargs), "ref.xlsx")
+    assert analyse["bloquant"]
+    assert any(extrait in a for a in analyse["anomalies"]), analyse["anomalies"]
 
 
 @pytest.mark.asyncio

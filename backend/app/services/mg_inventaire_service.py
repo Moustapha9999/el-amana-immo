@@ -52,6 +52,7 @@ PERM_AJUSTEMENT = "mg.stock.inventory.adjust"
 PERM_GESTION = "mg.stock.inventory.manage"
 
 MSG_VERROU = "Cet inventaire est clôturé. Les données ne peuvent plus être modifiées."
+MSG_DEJA_AJUSTE = "Les ajustements de cet inventaire ont déjà été appliqués."
 
 LIGNE_TRIS = {
     "code": MgArticle.code,
@@ -69,6 +70,37 @@ LIGNE_TRIS = {
 
 def fin_de_journee(d: date) -> datetime:
     return datetime.combine(d, time(23, 59, 59), tzinfo=timezone.utc)
+
+
+def theorique_reference(ligne: MgInventaireLigne) -> Decimal:
+    """Théorique servant à l'écart : celui de la référence externe pour une ligne rapprochée."""
+    if ligne.stock_cible is not None and ligne.stock_theorique_source is not None:
+        return Decimal(ligne.stock_theorique_source)
+    return Decimal(ligne.stock_theorique or 0)
+
+
+def stock_retenu(ligne: MgInventaireLigne) -> Decimal | None:
+    """Stock visé par l'ajustement : la cible si elle existe, sinon le physique compté."""
+    if ligne.statut_comptage != "COMPTE":
+        return None
+    if ligne.stock_cible is not None:
+        return Decimal(ligne.stock_cible)
+    return Decimal(ligne.stock_physique or 0)
+
+
+def ajustement_ligne(ligne: MgInventaireLigne) -> Decimal | None:
+    retenu = stock_retenu(ligne)
+    return None if retenu is None else retenu - Decimal(ligne.stock_theorique or 0)
+
+
+def ecart_a_regulariser(ligne: MgInventaireLigne) -> Decimal | None:
+    if ligne.statut_comptage != "COMPTE" or ligne.stock_cible is None or ligne.stock_physique is None:
+        return None
+    return Decimal(ligne.stock_physique) - Decimal(ligne.stock_cible)
+
+
+def ancienne_agence(ligne: MgInventaireLigne) -> bool:
+    return bool((ligne.donnees_source or {}).get("ancienne_agence"))
 
 
 def statut_ligne(statut_comptage: str, ecart: Decimal | None) -> str:
@@ -100,7 +132,21 @@ def periode_label(annee: int | None, mois: int | None) -> str | None:
 def _stats_columns():
     lg = MgInventaireLigne
     compte = lg.statut_comptage == "COMPTE"
+    cible = lg.stock_cible.isnot(None)
+    theo_ref = case(
+        (and_(cible, lg.stock_theorique_source.isnot(None)), lg.stock_theorique_source),
+        else_=lg.stock_theorique,
+    )
+    retenu = func.coalesce(lg.stock_cible, lg.stock_physique)
     return (
+        func.coalesce(func.sum(lg.stock_theorique).filter(compte), 0).label("total_systeme"),
+        func.coalesce(func.sum(retenu).filter(compte), 0).label("total_retenu"),
+        func.count(lg.id).filter(compte, retenu != lg.stock_theorique).label("ajustements_prevus"),
+        func.count(lg.id).filter(compte, cible, lg.stock_physique != lg.stock_cible).label("a_regulariser"),
+        func.coalesce(func.sum(lg.stock_physique - lg.stock_cible).filter(compte, cible), 0).label(
+            "ecart_a_regulariser"
+        ),
+        func.count(lg.id).filter(cible).label("lignes_rapprochees"),
         func.count(lg.id).label("total"),
         func.count(lg.id).filter(lg.statut_comptage != "EXCLU").label("a_compter"),
         func.count(lg.id).filter(compte).label("comptes"),
@@ -109,7 +155,7 @@ def _stats_columns():
         func.count(lg.id).filter(compte, lg.ecart == 0).label("sans_ecart"),
         func.count(lg.id).filter(compte, lg.ecart < 0).label("ecarts_negatifs"),
         func.count(lg.id).filter(compte, lg.ecart > 0).label("ecarts_positifs"),
-        func.coalesce(func.sum(lg.stock_theorique).filter(compte), 0).label("total_theorique"),
+        func.coalesce(func.sum(theo_ref).filter(compte), 0).label("total_theorique"),
         func.coalesce(func.sum(lg.stock_physique).filter(compte), 0).label("total_physique"),
     )
 
@@ -120,12 +166,23 @@ def stats_from_row(row) -> dict:
             "total": 0, "a_compter": 0, "comptes": 0, "non_comptes": 0, "exclus": 0,
             "sans_ecart": 0, "ecarts_negatifs": 0, "ecarts_positifs": 0,
             "total_theorique": 0, "total_physique": 0, "ecart_net": 0, "progression": 0.0,
+            "total_systeme": 0, "total_retenu": 0, "ajustement_net": 0, "ajustements_prevus": 0,
+            "a_regulariser": 0, "ecart_a_regulariser": 0, "rapprochement": False,
         }
     a_compter = int(row.a_compter or 0)
     comptes = int(row.comptes or 0)
     theo = Decimal(row.total_theorique or 0)
     phys = Decimal(row.total_physique or 0)
+    systeme = Decimal(row.total_systeme or 0)
+    retenu = Decimal(row.total_retenu or 0)
     return {
+        "total_systeme": systeme,
+        "total_retenu": retenu,
+        "ajustement_net": retenu - systeme,
+        "ajustements_prevus": int(row.ajustements_prevus or 0),
+        "a_regulariser": int(row.a_regulariser or 0),
+        "ecart_a_regulariser": Decimal(row.ecart_a_regulariser or 0),
+        "rapprochement": bool(row.lignes_rapprochees),
         "total": int(row.total or 0),
         "a_compter": a_compter,
         "comptes": comptes,
@@ -411,14 +468,22 @@ class MgInventaireService:
     def serialize_ligne(ligne: MgInventaireLigne, article: MgArticle | None, famille: MgArticleFamille | None,
                         compteur_nom: str | None = None) -> dict:
         ecart = ligne.ecart if ligne.statut_comptage == "COMPTE" else None
+        reste = ecart_a_regulariser(ligne)
         return {
             "id": ligne.id,
             "article_id": ligne.article_id,
             "stock_theorique": ligne.stock_theorique,
+            "theorique_reference": theorique_reference(ligne),
             "stock_physique": ligne.stock_physique,
+            "stock_cible": ligne.stock_cible,
+            "ajustement_prevu": ajustement_ligne(ligne),
+            "ecart_a_regulariser": reste,
+            "a_regulariser": bool(reste),
+            "ancienne_agence": ancienne_agence(ligne),
+            "donnees_source": ligne.donnees_source,
             "ecart": ecart,
             "ecart_absolu": abs(ecart) if ecart is not None else None,
-            "ecart_pourcentage": ecart_pourcentage(ligne.stock_theorique, ecart),
+            "ecart_pourcentage": ecart_pourcentage(theorique_reference(ligne), ecart),
             "nature_ecart": ligne.nature_ecart,
             "observation": ligne.observation,
             "sort_order": ligne.sort_order,
@@ -470,6 +535,8 @@ class MgInventaireService:
             "positif": and_(compte, lg.ecart > 0),
             "ecart": and_(compte, lg.ecart != 0),
             "exclu": lg.statut_comptage == "EXCLU",
+            "a_regulariser": and_(compte, lg.stock_cible.isnot(None), lg.stock_physique != lg.stock_cible),
+            "ajustement": and_(compte, func.coalesce(lg.stock_cible, lg.stock_physique) != lg.stock_theorique),
         }
         if filtre in filtres:
             stmt = stmt.where(filtres[filtre])
@@ -813,7 +880,7 @@ class MgInventaireService:
                 )
             physique = Decimal(fields["stock_physique"])
             ligne.stock_physique = physique
-            ligne.ecart = physique - Decimal(ligne.stock_theorique or 0)
+            ligne.ecart = physique - theorique_reference(ligne)
             ligne.nature_ecart = nature_ecart(ligne.ecart)
             ligne.statut_comptage = "COMPTE"
             ligne.compte_par = self.user.id if self.user else None
@@ -1027,9 +1094,9 @@ class MgInventaireService:
             details.update({"ecarts": s["ecarts_negatifs"] + s["ecarts_positifs"], "ecart_net": as_qty(s["ecart_net"])})
         elif action == "generer_ajustements":
             self.exiger(PERM_AJUSTEMENT)
-            if inv.ajustements_at is not None or inv.statut in {"AJUSTE", "ARCHIVE"}:
+            if inv.ajustements_at is not None or inv.statut in {"AJUSTE", "ARCHIVE"} or await self.nb_ajustements(inv.id):
                 raise AppError(
-                    "Les ajustements de cet inventaire ont déjà été générés.",
+                    MSG_DEJA_AJUSTE,
                     status.HTTP_409_CONFLICT,
                     code="INVENTAIRE_DEJA_AJUSTE",
                 )
@@ -1038,9 +1105,21 @@ class MgInventaireService:
             inv.statut = "AJUSTE"
             inv.ajustements_at = now
             inv.ajustements_by = self.user.id if self.user else None
+            if details.get("rapprochement"):
+                await self.db.flush()
+                await self._audit_rapprochement(inv, details, request=request)
         elif action == "archiver":
             self.exiger(PERM_VALIDATION, PERM_GESTION)
             exiger_statut("AJUSTE")
+            if (inv.import_meta or {}).get("rapprochement"):
+                echecs = [c for c in await self.controles(inv.id) if not c["ok"]]
+                if echecs:
+                    raise AppError(
+                        "Clôture impossible : contrôle(s) de rapprochement en échec — "
+                        + " ; ".join(f"{c['libelle']} (attendu {c['attendu']}, obtenu {c['obtenu']})" for c in echecs),
+                        status.HTTP_409_CONFLICT,
+                        code="RAPPROCHEMENT_CONTROLES",
+                    )
             inv.statut = "ARCHIVE"
             inv.date_fin = inv.date_fin or date.today()
             inv.cloture_at = now
@@ -1097,38 +1176,302 @@ class MgInventaireService:
             if periode is not None and periode.statut == "CLOTUREE":
                 periode = None
         psvc = MgStockPeriodeService(self.db)
+        rappro = (inv.import_meta or {}).get("rapprochement") or {}
+        articles = {
+            a.id: a
+            for a in (
+                await self.db.execute(
+                    select(MgArticle).where(MgArticle.id.in_([lg.article_id for lg in lignes])).with_for_update()
+                )
+            ).scalars().all()
+        }
+        plan = rappro.get("mouvements")
+        if plan is not None:
+            prevu = {
+                articles[lg.article_id].code: as_qty(ajustement_ligne(lg))
+                for lg in lignes
+                if lg.article_id in articles and ajustement_ligne(lg)
+            }
+            if prevu != {code: int(q) for code, q in plan.items()}:
+                ecarts_plan = sorted(set(prevu.items()) ^ {(c, int(q)) for c, q in plan.items()})
+                raise AppError(
+                    "Les ajustements calculés ne correspondent pas au plan de rapprochement chargé : "
+                    + ", ".join(f"{c} {q:+d}" for c, q in ecarts_plan[:20])
+                    + ". Aucun mouvement n'a été créé.",
+                    status.HTTP_409_CONFLICT,
+                    code="RAPPROCHEMENT_PLAN",
+                )
+        source = rappro.get("source_libelle")
+        stock_avant = sum((Decimal(a.stock_actuel or 0) for a in articles.values()), Decimal("0"))
         crees = 0
         total = Decimal("0")
         for ligne in lignes:
-            ecart = Decimal(ligne.stock_physique or 0) - Decimal(ligne.stock_theorique or 0)
-            ligne.ecart = ecart
-            ligne.nature_ecart = nature_ecart(ecart)
-            article = await self.db.scalar(
-                select(MgArticle).where(MgArticle.id == ligne.article_id).with_for_update()
-            )
+            ligne.ecart = Decimal(ligne.stock_physique or 0) - theorique_reference(ligne)
+            ligne.nature_ecart = nature_ecart(ligne.ecart)
+            article = articles.get(ligne.article_id)
             if article is None or not article.stockable:
                 continue
-            if ecart != 0:
+            quantite = ajustement_ligne(ligne) or Decimal("0")
+            if quantite != 0:
+                observation = (
+                    f"Stock système {as_qty(ligne.stock_theorique or 0)} · Physique {as_qty(ligne.stock_physique or 0)}"
+                )
+                if ligne.stock_cible is not None:
+                    observation += f" · Stock retenu {as_qty(ligne.stock_cible)}"
+                    reste = ecart_a_regulariser(ligne)
+                    if reste:
+                        observation += f" · Écart physique {as_qty(reste):+d} à régulariser (non intégré)"
                 await stock._apply_mouvement(
                     article=article,
                     type_mouvement="AJUSTEMENT",
-                    quantite=ecart,
+                    quantite=quantite,
                     agence_id=inv.agence_id or article.agence_id,
                     initiateur=self.user,
-                    motif=f"Ajustement inventaire {inv.reference}",
-                    observation=(
-                        f"Théorique {as_qty(ligne.stock_theorique or 0)} · Physique {as_qty(ligne.stock_physique or 0)}"
-                        f" · Écart {as_qty(ecart):+d}"
-                    ),
+                    motif=(f"{source} — {inv.reference}" if source else f"Ajustement inventaire {inv.reference}")[:255],
+                    observation=f"{observation} · Ajustement {as_qty(quantite):+d}",
                     source_type="inventaire",
                     source_id=inv.id,
                     date_mouvement=date_mvt,
                 )
                 crees += 1
-                total += ecart
+                total += quantite
             if periode is not None:
                 await psvc.apply_physique(periode, article, Decimal(article.stock_actuel or 0))
-        return {"ajustements": crees, "ecart_net": as_qty(total)}
+        details = {"ajustements": crees, "ecart_net": as_qty(total)}
+        if rappro:
+            archives = await self._archiver_anciens_articles(inv)
+            stock_apres = sum((Decimal(a.stock_actuel or 0) for a in articles.values()), Decimal("0"))
+            details.update(
+                {
+                    "rapprochement": True,
+                    "stock_avant": as_qty(stock_avant),
+                    "stock_apres": as_qty(stock_apres),
+                    "variation": as_qty(total),
+                    "articles_ancienne_agence_archives": archives,
+                }
+            )
+        return details
+
+    async def _archiver_anciens_articles(self, inv: MgInventaire) -> list[str]:
+        """Articles « ancienne agence » : sortis du stock actuel (archivés), sans mouvement de stock."""
+        rows = (
+            await self.db.execute(
+                select(MgInventaireLigne, MgArticle)
+                .join(MgArticle, MgArticle.id == MgInventaireLigne.article_id)
+                .where(MgInventaireLigne.inventaire_id == inv.id, MgInventaireLigne.statut_comptage == "EXCLU")
+            )
+        ).all()
+        codes: list[str] = []
+        for ligne, article in rows:
+            if ancienne_agence(ligne) and article.is_active:
+                article.is_active = False
+                codes.append(article.code)
+                await self._audit(
+                    "archivage_ancienne_agence", "mg_article", article.id,
+                    before={"is_active": True, "stock_actuel": as_qty(article.stock_actuel or 0)},
+                    after={"is_active": False, "inventaire": inv.reference,
+                           "motif": "Article d'ancienne agence : exclu du stock actuel, conservé pour l'historique"},
+                )
+        return codes
+
+    async def _audit_rapprochement(self, inv: MgInventaire, details: dict, *, request: Request | None) -> None:
+        rappro = dict((inv.import_meta or {}).get("rapprochement") or {})
+        controles = await self.controles(inv.id, audit_attendu=True)
+        echecs = [c["code"] for c in controles if not c["ok"]]
+        s = (await self.stats([inv.id]))[inv.id]
+        regul = [
+            {"code": e["code"], "designation": e.get("designation"), "ecart": e["ecart"]}
+            for e in await self.registre_ecarts(inv.id)
+        ]
+        await self._audit(
+            "rapprochement", "mg_inventaire", inv.id, request=request,
+            before={"stock": details["stock_avant"], "statut": "VALIDE"},
+            after={
+                "libelle": f"Rapprochement inventaire {(periode_label(inv.annee, inv.mois) or '').lower()}".strip(),
+                "inventaire_id": str(inv.id),
+                "reference": inv.reference,
+                "stock_avant": details["stock_avant"],
+                "ajustements": details["ajustements"],
+                "variation": details["variation"],
+                "stock_apres": details["stock_apres"],
+                "stock_physique": as_qty(s["total_physique"]),
+                "fichier_reference": rappro.get("source_officielle"),
+                "fichier_plan": rappro.get("fichier"),
+                "date_comptage": rappro.get("date_comptage"),
+                "ecarts_non_regularises": regul,
+                "articles_ancienne_agence_archives": details["articles_ancienne_agence_archives"],
+                "controle": "OK" if not echecs else "ECHEC",
+                "controles_en_echec": echecs,
+            },
+        )
+        rappro["controle"] = {"ok": not echecs, "echecs": echecs, "at": datetime.now(timezone.utc).isoformat()}
+        inv.import_meta = {**(inv.import_meta or {}), "rapprochement": rappro}
+
+    async def registre_ecarts(self, inventaire_id: uuid.UUID) -> list[dict]:
+        """Écarts physiques non intégrés au stock (physique − stock retenu) : à régulariser séparément."""
+        rows = (
+            await self.db.execute(
+                select(MgInventaireLigne, MgArticle)
+                .join(MgArticle, MgArticle.id == MgInventaireLigne.article_id)
+                .where(
+                    MgInventaireLigne.inventaire_id == inventaire_id,
+                    MgInventaireLigne.statut_comptage == "COMPTE",
+                    MgInventaireLigne.stock_cible.isnot(None),
+                    MgInventaireLigne.stock_physique != MgInventaireLigne.stock_cible,
+                )
+                .order_by(MgArticle.code)
+            )
+        ).all()
+        return [
+            {
+                "ligne_id": lg.id,
+                "code": art.code,
+                "designation": art.designation,
+                "theorique_reference": as_qty(theorique_reference(lg)),
+                "stock_retenu": as_qty(lg.stock_cible),
+                "stock_physique": as_qty(lg.stock_physique),
+                "ecart": as_qty(ecart_a_regulariser(lg)),
+                "statut": "A_REGULARISER",
+                "decision": (lg.donnees_source or {}).get("decision")
+                or "À régulariser séparément — non intégré au stock actuel",
+            }
+            for lg, art in rows
+        ]
+
+    async def controles(self, inventaire_id: uuid.UUID, *, audit_attendu: bool = False) -> list[dict]:
+        """Contrôles de rapprochement : un seul échec bloque la clôture (archivage)."""
+        inv = await self.get(inventaire_id)
+        rappro = (inv.import_meta or {}).get("rapprochement") or {}
+        attendu = rappro.get("attendu") or {}
+        s = (await self.stats([inv.id]))[inv.id]
+        ajuste = inv.statut in {"AJUSTE", "ARCHIVE"}
+        lignes = list(
+            (await self.db.execute(select(MgInventaireLigne).where(MgInventaireLigne.inventaire_id == inv.id)))
+            .scalars()
+            .all()
+        )
+        scope = [lg.article_id for lg in lignes if lg.statut_comptage == "COMPTE"]
+        exclus = [lg.article_id for lg in lignes if lg.statut_comptage == "EXCLU"]
+        erreurs_formule = 0
+        for lg in lignes:
+            d = lg.donnees_source or {}
+            if all(d.get(k) is not None for k in ("stock_initial", "entrees", "sorties", "stock_final_theorique")):
+                if Decimal(str(d["stock_initial"])) + Decimal(str(d["entrees"])) - Decimal(str(d["sorties"])) != Decimal(
+                    str(d["stock_final_theorique"])
+                ):
+                    erreurs_formule += 1
+        mv = MgStockMouvement
+        du_inv = and_(mv.source_type == "inventaire", mv.source_id == inv.id)
+        nb_aj, variation = (
+            await self.db.execute(
+                select(func.count(), func.coalesce(func.sum(mv.quantite), 0)).where(
+                    du_inv, mv.type_mouvement == "AJUSTEMENT"
+                )
+            )
+        ).one()
+        stock_final = Decimal(
+            await self.db.scalar(
+                select(func.coalesce(func.sum(MgArticle.stock_actuel), 0)).where(MgArticle.id.in_(scope))
+            )
+            or 0
+        ) if scope else Decimal("0")
+        stock_actif = Decimal(
+            await self.db.scalar(
+                select(func.coalesce(func.sum(MgArticle.stock_actuel), 0)).where(
+                    MgArticle.is_active.is_(True), MgArticle.deleted_at.is_(None), MgArticle.stockable.is_(True)
+                )
+            )
+            or 0
+        )
+        anciens_ajustes = int(
+            await self.db.scalar(select(func.count()).where(du_inv, mv.article_id.in_(exclus))) or 0
+        ) if exclus else 0
+        anciens_actifs = int(
+            await self.db.scalar(
+                select(func.count()).select_from(MgArticle).where(
+                    MgArticle.id.in_([lg.article_id for lg in lignes if ancienne_agence(lg)]),
+                    MgArticle.is_active.is_(True),
+                )
+            )
+            or 0
+        )
+        snapshot = inv.snapshot_at or inv.created_at
+        rejoues = int(
+            await self.db.scalar(
+                select(func.count()).where(
+                    mv.article_id.in_(scope + exclus),
+                    mv.created_at > snapshot,
+                    or_(mv.type_mouvement != "AJUSTEMENT", mv.source_type.is_(None), ~du_inv),
+                )
+            )
+            or 0
+        )
+        doublons = int(
+            await self.db.scalar(
+                select(func.count()).select_from(
+                    select(mv.article_id).where(du_inv).group_by(mv.article_id).having(func.count() > 1).subquery()
+                )
+            )
+            or 0
+        )
+        audit = int(
+            await self.db.scalar(
+                select(func.count()).select_from(AuditLog).where(
+                    AuditLog.entity == "mg_inventaire",
+                    AuditLog.entity_id == str(inv.id),
+                    AuditLog.action == "rapprochement",
+                )
+            )
+            or 0
+        )
+        registre = await self.registre_ecarts(inv.id)
+        registre_obtenu = sorted((e["code"], e["ecart"]) for e in registre)
+        registre_attendu = (
+            sorted((e["code"], int(e["ecart"])) for e in attendu["ecarts"]) if "ecarts" in attendu else registre_obtenu
+        )
+        nb_plan = len(rappro.get("mouvements") or {}) if rappro.get("mouvements") is not None else s["ajustements_prevus"]
+
+        def val(cle, defaut):
+            return attendu[cle] if cle in attendu else defaut
+
+        def ligne(code, libelle, attendu_, obtenu, *, applicable=True):
+            return {"code": code, "libelle": libelle, "attendu": attendu_, "obtenu": obtenu,
+                    "ok": bool(applicable) and attendu_ == obtenu, "en_attente": not applicable}
+
+        regul = sum((e["ecart"] for e in registre), 0)
+        out = [
+            ligne("references", "Nombre de références", val("references", s["total"]), s["total"]),
+            ligne("agence_actuelle", "Articles agence actuelle", val("agence_actuelle", s["a_compter"]), s["a_compter"]),
+            ligne("ancienne_agence", "Articles ancienne agence", val("ancienne_agence", s["exclus"]), s["exclus"]),
+            ligne("formule_banque", "Erreurs de formule de la référence", 0, erreurs_formule),
+            ligne("ajustements", "Ajustements appliqués", nb_plan, int(nb_aj), applicable=ajuste),
+            ligne("variation", "Variation totale", val("variation", as_qty(s["ajustement_net"])), as_qty(variation),
+                  applicable=ajuste),
+            ligne("stock_final", "Stock final BEA DIGITAL", val("stock_final", as_qty(s["total_retenu"])),
+                  as_qty(stock_final), applicable=ajuste),
+        ]
+        if inv.agence_id is None and inv.famille_id is None:
+            out.append(
+                ligne("stock_actif", "Stock actuel global (articles actifs)",
+                      val("stock_final", as_qty(s["total_retenu"])), as_qty(stock_actif), applicable=ajuste)
+            )
+        out += [
+            ligne("stock_physique", "Stock physique compté", val("stock_physique", as_qty(s["total_physique"])),
+                  as_qty(s["total_physique"])),
+            ligne("ecart_restant", "Écart physique restant", val("ecart_restant", regul), regul),
+            ligne("registre_ecarts", "Registre des écarts à régulariser",
+                  ", ".join(f"{c} {e:+d}" for c, e in registre_attendu) or "aucun",
+                  ", ".join(f"{c} {e:+d}" for c, e in registre_obtenu) or "aucun"),
+            ligne("anciens_non_ajustes", "Aucun article d'ancienne agence ajusté", 0, anciens_ajustes),
+            ligne("anciens_hors_stock", "Anciens articles exclus du stock actuel", 0, anciens_actifs, applicable=ajuste),
+            ligne("historique_non_rejoue", "Aucun mouvement historique rejoué", 0, rejoues),
+            ligne("doublons", "Aucun doublon d'ajustement", 0, doublons),
+            ligne("audit", "Audit du rapprochement enregistré", "oui", "oui" if audit else "non",
+                  applicable=ajuste and not audit_attendu),
+        ]
+        if audit_attendu:
+            out = [c for c in out if c["code"] != "audit"]
+        return out
 
     async def ajustements(self, inventaire_id: uuid.UUID) -> list[dict]:
         await self.get(inventaire_id)

@@ -115,7 +115,31 @@ def synthese_rows(inv: dict) -> list[tuple[str, Any]]:
         ("Validation forcée", "Oui" if inv.get("validation_forcee") else "Non"),
         ("Ajustements générés le", _d(inv.get("ajustements_at"), True)),
         ("Observations", inv.get("observation") or ""),
+    ] + _rapprochement_rows(inv)
+
+
+def _rapprochement_rows(inv: dict) -> list[tuple[str, Any]]:
+    s = inv["stats"]
+    if not s.get("rapprochement"):
+        return []
+    meta = (inv.get("import_meta") or {}).get("rapprochement") or {}
+    return [
+        ("Référence officielle", meta.get("source_officielle") or ""),
+        ("Plan de rapprochement", meta.get("fichier") or ""),
+        ("Comptage de référence le", meta.get("date_comptage") or ""),
+        ("Stock système avant rapprochement", _num(s["total_systeme"])),
+        ("Ajustements de stock", _num(s["ajustement_net"])),
+        ("Stock actuel retenu (référence)", _num(s["total_retenu"])),
+        ("Stock physique compté", _num(s["total_physique"])),
+        ("Écart physique restant à régulariser", _num(s["ecart_a_regulariser"])),
     ]
+
+
+def _statut(lg: dict) -> str:
+    if lg.get("ancienne_agence"):
+        return "Ancienne agence"
+    label = LIGNE_LABELS.get(lg["statut_ligne"], lg["statut_ligne"])
+    return f"{label} — à régulariser" if lg.get("a_regulariser") else label
 
 
 def detail_row(lg: dict) -> list[Any]:
@@ -124,11 +148,11 @@ def detail_row(lg: dict) -> list[Any]:
         lg["article_designation"],
         lg.get("famille_libelle") or "",
         lg.get("unite") or "",
-        _num(lg["stock_theorique"]),
+        _num(lg.get("theorique_reference", lg["stock_theorique"])),
         _num(lg["stock_physique"]),
         _num(lg["ecart"]),
         _pct(lg["ecart_pourcentage"]) if lg["ecart"] is not None else "",
-        LIGNE_LABELS.get(lg["statut_ligne"], lg["statut_ligne"]),
+        _statut(lg),
         lg.get("compte_par_nom") or "",
         _d(lg.get("compte_at"), True),
         lg.get("observation") or "",
@@ -140,11 +164,11 @@ def ecart_row(lg: dict) -> list[Any]:
         lg["article_code"],
         lg["article_designation"],
         lg.get("famille_libelle") or "",
-        _num(lg["stock_theorique"]),
+        _num(lg.get("theorique_reference", lg["stock_theorique"])),
         _num(lg["stock_physique"]),
         _num(lg["ecart"]),
         _pct(lg["ecart_pourcentage"]),
-        "Manquant" if lg["ecart"] < 0 else "Excédent",
+        ("Manquant" if lg["ecart"] < 0 else "Excédent") + (" — à régulariser" if lg.get("a_regulariser") else ""),
         lg.get("observation") or "",
     ]
 

@@ -339,6 +339,13 @@ class InventaireStats(BaseModel):
     total_physique: Qty = 0
     ecart_net: Qty = 0
     progression: float = 0.0
+    total_systeme: Qty = 0
+    total_retenu: Qty = 0
+    ajustement_net: Qty = 0
+    ajustements_prevus: int = 0
+    a_regulariser: int = 0
+    ecart_a_regulariser: Qty = 0
+    rapprochement: bool = False
 
 
 class InventaireLigneOut(BaseModel):
@@ -360,6 +367,13 @@ class InventaireLigneOut(BaseModel):
     compte_par_nom: str | None = None
     compte_at: datetime | None = None
     stock_theorique_source: Qty | None = None
+    theorique_reference: Qty | None = None
+    stock_cible: Qty | None = None
+    ajustement_prevu: Qty | None = None
+    ecart_a_regulariser: Qty | None = None
+    a_regulariser: bool = False
+    ancienne_agence: bool = False
+    donnees_source: dict | None = None
     ajout_manuel: bool = False
     updated_at: datetime | None = None
     article_code: str | None = None

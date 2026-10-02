@@ -407,7 +407,10 @@ class MgStockPeriodeService:
         obligatoire = await self._param_bool("inventaire_obligatoire")
         if obligatoire and not termines and not periode.reopen_at:
             anomalies.append("Inventaire mensuel obligatoire non réalisé")
-        stock_final = sum((stock_final_from_solde(s) for s in soldes), Decimal("0"))
+        actifs = set(
+            (await self.db.execute(select(MgArticle.id).where(MgArticle.is_active.is_(True)))).scalars().all()
+        )
+        stock_final = sum((stock_final_from_solde(s) for s in soldes if s.article_id in actifs), Decimal("0"))
         return {
             "periode": self.serialize_periode(periode),
             "articles": len(soldes),
@@ -676,7 +679,9 @@ class MgStockPeriodeService:
                     func.coalesce(func.sum(MgStockSolde.ajustements), 0),
                     func.coalesce(func.sum(MgStockSolde.stock_theorique), 0),
                     func.count(MgStockSolde.id),
-                ).where(MgStockSolde.periode_id == periode.id)
+                )
+                .join(MgArticle, MgArticle.id == MgStockSolde.article_id)
+                .where(MgStockSolde.periode_id == periode.id, MgArticle.is_active.is_(True))
             )
         ).one()
         return {

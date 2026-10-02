@@ -2,7 +2,9 @@ import { UserProfile } from '../../core/services/auth.service';
 
 export type InventaireStatut = 'BROUILLON' | 'EN_COURS' | 'A_CONTROLER' | 'VALIDE' | 'AJUSTE' | 'ARCHIVE' | 'ANNULE';
 export type LigneStatut = 'NON_COMPTE' | 'CONFORME' | 'ECART_NEGATIF' | 'ECART_POSITIF' | 'EXCLU';
-export type LigneFiltre = '' | 'non_compte' | 'compte' | 'conforme' | 'negatif' | 'positif' | 'ecart' | 'exclu';
+export type LigneFiltre =
+  | '' | 'non_compte' | 'compte' | 'conforme' | 'negatif' | 'positif' | 'ecart' | 'exclu'
+  | 'a_regulariser' | 'ajustement';
 
 export interface InventaireStats {
   total: number;
@@ -17,6 +19,52 @@ export interface InventaireStats {
   total_physique: number;
   ecart_net: number;
   progression: number;
+  total_systeme: number;
+  total_retenu: number;
+  ajustement_net: number;
+  ajustements_prevus: number;
+  a_regulariser: number;
+  ecart_a_regulariser: number;
+  rapprochement: boolean;
+}
+
+export interface RapprochementMeta {
+  fichier?: string;
+  source_officielle?: string | null;
+  source_libelle?: string;
+  date_inventaire?: string | null;
+  date_comptage?: string | null;
+  charge_at?: string;
+  attendu?: Record<string, unknown>;
+  controle?: { ok: boolean; echecs: string[]; at: string };
+}
+
+export interface Controle {
+  code: string;
+  libelle: string;
+  attendu: number | string;
+  obtenu: number | string;
+  ok: boolean;
+  en_attente: boolean;
+}
+
+export interface EcartARegulariser {
+  ligne_id: string;
+  code: string;
+  designation: string;
+  theorique_reference: number;
+  stock_retenu: number;
+  stock_physique: number;
+  ecart: number;
+  statut: 'A_REGULARISER';
+  decision: string;
+}
+
+export interface Rapprochement {
+  controles: Controle[];
+  ok: boolean;
+  en_attente: boolean;
+  registre_ecarts: EcartARegulariser[];
 }
 
 export interface Inventaire {
@@ -37,7 +85,12 @@ export interface Inventaire {
   statut: InventaireStatut;
   observation: string | null;
   source: 'MANUEL' | 'IMPORT_EXCEL';
-  import_meta: { fichier?: string; resume?: Record<string, number>; importe_at?: string } | null;
+  import_meta: {
+    fichier?: string;
+    resume?: Record<string, number>;
+    importe_at?: string;
+    rapprochement?: RapprochementMeta;
+  } | null;
   snapshot_at: string | null;
   created_at: string | null;
   created_by_nom: string | null;
@@ -70,6 +123,13 @@ export interface InventaireLigne {
   compte_par_nom: string | null;
   compte_at: string | null;
   stock_theorique_source: number | null;
+  theorique_reference: number | null;
+  stock_cible: number | null;
+  ajustement_prevu: number | null;
+  ecart_a_regulariser: number | null;
+  a_regulariser: boolean;
+  ancienne_agence: boolean;
+  donnees_source: Record<string, string | number | boolean | null> | null;
   ajout_manuel: boolean;
   updated_at: string | null;
   article_code: string | null;
@@ -179,6 +239,8 @@ export const ACTION_LABELS: Record<string, string> = {
   saisie_physique: 'Saisie du stock physique',
   ajout_ligne: 'Article ajouté',
   suppression_ligne: 'Article retiré',
+  chargement_reference: 'Référence de rapprochement chargée',
+  rapprochement: 'Rapprochement du stock',
 };
 
 export const MOIS = [

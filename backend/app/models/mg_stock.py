@@ -216,6 +216,10 @@ class MgInventaireLigne(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     compte_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Théorique du document source (fiche / Excel importé), conservé pour le rapprochement.
     stock_theorique_source: Mapped[Decimal | None] = mapped_column(Numeric(18, 3), nullable=True)
+    # Stock retenu après rapprochement sur une référence externe : l'ajustement vise ce stock,
+    # l'écart physique − cible reste à régulariser sans mouvement.
+    stock_cible: Mapped[Decimal | None] = mapped_column(Numeric(18, 3), nullable=True)
+    donnees_source: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     ajout_manuel: Mapped[bool] = mapped_column(Boolean, default=False)
 
     inventaire: Mapped[MgInventaire] = relationship(back_populates="lignes")

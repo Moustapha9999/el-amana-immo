@@ -1562,7 +1562,7 @@ class MgStockService:
             select(MgArticleFamille.libelle, func.coalesce(func.sum(MgStockMouvement.quantite), 0))
             .join(MgArticle, MgArticle.famille_id == MgArticleFamille.id)
             .join(MgStockMouvement, MgStockMouvement.article_id == MgArticle.id)
-            .where(MgStockMouvement.type_mouvement == "SORTIE")
+            .where(MgStockMouvement.type_mouvement == "SORTIE", MgArticle.is_active.is_(True))
             .group_by(MgArticleFamille.libelle)
             .order_by(MgArticleFamille.libelle)
         )
@@ -1575,7 +1575,8 @@ class MgStockService:
         stmt = (
             select(Agence.libelle, func.coalesce(func.sum(MgStockMouvement.quantite), 0))
             .join(MgStockMouvement, MgStockMouvement.agence_id == Agence.id)
-            .where(MgStockMouvement.type_mouvement == "SORTIE")
+            .join(MgArticle, MgArticle.id == MgStockMouvement.article_id)
+            .where(MgStockMouvement.type_mouvement == "SORTIE", MgArticle.is_active.is_(True))
             .group_by(Agence.libelle)
             .order_by(Agence.libelle)
         )
@@ -1589,7 +1590,8 @@ class MgStockService:
                 func.extract("month", MgStockMouvement.date_mouvement).label("mois"),
                 func.coalesce(func.sum(MgStockMouvement.quantite), 0),
             )
-            .where(MgStockMouvement.type_mouvement == "SORTIE")
+            .join(MgArticle, MgArticle.id == MgStockMouvement.article_id)
+            .where(MgStockMouvement.type_mouvement == "SORTIE", MgArticle.is_active.is_(True))
             .where(func.extract("year", MgStockMouvement.date_mouvement) == year)
             .group_by("mois")
             .order_by("mois")
