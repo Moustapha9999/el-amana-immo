@@ -15,6 +15,7 @@ import { Subscription } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { ApiService } from '../core/services/api.service';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
+import { Inventaire, InventaireSynthese } from './inventaire/inventaire.model';
 
 interface EvolutionPoint {
   label: string;
@@ -246,16 +247,22 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
               <em>À traiter</em>
             </span>
           </a>
-          <a class="bea-stock-dash__kpi" routerLink="/stock-fournitures/inventaires" style="--i:3">
+          <a
+            class="bea-stock-dash__kpi"
+            [routerLink]="inventaireRecent() ? ['/stock-fournitures/inventaires', inventaireRecent()!.id] : '/stock-fournitures/inventaires'"
+            style="--i:3"
+          >
             <span class="bea-stock-dash__kpi-icon" data-tone="teal">
               <mat-icon>fact_check</mat-icon>
             </span>
             <span class="bea-stock-dash__kpi-meta">
               <span>Inventaire</span>
               <strong>{{ d.inventaire_progression | taux }}</strong>
-              <em
-                >Progression · {{ d.inventaires_en_cours | quantite }} en cours</em
-              >
+              @if (inventaireRecent(); as inv) {
+                <em>{{ inv.reference }} · {{ inv.periode_libelle }} · {{ inv.stats.ecarts_negatifs + inv.stats.ecarts_positifs }} écart(s)</em>
+              } @else {
+                <em>Progression · {{ d.inventaires_en_cours | quantite }} en cours</em>
+              }
             </span>
           </a>
         </div>
@@ -995,6 +1002,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   readonly data = signal<Dash | null>(null);
   readonly agences = signal<Agence[]>([]);
   readonly familles = signal<Famille[]>([]);
+  readonly inventaireRecent = signal<Inventaire | null>(null);
   readonly loading = signal(true);
   readonly erreur = feedbackSignal('error', '');
 
@@ -1019,6 +1027,10 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     this.api.get<Famille[]>('/mg/stock/familles').subscribe({
       next: (rows) => this.familles.set(rows),
       error: () => this.familles.set([]),
+    });
+    this.api.get<InventaireSynthese>('/mg/stock/inventaires/synthese').subscribe({
+      next: (s) => this.inventaireRecent.set(s.en_cours ?? s.dernier),
+      error: () => this.inventaireRecent.set(null),
     });
 
     this.sub = this.filters.valueChanges

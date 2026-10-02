@@ -6,7 +6,7 @@ import csv
 import io
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, require_module_access, require_permission
@@ -29,11 +29,19 @@ from app.schemas.mg_stock import (
     FamilleOut,
     FamilleUpdate,
     InventaireCreate,
+    InventaireHistoriqueOut,
+    InventaireImportOptions,
+    InventaireLigneAjout,
+    InventaireLigneDetailOut,
     InventaireLigneIn,
-    InventaireOut,
     InventaireLigneOut,
+    InventaireLigneSaisie,
+    InventaireLigneSaveOut,
+    InventaireOut,
+    InventaireSynthese,
     InventaireTransition,
     InventaireUpdate,
+    InventaireValidationPreview,
     MouvementCreate,
     MouvementOut,
     MouvementUpdate,
@@ -47,8 +55,11 @@ from app.schemas.mg_stock import (
     ParametreUpdate,
     ReceptionBcIn,
 )
+from app.services.mg_inventaire_import import InventaireImportService
+from app.services.mg_inventaire_service import MgInventaireService
 from app.services.mg_stock_events import audit_stock, notify_stock_roles, notify_stock_user
 from app.services.mg_stock_service import MgStockService
+from app.services.permission_service import load_user_permission_codes
 from app.services.mg_pdf_service import pdf_demande_fourniture
 
 router = APIRouter(prefix="/mg/stock", tags=["mg-stock"])
@@ -83,24 +94,6 @@ def _article_fiche_out(svc: MgStockService, payload: dict) -> ArticleFicheOut:
         total_ajustements=payload.get("total_ajustements") or 0,
         total_inventaires=int(payload.get("total_inventaires") or 0),
     )
-
-
-def _inventaire_out(inv) -> InventaireOut:
-    lignes = []
-    for row in inv.lignes:
-        item = InventaireLigneOut.model_validate(row)
-        if row.article is not None:
-            item.article_code = row.article.code
-            item.article_designation = row.article.designation
-            if getattr(row.article, "famille", None) is not None:
-                item.famille_libelle = row.article.famille.libelle
-        lignes.append(item)
-    data = InventaireOut.model_validate(inv)
-    data.lignes = lignes
-    data.nb_conforme = sum(1 for lg in lignes if lg.nature_ecart == "CONFORME")
-    data.nb_surplus = sum(1 for lg in lignes if lg.nature_ecart == "SURPLUS")
-    data.nb_manquant = sum(1 for lg in lignes if lg.nature_ecart == "MANQUANT")
-    return data
 
 
 @router.get("/agences", dependencies=_module)
@@ -879,67 +872,132 @@ async def delete_parametre(
     await MgStockService(db).delete_parametre(cle)
 
 
-@router.get("/inventaires", response_model=list[InventaireOut], dependencies=_module)
+async def _inventaires(db: AsyncSession, user: User) -> MgInventaireService:
+    return MgInventaireService(db, user, await load_user_permission_codes(db, user))
+
+
+async def _inventaire_out(svc: MgInventaireService, inv) -> InventaireOut:
+    return InventaireOut.model_validate(await svc.serialize(inv))
+
+
+def _fichier(content: bytes, nom: str, fmt: str) -> Response:
+    media = "application/pdf" if fmt == "pdf" else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return Response(content=content, media_type=media, headers={"Content-Disposition": f'attachment; filename="{nom}"'})
+
+
+@router.get("/inventaires", response_model=PaginatedResponse[InventaireOut], dependencies=_module)
 async def list_inventaires(
+    q: str | None = None,
+    annee: int | None = Query(None, ge=2000, le=2100),
+    mois: int | None = Query(None, ge=1, le=12),
     statut: str | None = None,
+    agence_id: UUID | None = None,
+    responsable: str | None = None,
+    ecarts: str | None = Query(None, pattern="^(avec|sans)$"),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("mg.stock.view")),
+    user: User = Depends(require_permission("mg.stock.view")),
 ):
-    rows = await MgStockService(db).list_inventaires(statut=statut)
-    return [_inventaire_out(r) for r in rows]
+    svc = await _inventaires(db, user)
+    return await svc.lister(
+        q=q, annee=annee, mois=mois, statut=statut, agence_id=agence_id,
+        responsable=responsable, ecarts=ecarts, page=page, size=size,
+    )
+
+
+@router.get("/inventaires/synthese", response_model=InventaireSynthese, dependencies=_module)
+async def synthese_inventaires(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.view")),
+):
+    return await (await _inventaires(db, user)).synthese()
 
 
 @router.get("/inventaires/export", dependencies=_module)
 async def export_inventaires(
-    statut: str | None = None,
     q: str | None = None,
+    annee: int | None = Query(None, ge=2000, le=2100),
+    mois: int | None = Query(None, ge=1, le=12),
+    statut: str | None = None,
+    agence_id: UUID | None = None,
+    responsable: str | None = None,
+    ecarts: str | None = Query(None, pattern="^(avec|sans)$"),
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("mg.stock.export")),
+    user: User = Depends(require_permission("mg.stock.export")),
 ):
-    rows = await MgStockService(db).list_inventaires(statut=statut)
-    rows = _filtre_texte(rows, q, lambda i: (i.reference, i.libelle, i.statut))
-    headers = ["Référence", "Libellé", "Date début", "Date fin", "Statut", "Lignes"]
-    data_rows = [
-        [
-            inv.reference,
-            inv.libelle,
-            inv.date_debut.isoformat() if inv.date_debut else "",
-            inv.date_fin.isoformat() if inv.date_fin else "",
-            inv.statut,
-            len(inv.lignes or []),
-        ]
-        for inv in rows
-    ]
+    from app.services.mg_inventaire_export import STATUT_LABELS
     from app.services.reporting_export import build_styled_pdf, build_styled_workbook
 
-    title = "Inventaires — Stock & Fournitures"
-    subtitle = f"{len(data_rows)} inventaire(s)"
+    svc = await _inventaires(db, user)
+    page = await svc.lister(
+        q=q, annee=annee, mois=mois, statut=statut, agence_id=agence_id,
+        responsable=responsable, ecarts=ecarts, page=1, size=10000,
+    )
+    headers = ["Référence", "Période", "Date", "Agence", "Responsable", "Statut",
+               "Articles", "Comptés", "Progression", "Écarts −", "Écarts +", "Écart net"]
+    rows = [
+        [
+            i["reference"],
+            i["periode_libelle"] or "",
+            i["date_debut"].strftime("%d/%m/%Y") if i["date_debut"] else "",
+            i["agence_libelle"] or "Toutes agences",
+            i["responsable_nom"] or "",
+            STATUT_LABELS.get(i["statut"], i["statut"]),
+            i["stats"]["a_compter"],
+            i["stats"]["comptes"],
+            f"{i['stats']['progression']:.1f} %",
+            i["stats"]["ecarts_negatifs"],
+            i["stats"]["ecarts_positifs"],
+            as_qty(i["stats"]["ecart_net"]),
+        ]
+        for i in page["items"]
+    ]
+    title = "Inventaires mensuels — Stock & Fournitures"
+    subtitle = f"{len(rows)} inventaire(s)"
     if format == "xlsx":
         content = build_styled_workbook(
-            sheet_title="Inventaires",
-            report_title=title,
-            headers=headers,
-            rows=data_rows,
-            subtitle=subtitle,
+            sheet_title="Inventaires", report_title=title, headers=headers, rows=rows, subtitle=subtitle
         )
-        return Response(
-            content=content,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": 'attachment; filename="inventaires-stock.xlsx"'},
-        )
-    content = build_styled_pdf(
-        report_title=title,
-        headers=headers,
-        rows=data_rows,
-        subtitle=subtitle,
-        landscape_mode=True,
+    else:
+        content = build_styled_pdf(report_title=title, headers=headers, rows=rows, subtitle=subtitle)
+    return _fichier(content, f"inventaires-stock.{format}", format)
+
+
+def _import_options(options: str) -> InventaireImportOptions:
+    try:
+        return InventaireImportOptions.model_validate_json(options or "{}")
+    except ValueError as exc:
+        raise HTTPException(422, detail=f"Options d'import invalides : {exc}") from exc
+
+
+@router.post("/inventaires/import/analyse", dependencies=_module)
+async def analyser_import_inventaire(
+    file: UploadFile = File(...),
+    options: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.inventory")),
+):
+    svc = await _inventaires(db, user)
+    return await InventaireImportService(svc).analyser(
+        await file.read(), file.filename or "inventaire.xlsx", _import_options(options)
     )
-    return Response(
-        content=content,
-        media_type="application/pdf",
-        headers={"Content-Disposition": 'attachment; filename="inventaires-stock.pdf"'},
+
+
+@router.post("/inventaires/import", dependencies=_module)
+async def importer_inventaire(
+    request: Request,
+    file: UploadFile = File(...),
+    options: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.inventory")),
+):
+    svc = await _inventaires(db, user)
+    inv, analyse = await InventaireImportService(svc).importer(
+        await file.read(), file.filename or "inventaire.xlsx", _import_options(options), request=request
     )
+    return {"inventaire": await _inventaire_out(svc, inv), "resume": analyse["resume"]}
 
 
 @router.post("/inventaires", response_model=InventaireOut, dependencies=_module)
@@ -949,21 +1007,18 @@ async def create_inventaire(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.stock.inventory")),
 ):
-    inv = await MgStockService(db).create_inventaire(body, user)
-    await audit_stock(
-        db, user, "create", "mg_inventaire", inv.id, request=request,
-        after={"reference": inv.reference, "statut": inv.statut},
-    )
-    return _inventaire_out(inv)
+    svc = await _inventaires(db, user)
+    return await _inventaire_out(svc, await svc.creer(body, request=request))
 
 
 @router.get("/inventaires/{inventaire_id}", response_model=InventaireOut, dependencies=_module)
 async def get_inventaire(
     inventaire_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("mg.stock.view")),
+    user: User = Depends(require_permission("mg.stock.view")),
 ):
-    return _inventaire_out(await MgStockService(db).get_inventaire(inventaire_id))
+    svc = await _inventaires(db, user)
+    return await _inventaire_out(svc, await svc.get(inventaire_id))
 
 
 @router.patch("/inventaires/{inventaire_id}", response_model=InventaireOut, dependencies=_module)
@@ -974,31 +1029,90 @@ async def update_inventaire(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.stock.inventory")),
 ):
-    inv = await MgStockService(db).update_inventaire(inventaire_id, body)
-    await audit_stock(
-        db, user, "update", "mg_inventaire", inv.id, request=request,
-        after={"reference": inv.reference, "libelle": inv.libelle},
-    )
-    return _inventaire_out(inv)
+    svc = await _inventaires(db, user)
+    return await _inventaire_out(svc, await svc.modifier(inventaire_id, body, request=request))
 
 
 @router.delete("/inventaires/{inventaire_id}", status_code=204, dependencies=_module)
 async def delete_inventaire(
     inventaire_id: UUID,
     request: Request,
-    force: bool = False,
-    motif: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.view")),
+):
+    await (await _inventaires(db, user)).supprimer(inventaire_id, request=request)
+    return Response(status_code=204)
+
+
+@router.get("/inventaires/{inventaire_id}/lignes", response_model=PaginatedResponse[InventaireLigneOut],
+            dependencies=_module)
+async def list_lignes_inventaire(
+    inventaire_id: UUID,
+    q: str | None = None,
+    filtre: str | None = Query(None, pattern="^(non_compte|compte|conforme|negatif|positif|ecart|exclu)$"),
+    famille_id: UUID | None = None,
+    tri: str | None = None,
+    sens: str = Query("asc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.view")),
+):
+    svc = await _inventaires(db, user)
+    await svc.get(inventaire_id)
+    return await svc.lignes(
+        inventaire_id, q=q, filtre=filtre, famille_id=famille_id, tri=tri, sens=sens, page=page, size=size
+    )
+
+
+@router.post("/inventaires/{inventaire_id}/lignes", response_model=InventaireLigneOut, dependencies=_module)
+async def ajouter_ligne_inventaire(
+    inventaire_id: UUID,
+    body: InventaireLigneAjout,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.stock.inventory")),
 ):
-    if force:
-        motif = await _exiger_suppression_forcee(db, user, motif)
-    inv, annules = await MgStockService(db).delete_inventaire(inventaire_id, force=force)
-    await audit_stock(
-        db, user, "force_delete" if force else "delete", "mg_inventaire", inv.id, request=request,
-        before={"reference": inv.reference, "statut": inv.statut, "mouvements_annules": annules},
-        after={"motif": motif} if force else None,
-    )
+    return await (await _inventaires(db, user)).ajouter_ligne(inventaire_id, body, request=request)
+
+
+@router.get("/inventaires/{inventaire_id}/lignes/{ligne_id}", response_model=InventaireLigneDetailOut,
+            dependencies=_module)
+async def get_ligne_inventaire(
+    inventaire_id: UUID,
+    ligne_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.view")),
+):
+    svc = await _inventaires(db, user)
+    return {
+        "ligne": await svc.ligne(inventaire_id, ligne_id),
+        "historique": await svc.historique(inventaire_id=inventaire_id, ligne_id=ligne_id),
+    }
+
+
+@router.patch("/inventaires/{inventaire_id}/lignes/{ligne_id}", response_model=InventaireLigneSaveOut,
+              dependencies=_module)
+async def saisir_ligne_inventaire(
+    inventaire_id: UUID,
+    ligne_id: UUID,
+    body: InventaireLigneSaisie,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.view")),
+):
+    return await (await _inventaires(db, user)).saisir_ligne(inventaire_id, ligne_id, body, request=request)
+
+
+@router.delete("/inventaires/{inventaire_id}/lignes/{ligne_id}", status_code=204, dependencies=_module)
+async def supprimer_ligne_inventaire(
+    inventaire_id: UUID,
+    ligne_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.inventory")),
+):
+    await (await _inventaires(db, user)).supprimer_ligne(inventaire_id, ligne_id, request=request)
     return Response(status_code=204)
 
 
@@ -1006,26 +1120,34 @@ async def delete_inventaire(
 async def saisir_inventaire(
     inventaire_id: UUID,
     body: list[InventaireLigneIn],
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("mg.stock.inventory")),
-):
-    inv = await MgStockService(db).saisir_inventaire(inventaire_id, body)
-    return _inventaire_out(inv)
-
-
-@router.post("/inventaires/{inventaire_id}/cloturer", response_model=InventaireOut, dependencies=_module)
-async def cloturer_inventaire(
-    inventaire_id: UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_permission("mg.stock.inventory")),
+    user: User = Depends(require_permission("mg.stock.view")),
 ):
-    inv = await MgStockService(db).cloturer_inventaire(inventaire_id, user)
-    await audit_stock(
-        db, user, "cloture", "mg_inventaire", inv.id, request=request,
-        after={"reference": inv.reference, "statut": inv.statut},
-    )
-    return _inventaire_out(inv)
+    svc = await _inventaires(db, user)
+    return await _inventaire_out(svc, await svc.saisir_lot(inventaire_id, body, request=request))
+
+
+@router.get("/inventaires/{inventaire_id}/historique", response_model=list[InventaireHistoriqueOut],
+            dependencies=_module)
+async def historique_inventaire(
+    inventaire_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.view")),
+):
+    svc = await _inventaires(db, user)
+    await svc.get(inventaire_id)
+    return await svc.historique(inventaire_id=inventaire_id)
+
+
+@router.get("/inventaires/{inventaire_id}/validation", response_model=InventaireValidationPreview,
+            dependencies=_module)
+async def apercu_validation_inventaire(
+    inventaire_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.view")),
+):
+    return await (await _inventaires(db, user)).apercu_validation(inventaire_id)
 
 
 @router.post("/inventaires/{inventaire_id}/transition", response_model=InventaireOut, dependencies=_module)
@@ -1034,29 +1156,37 @@ async def transition_inventaire(
     body: InventaireTransition,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission("mg.stock.view")),
 ):
-    from app.api.deps import load_user_permission_codes, user_has_permission_codes
+    svc = await _inventaires(db, user)
+    inv = await svc.transition(inventaire_id, body.action, motif=body.motif, forcer=body.forcer, request=request)
+    return await _inventaire_out(svc, inv)
 
-    have = await load_user_permission_codes(db, user)
-    action = body.action.strip().lower()
-    if action in {"valider", "appliquer", "cloturer", "rejeter"}:
-        needed = "mg.stock.inventory.validate"
-        if not (
-            user_has_permission_codes(have, needed)
-            or user_has_permission_codes(have, "mg.stock.inventory")
-        ):
-            raise HTTPException(403, detail=f"Permission {needed} ou mg.stock.inventory requise")
-    elif not user_has_permission_codes(have, "mg.stock.inventory"):
-        raise HTTPException(403, detail="Permission mg.stock.inventory requise")
-    inv = await MgStockService(db).transition_inventaire(
-        inventaire_id, action, user, body.motif
-    )
-    await audit_stock(
-        db, user, action, "mg_inventaire", inv.id, request=request,
-        after={"reference": inv.reference, "statut": inv.statut},
-    )
-    return _inventaire_out(inv)
+
+@router.get("/inventaires/{inventaire_id}/ajustements", dependencies=_module)
+async def ajustements_inventaire(
+    inventaire_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.view")),
+):
+    return await (await _inventaires(db, user)).ajustements(inventaire_id)
+
+
+@router.get("/inventaires/{inventaire_id}/export", dependencies=_module)
+async def export_inventaire(
+    inventaire_id: UUID,
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.export")),
+):
+    from app.services.mg_inventaire_export import inventaire_to_excel, inventaire_to_pdf
+
+    svc = await _inventaires(db, user)
+    inv = await svc.get(inventaire_id)
+    data = await svc.serialize(inv)
+    lignes = await svc.toutes_lignes(inventaire_id)
+    content = inventaire_to_excel(data, lignes) if format == "xlsx" else inventaire_to_pdf(data, lignes)
+    return _fichier(content, f"inventaire-{inv.reference}.{format}", format)
 
 
 @router.get("/rapports/consommation", dependencies=_module)

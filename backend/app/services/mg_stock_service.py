@@ -26,7 +26,7 @@ from app.models.mg_stock import (
 )
 from app.core.exceptions import AppError
 from app.schemas.nombres import as_qty
-from app.services.mg_stock_periodes import MgStockPeriodeService, nature_ecart
+from app.services.mg_stock_periodes import MgStockPeriodeService
 from app.schemas.mg_stock import (
     ArticleCreate,
     ArticleUpdate,
@@ -35,9 +35,6 @@ from app.schemas.mg_stock import (
     DemandeUpdate,
     FamilleCreate,
     FamilleUpdate,
-    InventaireCreate,
-    InventaireLigneIn,
-    InventaireUpdate,
     MouvementCreate,
     MouvementUpdate,
     ParametreCreate,
@@ -54,7 +51,6 @@ WORKFLOW_SOURCES = {
     "achat_reception": "une réception de bon de commande",
 }
 MOUVEMENTS_EDITABLES = frozenset({"ENTREE", "SORTIE", "AJUSTEMENT"})
-INVENTAIRE_VERROUILLE = frozenset({"VALIDE", "AJUSTEMENTS_APPLIQUES", "CLOTURE"})
 DEMANDE_STATUTS = frozenset(
     {
         "BROUILLON",
@@ -979,28 +975,26 @@ class MgStockService:
         demandes_validees = await _count_demandes(["SERVIE", "CLOTUREE"])
         demandes_rejetees = await _count_demandes(["REFUSEE", "ANNULEE"])
 
-        inv_stmt = (
-            select(MgInventaire)
-            .options(selectinload(MgInventaire.lignes))
-            .where(
-                MgInventaire.deleted_at.is_(None),
-                MgInventaire.statut.in_(["OUVERT", "EN_COURS"]),
-            )
-        )
+        inv_filters = [
+            MgInventaire.deleted_at.is_(None),
+            MgInventaire.statut.in_(["BROUILLON", "EN_COURS", "A_CONTROLER"]),
+        ]
         if agence_id:
-            inv_stmt = inv_stmt.where(MgInventaire.agence_id == agence_id)
-        inventaires = list((await self.db.execute(inv_stmt)).scalars().unique().all())
-        inventaires_en_cours = len(inventaires)
-        total_lignes = sum(len(inv.lignes or []) for inv in inventaires)
-        saisies = sum(
-            1
-            for inv in inventaires
-            for ligne in (inv.lignes or [])
-            if ligne.stock_physique is not None
+            inv_filters.append(MgInventaire.agence_id == agence_id)
+        inventaires_en_cours = int(
+            await self.db.scalar(select(func.count()).select_from(MgInventaire).where(*inv_filters)) or 0
         )
-        inventaire_progression = (
-            round(100.0 * saisies / total_lignes, 1) if total_lignes else 0.0
-        )
+        a_compter, comptes = (
+            await self.db.execute(
+                select(
+                    func.count(MgInventaireLigne.id).filter(MgInventaireLigne.statut_comptage != "EXCLU"),
+                    func.count(MgInventaireLigne.id).filter(MgInventaireLigne.statut_comptage == "COMPTE"),
+                )
+                .join(MgInventaire, MgInventaire.id == MgInventaireLigne.inventaire_id)
+                .where(*inv_filters)
+            )
+        ).one()
+        inventaire_progression = round(100.0 * comptes / a_compter, 1) if a_compter else 0.0
 
         return {
             "articles_total": len(articles),
@@ -1130,223 +1124,6 @@ class MgStockService:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Paramètre introuvable")
         await self.db.delete(row)
         await self.db.commit()
-
-    async def list_inventaires(self, *, statut: str | None = None) -> list[MgInventaire]:
-        stmt = (
-            select(MgInventaire)
-            .options(
-                selectinload(MgInventaire.lignes)
-                .selectinload(MgInventaireLigne.article)
-                .selectinload(MgArticle.famille)
-            )
-            .where(MgInventaire.deleted_at.is_(None))
-            .order_by(MgInventaire.date_debut.desc())
-        )
-        if statut:
-            stmt = stmt.where(MgInventaire.statut == statut.upper())
-        return list((await self.db.execute(stmt)).scalars().unique().all())
-
-    async def get_inventaire(self, inventaire_id: uuid.UUID) -> MgInventaire:
-        stmt = (
-            select(MgInventaire)
-            .options(
-                selectinload(MgInventaire.lignes)
-                .selectinload(MgInventaireLigne.article)
-                .selectinload(MgArticle.famille)
-            )
-            .where(MgInventaire.id == inventaire_id)
-        )
-        inv = (await self.db.execute(stmt)).scalar_one_or_none()
-        if inv is None or inv.deleted_at is not None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Inventaire introuvable")
-        return inv
-
-    async def create_inventaire(self, data: InventaireCreate, user: User) -> MgInventaire:
-        psvc = MgStockPeriodeService(self.db)
-        if data.periode_id:
-            periode = await psvc.get_periode(data.periode_id)
-        else:
-            periode = await psvc.ensure_open_periode(user)
-        if periode.statut == "CLOTUREE":
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail=f"Période {periode.libelle} clôturée — inventaire interdit.",
-            )
-        ref = await self._next_inventaire_ref(periode.annee, periode.mois)
-        libelle = data.libelle.strip() or f"Inventaire mensuel {periode.libelle}"
-        inv = MgInventaire(
-            reference=ref,
-            libelle=libelle,
-            date_debut=data.date_debut or date.today(),
-            agence_id=data.agence_id,
-            statut="BROUILLON",
-            observation=data.observation,
-            created_by=user.id,
-            periode_id=periode.id,
-        )
-        self.db.add(inv)
-        await self.db.flush()
-
-        articles = await self._articles_inventaire(
-            agence_id=data.agence_id, famille_id=data.famille_id
-        )
-        if not articles:
-            raise AppError(
-                "Aucun article stockable actif pour ce périmètre (agence / famille) : "
-                "la campagne n’aurait aucune ligne à compter. Choisissez « Toutes agences » ou une autre agence.",
-                code="INVENTAIRE_VIDE",
-            )
-        for i, article in enumerate(articles):
-            theo = Decimal(article.stock_actuel or 0)
-            self.db.add(
-                MgInventaireLigne(
-                    inventaire_id=inv.id,
-                    article_id=article.id,
-                    stock_theorique=theo,
-                    stock_physique=None,
-                    ecart=None,
-                    nature_ecart=None,
-                    sort_order=i,
-                )
-            )
-        await self.db.commit()
-        return await self.get_inventaire(inv.id)
-
-    async def saisir_inventaire(
-        self, inventaire_id: uuid.UUID, lignes: list[InventaireLigneIn]
-    ) -> MgInventaire:
-        inv = await self.get_inventaire(inventaire_id)
-        if inv.statut not in {
-            "BROUILLON",
-            "OUVERT",
-            "EN_COMPTAGE",
-            "EN_COURS",
-            "COMPTAGE_TERMINE",
-            "EN_CONTROLE",
-        }:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Inventaire non modifiable")
-        by_id = {row.id: row for row in inv.lignes}
-        for payload in lignes:
-            row = by_id.get(payload.id)
-            if row is None:
-                continue
-            row.stock_physique = Decimal(payload.stock_physique)
-            row.ecart = row.stock_physique - Decimal(row.stock_theorique or 0)
-            row.nature_ecart = nature_ecart(row.ecart)
-            if payload.observation is not None:
-                row.observation = payload.observation
-        inv.statut = "EN_COMPTAGE"
-        await self.db.commit()
-        return await self.get_inventaire(inventaire_id)
-
-    async def update_inventaire(self, inventaire_id: uuid.UUID, data: InventaireUpdate) -> MgInventaire:
-        inv = await self.get_inventaire(inventaire_id)
-        fields = data.model_dump(exclude_unset=True)
-        if inv.statut in INVENTAIRE_VERROUILLE and fields.get("date_debut"):
-            raise AppError(
-                "Inventaire validé ou clôturé : seuls le libellé et l’observation restent modifiables.",
-                code="INVENTAIRE_VERROUILLE",
-            )
-        if fields.get("libelle"):
-            inv.libelle = fields["libelle"].strip()
-        if fields.get("date_debut"):
-            inv.date_debut = fields["date_debut"]
-        if "observation" in fields:
-            inv.observation = (fields["observation"] or "").strip() or None
-        await self.db.commit()
-        return await self.get_inventaire(inventaire_id)
-
-    async def delete_inventaire(self, inventaire_id: uuid.UUID, *, force: bool = False) -> tuple[MgInventaire, list[dict]]:
-        inv = await self.get_inventaire(inventaire_id)
-        if force:
-            annules = await self.supprimer_mouvements_source("inventaire", inv.id)
-            inv.deleted_at = datetime.now(timezone.utc)
-            await self.db.commit()
-            return inv, annules
-        nb_ajustements = await self.db.scalar(
-            select(func.count())
-            .select_from(MgStockMouvement)
-            .where(MgStockMouvement.source_type == "inventaire", MgStockMouvement.source_id == inv.id)
-        )
-        if nb_ajustements:
-            raise AppError(
-                "Les ajustements de cet inventaire ont déjà été appliqués au stock : suppression impossible.",
-                code="INVENTAIRE_VERROUILLE",
-            )
-        inv.deleted_at = datetime.now(timezone.utc)
-        await self.db.commit()
-        return inv, []
-
-    async def cloturer_inventaire(self, inventaire_id: uuid.UUID, user: User) -> MgInventaire:
-        """Chemin compact (UI existante) : saisie complète → ajustements → clôture."""
-        return await self.transition_inventaire(inventaire_id, "cloturer", user)
-
-    async def transition_inventaire(
-        self, inventaire_id: uuid.UUID, action: str, user: User, motif: str | None = None
-    ) -> MgInventaire:
-        inv = await self.get_inventaire(inventaire_id)
-        action = action.strip().lower()
-        now = datetime.now(timezone.utc)
-
-        if inv.statut in {"CLOTURE", "REJETE", "ANNULE"} and action not in {"cloturer"}:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Inventaire non modifiable")
-
-        if action == "commencer":
-            if inv.statut not in {"BROUILLON", "OUVERT"}:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Statut incompatible")
-            inv.statut = "EN_COMPTAGE"
-        elif action == "terminer":
-            if inv.statut not in {"EN_COMPTAGE", "EN_COURS", "OUVERT"}:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Statut incompatible")
-            self._require_lignes_comptees(inv)
-            inv.statut = "COMPTAGE_TERMINE"
-        elif action == "controler":
-            if inv.statut not in {"COMPTAGE_TERMINE", "EN_COMPTAGE", "EN_COURS"}:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Statut incompatible")
-            self._require_lignes_comptees(inv)
-            inv.statut = "EN_CONTROLE"
-        elif action == "valider":
-            if inv.statut not in {"EN_CONTROLE", "COMPTAGE_TERMINE", "EN_COMPTAGE", "EN_COURS"}:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Statut incompatible")
-            self._require_lignes_comptees(inv)
-            inv.statut = "VALIDE"
-            inv.valide_at = now
-            inv.valide_by = user.id
-        elif action == "appliquer":
-            if inv.statut not in {"VALIDE", "EN_CONTROLE", "COMPTAGE_TERMINE", "EN_COURS", "EN_COMPTAGE"}:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Statut incompatible")
-            self._require_lignes_comptees(inv)
-            await self._appliquer_ajustements_inventaire(inv, user)
-            inv.statut = "AJUSTEMENTS_APPLIQUES"
-            inv.ajustements_at = now
-            inv.ajustements_by = user.id
-        elif action == "cloturer":
-            if inv.statut in {"CLOTURE", "REJETE", "ANNULE"}:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Inventaire déjà clôturé")
-            self._require_lignes_comptees(inv)
-            if inv.statut != "AJUSTEMENTS_APPLIQUES":
-                await self._appliquer_ajustements_inventaire(inv, user)
-                inv.ajustements_at = now
-                inv.ajustements_by = user.id
-            inv.statut = "CLOTURE"
-            inv.date_fin = date.today()
-            inv.cloture_at = now
-            inv.cloture_by = user.id
-        elif action == "rejeter":
-            if inv.statut in {"CLOTURE", "AJUSTEMENTS_APPLIQUES"}:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Déjà ajusté / clôturé")
-            inv.statut = "REJETE"
-            inv.observation = motif or inv.observation
-        elif action == "annuler":
-            if inv.statut in {"CLOTURE", "AJUSTEMENTS_APPLIQUES"}:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Déjà ajusté / clôturé")
-            inv.statut = "ANNULE"
-            inv.observation = motif or inv.observation
-        else:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Action inventaire inconnue")
-
-        await self.db.commit()
-        return await self.get_inventaire(inventaire_id)
 
     async def rapport_conso(
         self, *, year: int, month: int | None = None, agence_id: uuid.UUID | None = None
@@ -1630,23 +1407,6 @@ class MgStockService:
         )
         return f"{prefix}-{year}-{(count or 0) + 1:05d}"
 
-    async def _next_inventaire_ref(self, year: int | None = None, month: int | None = None) -> str:
-        now = datetime.now(timezone.utc)
-        year = year or now.year
-        month = month or now.month
-        prefix = f"INV-{year}-{month:02d}-"
-        count = await self.db.scalar(
-            select(func.count())
-            .select_from(MgInventaire)
-            .where(MgInventaire.reference.like(f"{prefix}%"))
-        )
-        legacy = await self.db.scalar(
-            select(func.count())
-            .select_from(MgInventaire)
-            .where(MgInventaire.reference.like(f"INVCP-{year}-%"))
-        )
-        return f"{prefix}{(count or 0) + (legacy or 0) + 1:03d}"
-
     async def _existing_source_mvt(
         self,
         source_type: str,
@@ -1664,72 +1424,6 @@ class MgStockService:
                 MgStockMouvement.type_mouvement == type_mouvement,
             )
         )
-
-    async def _articles_inventaire(
-        self, *, agence_id: uuid.UUID | None, famille_id: uuid.UUID | None
-    ) -> list[MgArticle]:
-        filters = [
-            MgArticle.is_active.is_(True),
-            MgArticle.deleted_at.is_(None),
-            MgArticle.stockable.is_(True),
-        ]
-        if agence_id:
-            filters.append(MgArticle.agence_id == agence_id)
-        if famille_id:
-            filters.append(MgArticle.famille_id == famille_id)
-        stmt = select(MgArticle).where(*filters).order_by(MgArticle.code).limit(5000)
-        return list((await self.db.execute(stmt)).scalars().all())
-
-    @staticmethod
-    def _require_lignes_comptees(inv: MgInventaire) -> None:
-        if not inv.lignes:
-            raise AppError(
-                "Campagne sans aucune ligne à compter : supprimez-la et recréez-la sur un périmètre contenant des articles.",
-                code="INVENTAIRE_VIDE",
-            )
-        missing = [lg for lg in inv.lignes if lg.stock_physique is None]
-        if missing:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail=f"{len(missing)} ligne(s) sans comptage physique",
-            )
-
-    async def _appliquer_ajustements_inventaire(self, inv: MgInventaire, user: User) -> None:
-        psvc = MgStockPeriodeService(self.db)
-        periode = None
-        if inv.periode_id:
-            periode = await psvc.get_periode(inv.periode_id)
-        for ligne in inv.lignes:
-            article = await self.db.scalar(
-                select(MgArticle)
-                .where(MgArticle.id == ligne.article_id, MgArticle.deleted_at.is_(None))
-                .with_for_update()
-            )
-            if article is None or not getattr(article, "stockable", True):
-                continue
-            physique = Decimal(ligne.stock_physique or 0)
-            ligne.ecart = physique - Decimal(ligne.stock_theorique or 0)
-            ligne.nature_ecart = nature_ecart(ligne.ecart)
-            current = Decimal(article.stock_actuel or 0)
-            delta = physique - current
-            if delta != 0:
-                await self._apply_mouvement(
-                    article=article,
-                    type_mouvement="AJUSTEMENT",
-                    quantite=delta,
-                    agence_id=inv.agence_id or article.agence_id,
-                    initiateur=user,
-                    motif=f"Écart constaté lors de l'inventaire {inv.reference}",
-                    observation=(
-                        f"Théorique {as_qty(ligne.stock_theorique or 0)} · Physique {as_qty(physique)} · "
-                        f"Écart {as_qty(ligne.ecart):+d}"
-                    ),
-                    source_type="inventaire",
-                    source_id=inv.id,
-                    allow_zero=False,
-                )
-            if periode is not None:
-                await psvc.apply_physique(periode, article, physique)
 
     async def _dashboard_periode(self) -> dict:
         empty = {

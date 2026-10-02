@@ -7,7 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -133,6 +133,8 @@ class MgStockParametre(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class MgInventaire(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
+    """Campagne d'inventaire : photo figée du stock théorique d'un périmètre à une date."""
+
     __tablename__ = "mg_inventaires"
     __table_args__ = (UniqueConstraint("reference", name="uq_mg_inventaires_reference"),)
 
@@ -140,10 +142,31 @@ class MgInventaire(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     libelle: Mapped[str] = mapped_column(String(255))
     date_debut: Mapped[date] = mapped_column(Date)
     date_fin: Mapped[date | None] = mapped_column(Date, nullable=True)
+    annee: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mois: Mapped[int | None] = mapped_column(Integer, nullable=True)
     agence_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("agences.id"), nullable=True, index=True
     )
-    statut: Mapped[str] = mapped_column(String(30), default="OUVERT", index=True)
+    famille_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_article_familles.id"), nullable=True
+    )
+    responsable_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    responsable_nom: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="MANUEL")
+    import_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    snapshot_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    validation_forcee: Mapped[bool] = mapped_column(Boolean, default=False)
+    annule_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    annule_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    motif_annulation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    statut: Mapped[str] = mapped_column(String(30), default="BROUILLON", index=True)
     observation: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
@@ -185,6 +208,15 @@ class MgInventaireLigne(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     nature_ecart: Mapped[str | None] = mapped_column(String(20), nullable=True)
     observation: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sort_order: Mapped[int] = mapped_column(default=0)
+    # NON_COMPTE | COMPTE | EXCLU (hors périmètre de comptage, jamais ajusté)
+    statut_comptage: Mapped[str] = mapped_column(String(20), default="NON_COMPTE")
+    compte_par: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    compte_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Théorique du document source (fiche / Excel importé), conservé pour le rapprochement.
+    stock_theorique_source: Mapped[Decimal | None] = mapped_column(Numeric(18, 3), nullable=True)
+    ajout_manuel: Mapped[bool] = mapped_column(Boolean, default=False)
 
     inventaire: Mapped[MgInventaire] = relationship(back_populates="lignes")
     article: Mapped[MgArticle] = relationship()

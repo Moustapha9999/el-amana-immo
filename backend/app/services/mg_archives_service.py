@@ -597,7 +597,7 @@ class MgArchivesService:
                     select(MgInventaire)
                     .where(
                         MgInventaire.deleted_at.is_(None),
-                        MgInventaire.statut.in_(["CLOTURE", "VALIDE"]),
+                        MgInventaire.statut.in_(["VALIDE", "AJUSTE", "ARCHIVE"]),
                     )
                     .limit(100)
                 )

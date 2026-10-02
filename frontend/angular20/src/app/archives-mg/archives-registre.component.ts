@@ -187,7 +187,7 @@ export class ArchivesRegistreComponent implements OnInit {
     if (d.module_code === 'stock-fournitures') {
       if (d.entity === 'article') return ['/stock-fournitures/articles', id];
       if (d.entity === 'demande_fourniture') return ['/stock-fournitures/demandes', id];
-      if (d.entity === 'inventaire') return ['/stock-fournitures/inventaires'];
+      if (d.entity === 'inventaire') return ['/stock-fournitures/inventaires', id];
     }
     if (d.module_code === 'achats-appro' && d.entity === 'bon_commande') {
       return ['/achats-appro/bons', id];

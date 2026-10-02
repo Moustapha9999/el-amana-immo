@@ -283,24 +283,62 @@ class InventaireLigneIn(BaseModel):
     observation: str | None = None
 
 
+class InventaireLigneSaisie(BaseModel):
+    """Sauvegarde d'une ligne (saisie rapide). ``stock_physique=None`` remet la ligne « non comptée »."""
+
+    stock_physique: QtyGe0 | None = None
+    commentaire: str | None = Field(default=None, max_length=255)
+    effacer: bool = False
+    exclure: bool | None = None
+
+
+class InventaireLigneAjout(BaseModel):
+    article_id: UUID
+    commentaire: str | None = Field(default=None, max_length=255)
+
+
 class InventaireCreate(BaseModel):
-    libelle: str = Field(min_length=1, max_length=255)
+    libelle: str | None = Field(default=None, max_length=255)
     date_debut: date | None = None
+    annee: int | None = Field(default=None, ge=2000, le=2100)
+    mois: int | None = Field(default=None, ge=1, le=12)
     agence_id: UUID | None = None
-    observation: str | None = None
     famille_id: UUID | None = None
+    responsable_id: UUID | None = None
+    responsable_nom: str | None = Field(default=None, max_length=160)
+    observation: str | None = None
     periode_id: UUID | None = None
 
 
 class InventaireUpdate(BaseModel):
     libelle: str | None = Field(default=None, min_length=1, max_length=255)
     date_debut: date | None = None
+    agence_id: UUID | None = None
+    famille_id: UUID | None = None
+    responsable_id: UUID | None = None
+    responsable_nom: str | None = Field(default=None, max_length=160)
     observation: str | None = None
 
 
 class InventaireTransition(BaseModel):
     action: str
-    motif: str | None = None
+    motif: str | None = Field(default=None, max_length=2000)
+    forcer: bool = False
+
+
+class InventaireStats(BaseModel):
+    total: int = 0
+    a_compter: int = 0
+    comptes: int = 0
+    non_comptes: int = 0
+    exclus: int = 0
+    sans_ecart: int = 0
+    ecarts_negatifs: int = 0
+    ecarts_positifs: int = 0
+    total_theorique: Qty = 0
+    total_physique: Qty = 0
+    ecart_net: Qty = 0
+    progression: float = 0.0
 
 
 class InventaireLigneOut(BaseModel):
@@ -311,12 +349,26 @@ class InventaireLigneOut(BaseModel):
     stock_theorique: Qty
     stock_physique: Qty | None
     ecart: Qty | None
+    ecart_absolu: Qty | None = None
+    ecart_pourcentage: float | None = None
     nature_ecart: str | None = None
     observation: str | None
     sort_order: int
+    statut_comptage: str = "NON_COMPTE"
+    statut_ligne: str = "NON_COMPTE"
+    compte_par: UUID | None = None
+    compte_par_nom: str | None = None
+    compte_at: datetime | None = None
+    stock_theorique_source: Qty | None = None
+    ajout_manuel: bool = False
+    updated_at: datetime | None = None
     article_code: str | None = None
+    article_reference: str | None = None
     article_designation: str | None = None
+    famille_id: UUID | None = None
     famille_libelle: str | None = None
+    unite: str | None = None
+    emplacement: str | None = None
 
 
 class InventaireOut(BaseModel):
@@ -327,14 +379,94 @@ class InventaireOut(BaseModel):
     libelle: str
     date_debut: date
     date_fin: date | None
+    annee: int | None = None
+    mois: int | None = None
+    periode_libelle: str | None = None
     agence_id: UUID | None
+    agence_libelle: str | None = None
+    famille_id: UUID | None = None
+    famille_libelle: str | None = None
+    responsable_id: UUID | None = None
+    responsable_nom: str | None = None
     statut: str
     observation: str | None
+    source: str = "MANUEL"
+    import_meta: dict | None = None
     periode_id: UUID | None = None
-    lignes: list[InventaireLigneOut] = []
-    nb_conforme: int = 0
-    nb_surplus: int = 0
-    nb_manquant: int = 0
+    snapshot_at: datetime | None = None
+    created_at: datetime | None = None
+    created_by: UUID | None = None
+    created_by_nom: str | None = None
+    updated_at: datetime | None = None
+    valide_at: datetime | None = None
+    valide_by_nom: str | None = None
+    validation_forcee: bool = False
+    ajustements_at: datetime | None = None
+    ajustements_by_nom: str | None = None
+    cloture_at: datetime | None = None
+    annule_at: datetime | None = None
+    motif_annulation: str | None = None
+    stats: InventaireStats = Field(default_factory=InventaireStats)
+    mouvements_depuis: int = 0
+    nb_ajustements: int = 0
+
+
+class InventaireSynthese(BaseModel):
+    dernier: InventaireOut | None = None
+    en_cours: InventaireOut | None = None
+    nb_en_cours: int = 0
+    nb_a_controler: int = 0
+    nb_total: int = 0
+
+
+class InventaireHistoriqueOut(BaseModel):
+    id: UUID
+    created_at: datetime
+    action: str
+    entity: str
+    user_nom: str | None = None
+    before: dict | None = None
+    after: dict | None = None
+
+
+class InventaireLigneDetailOut(BaseModel):
+    ligne: InventaireLigneOut
+    historique: list[InventaireHistoriqueOut] = []
+
+
+class InventaireLigneSaveOut(BaseModel):
+    ligne: InventaireLigneOut
+    stats: InventaireStats
+    statut: str
+
+
+class InventaireValidationPreview(BaseModel):
+    total: int
+    a_compter: int
+    comptes: int
+    non_comptes: int
+    exclus: int
+    ecarts: int
+    ecarts_negatifs: int
+    ecarts_positifs: int
+    ecart_net: Qty
+    mouvements_depuis: int
+    peut_valider: bool
+    peut_forcer: bool
+    message: str | None = None
+
+
+class InventaireImportOptions(BaseModel):
+    date_inventaire: date
+    annee: int | None = Field(default=None, ge=2000, le=2100)
+    mois: int | None = Field(default=None, ge=1, le=12)
+    agence_id: UUID | None = None
+    responsable_nom: str | None = Field(default=None, max_length=160)
+    observation: str | None = None
+    feuille: str | None = None
+    mapping: dict[str, str | None] = Field(default_factory=dict)
+    # n° de ligne Excel → article_id (str) ou "IGNORER"
+    resolutions: dict[str, str] = Field(default_factory=dict)
 
 
 class AlerteOut(BaseModel):

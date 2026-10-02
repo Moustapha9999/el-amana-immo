@@ -40,19 +40,8 @@ MOIS_FR = (
     "Décembre",
 )
 
-INV_OUVERTS = frozenset(
-    {
-        "BROUILLON",
-        "OUVERT",
-        "EN_COMPTAGE",
-        "EN_COURS",
-        "COMPTAGE_TERMINE",
-        "EN_CONTROLE",
-        "VALIDE",
-        "AJUSTEMENTS_APPLIQUES",
-    }
-)
-INV_TERMINES = frozenset({"CLOTURE", "AJUSTEMENTS_APPLIQUES"})
+INV_OUVERTS = frozenset({"BROUILLON", "EN_COURS", "A_CONTROLER", "VALIDE"})
+INV_TERMINES = frozenset({"AJUSTE", "ARCHIVE"})
 
 
 def month_bounds(year: int, month: int) -> tuple[date, date]:
@@ -409,8 +398,8 @@ class MgStockPeriodeService:
                     )
                 ).scalars().all()
             )
-        ouverts = [i for i in invs if i.statut in INV_OUVERTS and i.statut not in INV_TERMINES]
-        termines = [i for i in invs if i.statut in {"CLOTURE"}]
+        ouverts = [i for i in invs if i.statut in INV_OUVERTS]
+        termines = [i for i in invs if i.statut in INV_TERMINES]
         with_ecart = sum(1 for s in soldes if s.ecart not in (None, Decimal("0")))
         anomalies: list[str] = []
         if ouverts:
@@ -587,7 +576,7 @@ class MgStockPeriodeService:
                     )
                 ).scalars().all()
             )
-        clotures = [i for i in invs if i.statut == "CLOTURE"]
+        clotures = [i for i in invs if i.statut in INV_TERMINES]
         en_cours = [i for i in invs if i.statut in INV_OUVERTS]
 
         if periode.statut == "CLOTUREE":
