@@ -151,10 +151,27 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:?PGADMIN_DEFAULT_EMAIL manquant dans .env.docker}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?PGADMIN_DEFAULT_PASSWORD manquant dans .env.docker}
+      # Serveur "BEA DIGITAL (Docker)" déclaré automatiquement à chaque démarrage.
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+      BEA_PG_USER: ${POSTGRES_USER:-admin}
+      BEA_PG_PASSWORD: ${POSTGRES_PASSWORD}
+    # pgpass écrit dans le stockage de l'utilisateur pgAdmin (PassFile relatif à ce dossier,
+    # droits 600 exigés par libpq : impossible via un bind mount Windows).
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        dir="/var/lib/pgadmin/storage/$$(echo "$$PGADMIN_DEFAULT_EMAIL" | sed 's/@/_/g')"
+        mkdir -p "$$dir"
+        printf 'postgres:5432:*:%s:%s\n' "$$BEA_PG_USER" "$$BEA_PG_PASSWORD" > "$$dir/pgpass"
+        chmod 600 "$$dir/pgpass"
+        exec /entrypoint.sh
     ports:
       - "5050:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
+      - ./deployment/pgadmin/servers.json:/pgadmin4/servers.json:ro
     depends_on:
       postgres:
         condition: service_healthy

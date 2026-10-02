@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "BEA DIGITAL (Docker)",
+      "Group": "BEA DIGITAL",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "bea_digital",
+      "Username": "admin",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpass"
+    }
+  }
+}
