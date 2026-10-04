@@ -9,6 +9,9 @@ Règle agence :
   toutes les agences ;
 - sinon (chargé de clientèle) → uniquement les dossiers de ``users.agence_id`` ;
   sans agence rattachée → aucun dossier, aucune création.
+
+Décision du 04/10/2026 : l'accès au département + module EER donne tous les droits EER
+(``charger_permissions_eer``) ; sans cet accès, aucun droit EER, même avec un rôle ``eer.*``.
 """
 
 from __future__ import annotations
@@ -17,10 +20,14 @@ import uuid
 from collections.abc import Collection
 from dataclasses import dataclass
 
-from app.data.plateforme_catalogue import FUNCTIONAL_PERMISSIONS
-from app.models import User
-from app.services.permission_service import user_has_permission_codes
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.data.plateforme_catalogue import FUNCTIONAL_PERMISSIONS
+from app.models import PlateformeModule, User, user_espace_acces_table, user_module_acces_table
+from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
+
+MODULE_EER = "eer"
 PERIMETRE_GLOBAL = "eer.scope.all"
 PERMISSIONS_EER: tuple[str, ...] = tuple(code for code, _l, module in FUNCTIONAL_PERMISSIONS if module == "eer")
 
@@ -88,6 +95,34 @@ def permissions_effectives(permissions: Collection[str]) -> frozenset[str]:
     """Codes EER réellement accordés (``*`` et ``eer.admin`` couvrent tout le module)."""
     have = set(permissions)
     return frozenset(code for code in PERMISSIONS_EER if user_has_permission_codes(have, code))
+
+
+async def acces_module_eer(db: AsyncSession, user: User) -> bool:
+    """Grants CORE ADMIN module EER + son département, sur un module actif (requêtes explicites :
+    ``user`` peut être un autre agent dont les relations ne sont pas chargées)."""
+    if user.is_superuser:
+        return True
+    trouve = await db.scalar(
+        select(PlateformeModule.id)
+        .join(user_module_acces_table, user_module_acces_table.c.module_id == PlateformeModule.id)
+        .join(user_espace_acces_table, and_(user_espace_acces_table.c.espace_id == PlateformeModule.espace_id,
+                                            user_espace_acces_table.c.user_id == user.id))
+        .where(PlateformeModule.code == MODULE_EER, PlateformeModule.is_active.is_(True),
+               user_module_acces_table.c.user_id == user.id)
+        .limit(1)
+    )
+    return trouve is not None
+
+
+async def charger_permissions_eer(db: AsyncSession, user: User) -> set[str]:
+    """Permissions CORE + décision du 04/10/2026 : tout agent ayant accès au département et au
+    module EER (grants CORE ADMIN) dispose de l'ensemble des droits EER."""
+    have = await load_user_permission_codes(db, user)
+    if user.is_superuser:
+        return have
+    if await acces_module_eer(db, user):
+        return have | {"eer.admin"}
+    return {code for code in have if not code.startswith("eer.")}
 
 
 def resolve_eer_access_scope(user: User, permissions: Collection[str]) -> EerScope:

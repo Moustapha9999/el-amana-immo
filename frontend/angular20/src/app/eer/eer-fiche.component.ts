@@ -1,9 +1,10 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { Observable } from 'rxjs';
+import { AuthService } from '../core/services/auth.service';
 import { ApiErrorInfo, describeApiErrorAsync } from '../core/feedback/api-error';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
@@ -78,6 +79,24 @@ const TITRES_FICHES: Record<string, string> = {
 };
 
 const CHAMPS_BOOLEENS = new Set(['ppe', 'fatca_indice', 'impact_rse']);
+const RISQUES: Choix[] = [
+  { code: 'FAIBLE', libelle: 'Faible' },
+  { code: 'MOYEN', libelle: 'Moyen' },
+  { code: 'ELEVE', libelle: 'Élevé' },
+];
+/** Champs à liste fermée : valeurs du référentiel EER (le backend refuse tout autre code). */
+const DOMAINE_PAR_CHEMIN: Record<string, string> = {
+  'dossier.type_signature': 'TYPE_SIGNATURE',
+  'role.forme_mandat': 'FORME_MANDAT',
+  'client.piece.type': 'TYPE_PIECE',
+  'partie.piece.type': 'TYPE_PIECE',
+};
+const DOMAINES_CHOIX = ['TYPE_SIGNATURE', 'FORME_MANDAT', 'TYPE_PIECE', 'TRANCHE_PP', 'TRANCHE_PM'];
+
+interface Choix {
+  code: string;
+  libelle: string;
+}
 const CHAMPS_NUMERIQUES = new Set(['salaire_net', 'nombre_signataires', 'effectif']);
 const ETATS_CHAMP: Record<string, string> = {
   CONNU: 'Connu',
@@ -88,21 +107,64 @@ const ETATS_CHAMP: Record<string, string> = {
 };
 const PRESENCES: Record<string, string> = { PRESENT: 'Présent', ABSENT: 'Absent', SANS_OBJET: 'Sans objet' };
 
+/** Parcours affiché en tête de fiche ; l'étape « Avis KYC » n'apparaît que si l'avis est requis. */
+const PARCOURS: Array<{ code: string; label: string; statuts: string[] }> = [
+  { code: 'saisie', label: 'Saisie', statuts: ['BROUILLON'] },
+  { code: 'affectation', label: 'Affectation', statuts: ['SOUMIS', 'A_AFFECTER'] },
+  { code: 'controle', label: 'Contrôle analyste', statuts: ['AFFECTE', 'EN_CONTROLE', 'RESOUMIS'] },
+  { code: 'decision', label: 'Décision', statuts: ['CONFORME', 'NON_CONFORME', 'A_COMPLETER'] },
+  { code: 'avis', label: 'Avis KYC', statuts: ['AVIS_CONFORMITE'] },
+  { code: 'validation', label: 'Validation', statuts: ['VALIDE'] },
+  { code: 'cloture', label: 'Clôture', statuts: ['CLOTURE', 'ARCHIVE'] },
+];
+
+const SOUS_ETAPES_CONTROLE: Array<{ code: string; label: string }> = [
+  { code: 'CHECKLIST', label: 'Pointer la checklist' },
+  { code: 'FICHES', label: 'Vérifier les fiches' },
+  { code: 'CONTROLES', label: 'Contrôler et décider' },
+];
+
+interface Consigne {
+  titre: string;
+  texte: string;
+  onglet?: Onglet;
+  lienOnglet?: string;
+}
+
+interface GroupeFiche {
+  cle: string;
+  titre: string;
+  total: number;
+  renseignes: number;
+  bloquants: number;
+  sections: Array<{ nom: string; champs: EerFicheChamp[] }>;
+}
+
+interface GroupeChecklist {
+  categorie: string;
+  items: EerChecklistItem[];
+}
+
 @Component({
   selector: 'bea-eer-fiche',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, FormsModule, RouterLink, MatIconModule],
   templateUrl: './eer-fiche.component.html',
-  styleUrl: './eer-fiche.component.css',
+  styleUrls: ['./eer-fiche.component.css', './eer-fiche-sections.component.css'],
 })
 export class EerFicheComponent implements OnInit {
   private readonly eer = inject(EerService);
   private readonly feedback = inject(FeedbackService);
   private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly auth = inject(AuthService);
 
+  readonly canAccessCoreAdmin = this.auth.canAccessCoreAdmin;
   readonly busy = signal(false);
+  readonly masquerNA = signal(true);
+  private affectationDemandee = false;
   readonly id = signal('');
   readonly dossier = signal<EerDossier | null>(null);
   readonly perimetre = signal<EerPerimetre | null>(null);
@@ -123,6 +185,8 @@ export class EerFicheComponent implements OnInit {
   readonly documents = signal<EerDocument[]>([]);
   readonly audit = signal<EerAudit[]>([]);
   readonly analystes = signal<EerAnalyste[]>([]);
+  readonly chargementAnalystes = signal(false);
+  readonly referentiels = signal<Record<string, Choix[]>>({});
 
   /** Saisies en cours dans l'onglet Formulaires : clé `${fiche}|${chemin}`. */
   readonly saisies = signal<Record<string, string>>({});
@@ -173,6 +237,176 @@ export class EerFicheComponent implements OnInit {
     return new Set((c?.elements ?? []).filter((e) => e.item_id && !e.fourni).map((e) => e.item_id as string));
   });
 
+  readonly estAnalyste = computed(() => {
+    const d = this.dossier();
+    return !!d?.analyste_id && d.analyste_id === this.perimetre()?.user_id;
+  });
+
+  readonly parcours = computed(() => {
+    const d = this.dossier();
+    if (!d) return [];
+    const etapes = PARCOURS.filter((e) => e.code !== 'avis' || d.avis_requis || d.statut === 'AVIS_CONFORMITE');
+    const courante = etapes.findIndex((e) => e.statuts.includes(d.statut));
+    return etapes.map((e, i) => ({
+      ...e,
+      etat: d.statut === 'ABANDONNE' ? 'abandon' : i < courante ? 'fait' : i === courante ? 'courant' : 'avenir',
+    }));
+  });
+
+  readonly sousEtapes = computed(() => {
+    const d = this.dossier();
+    if (d?.statut !== 'EN_CONTROLE') return [];
+    const rang = (e: string | null) => (e === 'CHECKLIST' ? 0 : e === 'CHECKLIST_VALIDEE' || e === 'FICHES' ? 1 : e === 'CONTROLES' ? 2 : 0);
+    const courante = rang(d.etape);
+    return SOUS_ETAPES_CONTROLE.map((s, i) => ({ ...s, etat: i < courante ? 'fait' : i === courante ? 'courant' : 'avenir' }));
+  });
+
+  /** Qui doit agir maintenant et où — guide l'utilisateur ; les droits restent contrôlés par le backend. */
+  readonly consigne = computed<Consigne | null>(() => {
+    const d = this.dossier();
+    if (!d) return null;
+    const cap = this.cap();
+    const moi = this.estAnalyste();
+    switch (d.statut) {
+      case 'BROUILLON':
+        return {
+          titre: 'Saisie du dossier',
+          texte: 'Complétez les formulaires (onglet « Formulaires ») puis cliquez « Soumettre au contrôle ». La checklist se calcule toute seule à partir des données saisies : rien n’est à cocher à ce stade, elle sera pointée par l’analyste après affectation.',
+          onglet: 'formulaires', lienOnglet: 'Ouvrir les formulaires',
+        };
+      case 'SOUMIS':
+      case 'A_AFFECTER':
+        return {
+          titre: 'En attente d’affectation',
+          texte: cap['affectation']
+            ? 'Cliquez « Affecter à un analyste ». Tout agent ayant accès au module EER peut être choisi, y compris vous-même.'
+            : 'Un agent du module EER doit affecter ce dossier à un analyste.',
+        };
+      case 'AFFECTE':
+        return {
+          titre: 'Affecté — contrôle à démarrer',
+          texte: moi ? 'Ce dossier vous est affecté : cliquez « Démarrer le contrôle » pour commencer le pointage de la checklist.' : 'L’analyste affecté doit démarrer le contrôle.',
+        };
+      case 'EN_CONTROLE':
+      case 'RESOUMIS':
+        if (!moi) return { titre: 'Contrôle en cours', texte: 'Seul l’analyste affecté pointe la checklist, vérifie les fiches et contrôle les éléments.' };
+        if (d.statut === 'RESOUMIS') return { titre: 'Dossier resoumis', texte: 'Le complément a été fourni : cliquez « Démarrer le contrôle » pour reprendre là où vous vous étiez arrêté.' };
+        if (d.etape === 'CHECKLIST') {
+          return {
+            titre: 'Étape 1 / 3 — Pointer la checklist',
+            texte: 'Pour chaque élément, indiquez si la pièce ou l’information figure dans le dossier : « Présent », « Absent » ou « Sans objet » (justification obligatoire). Quand tout est pointé, cliquez « Valider la checklist ».',
+            onglet: 'checklist', lienOnglet: 'Ouvrir la checklist',
+          };
+        }
+        if (d.etape === 'CONTROLES') {
+          return {
+            titre: 'Étape 3 / 3 — Contrôler et décider',
+            texte: 'Dans la checklist, marquez chaque élément « Conforme » ou « Non conforme ». Vous pouvez lancer les contrôles automatiques (onglet « Contrôles »). La décision « Déclarer conforme / non conforme » apparaît quand tous les éléments obligatoires sont contrôlés.',
+            onglet: 'checklist', lienOnglet: 'Ouvrir la checklist',
+          };
+        }
+        return {
+          titre: 'Étape 2 / 3 — Vérifier les fiches',
+          texte: 'Confirmez les données marquées « À confirmer », complétez les manquantes, enregistrez puis cliquez « Fiches complétées ».',
+          onglet: 'formulaires', lienOnglet: 'Ouvrir les formulaires',
+        };
+      case 'NON_CONFORME':
+        return { titre: 'Non conforme', texte: 'Demandez un complément en ciblant les éléments à régulariser ; le dossier reste le même et une nouvelle version sera créée à la resoumission.' };
+      case 'A_COMPLETER':
+        return {
+          titre: 'Complément attendu',
+          texte: 'Seuls les éléments demandés sont modifiables. Marquez chaque pièce « Reçu » dans la checklist, corrigez les formulaires, puis cliquez « Resoumettre ».',
+          onglet: 'complements', lienOnglet: 'Voir la demande',
+        };
+      case 'CONFORME':
+        return {
+          titre: 'Conforme',
+          texte: d.avis_requis
+            ? 'L’avis du Service Conformité KYC est obligatoire : cliquez « Demander l’avis KYC ».'
+            : 'Cliquez « Valider le dossier ».',
+        };
+      case 'AVIS_CONFORMITE':
+        return {
+          titre: 'Avis Conformité KYC',
+          texte: 'Émettez un avis favorable (validation) ou défavorable (complément ciblé, motif obligatoire).',
+        };
+      case 'VALIDE':
+        return { titre: 'Validé', texte: 'Le dossier peut être clôturé puis archivé.' };
+      case 'ABANDONNE':
+        return { titre: 'Dossier abandonné', texte: `Motif : ${d.motif_abandon || '—'}. Le dossier reste consultable, il n’est plus modifiable.` };
+      default:
+        return null;
+    }
+  });
+
+  readonly fichesGroupees = computed<GroupeFiche[]>(() =>
+    Object.entries(this.fiches()).map(([cle, champs]) => {
+      const sections = new Map<string, EerFicheChamp[]>();
+      for (const c of champs) {
+        const nom = c.section || 'Informations';
+        sections.set(nom, [...(sections.get(nom) ?? []), c]);
+      }
+      const applicables = champs.filter((c) => c.etat !== 'NON_APPLICABLE');
+      return {
+        cle,
+        titre: this.titreFiche(cle),
+        total: applicables.length,
+        renseignes: applicables.filter((c) => c.etat !== 'MANQUANT').length,
+        bloquants: champs.filter((c) => c.bloquant).length,
+        sections: [...sections].map(([nom, liste]) => ({ nom, champs: liste })),
+      };
+    }),
+  );
+
+  readonly checklistGroupee = computed<GroupeChecklist[]>(() => {
+    const groupes = new Map<string, EerChecklistItem[]>();
+    for (const i of this.checklist()?.items ?? []) {
+      if (this.masquerNA() && i.statut === 'NON_APPLICABLE') continue;
+      groupes.set(i.categorie, [...(groupes.get(i.categorie) ?? []), i]);
+    }
+    return [...groupes].map(([categorie, items]) => ({ categorie, items }));
+  });
+
+  readonly progression = computed(() => {
+    const items = (this.checklist()?.items ?? []).filter((i) => i.statut !== 'NON_APPLICABLE');
+    const etape = this.dossier()?.etape;
+    const faits = etape === 'CONTROLES'
+      ? items.filter((i) => !!i.controle_le || i.derogation_acceptee).length
+      : items.filter((i) => !!i.pointe_le).length;
+    return {
+      total: items.length,
+      faits,
+      na: (this.checklist()?.items.length ?? 0) - items.length,
+      libelle: etape === 'CONTROLES' ? 'contrôlé(s)' : 'pointé(s)',
+      pct: items.length ? Math.round((faits / items.length) * 100) : 0,
+    };
+  });
+
+  /** Mode d'emploi de la checklist selon l'étape et l'utilisateur. */
+  readonly modeChecklist = computed<{ ton: 'info' | 'action' | 'attente'; texte: string }>(() => {
+    const d = this.dossier();
+    const s = d?.statut ?? '';
+    if (['BROUILLON', 'SOUMIS', 'A_AFFECTER', 'AFFECTE'].includes(s)) {
+      return { ton: 'info', texte: 'Lecture seule : la checklist est générée automatiquement à partir des formulaires (type de client, profil, PPE, FATCA, risque…). Elle sera pointée par l’analyste affecté, une fois le contrôle démarré.' };
+    }
+    if (s === 'EN_CONTROLE' && !this.enControle()) {
+      return { ton: 'attente', texte: 'Contrôle en cours : seul l’analyste affecté pointe et contrôle les éléments.' };
+    }
+    if (s === 'EN_CONTROLE' && d?.etape === 'CHECKLIST') {
+      return { ton: 'action', texte: 'À vous : pour chaque élément, la pièce ou l’information est-elle dans le dossier ? Cliquez « Présent », « Absent » ou « Sans objet » (justification demandée). Puis « Valider la checklist ».' };
+    }
+    if (s === 'EN_CONTROLE' && d?.etape === 'CONTROLES') {
+      return { ton: 'action', texte: 'À vous : jugez chaque élément « Conforme » ou « Non conforme » (observation demandée en cas de non-conformité).' };
+    }
+    if (s === 'EN_CONTROLE') {
+      return { ton: 'attente', texte: 'Checklist validée : poursuivez par la vérification des fiches (onglet « Formulaires »).' };
+    }
+    if (s === 'A_COMPLETER') {
+      return { ton: 'action', texte: 'Complément : marquez « Reçu » chaque élément demandé lorsqu’il est fourni.' };
+    }
+    return { ton: 'info', texte: 'Checklist figée pour ce statut (consultation).' };
+  });
+
   readonly actions = computed<ActionBouton[]>(() => {
     const d = this.dossier();
     if (!d) return [];
@@ -207,11 +441,20 @@ export class EerFicheComponent implements OnInit {
     if (d.statut === 'A_COMPLETER' && this.cap()['demande_complement']) {
       out.push({ cle: 'RELANCE', label: 'Relancer', icon: 'notifications_active', run: () => this.relancer() });
     }
+    if (this.cap()['administration']) {
+      out.push({ cle: 'SUPPRIMER', label: 'Supprimer', icon: 'delete', danger: true, run: () => this.supprimer() });
+    }
     return out;
   });
 
   ngOnInit(): void {
     this.eer.perimetre().subscribe({ next: (p) => this.perimetre.set(p), error: (e) => this.fail(e) });
+    for (const domaine of DOMAINES_CHOIX) {
+      this.eer.referentiels(domaine).subscribe({
+        next: (r) => this.referentiels.update((m) => ({ ...m, [domaine]: r.map((x) => ({ code: x.code, libelle: x.libelle })) })),
+        error: () => undefined,
+      });
+    }
     this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((p) => {
       this.id.set(p.get('id') ?? '');
       this.saisies.set({});
@@ -220,6 +463,7 @@ export class EerFicheComponent implements OnInit {
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((q) => {
       const o = q.get('onglet') as Onglet | null;
       if (o && ONGLETS.some((x) => x.code === o)) this.choisir(o);
+      if (q.get('action') === 'affecter') this.affectationDemandee = true;
     });
   }
 
@@ -227,7 +471,16 @@ export class EerFicheComponent implements OnInit {
 
   recharger(): void {
     if (!this.id()) return;
-    this.eer.lire(this.id()).subscribe({ next: (d) => this.dossier.set(d), error: (e) => this.fail(e) });
+    this.eer.lire(this.id()).subscribe({
+      next: (d) => {
+        this.dossier.set(d);
+        if (this.affectationDemandee) {
+          this.affectationDemandee = false;
+          if (d.transitions_possibles.includes('AFFECTE')) this.ouvrirAffectation();
+        }
+      },
+      error: (e) => this.fail(e),
+    });
     this.chargerOnglet(this.onglet());
   }
 
@@ -335,7 +588,7 @@ export class EerFicheComponent implements OnInit {
   }
 
   private surErreur(info: ApiErrorInfo): void {
-    if (info.status === 409) {
+    if (info.status === 409 && info.code === 'EER_CONFLIT_REVISION') {
       this.feedback.warning({
         title: 'Dossier modifié entre-temps',
         message: 'Un autre utilisateur a modifié ce dossier. La fiche a été rechargée : vérifiez puis recommencez.',
@@ -365,6 +618,30 @@ export class EerFicheComponent implements OnInit {
       label,
       'Action refusée',
     );
+  }
+
+  supprimer(): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.feedback
+      .runWithReason((motif) => this.eer.action(d.id, 'supprimer', this.revision(), { motif }), {
+        reason: {
+          title: 'Supprimer le dossier',
+          message: `${d.reference}. Le dossier disparaît des listes et du tableau de bord ; son historique reste tracé (audit).`,
+          reasonLabel: 'Motif de suppression',
+          required: true,
+          maxLength: 4000,
+          tone: 'danger',
+          confirmLabel: 'Supprimer',
+        },
+        loading: 'Suppression…',
+        busy: this.busy,
+        retry: false,
+        errorTitle: 'Suppression refusée',
+        onError: (info) => this.surErreur(info),
+        success: () => ({ title: 'Dossier supprimé', details: [{ label: 'Référence', value: d.reference }] }),
+      })
+      .subscribe(() => this.router.navigateByUrl('/eer/dossiers'));
   }
 
   decider(resultat: 'CONFORME' | 'NON_CONFORME'): void {
@@ -421,7 +698,17 @@ export class EerFicheComponent implements OnInit {
     if (!d) return;
     this.assignForm.reset();
     this.analystes.set([]);
-    this.eer.analystes(d.id).subscribe({ next: (a) => this.analystes.set(a), error: (e) => this.fail(e) });
+    this.chargementAnalystes.set(true);
+    this.eer.analystes(d.id).subscribe({
+      next: (a) => {
+        this.analystes.set(a);
+        this.chargementAnalystes.set(false);
+      },
+      error: (e) => {
+        this.chargementAnalystes.set(false);
+        this.fail(e);
+      },
+    });
     this.modal.set('assign');
   }
 
@@ -506,7 +793,30 @@ export class EerFicheComponent implements OnInit {
     this.saisies.set(next);
   }
 
-  typeChamp(chemin: string): 'date' | 'bool' | 'number' | 'text' {
+  choix(chemin: string): Choix[] {
+    if (chemin.endsWith('.risque_lbcft')) return RISQUES;
+    if (chemin === 'dossier.tranche_mouvement') {
+      return this.referentiels()[this.dossier()?.type_client === 'PP' ? 'TRANCHE_PP' : 'TRANCHE_PM'] ?? [];
+    }
+    const domaine = DOMAINE_PAR_CHEMIN[chemin];
+    return domaine ? (this.referentiels()[domaine] ?? []) : [];
+  }
+
+  /** Options de la liste + valeur actuelle si elle n'y figure pas (saisie antérieure), pour ne rien masquer. */
+  options(fiche: string, c: EerFicheChamp): Choix[] {
+    const liste = this.choix(c.chemin);
+    const v = this.valeurSaisie(fiche, c);
+    return v && !liste.some((o) => o.code === v) ? [...liste, { code: v, libelle: `${v} (valeur non reconnue)` }] : liste;
+  }
+
+  affichage(c: EerFicheChamp): string {
+    if (c.etat === 'NON_APPLICABLE') return 'Non applicable';
+    const o = typeof c.valeur === 'string' ? this.choix(c.chemin).find((x) => x.code === c.valeur) : undefined;
+    return o ? o.libelle : this.val(c.valeur);
+  }
+
+  typeChamp(chemin: string): 'date' | 'bool' | 'number' | 'text' | 'choix' {
+    if (this.choix(chemin).length) return 'choix';
     const feuille = chemin.split('.').pop() ?? '';
     if (CHAMPS_BOOLEENS.has(feuille)) return 'bool';
     if (feuille.startsWith('date')) return 'date';

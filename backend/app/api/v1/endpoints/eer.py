@@ -18,8 +18,9 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.api.deps import require_permission
+from app.api.deps import auth_http_error, get_current_user
 from app.db.session import get_db
 from app.models import (
     Agence,
@@ -35,10 +36,8 @@ from app.models import (
     EerVersion,
     EerVisa,
     GedDocument,
-    Permission,
     User,
 )
-from app.models.associations import role_permissions_table, user_roles_table
 from app.schemas.eer import (
     EerActionIn,
     EerAgenceOut,
@@ -95,9 +94,9 @@ from app.services.eer_dossier_service import (
     EerDossierService,
     EerIntrouvable,
 )
-from app.services.eer_access import resolve_eer_access_scope
+from app.services.eer_access import charger_permissions_eer, resolve_eer_access_scope
 from app.services.eer_lecture_service import TRIS, EerLectureService, FiltresDossiers
-from app.services.permission_service import load_user_permission_codes
+from app.services.permission_service import user_has_permission_codes
 
 router = APIRouter(prefix="/eer", tags=["EER — Entrées en relation"])
 
@@ -107,10 +106,13 @@ _SAISIE = ("eer.update", "eer.control", "eer.complement.receive")
 def _acteur(*codes: str) -> Callable[..., Awaitable[Acteur]]:
     async def dependance(
         request: Request,
-        user: User = Depends(require_permission(*codes)),
+        user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
     ) -> Acteur:
-        permissions = frozenset(await load_user_permission_codes(db, user))
+        permissions = frozenset(await charger_permissions_eer(db, user))
+        if not user_has_permission_codes(set(permissions), *codes):
+            raise auth_http_error(status.HTTP_403_FORBIDDEN, "PERMISSION_DENIED", "Permission refusée",
+                                  required=list(codes))
         return Acteur(user, permissions, session_id=getattr(request.state, "bea_session_id", None),
                       ip_address=request.client.host if request.client else None)
 
@@ -229,19 +231,20 @@ async def analystes_eligibles(
     acteur: Acteur = Depends(_acteur("eer.assign")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Agents affectables : actifs, détenteurs de ``eer.control`` sur l'agence du dossier (même règle que /assign)."""
-    d = await _dossier_visible(db, acteur, dossier_id)
+    """Agents affectables : actifs, détenteurs de ``eer.control`` (accès module EER ou rôle) sur l'agence
+    du dossier, hors créateur si la séparation des rôles est active (mêmes règles que /assign)."""
+    svc = EerDossierService(db)
+    d = await svc.charger(dossier_id, acteur=acteur)
+    exclu = d.created_by_id if await svc.separation_active(d) else None
     candidats = (await db.scalars(
-        select(User).distinct()
-        .join(user_roles_table, user_roles_table.c.user_id == User.id)
-        .join(role_permissions_table, role_permissions_table.c.role_id == user_roles_table.c.role_id)
-        .join(Permission, Permission.id == role_permissions_table.c.permission_id)
-        .where(Permission.code.in_(("eer.control", "eer.admin")), User.is_active.is_(True),
-               User.deleted_at.is_(None))
+        select(User).options(selectinload(User.roles))
+        .where(User.is_active.is_(True), User.deleted_at.is_(None))
         .order_by(User.full_name))).all()
     eligibles = []
     for u in candidats:
-        portee = resolve_eer_access_scope(u, await load_user_permission_codes(db, u))
+        if u.id == exclu:
+            continue
+        portee = resolve_eer_access_scope(u, await charger_permissions_eer(db, u))
         if portee.peut("eer.control") and portee.couvre(d.agence_id):
             eligibles.append(EerAnalysteOut(id=u.id, nom=u.full_name))
     return eligibles
@@ -444,8 +447,23 @@ _transition_route("request-avis", Statut.AVIS_CONFORMITE, "eer.control", "Avis C
 _transition_route("validate", Statut.VALIDE, "eer.validate", "Dossier validé")
 _transition_route("close", Statut.CLOTURE, "eer.archive", "Dossier clôturé")
 _transition_route("archive", Statut.ARCHIVE, "eer.archive", "Dossier archivé")
-_transition_route("abandon", Statut.ABANDONNE, "eer.validate", "Dossier abandonné")
+# Permission selon l'origine (brouillon : eer.update ; à compléter : eer.validate), vérifiée par le workflow.
+_transition_route("abandon", Statut.ABANDONNE, "eer.view", "Dossier abandonné")
 _transition_route("resubmit", Statut.RESOUMIS, "eer.complement.receive", "Dossier resoumis (nouvelle version)")
+
+
+@router.post("/dossiers/{dossier_id}/supprimer", response_model=EerMutationOut)
+async def supprimer_dossier(
+    dossier_id: uuid.UUID,
+    payload: EerActionIn,
+    acteur: Acteur = Depends(_acteur("eer.admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    d = await EerDossierService(db).supprimer(acteur, dossier_id, payload.revision, payload.motif)
+    out = EerMutationOut(id=d.id, statut=d.statut, etape=d.etape, revision=d.revision,
+                         version_courante=d.version_courante, message="Dossier supprimé")
+    await db.commit()
+    return out
 
 
 @router.post("/dossiers/{dossier_id}/assign", response_model=EerMutationOut)

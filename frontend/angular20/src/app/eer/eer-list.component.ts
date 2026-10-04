@@ -9,6 +9,7 @@ import { EerAgence, EerFiltres, EerReferentiel, EerService } from './eer.service
 import { EerDossierLigne, EerPerimetre, STATUTS, TYPES_CLIENT, dateFr, eerTone, libelle } from './eer.models';
 
 const TAILLE = 25;
+const STATUTS_ACTIFS = Object.keys(STATUTS).filter((s) => s !== 'ABANDONNE');
 const COLONNES_TRIABLES = new Set(['reference', 'statut', 'date_eer', 'soumis_le', 'valide_le', 'created_at', 'updated_at']);
 
 @Component({
@@ -78,6 +79,11 @@ const COLONNES_TRIABLES = new Set(['reference', 'statut', 'date_eer', 'soumis_le
         <label class="bea-mg__field">Au
           <input type="date" formControlName="date_fin" (change)="appliquer()" />
         </label>
+        @if (!filtres.controls.statut.value) {
+          <label class="eer-toggle">
+            <input type="checkbox" formControlName="abandonnes" (change)="appliquer()" /> Afficher les dossiers abandonnés
+          </label>
+        }
         <div class="bea-ct-filters__btns">
           <button type="submit" class="bea-mg__btn bea-mg__btn--ghost"><mat-icon>search</mat-icon> Filtrer</button>
           @if (filtresActifs()) {
@@ -121,7 +127,19 @@ const COLONNES_TRIABLES = new Set(['reference', 'statut', 'date_eer', 'soumis_le
                 <td class="is-nowrap"><span class="bea-ct-badge" [attr.data-tone]="tone(d.statut)">{{ statut(d.statut) }}</span></td>
                 <td class="is-nowrap">{{ date(d.updated_at, true) }}</td>
                 <td class="bea-mg__actions-cell is-nowrap">
-                  <a class="bea-mg__icon-btn" [routerLink]="['/eer/dossiers', d.id]" title="Ouvrir la fiche"><mat-icon>visibility</mat-icon></a>
+                  <a class="bea-mg__icon-btn" [routerLink]="['/eer/dossiers', d.id]" title="Consulter la fiche"><mat-icon>visibility</mat-icon></a>
+                  @if (peutModifier(d)) {
+                    <a class="bea-mg__icon-btn" [routerLink]="['/eer/dossiers', d.id]" [queryParams]="{ onglet: 'formulaires' }" title="Modifier les données du dossier"><mat-icon>edit</mat-icon></a>
+                  }
+                  @if (peutAffecter(d)) {
+                    <a class="bea-mg__icon-btn" [routerLink]="['/eer/dossiers', d.id]" [queryParams]="{ action: 'affecter' }" title="Affecter à un analyste"><mat-icon>assignment_ind</mat-icon></a>
+                  }
+                  @if (peutAbandonner(d)) {
+                    <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Abandonner (motif obligatoire, dossier conservé)" [disabled]="busy()" (click)="abandonner(d)"><mat-icon>block</mat-icon></button>
+                  }
+                  @if (cap('administration')) {
+                    <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer le dossier (motif obligatoire)" [disabled]="busy()" (click)="supprimer(d)"><mat-icon>delete</mat-icon></button>
+                  }
                 </td>
               </tr>
             } @empty {
@@ -150,6 +168,7 @@ const COLONNES_TRIABLES = new Set(['reference', 'statut', 'date_eer', 'soumis_le
     .eer-sort:hover { color: #1a5278; }
     .eer-pager { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; }
     .eer-pager__num { font-size: 0.85rem; color: #475569; font-weight: 600; }
+    .eer-toggle { display: inline-flex; align-items: center; gap: 0.45rem; align-self: center; font-size: 0.84rem; color: #334155; cursor: pointer; }
   `],
 })
 export class EerListComponent implements OnInit {
@@ -171,8 +190,10 @@ export class EerListComponent implements OnInit {
     agence_id: '',
     date_debut: '',
     date_fin: '',
+    abandonnes: false,
   });
 
+  readonly busy = signal(false);
   readonly perimetre = signal<EerPerimetre | null>(null);
   readonly agences = signal<EerAgence[]>([]);
   readonly profils = signal<EerReferentiel[]>([]);
@@ -212,6 +233,7 @@ export class EerListComponent implements OnInit {
           agence_id: q.get('agence_id') ?? '',
           date_debut: q.get('date_debut') ?? '',
           date_fin: q.get('date_fin') ?? '',
+          abandonnes: q.get('abandonnes') === 'true',
         },
         { emitEvent: false },
       );
@@ -227,9 +249,10 @@ export class EerListComponent implements OnInit {
   }
 
   charger(): void {
-    const raw = this.filtres.getRawValue();
+    const { abandonnes, ...raw } = this.filtres.getRawValue();
     const f: EerFiltres = {
       ...raw,
+      statut: raw.statut || (abandonnes ? '' : STATUTS_ACTIFS),
       mes_dossiers: this.mesDossiers() || undefined,
       page: this.page(),
       size: TAILLE,
@@ -251,12 +274,72 @@ export class EerListComponent implements OnInit {
   }
 
   appliquer(): void {
-    this.naviguer({ ...this.filtres.getRawValue(), page: null });
+    const { abandonnes, ...raw } = this.filtres.getRawValue();
+    this.naviguer({ ...raw, abandonnes: abandonnes ? 'true' : null, page: null });
   }
 
   reinitialiser(): void {
     this.filtres.reset();
-    this.naviguer({ q: null, statut: null, type_client: null, profil: null, risque: null, agence_id: null, date_debut: null, date_fin: null, page: null });
+    this.naviguer({ q: null, statut: null, type_client: null, profil: null, risque: null, agence_id: null, date_debut: null, date_fin: null, abandonnes: null, page: null });
+  }
+
+  cap(code: string): boolean {
+    return !!this.perimetre()?.capacites?.[code];
+  }
+
+  /** Affichage seulement : le backend revérifie statut, permission, périmètre et analyste affecté. */
+  peutModifier(d: EerDossierLigne): boolean {
+    return (d.statut === 'BROUILLON' && this.cap('modification')) || (d.statut === 'A_COMPLETER' && this.cap('complement'));
+  }
+
+  peutAffecter(d: EerDossierLigne): boolean {
+    return d.statut === 'A_AFFECTER' && this.cap('affectation');
+  }
+
+  peutAbandonner(d: EerDossierLigne): boolean {
+    return (d.statut === 'BROUILLON' && this.cap('modification')) || (d.statut === 'A_COMPLETER' && this.cap('validation'));
+  }
+
+  abandonner(d: EerDossierLigne): void {
+    this.feedback
+      .runWithReason((motif) => this.eer.action(d.id, 'abandon', d.revision, { motif }), {
+        reason: {
+          title: 'Abandonner le dossier',
+          message: `${d.reference} — ${d.client_nom}. Le dossier n’est pas supprimé : il passe à « Abandonné » et reste consultable (historique, audit).`,
+          reasonLabel: 'Motif d’abandon',
+          required: true,
+          maxLength: 4000,
+          tone: 'danger',
+          confirmLabel: 'Abandonner',
+        },
+        loading: 'Abandon…',
+        busy: this.busy,
+        retry: false,
+        errorTitle: 'Abandon refusé',
+        success: () => ({ title: 'Dossier abandonné', details: [{ label: 'Référence', value: d.reference }] }),
+      })
+      .subscribe(() => this.charger());
+  }
+
+  supprimer(d: EerDossierLigne): void {
+    this.feedback
+      .runWithReason((motif) => this.eer.action(d.id, 'supprimer', d.revision, { motif }), {
+        reason: {
+          title: 'Supprimer le dossier',
+          message: `${d.reference} — ${d.client_nom}. Le dossier disparaît des listes et du tableau de bord ; son historique reste tracé (audit).`,
+          reasonLabel: 'Motif de suppression',
+          required: true,
+          maxLength: 4000,
+          tone: 'danger',
+          confirmLabel: 'Supprimer',
+        },
+        loading: 'Suppression…',
+        busy: this.busy,
+        retry: false,
+        errorTitle: 'Suppression refusée',
+        success: () => ({ title: 'Dossier supprimé', details: [{ label: 'Référence', value: d.reference }] }),
+      })
+      .subscribe(() => this.charger());
   }
 
   trier(colonne: string): void {

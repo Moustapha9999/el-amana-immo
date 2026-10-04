@@ -173,6 +173,7 @@ class EerDossier(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("nb_relances >= 0", name="ck_eer_dossiers_relances"),
         CheckConstraint("statut <> 'ABANDONNE' OR motif_abandon IS NOT NULL", name="ck_eer_dossiers_abandon"),
         CheckConstraint("revision >= 0", name="ck_eer_dossiers_revision"),
+        CheckConstraint("deleted_at IS NULL OR motif_suppression IS NOT NULL", name="ck_eer_dossiers_suppression"),
         CheckConstraint("version_courante >= 1", name="ck_eer_dossiers_version"),
         CheckConstraint(
             "statut IN ('BROUILLON','SOUMIS','A_AFFECTER','AFFECTE','EN_CONTROLE','CONFORME','NON_CONFORME',"
@@ -230,6 +231,10 @@ class EerDossier(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     soumis_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     valide_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Suppression logique : le dossier sort des listes et de l'API, son historique reste en base.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_id: Mapped[uuid.UUID | None] = _user_fk()
+    motif_suppression: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     client: Mapped[EerPartie] = relationship(foreign_keys=[client_partie_id], lazy="selectin")
     parties: Mapped[list[EerDossierPartie]] = relationship(

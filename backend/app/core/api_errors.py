@@ -43,6 +43,7 @@ DEFAULT_MESSAGES: dict[str, str] = {
     "METHOD_NOT_ALLOWED": "Opération non autorisée.",
     "CONFLICT": "Cette donnée a été modifiée entre-temps ou entre en conflit avec une donnée existante.",
     "DUPLICATE": "Cette donnée existe déjà.",
+    "INVALID_VALUE": "Une valeur saisie n’est pas autorisée. Vérifiez les champs à liste de choix.",
     "PAYLOAD_TOO_LARGE": "Le fichier ou la requête est trop volumineux.",
     "UNSUPPORTED_MEDIA_TYPE": "Type de fichier non pris en charge.",
     "VALIDATION_ERROR": "Certains champs sont invalides. Veuillez les corriger.",
@@ -162,6 +163,11 @@ async def _app_error(request: Request, exc: AppError) -> JSONResponse:
 
 async def _integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:
     log.warning("integrity_error request_id=%s: %s", current_request_id(), exc.orig)
+    # Seule une violation d'unicité (SQLSTATE 23505) est un doublon ; check / not null / FK = valeur refusée.
+    sqlstate = getattr(exc.orig, "sqlstate", None) or getattr(exc.orig, "pgcode", None)
+    if sqlstate and sqlstate != "23505":
+        body = error_body(status_code=400, code="INVALID_VALUE")
+        return _respond(request, 400, body)
     body = error_body(status_code=409, code="DUPLICATE")
     return _respond(request, 409, body)
 

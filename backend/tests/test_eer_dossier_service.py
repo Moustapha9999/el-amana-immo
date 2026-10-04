@@ -18,7 +18,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
-from app.models import Agence, AuditLog, EerAnomalie, EerHistorique, EerVersion, EerVisa, GedDocument, Role, User
+from app.models import (
+    Agence,
+    AuditLog,
+    EerAnomalie,
+    EerHistorique,
+    EerVersion,
+    EerVisa,
+    GedDocument,
+    PlateformeModule,
+    Role,
+    User,
+)
 from app.services import eer_controles_auto
 from app.services.eer.constantes import RoleDossier, StatutElement
 from app.services.eer.workflow import Etape, Statut
@@ -60,7 +71,7 @@ async def _tables(conn) -> bool:
 
 
 async def _acteurs(db: AsyncSession) -> tuple[Acteur, Acteur, Acteur]:
-    """Chargé rattaché à la 1ʳᵉ agence ; l'agent détient réellement eer.control (rôle eer.analyste)."""
+    """Chargé rattaché à la 1ʳᵉ agence ; l'agent a réellement accès au module EER (donc eer.control)."""
     users = list((await db.execute(select(User).where(User.is_active.is_(True), User.is_superuser.is_(False))
                                    .order_by(User.email).limit(3))).scalars())
     if len(users) < 3:
@@ -70,6 +81,15 @@ async def _acteurs(db: AsyncSession) -> tuple[Acteur, Acteur, Acteur]:
     analyste = await db.scalar(select(Role).where(Role.code == "eer.analyste"))
     await db.execute(text("INSERT INTO user_roles (user_id, role_id) VALUES (:u, :r) ON CONFLICT DO NOTHING"),
                      {"u": users[1].id, "r": analyste.id})
+    module = await db.scalar(select(PlateformeModule).where(PlateformeModule.code == "eer"))
+    params = {"u": users[1].id, "e": module.espace_id, "m": module.id}
+    await db.execute(text("INSERT INTO user_espace_acces (user_id, espace_id) VALUES (:u, :e) "
+                          "ON CONFLICT DO NOTHING"), params)
+    await db.execute(text("INSERT INTO user_module_acces (user_id, module_id) VALUES (:u, :m) "
+                          "ON CONFLICT DO NOTHING"), params)
+    # Le chargé n'a pas accès au module : il n'est donc pas affectable.
+    await db.execute(text("DELETE FROM user_module_acces WHERE user_id = :u AND module_id = :m"),
+                     {"u": users[0].id, "m": module.id})
     await db.flush()
     return Acteur(users[0], CHARGE), Acteur(users[1], AGENT), Acteur(users[2], SUPERVISEUR)
 
@@ -145,8 +165,8 @@ async def test_cycle_reel_pp_mandataire_ppe_non_conforme_complement_avis(db: Asy
     d = await svc.transition(charge, dossier_id, "SOUMIS")
     assert d.statut == Statut.A_AFFECTER
 
-    # 4. Affectation : le créateur ne peut pas contrôler son propre dossier.
-    with pytest.raises(EerAccesRefuse):
+    # 4. Affectation : seul un agent ayant accès au module EER est affectable.
+    with pytest.raises(EerErreur):
         await svc.transition(sup, dossier_id, "AFFECTE", analyste_id=charge.user.id)
     await svc.transition(sup, dossier_id, "AFFECTE", analyste_id=agent.user.id)
     with pytest.raises(EerAccesRefuse):
@@ -217,12 +237,11 @@ async def test_cycle_reel_pp_mandataire_ppe_non_conforme_complement_avis(db: Asy
     await svc.controler(agent, a_repointer[0].id, True)
     await svc.transition(agent, dossier_id, "CONFORME")
 
-    # 10. Avis KYC obligatoire (PPE) et séparation contrôleur ≠ auteur de l'avis.
+    # 10. Avis KYC obligatoire (PPE) ; séparation des rôles désactivée (paramètre du 04/10/2026),
+    # testée côté moteur (test_workflow_separation_des_roles).
     with pytest.raises(EerErreur):
         await svc.transition(sup, dossier_id, "VALIDE")
     await svc.transition(agent, dossier_id, "AVIS_CONFORMITE")
-    with pytest.raises(EerAccesRefuse):
-        await svc.transition(Acteur(agent.user, SUPERVISEUR), dossier_id, "VALIDE", avis_favorable=True)
     d = await svc.transition(sup, dossier_id, "VALIDE", avis_favorable=True)
     assert d.statut == Statut.VALIDE and d.decision_globale == "CONFORME"
 

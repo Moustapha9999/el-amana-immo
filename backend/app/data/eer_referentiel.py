@@ -101,7 +101,9 @@ ETATS_COMPTE = ["Actif", "Inactif", "Bloqué", "Fermé"]
 PARAMETRES_INITIAUX: dict[str, Any] = {
     # Fiches PM : « au moins 10 % » — règle documentée, modifiable sans code.
     "be.seuil_pourcentage": 10,
-    "workflow.separation_roles": True,
+    # Décision du 04/10/2026 : tout agent du module fait toutes les étapes (créateur, analyste,
+    # avis, validation) ; réactivable par un nouveau paramètre daté.
+    "workflow.separation_roles": False,
     # Valeurs non fournies par la banque : laissées vides jusqu'à validation.
     "controle.expiration_proche_jours": None,
     "complement.delai_regularisation_jours": None,

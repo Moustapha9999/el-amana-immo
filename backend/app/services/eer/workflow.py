@@ -1,7 +1,8 @@
 """Workflow EER (docs/conformite/eer-matrices.md §5) — garde pure, appelée par le service backend.
 
 Pas d'état REJETE : un dossier non conforme ou un avis défavorable repart en complément sur
-le même dossier. Un dossier jamais régularisé finit ABANDONNE (motif), jamais supprimé.
+le même dossier. Un dossier jamais régularisé (ou un brouillon créé à tort) finit ABANDONNE
+(motif), jamais supprimé.
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ ETATS_FINAUX = frozenset({Statut.ARCHIVE, Statut.ABANDONNE})
 # (origine, cible) → permission ; None = transition système.
 TRANSITIONS: dict[tuple[Statut, Statut], str | None] = {
     (Statut.BROUILLON, Statut.SOUMIS): "eer.submit",
+    (Statut.BROUILLON, Statut.ABANDONNE): "eer.update",
     (Statut.SOUMIS, Statut.A_AFFECTER): None,
     (Statut.A_AFFECTER, Statut.AFFECTE): "eer.assign",
     (Statut.AFFECTE, Statut.EN_CONTROLE): "eer.control",

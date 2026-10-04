@@ -44,7 +44,7 @@ export interface EerAnalyste {
 }
 
 export type EerFiltres = Partial<{
-  statut: string;
+  statut: string | string[];
   agence_id: string;
   type_client: string;
   profil: string;
@@ -84,11 +84,11 @@ export class EerService {
   }
 
   lister(filtres: EerFiltres): Observable<EerPage<EerDossierLigne>> {
-    const params: Record<string, string | number | boolean> = {};
+    const params: Record<string, string | number | boolean | string[]> = {};
     for (const [k, v] of Object.entries(filtres)) {
-      if (v !== undefined && v !== null && v !== '') params[k] = v as string | number | boolean;
+      if (v !== undefined && v !== null && v !== '') params[k] = v;
     }
-    return this.api.get(`${this.base}/dossiers`, params);
+    return this.api.get(`${this.base}/dossiers`, params as Record<string, string>);
   }
 
   creer(payload: unknown): Observable<EerDossier> {

@@ -539,7 +539,9 @@ ADMIN_CONFORMITE → `eer.admin` ; CHARGE_CLIENTELE → `eer.charge` (limité à
 
 Séparation des rôles [CDC §36] : paramètre `workflow.separation_roles`. En V1 l’agent
 conformité crée **et** contrôle le dossier ; la règle impose donc contrôleur ≠ auteur de
-l’avis / de la validation, vérifiée côté backend. Pas d’état REJETÉ (décision du 04/10/2026). Portée agence : permission `eer.scope.all` (voir 23 bis) ;
+l’avis / de la validation, vérifiée côté backend. **Décision du 04/10/2026** : paramètre à
+`false` (une même personne peut tout faire) et accès au module EER = tous les droits `eer.*`
+(voir [eer-matrices.md](eer-matrices.md) §5.1). Pas d’état REJETÉ (décision du 04/10/2026). Portée agence : permission `eer.scope.all` (voir 23 bis) ;
 le paramètre `acces.portee` reste inutilisé.
 RLS : phase 2 (voir [README.md](README.md)).
 
@@ -555,7 +557,8 @@ Déployés le 04/10/2026 : base réelle migrée jusqu’à `20261004_eer_04_suiv
 - **API** : `backend/app/api/v1/endpoints/eer.py`, préfixe `/api/v1/eer`, Login 2 module `eer`
   (`require_module_access`) + permission par route (`require_permission`) + contrôle dans le service.
   Schémas Pydantic : `backend/app/schemas/eer.py`. Aucune route PUT / DELETE ; versions, historique,
-  avis, décisions et audit en lecture seule.
+  avis, décisions et audit en lecture seule. Suppression d’un dossier = **logique**
+  (`POST /dossiers/{id}/supprimer`, motif obligatoire, migration `20261004_eer_05_suppression`).
 - **Concurrence** : toute mutation porte la `revision` connue du client ; `SELECT … FOR UPDATE` +
   comparaison ; révision périmée → 409 `EER_CONFLIT_REVISION`, rien n’est écrit.
 - **Périmètre agence** : `resolve_eer_access_scope(user, permissions)` (`app/services/eer_access.py`).
@@ -565,7 +568,9 @@ Déployés le 04/10/2026 : base réelle migrée jusqu’à `20261004_eer_04_suiv
   tableau de bord, fiche, sous-ressources, mutations, `/agences`).
 - **Rôles** : `eer.charge` (saisie / soumission, agence), `eer.analyste` (contrôle, toutes agences),
   `eer.superviseur` (affectation, avis KYC, validation, archivage, audit), `eer.lecteur`, `eer.admin`
-  (couvre tout `eer.*`).
+  (couvre tout `eer.*`). **Depuis le 04/10/2026**, `charger_permissions_eer` accorde `eer.admin` à
+  tout agent ayant accès au module EER (département + module, CORE ADMIN) : les rôles ne restreignent
+  plus ; sans accès au module, aucun droit EER.
 - **Frontend** : `frontend/angular20/src/app/eer/` — `/eer/dashboard`, `/eer/dossiers`,
   `/eer/dossiers/nouveau`, `/eer/dossiers/:id` (12 onglets). Les boutons d’action affichés
   proviennent de `transitions_possibles` calculées par le backend ; le frontend n’est pas une sécurité.

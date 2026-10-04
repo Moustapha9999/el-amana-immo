@@ -19,6 +19,37 @@
       </div>
     </header>
 
+    <ol class="eer-steps" aria-label="Parcours du dossier">
+      @for (e of parcours(); track e.code; let n = $index) {
+        <li class="eer-step" [attr.data-etat]="e.etat" [attr.aria-current]="e.etat === 'courant' ? 'step' : null">
+          <span class="eer-step__dot">
+            @if (e.etat === 'fait') { <mat-icon>check</mat-icon> } @else { {{ n + 1 }} }
+          </span>
+          <span class="eer-step__label">{{ e.label }}</span>
+        </li>
+      }
+    </ol>
+
+    @if (consigne(); as g) {
+      <div class="eer-guide" [attr.data-abandon]="d.statut === 'ABANDONNE' ? '' : null">
+        <mat-icon class="eer-guide__ico">{{ d.statut === 'ABANDONNE' ? 'block' : 'tips_and_updates' }}</mat-icon>
+        <div class="eer-guide__body">
+          <strong>{{ g.titre }}</strong>
+          <p>{{ g.texte }}</p>
+          @if (sousEtapes().length) {
+            <ol class="eer-substeps">
+              @for (s of sousEtapes(); track s.code; let n = $index) {
+                <li [attr.data-etat]="s.etat">{{ n + 1 }}. {{ s.label }}</li>
+              }
+            </ol>
+          }
+        </div>
+        @if (g.onglet && onglet() !== g.onglet) {
+          <button type="button" class="bea-mg__btn bea-mg__btn--ghost eer-guide__btn" (click)="choisir(g.onglet)">{{ g.lienOnglet }} <mat-icon>arrow_forward</mat-icon></button>
+        }
+      </div>
+    }
+
     @if (actions().length) {
       <div class="eer-actions">
         <span class="eer-actions__label">Actions disponibles</span>
@@ -106,8 +137,8 @@
         <!-- Formulaires -->
         @case ('formulaires') {
           @if (modifiable()) {
-            <div class="eer-toolbar">
-              <span class="bea-ct-note">{{ nbSaisies() }} modification(s) non enregistrée(s)</span>
+            <div class="eer-toolbar eer-toolbar--sticky" [class.is-dirty]="nbSaisies() > 0">
+              <span class="bea-ct-note">{{ nbSaisies() ? nbSaisies() + ' modification(s) non enregistrée(s)' : 'Aucune modification en cours' }}</span>
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!nbSaisies() || busy()" (click)="annulerSaisies()">Annuler</button>
               <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="!nbSaisies() || busy()" (click)="enregistrerFiches()"><mat-icon>save</mat-icon> Enregistrer</button>
               @if (enControle()) {
@@ -118,50 +149,69 @@
               <p class="bea-ct-note">Complément en cours : seuls les éléments demandés peuvent être modifiés (contrôle serveur).</p>
             }
           }
-          @for (cle of ficheCles(); track cle) {
-            <article class="bea-mg__panel eer-panel">
-              <h2>{{ titreFiche(cle) }}</h2>
-              <div class="bea-mg__table-scroll">
-                <table class="bea-mg__table eer-fiche-table">
-                  <thead><tr><th>Section</th><th>Champ</th><th>Valeur</th><th>État</th><th class="is-actions"></th></tr></thead>
-                  <tbody>
-                    @for (c of fiches()[cle]; track c.chemin) {
-                      <tr [class.eer-bloquant]="c.bloquant">
-                        <td class="bea-ct-sub">{{ c.section || '—' }}</td>
-                        <td>{{ c.libelle }}{{ c.obligatoire ? ' *' : '' }}</td>
-                        <td>
-                          @if (modifiable() && c.etat !== 'NON_APPLICABLE') {
-                            @switch (typeChamp(c.chemin)) {
-                              @case ('bool') {
-                                <select class="eer-input" [ngModel]="valeurSaisie(cle, c)" (ngModelChange)="saisir(cle, c, $event)">
-                                  <option value="">—</option><option value="true">Oui</option><option value="false">Non</option>
-                                </select>
-                              }
-                              @case ('date') {
-                                <input class="eer-input" type="date" [ngModel]="valeurSaisie(cle, c)" (ngModelChange)="saisir(cle, c, $event)" />
-                              }
-                              @case ('number') {
-                                <input class="eer-input" type="number" [ngModel]="valeurSaisie(cle, c)" (ngModelChange)="saisir(cle, c, ($event ?? '') + '')" />
-                              }
-                              @default {
-                                <input class="eer-input" [ngModel]="valeurSaisie(cle, c)" (ngModelChange)="saisir(cle, c, $event)" maxlength="500" />
-                              }
+          @if (!modifiable() && ficheCles().length) {
+            <p class="eer-hint"><mat-icon>lock</mat-icon> Consultation : les formulaires ne sont modifiables qu’en brouillon, par l’analyste affecté pendant le contrôle, ou pour les éléments demandés en complément.</p>
+          }
+          @for (g of fichesGroupees(); track g.cle) {
+            <article class="bea-mg__panel eer-panel eer-form">
+              <header class="eer-form__head">
+                <h2>{{ g.titre }}</h2>
+                <div class="eer-form__meta">
+                  <span class="eer-form__count">{{ g.renseignes }} / {{ g.total }} renseignés</span>
+                  @if (g.bloquants) { <span class="bea-ct-badge" data-tone="CRITIQUE">{{ g.bloquants }} à traiter</span> }
+                </div>
+                <div class="eer-bar" role="progressbar" [attr.aria-valuenow]="g.renseignes" aria-valuemin="0" [attr.aria-valuemax]="g.total">
+                  <span [style.width.%]="g.total ? (g.renseignes / g.total) * 100 : 0"></span>
+                </div>
+              </header>
+              @for (s of g.sections; track s.nom) {
+                <fieldset class="eer-form__section">
+                  <legend>{{ s.nom }}</legend>
+                  <div class="eer-form__grid">
+                    @for (c of s.champs; track c.chemin) {
+                      <div class="eer-field" [attr.data-etat]="c.etat" [class.is-bloquant]="c.bloquant">
+                        <label class="eer-field__label">
+                          {{ c.libelle }}@if (c.obligatoire) {<span class="eer-req" title="Obligatoire">*</span>}
+                        </label>
+                        @if (modifiable() && c.etat !== 'NON_APPLICABLE') {
+                          @switch (typeChamp(c.chemin)) {
+                            @case ('choix') {
+                              <select class="eer-input" [ngModel]="valeurSaisie(g.cle, c)" (ngModelChange)="saisir(g.cle, c, $event)">
+                                <option value="">— Choisir —</option>
+                                @for (o of options(g.cle, c); track o.code) { <option [value]="o.code">{{ o.libelle }}</option> }
+                              </select>
                             }
-                          } @else {
-                            {{ val(c.valeur) }}
+                            @case ('bool') {
+                              <select class="eer-input" [ngModel]="valeurSaisie(g.cle, c)" (ngModelChange)="saisir(g.cle, c, $event)">
+                                <option value="">—</option><option value="true">Oui</option><option value="false">Non</option>
+                              </select>
+                            }
+                            @case ('date') {
+                              <input class="eer-input" type="date" [ngModel]="valeurSaisie(g.cle, c)" (ngModelChange)="saisir(g.cle, c, $event)" />
+                            }
+                            @case ('number') {
+                              <input class="eer-input" type="number" [ngModel]="valeurSaisie(g.cle, c)" (ngModelChange)="saisir(g.cle, c, ($event ?? '') + '')" />
+                            }
+                            @default {
+                              <input class="eer-input" [ngModel]="valeurSaisie(g.cle, c)" (ngModelChange)="saisir(g.cle, c, $event)" maxlength="500" />
+                            }
                           }
-                        </td>
-                        <td><span class="bea-ct-badge" [attr.data-tone]="c.bloquant ? 'CRITIQUE' : c.etat === 'A_CONFIRMER' ? 'ATTENTION' : 'INFO'">{{ libEtatChamp(c.etat) }}</span></td>
-                        <td class="bea-mg__actions-cell">
-                          @if (enControle() && c.etat === 'A_CONFIRMER') {
-                            <button type="button" class="bea-mg__icon-btn" title="Confirmer la donnée" [disabled]="busy()" (click)="confirmerChamp(cle, c)"><mat-icon>done</mat-icon></button>
-                          }
-                        </td>
-                      </tr>
+                        } @else {
+                          <div class="eer-field__value">{{ affichage(c) }}</div>
+                        }
+                        @if (c.etat !== 'CONNU' && c.etat !== 'NON_APPLICABLE') {
+                          <div class="eer-field__foot">
+                            <span class="eer-chip" [attr.data-etat]="c.etat">{{ libEtatChamp(c.etat) }}</span>
+                            @if (enControle() && c.etat === 'A_CONFIRMER') {
+                              <button type="button" class="eer-link" [disabled]="busy()" (click)="confirmerChamp(g.cle, c)"><mat-icon>done</mat-icon> Confirmer</button>
+                            }
+                          </div>
+                        }
+                      </div>
                     }
-                  </tbody>
-                </table>
-              </div>
+                  </div>
+                </fieldset>
+              }
             </article>
           } @empty {
             <div class="bea-ct-empty"><mat-icon>description</mat-icon><p>Chargement des fiches…</p></div>
@@ -194,58 +244,73 @@
         <!-- Checklist -->
         @case ('checklist') {
           @if (checklist(); as c) {
+            <div class="eer-mode" [attr.data-ton]="modeChecklist().ton">
+              <mat-icon>{{ modeChecklist().ton === 'action' ? 'touch_app' : modeChecklist().ton === 'attente' ? 'hourglass_top' : 'info' }}</mat-icon>
+              <p>{{ modeChecklist().texte }}</p>
+            </div>
             <div class="eer-toolbar">
-              <span class="bea-ct-note">{{ c.items.length }} élément(s) · {{ c.non_pointes }} non pointé(s){{ c.etape ? ' · étape ' + libEtape(c.etape) : '' }}</span>
+              <div class="eer-progress">
+                <span><strong>{{ progression().faits }}</strong> / {{ progression().total }} {{ progression().libelle }}</span>
+                <div class="eer-bar"><span [style.width.%]="progression().pct"></span></div>
+              </div>
+              @if (progression().na) {
+                <label class="eer-toggle">
+                  <input type="checkbox" [checked]="!masquerNA()" (change)="masquerNA.set(!masquerNA())" /> Afficher les {{ progression().na }} non applicable(s)
+                </label>
+              }
               @if (modifiable()) {
-                <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="regenererChecklist()"><mat-icon>autorenew</mat-icon> Recalculer</button>
+                <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="regenererChecklist()" title="Recalcule les éléments attendus à partir des formulaires"><mat-icon>autorenew</mat-icon> Recalculer</button>
               }
               @if (enControle() && c.etape === 'CHECKLIST') {
-                <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy() || c.non_pointes > 0" (click)="validerChecklist()"><mat-icon>fact_check</mat-icon> Valider la checklist</button>
+                <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy() || c.non_pointes > 0" [title]="c.non_pointes ? c.non_pointes + ' élément(s) restent à pointer' : 'Valider le pointage'" (click)="validerChecklist()"><mat-icon>fact_check</mat-icon> Valider la checklist</button>
               }
             </div>
-            <div class="bea-mg__table-scroll">
-              <table class="bea-mg__table eer-checklist">
-                <thead>
-                  <tr>
-                    <th>Catégorie</th><th>Élément</th><th>Obligatoire</th><th>Donnée connue</th><th>Document reçu</th>
-                    <th>Résultat</th><th>Observation</th><th>Statut</th><th class="is-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (i of c.items; track i.id) {
-                    <tr [class.eer-na]="i.statut === 'NON_APPLICABLE'">
-                      <td class="bea-ct-sub">{{ i.categorie }}<br />{{ i.axe }}</td>
-                      <td><strong class="bea-ct-strong">{{ i.libelle }}</strong><small class="bea-ct-sub">{{ i.regle_code }} · v{{ i.regle_version }}</small></td>
-                      <td>{{ i.obligatoire ? 'Oui' : 'Non' }}</td>
-                      <td>{{ ouiNon(i.donnee_connue) }}</td>
-                      <td>
-                        {{ libPresence(i.presence) }}
-                        @if (i.document_id) { <mat-icon class="eer-ico" title="Document GED rattaché">attach_file</mat-icon> }
-                      </td>
-                      <td><span class="bea-ct-badge" [attr.data-tone]="tone(i.statut)">{{ libElement(i.statut) }}</span></td>
-                      <td class="eer-obs">{{ i.motif || '—' }}</td>
-                      <td>{{ statutLigne(i) }}</td>
-                      <td class="bea-mg__actions-cell is-nowrap">
+
+            @for (g of checklistGroupee(); track g.categorie) {
+              <article class="bea-mg__panel eer-panel eer-cl">
+                <h2 class="eer-cl__cat">{{ g.categorie }} <span class="eer-cl__n">{{ g.items.length }}</span></h2>
+                <ul class="eer-cl__list">
+                  @for (i of g.items; track i.id) {
+                    <li class="eer-cl__item" [class.is-na]="i.statut === 'NON_APPLICABLE'" [class.is-done]="!!i.pointe_le || !!i.controle_le">
+                      <div class="eer-cl__main">
+                        <div class="eer-cl__title">
+                          <strong>{{ i.libelle }}</strong>
+                          @if (i.obligatoire) { <span class="eer-chip" data-etat="OBLIGATOIRE">Obligatoire</span> }
+                          @if (i.document_id) { <mat-icon class="eer-ico" title="Document GED rattaché">attach_file</mat-icon> }
+                        </div>
+                        <div class="eer-cl__facts">
+                          <span title="La donnée correspondante est-elle saisie dans les formulaires ?">Donnée saisie : <b>{{ i.donnee_connue === null ? '—' : i.donnee_connue ? 'Oui' : 'Non' }}</b></span>
+                          <span>Pièce : <b>{{ libPresence(i.presence) }}</b></span>
+                          <span>Résultat : <span class="bea-ct-badge" [attr.data-tone]="tone(i.statut)">{{ libElement(i.statut) }}</span></span>
+                          <span class="eer-cl__etat">{{ statutLigne(i) }}</span>
+                        </div>
+                        @if (i.motif) { <p class="eer-cl__motif"><mat-icon>chat_bubble_outline</mat-icon> {{ i.motif }}</p> }
+                      </div>
+                      <div class="eer-cl__actions">
                         @if (enControle() && c.etape === 'CHECKLIST' && i.statut !== 'NON_APPLICABLE') {
-                          <button type="button" class="bea-mg__icon-btn" title="Présent" [disabled]="busy()" (click)="pointer(i, 'PRESENT')"><mat-icon>check</mat-icon></button>
-                          <button type="button" class="bea-mg__icon-btn" title="Absent" [disabled]="busy()" (click)="pointer(i, 'ABSENT')"><mat-icon>close</mat-icon></button>
-                          <button type="button" class="bea-mg__icon-btn" title="Sans objet (justifié)" [disabled]="busy()" (click)="pointer(i, 'SANS_OBJET')"><mat-icon>remove</mat-icon></button>
+                          <div class="eer-seg" role="group" [attr.aria-label]="'Pointage : ' + i.libelle">
+                            <button type="button" [class.is-on]="i.presence === 'PRESENT'" data-ton="ok" [disabled]="busy()" (click)="pointer(i, 'PRESENT')"><mat-icon>check</mat-icon> Présent</button>
+                            <button type="button" [class.is-on]="i.presence === 'ABSENT'" data-ton="ko" [disabled]="busy()" (click)="pointer(i, 'ABSENT')"><mat-icon>close</mat-icon> Absent</button>
+                            <button type="button" [class.is-on]="i.presence === 'SANS_OBJET'" [disabled]="busy()" (click)="pointer(i, 'SANS_OBJET')"><mat-icon>remove</mat-icon> Sans objet</button>
+                          </div>
                         }
                         @if (enControle() && c.etape === 'CONTROLES' && i.statut !== 'NON_APPLICABLE') {
-                          <button type="button" class="bea-mg__icon-btn" title="Conforme" [disabled]="busy()" (click)="controler(i, true)"><mat-icon>verified</mat-icon></button>
-                          <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Non conforme" [disabled]="busy()" (click)="controler(i, false)"><mat-icon>report</mat-icon></button>
+                          <div class="eer-seg" role="group" [attr.aria-label]="'Contrôle : ' + i.libelle">
+                            <button type="button" [class.is-on]="i.statut === 'CONFORME'" data-ton="ok" [disabled]="busy()" (click)="controler(i, true)"><mat-icon>verified</mat-icon> Conforme</button>
+                            <button type="button" [class.is-on]="i.statut === 'NON_CONFORME'" data-ton="ko" [disabled]="busy()" (click)="controler(i, false)"><mat-icon>report</mat-icon> Non conforme</button>
+                          </div>
                         }
                         @if (statut() === 'A_COMPLETER' && cap()['complement'] && itemsAttendus().has(i.id)) {
                           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="marquerFourni(i)"><mat-icon>inventory</mat-icon> Reçu</button>
                         }
-                      </td>
-                    </tr>
-                  } @empty {
-                    <tr><td colspan="9"><div class="bea-ct-empty"><mat-icon>checklist</mat-icon><p>Checklist non générée.</p></div></td></tr>
+                      </div>
+                    </li>
                   }
-                </tbody>
-              </table>
-            </div>
+                </ul>
+              </article>
+            } @empty {
+              <div class="bea-ct-empty"><mat-icon>checklist</mat-icon><p>{{ c.items.length ? 'Tous les éléments sont non applicables.' : 'Checklist non générée.' }}</p></div>
+            }
           } @else {
             <div class="bea-ct-empty"><mat-icon>hourglass_empty</mat-icon><p>Chargement…</p></div>
           }
@@ -485,14 +550,37 @@
       @case ('assign') {
         <form [formGroup]="assignForm" (ngSubmit)="affecter()">
           <div class="bea-mg__modal-head"><h2>Affecter le dossier</h2><button type="button" class="bea-mg__icon-btn" (click)="fermer()"><mat-icon>close</mat-icon></button></div>
-          <div class="bea-mg__modal-body bea-ct-grid">
-            <label>Analyste (détenteur du contrôle sur l’agence du dossier)
-              <select formControlName="analyste_id">
-                <option value="">— Choisir —</option>
-                @for (a of analystes(); track a.id) { <option [value]="a.id">{{ a.nom }}</option> }
-              </select>
-            </label>
-            @if (!analystes().length) { <p class="bea-ct-note">Aucun analyste éligible trouvé pour cette agence.</p> }
+          <div class="bea-mg__modal-body">
+            @if (chargementAnalystes()) {
+              <p class="bea-ct-note">Recherche des analystes éligibles…</p>
+            } @else if (analystes().length) {
+              <label class="eer-modal-field">Analyste conformité
+                <select formControlName="analyste_id">
+                  <option value="">— Choisir —</option>
+                  @for (a of analystes(); track a.id) { <option [value]="a.id">{{ a.nom }}</option> }
+                </select>
+              </label>
+              <p class="bea-ct-note">Tous les agents ayant accès au module EER sont proposés, y compris le créateur du dossier.</p>
+            } @else {
+              <div class="eer-empty-assign">
+                <mat-icon>person_off</mat-icon>
+                <div>
+                  <strong>Aucun analyste ne peut recevoir ce dossier.</strong>
+                  <p>Pour qu’un agent apparaisse ici, dans CORE ADMIN → Utilisateurs, il doit :</p>
+                  <ul>
+                    <li>être actif ;</li>
+                    <li>avoir le rôle <b>« EER — Analyste conformité »</b> (ou Superviseur / Admin EER) ;</li>
+                    <li>avoir l’accès au département « Audit, Contrôle &amp; Conformité » et au module EER (pour pouvoir se connecter) ;</li>
+                    <li>ne pas être le créateur de ce dossier.</li>
+                  </ul>
+                  @if (canAccessCoreAdmin()) {
+                    <a class="bea-mg__btn bea-mg__btn--ghost" href="/admin/users" target="_blank" rel="noopener"><mat-icon>manage_accounts</mat-icon> Gérer les utilisateurs (CORE ADMIN)</a>
+                  } @else {
+                    <p class="bea-ct-note">Demandez à un administrateur CORE ADMIN d’attribuer ce rôle.</p>
+                  }
+                </div>
+              </div>
+            }
           </div>
           <div class="bea-mg__modal-foot">
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="fermer()">Annuler</button>

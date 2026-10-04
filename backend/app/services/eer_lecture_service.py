@@ -44,6 +44,7 @@ class FiltresDossiers:
 
 
 def restreindre(stmt: Select, scope: EerScope) -> Select:
+    stmt = stmt.where(EerDossier.deleted_at.is_(None))
     agences = scope.agences
     if agences is None:
         return stmt

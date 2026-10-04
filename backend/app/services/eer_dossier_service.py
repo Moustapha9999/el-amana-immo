@@ -74,8 +74,7 @@ from app.services.eer.constantes import (
     TypeClient,
 )
 from app.services.eer.faits import PartieDossier, construire_faits, faits_partie
-from app.services.eer_access import EerScope, resolve_eer_access_scope
-from app.services.permission_service import load_user_permission_codes
+from app.services.eer_access import EerScope, charger_permissions_eer, resolve_eer_access_scope
 from app.services.eer.workflow import (
     Demande,
     Etape,
@@ -107,6 +106,9 @@ CHAMPS_DOSSIER = {"date_eer", "racine_client", "numero_idp", "numero_idm", "nume
                   "destination_fonds", "commentaire_profil", "risque_lbcft", "moment_controle", "etat_compte",
                   "sous_profil_code", "type_compte_code"}
 ALIAS_DOSSIER = {"profil": "profil_code", "tranche_mouvement": "tranche_mouvement_code"}
+TYPES_SIGNATURE = ("UNIQUE", "CONJOINTES", "SEPAREES")
+# Champs à valeur codée (contrainte SQL) : saisie contrôlée contre le référentiel EER → message clair.
+DOMAINE_PAR_CHAMP = {"type_signature": "TYPE_SIGNATURE", "forme_mandat": "FORME_MANDAT"}
 CHEMINS_LECTURE_SEULE = {"dossier.agence_code", "dossier.operation_type", "dossier.profil"}
 FICHE_PAR_TYPE = {TypeClient.PP: "FICHE_PP", TypeClient.PM_PRIVEE: "FICHE_PM_PRIVEE",
                   TypeClient.PM_PUBLIQUE: "FICHE_PM_PUBLIQUE", TypeClient.ASSOCIATION: "FICHE_ASSOCIATION"}
@@ -257,6 +259,13 @@ class EerDossierService:
             raise EerErreur("Référentiel EER non initialisé (scripts/eer_init_referentiel.py)")
         return valeurs
 
+    async def separation_active(self, d: EerDossier) -> bool:
+        """Séparation des rôles : figée sur le dossier ET encore en vigueur (paramètre daté).
+        Désactiver le paramètre la lève donc aussi sur les dossiers déjà ouverts."""
+        if not d.parametres_snapshot.get("workflow.separation_roles", True):
+            return False
+        return bool((await self.parametres()).get("workflow.separation_roles", True))
+
     async def _referentiel(self, domaine: str, code: str) -> EerReferentiel | None:
         return await self.db.scalar(select(EerReferentiel).where(
             EerReferentiel.domaine == domaine, EerReferentiel.code == code, EerReferentiel.actif.is_(True)))
@@ -296,7 +305,7 @@ class EerDossierService:
         if verrou:
             stmt = stmt.with_for_update(of=EerDossier)
         dossier = await self.db.scalar(stmt.execution_options(populate_existing=True))
-        if dossier is None:
+        if dossier is None or dossier.deleted_at is not None:
             raise EerIntrouvable()
         if acteur is not None:
             acteur.exiger_perimetre(dossier)
@@ -314,6 +323,22 @@ class EerDossierService:
             raise EerConflit(revision, d.revision)
         d.revision += 1
         await self.db.flush()
+        return d
+
+    async def supprimer(self, acteur: Acteur, dossier_id: uuid.UUID, revision: int, motif: str | None) -> EerDossier:
+        """Suppression logique (décision du 04/10/2026) : le dossier sort des listes et de l'API ;
+        versions, historique, décisions et visas restent en base (tables immuables)."""
+        if not acteur.perimetre.peut("eer.admin"):
+            raise EerAccesRefuse("Suppression réservée aux agents du module EER")
+        if not motif or not motif.strip():
+            raise EerErreur("Motif de suppression obligatoire")
+        d = await self.verrouiller(acteur, dossier_id, revision)
+        await self._historique(d, acteur, "SUPPRESSION", de=d.statut, vers=d.statut, motif=motif.strip())
+        d.deleted_at = _maintenant()
+        d.deleted_by_id = acteur.user.id
+        d.motif_suppression = motif.strip()
+        await self.db.flush()
+        await self._audit(acteur, "eer.dossier.delete", d, before={"statut": d.statut}, after={"supprime": True})
         return d
 
     # --- Parties ---------------------------------------------------------------------------
@@ -410,6 +435,8 @@ class EerDossierService:
     async def _verifier_codes_dossier(self, d: EerDossier) -> None:
         if d.risque_lbcft is not None and d.risque_lbcft not in ("FAIBLE", "MOYEN", "ELEVE"):
             raise EerErreur("Risque LBC-FT : FAIBLE, MOYEN ou ELEVE")
+        if d.type_signature is not None and d.type_signature not in TYPES_SIGNATURE:
+            raise EerErreur("Type de signature : UNIQUE, CONJOINTES ou SEPAREES")
         domaine_tranche = "TRANCHE_PP" if d.type_client_code == TypeClient.PP else "TRANCHE_PM"
         for domaine, code in ((domaine_tranche, d.tranche_mouvement_code), ("ETAT_COMPTE", d.etat_compte)):
             if code is not None and await self._referentiel(domaine, code) is None:
@@ -725,7 +752,11 @@ class EerDossierService:
         cible, attr = self._cible_ecriture(d, chemin, dp)
         if attr not in cible.__table__.columns:
             raise EerErreur(f"Chemin inconnu : {chemin}")
-        setattr(cible, attr, _convertir(cible.__table__.columns[attr], valeur))
+        converti = _convertir(cible.__table__.columns[attr], valeur)
+        domaine = DOMAINE_PAR_CHAMP.get(attr)
+        if domaine and converti is not None and await self._referentiel(domaine, converti) is None:
+            raise EerErreur(f"Valeur « {converti} » inconnue pour ce champ (référentiel {domaine})")
+        setattr(cible, attr, converti)
         if cible is d:
             await self._verifier_codes_dossier(d)
         await self._etat_champ(d, chemin, dossier_partie_id, EtatChamp.CONNU, source="SAISIE")
@@ -897,8 +928,7 @@ class EerDossierService:
         d = await self.charger(a.dossier_id, verrou=True, acteur=acteur)
         if not (justification and justification.strip()):
             raise EerErreur("Justification obligatoire pour une dérogation")
-        if d.parametres_snapshot.get("workflow.separation_roles", True) and acteur.user.id in (
-                d.analyste_id, d.created_by_id):
+        if await self.separation_active(d) and acteur.user.id in (d.analyste_id, d.created_by_id):
             raise EerAccesRefuse("Séparation des rôles : la dérogation doit venir d'un autre agent")
         if a.statut not in ANOMALIES_OUVERTES:
             raise EerErreur("Anomalie déjà traitée")
@@ -1027,7 +1057,7 @@ class EerDossierService:
             permissions=acteur.perimetre.permissions,
             motif=motif, elements_cibles=len(cibles), elements_cibles_fournis=fournis,
             avis_favorable=avis_favorable, analyste_cible_id=str(analyste_id) if analyste_id else None,
-            separation_roles=bool(d.parametres_snapshot.get("workflow.separation_roles", True)))
+            separation_roles=await self.separation_active(d))
         try:
             verifier(self._etat(d), demande)
         except TransitionRefusee as exc:
@@ -1065,7 +1095,7 @@ class EerDossierService:
             analyste = await self.db.get(User, analyste_id, options=[selectinload(User.roles)])
             if analyste is None or not analyste.is_active or analyste.deleted_at is not None:
                 raise EerErreur("Analyste inconnu ou inactif")
-            portee = resolve_eer_access_scope(analyste, await load_user_permission_codes(self.db, analyste))
+            portee = resolve_eer_access_scope(analyste, await charger_permissions_eer(self.db, analyste))
             if not portee.peut("eer.control") or not portee.couvre(d.agence_id):
                 raise EerErreur("L'agent affecté doit détenir eer.control sur l'agence du dossier")
             d.analyste_id = analyste_id

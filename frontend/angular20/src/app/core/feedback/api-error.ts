@@ -21,6 +21,7 @@ const TITLES: Record<string, string> = {
   CONFLICT: 'Conflit de données',
   DUPLICATE: 'Doublon',
   DUPLICATE_REQUEST: 'Opération déjà en cours',
+  INVALID_VALUE: 'Valeur non autorisée',
   VALIDATION_ERROR: 'Champs à corriger',
   RATE_LIMITED: 'Trop de tentatives',
   DATABASE_ERROR: 'Service indisponible',
@@ -35,6 +36,7 @@ const MESSAGES: Record<string, string> = {
   NOT_FOUND: 'L’élément demandé est introuvable ou a été supprimé.',
   CONFLICT: 'Cette donnée a été modifiée entre-temps. Actualisez la page pour voir la version actuelle.',
   DUPLICATE: 'Cette donnée existe déjà.',
+  INVALID_VALUE: 'Une valeur saisie n’est pas autorisée. Vérifiez les champs à liste de choix.',
   VALIDATION_ERROR: 'Certains champs sont invalides. Veuillez les corriger.',
   INTERNAL_ERROR: 'Une erreur interne est survenue.',
 };

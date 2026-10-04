@@ -425,6 +425,13 @@ def test_workflow_complement_relance_abandon_sans_rejet():
     assert peut_relancer(EtatDossier(Statut.CONFORME), TOUTES)
     assert raisons_refus(a_completer, Demande(Statut.ABANDONNE, "sup", TOUTES))
     verifier(a_completer, Demande(Statut.ABANDONNE, "sup", TOUTES, motif="Complément non reçu"))
+    # Brouillon créé à tort : abandon motivé par qui peut le modifier, jamais de suppression.
+    brouillon = EtatDossier(Statut.BROUILLON)
+    assert raisons_refus(brouillon, Demande(Statut.ABANDONNE, "c", {"eer.update"}))
+    assert raisons_refus(brouillon, Demande(Statut.ABANDONNE, "c", {"eer.view"}, motif="Doublon"))
+    verifier(brouillon, Demande(Statut.ABANDONNE, "c", {"eer.update"}, motif="Doublon"))
+    for etat in (Statut.A_AFFECTER, Statut.EN_CONTROLE, Statut.VALIDE):
+        assert raisons_refus(EtatDossier(etat), Demande(Statut.ABANDONNE, "sup", TOUTES, motif="x"))
     assert raisons_refus(a_completer, Demande(Statut.RESOUMIS, "a", TOUTES))
     verifier(a_completer, Demande(Statut.RESOUMIS, "a", TOUTES, elements_cibles_fournis=True))
     # Avis défavorable → complément sur le même dossier, motif obligatoire.

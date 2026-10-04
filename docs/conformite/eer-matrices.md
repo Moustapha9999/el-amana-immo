@@ -190,6 +190,7 @@ Seuls les documents **cités** dans les sources sont listés ; le reste est à f
 
 ```text
 A_COMPLETER → (relance, reste A_COMPLETER) | ABANDONNE (motif obligatoire)
+BROUILLON → ABANDONNE (brouillon créé à tort, motif obligatoire)
 BROUILLON → SOUMIS → A_AFFECTER → AFFECTE → EN_CONTROLE
 EN_CONTROLE → CONFORME | NON_CONFORME
 NON_CONFORME → A_COMPLETER → RESOUMIS → EN_CONTROLE
@@ -206,6 +207,14 @@ Saisie V1 (décision du 04/10/2026) : l’**agent conformité** crée le dossier
 du dossier papier, le soumet, puis le contrôle. La séparation des rôles porte donc sur
 **contrôleur ≠ auteur de l’avis / de la validation**, pas sur créateur ≠ contrôleur.
 
+**Accès au module = tous les droits EER** (décision du 04/10/2026, Administrateur Système) :
+tout agent ayant accès au département et au module EER (CORE ADMIN) reçoit `eer.admin`
+(toutes les permissions, toutes agences) ; l’Administrateur Système (superuser) aussi.
+Sans accès au module, aucun droit EER, même avec un rôle `eer.*`. Le paramètre daté
+`workflow.separation_roles` vaut **false** : une même personne peut créer, contrôler,
+émettre l’avis et valider. Réactivable par une nouvelle valeur datée `true` (la règle
+s’applique alors si le paramètre en vigueur **et** l’instantané du dossier l’activent).
+
 | Transition | Permission | Garde backend |
 |------------|------------|---------------|
 | BROUILLON → SOUMIS | `eer.submit` | champs obligatoires du socle présents |
@@ -221,6 +230,9 @@ du dossier papier, le soumet, puis le contrôle. La séparation des rôles porte
 | CONFORME → VALIDE | `eer.validate` | avis non requis ; ≠ contrôleur si séparation active |
 | VALIDE → CLOTURE | `eer.validate` | — |
 | CLOTURE → ARCHIVE | `eer.archive` | — |
+| BROUILLON → ABANDONNE | `eer.update` | motif obligatoire (décision du 04/10/2026 : aucun dossier n’est supprimé, le brouillon reste tracé) |
+| A_COMPLETER → ABANDONNE | `eer.validate` | motif obligatoire |
+| (tout statut) → supprimé | `eer.admin` | motif obligatoire ; **suppression logique** (décision du 04/10/2026) : `deleted_at` / `deleted_by_id` / `motif_suppression`, dossier retiré des listes, du tableau de bord et de l’API (404) ; versions, historique (`SUPPRESSION`), décisions et visas conservés ; audit CORE `eer.dossier.delete` |
 
 La permission existante `eer.reject` n’est pas utilisée par ce workflow (proposition :
 la retirer des rôles lors de la migration sécurité, ou la réserver à l’avis défavorable).
@@ -315,7 +327,7 @@ Non bloquantes (paramètres, valeurs vides en attendant) :
 8. « Procédure classifications risques clients » (citée par les fiches) si calcul automatique souhaité.
 9. Délai « expiration proche » (jours).
 10. Gravités d’anomalie et libellés.
-11. Séparation contrôleur ≠ auteur de l’avis / validation : active pour tous les dossiers ?
-12. Règle d’accès inter-agences.
+11. ~~Séparation contrôleur ≠ auteur de l’avis / validation~~ : désactivée (décision du 04/10/2026).
+12. ~~Règle d’accès inter-agences~~ : tout agent du module voit toutes les agences (décision du 04/10/2026).
 13. Délai de régularisation par défaut d’une ouverture sous réserve (ex. NIF manquant).
 14. Fichier `TABLEAU DE SUIVI EER 2026 v2.xlsx` (feuille FLUX) à récupérer au bureau.

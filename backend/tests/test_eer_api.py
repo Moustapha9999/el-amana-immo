@@ -1,4 +1,7 @@
-"""API EER — permissions (403), périmètre agence, workflow, révisions (409), immuabilité, OpenAPI.
+"""API EER — accès module, workflow, révisions (409), immuabilité, OpenAPI.
+
+Décision du 04/10/2026 : tout agent ayant accès au département + module EER a tous les droits
+EER (toutes agences) et la séparation des rôles est désactivée (paramètre daté).
 
 Exécuté UNIQUEMENT sur une copie de base (ex. bea_digital_eer_test) : migrations eer_* appliquées,
 référentiel chargé. Le test ouvre le module EER (statut actif) et crée des comptes de test
@@ -31,8 +34,10 @@ COMPTES = {
     "charge_b": ("eer.charge", 1),
     "analyste": ("eer.analyste", None),
     "superviseur": ("eer.superviseur", None),
-    "sans_droit": (None, 0),
+    "sans_role": (None, 0),
+    "hors_module": ("eer.superviseur", 0),
 }
+SANS_ACCES_MODULE = {"hors_module"}
 
 
 def _email(nom: str) -> str:
@@ -71,10 +76,13 @@ async def env():
                 await s.flush()
             user.agence_id = agences[rang].id if rang is not None else None
             params = {"u": user.id, "e": espace.id, "m": module.id}
-            await s.execute(text("INSERT INTO user_espace_acces (user_id, espace_id) VALUES (:u, :e) "
-                                 "ON CONFLICT DO NOTHING"), params)
-            await s.execute(text("INSERT INTO user_module_acces (user_id, module_id) VALUES (:u, :m) "
-                                 "ON CONFLICT DO NOTHING"), params)
+            if nom in SANS_ACCES_MODULE:
+                await s.execute(text("DELETE FROM user_module_acces WHERE user_id = :u AND module_id = :m"), params)
+            else:
+                await s.execute(text("INSERT INTO user_espace_acces (user_id, espace_id) VALUES (:u, :e) "
+                                     "ON CONFLICT DO NOTHING"), params)
+                await s.execute(text("INSERT INTO user_module_acces (user_id, module_id) VALUES (:u, :m) "
+                                     "ON CONFLICT DO NOTHING"), params)
             if role_code:
                 role = await s.scalar(select(Role).where(Role.code == role_code))
                 await s.execute(text("INSERT INTO user_roles (user_id, role_id) VALUES (:u, :r) "
@@ -135,82 +143,60 @@ def _valeur(chemin: str, user_id) -> object:
 # --- Permissions ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_permissions_403_et_authentification(env):
+async def test_acces_module_et_authentification(env):
     c, agences = env["client"], env["agences"]
-    sans = await _module(c, "sans_droit")
-    assert (await c.get("/api/v1/eer/dossiers", headers=sans)).status_code == 403
-    assert (await c.post("/api/v1/eer/dossiers", json=_nouveau(agences[0]), headers=sans)).status_code == 403
+    # Sans accès au module (même avec un rôle eer.*) : Login 2 refusé.
+    login = await c.post("/api/v1/auth/login", json={"email": _email("hors_module"), "password": MOT_DE_PASSE})
+    plateforme_hors = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    refus = await c.post(f"/api/v1/auth/modules/{EER_MODULE_CODE}/login",
+                         json={"email": _email("hors_module"), "password": MOT_DE_PASSE}, headers=plateforme_hors)
+    assert refus.status_code == 403 and refus.json()["code"] == "MODULE_FORBIDDEN"
 
     # Session plateforme seule (pas de Login 2 module) : refusée.
     login = await c.post("/api/v1/auth/login", json={"email": _email("charge_a"), "password": MOT_DE_PASSE})
     plateforme = {"Authorization": f"Bearer {login.json()['access_token']}"}
     assert (await c.get("/api/v1/eer/dossiers", headers=plateforme)).status_code == 401
 
-    charge = await _module(c, "charge_a")
-    cree = await c.post("/api/v1/eer/dossiers", json=_nouveau(agences[0]), headers=charge)
+    # Accès module sans aucun rôle eer.* : tous les droits EER, toutes agences.
+    sans_role = await _module(c, "sans_role")
+    perim = (await c.get("/api/v1/eer/perimetre", headers=sans_role)).json()
+    assert perim["perimetre"] == "TOUTES_AGENCES" and all(perim["capacites"].values())
+    cree = await c.post("/api/v1/eer/dossiers", json=_nouveau(agences[1]), headers=sans_role)
     assert cree.status_code == 201, cree.text
-    dossier = cree.json()
-    did, rev = dossier["id"], dossier["revision"]
-    assert "SOUMIS" in dossier["transitions_possibles"]
+    assert {"SOUMIS", "ABANDONNE"} <= set(cree.json()["transitions_possibles"])
 
-    for chemin, corps in (
-        (f"/api/v1/eer/dossiers/{did}", {"revision": rev, "champs": [{"chemin": "dossier.origine_fonds",
-                                                                      "valeur": "X"}]}),
-        (f"/api/v1/eer/dossiers/{did}/submit", {"revision": rev}),
-    ):
-        methode = c.patch if chemin.endswith(did) else c.post
-        res = await methode(chemin, json=corps, headers=sans)
-        assert res.status_code == 403, res.text
-    # Le chargé n'a ni eer.avis, ni eer.validate, ni eer.assign.
-    for action, corps in (("avis", {"revision": rev, "favorable": True}), ("validate", {"revision": rev}),
-                          ("assign", {"revision": rev, "analyste_id": str(env["ids"]["analyste"])})):
-        res = await c.post(f"/api/v1/eer/dossiers/{did}/{action}", json=corps, headers=charge)
-        assert res.status_code == 403, (action, res.text)
-        assert res.json()["code"] == "PERMISSION_DENIED"
-    perim = (await c.get("/api/v1/eer/perimetre", headers=charge)).json()
-    assert perim["perimetre"] == "AGENCE" and perim["capacites"]["avis"] is False
-
-
-# --- Périmètre agence ---------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_perimetre_agence_a_ne_voit_pas_b(env):
+async def test_tout_agent_du_module_voit_toutes_les_agences(env):
     c, (agence_a, agence_b) = env["client"], env["agences"]
     charge_a, charge_b = await _module(c, "charge_a"), await _module(c, "charge_b")
-    analyste = await _module(c, "analyste")
     da = (await c.post("/api/v1/eer/dossiers", json=_nouveau(agence_a, "Client agence A"), headers=charge_a)).json()
     db_ = (await c.post("/api/v1/eer/dossiers", json=_nouveau(agence_b, "Client agence B"), headers=charge_b)).json()
 
-    liste_a = (await c.get("/api/v1/eer/dossiers?size=100", headers=charge_a)).json()
-    ids_a = {d["id"] for d in liste_a["items"]}
-    assert da["id"] in ids_a and db_["id"] not in ids_a
-    assert all(d["agence_id"] == str(agence_a) for d in liste_a["items"])
-    # Même en filtrant explicitement sur l'agence B, le chargé A ne voit rien.
-    forcee = (await c.get(f"/api/v1/eer/dossiers?agence_id={agence_b}", headers=charge_a)).json()
-    assert forcee["total"] == 0
-
-    assert (await c.get(f"/api/v1/eer/dossiers/{db_['id']}", headers=charge_a)).status_code == 404
-    for suffixe in ("checklist", "versions", "history", "anomalies", "fiches"):
-        assert (await c.get(f"/api/v1/eer/dossiers/{db_['id']}/{suffixe}", headers=charge_a)).status_code == 404
-    patch = await c.patch(f"/api/v1/eer/dossiers/{db_['id']}", headers=charge_a, json={
-        "revision": db_["revision"], "champs": [{"chemin": "dossier.origine_fonds", "valeur": "Pirate"}]})
-    assert patch.status_code == 404
-    soumis = await c.post(f"/api/v1/eer/dossiers/{db_['id']}/submit", headers=charge_a,
-                          json={"revision": db_["revision"]})
-    assert soumis.status_code == 404
-    hors = await c.post("/api/v1/eer/dossiers", json=_nouveau(agence_b), headers=charge_a)
-    assert hors.status_code == 403 and hors.json()["code"] == "EER_ACCES_REFUSE"
-
-    tous = {d["id"] for d in (await c.get("/api/v1/eer/dossiers?size=100", headers=analyste)).json()["items"]}
-    assert {da["id"], db_["id"]} <= tous
-    tdb = (await c.get("/api/v1/eer/dashboard", headers=charge_a)).json()
-    assert [a["code"] for a in tdb["par_agence"]] == [liste_a["items"][0]["agence_code"]]
-    assert tdb["total"] == liste_a["total"]
-
-    assert [a["id"] for a in (await c.get("/api/v1/eer/agences", headers=charge_a)).json()] == [str(agence_a)]
-    assert len((await c.get("/api/v1/eer/agences", headers=analyste)).json()) >= 2
+    ids_a = {d["id"] for d in (await c.get("/api/v1/eer/dossiers?size=100", headers=charge_a)).json()["items"]}
+    assert {da["id"], db_["id"]} <= ids_a
+    assert (await c.get(f"/api/v1/eer/dossiers/{db_['id']}", headers=charge_a)).status_code == 200
+    assert len((await c.get("/api/v1/eer/agences", headers=charge_a)).json()) >= 2
     profils = (await c.get("/api/v1/eer/referentiels?domaine=PROFIL", headers=charge_a)).json()
     assert next(p for p in profils if p["code"] == "SALARIE")["parent_code"] == "PP"
+
+
+@pytest.mark.asyncio
+async def test_suppression_logique_avec_motif(env):
+    c, agences = env["client"], env["agences"]
+    charge = await _module(c, "charge_a")
+    d = (await c.post("/api/v1/eer/dossiers", json=_nouveau(agences[0], "Client à supprimer"), headers=charge)).json()
+    url = f"/api/v1/eer/dossiers/{d['id']}"
+
+    assert (await c.post(f"{url}/supprimer", headers=charge, json={"revision": d["revision"]})).status_code == 400
+    res = await c.post(f"{url}/supprimer", headers=charge, json={"revision": d["revision"], "motif": "Test"})
+    assert res.status_code == 200, res.text
+
+    assert (await c.get(url, headers=charge)).status_code == 404
+    liste = (await c.get("/api/v1/eer/dossiers?size=100", headers=charge)).json()["items"]
+    assert d["id"] not in {x["id"] for x in liste}
+    rejoue = await c.post(f"{url}/supprimer", headers=charge, json={"revision": res.json()["revision"], "motif": "x"})
+    assert rejoue.status_code == 404
 
 
 # --- Workflow complet par l'API -------------------------------------------------------------
@@ -255,10 +241,11 @@ async def test_workflow_complet_api_complement_avis_et_conflit(env):
     conflit = await c.post(f"{url}/{did}/submit", headers=charge, json={"revision": rev0})
     assert conflit.status_code == 409 and conflit.json()["code"] == "EER_CONFLIT_REVISION"
 
-    assert (await c.get(f"{url}/{did}/analystes", headers=charge)).status_code == 403
-    eligibles = {a["id"] for a in (await c.get(f"{url}/{did}/analystes", headers=sup)).json()}
-    assert str(ids["analyste"]) in eligibles and str(ids["charge_a"]) not in eligibles
-    assert (await post("assign", sup, analyste_id=str(ids["charge_a"]))).status_code in (400, 403)
+    # Séparation des rôles désactivée : le créateur (chargé) est lui aussi affectable.
+    eligibles = {a["id"] for a in (await c.get(f"{url}/{did}/analystes", headers=charge)).json()}
+    assert {str(ids["analyste"]), str(ids["charge_a"]), str(ids["sans_role"])} <= eligibles
+    assert str(ids["hors_module"]) not in eligibles
+    assert (await post("assign", sup, analyste_id=str(ids["hors_module"]))).status_code == 400
     assert (await post("assign", sup, analyste_id=str(ids["analyste"]))).status_code == 200
     assert (await post("start-control", analyste)).status_code == 200
 
@@ -322,24 +309,22 @@ async def test_workflow_complet_api_complement_avis_et_conflit(env):
     await tout_controler()
     assert (await post("decision", analyste, resultat="CONFORME")).status_code == 200
 
-    # Avis KYC : le contrôleur ne peut pas émettre l'avis (permission) ; validation directe interdite.
+    # Avis KYC requis : validation directe interdite ; le contrôleur peut émettre l'avis (séparation levée).
     assert (await post("validate", sup)).status_code == 400
     assert (await post("request-avis", analyste)).status_code == 200
-    assert (await post("avis", analyste, favorable=True)).status_code == 403
-    res = await post("avis", sup, favorable=True, commentaire="RAS")
+    res = await post("avis", analyste, favorable=True, commentaire="RAS")
     assert res.status_code == 200 and res.json()["statut"] == "VALIDE"
 
     visas = (await c.get(f"{url}/{did}/avis", headers=analyste)).json()
-    assert [(v["avis"], v["user_id"], v["version"]) for v in visas] == [("FAVORABLE", str(ids["superviseur"]), 2)]
+    assert [(v["avis"], v["user_id"], v["version"]) for v in visas] == [("FAVORABLE", str(ids["analyste"]), 2)]
     versions = (await c.get(f"{url}/{did}/versions", headers=analyste)).json()
     assert [v["evenement"] for v in versions][-1] == "VALIDE"
     detail = (await c.get(f"{url}/{did}/versions/{versions[0]['id']}", headers=analyste)).json()
     assert detail["empreinte_verifiee"] is True and detail["numero"] == 1
     historique = (await c.get(f"{url}/{did}/history", headers=analyste)).json()
     assert {"CREATION", "CONTROLES_AUTO", "COMPLEMENT_RECU", "TRANSITION"} <= {h["action"] for h in historique}
-    audit = await c.get(f"{url}/{did}/audit", headers=sup)
+    audit = await c.get(f"{url}/{did}/audit", headers=analyste)
     assert audit.status_code == 200 and "Client cycle API" not in audit.text
-    assert (await c.get(f"{url}/{did}/audit", headers=analyste)).status_code == 403
 
     assert (await post("close", sup)).status_code == 200
     assert (await post("archive", sup)).status_code == 200

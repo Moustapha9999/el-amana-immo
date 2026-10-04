@@ -52,16 +52,16 @@ import { ContratsFicheComponent } from './contrats-echeances/contrats-fiche.comp
 import { withUnsavedChangesGuard } from './core/feedback/unsaved-changes.guard';
 import { ContratsParametresComponent } from './contrats-echeances/contrats-parametres.component';
 import { ContratsRapportsComponent } from './contrats-echeances/contrats-rapports.component';
-import { EerDashboardComponent } from './eer/eer-dashboard.component';
-import { EerFicheComponent } from './eer/eer-fiche.component';
-import { EerListComponent } from './eer/eer-list.component';
-import { EerNouveauComponent } from './eer/eer-nouveau.component';
 import {
   DmgBatchesComponent,
   DmgDashboardComponent,
   DmgInboxComponent,
 } from './demandes-mg/demandes-mg.pages';
 
+const eerDashboard = () => import('./eer/eer-dashboard.component').then((m) => m.EerDashboardComponent);
+const eerList = () => import('./eer/eer-list.component').then((m) => m.EerListComponent);
+const eerNouveau = () => import('./eer/eer-nouveau.component').then((m) => m.EerNouveauComponent);
+const eerFiche = () => import('./eer/eer-fiche.component').then((m) => m.EerFicheComponent);
 const achatsBons = () => import('./achats-appro/achats-bons.component').then((m) => m.AchatsBonsComponent);
 const achatsReceptions = () =>
   import('./achats-appro/achats-receptions.component').then((m) => m.AchatsReceptionsComponent);
@@ -207,10 +207,10 @@ export const routes: Routes = withUnsavedChangesGuard([
     canActivate: [authGuard, moduleGuard('eer')],
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
-      { path: 'dashboard', component: EerDashboardComponent },
-      { path: 'dossiers', component: EerListComponent },
-      { path: 'dossiers/nouveau', component: EerNouveauComponent },
-      { path: 'dossiers/:id', component: EerFicheComponent },
+      { path: 'dashboard', loadComponent: eerDashboard },
+      { path: 'dossiers', loadComponent: eerList },
+      { path: 'dossiers/nouveau', loadComponent: eerNouveau },
+      { path: 'dossiers/:id', loadComponent: eerFiche },
     ],
   },
   {
