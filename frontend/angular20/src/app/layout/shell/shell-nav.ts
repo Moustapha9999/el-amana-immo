@@ -298,6 +298,39 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
       permissions: ['mg.contrats.settings'],
     },
   ],
+  eer: [
+    {
+      section: 'KYC — Pilotage',
+      label: 'Tableau de bord',
+      path: '/eer/dashboard',
+      icon: 'dashboard',
+      exact: true,
+      permissions: ['eer.view'],
+    },
+    {
+      section: 'KYC — Gestion des EER',
+      label: 'Dossiers EER',
+      path: '/eer/dossiers',
+      icon: 'folder_shared',
+      exact: true,
+      permissions: ['eer.view'],
+    },
+    {
+      section: 'KYC — Gestion des EER',
+      label: 'Mes dossiers',
+      path: '/eer/dossiers',
+      icon: 'assignment_ind',
+      queryParams: { mes_dossiers: 'true' },
+      permissions: ['eer.control'],
+    },
+    {
+      section: 'KYC — Gestion des EER',
+      label: 'Nouvelle entrée en relation',
+      path: '/eer/dossiers/nouveau',
+      icon: 'person_add',
+      permissions: ['eer.create'],
+    },
+  ],
   'archives-mg': [
     {
       section: 'Pilotage',

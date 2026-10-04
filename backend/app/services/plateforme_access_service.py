@@ -13,6 +13,7 @@ from app.data.plateforme_catalogue import (
     DEFAULT_ESPACE_CODE,
     DEFAULT_MODULE_CODE,
     FUNCTIONAL_PERMISSIONS,
+    PLATEFORME_DOMAINES,
     PLATEFORME_ESPACES,
     PLATEFORME_MODULES,
     RBAC_ROLES,
@@ -20,7 +21,7 @@ from app.data.plateforme_catalogue import (
     SEED_LOCKED_ESPACE_CODES,
     SEED_LOCKED_MODULE_CODES,
 )
-from app.models import Permission, PlateformeEspace, PlateformeModule, Role, User
+from app.models import Permission, PlateformeDomaine, PlateformeEspace, PlateformeModule, Role, User
 from app.models.associations import role_permissions_table
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,7 @@ class PlateformeAccessService:
                     route=item["route"],
                     statut=item["statut"],
                     sort_order=item["sort_order"],
+                    icon=item.get("icon"),
                     is_active=True,
                 )
                 self.db.add(row)
@@ -88,6 +90,29 @@ class PlateformeAccessService:
                 if _text_needs_utf8_repair(row.description):
                     row.description = item["description"]
         await self.db.flush()
+
+        # Domaines : 1ʳᵉ install seulement (sinon migration Alembic + CORE ADMIN).
+        domaines: dict[str, PlateformeDomaine] = {}
+        if bootstrap:
+            for item in PLATEFORME_DOMAINES:
+                espace = existing.get(item["espace_code"])
+                if espace is None:
+                    continue
+                parent = domaines.get(item.get("parent_code") or "")
+                dom = PlateformeDomaine(
+                    espace_id=espace.id,
+                    parent_id=parent.id if parent else None,
+                    code=item["code"],
+                    label=item["label"],
+                    description=item.get("description", ""),
+                    icon=item.get("icon"),
+                    statut=item.get("statut", "bientot"),
+                    sort_order=item.get("sort_order", 0),
+                    is_active=True,
+                )
+                self.db.add(dom)
+                await self.db.flush()
+                domaines[dom.code] = dom
 
         modules = {
             row.code: row
@@ -105,6 +130,7 @@ class PlateformeAccessService:
                     bootstrap=bootstrap,
                 ):
                     continue
+                dom = domaines.get(item.get("domaine_code") or "")
                 self.db.add(
                     PlateformeModule(
                         espace_id=espace.id,
@@ -113,7 +139,10 @@ class PlateformeAccessService:
                         description=item["description"],
                         entry_path=item["entry_path"],
                         statut=item["statut"],
+                        status_message=item.get("status_message", ""),
                         sort_order=item["sort_order"],
+                        icon=item.get("icon"),
+                        domaine_id=dom.id if dom else None,
                         is_active=True,
                     )
                 )
@@ -237,7 +266,10 @@ class PlateformeAccessService:
     async def list_espaces(self) -> list[PlateformeEspace]:
         result = await self.db.execute(
             select(PlateformeEspace)
-            .options(selectinload(PlateformeEspace.modules))
+            .options(
+                selectinload(PlateformeEspace.modules),
+                selectinload(PlateformeEspace.domaines),
+            )
             .where(PlateformeEspace.is_active.is_(True))
             .order_by(PlateformeEspace.sort_order.asc(), PlateformeEspace.label.asc())
         )
@@ -320,9 +352,16 @@ class PlateformeAccessService:
             show = espace.statut == "bientot" or accessible
             if not show:
                 continue
+            actifs = {d.id: d for d in (espace.domaines or []) if d.is_active and d.statut != "inactif"}
+            # Sous-domaine d'un parent désactivé : masqué avec lui, ainsi que ses modules.
+            domaines_actifs = {
+                k: d for k, d in actifs.items() if d.parent_id is None or d.parent_id in actifs
+            }
             modules_out = []
             for mod in sorted(espace.modules, key=lambda m: (m.sort_order, m.label)):
                 if not mod.is_active:
+                    continue
+                if mod.domaine_id is not None and mod.domaine_id not in domaines_actifs:
                     continue
                 m_acc = user.is_superuser or (granted_m is not None and mod.code in granted_m)
                 # Bientôt : visible pour tous. Autres statuts : seulement si grant module.
@@ -343,6 +382,12 @@ class PlateformeAccessService:
                         "status_message": getattr(mod, "status_message", "") or "",
                         "version": getattr(mod, "version", None),
                         "accessible": clickable,
+                        "icon": mod.icon,
+                        "domaine_id": (
+                            domaines_actifs[mod.domaine_id].code
+                            if mod.domaine_id in domaines_actifs
+                            else None
+                        ),
                     }
                 )
             clickable_espace = accessible and espace.statut == "actif" and bool(espace.route)
@@ -354,10 +399,28 @@ class PlateformeAccessService:
                     "route": espace.route if clickable_espace else None,
                     "statut": espace.statut,
                     "accessible": clickable_espace,
+                    "icon": espace.icon,
                     "modules": modules_out,
+                    "domaines": self._serialize_domaines(domaines_actifs),
                 }
             )
         return payload
+
+    @staticmethod
+    def _serialize_domaines(domaines: dict) -> list[dict]:
+        by_id = domaines
+        return [
+            {
+                "id": d.code,
+                "parent_id": by_id[d.parent_id].code if d.parent_id in by_id else None,
+                "titre": d.label,
+                "description": d.description or "",
+                "icon": d.icon,
+                "statut": d.statut,
+                "status_message": d.status_message or "",
+            }
+            for d in sorted(by_id.values(), key=lambda x: (x.sort_order, x.label))
+        ]
 
     async def serialize_module(self, user: User, module_code: str) -> dict | None:
         module = await self.get_module(module_code)
@@ -389,4 +452,5 @@ class PlateformeAccessService:
             "espace_id": module.espace.code,
             "espace_titre": module.espace.label,
             "espace_route": module.espace.route,
+            "icon": module.icon,
         }

@@ -1,0 +1,778 @@
+import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, OnInit, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { MatIconModule } from '@angular/material/icon';
+import { Observable } from 'rxjs';
+import { ApiErrorInfo, describeApiErrorAsync } from '../core/feedback/api-error';
+import { FeedbackService } from '../core/feedback/feedback.service';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import { UiConfirmData, UiReasonData } from '../shared/ui-dialog/ui-dialog.types';
+import { EerAnalyste, EerService } from './eer.service';
+import {
+  ACTIONS_WORKFLOW,
+  ELEMENT_STATUTS,
+  ETAPES,
+  EerAnomalie,
+  EerAudit,
+  EerChecklist,
+  EerChecklistItem,
+  EerComplement,
+  EerConstat,
+  EerControle,
+  EerDecision,
+  EerDocument,
+  EerDossier,
+  EerFicheChamp,
+  EerHistorique,
+  EerPerimetre,
+  EerVersion,
+  EerVersionLigne,
+  EerVisa,
+  ROLES_PARTIE,
+  STATUTS,
+  TYPES_CLIENT,
+  dateFr,
+  eerTone,
+  libelle,
+  valeurAffichee,
+} from './eer.models';
+
+type Onglet =
+  | 'resume' | 'client' | 'formulaires' | 'documents' | 'checklist' | 'controles'
+  | 'anomalies' | 'complements' | 'avis' | 'versions' | 'historique' | 'audit';
+
+type Modal = null | 'assign' | 'complement' | 'avis-defavorable' | 'anomalie' | 'version';
+
+interface ActionBouton {
+  cle: string;
+  label: string;
+  icon: string;
+  primaire?: boolean;
+  danger?: boolean;
+  run: () => void;
+}
+
+const ONGLETS: Array<{ code: Onglet; label: string; capacite?: string }> = [
+  { code: 'resume', label: 'Résumé' },
+  { code: 'client', label: 'Client' },
+  { code: 'formulaires', label: 'Formulaires' },
+  { code: 'documents', label: 'Documents', capacite: 'documents' },
+  { code: 'checklist', label: 'Checklist' },
+  { code: 'controles', label: 'Contrôles' },
+  { code: 'anomalies', label: 'Anomalies' },
+  { code: 'complements', label: 'Compléments' },
+  { code: 'avis', label: 'Avis' },
+  { code: 'versions', label: 'Versions' },
+  { code: 'historique', label: 'Historique' },
+  { code: 'audit', label: 'Audit', capacite: 'audit' },
+];
+
+const TITRES_FICHES: Record<string, string> = {
+  FICHE_PP: 'Fiche client personne physique',
+  FICHE_PM_PRIVEE: 'Fiche client personne morale privée',
+  FICHE_PM_PUBLIQUE: 'Fiche client personne morale publique',
+  FICHE_ASSOCIATION: 'Fiche client personne morale associations',
+  FICHE_MANDATAIRE: 'Fiche client mandataire',
+  SPECIMEN_SIGNATURE: 'Spécimen de signature',
+};
+
+const CHAMPS_BOOLEENS = new Set(['ppe', 'fatca_indice', 'impact_rse']);
+const CHAMPS_NUMERIQUES = new Set(['salaire_net', 'nombre_signataires', 'effectif']);
+const ETATS_CHAMP: Record<string, string> = {
+  CONNU: 'Connu',
+  MANQUANT: 'Manquant',
+  A_CONFIRMER: 'À confirmer',
+  CONFIRME: 'Confirmé',
+  NON_APPLICABLE: 'Non applicable',
+};
+const PRESENCES: Record<string, string> = { PRESENT: 'Présent', ABSENT: 'Absent', SANS_OBJET: 'Sans objet' };
+
+@Component({
+  selector: 'bea-eer-fiche',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [ReactiveFormsModule, FormsModule, RouterLink, MatIconModule],
+  templateUrl: './eer-fiche.component.html',
+  styleUrl: './eer-fiche.component.css',
+})
+export class EerFicheComponent implements OnInit {
+  private readonly eer = inject(EerService);
+  private readonly feedback = inject(FeedbackService);
+  private readonly fb = inject(FormBuilder);
+  private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
+
+  readonly busy = signal(false);
+  readonly id = signal('');
+  readonly dossier = signal<EerDossier | null>(null);
+  readonly perimetre = signal<EerPerimetre | null>(null);
+  readonly onglet = signal<Onglet>('resume');
+  readonly modal = signal<Modal>(null);
+
+  readonly checklist = signal<EerChecklist | null>(null);
+  readonly fiches = signal<Record<string, EerFicheChamp[]>>({});
+  readonly controles = signal<EerControle[]>([]);
+  readonly decisions = signal<EerDecision[]>([]);
+  readonly constats = signal<EerConstat[] | null>(null);
+  readonly anomalies = signal<EerAnomalie[]>([]);
+  readonly complements = signal<EerComplement[]>([]);
+  readonly visas = signal<EerVisa[]>([]);
+  readonly versions = signal<EerVersionLigne[]>([]);
+  readonly versionDetail = signal<EerVersion | null>(null);
+  readonly historique = signal<EerHistorique[]>([]);
+  readonly documents = signal<EerDocument[]>([]);
+  readonly audit = signal<EerAudit[]>([]);
+  readonly analystes = signal<EerAnalyste[]>([]);
+
+  /** Saisies en cours dans l'onglet Formulaires : clé `${fiche}|${chemin}`. */
+  readonly saisies = signal<Record<string, string>>({});
+
+  readonly assignForm = this.fb.nonNullable.group({ analyste_id: ['', Validators.required] });
+  readonly complementForm = this.fb.nonNullable.group({
+    consigne: ['', [Validators.required, Validators.maxLength(4000)]],
+    echeance: '',
+  });
+  readonly anomalieForm = this.fb.nonNullable.group({
+    type_code: ['', [Validators.required, Validators.maxLength(60)]],
+    gravite: ['MAJEURE', Validators.required],
+    description: ['', [Validators.required, Validators.maxLength(4000)]],
+    item_id: '',
+    observation: '',
+    action_attendue: '',
+  });
+  readonly ciblesItems = signal<Set<string>>(new Set());
+  readonly ciblesAnomalies = signal<Set<string>>(new Set());
+
+  readonly hasUnsavedChanges = unsavedChanges(
+    () => !this.busy() && (Object.keys(this.saisies()).length > 0 || (this.modal() !== null && this.modal() !== 'version' && this.formModalDirty())),
+  );
+
+  readonly onglets = computed(() => {
+    const cap = this.perimetre()?.capacites ?? {};
+    return ONGLETS.filter((o) => !o.capacite || cap[o.capacite]);
+  });
+  readonly cap = computed(() => this.perimetre()?.capacites ?? {});
+  readonly statut = computed(() => this.dossier()?.statut ?? '');
+  readonly revision = computed(() => this.dossier()?.revision ?? 0);
+  readonly enControle = computed(() => this.statut() === 'EN_CONTROLE' && !!this.cap()['controle']);
+  readonly modifiable = computed(() => {
+    const s = this.statut();
+    const c = this.cap();
+    return (s === 'BROUILLON' && !!c['modification']) || (s === 'EN_CONTROLE' && !!c['controle']) || (s === 'A_COMPLETER' && !!c['complement']);
+  });
+  readonly client = computed(() => this.dossier()?.parties.find((p) => p.role === 'CLIENT') ?? null);
+  readonly ficheCles = computed(() => Object.keys(this.fiches()));
+  readonly nbSaisies = computed(() => Object.keys(this.saisies()).length);
+  readonly anomaliesOuvertes = computed(() => this.anomalies().filter((a) => a.statut === 'OUVERTE'));
+  readonly itemsCiblables = computed(() =>
+    (this.checklist()?.items ?? []).filter((i) => ['NON_CONFORME', 'MANQUANT', 'A_VERIFIER'].includes(i.statut)),
+  );
+  readonly complementOuvert = computed(() => this.complements().find((c) => c.statut === 'OUVERT') ?? null);
+  readonly itemsAttendus = computed(() => {
+    const c = this.complementOuvert();
+    return new Set((c?.elements ?? []).filter((e) => e.item_id && !e.fourni).map((e) => e.item_id as string));
+  });
+
+  readonly actions = computed<ActionBouton[]>(() => {
+    const d = this.dossier();
+    if (!d) return [];
+    const out: ActionBouton[] = [];
+    for (const cible of d.transitions_possibles) {
+      if (cible === 'AFFECTE') {
+        out.push({ cle: cible, label: 'Affecter à un analyste', icon: 'assignment_ind', primaire: true, run: () => this.ouvrirAffectation() });
+      } else if (cible === 'CONFORME') {
+        out.push({ cle: cible, label: 'Déclarer conforme', icon: 'verified', primaire: true, run: () => this.decider('CONFORME') });
+      } else if (cible === 'NON_CONFORME') {
+        out.push({ cle: cible, label: 'Déclarer non conforme', icon: 'report', danger: true, run: () => this.decider('NON_CONFORME') });
+      } else if (cible === 'A_COMPLETER' && d.statut === 'NON_CONFORME') {
+        out.push({ cle: cible, label: 'Demander un complément', icon: 'playlist_add', primaire: true, run: () => this.ouvrirComplement('complement') });
+      } else if (cible === 'A_COMPLETER' && d.statut === 'AVIS_CONFORMITE') {
+        out.push({ cle: cible, label: 'Avis défavorable', icon: 'thumb_down', danger: true, run: () => this.ouvrirComplement('avis-defavorable') });
+      } else if (cible === 'VALIDE' && d.statut === 'AVIS_CONFORMITE') {
+        out.push({ cle: cible, label: 'Avis favorable', icon: 'thumb_up', primaire: true, run: () => this.avisFavorable() });
+      } else if (cible === 'VALIDE') {
+        out.push({ cle: cible, label: 'Valider le dossier', icon: 'check_circle', primaire: true, run: () => this.transition('validate', 'Valider le dossier', 'validation') });
+      } else if (ACTIONS_WORKFLOW[cible]) {
+        const a = ACTIONS_WORKFLOW[cible];
+        out.push({
+          cle: cible,
+          label: a.label,
+          icon: a.icon,
+          danger: cible === 'ABANDONNE',
+          primaire: cible === 'SOUMIS' || cible === 'EN_CONTROLE' || cible === 'RESOUMIS',
+          run: () => (a.motif === 'requis' ? this.transitionMotivee(a.route, a.label) : this.transition(a.route, a.label)),
+        });
+      }
+    }
+    if (d.statut === 'A_COMPLETER' && this.cap()['demande_complement']) {
+      out.push({ cle: 'RELANCE', label: 'Relancer', icon: 'notifications_active', run: () => this.relancer() });
+    }
+    return out;
+  });
+
+  ngOnInit(): void {
+    this.eer.perimetre().subscribe({ next: (p) => this.perimetre.set(p), error: (e) => this.fail(e) });
+    this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((p) => {
+      this.id.set(p.get('id') ?? '');
+      this.saisies.set({});
+      this.recharger();
+    });
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((q) => {
+      const o = q.get('onglet') as Onglet | null;
+      if (o && ONGLETS.some((x) => x.code === o)) this.choisir(o);
+    });
+  }
+
+  // --- Chargement ---------------------------------------------------------------------------
+
+  recharger(): void {
+    if (!this.id()) return;
+    this.eer.lire(this.id()).subscribe({ next: (d) => this.dossier.set(d), error: (e) => this.fail(e) });
+    this.chargerOnglet(this.onglet());
+  }
+
+  choisir(o: Onglet): void {
+    this.onglet.set(o);
+    this.chargerOnglet(o);
+  }
+
+  private chargerOnglet(o: Onglet): void {
+    const id = this.id();
+    if (!id) return;
+    const err = (e: unknown) => this.fail(e);
+    switch (o) {
+      case 'resume':
+        this.eer.checklist(id).subscribe({ next: (c) => this.checklist.set(c), error: err });
+        this.eer.anomalies(id).subscribe({ next: (a) => this.anomalies.set(a), error: err });
+        break;
+      case 'formulaires':
+        this.eer.fiches(id).subscribe({ next: (f) => this.fiches.set(f), error: err });
+        break;
+      case 'documents':
+        this.eer.documents(id).subscribe({ next: (d) => this.documents.set(d), error: err });
+        break;
+      case 'checklist':
+        this.eer.checklist(id).subscribe({ next: (c) => this.checklist.set(c), error: err });
+        this.eer.complements(id).subscribe({ next: (c) => this.complements.set(c), error: err });
+        break;
+      case 'controles':
+        this.eer.controles(id).subscribe({
+          next: (r) => {
+            this.controles.set(r.controles);
+            this.decisions.set(r.decisions);
+          },
+          error: err,
+        });
+        break;
+      case 'anomalies':
+        this.eer.anomalies(id).subscribe({ next: (a) => this.anomalies.set(a), error: err });
+        this.eer.checklist(id).subscribe({ next: (c) => this.checklist.set(c), error: err });
+        break;
+      case 'complements':
+        this.eer.complements(id).subscribe({ next: (c) => this.complements.set(c), error: err });
+        break;
+      case 'avis':
+        this.eer.avis(id).subscribe({ next: (v) => this.visas.set(v), error: err });
+        break;
+      case 'versions':
+        this.eer.versions(id).subscribe({ next: (v) => this.versions.set(v), error: err });
+        break;
+      case 'historique':
+        this.eer.historique(id).subscribe({ next: (h) => this.historique.set(h), error: err });
+        break;
+      case 'audit':
+        this.eer.audit(id).subscribe({ next: (a) => this.audit.set(a), error: err });
+        break;
+      default:
+        break;
+    }
+  }
+
+  // --- Mutations (révision optimiste ; 409 → rechargement) ----------------------------------
+
+  private muter<T>(
+    action: (revision: number) => Observable<T>,
+    opts: { loading: string; succes: string; errorTitle: string; confirm?: UiConfirmData | { action: 'soumission' | 'validation' | 'cloture' | 'archivage' | 'modification'; message: string } },
+    apres?: (r: T) => void,
+  ): void {
+    this.feedback
+      .run(() => action(this.revision()), {
+        confirm: opts.confirm,
+        loading: opts.loading,
+        busy: this.busy,
+        retry: false,
+        errorTitle: opts.errorTitle,
+        onError: (info) => this.surErreur(info),
+        success: (r: T) => ({ title: opts.succes, details: this.details(r) }),
+      })
+      .subscribe((r) => {
+        apres?.(r);
+        this.recharger();
+      });
+  }
+
+  private muterMotif<T>(reason: UiReasonData, action: (revision: number, motif: string) => Observable<T>, succes: string, errorTitle: string): void {
+    this.feedback
+      .runWithReason((motif) => action(this.revision(), motif), {
+        reason,
+        loading: 'Enregistrement…',
+        busy: this.busy,
+        retry: false,
+        errorTitle,
+        onError: (info) => this.surErreur(info),
+        success: (r: T) => ({ title: succes, details: this.details(r) }),
+      })
+      .subscribe(() => this.recharger());
+  }
+
+  private details(r: unknown): Array<{ label: string; value: string }> {
+    const m = r as { statut?: string; version_courante?: number } | null;
+    if (!m?.statut) return [];
+    return [
+      { label: 'Statut', value: libelle(STATUTS, m.statut) },
+      { label: 'Version', value: `v${m.version_courante}` },
+    ];
+  }
+
+  private surErreur(info: ApiErrorInfo): void {
+    if (info.status === 409) {
+      this.feedback.warning({
+        title: 'Dossier modifié entre-temps',
+        message: 'Un autre utilisateur a modifié ce dossier. La fiche a été rechargée : vérifiez puis recommencez.',
+      });
+      this.recharger();
+    }
+  }
+
+  transition(route: string, label: string, preset: 'soumission' | 'validation' | 'cloture' | 'archivage' | 'modification' = 'modification'): void {
+    const d = this.dossier();
+    if (!d) return;
+    const action = route === 'submit' ? 'soumission' : route === 'close' ? 'cloture' : route === 'archive' ? 'archivage' : preset;
+    this.muter((rev) => this.eer.action(d.id, route, rev), {
+      loading: `${label}…`,
+      succes: label,
+      errorTitle: 'Action refusée',
+      confirm: { action, message: `${label} — dossier ${d.reference} ?` },
+    });
+  }
+
+  transitionMotivee(route: string, label: string): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.muterMotif(
+      { title: label, message: `${label} — dossier ${d.reference}.`, reasonLabel: 'Motif', required: true, maxLength: 4000, tone: 'danger', confirmLabel: label },
+      (rev, motif) => this.eer.action(d.id, route, rev, { motif }),
+      label,
+      'Action refusée',
+    );
+  }
+
+  decider(resultat: 'CONFORME' | 'NON_CONFORME'): void {
+    const d = this.dossier();
+    if (!d) return;
+    const label = resultat === 'CONFORME' ? 'Déclarer le dossier conforme' : 'Déclarer le dossier non conforme';
+    this.muter((rev) => this.eer.action(d.id, 'decision', rev, { resultat }), {
+      loading: 'Enregistrement de la décision…',
+      succes: resultat === 'CONFORME' ? 'Dossier déclaré conforme' : 'Dossier déclaré non conforme',
+      errorTitle: 'Décision refusée',
+      confirm: {
+        title: label,
+        message: `${label} (${d.reference}) ?`,
+        hint: 'La décision doit correspondre à la décision calculée par le moteur de conformité.',
+        tone: resultat === 'CONFORME' ? 'success' : 'danger',
+        confirmLabel: 'Confirmer',
+      },
+    });
+  }
+
+  avisFavorable(): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.muterMotif(
+      {
+        title: 'Avis Conformité KYC favorable',
+        message: `Émettre un avis favorable sur ${d.reference} (version ${d.version_courante}) ? Le dossier sera validé.`,
+        reasonLabel: 'Commentaire',
+        required: false,
+        maxLength: 4000,
+        tone: 'success',
+        confirmLabel: 'Émettre l’avis',
+      },
+      (rev, commentaire) => this.eer.action(d.id, 'avis', rev, { favorable: true, commentaire: commentaire || null }),
+      'Avis favorable enregistré',
+      'Avis refusé',
+    );
+  }
+
+  relancer(): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.muterMotif(
+      { title: 'Relancer le complément', message: `Enregistrer une relance pour ${d.reference}.`, reasonLabel: 'Commentaire', required: false, maxLength: 4000, confirmLabel: 'Relancer' },
+      (rev, motif) => this.eer.action(d.id, 'relance', rev, { motif: motif || null }),
+      'Relance enregistrée',
+      'Relance refusée',
+    );
+  }
+
+  // Affectation
+  ouvrirAffectation(): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.assignForm.reset();
+    this.analystes.set([]);
+    this.eer.analystes(d.id).subscribe({ next: (a) => this.analystes.set(a), error: (e) => this.fail(e) });
+    this.modal.set('assign');
+  }
+
+  affecter(): void {
+    const d = this.dossier();
+    if (!d || this.assignForm.invalid) return;
+    const { analyste_id } = this.assignForm.getRawValue();
+    this.muter((rev) => this.eer.action(d.id, 'assign', rev, { analyste_id }), {
+      loading: 'Affectation…',
+      succes: 'Dossier affecté',
+      errorTitle: 'Affectation refusée',
+    }, () => this.fermer(true));
+  }
+
+  // Complément / avis défavorable : seuls les éléments ciblés seront modifiables.
+  ouvrirComplement(type: 'complement' | 'avis-defavorable'): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.complementForm.reset();
+    this.ciblesItems.set(new Set());
+    this.ciblesAnomalies.set(new Set(this.anomaliesOuvertes().map((a) => a.id)));
+    this.eer.checklist(d.id).subscribe({ next: (c) => this.checklist.set(c), error: (e) => this.fail(e) });
+    this.eer.anomalies(d.id).subscribe({
+      next: (a) => {
+        this.anomalies.set(a);
+        this.ciblesAnomalies.set(new Set(a.filter((x) => x.statut === 'OUVERTE').map((x) => x.id)));
+      },
+      error: (e) => this.fail(e),
+    });
+    this.modal.set(type);
+  }
+
+  basculer(cible: 'items' | 'anomalies', id: string): void {
+    const s = cible === 'items' ? this.ciblesItems : this.ciblesAnomalies;
+    const next = new Set(s());
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    s.set(next);
+  }
+
+  envoyerComplement(): void {
+    const d = this.dossier();
+    if (!d || this.complementForm.invalid) return;
+    const v = this.complementForm.getRawValue();
+    const cibles = { item_ids: [...this.ciblesItems()], anomalie_ids: [...this.ciblesAnomalies()], champs: [] };
+    if (this.modal() === 'avis-defavorable') {
+      this.muter((rev) => this.eer.action(d.id, 'avis', rev, { favorable: false, commentaire: v.consigne, cibles }), {
+        loading: 'Enregistrement de l’avis…',
+        succes: 'Avis défavorable enregistré',
+        errorTitle: 'Avis refusé',
+      }, () => this.fermer(true));
+    } else {
+      this.muter((rev) => this.eer.action(d.id, 'complement', rev, { consigne: v.consigne, echeance: v.echeance || null, cibles }), {
+        loading: 'Demande de complément…',
+        succes: 'Complément demandé',
+        errorTitle: 'Demande refusée',
+      }, () => this.fermer(true));
+    }
+  }
+
+  // --- Formulaires ---------------------------------------------------------------------------
+
+  cleSaisie(fiche: string, chemin: string): string {
+    return `${fiche}|${chemin}`;
+  }
+
+  valeurSaisie(fiche: string, c: EerFicheChamp): string {
+    const k = this.cleSaisie(fiche, c.chemin);
+    const s = this.saisies();
+    if (k in s) return s[k];
+    if (c.valeur === null || c.valeur === undefined) return '';
+    if (typeof c.valeur === 'boolean') return c.valeur ? 'true' : 'false';
+    return String(c.valeur);
+  }
+
+  saisir(fiche: string, c: EerFicheChamp, valeur: string): void {
+    const k = this.cleSaisie(fiche, c.chemin);
+    const next = { ...this.saisies() };
+    const origine = c.valeur === null || c.valeur === undefined ? '' : typeof c.valeur === 'boolean' ? String(c.valeur) : String(c.valeur);
+    if (valeur === origine) delete next[k];
+    else next[k] = valeur;
+    this.saisies.set(next);
+  }
+
+  typeChamp(chemin: string): 'date' | 'bool' | 'number' | 'text' {
+    const feuille = chemin.split('.').pop() ?? '';
+    if (CHAMPS_BOOLEENS.has(feuille)) return 'bool';
+    if (feuille.startsWith('date')) return 'date';
+    if (CHAMPS_NUMERIQUES.has(feuille)) return 'number';
+    return 'text';
+  }
+
+  enregistrerFiches(): void {
+    const d = this.dossier();
+    if (!d || !this.nbSaisies()) return;
+    const champs = Object.entries(this.saisies()).map(([k, brut]) => {
+      const [fiche, chemin] = k.split('|');
+      const dpId = fiche.includes(':') ? fiche.split(':')[1] : null;
+      const t = this.typeChamp(chemin);
+      const valeur = brut === '' ? null : t === 'bool' ? brut === 'true' : t === 'number' ? Number(brut) : brut;
+      return { chemin, valeur, dossier_partie_id: dpId };
+    });
+    this.muter((rev) => this.eer.modifier(d.id, rev, champs), {
+      loading: 'Enregistrement des fiches…',
+      succes: 'Fiches enregistrées',
+      errorTitle: 'Enregistrement refusé',
+    }, () => this.saisies.set({}));
+  }
+
+  annulerSaisies(): void {
+    this.saisies.set({});
+  }
+
+  confirmerChamp(fiche: string, c: EerFicheChamp): void {
+    const d = this.dossier();
+    if (!d) return;
+    const dpId = fiche.includes(':') ? fiche.split(':')[1] : null;
+    this.muter((rev) => this.eer.action(d.id, 'fiches/confirm', rev, { chemin: c.chemin, dossier_partie_id: dpId }), {
+      loading: 'Confirmation…',
+      succes: `« ${c.libelle} » confirmé`,
+      errorTitle: 'Confirmation refusée',
+    });
+  }
+
+  terminerFiches(): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.muter((rev) => this.eer.action(d.id, 'fiches/complete', rev), {
+      loading: 'Clôture de l’étape fiches…',
+      succes: 'Fiches complétées',
+      errorTitle: 'Fiches incomplètes',
+    });
+  }
+
+  titreFiche(cle: string): string {
+    const [code, dp] = cle.split(':');
+    const titre = TITRES_FICHES[code] ?? code;
+    if (!dp) return titre;
+    const partie = this.dossier()?.parties.find((p) => p.dossier_partie_id === dp);
+    return partie ? `${titre} — ${partie.nom}` : titre;
+  }
+
+  // --- Checklist / contrôles -----------------------------------------------------------------
+
+  regenererChecklist(): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.muter((rev) => this.eer.action(d.id, 'checklist/generate', rev), {
+      loading: 'Recalcul de la checklist…',
+      succes: 'Checklist recalculée',
+      errorTitle: 'Recalcul refusé',
+    });
+  }
+
+  validerChecklist(): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.muter((rev) => this.eer.action(d.id, 'checklist/validate', rev), {
+      loading: 'Validation de la checklist…',
+      succes: 'Checklist validée',
+      errorTitle: 'Checklist incomplète',
+    });
+  }
+
+  pointer(i: EerChecklistItem, presence: 'PRESENT' | 'ABSENT' | 'SANS_OBJET'): void {
+    const d = this.dossier();
+    if (!d) return;
+    if (presence === 'SANS_OBJET') {
+      this.muterMotif(
+        { title: 'Élément sans objet', message: i.libelle, reasonLabel: 'Justification', required: true, maxLength: 1000, confirmLabel: 'Enregistrer' },
+        (rev, motif) => this.eer.pointer(d.id, i.id, rev, presence, motif),
+        'Élément pointé',
+        'Pointage refusé',
+      );
+      return;
+    }
+    this.muter((rev) => this.eer.pointer(d.id, i.id, rev, presence), {
+      loading: 'Pointage…',
+      succes: `${i.libelle} : ${PRESENCES[presence]}`,
+      errorTitle: 'Pointage refusé',
+    });
+  }
+
+  controler(i: EerChecklistItem, conforme: boolean): void {
+    const d = this.dossier();
+    if (!d) return;
+    if (!conforme) {
+      this.muterMotif(
+        { title: 'Élément non conforme', message: i.libelle, reasonLabel: 'Observation', required: true, maxLength: 1000, tone: 'danger', confirmLabel: 'Enregistrer' },
+        (rev, motif) => this.eer.controler(d.id, i.id, rev, false, motif),
+        'Contrôle enregistré',
+        'Contrôle refusé',
+      );
+      return;
+    }
+    this.muter((rev) => this.eer.controler(d.id, i.id, rev, true), {
+      loading: 'Contrôle…',
+      succes: `${i.libelle} : conforme`,
+      errorTitle: 'Contrôle refusé',
+    });
+  }
+
+  marquerFourni(i: EerChecklistItem): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.muter((rev) => this.eer.action(d.id, 'complements/fourni', rev, { item_id: i.id }), {
+      loading: 'Enregistrement…',
+      succes: `${i.libelle} : reçu`,
+      errorTitle: 'Réception refusée',
+    });
+  }
+
+  lancerControlesAuto(): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.muter((rev) => this.eer.controlesAuto(d.id, rev), {
+      loading: 'Contrôles automatiques…',
+      succes: 'Contrôles automatiques exécutés',
+      errorTitle: 'Contrôles impossibles',
+    }, (r) => this.constats.set(r.constats));
+  }
+
+  statutLigne(i: EerChecklistItem): string {
+    if (i.neutralise_auto) return 'Neutralisé (auto)';
+    if (i.derogation_acceptee) return 'Dérogation acceptée';
+    if (i.controle_le) return 'Contrôlé';
+    if (i.pointe_le) return 'Pointé';
+    return 'Non pointé';
+  }
+
+  // --- Anomalies -----------------------------------------------------------------------------
+
+  ouvrirAnomaliesAuto(): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.muter((rev) => this.eer.action(d.id, 'anomalies/open', rev), {
+      loading: 'Ouverture des anomalies…',
+      succes: 'Anomalies ouvertes depuis les non-conformités',
+      errorTitle: 'Ouverture refusée',
+    });
+  }
+
+  nouvelleAnomalie(): void {
+    this.anomalieForm.reset({ gravite: 'MAJEURE' });
+    this.modal.set('anomalie');
+  }
+
+  creerAnomalie(): void {
+    const d = this.dossier();
+    if (!d || this.anomalieForm.invalid) return;
+    const v = this.anomalieForm.getRawValue();
+    this.muter((rev) => this.eer.action(d.id, 'anomalies', rev, {
+      type_code: v.type_code.trim(),
+      gravite: v.gravite,
+      description: v.description.trim(),
+      item_id: v.item_id || null,
+      observation: v.observation.trim() || null,
+      action_attendue: v.action_attendue.trim() || null,
+    }), {
+      loading: 'Enregistrement de l’anomalie…',
+      succes: 'Anomalie enregistrée',
+      errorTitle: 'Anomalie refusée',
+    }, () => this.fermer(true));
+  }
+
+  annulerAnomalie(a: EerAnomalie): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.muterMotif(
+      { title: 'Annuler l’anomalie', message: a.description, reasonLabel: 'Motif d’annulation', required: true, maxLength: 1000, tone: 'danger', confirmLabel: 'Annuler l’anomalie' },
+      (rev, motif) => this.eer.modifierAnomalie(d.id, a.id, rev, { annuler_motif: motif }),
+      'Anomalie annulée',
+      'Annulation refusée',
+    );
+  }
+
+  accepterAnomalie(a: EerAnomalie): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.muterMotif(
+      { title: 'Accepter avec justification', message: a.description, reasonLabel: 'Justification (dérogation)', required: true, maxLength: 1000, tone: 'warn', confirmLabel: 'Accepter' },
+      (rev, justification) => this.eer.modifierAnomalie(d.id, a.id, rev, { accepter_justification: justification }),
+      'Anomalie acceptée',
+      'Acceptation refusée',
+    );
+  }
+
+  libelleItem(id: string | null): string {
+    if (!id) return '—';
+    return this.checklist()?.items.find((i) => i.id === id)?.libelle ?? '—';
+  }
+
+  // --- Versions ------------------------------------------------------------------------------
+
+  ouvrirVersion(v: EerVersionLigne): void {
+    this.versionDetail.set(null);
+    this.modal.set('version');
+    this.eer.version(this.id(), v.id).subscribe({ next: (r) => this.versionDetail.set(r), error: (e) => this.fail(e) });
+  }
+
+  json(v: unknown): string {
+    return JSON.stringify(v, null, 2);
+  }
+
+  // --- Modales -------------------------------------------------------------------------------
+
+  private formModalDirty(): boolean {
+    switch (this.modal()) {
+      case 'assign':
+        return this.assignForm.dirty;
+      case 'complement':
+      case 'avis-defavorable':
+        return this.complementForm.dirty;
+      case 'anomalie':
+        return this.anomalieForm.dirty;
+      default:
+        return false;
+    }
+  }
+
+  fermer(force = false): void {
+    if (!force && this.busy()) return;
+    this.modal.set(null);
+    this.assignForm.markAsPristine();
+    this.complementForm.markAsPristine();
+    this.anomalieForm.markAsPristine();
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    if (this.modal()) this.fermer();
+  }
+
+  // --- Affichage -----------------------------------------------------------------------------
+
+  readonly libStatut = (c: string | null | undefined) => libelle(STATUTS, c);
+  readonly libEtape = (c: string | null | undefined) => libelle(ETAPES, c);
+  readonly libType = (c: string | null | undefined) => libelle(TYPES_CLIENT, c);
+  readonly libRole = (c: string | null | undefined) => libelle(ROLES_PARTIE, c);
+  readonly libElement = (c: string | null | undefined) => libelle(ELEMENT_STATUTS, c);
+  readonly libEtatChamp = (c: string | null | undefined) => libelle(ETATS_CHAMP, c);
+  readonly libPresence = (c: string | null | undefined) => libelle(PRESENCES, c);
+  readonly tone = eerTone;
+  readonly date = dateFr;
+  readonly val = valeurAffichee;
+
+  ouiNon(v: boolean | null | undefined): string {
+    return v === null || v === undefined ? '—' : v ? 'Oui' : 'Non';
+  }
+
+  private fail(err: unknown): void {
+    void describeApiErrorAsync(err).then((info) => this.feedback.apiError(info, 'Chargement impossible'));
+  }
+}

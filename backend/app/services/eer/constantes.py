@@ -1,0 +1,109 @@
+"""Codes stables du module EER (valeurs stockées en base, jamais les libellés)."""
+
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class TypeClient(StrEnum):
+    PP = "PP"
+    PM_PRIVEE = "PM_PRIVEE"
+    PM_PUBLIQUE = "PM_PUBLIQUE"
+    ASSOCIATION = "ASSOCIATION"
+
+
+TYPES_PERSONNE_MORALE = frozenset({TypeClient.PM_PRIVEE, TypeClient.PM_PUBLIQUE, TypeClient.ASSOCIATION})
+
+
+class OperationType(StrEnum):
+    ENTREE_RELATION = "ENTREE_RELATION"
+    MISE_A_JOUR = "MISE_A_JOUR"
+
+
+class Risque(StrEnum):
+    FAIBLE = "FAIBLE"
+    MOYEN = "MOYEN"
+    ELEVE = "ELEVE"
+
+
+class RoleDossier(StrEnum):
+    CLIENT = "CLIENT"
+    MANDATAIRE = "MANDATAIRE"
+    SIGNATAIRE_COMPTE = "SIGNATAIRE_COMPTE"
+    GERANT = "GERANT"
+    CO_GERANT = "CO_GERANT"
+    SIGNATAIRE_ASSOCIATION = "SIGNATAIRE_ASSOCIATION"
+    CO_SIGNATAIRE_ASSOCIATION = "CO_SIGNATAIRE_ASSOCIATION"
+    MEMBRE_DIRECTION = "MEMBRE_DIRECTION"
+    ACTIONNAIRE = "ACTIONNAIRE"
+    BENEFICIAIRE_EFFECTIF = "BENEFICIAIRE_EFFECTIF"
+    CONTACT_URGENCE = "CONTACT_URGENCE"
+
+
+class Axe(StrEnum):
+    PHYSIQUE = "PHYSIQUE"
+    SYSTEME = "SYSTEME"
+    COHERENCE = "COHERENCE"
+
+
+class NatureElement(StrEnum):
+    DOCUMENT = "DOCUMENT"
+    INFORMATION = "INFORMATION"
+    CONTROLE = "CONTROLE"
+    AVIS = "AVIS"
+
+
+class TypeControle(StrEnum):
+    MANUEL = "MANUEL"
+    AUTO_PRESENCE = "AUTO_PRESENCE"
+    AUTO_EXPIRATION = "AUTO_EXPIRATION"
+    AUTO_COHERENCE = "AUTO_COHERENCE"
+    AUTO_CALCUL = "AUTO_CALCUL"
+
+
+class StatutElement(StrEnum):
+    NON_CONTROLE = "NON_CONTROLE"
+    EN_COURS = "EN_COURS"
+    CONFORME = "CONFORME"
+    NON_CONFORME = "NON_CONFORME"
+    MANQUANT = "MANQUANT"
+    NON_APPLICABLE = "NON_APPLICABLE"
+    A_VERIFIER = "A_VERIFIER"
+
+
+class Presence(StrEnum):
+    PRESENT = "PRESENT"
+    ABSENT = "ABSENT"
+    SANS_OBJET = "SANS_OBJET"
+
+
+class ResultatAxe(StrEnum):
+    CONFORME = "CONFORME"
+    NON_CONFORME = "NON_CONFORME"
+    INCOMPLET = "INCOMPLET"
+
+
+class GraviteAnomalie(StrEnum):
+    BLOQUANTE = "BLOQUANTE"
+    MAJEURE = "MAJEURE"
+    MINEURE = "MINEURE"
+
+
+class StatutAnomalie(StrEnum):
+    OUVERTE = "OUVERTE"
+    EN_COMPLEMENT = "EN_COMPLEMENT"
+    CORRIGEE = "CORRIGEE"
+    ACCEPTEE = "ACCEPTEE"
+    CLOSE = "CLOSE"
+    ANNULEE = "ANNULEE"
+
+
+ANOMALIES_OUVERTES = frozenset({StatutAnomalie.OUVERTE, StatutAnomalie.EN_COMPLEMENT})
+
+
+class EtatChamp(StrEnum):
+    CONNU = "CONNU"
+    MANQUANT = "MANQUANT"
+    A_CONFIRMER = "A_CONFIRMER"
+    CONFIRME = "CONFIRME"
+    NON_APPLICABLE = "NON_APPLICABLE"

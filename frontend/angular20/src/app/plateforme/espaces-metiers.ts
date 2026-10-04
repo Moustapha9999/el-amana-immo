@@ -28,6 +28,21 @@ export interface ModuleMetier {
   entry_path?: string | null;
   status_message?: string;
   version?: string | null;
+  /** Glyphe Material Icons (police chargée par index.html). */
+  icon?: string | null;
+  /** Code du domaine / sous-domaine de rattachement (null = hors domaine). */
+  domaine_id?: string | null;
+}
+
+/** Domaine (parent_id null) ou sous-domaine — regroupement visuel, pas un niveau d’accès. */
+export interface DomaineMetier {
+  id: string;
+  parent_id: string | null;
+  titre: string;
+  description: string;
+  icon?: string | null;
+  statut: 'actif' | 'bientot' | 'developpement' | string;
+  status_message?: string;
 }
 
 export interface EspaceMetier {
@@ -38,6 +53,8 @@ export interface EspaceMetier {
   statut: StatutEspace | string;
   modules: ModuleMetier[];
   accessible?: boolean;
+  icon?: string | null;
+  domaines?: DomaineMetier[];
 }
 
 export interface PageModuleImmo {

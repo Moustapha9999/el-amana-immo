@@ -203,9 +203,16 @@ Voir [moyens-generaux/cdc-fonctionnel-v1.md](moyens-generaux/cdc-fonctionnel-v1.
 |--------|--------|
 | `stock-fournitures`, `achats-appro`, `notes-frais`, `contrats-echeances`, `archives-mg` | actif |
 
-### 6.2 Candidats non seedés
+### 6.2 Audit, Contrôle & Conformité — créé (migration `20261003_acc_departement`)
 
-Compliance / LBC, Audit interne, Marketing, Agence / réseau, Juridique, Risques.
+Espace `audit-controle-conformite`, 5 domaines (Audit interne, Contrôle permanent,
+Conformité & sécurité financière → KYC, Organisation & Processus, Management & Qualité).
+Seul module : `eer` (Gestion des Entrées en Relation), statut **en développement**.
+Détail : [conformite/README.md](conformite/README.md).
+
+### 6.3 Candidats non seedés
+
+Marketing, Agence / réseau, Juridique, Risques.
 Créer l’espace CORE ADMIN **seulement** après atelier.
 
 ---

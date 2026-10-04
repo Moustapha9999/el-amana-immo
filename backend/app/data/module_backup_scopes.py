@@ -35,6 +35,7 @@ SHARED_CORE_TABLES: list[str] = [
     "journaux",
     "comptes_plan_comptable",
     "plateforme_espaces",
+    "plateforme_domaines",
     "plateforme_modules",
     "user_espace_acces",
     "user_module_acces",
@@ -168,6 +169,10 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
     "demandes-informatique": make_module_scope(
         label="Demandes Informatique", exclusive_tables=[]
     ),
+    # Tables eer_* ajoutées avec le modèle de données EER (prompts suivants).
+    "eer": make_module_scope(
+        label="Gestion des Entrées en Relation", uploads_subdir="eer", exclusive_tables=[]
+    ),
 }
 
 ESPACE_MODULES: dict[str, list[str]] = {
@@ -185,6 +190,7 @@ ESPACE_MODULES: dict[str, list[str]] = {
         "demandes-mg",
     ],
     "archives": ["archives-generales"],
+    "audit-controle-conformite": ["eer"],
 }
 
 

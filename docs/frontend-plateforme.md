@@ -16,6 +16,7 @@ Source de vérité code : `plateforme/module-routing.contract.ts`.
 | `rh` | `prefixed` | `/rh/...` | `/rh` | `/rh` |
 | `tickets-si` | `prefixed` | `/tickets-si/...` | `/tickets-si` | `/informatique` |
 | `demandes-achat` | `prefixed` | `/demandes-achat/...` | `/demandes-achat` | `/achats` |
+| `eer` | `prefixed` | `/eer/...` | `/eer/dashboard` | `/audit-controle-conformite` |
 
 CDC Stock / MG : [moyens-generaux/README.md](moyens-generaux/README.md).
 Chrome métier : **un seul** `ShellComponent` (`layout/shell/`) pour Immobilisations
@@ -58,6 +59,11 @@ Dossier : `frontend/angular20/src/app/plateforme/`
   (statut actif + grant utilisateur, ou superuser).
 - Module `bientot` : carte non ouvrable. Module `actif` : Login 2 ; shell métier
   seulement pour Immobilisations tant que les ateliers n’ont pas abouti.
+- Département avec **domaines** (`espace.domaines` non vide, ex. `/audit-controle-conformite`) :
+  le hub affiche domaine → sous-domaine → modules ; domaine non actif = carte
+  d’attente (« Bientôt » / « En développement ») sans module fictif. Sans domaine :
+  grille de modules inchangée. Route explicite déclarée car `audit` est un segment
+  racine réservé à l’immo.
 
 Catalogue espaces/modules : seed backend `plateforme_catalogue.py` → tables
 `plateforme_espaces` / `plateforme_modules` → API. Aucun doublon hardcodé dans le front.

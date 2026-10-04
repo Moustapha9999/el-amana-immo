@@ -9,6 +9,9 @@ from app.db.session import get_db
 from app.models import User
 from app.schemas.common import MessageResponse
 from app.schemas.plateforme import (
+    CoreAdminDomaineRead,
+    CoreAdminDomaineUpdate,
+    CoreAdminDomaineWrite,
     CoreAdminEspaceFiche,
     CoreAdminEspaceListRead,
     CoreAdminEspaceUpdate,
@@ -178,6 +181,107 @@ async def delete_department(
     return MessageResponse(message="Département supprimé")
 
 
+@router.get("/domaines", response_model=list[CoreAdminDomaineRead])
+async def list_domaines(
+    espace_id: UUID | None = Query(None),
+    _: User = Depends(_DEPT_PERM),
+    db: AsyncSession = Depends(get_db),
+):
+    return await CoreAdminCatalogueService(db).list_domaines(espace_id=espace_id)
+
+
+@router.post("/domaines", response_model=CoreAdminDomaineRead, status_code=status.HTTP_201_CREATED)
+async def create_domaine(
+    payload: CoreAdminDomaineWrite,
+    request: Request,
+    actor: User = Depends(_DEPT_PERM),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await CoreAdminCatalogueService(db).create_domaine(payload)
+    except ValueError as exc:
+        raise _http_from_value_error(exc) from exc
+    await _audit(
+        db,
+        actor=actor,
+        action="create",
+        entity="domaine",
+        entity_id=row["id"],
+        request=request,
+        after={"code": row["code"], "statut": row["statut"], "espace": row["espace_code"]},
+    )
+    return row
+
+
+@router.get("/domaines/{domaine_id}", response_model=CoreAdminDomaineRead)
+async def get_domaine(
+    domaine_id: UUID,
+    _: User = Depends(_DEPT_PERM),
+    db: AsyncSession = Depends(get_db),
+):
+    fiche = await CoreAdminCatalogueService(db).domaine_fiche(domaine_id)
+    if fiche is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domaine introuvable")
+    return fiche
+
+
+@router.patch("/domaines/{domaine_id}", response_model=CoreAdminDomaineRead)
+async def update_domaine(
+    domaine_id: UUID,
+    payload: CoreAdminDomaineUpdate,
+    request: Request,
+    actor: User = Depends(_DEPT_PERM),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await CoreAdminCatalogueService(db).update_domaine(domaine_id, payload)
+    except ValueError as exc:
+        raise _http_from_value_error(exc) from exc
+    await _audit(
+        db,
+        actor=actor,
+        action="update",
+        entity="domaine",
+        entity_id=row["id"],
+        request=request,
+        after={"code": row["code"], "statut": row["statut"], **payload.model_dump(exclude_unset=True)},
+    )
+    return row
+
+
+@router.post("/domaines/{domaine_id}/{action}", response_model=CoreAdminDomaineRead)
+async def toggle_domaine(
+    domaine_id: UUID,
+    action: Literal["activate", "deactivate"],
+    request: Request,
+    actor: User = Depends(_DEPT_PERM),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await CoreAdminCatalogueService(db).set_domaine_active(
+            domaine_id, active=action == "activate"
+        )
+    except ValueError as exc:
+        raise _http_from_value_error(exc) from exc
+    await _audit(db, actor=actor, action=action, entity="domaine", entity_id=row["id"], request=request)
+    return row
+
+
+@router.delete("/domaines/{domaine_id}", response_model=MessageResponse)
+async def delete_domaine(
+    domaine_id: UUID,
+    request: Request,
+    actor: User = Depends(_DEPT_PERM),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await CoreAdminCatalogueService(db).delete_domaine(domaine_id)
+    except ValueError as exc:
+        raise _http_from_value_error(exc) from exc
+    await _audit(db, actor=actor, action="delete", entity="domaine", entity_id=str(domaine_id), request=request)
+    return MessageResponse(message="Domaine supprimé")
+
+
 @router.get("/modules", response_model=CoreAdminModuleListRead)
 async def list_modules(
     page: int = Query(1, ge=1),
@@ -199,12 +303,25 @@ async def module_options(
     _: User = Depends(_MOD_PERM),
     db: AsyncSession = Depends(get_db),
 ):
-    items, _, _ = await CoreAdminCatalogueService(db).list_espaces(1, 100, statut="tous")
+    service = CoreAdminCatalogueService(db)
+    items, _, _ = await service.list_espaces(1, 100, statut="tous")
+    domaines = await service.list_domaines()
     return {
         "espaces": [
             {"id": row["id"], "code": row["code"], "label": row["label"], "is_active": row["is_active"]}
             for row in items
-        ]
+        ],
+        "domaines": [
+            {
+                "id": row["id"],
+                "code": row["code"],
+                "label": row["label"],
+                "espace_id": row["espace_id"],
+                "parent_id": row["parent_id"],
+                "is_active": row["is_active"],
+            }
+            for row in domaines
+        ],
     }
 
 

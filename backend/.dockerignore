@@ -9,6 +9,8 @@ htmlcov
 *.egg-info
 tests
 storage/uploads
+storage/ged
+storage/*.sql
 **/*.pyc
 .git
 .gitignore

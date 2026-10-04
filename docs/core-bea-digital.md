@@ -27,7 +27,8 @@ est encore valide. Détail auth : [socle-bea-digital.md](socle-bea-digital.md).
 | B | Rôles | `roles` + `user_roles` | Immo = codes courts legacy (`comptable`, …). Nouveaux modules = `{module}.{profil}` (`credit.admin`). Helpers : `module_role_code` / `role_module_code` |
 | C | Permissions | `permissions` + `role_permissions` | `{module}.{action}` ; `{module}.admin` couvre `{module}.*` |
 | D | Départements | `plateforme_espaces` | Comptabilité, Moyens Généraux, Crédit, RH, … **≠** `departements` (org immo / centres de coût). Catalogue : [catalogue-modules-futurs.md](catalogue-modules-futurs.md) · MG : [moyens-generaux/README.md](moyens-generaux/README.md) |
-| E | Modules | `plateforme_modules` | Actifs : `immobilisations`, `stock-fournitures` (+ stubs bientôt) |
+| D′ | Domaines | `plateforme_domaines` | Regroupement **visuel** dans un département (2 niveaux max : domaine → sous-domaine). Aucun droit attaché : l’accès reste au module. CORE ADMIN `/plateforme/admin/domaines`. Ex. : [conformite/README.md](conformite/README.md) |
+| E | Modules | `plateforme_modules` | Actifs : `immobilisations`, `stock-fournitures` (+ stubs bientôt). `domaine_id` (nullable) + `icon` |
 | F | Accès | `user_espace_acces`, `user_module_acces` | User → département, User → module |
 | G | Audit | `audit_logs` | Qui, quoi, quand, espace, module, action, session |
 | H | Notifications | `notifications` | Filtrables par `espace_code` / `module_code`. Enum Postgres historique immo ; nouveaux modules → `event_type` libre + `categorie` (`notification_taxonomy`) |

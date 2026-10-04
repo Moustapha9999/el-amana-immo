@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     core_admin_sessions,
     core_admin_users,
     documents,
+    eer,
     exercices,
     ged,
     immobilisations,
@@ -55,6 +56,7 @@ api_router.include_router(mg_archives.router)
 api_router.include_router(mg_requests.me_router)
 api_router.include_router(mg_requests.mg_router)
 api_router.include_router(mg_requests.batch_router)
+api_router.include_router(eer.router, dependencies=[Depends(require_module_access("eer"))])
 
 _immo = [Depends(require_module_access("immobilisations"))]
 api_router.include_router(organisation.router, dependencies=_immo)

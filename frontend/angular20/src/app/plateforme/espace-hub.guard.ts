@@ -31,6 +31,7 @@ const PLATEFORME_FIXED = [
   'demandes-rh',
   'demandes-informatique',
   'employe',
+  'eer',
 ] as const;
 
 export const ESPACE_HUB_RESERVED_SEGMENTS: ReadonlySet<string> = new Set([

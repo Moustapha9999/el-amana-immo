@@ -52,6 +52,10 @@ import { ContratsFicheComponent } from './contrats-echeances/contrats-fiche.comp
 import { withUnsavedChangesGuard } from './core/feedback/unsaved-changes.guard';
 import { ContratsParametresComponent } from './contrats-echeances/contrats-parametres.component';
 import { ContratsRapportsComponent } from './contrats-echeances/contrats-rapports.component';
+import { EerDashboardComponent } from './eer/eer-dashboard.component';
+import { EerFicheComponent } from './eer/eer-fiche.component';
+import { EerListComponent } from './eer/eer-list.component';
+import { EerNouveauComponent } from './eer/eer-nouveau.component';
 import {
   DmgBatchesComponent,
   DmgDashboardComponent,
@@ -195,6 +199,18 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'rapports', component: ContratsRapportsComponent },
       { path: 'parametres', component: ContratsParametresComponent },
       { path: ':id', component: ContratsFicheComponent },
+    ],
+  },
+  {
+    path: 'eer',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('eer')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      { path: 'dashboard', component: EerDashboardComponent },
+      { path: 'dossiers', component: EerListComponent },
+      { path: 'dossiers/nouveau', component: EerNouveauComponent },
+      { path: 'dossiers/:id', component: EerFicheComponent },
     ],
   },
   {

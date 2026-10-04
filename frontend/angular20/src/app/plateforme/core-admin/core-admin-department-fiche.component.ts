@@ -1,11 +1,15 @@
-import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, OnInit, signal, viewChild } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { BeaAdminDialogService } from './core-admin-dialog.service';
+import { CoreAdminDomainesPanelComponent } from './core-admin-domaines-panel.component';
+import { CoreAdminIconComponent } from './core-admin-icon.component';
 import {
+  CoreAdminDomaineRow,
   CoreAdminEspaceFiche,
   CoreAdminModuleSummary,
+  ICON_NAME_PATTERN,
   catalogueStatut,
   catalogueStatutLabel,
   coreAdminCatalogueError,
@@ -16,7 +20,7 @@ import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
 @Component({
   selector: 'bea-core-admin-department-fiche',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, CoreAdminDomainesPanelComponent, CoreAdminIconComponent],
   template: `
     <section class="bea-admin-dash">
       <header class="bea-admin-dash__head bea-admin-users__head">
@@ -108,6 +112,18 @@ import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
               <span>Ordre</span>
               <input type="number" formControlName="sort_order" min="0" />
             </label>
+            <label class="bea-admin-field">
+              <span>Icône (Material Icons)</span>
+              <span style="display:flex;align-items:center;gap:.5rem">
+                <input type="text" formControlName="icon" placeholder="ex. verified_user" style="flex:1" />
+                @if (form.controls.icon.value && form.controls.icon.valid) {
+                  <bea-admin-icon [name]="form.controls.icon.value" />
+                }
+              </span>
+              @if (form.controls.icon.invalid) {
+                <span class="bea-admin-note">Minuscules, chiffres et « _ » uniquement.</span>
+              }
+            </label>
             <label class="bea-admin-field bea-admin-toolbar__search">
               <span>Description</span>
               <textarea formControlName="description" rows="3"></textarea>
@@ -155,12 +171,19 @@ import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
             </div>
           }
         </section>
+        @if (espaceId(); as id) {
+          <bea-core-admin-domaines-panel [espaceId]="id" [domaines]="domaines()" (changed)="reload()" />
+        }
       }
     </section>
   `,
 })
 export class CoreAdminDepartmentFicheComponent implements OnInit {
-  readonly hasUnsavedChanges = unsavedChanges(() => this.form.dirty && !this.saving(), () => this.form);
+  readonly hasUnsavedChanges = unsavedChanges(
+    () => (this.form.dirty && !this.saving()) || !!this.domainesPanel()?.isDirty(),
+    () => this.form,
+  );
+  private readonly domainesPanel = viewChild(CoreAdminDomainesPanelComponent);
   private readonly api = inject(ApiService);
   private readonly dialogs = inject(BeaAdminDialogService);
   private readonly fb = inject(FormBuilder);
@@ -174,6 +197,7 @@ export class CoreAdminDepartmentFicheComponent implements OnInit {
   readonly isActive = signal(true);
   readonly espaceId = signal<string | null>(null);
   readonly modules = signal<CoreAdminModuleSummary[]>([]);
+  readonly domaines = signal<CoreAdminDomaineRow[]>([]);
   readonly erreur = feedbackSignal('error', null);
   readonly statut = signal('bientot');
 
@@ -184,6 +208,7 @@ export class CoreAdminDepartmentFicheComponent implements OnInit {
     route: [''],
     statut: ['bientot'],
     sort_order: [0],
+    icon: ['', Validators.pattern(ICON_NAME_PATTERN)],
   });
 
   ngOnInit(): void {
@@ -211,6 +236,21 @@ export class CoreAdminDepartmentFicheComponent implements OnInit {
         error: (err) => this.erreur.set(coreAdminCatalogueError(err, 'Département introuvable.')),
       });
     }
+  }
+
+  /** Recharge la fiche sans toucher au formulaire en cours d'édition. */
+  reload(): void {
+    const id = this.espaceId();
+    if (!id) {
+      return;
+    }
+    this.api.get<CoreAdminEspaceFiche>(`/plateforme/admin/departments/${id}`).subscribe({
+      next: (row) => {
+        this.modules.set(row.modules ?? []);
+        this.domaines.set(row.domaines ?? []);
+      },
+      error: (err) => this.erreur.set(coreAdminCatalogueError(err, 'Rechargement impossible.')),
+    });
   }
 
   statutOf(): string {
@@ -245,6 +285,7 @@ export class CoreAdminDepartmentFicheComponent implements OnInit {
       route: value.route.trim() || null,
       statut: value.statut,
       sort_order: Number(value.sort_order) || 0,
+      icon: value.icon.trim() || null,
     };
     if (this.isCreate()) {
       this.api
@@ -347,6 +388,7 @@ export class CoreAdminDepartmentFicheComponent implements OnInit {
     this.isActive.set(row.is_active);
     this.statut.set(row.statut);
     this.modules.set(row.modules ?? []);
+    this.domaines.set(row.domaines ?? []);
     this.form.patchValue({
       code: row.code,
       label: row.label,
@@ -354,6 +396,7 @@ export class CoreAdminDepartmentFicheComponent implements OnInit {
       route: row.route || '',
       statut: row.statut,
       sort_order: row.sort_order,
+      icon: row.icon ?? '',
     });
     this.form.controls.code.disable({ emitEvent: false });
     if (row.locked) {

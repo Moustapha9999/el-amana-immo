@@ -88,6 +88,12 @@ export const PLATEFORME_ROUTES: Routes = [
     canActivate: [authGuard],
     data: { espaceCode: 'informatique' },
   },
+  {
+    path: 'audit-controle-conformite',
+    component: EspaceHubComponent,
+    canActivate: [authGuard],
+    data: { espaceCode: 'audit-controle-conformite' },
+  },
   { path: 'modules/:moduleCode/acces', component: ModuleAccesComponent, canActivate: [authGuard] },
   {
     path: 'admin',

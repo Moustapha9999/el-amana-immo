@@ -36,12 +36,44 @@ class PlateformeEspace(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    icon: Mapped[str | None] = mapped_column(String(60), nullable=True)
 
     modules: Mapped[list[PlateformeModule]] = relationship(back_populates="espace")
+    domaines: Mapped[list[PlateformeDomaine]] = relationship(back_populates="espace")
     users: Mapped[list[User]] = relationship(
         secondary=user_espace_acces_table,
         back_populates="espaces",
     )
+
+
+class PlateformeDomaine(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """Regroupement de modules dans un département (domaine, sous-domaine via parent_id).
+
+    Purement organisationnel : l'accès reste porté par les modules (grants + Login 2).
+    """
+
+    __tablename__ = "plateforme_domaines"
+
+    espace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("plateforme_espaces.id", ondelete="CASCADE"), index=True
+    )
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("plateforme_domaines.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    code: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    label: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str] = mapped_column(Text, default="")
+    icon: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    statut: Mapped[str] = mapped_column(String(20), default="bientot", index=True)
+    status_message: Mapped[str] = mapped_column(Text, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    espace: Mapped[PlateformeEspace] = relationship(back_populates="domaines")
+    modules: Mapped[list[PlateformeModule]] = relationship(back_populates="domaine")
 
 
 class PlateformeModule(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -66,8 +98,16 @@ class PlateformeModule(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     admins_bypass_maintenance: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    icon: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    domaine_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("plateforme_domaines.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     espace: Mapped[PlateformeEspace] = relationship(back_populates="modules")
+    domaine: Mapped[PlateformeDomaine | None] = relationship(back_populates="modules")
     users: Mapped[list[User]] = relationship(
         secondary=user_module_acces_table,
         back_populates="modules",

@@ -1,11 +1,16 @@
-import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { startWith } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { BeaAdminDialogService } from './core-admin-dialog.service';
+import { CoreAdminIconComponent } from './core-admin-icon.component';
 import {
+  CoreAdminDomaineOption,
   CoreAdminEspaceOption,
   CoreAdminModuleRow,
+  ICON_NAME_PATTERN,
   catalogueStatut,
   catalogueStatutLabel,
   coreAdminCatalogueError,
@@ -16,7 +21,7 @@ import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
 @Component({
   selector: 'bea-core-admin-module-fiche',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, CoreAdminIconComponent],
   template: `
     <section class="bea-admin-dash">
       <header class="bea-admin-dash__head bea-admin-users__head">
@@ -39,6 +44,7 @@ import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
               class="bea-badge"
               [class.bea-badge--actif]="statutOf() === 'actif'"
               [class.bea-badge--bientot]="statutOf() === 'bientot'"
+              [class.bea-badge--info]="statutOf() === 'developpement'"
               [class.bea-badge--inactif]="statutOf() === 'inactif'"
             >
               {{ statutLabel() }}
@@ -135,8 +141,31 @@ import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
               <select formControlName="statut">
                 <option value="actif">Actif</option>
                 <option value="bientot">Bientôt</option>
+                <option value="developpement">En développement</option>
                 <option value="inactif">Inactif</option>
               </select>
+            </label>
+            <label class="bea-admin-field">
+              <span>Domaine (optionnel)</span>
+              <select formControlName="domaine_id">
+                <option value="">— Aucun —</option>
+                @for (dom of domainesDuDepartement(); track dom.id) {
+                  <option [value]="dom.id">{{ dom.parent_id ? '↳ ' : '' }}{{ dom.label }}</option>
+                }
+              </select>
+              <span class="bea-admin-note">Regroupement sur la page du département ; n’ouvre aucun droit.</span>
+            </label>
+            <label class="bea-admin-field">
+              <span>Icône (Material Icons)</span>
+              <span style="display:flex;align-items:center;gap:.5rem">
+                <input type="text" formControlName="icon" placeholder="ex. person_add" style="flex:1" />
+                @if (form.controls.icon.value && form.controls.icon.valid) {
+                  <bea-admin-icon [name]="form.controls.icon.value" />
+                }
+              </span>
+              @if (form.controls.icon.invalid) {
+                <span class="bea-admin-note">Minuscules, chiffres et « _ » uniquement.</span>
+              }
             </label>
             <label class="bea-admin-field">
               <span>Ordre</span>
@@ -189,6 +218,7 @@ export class CoreAdminModuleFicheComponent implements OnInit {
   readonly isActive = signal(true);
   readonly moduleId = signal<string | null>(null);
   readonly espaces = signal<CoreAdminEspaceOption[]>([]);
+  readonly domaines = signal<CoreAdminDomaineOption[]>([]);
   readonly erreur = feedbackSignal('error', null);
   readonly statut = signal('bientot');
 
@@ -200,6 +230,21 @@ export class CoreAdminModuleFicheComponent implements OnInit {
     entry_path: [''],
     statut: ['bientot'],
     sort_order: [0],
+    icon: ['', Validators.pattern(ICON_NAME_PATTERN)],
+    domaine_id: [''],
+  });
+
+  private readonly espaceChoisi = toSignal(
+    this.form.controls.espace_id.valueChanges.pipe(startWith(this.form.controls.espace_id.value)),
+    { initialValue: '' },
+  );
+
+  /** Parents suivis de leurs sous-domaines, limités au département choisi. */
+  readonly domainesDuDepartement = computed(() => {
+    const espaceId = this.espaceChoisi();
+    const list = this.domaines().filter((d) => d.espace_id === espaceId);
+    const roots = list.filter((d) => !d.parent_id);
+    return roots.flatMap((root) => [root, ...list.filter((d) => d.parent_id === root.id)]);
   });
 
   ngOnInit(): void {
@@ -208,13 +253,28 @@ export class CoreAdminModuleFicheComponent implements OnInit {
     this.isCreate.set(!id);
     this.isView.set(!!id && !url.includes('/modifier'));
     this.moduleId.set(id);
-    this.api.get<{ espaces: CoreAdminEspaceOption[] }>('/plateforme/admin/modules/options').subscribe({
-      next: (res) => this.espaces.set(res.espaces ?? []),
-      error: () => this.espaces.set([]),
-    });
+    this.api
+      .get<{ espaces: CoreAdminEspaceOption[]; domaines?: CoreAdminDomaineOption[] }>('/plateforme/admin/modules/options')
+      .subscribe({
+        next: (res) => {
+          this.espaces.set(res.espaces ?? []);
+          this.domaines.set(res.domaines ?? []);
+        },
+        error: () => {
+          this.espaces.set([]);
+          this.domaines.set([]);
+        },
+      });
     if (this.isView()) {
       this.form.disable({ emitEvent: false });
     }
+    this.form.controls.espace_id.valueChanges.subscribe((espaceId) => {
+      const domCtrl = this.form.controls.domaine_id;
+      const current = this.domaines().find((d) => d.id === domCtrl.value);
+      if (domCtrl.value && current && current.espace_id !== espaceId) {
+        domCtrl.setValue('');
+      }
+    });
     if (id) {
       this.api.get<CoreAdminModuleRow>(`/plateforme/admin/modules/${id}`).subscribe({
         next: (row) => this.fill(row),
@@ -255,6 +315,8 @@ export class CoreAdminModuleFicheComponent implements OnInit {
       entry_path: value.entry_path.trim() || null,
       statut: value.statut,
       sort_order: Number(value.sort_order) || 0,
+      icon: value.icon.trim() || null,
+      domaine_id: value.domaine_id || null,
     };
     if (this.isCreate()) {
       this.api
@@ -364,6 +426,8 @@ export class CoreAdminModuleFicheComponent implements OnInit {
       entry_path: row.entry_path || '',
       statut: row.statut,
       sort_order: row.sort_order,
+      icon: row.icon ?? '',
+      domaine_id: row.domaine_id ?? '',
     });
     this.form.controls.code.disable({ emitEvent: false });
     if (row.locked) {

@@ -1,0 +1,580 @@
+<section class="bea-mg bea-nf bea-ct">
+  @if (dossier(); as d) {
+    <header class="bea-mg__head">
+      <div>
+        <p class="bea-stock-page__kicker">KYC · Entrée en relation</p>
+        <h1><code class="bea-mg__code">{{ d.reference }}</code> {{ client()?.nom }}</h1>
+        <p class="bea-ct-head__sub">
+          <span class="bea-ct-badge" [attr.data-tone]="tone(d.statut)">{{ libStatut(d.statut) }}</span>
+          @if (d.etape) { <span class="bea-ct-badge" data-tone="INFO">Étape : {{ libEtape(d.etape) }}</span> }
+          <span class="bea-ct-badge">Version {{ d.version_courante }}</span>
+          @if (d.avis_requis) { <span class="bea-ct-badge" data-tone="ATTENTION">Avis Conformité KYC requis</span> }
+          @if (d.ppe) { <span class="bea-ct-badge" data-tone="CRITIQUE">PPE</span> }
+          @if (d.fatca) { <span class="bea-ct-badge" data-tone="ATTENTION">FATCA</span> }
+        </p>
+      </div>
+      <div class="bea-mg__actions">
+        <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/eer/dossiers"><mat-icon>arrow_back</mat-icon> Liste</a>
+        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Actualiser" (click)="recharger()"><mat-icon>refresh</mat-icon></button>
+      </div>
+    </header>
+
+    @if (actions().length) {
+      <div class="eer-actions">
+        <span class="eer-actions__label">Actions disponibles</span>
+        @for (a of actions(); track a.cle) {
+          <button type="button" class="bea-mg__btn"
+                  [class.bea-mg__btn--primary]="a.primaire" [class.bea-mg__btn--danger]="a.danger" [class.bea-mg__btn--ghost]="!a.primaire && !a.danger"
+                  [disabled]="busy()" (click)="a.run()">
+            <mat-icon>{{ a.icon }}</mat-icon> {{ a.label }}
+          </button>
+        }
+      </div>
+    }
+
+    <nav class="bea-ct-tabs" aria-label="Onglets du dossier">
+      @for (o of onglets(); track o.code) {
+        <button type="button" [class.is-on]="onglet() === o.code" (click)="choisir(o.code)">{{ o.label }}</button>
+      }
+    </nav>
+
+    <div class="bea-ct-pane">
+      @switch (onglet()) {
+        <!-- Résumé -->
+        @case ('resume') {
+          <div class="eer-cols">
+            <article class="bea-mg__panel eer-panel">
+              <h2>Dossier</h2>
+              <dl class="eer-dl">
+                <dt>Type de client</dt><dd>{{ libType(d.type_client) }}</dd>
+                <dt>Profil</dt><dd>{{ d.profil }}{{ d.sous_profil ? ' / ' + d.sous_profil : '' }}</dd>
+                <dt>Opération</dt><dd>{{ d.operation_type === 'ENTREE_RELATION' ? 'Entrée en relation' : d.operation_type }}</dd>
+                <dt>Date EER</dt><dd>{{ date(d.date_eer) }}</dd>
+                <dt>Risque LBC-FT</dt><dd>{{ d.risque || 'Non évalué' }}</dd>
+                <dt>Soumis le</dt><dd>{{ date(d.soumis_le, true) }}</dd>
+                <dt>Validé le</dt><dd>{{ date(d.valide_le, true) }}</dd>
+                <dt>Relances</dt><dd>{{ d.nb_relances }}</dd>
+                @if (d.motif_abandon) { <dt>Motif d’abandon</dt><dd>{{ d.motif_abandon }}</dd> }
+              </dl>
+            </article>
+            <article class="bea-mg__panel eer-panel">
+              <h2>Conformité</h2>
+              <dl class="eer-dl">
+                <dt>Physique</dt><dd><span class="bea-ct-badge" [attr.data-tone]="tone(d.conformite_physique)">{{ d.conformite_physique || '—' }}</span></dd>
+                <dt>Système</dt><dd><span class="bea-ct-badge" [attr.data-tone]="tone(d.conformite_systeme)">{{ d.conformite_systeme || '—' }}</span></dd>
+                <dt>Cohérence</dt><dd><span class="bea-ct-badge" [attr.data-tone]="tone(d.conformite_coherence)">{{ d.conformite_coherence || '—' }}</span></dd>
+                <dt>Décision globale</dt><dd><span class="bea-ct-badge" [attr.data-tone]="tone(d.decision)">{{ d.decision || '—' }}</span></dd>
+              </dl>
+              @if (checklist(); as c) {
+                <p class="bea-ct-note">{{ c.items.length }} élément(s) de checklist · {{ c.non_pointes }} non pointé(s)</p>
+              }
+              <p class="bea-ct-note">{{ anomaliesOuvertes().length }} anomalie(s) ouverte(s)</p>
+            </article>
+            <article class="bea-mg__panel eer-panel">
+              <h2>Seuil bénéficiaire effectif figé</h2>
+              <p class="bea-ct-note">
+                Paramètres figés à la création du dossier (indépendants des paramètres globaux actuels) :
+                seuil BE = {{ val(d.parametres_snapshot['be.seuil_pourcentage']) }} %.
+              </p>
+            </article>
+          </div>
+        }
+
+        <!-- Client -->
+        @case ('client') {
+          <div class="bea-mg__table-scroll">
+            <table class="bea-mg__table">
+              <thead><tr><th>Rôle</th><th>Nom</th><th>Nature</th><th>PPE</th><th>FATCA</th><th>Risque</th><th>BE (source / %)</th></tr></thead>
+              <tbody>
+                @for (p of d.parties; track p.dossier_partie_id) {
+                  <tr>
+                    <td>{{ libRole(p.role) }}</td>
+                    <td><strong class="bea-ct-strong">{{ p.nom }}</strong></td>
+                    <td>{{ p.nature === 'PHYSIQUE' ? 'Personne physique' : 'Personne morale' }}</td>
+                    <td>{{ ouiNon(p.ppe) }}</td>
+                    <td>{{ ouiNon(p.fatca_indice) }}</td>
+                    <td>{{ p.risque_lbcft || '—' }}</td>
+                    <td>{{ p.be_source || '—' }}{{ p.be_pourcentage_calcule ? ' · ' + p.be_pourcentage_calcule + ' %' : '' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="bea-ct-note">Les données personnelles se saisissent dans l’onglet « Formulaires » (saisie unique, pré-remplissage des fiches).</p>
+        }
+
+        <!-- Formulaires -->
+        @case ('formulaires') {
+          @if (modifiable()) {
+            <div class="eer-toolbar">
+              <span class="bea-ct-note">{{ nbSaisies() }} modification(s) non enregistrée(s)</span>
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!nbSaisies() || busy()" (click)="annulerSaisies()">Annuler</button>
+              <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="!nbSaisies() || busy()" (click)="enregistrerFiches()"><mat-icon>save</mat-icon> Enregistrer</button>
+              @if (enControle()) {
+                <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy() || nbSaisies() > 0" (click)="terminerFiches()"><mat-icon>task_alt</mat-icon> Fiches complétées</button>
+              }
+            </div>
+            @if (statut() === 'A_COMPLETER') {
+              <p class="bea-ct-note">Complément en cours : seuls les éléments demandés peuvent être modifiés (contrôle serveur).</p>
+            }
+          }
+          @for (cle of ficheCles(); track cle) {
+            <article class="bea-mg__panel eer-panel">
+              <h2>{{ titreFiche(cle) }}</h2>
+              <div class="bea-mg__table-scroll">
+                <table class="bea-mg__table eer-fiche-table">
+                  <thead><tr><th>Section</th><th>Champ</th><th>Valeur</th><th>État</th><th class="is-actions"></th></tr></thead>
+                  <tbody>
+                    @for (c of fiches()[cle]; track c.chemin) {
+                      <tr [class.eer-bloquant]="c.bloquant">
+                        <td class="bea-ct-sub">{{ c.section || '—' }}</td>
+                        <td>{{ c.libelle }}{{ c.obligatoire ? ' *' : '' }}</td>
+                        <td>
+                          @if (modifiable() && c.etat !== 'NON_APPLICABLE') {
+                            @switch (typeChamp(c.chemin)) {
+                              @case ('bool') {
+                                <select class="eer-input" [ngModel]="valeurSaisie(cle, c)" (ngModelChange)="saisir(cle, c, $event)">
+                                  <option value="">—</option><option value="true">Oui</option><option value="false">Non</option>
+                                </select>
+                              }
+                              @case ('date') {
+                                <input class="eer-input" type="date" [ngModel]="valeurSaisie(cle, c)" (ngModelChange)="saisir(cle, c, $event)" />
+                              }
+                              @case ('number') {
+                                <input class="eer-input" type="number" [ngModel]="valeurSaisie(cle, c)" (ngModelChange)="saisir(cle, c, ($event ?? '') + '')" />
+                              }
+                              @default {
+                                <input class="eer-input" [ngModel]="valeurSaisie(cle, c)" (ngModelChange)="saisir(cle, c, $event)" maxlength="500" />
+                              }
+                            }
+                          } @else {
+                            {{ val(c.valeur) }}
+                          }
+                        </td>
+                        <td><span class="bea-ct-badge" [attr.data-tone]="c.bloquant ? 'CRITIQUE' : c.etat === 'A_CONFIRMER' ? 'ATTENTION' : 'INFO'">{{ libEtatChamp(c.etat) }}</span></td>
+                        <td class="bea-mg__actions-cell">
+                          @if (enControle() && c.etat === 'A_CONFIRMER') {
+                            <button type="button" class="bea-mg__icon-btn" title="Confirmer la donnée" [disabled]="busy()" (click)="confirmerChamp(cle, c)"><mat-icon>done</mat-icon></button>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          } @empty {
+            <div class="bea-ct-empty"><mat-icon>description</mat-icon><p>Chargement des fiches…</p></div>
+          }
+        }
+
+        <!-- Documents (GED existante) -->
+        @case ('documents') {
+          <div class="bea-mg__table-scroll">
+            <table class="bea-mg__table">
+              <thead><tr><th>Document</th><th>Type</th><th>Version</th><th>Taille</th><th>Déposé le</th></tr></thead>
+              <tbody>
+                @for (doc of documents(); track doc.id) {
+                  <tr>
+                    <td><strong class="bea-ct-strong">{{ doc.title || doc.filename }}</strong><small class="bea-ct-sub">{{ doc.filename }}</small></td>
+                    <td>{{ doc.doc_type || '—' }}</td>
+                    <td>v{{ doc.version }}</td>
+                    <td>{{ (doc.size_bytes / 1024).toFixed(0) }} Ko</td>
+                    <td>{{ date(doc.created_at, true) }}</td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="5"><div class="bea-ct-empty"><mat-icon>folder_open</mat-icon><p>Aucun document GED rattaché à ce dossier.</p></div></td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="bea-ct-note">Documents issus de la GED BEA DIGITAL (module « eer », entité « eer_dossier »). Le dépôt depuis la fiche sera branché à l’étape GED.</p>
+        }
+
+        <!-- Checklist -->
+        @case ('checklist') {
+          @if (checklist(); as c) {
+            <div class="eer-toolbar">
+              <span class="bea-ct-note">{{ c.items.length }} élément(s) · {{ c.non_pointes }} non pointé(s){{ c.etape ? ' · étape ' + libEtape(c.etape) : '' }}</span>
+              @if (modifiable()) {
+                <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="regenererChecklist()"><mat-icon>autorenew</mat-icon> Recalculer</button>
+              }
+              @if (enControle() && c.etape === 'CHECKLIST') {
+                <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy() || c.non_pointes > 0" (click)="validerChecklist()"><mat-icon>fact_check</mat-icon> Valider la checklist</button>
+              }
+            </div>
+            <div class="bea-mg__table-scroll">
+              <table class="bea-mg__table eer-checklist">
+                <thead>
+                  <tr>
+                    <th>Catégorie</th><th>Élément</th><th>Obligatoire</th><th>Donnée connue</th><th>Document reçu</th>
+                    <th>Résultat</th><th>Observation</th><th>Statut</th><th class="is-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (i of c.items; track i.id) {
+                    <tr [class.eer-na]="i.statut === 'NON_APPLICABLE'">
+                      <td class="bea-ct-sub">{{ i.categorie }}<br />{{ i.axe }}</td>
+                      <td><strong class="bea-ct-strong">{{ i.libelle }}</strong><small class="bea-ct-sub">{{ i.regle_code }} · v{{ i.regle_version }}</small></td>
+                      <td>{{ i.obligatoire ? 'Oui' : 'Non' }}</td>
+                      <td>{{ ouiNon(i.donnee_connue) }}</td>
+                      <td>
+                        {{ libPresence(i.presence) }}
+                        @if (i.document_id) { <mat-icon class="eer-ico" title="Document GED rattaché">attach_file</mat-icon> }
+                      </td>
+                      <td><span class="bea-ct-badge" [attr.data-tone]="tone(i.statut)">{{ libElement(i.statut) }}</span></td>
+                      <td class="eer-obs">{{ i.motif || '—' }}</td>
+                      <td>{{ statutLigne(i) }}</td>
+                      <td class="bea-mg__actions-cell is-nowrap">
+                        @if (enControle() && c.etape === 'CHECKLIST' && i.statut !== 'NON_APPLICABLE') {
+                          <button type="button" class="bea-mg__icon-btn" title="Présent" [disabled]="busy()" (click)="pointer(i, 'PRESENT')"><mat-icon>check</mat-icon></button>
+                          <button type="button" class="bea-mg__icon-btn" title="Absent" [disabled]="busy()" (click)="pointer(i, 'ABSENT')"><mat-icon>close</mat-icon></button>
+                          <button type="button" class="bea-mg__icon-btn" title="Sans objet (justifié)" [disabled]="busy()" (click)="pointer(i, 'SANS_OBJET')"><mat-icon>remove</mat-icon></button>
+                        }
+                        @if (enControle() && c.etape === 'CONTROLES' && i.statut !== 'NON_APPLICABLE') {
+                          <button type="button" class="bea-mg__icon-btn" title="Conforme" [disabled]="busy()" (click)="controler(i, true)"><mat-icon>verified</mat-icon></button>
+                          <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Non conforme" [disabled]="busy()" (click)="controler(i, false)"><mat-icon>report</mat-icon></button>
+                        }
+                        @if (statut() === 'A_COMPLETER' && cap()['complement'] && itemsAttendus().has(i.id)) {
+                          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="marquerFourni(i)"><mat-icon>inventory</mat-icon> Reçu</button>
+                        }
+                      </td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="9"><div class="bea-ct-empty"><mat-icon>checklist</mat-icon><p>Checklist non générée.</p></div></td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else {
+            <div class="bea-ct-empty"><mat-icon>hourglass_empty</mat-icon><p>Chargement…</p></div>
+          }
+        }
+
+        <!-- Contrôles -->
+        @case ('controles') {
+          @if (enControle()) {
+            <div class="eer-toolbar">
+              <span class="bea-ct-note">Les contrôles automatiques appliquent uniquement les règles du référentiel ; ils ne modifient aucun statut.</span>
+              <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()" (click)="lancerControlesAuto()"><mat-icon>rule</mat-icon> Lancer les contrôles automatiques</button>
+            </div>
+          }
+          @if (constats(); as k) {
+            <article class="bea-mg__panel eer-panel">
+              <h2>Derniers constats automatiques</h2>
+              <table class="bea-mg__table">
+                <thead><tr><th>Contrôle</th><th>Type</th><th>Résultat</th><th>Message</th></tr></thead>
+                <tbody>
+                  @for (x of k; track $index) {
+                    <tr>
+                      <td><code class="bea-mg__code">{{ x.code }}</code></td>
+                      <td>{{ x.type_controle }}</td>
+                      <td><span class="bea-ct-badge" [attr.data-tone]="tone(x.resultat)">{{ libElement(x.resultat) }}</span></td>
+                      <td>{{ x.message }}</td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="4"><p class="bea-ct-note">Aucun constat.</p></td></tr>
+                  }
+                </tbody>
+              </table>
+            </article>
+          }
+          <article class="bea-mg__panel eer-panel">
+            <h2>Décisions</h2>
+            <table class="bea-mg__table">
+              <thead><tr><th>Version</th><th>Résultat</th><th>Physique</th><th>Système</th><th>Cohérence</th><th>Le</th></tr></thead>
+              <tbody>
+                @for (x of decisions(); track x.id) {
+                  <tr>
+                    <td>v{{ x.version }}</td>
+                    <td><span class="bea-ct-badge" [attr.data-tone]="tone(x.resultat)">{{ x.resultat }}</span></td>
+                    <td>{{ x.conformite_physique }}</td><td>{{ x.conformite_systeme }}</td><td>{{ x.conformite_coherence }}</td>
+                    <td>{{ date(x.decide_le, true) }}</td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="6"><p class="bea-ct-note">Aucune décision.</p></td></tr>
+                }
+              </tbody>
+            </table>
+          </article>
+          <article class="bea-mg__panel eer-panel">
+            <h2>Journal des contrôles</h2>
+            <table class="bea-mg__table">
+              <thead><tr><th>Le</th><th>Contrôle</th><th>Type</th><th>Résultat</th><th>Version</th></tr></thead>
+              <tbody>
+                @for (x of controles(); track x.id) {
+                  <tr>
+                    <td class="is-nowrap">{{ date(x.execute_le, true) }}</td>
+                    <td><code class="bea-mg__code">{{ x.code }}</code></td>
+                    <td>{{ x.type_controle }}</td>
+                    <td><span class="bea-ct-badge" [attr.data-tone]="tone(x.resultat)">{{ libElement(x.resultat) }}</span></td>
+                    <td>v{{ x.version }}</td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="5"><p class="bea-ct-note">Aucun contrôle enregistré.</p></td></tr>
+                }
+              </tbody>
+            </table>
+          </article>
+        }
+
+        <!-- Anomalies -->
+        @case ('anomalies') {
+          @if (enControle()) {
+            <div class="eer-toolbar">
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="ouvrirAnomaliesAuto()"><mat-icon>playlist_add_check</mat-icon> Ouvrir depuis les non-conformités</button>
+              <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()" (click)="nouvelleAnomalie()"><mat-icon>add</mat-icon> Nouvelle anomalie</button>
+            </div>
+          }
+          <div class="bea-mg__table-scroll">
+            <table class="bea-mg__table">
+              <thead><tr><th>Type</th><th>Gravité</th><th>Description</th><th>Élément</th><th>Action attendue</th><th>Statut</th><th>Versions</th><th class="is-actions"></th></tr></thead>
+              <tbody>
+                @for (a of anomalies(); track a.id) {
+                  <tr>
+                    <td><code class="bea-mg__code">{{ a.type_code }}</code></td>
+                    <td><span class="bea-ct-badge" [attr.data-tone]="tone(a.gravite)">{{ a.gravite }}</span></td>
+                    <td>{{ a.description }}@if (a.observation) {<small class="bea-ct-sub">{{ a.observation }}</small>}</td>
+                    <td>{{ libelleItem(a.item_id) }}</td>
+                    <td>{{ a.action_attendue || '—' }}</td>
+                    <td><span class="bea-ct-badge" [attr.data-tone]="tone(a.statut)">{{ a.statut }}</span>@if (a.justification) {<small class="bea-ct-sub">{{ a.justification }}</small>}</td>
+                    <td>v{{ a.version_detection }}{{ a.version_resolution ? ' → v' + a.version_resolution : '' }}</td>
+                    <td class="bea-mg__actions-cell is-nowrap">
+                      @if (a.statut === 'OUVERTE' && enControle()) {
+                        <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Annuler (motif)" [disabled]="busy()" (click)="annulerAnomalie(a)"><mat-icon>cancel</mat-icon></button>
+                      }
+                      @if ((a.statut === 'OUVERTE' || a.statut === 'EN_COMPLEMENT') && cap()['derogation']) {
+                        <button type="button" class="bea-mg__icon-btn" title="Accepter avec justification" [disabled]="busy()" (click)="accepterAnomalie(a)"><mat-icon>gavel</mat-icon></button>
+                      }
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="8"><div class="bea-ct-empty"><mat-icon>task_alt</mat-icon><p>Aucune anomalie.</p></div></td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+
+        <!-- Compléments -->
+        @case ('complements') {
+          @for (c of complements(); track c.id) {
+            <article class="bea-mg__panel eer-panel">
+              <h2>Complément n° {{ c.numero }} <span class="bea-ct-badge" [attr.data-tone]="tone(c.statut)">{{ c.statut }}</span></h2>
+              <dl class="eer-dl">
+                <dt>Origine</dt><dd>{{ c.origine === 'AVIS_DEFAVORABLE' ? 'Avis Conformité KYC défavorable' : 'Non-conformité' }}</dd>
+                <dt>Consigne</dt><dd>{{ c.consigne || '—' }}</dd>
+                <dt>Échéance</dt><dd>{{ date(c.echeance) }}</dd>
+                <dt>Demandé sur</dt><dd>version {{ c.version_demande }} · {{ date(c.created_at, true) }}</dd>
+                <dt>Reçu le</dt><dd>{{ date(c.recu_le, true) }}</dd>
+              </dl>
+              <ul class="eer-list">
+                @for (e of c.elements; track e.id) {
+                  <li>
+                    <mat-icon class="eer-ico">{{ e.fourni ? 'check_circle' : 'radio_button_unchecked' }}</mat-icon>
+                    {{ e.item_id ? libelleItem(e.item_id) : e.champ || 'Anomalie' }}
+                  </li>
+                }
+              </ul>
+            </article>
+          } @empty {
+            <div class="bea-ct-empty"><mat-icon>playlist_add</mat-icon><p>Aucune demande de complément.</p></div>
+          }
+        }
+
+        <!-- Avis Conformité KYC -->
+        @case ('avis') {
+          <div class="bea-mg__table-scroll">
+            <table class="bea-mg__table">
+              <thead><tr><th>Avis</th><th>Fonction</th><th>Version</th><th>Commentaire</th><th>Le</th></tr></thead>
+              <tbody>
+                @for (v of visas(); track v.id) {
+                  <tr>
+                    <td><span class="bea-ct-badge" [attr.data-tone]="tone(v.avis)">{{ v.avis }}</span></td>
+                    <td>{{ v.fonction }}</td>
+                    <td>v{{ v.version }}</td>
+                    <td>{{ v.commentaire || '—' }}</td>
+                    <td class="is-nowrap">{{ date(v.vise_le, true) }}</td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="5"><div class="bea-ct-empty"><mat-icon>gavel</mat-icon><p>Aucun avis émis.</p></div></td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="bea-ct-note">Chaque avis est authentifié, daté, lié à une version figée et non modifiable. L’auteur d’un avis ne peut pas être le contrôleur du dossier.</p>
+        }
+
+        <!-- Versions -->
+        @case ('versions') {
+          <div class="bea-mg__table-scroll">
+            <table class="bea-mg__table">
+              <thead><tr><th>Version</th><th>Événement</th><th>Empreinte SHA-256</th><th>Le</th><th class="is-actions"></th></tr></thead>
+              <tbody>
+                @for (v of versions(); track v.id) {
+                  <tr>
+                    <td>v{{ v.numero }}</td>
+                    <td>{{ libStatut(v.evenement) }}</td>
+                    <td><code class="bea-mg__code eer-hash">{{ v.empreinte }}</code></td>
+                    <td class="is-nowrap">{{ date(v.cree_le, true) }}</td>
+                    <td class="bea-mg__actions-cell"><button type="button" class="bea-mg__icon-btn" title="Consulter (lecture seule)" (click)="ouvrirVersion(v)"><mat-icon>visibility</mat-icon></button></td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="5"><div class="bea-ct-empty"><mat-icon>history</mat-icon><p>Aucune version figée.</p></div></td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="bea-ct-note">Les versions sont immuables (protection PostgreSQL) ; l’empreinte est recalculée à chaque consultation.</p>
+        }
+
+        <!-- Historique -->
+        @case ('historique') {
+          <div class="bea-mg__table-scroll">
+            <table class="bea-mg__table">
+              <thead><tr><th>Le</th><th>Action</th><th>Transition</th><th>Étape</th><th>Version</th><th>Motif</th></tr></thead>
+              <tbody>
+                @for (h of historique(); track h.id) {
+                  <tr>
+                    <td class="is-nowrap">{{ date(h.cree_le, true) }}</td>
+                    <td><code class="bea-mg__code">{{ h.action }}</code></td>
+                    <td>{{ h.de_statut ? libStatut(h.de_statut) + ' → ' : '' }}{{ h.vers_statut ? libStatut(h.vers_statut) : '—' }}</td>
+                    <td>{{ libEtape(h.etape) }}</td>
+                    <td>v{{ h.version }}</td>
+                    <td>{{ h.motif || '—' }}</td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="6"><p class="bea-ct-note">Aucun événement.</p></td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+
+        <!-- Audit -->
+        @case ('audit') {
+          <div class="bea-mg__table-scroll">
+            <table class="bea-mg__table">
+              <thead><tr><th>Le</th><th>Action</th><th>Détail (sans données personnelles)</th></tr></thead>
+              <tbody>
+                @for (a of audit(); track a.id) {
+                  <tr>
+                    <td class="is-nowrap">{{ date(a.created_at, true) }}</td>
+                    <td><code class="bea-mg__code">{{ a.action }}</code></td>
+                    <td><code class="eer-json">{{ a.after ? json(a.after) : '—' }}</code></td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="3"><p class="bea-ct-note">Aucune entrée d’audit.</p></td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      }
+    </div>
+  } @else {
+    <div class="bea-ct-empty"><mat-icon>hourglass_empty</mat-icon><p>Chargement du dossier…</p></div>
+  }
+</section>
+
+<!-- Modales -->
+@if (modal(); as m) {
+  <div class="bea-mg__backdrop" (click)="fermer()"></div>
+  <div class="bea-mg__modal" [class.bea-mg__modal--lg]="m === 'version' || m === 'complement' || m === 'avis-defavorable'" role="dialog" aria-modal="true">
+    @switch (m) {
+      @case ('assign') {
+        <form [formGroup]="assignForm" (ngSubmit)="affecter()">
+          <div class="bea-mg__modal-head"><h2>Affecter le dossier</h2><button type="button" class="bea-mg__icon-btn" (click)="fermer()"><mat-icon>close</mat-icon></button></div>
+          <div class="bea-mg__modal-body bea-ct-grid">
+            <label>Analyste (détenteur du contrôle sur l’agence du dossier)
+              <select formControlName="analyste_id">
+                <option value="">— Choisir —</option>
+                @for (a of analystes(); track a.id) { <option [value]="a.id">{{ a.nom }}</option> }
+              </select>
+            </label>
+            @if (!analystes().length) { <p class="bea-ct-note">Aucun analyste éligible trouvé pour cette agence.</p> }
+          </div>
+          <div class="bea-mg__modal-foot">
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="fermer()">Annuler</button>
+            <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy() || assignForm.invalid"><mat-icon>assignment_ind</mat-icon> Affecter</button>
+          </div>
+        </form>
+      }
+      @case ('anomalie') {
+        <form [formGroup]="anomalieForm" (ngSubmit)="creerAnomalie()">
+          <div class="bea-mg__modal-head"><h2>Nouvelle anomalie</h2><button type="button" class="bea-mg__icon-btn" (click)="fermer()"><mat-icon>close</mat-icon></button></div>
+          <div class="bea-mg__modal-body bea-ct-grid">
+            <label>Type (code) *<input formControlName="type_code" maxlength="60" /></label>
+            <label>Gravité *
+              <select formControlName="gravite">
+                <option value="BLOQUANTE">Bloquante</option><option value="MAJEURE">Majeure</option><option value="MINEURE">Mineure</option>
+              </select>
+            </label>
+            <label>Élément de checklist
+              <select formControlName="item_id">
+                <option value="">—</option>
+                @for (i of checklist()?.items ?? []; track i.id) { <option [value]="i.id">{{ i.libelle }}</option> }
+              </select>
+            </label>
+            <label class="bea-mg__span2">Description *<input formControlName="description" maxlength="4000" /></label>
+            <label class="bea-mg__span2">Observation<input formControlName="observation" /></label>
+            <label class="bea-mg__span2">Action attendue<input formControlName="action_attendue" /></label>
+          </div>
+          <div class="bea-mg__modal-foot">
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="fermer()">Annuler</button>
+            <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy() || anomalieForm.invalid"><mat-icon>save</mat-icon> Enregistrer</button>
+          </div>
+        </form>
+      }
+      @case ('version') {
+        <div class="bea-mg__modal-head">
+          <h2>Version {{ versionDetail()?.numero ?? '' }} — lecture seule</h2>
+          <button type="button" class="bea-mg__icon-btn" (click)="fermer()"><mat-icon>close</mat-icon></button>
+        </div>
+        <div class="bea-mg__modal-body">
+          @if (versionDetail(); as v) {
+            <p>
+              <span class="bea-ct-badge" [attr.data-tone]="v.empreinte_verifiee ? 'ACTIF' : 'CRITIQUE'">
+                {{ v.empreinte_verifiee ? 'Empreinte vérifiée' : 'Empreinte NON conforme' }}
+              </span>
+              {{ libStatut(v.evenement) }} · {{ date(v.cree_le, true) }}
+            </p>
+            <pre class="eer-pre">{{ json(v.contenu) }}</pre>
+          } @else {
+            <p class="bea-ct-note">Chargement…</p>
+          }
+        </div>
+      }
+      @default {
+        <form [formGroup]="complementForm" (ngSubmit)="envoyerComplement()">
+          <div class="bea-mg__modal-head">
+            <h2>{{ m === 'avis-defavorable' ? 'Avis Conformité KYC défavorable' : 'Demande de complément' }}</h2>
+            <button type="button" class="bea-mg__icon-btn" (click)="fermer()"><mat-icon>close</mat-icon></button>
+          </div>
+          <div class="bea-mg__modal-body">
+            <p class="bea-ct-note">Le dossier reste le même EER ; la resoumission créera une nouvelle version. Seuls les éléments cochés pourront être modifiés.</p>
+            <div class="bea-ct-grid">
+              <label class="bea-mg__span2">{{ m === 'avis-defavorable' ? 'Motif de l’avis *' : 'Consigne *' }}<input formControlName="consigne" maxlength="4000" /></label>
+              @if (m === 'complement') { <label>Échéance<input type="date" formControlName="echeance" /></label> }
+            </div>
+            <h3 class="eer-h3">Anomalies concernées</h3>
+            @for (a of anomaliesOuvertes(); track a.id) {
+              <label class="eer-check"><input type="checkbox" [checked]="ciblesAnomalies().has(a.id)" (change)="basculer('anomalies', a.id)" /> {{ a.gravite }} — {{ a.description }}</label>
+            } @empty { <p class="bea-ct-note">Aucune anomalie ouverte.</p> }
+            <h3 class="eer-h3">Autres éléments de checklist</h3>
+            @for (i of itemsCiblables(); track i.id) {
+              <label class="eer-check"><input type="checkbox" [checked]="ciblesItems().has(i.id)" (change)="basculer('items', i.id)" /> {{ i.libelle }} ({{ libElement(i.statut) }})</label>
+            } @empty { <p class="bea-ct-note">Aucun élément non conforme, manquant ou à vérifier.</p> }
+          </div>
+          <div class="bea-mg__modal-foot">
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="fermer()">Annuler</button>
+            <button type="submit" class="bea-mg__btn" [class.bea-mg__btn--danger]="m === 'avis-defavorable'" [class.bea-mg__btn--primary]="m === 'complement'"
+                    [disabled]="busy() || complementForm.invalid || (!ciblesAnomalies().size && !ciblesItems().size)">
+              <mat-icon>send</mat-icon> {{ m === 'avis-defavorable' ? 'Émettre l’avis défavorable' : 'Demander le complément' }}
+            </button>
+          </div>
+        </form>
+      }
+    }
+  </div>
+}

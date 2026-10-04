@@ -19,11 +19,44 @@ export interface CoreAdminEspaceRow {
   sort_order: number;
   is_active: boolean;
   locked: boolean;
+  icon?: string | null;
   modules_count: number;
   users_count: number;
   created_at?: string | null;
   updated_at?: string | null;
 }
+
+export type CoreAdminDomaineStatut = 'actif' | 'bientot' | 'developpement' | 'inactif';
+
+export interface CoreAdminDomaineRow {
+  id: string;
+  code: string;
+  espace_id: string;
+  espace_code: string;
+  parent_id: string | null;
+  parent_code: string | null;
+  label: string;
+  description: string;
+  icon: string | null;
+  statut: CoreAdminDomaineStatut | string;
+  status_message: string;
+  sort_order: number;
+  is_active: boolean;
+  modules_count: number;
+  children_count: number;
+}
+
+export interface CoreAdminDomaineOption {
+  id: string;
+  code: string;
+  label: string;
+  espace_id: string;
+  parent_id: string | null;
+  is_active: boolean;
+}
+
+/** Nom de glyphe Material Icons (police déjà chargée) — même règle que le backend. */
+export const ICON_NAME_PATTERN = /^[a-z0-9_]{1,60}$/;
 
 export interface CoreAdminModuleSummary {
   id: string;
@@ -36,6 +69,7 @@ export interface CoreAdminModuleSummary {
 
 export interface CoreAdminEspaceFiche extends CoreAdminEspaceRow {
   modules: CoreAdminModuleSummary[];
+  domaines?: CoreAdminDomaineRow[];
 }
 
 export interface CoreAdminEspacePage {
@@ -59,6 +93,10 @@ export interface CoreAdminModuleRow {
   espace_id: string;
   espace_code: string;
   espace_label: string;
+  icon?: string | null;
+  domaine_id?: string | null;
+  domaine_code?: string | null;
+  domaine_label?: string | null;
   users_count: number;
   created_at?: string | null;
   updated_at?: string | null;
@@ -92,6 +130,9 @@ export function catalogueStatutLabel(statut: string): string {
   }
   if (statut === 'inactif') {
     return 'Inactif';
+  }
+  if (statut === 'developpement') {
+    return 'En développement';
   }
   return statut;
 }

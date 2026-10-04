@@ -24,6 +24,20 @@ class PlateformeModuleRead(BaseModel):
     espace_id: str | None = None
     espace_titre: str | None = None
     espace_route: str | None = None
+    icon: str | None = None
+    domaine_id: str | None = None
+
+
+class PlateformeDomaineRead(BaseModel):
+    """Domaine / sous-domaine (codes) — regroupement visuel, pas un niveau d'accès."""
+
+    id: str
+    parent_id: str | None = None
+    titre: str
+    description: str = ""
+    icon: str | None = None
+    statut: str
+    status_message: str = ""
 
 
 class PlateformeEspaceRead(BaseModel):
@@ -33,7 +47,9 @@ class PlateformeEspaceRead(BaseModel):
     route: str | None = None
     statut: str
     accessible: bool
+    icon: str | None = None
     modules: list[PlateformeModuleRead] = Field(default_factory=list)
+    domaines: list[PlateformeDomaineRead] = Field(default_factory=list)
 
 
 class PlateformeHubModuleRead(BaseModel):
@@ -287,6 +303,10 @@ class CoreAdminCatalogueKpis(BaseModel):
     inactifs: int
 
 
+# Nom de glyphe Material Icons (police déjà chargée par index.html), ex. verified_user.
+ICON_PATTERN = r"^[a-z0-9_]{1,60}$"
+
+
 class CoreAdminEspaceWrite(BaseModel):
     code: str = Field(min_length=2, max_length=80)
     label: str = Field(min_length=1, max_length=120)
@@ -294,6 +314,7 @@ class CoreAdminEspaceWrite(BaseModel):
     route: str | None = Field(default=None, max_length=160)
     statut: Literal["actif", "bientot", "inactif"] = "bientot"
     sort_order: int = Field(default=0, ge=0, le=9999)
+    icon: str | None = Field(default=None, pattern=ICON_PATTERN)
 
 
 class CoreAdminEspaceUpdate(BaseModel):
@@ -302,6 +323,7 @@ class CoreAdminEspaceUpdate(BaseModel):
     route: str | None = Field(default=None, max_length=160)
     statut: Literal["actif", "bientot", "inactif"] | None = None
     sort_order: int | None = Field(default=None, ge=0, le=9999)
+    icon: str | None = Field(default=None, pattern=ICON_PATTERN)
 
 
 class CoreAdminModuleSummary(BaseModel):
@@ -323,14 +345,61 @@ class CoreAdminEspaceRead(BaseModel):
     sort_order: int
     is_active: bool
     locked: bool
+    icon: str | None = None
     modules_count: int = 0
     users_count: int = 0
     created_at: str | None = None
     updated_at: str | None = None
 
 
+DomaineStatut = Literal["actif", "bientot", "developpement", "inactif"]
+
+
+class CoreAdminDomaineWrite(BaseModel):
+    code: str = Field(min_length=2, max_length=80)
+    espace_id: str
+    parent_id: str | None = None
+    label: str = Field(min_length=1, max_length=160)
+    description: str = ""
+    icon: str | None = Field(default=None, pattern=ICON_PATTERN)
+    statut: DomaineStatut = "bientot"
+    status_message: str = Field(default="", max_length=500)
+    sort_order: int = Field(default=0, ge=0, le=9999)
+
+
+class CoreAdminDomaineUpdate(BaseModel):
+    parent_id: str | None = None
+    label: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = None
+    icon: str | None = Field(default=None, pattern=ICON_PATTERN)
+    statut: DomaineStatut | None = None
+    status_message: str | None = Field(default=None, max_length=500)
+    sort_order: int | None = Field(default=None, ge=0, le=9999)
+
+
+class CoreAdminDomaineRead(BaseModel):
+    id: str
+    code: str
+    espace_id: str
+    espace_code: str
+    parent_id: str | None = None
+    parent_code: str | None = None
+    label: str
+    description: str
+    icon: str | None = None
+    statut: str
+    status_message: str = ""
+    sort_order: int
+    is_active: bool
+    modules_count: int = 0
+    children_count: int = 0
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 class CoreAdminEspaceFiche(CoreAdminEspaceRead):
     modules: list[CoreAdminModuleSummary] = Field(default_factory=list)
+    domaines: list[CoreAdminDomaineRead] = Field(default_factory=list)
 
 
 class CoreAdminEspaceListRead(BaseModel):
@@ -362,6 +431,8 @@ class CoreAdminModuleWrite(BaseModel):
     entry_path: str | None = Field(default=None, max_length=160)
     statut: ModuleStatut = "bientot"
     sort_order: int = Field(default=0, ge=0, le=9999)
+    icon: str | None = Field(default=None, pattern=ICON_PATTERN)
+    domaine_id: str | None = None
 
 
 class CoreAdminModuleUpdate(BaseModel):
@@ -371,6 +442,8 @@ class CoreAdminModuleUpdate(BaseModel):
     entry_path: str | None = Field(default=None, max_length=160)
     statut: ModuleStatut | None = None
     sort_order: int | None = Field(default=None, ge=0, le=9999)
+    icon: str | None = Field(default=None, pattern=ICON_PATTERN)
+    domaine_id: str | None = None
 
 
 class CoreAdminModuleRead(BaseModel):
@@ -388,6 +461,10 @@ class CoreAdminModuleRead(BaseModel):
     espace_id: str
     espace_code: str
     espace_label: str
+    icon: str | None = None
+    domaine_id: str | None = None
+    domaine_code: str | None = None
+    domaine_label: str | None = None
     users_count: int = 0
     created_at: str | None = None
     updated_at: str | None = None
@@ -452,8 +529,18 @@ class CoreAdminEspaceOption(BaseModel):
     is_active: bool
 
 
+class CoreAdminDomaineOption(BaseModel):
+    id: str
+    code: str
+    label: str
+    espace_id: str
+    parent_id: str | None = None
+    is_active: bool
+
+
 class CoreAdminModuleOptions(BaseModel):
     espaces: list[CoreAdminEspaceOption] = Field(default_factory=list)
+    domaines: list[CoreAdminDomaineOption] = Field(default_factory=list)
 
 
 class CoreAdminRbacKpis(BaseModel):

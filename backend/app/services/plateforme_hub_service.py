@@ -351,7 +351,6 @@ class PlateformeHubService:
         ]
         return kpis, sessions
 
-    @staticmethod
     async def _mes_demandes_counts(self, user: User) -> list[dict]:
         try:
             from app.models.mg_requests import MgEmployeeRequest

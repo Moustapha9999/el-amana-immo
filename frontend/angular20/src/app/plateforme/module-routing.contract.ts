@@ -166,6 +166,15 @@ export const MODULE_ROUTE_CONTRACTS: Readonly<Record<string, ModuleRouteContract
     espacePath: '/informatique',
     urlPrefix: '/demandes-informatique',
   },
+  // Audit, Contrôle & Conformité → Conformité & sécurité financière → KYC.
+  // Département ≠ /audit (segment réservé Immobilisations).
+  eer: {
+    code: 'eer',
+    strategy: 'prefixed',
+    entryPath: '/eer/dashboard',
+    espacePath: '/audit-controle-conformite',
+    urlPrefix: '/eer',
+  },
 };
 
 /** Modules dont le shell métier Angular est branché (Login 2 peut naviguer). */
@@ -182,6 +191,7 @@ export const MODULES_WITH_METIER_SHELL = new Set<string>([
   'demandes-credit',
   'demandes-rh',
   'demandes-informatique',
+  'eer',
 ]);
 
 export function moduleHasMetierShell(moduleCode: string): boolean {

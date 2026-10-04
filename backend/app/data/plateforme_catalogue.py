@@ -5,16 +5,17 @@ from __future__ import annotations
 from typing import TypedDict
 
 
-class EspaceDef(TypedDict):
+class EspaceDef(TypedDict, total=False):
     code: str
     label: str
     description: str
     route: str | None
     statut: str
     sort_order: int
+    icon: str
 
 
-class ModuleDef(TypedDict):
+class ModuleDef(TypedDict, total=False):
     code: str
     espace_code: str
     label: str
@@ -22,10 +23,26 @@ class ModuleDef(TypedDict):
     entry_path: str | None
     statut: str
     sort_order: int
+    icon: str
+    domaine_code: str
+    status_message: str
+
+
+class DomaineDef(TypedDict, total=False):
+    code: str
+    espace_code: str
+    parent_code: str | None
+    label: str
+    description: str
+    icon: str
+    statut: str
+    sort_order: int
 
 
 DEFAULT_ESPACE_CODE = "comptabilite"
 DEFAULT_MODULE_CODE = "immobilisations"
+ACC_ESPACE_CODE = "audit-controle-conformite"
+EER_MODULE_CODE = "eer"
 
 # Toujours (re)créés s’ils manquent. Le reste du catalogue = seed **bootstrap**
 # seulement (CORE ADMIN peut supprimer sans resurrection au refresh).
@@ -115,6 +132,85 @@ PLATEFORME_ESPACES: list[EspaceDef] = [
         "route": "/archive-generale",
         "statut": "actif",
         "sort_order": 7,
+    },
+    {
+        # Pas /audit : segment réservé Immobilisations (LEGACY_ROOT_PATH_SEGMENTS).
+        "code": ACC_ESPACE_CODE,
+        "label": "Audit, Contrôle & Conformité",
+        "description": (
+            "Audit interne, contrôle permanent, conformité & sécurité financière (KYC), "
+            "organisation & processus, management & qualité."
+        ),
+        "route": f"/{ACC_ESPACE_CODE}",
+        "statut": "actif",
+        "sort_order": 8,
+        "icon": "verified_user",
+    },
+]
+
+# Domaines / sous-domaines (regroupement visuel des modules, pas un niveau d'accès).
+# Insérés par migration Alembic (20261003_acc_departement) puis administrés en CORE ADMIN :
+# pas de statut « verrouillé » réécrit au refresh.
+PLATEFORME_DOMAINES: list[DomaineDef] = [
+    {
+        "code": "audit-interne",
+        "espace_code": ACC_ESPACE_CODE,
+        "parent_code": None,
+        "label": "Audit interne",
+        "description": "Missions d'audit, recommandations et suivi des plans d'action.",
+        "icon": "manage_search",
+        "statut": "bientot",
+        "sort_order": 1,
+    },
+    {
+        "code": "controle-permanent",
+        "espace_code": ACC_ESPACE_CODE,
+        "parent_code": None,
+        "label": "Contrôle permanent & périmètre opérationnel",
+        "description": "Plans de contrôle de niveau 1 et 2, anomalies et périmètre opérationnel.",
+        "icon": "fact_check",
+        "statut": "bientot",
+        "sort_order": 2,
+    },
+    {
+        "code": "conformite-securite-financiere",
+        "espace_code": ACC_ESPACE_CODE,
+        "parent_code": None,
+        "label": "Conformité & sécurité financière",
+        "description": "KYC, LBC-FT, PPE, FATCA et conformité réglementaire.",
+        "icon": "shield",
+        "statut": "actif",
+        "sort_order": 3,
+    },
+    {
+        "code": "kyc",
+        "espace_code": ACC_ESPACE_CODE,
+        "parent_code": "conformite-securite-financiere",
+        "label": "KYC",
+        "description": "Connaissance client : entrées en relation, vérifications et pièces.",
+        "icon": "badge",
+        "statut": "actif",
+        "sort_order": 1,
+    },
+    {
+        "code": "organisation-processus",
+        "espace_code": ACC_ESPACE_CODE,
+        "parent_code": None,
+        "label": "Organisation & Processus",
+        "description": "Cartographie des processus, procédures et notes d'organisation.",
+        "icon": "account_tree",
+        "statut": "bientot",
+        "sort_order": 4,
+    },
+    {
+        "code": "management-qualite",
+        "espace_code": ACC_ESPACE_CODE,
+        "parent_code": None,
+        "label": "Management & Qualité",
+        "description": "Démarche qualité, indicateurs et amélioration continue.",
+        "icon": "workspace_premium",
+        "statut": "bientot",
+        "sort_order": 5,
     },
 ]
 
@@ -335,6 +431,23 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "statut": "actif",
         "sort_order": 1,
     },
+    # --- Audit, Contrôle & Conformité → Conformité & sécurité financière → KYC ---
+    {
+        "code": EER_MODULE_CODE,
+        "espace_code": ACC_ESPACE_CODE,
+        "domaine_code": "kyc",
+        "label": "Gestion des Entrées en Relation",
+        "description": (
+            "Dossiers EER reçus par e-mail : checklist KYC dynamique, contrôles, "
+            "non-conformités, compléments sur le même dossier, validation et archivage."
+        ),
+        "entry_path": "/eer/dashboard",
+        # Passe à « actif » via CORE ADMIN quand le dossier EER est livré.
+        "statut": "developpement",
+        "status_message": "Module en cours de construction — ouverture après livraison du dossier EER.",
+        "icon": "person_add",
+        "sort_order": 1,
+    },
 ]
 
 # Permissions CORE (tous les départements). `{module}.admin` couvre `{module}.*`.
@@ -456,6 +569,29 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("mg.batch.create", "Création des regroupements achats", "demandes-mg"),
     ("mg.batch.update", "Modification des regroupements achats", "demandes-mg"),
     ("mg.batch.validate", "Validation des regroupements (création DA)", "demandes-mg"),
+    # Gestion des Entrées en Relation (Conformité → KYC)
+    ("eer.view", "Consultation des dossiers EER", "eer"),
+    ("eer.create", "Création de dossiers EER", "eer"),
+    ("eer.update", "Modification de dossiers EER", "eer"),
+    ("eer.submit", "Soumission des dossiers EER au contrôle", "eer"),
+    ("eer.assign", "Affectation des dossiers EER", "eer"),
+    ("eer.control", "Contrôle KYC (checklist, anomalies)", "eer"),
+    ("eer.avis", "Avis Conformité KYC", "eer"),
+    ("eer.validate", "Validation des dossiers EER", "eer"),
+    ("eer.reject", "Rejet des dossiers EER", "eer"),
+    ("eer.complement.request", "Demande de complément EER", "eer"),
+    ("eer.complement.receive", "Réception de complément EER", "eer"),
+    ("eer.archive", "Clôture / archivage des dossiers EER", "eer"),
+    ("eer.export", "Exports EER", "eer"),
+    ("eer.report.view", "Reporting EER", "eer"),
+    ("eer.rules.view", "Consultation des règles KYC", "eer"),
+    ("eer.rules.manage", "Paramétrage des règles KYC", "eer"),
+    ("eer.document.view", "Consultation des pièces EER", "eer"),
+    ("eer.document.upload", "Dépôt de pièces EER", "eer"),
+    ("eer.document.download", "Téléchargement des pièces EER", "eer"),
+    ("eer.scope.all", "Périmètre EER : toutes les agences", "eer"),
+    ("eer.audit.view", "Consultation de l'audit EER", "eer"),
+    ("eer.admin", "Administration du module EER", "eer"),
 ]
 
 # Rôles figés Login 2 / module Immobilisations (codes courts = legacy).
@@ -500,6 +636,11 @@ RBAC_ROLES: list[tuple[str, str, str]] = [
     ("demandes-mg.gestionnaire", "Demandes MG — Gestionnaire", "Traitement et regroupement des demandes"),
     ("demandes-mg.valideur", "Demandes MG — Valideur", "Validation / refus des demandes"),
     ("demandes-mg.admin", "Demandes MG — Admin", "Administration des demandes employés"),
+    ("eer.charge", "EER — Chargé de clientèle", "Création, saisie et soumission des dossiers de son agence"),
+    ("eer.lecteur", "EER — Lecteur", "Consultation des dossiers et du reporting EER"),
+    ("eer.analyste", "EER — Analyste conformité", "Saisie, contrôle KYC et compléments"),
+    ("eer.superviseur", "EER — Superviseur", "Affectation, validation, rejet et archivage"),
+    ("eer.admin", "EER — Admin", "Administration complète du module EER et des règles KYC"),
 ]
 
 # Codes courts réservés au module Immobilisations (ne pas créer pour Crédit / RH / …).
@@ -542,6 +683,34 @@ _MG_REQUEST_EMP_ALL = tuple(
 )
 _MG_REQUEST_MG_ALL = tuple(
     code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "demandes-mg"
+)
+_EER_ALL = tuple(code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "eer")
+# Pas de ged.* sur les rôles EER : les pièces KYC passent uniquement par les endpoints EER
+# (eer.document.*), jamais par la GED générique / Archive Générale.
+_EER_ANALYSTE = (
+    "eer.view",
+    "eer.create",
+    "eer.update",
+    "eer.submit",
+    "eer.control",
+    "eer.complement.request",
+    "eer.complement.receive",
+    "eer.export",
+    "eer.report.view",
+    "eer.rules.view",
+    "eer.document.view",
+    "eer.document.upload",
+    "eer.document.download",
+    "eer.scope.all",
+)
+_EER_CHARGE = (
+    "eer.view",
+    "eer.create",
+    "eer.update",
+    "eer.submit",
+    "eer.document.view",
+    "eer.document.upload",
+    "eer.document.download",
 )
 _CORE_ADMIN = (
     "plateforme.users.read",
@@ -682,6 +851,12 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "ged.download",
     ),
     "demandes-mg.admin": _MG_REQUEST_MG_ALL + _GED_RW,
+    "eer.charge": _EER_CHARGE,
+    "eer.lecteur": ("eer.view", "eer.report.view", "eer.document.view", "eer.scope.all"),
+    "eer.analyste": _EER_ANALYSTE,
+    "eer.superviseur": _EER_ANALYSTE
+    + ("eer.assign", "eer.avis", "eer.validate", "eer.reject", "eer.archive", "eer.audit.view"),
+    "eer.admin": _EER_ALL,
 }
 
 SYSTEM_ROLE_CODES = frozenset(code for code, _label, _desc in RBAC_ROLES)
