@@ -6,6 +6,7 @@ import {
   EerAudit,
   EerChecklist,
   EerComplement,
+  EerConformite,
   EerControle,
   EerConstat,
   EerDecision,
@@ -14,6 +15,10 @@ import {
   EerDossierLigne,
   EerFicheChamp,
   EerHistorique,
+  EerKpiEtatsCompte,
+  EerKpiGlobal,
+  EerKpiRepartition,
+  EerKpiSerie,
   EerMutation,
   EerPage,
   EerPerimetre,
@@ -55,11 +60,36 @@ export type EerFiltres = Partial<{
   q: string;
   date_debut: string;
   date_fin: string;
+  sous_profil: string;
+  ppe: string;
+  fatca: string;
+  analyste_id: string;
+  etat_compte: string;
+  residence: string;
+  conformite_excel: string;
   page: number;
   size: number;
   tri: string;
   ordre: 'asc' | 'desc';
 }>;
+
+export type EerKpiFiltres = Partial<{
+  agence_id: string;
+  type_client: string;
+  date_debut: string;
+  date_fin: string;
+}>;
+
+export type EerGranularite = 'jour' | 'semaine' | 'mois' | 'annee';
+export type EerDimension = 'risque' | 'ppe' | 'fatca' | 'residence' | 'analyste' | 'profil' | 'sous_profil';
+
+function nettoyer(filtres: Record<string, unknown>): Record<string, string> {
+  const params: Record<string, string> = {};
+  for (const [k, v] of Object.entries(filtres)) {
+    if (v !== undefined && v !== null && v !== '') params[k] = String(v);
+  }
+  return params;
+}
 
 /** Accès HTTP du module EER. Toute mutation transmet la `revision` connue (409 si périmée). */
 @Injectable({ providedIn: 'root' })
@@ -73,6 +103,34 @@ export class EerService {
 
   tableauDeBord(agenceId?: string): Observable<EerTableauDeBord> {
     return this.api.get(`${this.base}/dashboard`, agenceId ? { agence_id: agenceId } : undefined);
+  }
+
+  kpis(filtres: EerKpiFiltres = {}): Observable<EerKpiGlobal> {
+    return this.api.get(`${this.base}/kpis`, nettoyer(filtres));
+  }
+
+  kpisAgences(filtres: EerKpiFiltres = {}): Observable<EerKpiRepartition> {
+    return this.api.get(`${this.base}/kpis/agencies`, nettoyer(filtres));
+  }
+
+  kpisProfils(filtres: EerKpiFiltres = {}): Observable<EerKpiRepartition> {
+    return this.api.get(`${this.base}/kpis/profiles`, nettoyer(filtres));
+  }
+
+  kpisEtatsCompte(filtres: EerKpiFiltres = {}): Observable<EerKpiEtatsCompte> {
+    return this.api.get(`${this.base}/kpis/account-statuses`, nettoyer(filtres));
+  }
+
+  kpisSerie(granularite: EerGranularite, filtres: EerKpiFiltres = {}): Observable<EerKpiSerie> {
+    return this.api.get(`${this.base}/kpis/timeseries`, { ...nettoyer(filtres), granularite });
+  }
+
+  kpisDimension(dimension: EerDimension, filtres: EerKpiFiltres = {}): Observable<EerKpiRepartition> {
+    return this.api.get(`${this.base}/kpis/dimensions/${dimension}`, nettoyer(filtres));
+  }
+
+  conformite(id: string): Observable<EerConformite> {
+    return this.api.get(this.url(id, 'compliance'));
   }
 
   agences(): Observable<EerAgence[]> {

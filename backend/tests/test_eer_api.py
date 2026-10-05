@@ -202,6 +202,49 @@ async def test_suppression_logique_avec_motif(env):
     assert rejoue.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_conformite_reference_excel_et_kpi(env):
+    c, agences = env["client"], env["agences"]
+    charge = await _module(c, "charge_a")
+    d = (await c.post("/api/v1/eer/dossiers", json=_nouveau(agences[0], "Client KPI"), headers=charge)).json()
+    assert (d["conformite_excel"], d["code_conforme"], d["code_non_conforme"]) == ("NON_EVALUE", 0, 0)
+    assert d["conformite_bea"] == "NON_EVALUE" and d["divergence"] is False
+
+    conf = await c.get(f"/api/v1/eer/dossiers/{d['id']}/compliance", headers=charge)
+    assert conf.status_code == 200, conf.text
+    corps = conf.json()
+    assert corps["reference_excel"] == {"classement": "NON_EVALUE", "code_conforme": 0, "code_non_conforme": 0,
+                                        "cellule_m": None, "cellule_n": None}
+    assert corps["explication_ecart"] == [] and corps["anomalies_bloquantes"] == []
+    # Évaluation réservée au contrôle en cours (règle existante conservée).
+    evaluer = await c.post(f"/api/v1/eer/dossiers/{d['id']}/compliance/evaluate", headers=charge,
+                           json={"revision": d["revision"]})
+    assert evaluer.status_code == 400
+
+    liste = (await c.get("/api/v1/eer/dossiers?size=100&conformite_excel=NON_EVALUE", headers=charge)).json()
+    assert d["id"] in {x["id"] for x in liste["items"]}
+    assert all(x["conformite_excel"] == "NON_EVALUE" for x in liste["items"])
+
+    k = (await c.get("/api/v1/eer/kpis", headers=charge)).json()
+    assert k["nature"] == "HISTORIQUE_EXCEL" and k["total"] >= 1 and "taux_abandon" in k["flux"]
+    assert k["excel"]["non_evalues"] == k["total"] - k["excel"]["conformes"] - k["excel"]["non_conformes"]
+    agences_kpi = (await c.get("/api/v1/eer/kpis/agencies", headers=charge)).json()
+    assert {str(a) for a in agences} <= {l["agence_id"] for l in agences_kpi["lignes"]}
+    profils = (await c.get("/api/v1/eer/kpis/profiles", headers=charge)).json()
+    assert [l["libelle"] for l in profils["lignes"]][0] == "Personne_Physique"
+    etats = (await c.get("/api/v1/eer/kpis/account-statuses", headers=charge)).json()
+    assert [l["code"] for l in etats["lignes"]] == ["ACTIF", "INACTIF", "BLOQUE", "FERME"]
+    serie = (await c.get("/api/v1/eer/kpis/timeseries?granularite=semaine", headers=charge)).json()
+    assert serie["nature"] == "EXTENSION_BEA_DIGITAL"
+    assert (await c.get("/api/v1/eer/kpis/dimensions/risque", headers=charge)).status_code == 200
+    assert (await c.get("/api/v1/eer/kpis/dimensions/nom_client", headers=charge)).status_code == 422
+    assert (await c.get("/api/v1/eer/kpis/timeseries?granularite=trimestre", headers=charge)).status_code == 422
+
+    login = await c.post("/api/v1/auth/login", json={"email": _email("charge_a"), "password": MOT_DE_PASSE})
+    plateforme = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    assert (await c.get("/api/v1/eer/kpis", headers=plateforme)).status_code == 401
+
+
 # --- Workflow complet par l'API -------------------------------------------------------------
 
 async def _completer_fiches(c, headers, did, rev, user_id) -> int:

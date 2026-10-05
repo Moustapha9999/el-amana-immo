@@ -368,6 +368,28 @@ Calcul par axe, sur les éléments **obligatoires** applicables :
 - L’analyste peut **déroger** sur une anomalie (statut `ACCEPTEE`) avec justification
   obligatoire, tracée et soumise à la séparation des rôles.
 
+### 11 bis. Deux niveaux de résultat (décision du 05/10/2026)
+
+Chaque dossier porte **deux** résultats, calculés (jamais saisis) et affichés côte à côte :
+
+| Niveau | Règle | Source |
+|--------|-------|--------|
+| **Référence Excel** | `CONFORME` si physique = système = `CONFORME` ; `NON_CONFORME` si l’un des deux est `NON_CONFORME` ; sinon `NON_EVALUE` | colonnes M / N → S / T du suivi historique |
+| **Décision BEA-DIGITAL** | `decision_globale` existante (ajoute cohérence + anomalies bloquantes) ; `INCOMPLET` ou vide → `NON_EVALUE` | moteur `conformite_engine` (inchangé) |
+
+- Indicateurs Excel dérivés : `code_conforme` (S) = 1 ssi référence `CONFORME` ;
+  `code_non_conforme` (T) = 1 ssi référence `NON_CONFORME` ; S + T ≤ 1.
+- Comparaison Excel « = » : insensible à la casse, sensible aux espaces.
+- Pas de colonne stockée ni de migration : dérivation à la volée, une seule source
+  (`backend/app/services/eer/conformite_historique.py`, version Python et version SQL).
+- **Divergence** : quand les deux niveaux diffèrent, `GET /eer/dossiers/{id}/compliance`
+  explique pourquoi (cohérence non conforme ou incomplète, anomalies bloquantes ouvertes,
+  décision remise à zéro après réception d’un complément — les axes M / N gardent alors
+  la dernière évaluation).
+- PP / PM : dérivé du type client uniquement (pas de reprise de l’erreur U7:U39).
+- Recalcul : `POST /eer/dossiers/{id}/compliance/evaluate` (permission `eer.control`,
+  dossier `EN_CONTROLE` à l’étape `CONTROLES`).
+
 ## 12. Règles PPE [CDC §15]
 
 - Statut PPE OUI/NON + « Motif PPE (si Oui) » en **texte libre**, dans le cadre réservé à la
@@ -486,13 +508,31 @@ ex. NIF manquant), `version_detection`, `version_resolution`,
 
 ## 21. Stratégie reporting
 
-Calcul **depuis PostgreSQL**, pas depuis l’Excel :
-- vue `v_eer_suivi` = les 16 colonnes de Feuil1 (mapping : [eer-matrices.md §6](eer-matrices.md)) ;
-- `v_eer_conformite_agence`, `v_eer_conformite_profil`, `v_eer_etat_comptes`
-  = les 3 tableaux de Feuil2 ;
-- taux = conformes / (conformes + non conformes), formule identique à Feuil2 (`=B/(B+C)`) ;
-- dashboard (KPI [CDC §30]), exports Excel au gabarit actuel, PDF.
-- Import de l’historique Excel : plus tard, après comparaison.
+Calcul **depuis PostgreSQL**, pas depuis l’Excel, par requêtes agrégées
+(`backend/app/services/eer_reporting_service.py`, pas de vues SQL) ; périmètre agence et
+filtres de la liste appliqués ; permission `eer.report.view`.
+
+| Route | Contenu | Statut |
+|-------|---------|--------|
+| `GET /eer/kpis` | global (référence Excel + BEA-DIGITAL + divergences) et flux | historique Excel + flux |
+| `GET /eer/kpis/agencies` | SUMIFS par agence (toutes les agences du périmètre, y compris à 0) | historique Excel |
+| `GET /eer/kpis/profiles` | 4 types client, libellé Excel, PP / PM | historique Excel |
+| `GET /eer/kpis/account-statuses` | COUNT Actif / Inactif / Bloqué / Fermé (indépendant de S / T) ; non renseignés à part | historique Excel |
+| `GET /eer/kpis/timeseries?granularite=` | jour / semaine / mois / année sur `date_eer` | extension BEA-DIGITAL |
+| `GET /eer/kpis/dimensions/{dimension}` | risque, PPE, FATCA, résidence, analyste, profil, sous-profil | extension BEA-DIGITAL |
+
+- **Taux** = conformes / (conformes + non conformes), en %, 2 décimales. Les non évalués
+  sont exclus du dénominateur ; si rien n’est classé → `null` (affiché « — »), jamais
+  0 % ni `#DIV/0!`.
+- **Abandons** : les dossiers `ABANDONNE` sont conservés mais exclus des KPI de
+  conformité (numérateur et dénominateur).
+- **Flux** : reçus (soumis au moins une fois), brouillons, en cours, à compléter,
+  abandonnés ; taux d’abandon = abandonnés après réception / reçus.
+  [À CONFIRMER MÉTIER] définition exacte des « dossiers éligibles ».
+- Dashboard : sélecteur de référence (Excel / BEA-DIGITAL), tableaux agence / profil /
+  état du compte avec ligne Total, analyses complémentaires (période, dimension).
+- Exports Excel au gabarit actuel, PDF : à faire.
+- Import de l’historique Excel : non automatique ; plus tard, après comparaison.
 
 ## 22. Dépendance `[1]FLUX` (documentée, non reproduite)
 
@@ -502,8 +542,13 @@ Calcul **depuis PostgreSQL**, pas depuis l’Excel :
   mêmes formules par profil sur `FLUX!E:E`, `COUNTIFS(FLUX!O:O, état)`.
 - Hypothèse **non validée** : B = agence, E = profil, O = état du compte,
   S / T = indicateurs conforme / non conforme. À vérifier sur le fichier au bureau.
-- Les vues §21 sont compatibles : quand FLUX sera analysé, on ajuste la définition
-  « conforme » des vues, sans changer le modèle.
+- **Statut : SOURCE NON DISPONIBLE — À ANALYSER LORSQU’ELLE SERA FOURNIE.**
+  Le fichier n’est pas reconstruit par hypothèse.
+- Test de comparaison prêt : `backend/tests/test_eer_suivi_excel.py`, sauté tant que la
+  variable `EER_SUIVI_EXCEL` ne pointe pas vers le fichier. Il compare ligne à ligne S / T
+  (valeurs en cache) avec la règle du §11 bis, puis les SUMIFS par agence et par profil.
+- Quand FLUX sera analysé, on ajuste la règle de `conformite_historique.py`, sans changer
+  le modèle.
 
 ## 23. Plan de migrations Alembic (après validation)
 

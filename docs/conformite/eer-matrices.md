@@ -285,10 +285,13 @@ ou pose problème (ex. NIF absent ou erroné) : le dossier reste alors **non con
 | Conformité des données systèmes | `conformite_systeme` | axe SYSTEME |
 | Etat du compte | `etat_compte` | Actif / Inactif / Bloqué / Fermé ; saisie manuelle V1 (ORION) |
 | Analyste en charge | `analyste_id` | |
-| Observations éléments non conformes | généré depuis anomalies ouvertes + observation | |
+| Observations éléments non conformes | généré depuis anomalies ouvertes + observation | « description — observation », séparées par « ; » |
+| Conforme (S) | `code_conforme` (dérivé) | 1 ssi physique = système = `CONFORME` |
+| Non conforme (T) | `code_non_conforme` (dérivé) | 1 ssi physique ou système = `NON_CONFORME` |
 
-Feuil2 → vues `v_eer_conformite_agence` (15 agences listées ; la base en compte 17 : AMANTY et
-ZOUERATE en plus), `v_eer_conformite_profil` (4 types), `v_eer_etat_comptes` (4 états).
+Feuil2 → routes `GET /eer/kpis/agencies` (15 agences listées ; la base en compte 17 : AMANTY et
+ZOUERATE en plus, affichées à 0 si vides), `/kpis/profiles` (4 types), `/kpis/account-statuses`
+(4 états). Règles détaillées : [eer-architecture-metier.md §11 bis et §21](eer-architecture-metier.md).
 
 ## 7. Questions ouvertes
 

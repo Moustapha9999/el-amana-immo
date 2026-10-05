@@ -34,7 +34,33 @@ export interface EerDossierLigne {
   valide_le: string | null;
   created_at: string;
   updated_at: string;
+  sous_profil: string | null;
+  ppe: boolean;
+  fatca: boolean;
+  etat_compte: string | null;
+  conformite_physique: string | null;
+  conformite_systeme: string | null;
+  conformite_excel: EerClassement;
+  code_conforme: number;
+  code_non_conforme: number;
+  conformite_bea: EerClassement;
 }
+
+/** Classement dérivé (jamais saisi) : référence Excel M/N ou décision BEA-DIGITAL. */
+export type EerClassement = 'CONFORME' | 'NON_CONFORME' | 'NON_EVALUE';
+
+export const CLASSEMENTS: Record<EerClassement, string> = {
+  CONFORME: 'Conforme',
+  NON_CONFORME: 'Non conforme',
+  NON_EVALUE: 'Non évalué',
+};
+
+export const ETATS_COMPTE: Record<string, string> = {
+  ACTIF: 'Actif',
+  INACTIF: 'Inactif',
+  BLOQUE: 'Bloqué',
+  FERME: 'Fermé',
+};
 
 export interface EerPage<T> {
   items: T[];
@@ -75,6 +101,12 @@ export interface EerDossier {
   conformite_systeme: string | null;
   conformite_coherence: string | null;
   decision: string | null;
+  etat_compte: string | null;
+  conformite_excel: EerClassement;
+  code_conforme: number;
+  code_non_conforme: number;
+  conformite_bea: EerClassement;
+  divergence: boolean;
   version_courante: number;
   revision: number;
   nb_relances: number;
@@ -288,6 +320,85 @@ export interface EerTableauDeBord {
   par_risque: EerRepartition[];
 }
 
+export interface EerConformite {
+  dossier_id: string;
+  version_courante: number;
+  revision: number;
+  conformite_physique: string | null;
+  conformite_systeme: string | null;
+  conformite_coherence: string | null;
+  reference_excel: {
+    classement: EerClassement;
+    code_conforme: number;
+    code_non_conforme: number;
+    cellule_m: string | null;
+    cellule_n: string | null;
+  };
+  decision_bea: string | null;
+  conformite_bea: EerClassement;
+  anomalies_bloquantes: Array<{ id: string; type_code: string; description: string; statut: string }>;
+  divergence: boolean;
+  explication_ecart: string[];
+  observations: string | null;
+  derniere_decision: EerDecision | null;
+}
+
+/** Taux = conformes / (conformes + non conformes) en % ; null = non calculable (aucun classé). */
+export interface EerKpiConformite {
+  total: number;
+  conformes: number;
+  non_conformes: number;
+  non_evalues: number;
+  taux: string | null;
+}
+
+export interface EerKpiBloc {
+  total: number;
+  excel: EerKpiConformite;
+  bea: EerKpiConformite;
+  divergences: number;
+}
+
+export interface EerKpiGlobal extends EerKpiBloc {
+  nature: string;
+  flux: {
+    recus: number;
+    brouillons: number;
+    en_cours: number;
+    a_completer: number;
+    abandonnes: number;
+    abandonnes_apres_reception: number;
+    taux_abandon: string | null;
+  };
+}
+
+export interface EerKpiLigne extends EerKpiBloc {
+  code: string | null;
+  libelle: string | null;
+  agence_id?: string | null;
+  profil_technique?: string | null;
+}
+
+export interface EerKpiRepartition {
+  nature: string;
+  dimension?: string | null;
+  lignes: EerKpiLigne[];
+  total: EerKpiBloc;
+}
+
+export interface EerKpiEtatsCompte {
+  nature: string;
+  lignes: Array<{ code: string; libelle: string; nombre: number; pourcentage: string | null }>;
+  total: number;
+  non_renseignes: number;
+}
+
+export interface EerKpiSerie {
+  nature: string;
+  granularite: string;
+  lignes: Array<EerKpiBloc & { periode: string }>;
+}
+
 export const STATUTS: Record<string, string> = {
   BROUILLON: 'Brouillon',
   SOUMIS: 'Soumis',
@@ -366,6 +477,8 @@ export function eerTone(statut: string | null | undefined): string {
     case 'ACCEPTEE':
     case 'RECU':
       return 'ACTIF';
+    case 'NON_EVALUE':
+      return 'EXPIRE';
     case 'NON_CONFORME':
     case 'ABANDONNE':
     case 'MANQUANT':

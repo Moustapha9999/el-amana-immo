@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.models import Agence, EerDossier, EerPartie, User
+from app.services.eer.conformite_historique import classer_bea, classer_excel, sql_classement_excel
 from app.services.eer.workflow import Statut
 from app.services.eer_access import EerScope
 
@@ -41,6 +42,12 @@ class FiltresDossiers:
     q: str | None = None
     date_debut: date | None = None
     date_fin: date | None = None
+    sous_profil: str | None = None
+    ppe: bool | None = None
+    fatca: bool | None = None
+    etat_compte: str | None = None
+    residence: str | None = None
+    conformite_excel: str | None = None
 
 
 def restreindre(stmt: Select, scope: EerScope) -> Select:
@@ -78,6 +85,19 @@ class EerLectureService:
             stmt = stmt.where(EerDossier.date_eer >= f.date_debut)
         if f.date_fin:
             stmt = stmt.where(EerDossier.date_eer <= f.date_fin)
+        if f.sous_profil:
+            stmt = stmt.where(EerDossier.sous_profil_code == f.sous_profil)
+        if f.ppe is not None:
+            stmt = stmt.where(EerDossier.ppe_dossier.is_(f.ppe))
+        if f.fatca is not None:
+            stmt = stmt.where(EerDossier.fatca_dossier.is_(f.fatca))
+        if f.etat_compte:
+            stmt = stmt.where(EerDossier.etat_compte == f.etat_compte)
+        if f.residence:
+            stmt = stmt.where(EerPartie.pays_residence == f.residence)
+        if f.conformite_excel:
+            stmt = stmt.where(sql_classement_excel(EerDossier.conformite_physique, EerDossier.conformite_systeme)
+                              == f.conformite_excel)
         if f.q and f.q.strip():
             motif = f"%{f.q.strip()}%"
             stmt = stmt.where(or_(EerDossier.reference.ilike(motif), EerDossier.racine_client.ilike(motif),
@@ -103,7 +123,13 @@ class EerLectureService:
         stmt = stmt.offset((page - 1) * size).limit(size)
         lignes = []
         for d, nom, agence_code, agence_libelle, analyste_nom in (await self.db.execute(stmt)).all():
+            excel = classer_excel(d.conformite_physique, d.conformite_systeme)
             lignes.append({
+                "sous_profil": d.sous_profil_code, "ppe": d.ppe_dossier, "fatca": d.fatca_dossier,
+                "etat_compte": d.etat_compte, "conformite_physique": d.conformite_physique,
+                "conformite_systeme": d.conformite_systeme, "conformite_excel": excel.classement,
+                "code_conforme": excel.code_conforme, "code_non_conforme": excel.code_non_conforme,
+                "conformite_bea": classer_bea(d.decision_globale),
                 "id": d.id, "reference": d.reference, "statut": d.statut, "etape": d.etape,
                 "operation_type": d.operation_type, "agence_id": d.agence_id, "agence_code": agence_code,
                 "agence_libelle": agence_libelle, "type_client": d.type_client_code, "profil": d.profil_code,

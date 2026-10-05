@@ -31,6 +31,7 @@ from app.models import (
     User,
 )
 from app.services import eer_controles_auto
+from app.services.eer.conformite_historique import classer_excel, expliquer_ecart
 from app.services.eer.constantes import RoleDossier, StatutElement
 from app.services.eer.workflow import Etape, Statut
 from app.services.eer_dossier_service import (
@@ -211,7 +212,9 @@ async def test_cycle_reel_pp_mandataire_ppe_non_conforme_complement_avis(db: Asy
     assert [a.gravite for a in anomalies] == ["BLOQUANTE"]
     with pytest.raises(EerErreur, match="décision calculée"):
         await svc.transition(agent, dossier_id, "CONFORME")
-    await svc.transition(agent, dossier_id, "NON_CONFORME")
+    d = await svc.transition(agent, dossier_id, "NON_CONFORME")
+    excel = classer_excel(d.conformite_physique, d.conformite_systeme)
+    assert (excel.classement, excel.code_conforme, excel.code_non_conforme) == ("NON_CONFORME", 0, 1)
 
     # 8. Complément sur le même dossier : seuls les éléments demandés sont déverrouillés.
     with pytest.raises(EerErreur):
@@ -228,6 +231,11 @@ async def test_cycle_reel_pp_mandataire_ppe_non_conforme_complement_avis(db: Asy
     d = await svc.transition(agent, dossier_id, "RESOUMIS")
     assert (d.id, d.reference, d.version_courante, d.nb_relances) == (dossier_id, reference, 2, 1)
     assert d.etape == Etape.CHECKLIST  # reprise au point d'arrêt, pas depuis le début
+    # Décision BEA-DIGITAL remise à zéro ; la référence Excel garde la dernière évaluation M/N.
+    assert d.decision_globale is None
+    assert any("complément reçu" in r for r in expliquer_ecart(
+        physique=d.conformite_physique, systeme=d.conformite_systeme, coherence=d.conformite_coherence,
+        decision_globale=d.decision_globale))
 
     # 9. Reprise : seul l'élément demandé est re-pointé et re-contrôlé.
     await svc.transition(agent, dossier_id, "EN_CONTROLE")
@@ -247,6 +255,8 @@ async def test_cycle_reel_pp_mandataire_ppe_non_conforme_complement_avis(db: Asy
     await svc.transition(agent, dossier_id, "AVIS_CONFORMITE")
     d = await svc.transition(sup, dossier_id, "VALIDE", avis_favorable=True)
     assert d.statut == Statut.VALIDE and d.decision_globale == "CONFORME"
+    excel = classer_excel(d.conformite_physique, d.conformite_systeme)
+    assert (excel.classement, excel.code_conforme, excel.code_non_conforme) == ("CONFORME", 1, 0)
 
     visas = list((await db.execute(select(EerVisa).where(EerVisa.dossier_id == dossier_id))).scalars())
     assert [(v.avis, v.user_id) for v in visas] == [("FAVORABLE", sup.user.id)]

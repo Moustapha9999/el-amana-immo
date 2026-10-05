@@ -9,6 +9,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.services.eer.conformite_historique import Classement
+
 
 class _Orm(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -179,6 +181,17 @@ class EerDossierLigne(BaseModel):
     valide_le: datetime | None
     created_at: datetime
     updated_at: datetime
+    sous_profil: str | None = None
+    ppe: bool = False
+    fatca: bool = False
+    etat_compte: str | None = None
+    conformite_physique: str | None = None
+    conformite_systeme: str | None = None
+    # Dérivés (jamais saisis) : référence Excel M/N → S/T et décision BEA-DIGITAL classée.
+    conformite_excel: Classement = Classement.NON_EVALUE
+    code_conforme: int = 0
+    code_non_conforme: int = 0
+    conformite_bea: Classement = Classement.NON_EVALUE
 
 
 class EerDossierPage(BaseModel):
@@ -220,6 +233,12 @@ class EerDossierOut(BaseModel):
     conformite_systeme: str | None
     conformite_coherence: str | None
     decision: str | None
+    etat_compte: str | None = None
+    conformite_excel: Classement = Classement.NON_EVALUE
+    code_conforme: int = 0
+    code_non_conforme: int = 0
+    conformite_bea: Classement = Classement.NON_EVALUE
+    divergence: bool = False
     version_courante: int
     revision: int
     nb_relances: int
@@ -480,6 +499,108 @@ class EerTableauDeBordOut(BaseModel):
     par_profil: list[dict[str, Any]]
     par_type_client: list[dict[str, Any]]
     par_risque: list[dict[str, Any]]
+
+
+# --- Conformité (référence Excel / décision BEA-DIGITAL) et KPI ------------------------------
+
+class EerAnomalieBloquanteOut(BaseModel):
+    id: uuid.UUID
+    type_code: str
+    description: str
+    statut: str
+
+
+class EerReferenceExcelOut(BaseModel):
+    classement: Classement
+    code_conforme: int
+    code_non_conforme: int
+    cellule_m: str | None
+    cellule_n: str | None
+
+
+class EerConformiteOut(BaseModel):
+    dossier_id: uuid.UUID
+    version_courante: int
+    revision: int
+    conformite_physique: str | None
+    conformite_systeme: str | None
+    conformite_coherence: str | None
+    reference_excel: EerReferenceExcelOut
+    decision_bea: str | None
+    conformite_bea: Classement
+    anomalies_bloquantes: list[EerAnomalieBloquanteOut]
+    divergence: bool
+    explication_ecart: list[str]
+    observations: str | None
+    derniere_decision: EerDecisionOut | None = None
+
+
+class EerKpiConformite(BaseModel):
+    total: int
+    conformes: int
+    non_conformes: int
+    non_evalues: int
+    taux: Decimal | None = Field(description="conformes / (conformes + non conformes) en % ; null si aucun classé")
+
+
+class EerKpiBloc(BaseModel):
+    total: int
+    excel: EerKpiConformite
+    bea: EerKpiConformite
+    divergences: int
+
+
+class EerKpiFlux(BaseModel):
+    recus: int
+    brouillons: int
+    en_cours: int
+    a_completer: int
+    abandonnes: int
+    abandonnes_apres_reception: int
+    taux_abandon: Decimal | None
+
+
+class EerKpiGlobalOut(EerKpiBloc):
+    nature: str
+    flux: EerKpiFlux
+
+
+class EerKpiLigne(EerKpiBloc):
+    code: str | None
+    libelle: str | None
+    agence_id: uuid.UUID | None = None
+    profil_technique: str | None = None
+
+
+class EerKpiRepartitionOut(BaseModel):
+    nature: str
+    dimension: str | None = None
+    lignes: list[EerKpiLigne]
+    total: EerKpiBloc
+
+
+class EerKpiEtatCompteLigne(BaseModel):
+    code: str
+    libelle: str
+    nombre: int
+    pourcentage: Decimal | None
+
+
+class EerKpiEtatsCompteOut(BaseModel):
+    nature: str
+    lignes: list[EerKpiEtatCompteLigne]
+    total: int
+    non_renseignes: int
+
+
+class EerKpiPeriodeLigne(EerKpiBloc):
+    periode: date
+
+
+class EerKpiSerieOut(BaseModel):
+    nature: str
+    granularite: str
+    lignes: list[EerKpiPeriodeLigne]
 
 
 class EerConfirmIn(_Mutation):

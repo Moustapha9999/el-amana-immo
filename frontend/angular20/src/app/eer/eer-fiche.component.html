@@ -95,7 +95,26 @@
                 <dt>Système</dt><dd><span class="bea-ct-badge" [attr.data-tone]="tone(d.conformite_systeme)">{{ d.conformite_systeme || '—' }}</span></dd>
                 <dt>Cohérence</dt><dd><span class="bea-ct-badge" [attr.data-tone]="tone(d.conformite_coherence)">{{ d.conformite_coherence || '—' }}</span></dd>
                 <dt>Décision globale</dt><dd><span class="bea-ct-badge" [attr.data-tone]="tone(d.decision)">{{ d.decision || '—' }}</span></dd>
+                <dt title="Physique + données systèmes, règle du suivi Excel">Référence Excel</dt>
+                <dd>
+                  <span class="bea-ct-badge" [attr.data-tone]="tone(d.conformite_excel)">{{ classement(d.conformite_excel) }}</span>
+                  <small class="bea-ct-sub">Conforme = {{ d.code_conforme }} · Non conforme = {{ d.code_non_conforme }}</small>
+                </dd>
+                <dt title="Ajoute la cohérence et les anomalies bloquantes">Décision BEA-DIGITAL</dt>
+                <dd><span class="bea-ct-badge" [attr.data-tone]="tone(d.conformite_bea)">{{ classement(d.conformite_bea) }}</span></dd>
+                <dt>État du compte</dt><dd>{{ etatCompte(d.etat_compte) }}</dd>
               </dl>
+              @if (conformite(); as c) {
+                @if (c.divergence) {
+                  <div class="bea-ct-note" role="note">
+                    <strong>Pourquoi les deux résultats diffèrent :</strong>
+                    <ul>@for (r of c.explication_ecart; track $index) { <li>{{ r }}</li> }</ul>
+                  </div>
+                }
+                @if (c.observations) {
+                  <p class="bea-ct-note"><strong>Observations (éléments non conformes) :</strong> {{ c.observations }}</p>
+                }
+              }
               @if (checklist(); as c) {
                 <p class="bea-ct-note">{{ c.items.length }} élément(s) de checklist · {{ c.non_pointes }} non pointé(s)</p>
               }

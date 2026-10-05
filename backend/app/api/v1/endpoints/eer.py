@@ -55,7 +55,9 @@ from app.schemas.eer import (
     EerComplementFourniIn,
     EerComplementIn,
     EerComplementOut,
+    EerAnomalieBloquanteOut,
     EerConfirmIn,
+    EerConformiteOut,
     EerConstatOut,
     EerControleManuelIn,
     EerControleOut,
@@ -72,11 +74,16 @@ from app.schemas.eer import (
     EerDossierPatch,
     EerFicheChampOut,
     EerHistoriqueOut,
+    EerKpiEtatsCompteOut,
+    EerKpiGlobalOut,
+    EerKpiRepartitionOut,
+    EerKpiSerieOut,
     EerMutationOut,
     EerPartieAjout,
     EerPartieOut,
     EerPerimetreOut,
     EerPointageIn,
+    EerReferenceExcelOut,
     EerReferentielOut,
     EerTableauDeBordOut,
     EerVersionLigne,
@@ -85,6 +92,8 @@ from app.schemas.eer import (
 )
 from app.services import eer_controles_auto
 from app.services.eer.checklist_engine import elements_non_pointes
+from app.services.eer.conformite_historique import Classement, classer_bea, classer_excel, expliquer_ecart
+from app.services.eer.constantes import ANOMALIES_OUVERTES, GraviteAnomalie
 from app.services.eer.workflow import TRANSITIONS, Statut
 from app.services.eer_dossier_service import (
     GED_ENTITE,
@@ -96,6 +105,7 @@ from app.services.eer_dossier_service import (
 )
 from app.services.eer_access import charger_permissions_eer, resolve_eer_access_scope
 from app.services.eer_lecture_service import TRIS, EerLectureService, FiltresDossiers
+from app.services.eer_reporting_service import DIMENSIONS, EerReportingService
 from app.services.permission_service import user_has_permission_codes
 
 router = APIRouter(prefix="/eer", tags=["EER — Entrées en relation"])
@@ -129,7 +139,11 @@ def _transitions(d: EerDossier, acteur: Acteur) -> list[str]:
 
 
 def _dossier_out(d: EerDossier, acteur: Acteur) -> EerDossierOut:
+    excel = classer_excel(d.conformite_physique, d.conformite_systeme)
+    bea = classer_bea(d.decision_globale)
     return EerDossierOut(
+        etat_compte=d.etat_compte, conformite_excel=excel.classement, code_conforme=excel.code_conforme,
+        code_non_conforme=excel.code_non_conforme, conformite_bea=bea, divergence=excel.classement != bea,
         id=d.id, reference=d.reference, statut=d.statut, etape=d.etape, operation_type=d.operation_type,
         agence_id=d.agence_id, type_client=d.type_client_code, profil=d.profil_code,
         sous_profil=d.sous_profil_code, risque=d.risque_lbcft, ppe=d.ppe_dossier, fatca=d.fatca_dossier,
@@ -264,6 +278,12 @@ async def lister_dossiers(
     q: str | None = Query(None, max_length=100),
     date_debut: date | None = None,
     date_fin: date | None = None,
+    sous_profil: str | None = None,
+    ppe: bool | None = None,
+    fatca: bool | None = None,
+    etat_compte: str | None = None,
+    residence: str | None = Query(None, max_length=80),
+    conformite_excel: Classement | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(25, ge=1, le=100),
     tri: str = Query("created_at"),
@@ -274,10 +294,93 @@ async def lister_dossiers(
     filtres = FiltresDossiers(
         statut=statut, agence_id=agence_id, type_client=type_client, profil=profil, risque=risque,
         decision=decision, avis_requis=avis_requis, analyste_id=acteur.user.id if mes_dossiers else analyste_id,
-        q=q, date_debut=date_debut, date_fin=date_fin)
+        q=q, date_debut=date_debut, date_fin=date_fin, sous_profil=sous_profil, ppe=ppe, fatca=fatca,
+        etat_compte=etat_compte, residence=residence, conformite_excel=conformite_excel)
     items, total = await EerLectureService(db).lister(
         acteur.perimetre, filtres, page=page, size=size, tri=tri if tri in TRIS else "created_at", ordre=ordre)
     return EerDossierPage(items=[EerDossierLigne(**i) for i in items], total=total, page=page, size=size)
+
+
+# --- KPI (reporting) ----------------------------------------------------------------------------
+
+def _filtres_kpi(
+    agence_id: uuid.UUID | None = None,
+    type_client: str | None = None,
+    profil: str | None = None,
+    sous_profil: str | None = None,
+    risque: str | None = None,
+    ppe: bool | None = None,
+    fatca: bool | None = None,
+    etat_compte: str | None = None,
+    residence: str | None = Query(None, max_length=80),
+    analyste_id: uuid.UUID | None = None,
+    statut: list[str] | None = Query(None),
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+) -> FiltresDossiers:
+    return FiltresDossiers(
+        statut=statut, agence_id=agence_id, type_client=type_client, profil=profil, sous_profil=sous_profil,
+        risque=risque, ppe=ppe, fatca=fatca, etat_compte=etat_compte, residence=residence,
+        analyste_id=analyste_id, date_debut=date_debut, date_fin=date_fin)
+
+
+@router.get("/kpis", response_model=EerKpiGlobalOut)
+async def kpis(
+    filtres: FiltresDossiers = Depends(_filtres_kpi),
+    acteur: Acteur = Depends(_acteur("eer.report.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Conformité (référence Excel + décision BEA-DIGITAL, abandonnés exclus) et flux des dossiers."""
+    return await EerReportingService(db).global_(acteur.perimetre, filtres)
+
+
+@router.get("/kpis/agencies", response_model=EerKpiRepartitionOut)
+async def kpis_agences(
+    filtres: FiltresDossiers = Depends(_filtres_kpi),
+    acteur: Acteur = Depends(_acteur("eer.report.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await EerReportingService(db).par_agence(acteur.perimetre, filtres)
+
+
+@router.get("/kpis/profiles", response_model=EerKpiRepartitionOut)
+async def kpis_profils(
+    filtres: FiltresDossiers = Depends(_filtres_kpi),
+    acteur: Acteur = Depends(_acteur("eer.report.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await EerReportingService(db).par_profil(acteur.perimetre, filtres)
+
+
+@router.get("/kpis/account-statuses", response_model=EerKpiEtatsCompteOut)
+async def kpis_etats_compte(
+    filtres: FiltresDossiers = Depends(_filtres_kpi),
+    acteur: Acteur = Depends(_acteur("eer.report.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await EerReportingService(db).etats_compte(acteur.perimetre, filtres)
+
+
+@router.get("/kpis/timeseries", response_model=EerKpiSerieOut)
+async def kpis_serie(
+    granularite: Literal["jour", "semaine", "mois", "annee"] = "mois",
+    filtres: FiltresDossiers = Depends(_filtres_kpi),
+    acteur: Acteur = Depends(_acteur("eer.report.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Extension BEA-DIGITAL (absente de la synthèse Excel), sur la date EER."""
+    return await EerReportingService(db).serie(acteur.perimetre, filtres, granularite)
+
+
+@router.get("/kpis/dimensions/{dimension}", response_model=EerKpiRepartitionOut)
+async def kpis_dimension(
+    dimension: Literal[DIMENSIONS],  # type: ignore[valid-type]
+    filtres: FiltresDossiers = Depends(_filtres_kpi),
+    acteur: Acteur = Depends(_acteur("eer.report.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Extension BEA-DIGITAL : risque, PPE, FATCA, résidence, analyste, profil, sous-profil."""
+    return await EerReportingService(db).par_dimension(acteur.perimetre, filtres, dimension)
 
 
 # --- Dossier ----------------------------------------------------------------------------------
@@ -598,6 +701,58 @@ async def controle_manuel(
         await svc.controler(acteur, item_id, payload.conforme, payload.motif, payload.motif_code)
 
     return await _muter(db, acteur, dossier_id, payload.revision, op, "Contrôle enregistré")
+
+
+# --- Conformité : référence Excel / décision BEA-DIGITAL ------------------------------------
+
+@router.get("/dossiers/{dossier_id}/compliance", response_model=EerConformiteOut)
+async def conformite(
+    dossier_id: uuid.UUID,
+    acteur: Acteur = Depends(_acteur("eer.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Les deux résultats côte à côte, avec l'explication de leur éventuel écart."""
+    d = await _dossier_visible(db, acteur, dossier_id)
+    ouvertes = list((await db.execute(select(EerAnomalie).where(
+        EerAnomalie.dossier_id == dossier_id, EerAnomalie.statut.in_(list(ANOMALIES_OUVERTES)))
+        .order_by(EerAnomalie.created_at))).scalars())
+    bloquantes = [a for a in ouvertes if a.gravite == GraviteAnomalie.BLOQUANTE]
+    derniere = await db.scalar(select(EerDecision).where(EerDecision.dossier_id == dossier_id)
+                               .order_by(EerDecision.decide_le.desc()).limit(1))
+    excel = classer_excel(d.conformite_physique, d.conformite_systeme)
+    bea = classer_bea(d.decision_globale)
+    ecart = expliquer_ecart(physique=d.conformite_physique, systeme=d.conformite_systeme,
+                            coherence=d.conformite_coherence, decision_globale=d.decision_globale,
+                            anomalies_bloquantes=[a.description for a in bloquantes])
+    # Colonne Excel « Observations éléments non conformes », générée depuis les anomalies ouvertes.
+    observations = "; ".join(a.description + (f" — {a.observation}" if a.observation else "") for a in ouvertes)
+    return EerConformiteOut(
+        dossier_id=d.id, version_courante=d.version_courante, revision=d.revision,
+        conformite_physique=d.conformite_physique, conformite_systeme=d.conformite_systeme,
+        conformite_coherence=d.conformite_coherence,
+        reference_excel=EerReferenceExcelOut(
+            classement=excel.classement, code_conforme=excel.code_conforme,
+            code_non_conforme=excel.code_non_conforme, cellule_m=excel.cellule_m, cellule_n=excel.cellule_n),
+        decision_bea=d.decision_globale, conformite_bea=bea,
+        anomalies_bloquantes=[EerAnomalieBloquanteOut(id=a.id, type_code=a.type_code, description=a.description,
+                                                      statut=a.statut) for a in bloquantes],
+        divergence=excel.classement != bea, explication_ecart=ecart, observations=observations or None,
+        derniere_decision=EerDecisionOut.model_validate(derniere) if derniere else None,
+    )
+
+
+@router.post("/dossiers/{dossier_id}/compliance/evaluate", response_model=EerMutationOut)
+async def evaluer_conformite(
+    dossier_id: uuid.UUID,
+    payload: EerActionIn,
+    acteur: Acteur = Depends(_acteur("eer.control")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recalcule les axes et la décision (moteur existant, décision historisée) sans changer le statut."""
+    async def op(svc: EerDossierService) -> None:
+        await svc.calculer_decision(acteur, dossier_id)
+
+    return await _muter(db, acteur, dossier_id, payload.revision, op, "Conformité évaluée")
 
 
 # --- Anomalies ------------------------------------------------------------------------------

@@ -12,9 +12,12 @@ import { UiConfirmData, UiReasonData } from '../shared/ui-dialog/ui-dialog.types
 import { EerAnalyste, EerService } from './eer.service';
 import {
   ACTIONS_WORKFLOW,
+  CLASSEMENTS,
   ELEMENT_STATUTS,
   ETAPES,
+  ETATS_COMPTE,
   EerAnomalie,
+  EerConformite,
   EerAudit,
   EerChecklist,
   EerChecklistItem,
@@ -177,6 +180,7 @@ export class EerFicheComponent implements OnInit {
   readonly decisions = signal<EerDecision[]>([]);
   readonly constats = signal<EerConstat[] | null>(null);
   readonly anomalies = signal<EerAnomalie[]>([]);
+  readonly conformite = signal<EerConformite | null>(null);
   readonly complements = signal<EerComplement[]>([]);
   readonly visas = signal<EerVisa[]>([]);
   readonly versions = signal<EerVersionLigne[]>([]);
@@ -481,7 +485,16 @@ export class EerFicheComponent implements OnInit {
       },
       error: (e) => this.fail(e),
     });
+    this.eer.conformite(this.id()).subscribe({ next: (c) => this.conformite.set(c), error: (e) => this.fail(e) });
     this.chargerOnglet(this.onglet());
+  }
+
+  classement(code: string | null | undefined): string {
+    return libelle(CLASSEMENTS, code);
+  }
+
+  etatCompte(code: string | null | undefined): string {
+    return libelle(ETATS_COMPTE, code);
   }
 
   choisir(o: Onglet): void {

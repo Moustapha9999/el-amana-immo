@@ -6,7 +6,18 @@ import { MatIconModule } from '@angular/material/icon';
 import { describeApiErrorAsync } from '../core/feedback/api-error';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { EerAgence, EerFiltres, EerReferentiel, EerService } from './eer.service';
-import { EerDossierLigne, EerPerimetre, STATUTS, TYPES_CLIENT, dateFr, eerTone, libelle } from './eer.models';
+import {
+  CLASSEMENTS,
+  ETATS_COMPTE,
+  EerDossierLigne,
+  EerKpiLigne,
+  EerPerimetre,
+  STATUTS,
+  TYPES_CLIENT,
+  dateFr,
+  eerTone,
+  libelle,
+} from './eer.models';
 
 const TAILLE = 25;
 const STATUTS_ACTIFS = Object.keys(STATUTS).filter((s) => s !== 'ABANDONNE');
@@ -73,6 +84,42 @@ const COLONNES_TRIABLES = new Set(['reference', 'statut', 'date_eer', 'soumis_le
             </select>
           </label>
         }
+        <label class="bea-mg__field">Conformité
+          <select formControlName="conformite_excel" (change)="appliquer()" title="Référence Excel : physique + données systèmes">
+            <option value="">Toutes</option>
+            @for (c of classements; track c[0]) { <option [value]="c[0]">{{ c[1] }}</option> }
+          </select>
+        </label>
+        <label class="bea-mg__field">État du compte
+          <select formControlName="etat_compte" (change)="appliquer()">
+            <option value="">Tous</option>
+            @for (e of etatsCompte; track e[0]) { <option [value]="e[0]">{{ e[1] }}</option> }
+          </select>
+        </label>
+        <label class="bea-mg__field">PPE
+          <select formControlName="ppe" (change)="appliquer()">
+            <option value="">Tous</option><option value="true">Oui</option><option value="false">Non</option>
+          </select>
+        </label>
+        <label class="bea-mg__field">FATCA
+          <select formControlName="fatca" (change)="appliquer()">
+            <option value="">Tous</option><option value="true">Oui</option><option value="false">Non</option>
+          </select>
+        </label>
+        @if (analystes().length) {
+          <label class="bea-mg__field">Analyste
+            <select formControlName="analyste_id" (change)="appliquer()">
+              <option value="">Tous</option>
+              @for (a of analystes(); track a.code) { <option [value]="a.code">{{ a.libelle }}</option> }
+            </select>
+          </label>
+        }
+        <label class="bea-mg__field">Sous-profil
+          <input formControlName="sous_profil" maxlength="60" (change)="appliquer()" />
+        </label>
+        <label class="bea-mg__field">Résidence
+          <input formControlName="residence" maxlength="80" placeholder="Pays" (change)="appliquer()" />
+        </label>
         <label class="bea-mg__field">Du
           <input type="date" formControlName="date_debut" (change)="appliquer()" />
         </label>
@@ -103,6 +150,7 @@ const COLONNES_TRIABLES = new Set(['reference', 'statut', 'date_eer', 'soumis_le
               <th><button type="button" class="eer-sort" (click)="trier('date_eer')">Date EER {{ fleche('date_eer') }}</button></th>
               <th>Analyste</th>
               <th>Risque</th>
+              <th title="Référence Excel : physique + données systèmes">Conformité</th>
               <th><button type="button" class="eer-sort" (click)="trier('statut')">Statut {{ fleche('statut') }}</button></th>
               <th><button type="button" class="eer-sort" (click)="trier('updated_at')">Mis à jour {{ fleche('updated_at') }}</button></th>
               <th class="is-actions">Actions</th>
@@ -124,6 +172,12 @@ const COLONNES_TRIABLES = new Set(['reference', 'statut', 'date_eer', 'soumis_le
                 <td class="is-nowrap">{{ date(d.date_eer) }}</td>
                 <td class="is-wide">{{ d.analyste_nom || '—' }}</td>
                 <td class="is-nowrap">{{ d.risque || '—' }}</td>
+                <td class="is-nowrap">
+                  <span class="bea-ct-badge" [attr.data-tone]="tone(d.conformite_excel)">{{ classement(d.conformite_excel) }}</span>
+                  @if (d.conformite_bea !== d.conformite_excel) {
+                    <small class="bea-ct-sub" title="Décision BEA-DIGITAL (cohérence, anomalies bloquantes)">BEA-DIGITAL : {{ classement(d.conformite_bea) }}</small>
+                  }
+                </td>
                 <td class="is-nowrap"><span class="bea-ct-badge" [attr.data-tone]="tone(d.statut)">{{ statut(d.statut) }}</span></td>
                 <td class="is-nowrap">{{ date(d.updated_at, true) }}</td>
                 <td class="bea-mg__actions-cell is-nowrap">
@@ -143,7 +197,7 @@ const COLONNES_TRIABLES = new Set(['reference', 'statut', 'date_eer', 'soumis_le
                 </td>
               </tr>
             } @empty {
-              <tr><td colspan="10"><div class="bea-ct-empty"><mat-icon>folder_shared</mat-icon>
+              <tr><td colspan="11"><div class="bea-ct-empty"><mat-icon>folder_shared</mat-icon>
                 <p>{{ chargement() ? 'Chargement…' : filtresActifs() ? 'Aucun dossier ne correspond aux filtres.' : 'Aucun dossier EER dans votre périmètre.' }}</p>
               </div></td></tr>
             }
@@ -181,6 +235,8 @@ export class EerListComponent implements OnInit {
 
   readonly statuts = Object.entries(STATUTS);
   readonly types = Object.entries(TYPES_CLIENT);
+  readonly classements = Object.entries(CLASSEMENTS);
+  readonly etatsCompte = Object.entries(ETATS_COMPTE);
   readonly filtres = this.fb.nonNullable.group({
     q: '',
     statut: '',
@@ -190,8 +246,16 @@ export class EerListComponent implements OnInit {
     agence_id: '',
     date_debut: '',
     date_fin: '',
+    conformite_excel: '',
+    etat_compte: '',
+    ppe: '',
+    fatca: '',
+    analyste_id: '',
+    sous_profil: '',
+    residence: '',
     abandonnes: false,
   });
+  readonly analystes = signal<EerKpiLigne[]>([]);
 
   readonly busy = signal(false);
   readonly perimetre = signal<EerPerimetre | null>(null);
@@ -219,6 +283,10 @@ export class EerListComponent implements OnInit {
     this.eer.perimetre().subscribe({ next: (p) => this.perimetre.set(p), error: (e) => this.fail(e) });
     this.eer.agences().subscribe({ next: (a) => this.agences.set(a), error: () => undefined });
     this.eer.referentiels('PROFIL').subscribe({ next: (r) => this.profils.set(r), error: () => undefined });
+    this.eer.kpisDimension('analyste').subscribe({
+      next: (r) => this.analystes.set(r.lignes.filter((l) => l.code)),
+      error: () => undefined,
+    });
     this.filtres.controls.type_client.valueChanges
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((t) => this.typeChoisi.set(t));
@@ -233,6 +301,13 @@ export class EerListComponent implements OnInit {
           agence_id: q.get('agence_id') ?? '',
           date_debut: q.get('date_debut') ?? '',
           date_fin: q.get('date_fin') ?? '',
+          conformite_excel: q.get('conformite_excel') ?? '',
+          etat_compte: q.get('etat_compte') ?? '',
+          ppe: q.get('ppe') ?? '',
+          fatca: q.get('fatca') ?? '',
+          analyste_id: q.get('analyste_id') ?? '',
+          sous_profil: q.get('sous_profil') ?? '',
+          residence: q.get('residence') ?? '',
           abandonnes: q.get('abandonnes') === 'true',
         },
         { emitEvent: false },
@@ -280,7 +355,11 @@ export class EerListComponent implements OnInit {
 
   reinitialiser(): void {
     this.filtres.reset();
-    this.naviguer({ q: null, statut: null, type_client: null, profil: null, risque: null, agence_id: null, date_debut: null, date_fin: null, abandonnes: null, page: null });
+    this.naviguer({
+      q: null, statut: null, type_client: null, profil: null, risque: null, agence_id: null, date_debut: null, date_fin: null,
+      conformite_excel: null, etat_compte: null, ppe: null, fatca: null, analyste_id: null, sous_profil: null, residence: null,
+      abandonnes: null, page: null,
+    });
   }
 
   cap(code: string): boolean {
@@ -362,6 +441,10 @@ export class EerListComponent implements OnInit {
 
   type(code: string): string {
     return libelle(TYPES_CLIENT, code);
+  }
+
+  classement(code: string): string {
+    return libelle(CLASSEMENTS, code);
   }
 
   tone(statut: string): string {
