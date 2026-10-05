@@ -540,6 +540,23 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("mg.contrats.validate", "Validation / rejet / annulation contrats", "contrats-echeances"),
     ("mg.contrats.settings", "Paramètres contrats", "contrats-echeances"),
     ("mg.contrats.export", "Exports contrats", "contrats-echeances"),
+    ("mg.factures.view", "Consultation des factures (facturation)", "contrats-echeances"),
+    ("mg.factures.create", "Saisie des factures", "contrats-echeances"),
+    ("mg.factures.update", "Modification / contrôle des factures", "contrats-echeances"),
+    ("mg.factures.delete", "Suppression de brouillons / annulation de factures", "contrats-echeances"),
+    ("mg.factures.validate", "Validation / contestation des factures", "contrats-echeances"),
+    ("mg.factures.archive", "Archivage des factures", "contrats-echeances"),
+    ("mg.factures.export", "Exports des factures", "contrats-echeances"),
+    ("mg.factures.payment.view", "Consultation des paiements de factures", "contrats-echeances"),
+    ("mg.factures.payment.create", "Enregistrement des paiements de factures", "contrats-echeances"),
+    ("mg.factures.payment.update", "Modification des paiements de factures", "contrats-echeances"),
+    ("mg.factures.payment.delete", "Annulation des paiements de factures", "contrats-echeances"),
+    ("mg.factures.documents.view", "Consultation des pièces de factures", "contrats-echeances"),
+    ("mg.factures.documents.create", "Dépôt de pièces sur les factures", "contrats-echeances"),
+    ("mg.factures.documents.delete", "Détachement de pièces de factures", "contrats-echeances"),
+    ("mg.factures.analytics.view", "Dashboard 360° et analyses de facturation", "contrats-echeances"),
+    ("mg.factures.reports.export", "Rapports de facturation (PDF, Excel, CSV)", "contrats-echeances"),
+    ("mg.facturation.manage", "Points de facturation, import et paramètres de facturation", "contrats-echeances"),
     ("mg.archives.view", "Consultation archives MG", "archives-mg"),
     ("mg.archives.create", "Ajout / archivage manuel archives MG", "archives-mg"),
     ("mg.archives.update", "Modification metadonnees archives MG", "archives-mg"),
@@ -672,6 +689,12 @@ _MG_NOTES_ALL = tuple(
 _MG_CONTRATS_ALL = tuple(
     code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "contrats-echeances"
 )
+_MG_FACTURES_LECTURE = (
+    "mg.factures.view",
+    "mg.factures.payment.view",
+    "mg.factures.documents.view",
+    "mg.factures.analytics.view",
+)
 _MG_ARCHIVES_ALL = tuple(
     code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "archives-mg"
 )
@@ -785,7 +808,7 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "mg.notes.export",
     ),
     "notes-frais.admin": _MG_NOTES_ALL + _GED_RW,
-    "contrats-echeances.lecteur": ("mg.contrats.view", "ged.read", "ged.download"),
+    "contrats-echeances.lecteur": ("mg.contrats.view", "ged.read", "ged.download") + _MG_FACTURES_LECTURE,
     "contrats-echeances.gestionnaire": (
         "mg.contrats.view",
         "mg.contrats.create",
@@ -794,6 +817,18 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "ged.read",
         "ged.write",
         "ged.download",
+    )
+    + _MG_FACTURES_LECTURE
+    + (
+        "mg.factures.create",
+        "mg.factures.update",
+        "mg.factures.delete",
+        "mg.factures.export",
+        "mg.factures.payment.create",
+        "mg.factures.payment.update",
+        "mg.factures.documents.create",
+        "mg.factures.documents.delete",
+        "mg.factures.reports.export",
     ),
     "contrats-echeances.valideur": (
         "mg.contrats.view",
@@ -802,6 +837,16 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "mg.contrats.export",
         "ged.read",
         "ged.download",
+    )
+    + _MG_FACTURES_LECTURE
+    + (
+        "mg.factures.validate",
+        "mg.factures.archive",
+        "mg.factures.delete",
+        "mg.factures.export",
+        "mg.factures.payment.delete",
+        "mg.factures.reports.export",
+        "mg.facturation.manage",
     ),
     "contrats-echeances.admin": _MG_CONTRATS_ALL + _GED_RW,
     "archives-mg.lecteur": (

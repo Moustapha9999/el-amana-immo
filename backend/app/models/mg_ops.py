@@ -480,6 +480,51 @@ class MgContratType(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     actif: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class MgPointFacturation(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
+    """Compteur / abonnement d'un fournisseur pour un site (agence, siège, PDV Amanty…).
+
+    Rattache chaque facture récurrente à ce qu'elle facture. Jamais supprimé physiquement
+    s'il porte des factures : passage à INACTIF.
+    """
+
+    __tablename__ = "mg_points_facturation"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_mg_points_facturation_code"),
+        CheckConstraint("type_point IN ('AGENCE','SIEGE','PDV','AUTRE')", name="ck_mg_points_facturation_type"),
+        CheckConstraint("statut IN ('ACTIF','INACTIF')", name="ck_mg_points_facturation_statut"),
+    )
+
+    code: Mapped[str] = mapped_column(String(20))
+    type_point: Mapped[str] = mapped_column(String(20), default="AGENCE", index=True)
+    nom: Mapped[str] = mapped_column(String(255))
+    agence_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agences.id"), nullable=True, index=True
+    )
+    fournisseur_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("fournisseurs.id"), index=True
+    )
+    contrat_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_contrats.id"), nullable=True
+    )
+    reference_fournisseur: Mapped[str] = mapped_column(String(80))
+    # Chiffres seuls : recherche « 363215238221 » quel que soit le format saisi.
+    reference_normalisee: Mapped[str] = mapped_column(String(80))
+    compteur: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    type_facture: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    periodicite: Mapped[str] = mapped_column(String(20), default="MENSUEL")
+    adresse: Mapped[str | None] = mapped_column(Text, nullable=True)
+    date_debut: Mapped[date | None] = mapped_column(Date, nullable=True)
+    date_fin: Mapped[date | None] = mapped_column(Date, nullable=True)
+    statut: Mapped[str] = mapped_column(String(20), default="ACTIF")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
+
 class MgContratParametre(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "mg_contrat_parametres"
     __table_args__ = (UniqueConstraint("cle", name="uq_mg_contrat_parametres_cle"),)

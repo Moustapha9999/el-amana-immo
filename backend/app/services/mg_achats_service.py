@@ -19,6 +19,7 @@ from app.schemas.nombres import as_qty
 from app.services import mg_achats_regles as R
 from app.services.reporting_export import format_montant
 from app.models.mg_achats import (
+    ORIGINE_ACHAT,
     MgAchatBl,
     MgAchatComparaison,
     MgAchatConsultation,
@@ -258,11 +259,13 @@ class MgAchatsService:
         factures_ouvertes = await _count(
             MgAchatFacture,
             MgAchatFacture.deleted_at.is_(None),
+            MgAchatFacture.origine == ORIGINE_ACHAT,
             MgAchatFacture.statut.in_(["RECUE", "VALIDEE", "ANOMALIE"]),
         )
         paiements_a_payer = await _count(
             MgAchatPaiement,
             MgAchatPaiement.deleted_at.is_(None),
+            MgAchatPaiement.origine == ORIGINE_ACHAT,
             MgAchatPaiement.statut == "A_PAYER",
         )
         montant_bc_mois = await self.db.scalar(
@@ -274,6 +277,7 @@ class MgAchatsService:
         montant_factures_mois = await self.db.scalar(
             select(func.coalesce(func.sum(MgAchatFacture.montant_ttc), 0)).where(
                 MgAchatFacture.deleted_at.is_(None),
+                MgAchatFacture.origine == ORIGINE_ACHAT,
                 MgAchatFacture.date_facture >= month_start,
             )
         )
@@ -302,6 +306,7 @@ class MgAchatsService:
             await self.db.execute(
                 select(MgAchatFacture).where(
                     MgAchatFacture.deleted_at.is_(None),
+                    MgAchatFacture.origine == ORIGINE_ACHAT,
                     MgAchatFacture.date_echeance.is_not(None),
                     MgAchatFacture.date_echeance <= horizon,
                     MgAchatFacture.statut.in_(["RECUE", "VALIDEE", "ANOMALIE"]),
@@ -324,6 +329,7 @@ class MgAchatsService:
             await self.db.execute(
                 select(MgAchatPaiement).where(
                     MgAchatPaiement.deleted_at.is_(None),
+                    MgAchatPaiement.origine == ORIGINE_ACHAT,
                     MgAchatPaiement.statut == "A_PAYER",
                     MgAchatPaiement.date_echeance.is_not(None),
                     MgAchatPaiement.date_echeance <= horizon,
@@ -368,6 +374,7 @@ class MgAchatsService:
             await self.db.execute(
                 select(MgAchatFacture).where(
                     MgAchatFacture.deleted_at.is_(None),
+                    MgAchatFacture.origine == ORIGINE_ACHAT,
                     MgAchatFacture.statut == "ANOMALIE",
                 )
             )
@@ -437,7 +444,7 @@ class MgAchatsService:
         nb_factures = int(
             await self.db.scalar(
                 select(func.count()).select_from(MgAchatFacture).where(
-                    MgAchatFacture.deleted_at.is_(None)
+                    MgAchatFacture.deleted_at.is_(None), MgAchatFacture.origine == ORIGINE_ACHAT
                 )
             )
             or 0
@@ -449,12 +456,13 @@ class MgAchatsService:
         )
         montant_factures = await self.db.scalar(
             select(func.coalesce(func.sum(MgAchatFacture.montant_ttc), 0)).where(
-                MgAchatFacture.deleted_at.is_(None)
+                MgAchatFacture.deleted_at.is_(None), MgAchatFacture.origine == ORIGINE_ACHAT
             )
         )
         montant_paiements = await self.db.scalar(
             select(func.coalesce(func.sum(MgAchatPaiement.montant), 0)).where(
                 MgAchatPaiement.deleted_at.is_(None),
+                MgAchatPaiement.origine == ORIGINE_ACHAT,
                 MgAchatPaiement.statut == "PAYE",
             )
         )
@@ -617,14 +625,14 @@ class MgAchatsService:
         ids = [r.id for r in rows]
         counts: dict[uuid.UUID, dict[str, int]] = {i: {"nb_bons": 0, "nb_devis": 0, "nb_factures": 0} for i in ids}
         if ids:
-            for model, key, col in (
-                (MgBonCommande, "nb_bons", MgBonCommande.fournisseur_id),
-                (MgAchatDevis, "nb_devis", MgAchatDevis.fournisseur_id),
-                (MgAchatFacture, "nb_factures", MgAchatFacture.fournisseur_id),
+            for model, key, col, extra in (
+                (MgBonCommande, "nb_bons", MgBonCommande.fournisseur_id, ()),
+                (MgAchatDevis, "nb_devis", MgAchatDevis.fournisseur_id, ()),
+                (MgAchatFacture, "nb_factures", MgAchatFacture.fournisseur_id, (MgAchatFacture.origine == ORIGINE_ACHAT,)),
             ):
                 result = await self.db.execute(
                     select(col, func.count())
-                    .where(col.in_(ids), model.deleted_at.is_(None))
+                    .where(col.in_(ids), model.deleted_at.is_(None), *extra)
                     .group_by(col)
                 )
                 for fid, n in result.all():
@@ -675,6 +683,7 @@ class MgAchatsService:
                 select(func.count()).select_from(MgAchatFacture).where(
                     MgAchatFacture.fournisseur_id == fournisseur_id,
                     MgAchatFacture.deleted_at.is_(None),
+                    MgAchatFacture.origine == ORIGINE_ACHAT,
                 )
             )
             or 0
@@ -684,6 +693,7 @@ class MgAchatsService:
                 select(func.count()).select_from(MgAchatPaiement).where(
                     MgAchatPaiement.fournisseur_id == fournisseur_id,
                     MgAchatPaiement.deleted_at.is_(None),
+                    MgAchatPaiement.origine == ORIGINE_ACHAT,
                 )
             )
             or 0
@@ -712,6 +722,7 @@ class MgAchatsService:
             select(func.coalesce(func.sum(MgAchatFacture.montant_ttc), 0)).where(
                 MgAchatFacture.fournisseur_id == fournisseur_id,
                 MgAchatFacture.deleted_at.is_(None),
+                MgAchatFacture.origine == ORIGINE_ACHAT,
             )
         )
         snap = self._frs_snapshot(fr)
@@ -794,7 +805,7 @@ class MgAchatsService:
 
     async def count_fournisseur_usage(self, fournisseur_id: uuid.UUID) -> dict[str, int]:
         from app.models.immobilisation import Immobilisation
-        from app.models.mg_ops import MgContrat
+        from app.models.mg_ops import MgContrat, MgPointFacturation
 
         usage = {
             "consultations": int(
@@ -873,6 +884,15 @@ class MgAchatsService:
                     select(func.count()).select_from(MgContrat).where(
                         MgContrat.fournisseur_id == fournisseur_id,
                         MgContrat.deleted_at.is_(None),
+                    )
+                )
+                or 0
+            ),
+            "points_facturation": int(
+                await self.db.scalar(
+                    select(func.count()).select_from(MgPointFacturation).where(
+                        MgPointFacturation.fournisseur_id == fournisseur_id,
+                        MgPointFacturation.deleted_at.is_(None),
                     )
                 )
                 or 0
@@ -2330,7 +2350,7 @@ class MgAchatsService:
         stmt = (
             select(MgAchatFacture)
             .options(selectinload(MgAchatFacture.lignes))
-            .where(MgAchatFacture.deleted_at.is_(None))
+            .where(MgAchatFacture.deleted_at.is_(None), MgAchatFacture.origine == ORIGINE_ACHAT)
             .order_by(MgAchatFacture.date_facture.desc())
         )
         if bon_id:
@@ -2341,7 +2361,11 @@ class MgAchatsService:
         row = await self.db.scalar(
             select(MgAchatFacture)
             .options(selectinload(MgAchatFacture.lignes))
-            .where(MgAchatFacture.id == facture_id, MgAchatFacture.deleted_at.is_(None))
+            .where(
+                MgAchatFacture.id == facture_id,
+                MgAchatFacture.deleted_at.is_(None),
+                MgAchatFacture.origine == ORIGINE_ACHAT,
+            )
         )
         if not row:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Facture introuvable")
@@ -2997,7 +3021,7 @@ class MgAchatsService:
     ) -> list[MgAchatPaiement]:
         stmt = (
             select(MgAchatPaiement)
-            .where(MgAchatPaiement.deleted_at.is_(None))
+            .where(MgAchatPaiement.deleted_at.is_(None), MgAchatPaiement.origine == ORIGINE_ACHAT)
             .order_by(MgAchatPaiement.created_at.desc())
         )
         if facture_id:
@@ -3007,7 +3031,9 @@ class MgAchatsService:
     async def get_paiement(self, paiement_id: uuid.UUID) -> MgAchatPaiement:
         row = await self.db.scalar(
             select(MgAchatPaiement).where(
-                MgAchatPaiement.id == paiement_id, MgAchatPaiement.deleted_at.is_(None)
+                MgAchatPaiement.id == paiement_id,
+                MgAchatPaiement.deleted_at.is_(None),
+                MgAchatPaiement.origine == ORIGINE_ACHAT,
             )
         )
         if not row:
@@ -3017,7 +3043,11 @@ class MgAchatsService:
     async def _facture_pour_paiement(self, facture_id: uuid.UUID) -> MgAchatFacture:
         facture = await self.db.scalar(
             select(MgAchatFacture)
-            .where(MgAchatFacture.id == facture_id, MgAchatFacture.deleted_at.is_(None))
+            .where(
+                MgAchatFacture.id == facture_id,
+                MgAchatFacture.deleted_at.is_(None),
+                MgAchatFacture.origine == ORIGINE_ACHAT,
+            )
             .with_for_update()
         )
         if facture is None:

@@ -198,6 +198,49 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'nouveau', component: ContratsFicheComponent },
       { path: 'rapports', component: ContratsRapportsComponent },
       { path: 'parametres', component: ContratsParametresComponent },
+      {
+        path: 'factures',
+        loadComponent: () =>
+          import('./contrats-echeances/facturation/facturation-dashboard.component').then((m) => m.FacturationDashboardComponent),
+      },
+      {
+        path: 'factures/liste',
+        loadComponent: () => import('./contrats-echeances/facturation/facturation-list.component').then((m) => m.FacturationListComponent),
+      },
+      {
+        path: 'factures/points',
+        loadComponent: () => import('./contrats-echeances/facturation/facturation-points.component').then((m) => m.FacturationPointsComponent),
+      },
+      {
+        path: 'factures/paiements',
+        data: { mode: 'paiements' },
+        loadComponent: () => import('./contrats-echeances/facturation/facturation-suivi.component').then((m) => m.FacturationSuiviComponent),
+      },
+      {
+        path: 'factures/echeances',
+        data: { mode: 'echeances' },
+        loadComponent: () => import('./contrats-echeances/facturation/facturation-suivi.component').then((m) => m.FacturationSuiviComponent),
+      },
+      {
+        path: 'factures/alertes',
+        data: { mode: 'alertes' },
+        loadComponent: () => import('./contrats-echeances/facturation/facturation-suivi.component').then((m) => m.FacturationSuiviComponent),
+      },
+      {
+        path: 'factures/analyses',
+        loadComponent: () =>
+          import('./contrats-echeances/facturation/facturation-analyses.component').then((m) => m.FacturationAnalysesComponent),
+      },
+      {
+        path: 'factures/rapports',
+        loadComponent: () =>
+          import('./contrats-echeances/facturation/facturation-rapports.component').then((m) => m.FacturationRapportsComponent),
+      },
+      {
+        path: 'factures/parametres',
+        loadComponent: () =>
+          import('./contrats-echeances/facturation/facturation-parametres.component').then((m) => m.FacturationParametresComponent),
+      },
       { path: ':id', component: ContratsFicheComponent },
     ],
   },

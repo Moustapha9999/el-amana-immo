@@ -263,18 +263,59 @@ class MgAchatReceptionLigne(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     reception: Mapped[MgAchatReception] = relationship(back_populates="lignes")
 
 
+ORIGINE_ACHAT = "ACHAT"
+ORIGINE_FACTURATION = "FACTURATION"
+
+
 class MgAchatFacture(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
+    """Registre unique des factures fournisseurs MG.
+
+    ``origine`` ACHAT : circuit BC → réception → 3-way match (``bon_id`` obligatoire).
+    ``origine`` FACTURATION : factures de points de facturation (SOMELEC, télécom, loyers…)
+    gérées par Contrats & échéances ; jamais visibles du module Achats.
+    """
+
     __tablename__ = "mg_achat_factures"
     __table_args__ = (UniqueConstraint("reference", name="uq_mg_achat_factures_reference"),)
 
     reference: Mapped[str] = mapped_column(String(40), index=True)
+    origine: Mapped[str] = mapped_column(
+        String(20), default=ORIGINE_ACHAT, server_default=ORIGINE_ACHAT, index=True
+    )
     numero_fournisseur: Mapped[str | None] = mapped_column(String(80), nullable=True)
     fournisseur_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("fournisseurs.id"), index=True
     )
-    bon_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("mg_bons_commande.id"), index=True
+    bon_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_bons_commande.id"), nullable=True, index=True
     )
+    point_facturation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_points_facturation.id"), nullable=True, index=True
+    )
+    contrat_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_contrats.id"), nullable=True, index=True
+    )
+    agence_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agences.id"), nullable=True, index=True
+    )
+    type_facture: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    reference_fournisseur: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    date_reception: Mapped[date | None] = mapped_column(Date, nullable=True)
+    periode_debut: Mapped[date | None] = mapped_column(Date, nullable=True)
+    periode_fin: Mapped[date | None] = mapped_column(Date, nullable=True)
+    mois: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    annee: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    autres_taxes: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), server_default="0")
+    remise: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), server_default="0")
+    montant_a_payer: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    statut_paiement: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     bl_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("mg_achat_bl.id"), nullable=True
     )
@@ -283,8 +324,9 @@ class MgAchatFacture(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base)
     )
     date_facture: Mapped[date] = mapped_column(Date)
     date_echeance: Mapped[date | None] = mapped_column(Date, nullable=True)
-    montant_ht: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
-    montant_tva: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    # Toujours renseignés par le circuit Achats ; NULL possible en facturation (montant HT absent).
+    montant_ht: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=True)
+    montant_tva: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=True)
     montant_ttc: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
     devise: Mapped[str] = mapped_column(String(10), default="MRU")
     statut: Mapped[str] = mapped_column(String(30), default="RECUE", index=True)
@@ -319,6 +361,8 @@ class MgAchatFactureLigne(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     designation: Mapped[str] = mapped_column(String(255))
     quantite: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("1"))
+    unite: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    type_ligne: Mapped[str | None] = mapped_column(String(40), nullable=True)
     prix_unitaire: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
     taux_tva: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0"))
     total_ht: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
@@ -334,11 +378,20 @@ class MgAchatPaiement(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base
     __table_args__ = (UniqueConstraint("reference", name="uq_mg_achat_paiements_reference"),)
 
     reference: Mapped[str] = mapped_column(String(40), index=True)
+    origine: Mapped[str] = mapped_column(
+        String(20), default=ORIGINE_ACHAT, server_default=ORIGINE_ACHAT, index=True
+    )
     facture_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("mg_achat_factures.id"), index=True
     )
     fournisseur_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("fournisseurs.id")
+    )
+    justificatif_document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ged_documents.id"), nullable=True
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     montant: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     date_echeance: Mapped[date | None] = mapped_column(Date, nullable=True)

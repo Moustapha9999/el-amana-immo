@@ -9,6 +9,7 @@ Espace plateforme `moyens-generaux`. Modules actifs : Stock, Achats, Notes de fr
 | [cdc-fonctionnel-v1.md](cdc-fonctionnel-v1.md) | CDC fonctionnel (5 modules) |
 | [conception-technique-phase2.md](conception-technique-phase2.md) | Achats, notes, contrats, archives |
 | [operationnalisation.md](operationnalisation.md) | Seed verrouillé, rôles, PDF, GED |
+| [facturation.md](facturation.md) | Contrats & échéances › Gestion des factures |
 
 ## Accès
 

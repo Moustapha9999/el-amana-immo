@@ -20,6 +20,7 @@ from app.api.v1.endpoints import (
     mg_achats,
     mg_archives,
     mg_contrats,
+    mg_facturation,
     mg_notes,
     mg_requests,
     mg_stock,
@@ -52,6 +53,8 @@ api_router.include_router(mg_stock.router)
 api_router.include_router(mg_achats.router)
 api_router.include_router(mg_notes.router)
 api_router.include_router(mg_contrats.router)
+api_router.include_router(mg_facturation.router)
+api_router.include_router(mg_facturation.points_router)
 api_router.include_router(mg_archives.router)
 api_router.include_router(mg_requests.me_router)
 api_router.include_router(mg_requests.mg_router)

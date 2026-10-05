@@ -20,6 +20,7 @@ from sqlalchemy.orm import selectinload
 from app.data.el_amana_referentiel import BANQUE_EL_AMANA
 from app.models.auth import Agence, User
 from app.models.mg_achats import (
+    ORIGINE_ACHAT,
     MgAchatBl,
     MgAchatComparaison,
     MgAchatConsultation,
@@ -415,8 +416,11 @@ class MgAchatsReportingService:
         date_debut = f.get("date_debut")
         date_fin = f.get("date_fin")
 
+        def _achat_only(model) -> list:
+            return [model.origine == ORIGINE_ACHAT] if model in (MgAchatFacture, MgAchatPaiement) else []
+
         async def _count(model, date_col, extra=None):
-            filters_ = [model.deleted_at.is_(None)]
+            filters_ = [model.deleted_at.is_(None), *_achat_only(model)]
             if date_debut is not None:
                 filters_.append(date_col >= date_debut)
             if date_fin is not None:
@@ -426,7 +430,7 @@ class MgAchatsReportingService:
             return int(await self.db.scalar(select(func.count()).select_from(model).where(*filters_)) or 0)
 
         async def _sum(model, amount_col, date_col):
-            filters_ = [model.deleted_at.is_(None)]
+            filters_ = [model.deleted_at.is_(None), *_achat_only(model)]
             if date_debut is not None:
                 filters_.append(date_col >= date_debut)
             if date_fin is not None:
@@ -1147,7 +1151,7 @@ class MgAchatsReportingService:
         return out, total, {}
 
     async def _rows_factures(self, f, *, ids, limit):
-        filters = [MgAchatFacture.deleted_at.is_(None)]
+        filters = [MgAchatFacture.deleted_at.is_(None), MgAchatFacture.origine == ORIGINE_ACHAT]
         if ids:
             filters.append(MgAchatFacture.id.in_(ids))
         if f.get("statut"):
@@ -1211,7 +1215,7 @@ class MgAchatsReportingService:
         return out, total, {"montant_ttc": float(tot)}
 
     async def _rows_paiements(self, f, *, ids, limit):
-        filters = [MgAchatPaiement.deleted_at.is_(None)]
+        filters = [MgAchatPaiement.deleted_at.is_(None), MgAchatPaiement.origine == ORIGINE_ACHAT]
         if ids:
             filters.append(MgAchatPaiement.id.in_(ids))
         if f.get("statut"):

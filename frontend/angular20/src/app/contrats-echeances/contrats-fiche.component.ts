@@ -13,6 +13,7 @@ import { MontantPipe, TauxPipe } from '../shared/montant.pipe';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 import { UiDialogAction } from '../shared/ui-dialog/ui-dialog.types';
 import { ContratsDocumentsComponent } from './contrats-documents.component';
+import { fxStatut, fxTone } from './facturation/facturation.models';
 import {
   ACTION_LABELS,
   Contrat,
@@ -35,7 +36,24 @@ import {
 } from './contrats.models';
 
 type TransitionAction = 'soumettre' | 'valider' | 'suspendre' | 'reprendre' | 'expirer' | 'archiver';
-type Onglet = 'echeances' | 'paiements' | 'avenants' | 'documents' | 'historique';
+type Onglet = 'echeances' | 'paiements' | 'avenants' | 'factures' | 'documents' | 'historique';
+
+interface FacturesContrat {
+  nb: number;
+  total: number;
+  reste: number;
+  items: {
+    id: string;
+    reference: string;
+    numero_fournisseur: string | null;
+    point_nom: string | null;
+    periode_label: string | null;
+    date_facture: string;
+    montant_a_payer: number | null;
+    reste: number | null;
+    statut_affiche: string;
+  }[];
+}
 
 const TRANSITIONS: Record<TransitionAction, { preset: UiDialogAction; question: string; hint: string; loading: string; success: string; errorTitle: string }> = {
   soumettre: {
@@ -360,6 +378,7 @@ interface Simulation {
               <button type="button" role="tab" [class.is-on]="onglet() === 'echeances'" (click)="onglet.set('echeances')"><mat-icon>schedule</mat-icon> Échéancier <small>{{ (c.echeances || []).length }}</small></button>
               <button type="button" role="tab" [class.is-on]="onglet() === 'paiements'" (click)="onglet.set('paiements')"><mat-icon>payments</mat-icon> Paiements <small>{{ (c.paiements || []).length }}</small></button>
               <button type="button" role="tab" [class.is-on]="onglet() === 'avenants'" (click)="onglet.set('avenants')"><mat-icon>post_add</mat-icon> Avenants <small>{{ (c.avenants || []).length }}</small></button>
+              <button type="button" role="tab" [class.is-on]="onglet() === 'factures'" (click)="ouvrirFactures(c.id)"><mat-icon>receipt_long</mat-icon> Factures @if (factures(); as fx) { <small>{{ fx.items.length }}</small> }</button>
               <button type="button" role="tab" [class.is-on]="onglet() === 'documents'" (click)="onglet.set('documents')"><mat-icon>folder</mat-icon> Documents</button>
               <button type="button" role="tab" [class.is-on]="onglet() === 'historique'" (click)="onglet.set('historique')"><mat-icon>history</mat-icon> Historique</button>
             </div>
@@ -565,6 +584,30 @@ interface Simulation {
             </div>
           }
 
+          @if (onglet() === 'factures') {
+            <div class="bea-ct-pane">
+              @if (facturesErreur(); as err) {
+                <p class="bea-ct-help"><mat-icon>lock</mat-icon> {{ err }}</p>
+              } @else if (factures(); as fx) {
+                <p class="bea-ct-note">{{ fx.nb }} facture(s) comptabilisée(s) · total {{ fx.total | montant }} · reste à payer {{ fx.reste | montant }}</p>
+                <ul class="bea-ct-dash__list">
+                  @for (r of fx.items; track r.id) {
+                    <li>
+                      <a [routerLink]="'/contrats-echeances/factures/liste'" [queryParams]="{ facture: r.id }">
+                        <span class="bea-ct-dash__date"><strong>{{ r.periode_label || date(r.date_facture) }}</strong><small>{{ r.reference }}</small></span>
+                        <span class="bea-ct-dash__main">{{ r.point_nom || r.numero_fournisseur || '—' }}</span>
+                        <span class="bea-ct-dash__amount">{{ r.montant_a_payer === null ? '—' : (r.montant_a_payer | montant) }}</span>
+                        <span class="bea-ct-badge" [attr.data-tone]="factureTone(r.statut_affiche)">{{ factureStatut(r.statut_affiche) }}</span>
+                      </a>
+                    </li>
+                  } @empty { <li class="bea-ct-dash__none">Aucune facture rattachée à ce contrat.</li> }
+                </ul>
+              } @else {
+                <p class="bea-ct-note">Chargement des factures…</p>
+              }
+            </div>
+          }
+
           @if (onglet() === 'documents') {
             <div class="bea-ct-pane">
               <bea-contrats-documents
@@ -639,6 +682,9 @@ export class ContratsFicheComponent implements OnInit {
   readonly paiementBusy = signal(false);
   readonly fieldErrors = signal<Record<string, string>>({});
   readonly onglet = signal<Onglet>('echeances');
+  readonly factures = signal<FacturesContrat | null>(null);
+  readonly facturesErreur = signal<string | null>(null);
+  private facturesContrat: string | null = null;
   readonly echeanceEditId = signal<string | null>(null);
   readonly paiementEditId = signal<string | null>(null);
   readonly avenantOuvert = signal(false);
@@ -1308,6 +1354,27 @@ export class ContratsFicheComponent implements OnInit {
 
   aide(statut: string): string {
     return STATUT_AIDE[statut] ?? '';
+  }
+
+  ouvrirFactures(contratId: string): void {
+    this.onglet.set('factures');
+    if (this.facturesContrat === contratId && (this.factures() || this.facturesErreur())) return;
+    this.facturesContrat = contratId;
+    this.factures.set(null);
+    this.facturesErreur.set(null);
+    this.api.get<FacturesContrat>(`/mg/factures/contrats/${contratId}`).subscribe({
+      next: (r) => this.factures.set(r),
+      error: (e: { status?: number }) =>
+        this.facturesErreur.set(e?.status === 403 ? 'Vous n’avez pas accès à la gestion des factures.' : 'Factures indisponibles pour le moment.'),
+    });
+  }
+
+  factureStatut(code: string): string {
+    return fxStatut(code);
+  }
+
+  factureTone(code: string): string {
+    return fxTone(code);
   }
 
   statut(code: string | null | undefined): string {
