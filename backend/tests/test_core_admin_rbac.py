@@ -176,7 +176,7 @@ async def test_system_roles_and_permissions_are_protected(client: AsyncClient):
 async def test_core_admin_rbac_crud_and_seed_not_overwritten(client: AsyncClient):
     headers = await _headers(client)
     suffix = uuid4().hex[:8]
-    role_code = f"test_role_{suffix[:8]}"
+    role_code = f"testmod.role_{suffix[:8]}"
     perm_code = f"testmod.{suffix[:8]}"
     role_id = None
     perm_id = None
