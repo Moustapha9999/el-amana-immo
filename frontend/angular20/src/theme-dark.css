@@ -6274,6 +6274,14 @@ html[data-theme='dark'][data-theme='dark'] .eer-actions {
 html[data-theme='dark'][data-theme='dark'] .eer-actions__label {
   color: #9fa9b8;
 }
+html[data-theme='dark'][data-theme='dark'] .eer-depot__field {
+  color: #b3bbc7;
+}
+html[data-theme='dark'][data-theme='dark'][data-theme='dark'] .eer-depot__field select {
+  border: 1px solid #3b434b;
+  background: #1f1f1f;
+  color: #e0e6f4;
+}
 html[data-theme='dark'][data-theme='dark'][data-theme='dark'] .eer-panel h2 {
   color: #e0e6f4;
 }

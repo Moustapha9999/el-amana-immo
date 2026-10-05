@@ -12,6 +12,7 @@ from app.core.exceptions import ForbiddenError, NotFoundError
 from app.models.audit import AuditLog
 from app.models.auth import User
 from app.models.ged import GedDocument
+from app.services.ged_service import MODULES_CLOISONNES, est_cloisonne
 from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
 from app.services.plateforme_access_service import PlateformeAccessService
 
@@ -38,9 +39,11 @@ class DocumentQueryService:
         return set(result.scalars().all())
 
     def _security_filters(self, user: User, allowed_espaces: set[str]):
+        cloison = GedDocument.module_code.notin_(sorted(MODULES_CLOISONNES))
         if user.is_superuser:
-            return []
+            return [cloison]
         return [
+            cloison,
             GedDocument.espace_code.in_(sorted(allowed_espaces)),
         ]
 
@@ -67,7 +70,7 @@ class DocumentQueryService:
         if not include_deleted:
             filters.append(GedDocument.deleted_at.is_(None))
         row = await self.db.scalar(select(GedDocument).where(*filters))
-        if row is None:
+        if row is None or est_cloisonne(row.module_code, row.entity):
             raise NotFoundError("Document GED", str(document_id))
         allowed = require_espaces if require_espaces is not None else await self.user_espace_codes(user)
         if not user.is_superuser and row.espace_code not in allowed:
@@ -731,7 +734,7 @@ class DocumentQueryService:
         allowed = await self.user_espace_codes(user)
         if not allowed and not user.is_superuser:
             return []
-        filters = [GedDocument.deleted_at.is_(None)]
+        filters = [GedDocument.deleted_at.is_(None), GedDocument.module_code.notin_(sorted(MODULES_CLOISONNES))]
         if general and not user.is_superuser:
             filters.append(GedDocument.espace_code.in_(sorted(allowed)))
         return filters

@@ -531,7 +531,14 @@ filtres de la liste appliqués ; permission `eer.report.view`.
   [À CONFIRMER MÉTIER] définition exacte des « dossiers éligibles ».
 - Dashboard : sélecteur de référence (Excel / BEA-DIGITAL), tableaux agence / profil /
   état du compte avec ligne Total, analyses complémentaires (période, dimension).
-- Exports Excel au gabarit actuel, PDF : à faire.
+- **Exports** (05/10/2026, `app/services/eer_export.py`, permission `eer.export` en plus de la
+  lecture, audit `eer.export.*`) :
+  - `GET /eer/kpis/export?format=pdf|xlsx&reference=excel|bea` : synthèse au gabarit Feuil2
+    (synthèse, par agence, par profil, état du compte, lignes Total) ;
+  - `GET /eer/dossiers/export?format=…` : liste avec les filtres de l’écran (10 000 lignes max) ;
+  - `GET /eer/dossiers/{id}/export?format=…` : fiche dossier (identité, parcours, conformité,
+    checklist, anomalies).
+  Boutons PDF / Excel sur le tableau de bord, la liste et la fiche.
 - Import de l’historique Excel : non automatique ; plus tard, après comparaison.
 
 ## 22. Dépendance `[1]FLUX` (documentée, non reproduite)
@@ -619,6 +626,27 @@ Déployés le 04/10/2026 : base réelle migrée jusqu’à `20261004_eer_04_suiv
 - **Frontend** : `frontend/angular20/src/app/eer/` — `/eer/dashboard`, `/eer/dossiers`,
   `/eer/dossiers/nouveau`, `/eer/dossiers/:id` (12 onglets). Les boutons d’action affichés
   proviennent de `transitions_possibles` calculées par le backend ; le frontend n’est pas une sécurité.
+- **Pièces (GED cloisonnée, 05/10/2026)** : `app/services/eer_documents.py`. Dépôt
+  `POST /dossiers/{id}/documents` (multipart `file`, `revision`, `doc_type`, `item_id` facultatif),
+  retrait `POST …/documents/{doc}/retirer` (motif, corbeille GED), téléchargement
+  `GET …/documents/{doc}/download` ; permissions `eer.document.upload` / `.download`, audit
+  `eer.document.*`, historique `DOCUMENT_DEPOSE` / `DOCUMENT_RETIRE`. Rattacher une pièce à un
+  élément de checklist ne le pointe pas. Interdit sur dossier VALIDE / CLOTURE / ARCHIVE /
+  ABANDONNE. Les documents du module `eer` (entité `eer_dossier`) sont **exclus de la GED
+  générique** : `/ged/*` (404), recherche, CORE ADMIN GED / OCR / corbeille, restauration —
+  y compris pour un superutilisateur (`ged_service.est_cloisonne`).
+- **Notifications** (`app/services/eer_notifications.py`) : après chaque transition, l’agent qui
+  doit agir (affectation, avis KYC, validation → détenteurs de la permission sur l’agence ;
+  affecté / resoumis → analyste ; complément / relance → créateur ; validé / abandonné → créateur
+  et analyste). L’auteur est exclu ; le message ne contient que la référence du dossier. Lien
+  direct vers la fiche depuis `/notifications`.
+- **Échéances** (`app/services/eer_echeances.py`) : boucle de fond du backend toutes les
+  `EER_ECHEANCES_INTERVAL_HEURES` (défaut 6 h, 0 = désactivée), verrou consultatif PostgreSQL
+  (une seule instance), rappel au plus tous les 7 jours par objet. Compléments échus →
+  créateur + analyste ; pièces client / mandataire / BE expirées ou expirant sous
+  `controle.expiration_proche_jours` → analyste. Passage manuel : `POST /eer/echeances/run`
+  (`eer.admin`). Échéance de complément par défaut : `complement.delai_regularisation_jours`.
+  Contrôle automatique : pièce expirant dans le délai → `A_VERIFIER`.
 
 ## 24. Plan de tests
 

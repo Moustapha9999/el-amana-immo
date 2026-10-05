@@ -49,6 +49,8 @@ ACTIONS: dict[str, str] = {
     "export": "eer.export",
     "reporting": "eer.report.view",
     "documents": "eer.document.view",
+    "document_depot": "eer.document.upload",
+    "document_telechargement": "eer.document.download",
     "audit": "eer.audit.view",
     "administration": "eer.admin",
 }

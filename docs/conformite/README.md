@@ -78,7 +78,17 @@ calculé depuis PostgreSQL et sera rapproché de FLUX après récupération du f
 - [eer-matrices.md](eer-matrices.md) : matrices Type client → Profil → Formulaire → Checklist →
   Documents → Contrôles → Workflow, mapping Excel, questions ouvertes.
 
-## Statut
+## Statut (05/10/2026)
 
-Étape 1 (architecture département) livrée. Le module `eer` reste **en développement**
-— carte visible, non ouvrable — jusqu’à la livraison du dossier EER (étapes suivantes).
+Module `eer` fonctionnellement complet côté application : dossiers, workflow, checklist,
+contrôles automatiques, anomalies, compléments, avis, versions, reporting, pièces GED
+cloisonnées, notifications, échéances (job de fond `EER_ECHEANCES_INTERVAL_HEURES`) et exports
+PDF / Excel (détail : [eer-architecture-metier.md](eer-architecture-metier.md) §21 et §23 bis).
+L’ouverture (statut `actif`) reste une décision CORE ADMIN.
+
+Reste dépendant du métier ou de l’exploitation :
+
+- **Source `[1]FLUX`** (`TABLEAU DE SUIVI EER 2026 v2.xlsx`) : rapprochement du reporting
+  historique (§22, test `test_eer_suivi_excel.py` prêt, sauté sans le fichier).
+- **RLS** : rôle PostgreSQL applicatif non superuser à créer (section ci-dessus).
+- **Questions ouvertes** : [eer-matrices.md §7](eer-matrices.md#7-questions-ouvertes).

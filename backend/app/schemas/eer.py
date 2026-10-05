@@ -460,6 +460,18 @@ class EerDocumentOut(_Orm):
     version: int
     uploaded_by_id: uuid.UUID | None
     created_at: datetime
+    elements: list[str] = Field(default_factory=list)
+
+
+class EerEcheancesOut(BaseModel):
+    execute: bool
+    complements_echus: int
+    pieces: int
+
+
+class EerTypeDocumentOut(BaseModel):
+    code: str
+    libelle: str
 
 
 class EerAuditOut(BaseModel):

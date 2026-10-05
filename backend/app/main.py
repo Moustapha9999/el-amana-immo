@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -23,7 +25,29 @@ async def lifespan(_: FastAPI):
             await SecurityPolicyService(session).ensure_cache()
     except Exception:
         pass
+    taches = []
+    if get_settings().eer_echeances_interval_heures > 0:
+        taches.append(asyncio.create_task(_boucle_echeances_eer(get_settings().eer_echeances_interval_heures)))
     yield
+    for t in taches:
+        t.cancel()
+
+
+async def _boucle_echeances_eer(interval_heures: float) -> None:
+    from app.db.session import AsyncSessionLocal
+    from app.services import eer_echeances
+
+    await asyncio.sleep(120)
+    while True:
+        try:
+            async with AsyncSessionLocal() as session:
+                await eer_echeances.executer(session)
+                await session.commit()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.getLogger(__name__).exception("Échéances EER : passage en échec")
+        await asyncio.sleep(interval_heures * 3600)
 
 
 def create_app() -> FastAPI:

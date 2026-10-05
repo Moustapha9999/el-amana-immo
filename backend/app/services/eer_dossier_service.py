@@ -14,7 +14,7 @@ import json
 import uuid
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from functools import cached_property
 from typing import Any
@@ -57,6 +57,7 @@ from app.models import (
     GedDocument,
     User,
 )
+from app.services import eer_notifications
 from app.services.audit_service import AuditService
 from app.services.eer import checklist_engine as ce
 from app.services.eer import prefill
@@ -75,6 +76,7 @@ from app.services.eer.constantes import (
 )
 from app.services.eer.faits import PartieDossier, construire_faits, faits_partie
 from app.services.eer_access import EerScope, charger_permissions_eer, resolve_eer_access_scope
+from app.services.eer_controles_auto import jours_parametre
 from app.services.eer.workflow import (
     Demande,
     Etape,
@@ -1024,6 +1026,7 @@ class EerDossierService:
         d.derniere_relance_le = _maintenant()
         await self._historique(d, acteur, "RELANCE", motif=commentaire, details={"numero": d.nb_relances})
         await self.db.flush()
+        await eer_notifications.relance(self.db, d, acteur.user.id)
         return d
 
     def _etat(self, d: EerDossier) -> EtatDossier:
@@ -1083,6 +1086,7 @@ class EerDossierService:
             d.statut = Statut.A_AFFECTER
             await self._historique(d, None, "TRANSITION", de=Statut.SOUMIS, vers=Statut.A_AFFECTER)
             await self.db.flush()
+        await eer_notifications.apres_transition(self.db, d, acteur.user.id)
         return d
 
     async def _effets(self, d: EerDossier, acteur: Acteur, origine: Statut, cible: Statut, *, motif: str | None,
@@ -1134,6 +1138,9 @@ class EerDossierService:
         anomalies = {a.id: a for a in await self._anomalies(d)}
         if any(i not in items for i in cibles.item_ids) or any(a not in anomalies for a in cibles.anomalie_ids):
             raise EerErreur("Élément ciblé hors du dossier")
+        if echeance is None:
+            delai = jours_parametre((await self.parametres()).get("complement.delai_regularisation_jours"))
+            echeance = date.today() + timedelta(days=delai) if delai is not None else None
         numero = (await self.db.scalar(select(func.coalesce(func.max(EerComplement.numero), 0)).where(
             EerComplement.dossier_id == d.id))) + 1
         complement = EerComplement(dossier_id=d.id, numero=numero, origine=origine, consigne=consigne,

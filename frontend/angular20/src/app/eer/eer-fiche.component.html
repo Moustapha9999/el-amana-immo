@@ -15,6 +15,10 @@
       </div>
       <div class="bea-mg__actions">
         <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/eer/dossiers"><mat-icon>arrow_back</mat-icon> Liste</a>
+        @if (cap()['export']) {
+          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Fiche dossier en PDF" [disabled]="exportEnCours()" (click)="exporterFiche('pdf')"><mat-icon>picture_as_pdf</mat-icon> PDF</button>
+          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Fiche dossier en Excel" [disabled]="exportEnCours()" (click)="exporterFiche('xlsx')"><mat-icon>table_chart</mat-icon> Excel</button>
+        }
         <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Actualiser" (click)="recharger()"><mat-icon>refresh</mat-icon></button>
       </div>
     </header>
@@ -239,25 +243,59 @@
 
         <!-- Documents (GED existante) -->
         @case ('documents') {
+          @if (depotPossible()) {
+            <div class="eer-toolbar eer-depot">
+              <label class="eer-depot__field">
+                <span>Élément de checklist</span>
+                <select [ngModel]="depotItem()" (ngModelChange)="depotItem.set($event)" [disabled]="busy()">
+                  <option value="">— Aucun (pièce libre) —</option>
+                  @for (i of itemsDocument(); track i.id) {
+                    <option [value]="i.id">{{ i.libelle }}{{ i.document_id ? ' (déjà une pièce : rattachement remplacé)' : '' }}</option>
+                  }
+                </select>
+              </label>
+              <label class="eer-depot__field">
+                <span>Type de pièce</span>
+                <select [ngModel]="depotType()" (ngModelChange)="depotType.set($event)" [disabled]="busy()">
+                  <option value="">{{ depotItem() ? 'Selon l’élément' : 'Autre' }}</option>
+                  @for (t of typesDocuments(); track t.code) {
+                    <option [value]="t.code">{{ t.libelle }}</option>
+                  }
+                </select>
+              </label>
+              <label class="bea-mg__btn bea-mg__btn--primary" [class.is-disabled]="busy()">
+                <mat-icon>upload_file</mat-icon> Déposer une pièce
+                <input type="file" hidden [accept]="piecesAccept" [disabled]="busy()" (change)="choisirPiece($event)" />
+              </label>
+            </div>
+          }
           <div class="bea-mg__table-scroll">
             <table class="bea-mg__table">
-              <thead><tr><th>Document</th><th>Type</th><th>Version</th><th>Taille</th><th>Déposé le</th></tr></thead>
+              <thead><tr><th>Document</th><th>Type</th><th>Éléments rattachés</th><th>Taille</th><th>Déposé le</th><th></th></tr></thead>
               <tbody>
                 @for (doc of documents(); track doc.id) {
                   <tr>
-                    <td><strong class="bea-ct-strong">{{ doc.title || doc.filename }}</strong><small class="bea-ct-sub">{{ doc.filename }}</small></td>
-                    <td>{{ doc.doc_type || '—' }}</td>
-                    <td>v{{ doc.version }}</td>
+                    <td><strong class="bea-ct-strong">{{ doc.title || doc.filename }}</strong><small class="bea-ct-sub">{{ doc.filename }} · v{{ doc.version }}</small></td>
+                    <td>{{ libTypeDocument(doc.doc_type) }}</td>
+                    <td>{{ doc.elements.length ? doc.elements.join(', ') : '—' }}</td>
                     <td>{{ (doc.size_bytes / 1024).toFixed(0) }} Ko</td>
                     <td>{{ date(doc.created_at, true) }}</td>
+                    <td class="eer-doc-actions">
+                      @if (cap()['document_telechargement']) {
+                        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Télécharger" (click)="telechargerPiece(doc)"><mat-icon>download</mat-icon></button>
+                      }
+                      @if (depotPossible()) {
+                        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Retirer la pièce" [disabled]="busy()" (click)="retirerPiece(doc)"><mat-icon>link_off</mat-icon></button>
+                      }
+                    </td>
                   </tr>
                 } @empty {
-                  <tr><td colspan="5"><div class="bea-ct-empty"><mat-icon>folder_open</mat-icon><p>Aucun document GED rattaché à ce dossier.</p></div></td></tr>
+                  <tr><td colspan="6"><div class="bea-ct-empty"><mat-icon>folder_open</mat-icon><p>Aucune pièce déposée sur ce dossier.</p></div></td></tr>
                 }
               </tbody>
             </table>
           </div>
-          <p class="bea-ct-note">Documents issus de la GED BEA DIGITAL (module « eer », entité « eer_dossier »). Le dépôt depuis la fiche sera branché à l’étape GED.</p>
+          <p class="bea-ct-note">Pièces conservées dans la GED BEA DIGITAL, cloisonnées au module EER (invisibles depuis la GED générique). Formats : {{ piecesFormats }}, 25 Mo maximum. Rattacher une pièce à un élément ne le pointe pas : le pointage reste fait dans la checklist.</p>
         }
 
         <!-- Checklist -->

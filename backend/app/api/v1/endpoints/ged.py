@@ -18,9 +18,14 @@ from app.db.session import get_db
 from app.models import User
 from app.schemas.common import MessageResponse
 from app.services.audit_helpers import record_audit
-from app.services.ged_service import GedService
+from app.services.ged_service import GedService, est_cloisonne
 
 router = APIRouter(prefix="/ged", tags=["ged"])
+
+
+def _hors_ged_generique(module_code: str | None, entity: str | None) -> None:
+    if est_cloisonne(module_code, entity):
+        raise HTTPException(status_code=404, detail="Document introuvable")
 
 
 class GedDocumentRead(BaseModel):
@@ -66,6 +71,7 @@ async def upload_document(
     user: User = Depends(require_permission("ged.write")),
     db: AsyncSession = Depends(get_db),
 ):
+    _hors_ged_generique(module_code, entity)
     try:
         from app.services.document_ingest_service import DocumentIngestService
         from app.services.mg_requests_service import MgRequestsService
@@ -112,6 +118,7 @@ async def list_documents(
 ):
     from app.services.mg_requests_service import MgRequestsService
 
+    _hors_ged_generique(module_code, entity)
     await MgRequestsService(db).assert_document_access(user, entity=entity, entity_id=entity_id)
     rows = await GedService(db).list_for_entity(
         module_code=module_code.strip().lower(),
@@ -129,6 +136,7 @@ async def download_document(
 ):
     try:
         row = await GedService(db).get(document_id)
+        _hors_ged_generique(row.module_code, row.entity)
         from app.services.mg_requests_service import MgRequestsService
 
         await MgRequestsService(db).assert_document_access(
@@ -160,6 +168,7 @@ async def delete_document(
         from app.services.mg_requests_service import MgRequestsService
 
         row = await DocumentQueryService(db).get_accessible(document_id, user)
+        _hors_ged_generique(row.module_code, row.entity)
         await MgRequestsService(db).assert_document_access(
             user, entity=row.entity, entity_id=row.entity_id,
         )

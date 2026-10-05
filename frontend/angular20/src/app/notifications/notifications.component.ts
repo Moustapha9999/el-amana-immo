@@ -82,6 +82,9 @@ export class NotificationsComponent implements OnInit {
     if (row.entity === 'contrat' && row.entity_id) {
       return `/contrats-echeances/${row.entity_id}`;
     }
+    if (row.entity === 'eer_dossier' && row.entity_id) {
+      return `/eer/dossiers/${row.entity_id}`;
+    }
     if (row.type_notification === 'inventaire') {
       return '/inventaire';
     }

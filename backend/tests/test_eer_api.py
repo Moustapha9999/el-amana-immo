@@ -378,6 +378,101 @@ async def test_workflow_complet_api_complement_avis_et_conflit(env):
     assert final["statut"] == "ARCHIVE" and final["transitions_possibles"] == []
 
 
+# --- GED, notifications, exports, échéances ---------------------------------------------------
+
+PDF_TEST = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+
+
+@pytest.mark.asyncio
+async def test_pieces_ged_cloisonnees_et_tracees(env):
+    c = env["client"]
+    charge = await _module(c, "charge_a")
+    d = (await c.post("/api/v1/eer/dossiers", json=_nouveau(env["agences"][0], "Client GED"), headers=charge)).json()
+    url = f"/api/v1/eer/dossiers/{d['id']}"
+    item = next(i for i in (await c.get(f"{url}/checklist", headers=charge)).json()["items"]
+                if i["regle_code"] == "PIECE_IDENTITE")
+
+    refus = await c.post(f"{url}/documents", headers=charge, data={"revision": str(d["revision"])},
+                         files={"file": ("nni.exe", b"MZ", "application/octet-stream")})
+    assert refus.status_code == 422 and refus.json()["code"] == "VALIDATION_ERROR"
+    depot = await c.post(f"{url}/documents", headers=charge,
+                         data={"revision": str(d["revision"]), "item_id": item["id"]},
+                         files={"file": ("nni.pdf", PDF_TEST, "application/pdf")})
+    assert depot.status_code == 201, depot.text
+    rev = depot.json()["revision"]
+
+    docs = (await c.get(f"{url}/documents", headers=charge)).json()
+    assert len(docs) == 1 and docs[0]["doc_type"] == "PIECE_IDENTITE" and docs[0]["elements"]
+    doc_id = docs[0]["id"]
+    item = next(i for i in (await c.get(f"{url}/checklist", headers=charge)).json()["items"] if i["id"] == item["id"])
+    assert item["document_id"] == doc_id and item["presence"] is None
+
+    fichier = await c.get(f"{url}/documents/{doc_id}/download", headers=charge)
+    assert fichier.status_code == 200 and fichier.content == PDF_TEST
+
+    # La GED générique ne sert jamais une pièce KYC (même document, même utilisateur).
+    assert (await c.get(f"/api/v1/ged/documents/{doc_id}/download", headers=charge)).status_code in (403, 404)
+    liste_ged = await c.get("/api/v1/ged/documents", headers=charge,
+                            params={"module_code": "eer", "entity": "eer_dossier", "entity_id": d["id"]})
+    assert liste_ged.status_code in (403, 404)
+
+    assert (await c.post(f"{url}/documents/{doc_id}/retirer", headers=charge,
+                         json={"revision": rev})).status_code == 400
+    retrait = await c.post(f"{url}/documents/{doc_id}/retirer", headers=charge,
+                           json={"revision": rev, "motif": "Mauvais fichier"})
+    assert retrait.status_code == 200, retrait.text
+    assert (await c.get(f"{url}/documents", headers=charge)).json() == []
+    historique = {h["action"] for h in (await c.get(f"{url}/history", headers=charge)).json()}
+    assert {"DOCUMENT_DEPOSE", "DOCUMENT_RETIRE"} <= historique
+    actions = {a["action"] for a in (await c.get(f"{url}/audit", headers=charge)).json()}
+    assert {"eer.document.upload", "eer.document.download", "eer.document.delete"} <= actions
+
+
+@pytest.mark.asyncio
+async def test_notifications_workflow_sans_donnee_personnelle(env):
+    c, ids = env["client"], env["ids"]
+    charge, sup = await _module(c, "charge_a"), await _module(c, "superviseur")
+    d = (await c.post("/api/v1/eer/dossiers", json=_nouveau(env["agences"][0], "Client Notif Secret"),
+                      headers=charge)).json()
+    url = f"/api/v1/eer/dossiers/{d['id']}"
+    res = await c.post(f"{url}/submit", headers=charge, json={"revision": d["revision"]})
+    assert res.status_code == 200 and res.json()["statut"] == "A_AFFECTER"
+
+    notifs = (await c.get("/api/v1/notifications", headers=sup, params={"entity": "eer_dossier"})).json()
+    lignes = notifs.get("items", notifs) if isinstance(notifs, dict) else notifs
+    a_affecter = [n for n in lignes if n.get("entity_id") == d["id"]]
+    assert a_affecter and a_affecter[0]["titre"] == "Dossier EER à affecter"
+    assert d["reference"] in a_affecter[0]["message"] and "Secret" not in a_affecter[0]["message"]
+
+    res = await c.post(f"{url}/assign", headers=sup,
+                       json={"revision": res.json()["revision"], "analyste_id": str(ids["analyste"])})
+    assert res.status_code == 200
+    analyste = await _module(c, "analyste")
+    notifs = (await c.get("/api/v1/notifications", headers=analyste, params={"entity": "eer_dossier"})).json()
+    lignes = notifs.get("items", notifs) if isinstance(notifs, dict) else notifs
+    assert any(n["entity_id"] == d["id"] and n["titre"] == "Dossier EER affecté" for n in lignes)
+
+
+@pytest.mark.asyncio
+async def test_exports_pdf_excel_et_echeances(env):
+    c = env["client"]
+    charge = await _module(c, "charge_a")
+    d = (await c.post("/api/v1/eer/dossiers", json=_nouveau(env["agences"][0], "Client Export"), headers=charge)).json()
+
+    for fmt, signature in (("pdf", b"%PDF"), ("xlsx", b"PK")):
+        liste = await c.get(f"/api/v1/eer/dossiers/export?format={fmt}&q=Client Export", headers=charge)
+        assert liste.status_code == 200 and liste.content.startswith(signature), liste.text[:200]
+        synthese = await c.get(f"/api/v1/eer/kpis/export?format={fmt}&reference=bea", headers=charge)
+        assert synthese.status_code == 200 and synthese.content.startswith(signature)
+        fiche = await c.get(f"/api/v1/eer/dossiers/{d['id']}/export?format={fmt}", headers=charge)
+        assert fiche.status_code == 200 and fiche.content.startswith(signature)
+        assert d["reference"] in fiche.headers["content-disposition"]
+    assert (await c.get("/api/v1/eer/kpis/export?format=csv", headers=charge)).status_code == 422
+
+    echeances = await c.post("/api/v1/eer/echeances/run", headers=charge)
+    assert echeances.status_code == 200 and echeances.json()["execute"] is True
+
+
 # --- Immuabilité / OpenAPI ----------------------------------------------------------------
 
 def test_aucune_route_ne_modifie_versions_historique_avis_decisions():
@@ -402,6 +497,9 @@ def test_openapi_schemas_pydantic():
         for methode, op in operations.items():
             reponse = op["responses"].get("200") or op["responses"].get("201")
             assert reponse and "content" in reponse, (methode, chemin)
+            if chemin.endswith(("/export", "/download")):
+                assert set(reponse["content"]) - {"application/json"}, (methode, chemin)
+                continue
             assert reponse["content"]["application/json"]["schema"], (methode, chemin)
     composants = spec["components"]["schemas"]
     assert {"EerDossierOut", "EerChecklistOut", "EerMutationOut", "EerVersionOut"} <= set(composants)

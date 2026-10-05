@@ -22,7 +22,9 @@ import {
   EerMutation,
   EerPage,
   EerPerimetre,
+  EerFormatExport,
   EerTableauDeBord,
+  EerTypeDocument,
   EerVersion,
   EerVersionLigne,
   EerVisa,
@@ -228,6 +230,44 @@ export class EerService {
 
   documents(id: string): Observable<EerDocument[]> {
     return this.api.get(this.url(id, 'documents'));
+  }
+
+  typesDocuments(): Observable<EerTypeDocument[]> {
+    return this.api.get(`${this.base}/types-documents`);
+  }
+
+  deposerDocument(id: string, revision: number, file: File, docType: string, itemId?: string | null): Observable<EerMutation> {
+    return this.api.upload(this.url(id, 'documents'), file, {
+      revision: String(revision),
+      doc_type: docType,
+      item_id: itemId ?? '',
+    });
+  }
+
+  retirerDocument(id: string, documentId: string, revision: number, motif: string): Observable<EerMutation> {
+    return this.api.post(this.url(id, `documents/${documentId}/retirer`), { revision, motif });
+  }
+
+  telechargerDocument(id: string, documentId: string): Observable<Blob> {
+    return this.api.download(this.url(id, `documents/${documentId}/download`));
+  }
+
+  /** Export de la liste avec les filtres courants (pagination ignorée côté serveur). */
+  exporterListe(filtres: EerFiltres, format: EerFormatExport): Observable<Blob> {
+    const params: Record<string, string | string[]> = { format };
+    for (const [k, v] of Object.entries(filtres)) {
+      if (k === 'page' || k === 'size') continue;
+      if (v !== undefined && v !== null && v !== '') params[k] = Array.isArray(v) ? v : String(v);
+    }
+    return this.api.download(`${this.base}/dossiers/export`, params as Record<string, string>);
+  }
+
+  exporterSynthese(filtres: EerKpiFiltres, format: EerFormatExport, reference: 'excel' | 'bea'): Observable<Blob> {
+    return this.api.download(`${this.base}/kpis/export`, { ...nettoyer(filtres), format, reference });
+  }
+
+  exporterFiche(id: string, format: EerFormatExport): Observable<Blob> {
+    return this.api.download(this.url(id, 'export'), { format });
   }
 
   audit(id: string): Observable<EerAudit[]> {

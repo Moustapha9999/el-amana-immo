@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import NotFoundError, ValidationError
 from app.models.enums import TypeNotification
 from app.models.ged import SECURITY_LEVELS, GedDocument
-from app.services.ged_service import GedService
+from app.services.ged_service import GedService, est_cloisonne
 from app.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
@@ -310,7 +310,7 @@ class DocumentIngestService:
         row = await self.db.scalar(
             select(GedDocument).where(GedDocument.id == document_id)
         )
-        if row is None:
+        if row is None or est_cloisonne(row.module_code, row.entity):
             raise NotFoundError("Document GED", str(document_id))
         row.deleted_at = None
         row.is_active = True

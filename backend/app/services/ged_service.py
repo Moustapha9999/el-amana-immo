@@ -17,6 +17,14 @@ from app.core.fichiers import EXTENSIONS_AUTORISEES, TAILLE_MAX, valider_piece_j
 from app.models.ged import GedDocument
 
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
+
+# Pièces servies uniquement par l'API de leur module (KYC : ACL GED par espace trop large).
+MODULES_CLOISONNES: frozenset[str] = frozenset({"eer"})
+ENTITES_CLOISONNEES: frozenset[str] = frozenset({"eer_dossier"})
+
+
+def est_cloisonne(module_code: str | None, entity: str | None = None) -> bool:
+    return (module_code or "").strip().lower() in MODULES_CLOISONNES or (entity or "").strip() in ENTITES_CLOISONNEES
 _MAX_BYTES = TAILLE_MAX
 _ALLOWED_SUFFIXES = EXTENSIONS_AUTORISEES
 

@@ -10,6 +10,7 @@ import {
   CLASSEMENTS,
   ETATS_COMPTE,
   EerDossierLigne,
+  EerFormatExport,
   EerKpiLigne,
   EerPerimetre,
   STATUTS,
@@ -17,6 +18,7 @@ import {
   dateFr,
   eerTone,
   libelle,
+  telechargerBlob,
 } from './eer.models';
 
 const TAILLE = 25;
@@ -39,6 +41,10 @@ const COLONNES_TRIABLES = new Set(['reference', 'statut', 'date_eer', 'soumis_le
           </p>
         </div>
         <div class="bea-mg__actions">
+          @if (cap('export')) {
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Exporter la liste filtrée en PDF" [disabled]="exportEnCours()" (click)="exporter('pdf')"><mat-icon>picture_as_pdf</mat-icon> PDF</button>
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Exporter la liste filtrée en Excel" [disabled]="exportEnCours()" (click)="exporter('xlsx')"><mat-icon>table_chart</mat-icon> Excel</button>
+          }
           @if (perimetre()?.capacites?.['creation']) {
             <a class="bea-mg__btn bea-mg__btn--primary" routerLink="/eer/dossiers/nouveau"><mat-icon>person_add</mat-icon> Nouvelle EER</a>
           }
@@ -259,6 +265,7 @@ export class EerListComponent implements OnInit {
 
   readonly busy = signal(false);
   readonly perimetre = signal<EerPerimetre | null>(null);
+  readonly exportEnCours = signal(false);
   readonly agences = signal<EerAgence[]>([]);
   readonly profils = signal<EerReferentiel[]>([]);
   readonly lignes = signal<EerDossierLigne[]>([]);
@@ -323,9 +330,9 @@ export class EerListComponent implements OnInit {
     });
   }
 
-  charger(): void {
+  private filtresCourants(): EerFiltres {
     const { abandonnes, ...raw } = this.filtres.getRawValue();
-    const f: EerFiltres = {
+    return {
       ...raw,
       statut: raw.statut || (abandonnes ? '' : STATUTS_ACTIFS),
       mes_dossiers: this.mesDossiers() || undefined,
@@ -334,6 +341,22 @@ export class EerListComponent implements OnInit {
       tri: this.tri(),
       ordre: this.ordre(),
     };
+  }
+
+  exporter(format: EerFormatExport): void {
+    this.feedback
+      .run(() => this.eer.exporterListe(this.filtresCourants(), format), {
+        loading: 'Génération de l’export…',
+        success: () => ({ title: 'Export généré', message: 'Toutes les lignes filtrées (10 000 maximum).' }),
+        busy: this.exportEnCours,
+        retry: false,
+        errorTitle: 'Export impossible',
+      })
+      .subscribe((blob) => telechargerBlob(blob, `eer-dossiers.${format}`));
+  }
+
+  charger(): void {
+    const f = this.filtresCourants();
     this.chargement.set(true);
     this.eer.lister(f).subscribe({
       next: (r) => {

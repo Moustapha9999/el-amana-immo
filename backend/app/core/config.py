@@ -118,6 +118,8 @@ class Settings(BaseSettings):
 
     upload_dir: str = "storage/uploads"
     ged_dir: str = "storage/ged"
+    # 0 = désactivé (tests, workers secondaires) ; passage aussi déclenchable via POST /eer/echeances/run.
+    eer_echeances_interval_heures: float = Field(default=6, alias="EER_ECHEANCES_INTERVAL_HEURES")
     backup_dir: str = Field(default="backups", alias="BACKUP_DIR")
 
     @property

@@ -11,9 +11,11 @@ import {
   EerKpiSerie,
   EerPerimetre,
   EerRepartition,
+  EerFormatExport,
   EerTableauDeBord,
   TYPES_CLIENT,
   libelle,
+  telechargerBlob,
 } from './eer.models';
 
 const DIMENSIONS: Array<[EerDimension, string]> = [
@@ -94,6 +96,12 @@ const CARTES: Carte[] = [
                 <option value="bea">BEA-DIGITAL (+ cohérence, anomalies bloquantes)</option>
               </select>
             </label>
+            @if (perimetre()?.capacites?.['export'] && perimetre()?.capacites?.['reporting']) {
+              <div class="bea-mg__actions">
+                <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Synthèse (gabarit Feuil2) en PDF" [disabled]="exportEnCours()" (click)="exporter('pdf')"><mat-icon>picture_as_pdf</mat-icon> PDF</button>
+                <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Synthèse (gabarit Feuil2) en Excel" [disabled]="exportEnCours()" (click)="exporter('xlsx')"><mat-icon>table_chart</mat-icon> Excel</button>
+              </div>
+            }
           </div>
           <div class="bea-nf-kpi">
             <a class="bea-nf-kpi__card eer-kpi" routerLink="/eer/dossiers" [queryParams]="lienConformite('')"><p>Total EER</p><strong>{{ k[reference()].total }}</strong></a>
@@ -288,6 +296,7 @@ export class EerDashboardComponent implements OnInit {
   readonly parDimension = signal<EerKpiRepartition | null>(null);
   readonly granularite = signal<EerGranularite>('mois');
   readonly dimension = signal<EerDimension>('risque');
+  readonly exportEnCours = signal(false);
 
   readonly tableaux = computed(() => {
     const a = this.parAgence();
@@ -334,6 +343,19 @@ export class EerDashboardComponent implements OnInit {
         this.fail(e);
       },
     });
+  }
+
+  exporter(format: EerFormatExport): void {
+    const ref = this.reference();
+    this.feedback
+      .run(() => this.eer.exporterSynthese({ agence_id: this.agenceId() || undefined }, format, ref), {
+        loading: 'Génération du reporting…',
+        success: () => ({ title: 'Reporting généré' }),
+        busy: this.exportEnCours,
+        retry: false,
+        errorTitle: 'Export impossible',
+      })
+      .subscribe((blob) => telechargerBlob(blob, `eer-synthese-${ref}.${format}`));
   }
 
   choisirAgence(id: string): void {

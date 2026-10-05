@@ -12,10 +12,12 @@ import hashlib
 import json
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile, status
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -35,7 +37,6 @@ from app.models import (
     EerReferentiel,
     EerVersion,
     EerVisa,
-    GedDocument,
     User,
 )
 from app.schemas.eer import (
@@ -72,6 +73,7 @@ from app.schemas.eer import (
     EerDossierOut,
     EerDossierPage,
     EerDossierPatch,
+    EerEcheancesOut,
     EerFicheChampOut,
     EerHistoriqueOut,
     EerKpiEtatsCompteOut,
@@ -86,17 +88,19 @@ from app.schemas.eer import (
     EerReferenceExcelOut,
     EerReferentielOut,
     EerTableauDeBordOut,
+    EerTypeDocumentOut,
     EerVersionLigne,
     EerVersionOut,
     EerVisaOut,
 )
-from app.services import eer_controles_auto
+from app.services import eer_controles_auto, eer_documents, eer_echeances, eer_export
+from app.services.audit_service import AuditService
 from app.services.eer.checklist_engine import elements_non_pointes
 from app.services.eer.conformite_historique import Classement, classer_bea, classer_excel, expliquer_ecart
 from app.services.eer.constantes import ANOMALIES_OUVERTES, GraviteAnomalie
 from app.services.eer.workflow import TRANSITIONS, Statut
 from app.services.eer_dossier_service import (
-    GED_ENTITE,
+    ESPACE_CODE,
     MODULE_CODE,
     Acteur,
     CibleComplement,
@@ -264,8 +268,20 @@ async def analystes_eligibles(
     return eligibles
 
 
-@router.get("/dossiers", response_model=EerDossierPage)
-async def lister_dossiers(
+@dataclass
+class _FiltresListe:
+    filtres: FiltresDossiers
+    mes_dossiers: bool
+    tri: str
+    ordre: Literal["asc", "desc"]
+
+    def pour(self, acteur: Acteur) -> FiltresDossiers:
+        if self.mes_dossiers:
+            self.filtres.analyste_id = acteur.user.id
+        return self.filtres
+
+
+def _filtres_liste(
     statut: list[str] | None = Query(None),
     agence_id: uuid.UUID | None = None,
     type_client: str | None = None,
@@ -284,21 +300,68 @@ async def lister_dossiers(
     etat_compte: str | None = None,
     residence: str | None = Query(None, max_length=80),
     conformite_excel: Classement | None = None,
-    page: int = Query(1, ge=1),
-    size: int = Query(25, ge=1, le=100),
     tri: str = Query("created_at"),
     ordre: Literal["asc", "desc"] = "desc",
+) -> _FiltresListe:
+    return _FiltresListe(FiltresDossiers(
+        statut=statut, agence_id=agence_id, type_client=type_client, profil=profil, risque=risque,
+        decision=decision, avis_requis=avis_requis, analyste_id=analyste_id,
+        q=q, date_debut=date_debut, date_fin=date_fin, sous_profil=sous_profil, ppe=ppe, fatca=fatca,
+        etat_compte=etat_compte, residence=residence, conformite_excel=conformite_excel),
+        mes_dossiers, tri if tri in TRIS else "created_at", ordre)
+
+
+@router.get("/dossiers", response_model=EerDossierPage)
+async def lister_dossiers(
+    f: _FiltresListe = Depends(_filtres_liste),
+    page: int = Query(1, ge=1),
+    size: int = Query(25, ge=1, le=100),
     acteur: Acteur = Depends(_acteur("eer.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    filtres = FiltresDossiers(
-        statut=statut, agence_id=agence_id, type_client=type_client, profil=profil, risque=risque,
-        decision=decision, avis_requis=avis_requis, analyste_id=acteur.user.id if mes_dossiers else analyste_id,
-        q=q, date_debut=date_debut, date_fin=date_fin, sous_profil=sous_profil, ppe=ppe, fatca=fatca,
-        etat_compte=etat_compte, residence=residence, conformite_excel=conformite_excel)
     items, total = await EerLectureService(db).lister(
-        acteur.perimetre, filtres, page=page, size=size, tri=tri if tri in TRIS else "created_at", ordre=ordre)
+        acteur.perimetre, f.pour(acteur), page=page, size=size, tri=f.tri, ordre=f.ordre)
     return EerDossierPage(items=[EerDossierLigne(**i) for i in items], total=total, page=page, size=size)
+
+
+# --- Exports (PDF / Excel) ----------------------------------------------------------------------
+
+EXPORT_MAX = 10_000
+_MEDIA = {"pdf": "application/pdf", "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+_REPONSES_FICHIER: dict[int | str, dict[str, Any]] = {200: {"content": {m: {} for m in _MEDIA.values()}}}
+
+
+def _fichier(contenu: bytes, nom: str, fmt: str) -> Response:
+    return Response(content=contenu, media_type=_MEDIA[fmt],
+                    headers={"Content-Disposition": f'attachment; filename="{nom}.{fmt}"'})
+
+
+async def _tracer_export(db: AsyncSession, acteur: Acteur, quoi: str, entity_id: str, details: dict) -> None:
+    await AuditService(db).log(user=acteur.user, action=f"eer.export.{quoi}", entity="eer_export", entity_id=entity_id,
+                               after=details, ip_address=acteur.ip_address, espace_code=ESPACE_CODE,
+                               module_code=MODULE_CODE, session_id=acteur.session_id)
+    await db.commit()
+
+
+@router.get("/dossiers/export", response_class=Response, responses=_REPONSES_FICHIER)
+async def exporter_dossiers(
+    format: Literal["pdf", "xlsx"] = "xlsx",
+    f: _FiltresListe = Depends(_filtres_liste),
+    acteur: Acteur = Depends(_acteur("eer.view", "eer.export")),
+    db: AsyncSession = Depends(get_db),
+):
+    acteur.exiger("eer.view", "eer.export")
+    lecture, filtres, items, page = EerLectureService(db), f.pour(acteur), [], 1
+    while len(items) < EXPORT_MAX:
+        lot, total = await lecture.lister(acteur.perimetre, filtres, page=page, size=500, tri=f.tri, ordre=f.ordre)
+        items += lot
+        if not lot or len(items) >= total:
+            break
+        page += 1
+    sous_titre = f"{len(items)} dossier(s)" + (" — export limité" if len(items) >= EXPORT_MAX else "")
+    contenu = (eer_export.liste_pdf if format == "pdf" else eer_export.liste_excel)(items[:EXPORT_MAX], sous_titre)
+    await _tracer_export(db, acteur, "dossiers", "liste", {"format": format, "lignes": len(items)})
+    return _fichier(contenu, f"eer-dossiers-{date.today():%Y%m%d}", format)
 
 
 # --- KPI (reporting) ----------------------------------------------------------------------------
@@ -381,6 +444,28 @@ async def kpis_dimension(
 ):
     """Extension BEA-DIGITAL : risque, PPE, FATCA, résidence, analyste, profil, sous-profil."""
     return await EerReportingService(db).par_dimension(acteur.perimetre, filtres, dimension)
+
+
+@router.get("/kpis/export", response_class=Response, responses=_REPONSES_FICHIER)
+async def exporter_synthese(
+    format: Literal["pdf", "xlsx"] = "xlsx",
+    reference: Literal["excel", "bea"] = "excel",
+    filtres: FiltresDossiers = Depends(_filtres_kpi),
+    acteur: Acteur = Depends(_acteur("eer.report.view", "eer.export")),
+    db: AsyncSession = Depends(get_db),
+):
+    acteur.exiger("eer.report.view", "eer.export")
+    rep = EerReportingService(db)
+    sections = eer_export.sections_synthese(
+        await rep.global_(acteur.perimetre, filtres), await rep.par_agence(acteur.perimetre, filtres),
+        await rep.par_profil(acteur.perimetre, filtres), await rep.etats_compte(acteur.perimetre, filtres), reference)
+    periode = " au ".join(f"{d:%d/%m/%Y}" for d in (filtres.date_debut, filtres.date_fin) if d)
+    sous_titre = " · ".join(p for p in (eer_export.LIBELLE_REFERENCE[reference], periode) if p)
+    titre = "Entrées en relation — synthèse de conformité"
+    contenu = (eer_export.sections_pdf(titre, sous_titre, sections) if format == "pdf"
+               else eer_export.sections_excel(titre, sous_titre, sections, "Synthèse"))
+    await _tracer_export(db, acteur, "synthese", "kpis", {"format": format, "reference": reference})
+    return _fichier(contenu, f"eer-synthese-{date.today():%Y%m%d}", format)
 
 
 # --- Dossier ----------------------------------------------------------------------------------
@@ -948,18 +1033,80 @@ async def historique(
     return [EerHistoriqueOut.model_validate(h) for h in lignes]
 
 
+@router.post("/echeances/run", response_model=EerEcheancesOut)
+async def executer_echeances(
+    _: Acteur = Depends(_acteur("eer.admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Passage manuel du contrôle des échéances (également planifié au démarrage du backend)."""
+    resultat = await eer_echeances.executer(db)
+    await db.commit()
+    return EerEcheancesOut(**resultat)
+
+
+@router.get("/types-documents", response_model=list[EerTypeDocumentOut])
+async def types_documents(_: Acteur = Depends(_acteur("eer.document.view"))):
+    return [EerTypeDocumentOut(code=code, libelle=lib) for code, lib in eer_documents.TYPES_DOCUMENT.items()]
+
+
 @router.get("/dossiers/{dossier_id}/documents", response_model=list[EerDocumentOut])
 async def documents(
     dossier_id: uuid.UUID,
     acteur: Acteur = Depends(_acteur("eer.document.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    await _dossier_visible(db, acteur, dossier_id)
-    lignes = (await db.execute(select(GedDocument).where(
-        GedDocument.module_code == MODULE_CODE, GedDocument.entity == GED_ENTITE,
-        GedDocument.entity_id == str(dossier_id), GedDocument.deleted_at.is_(None))
-        .order_by(GedDocument.created_at))).scalars()
-    return [EerDocumentOut.model_validate(g) for g in lignes]
+    svc = EerDossierService(db)
+    d = await svc.charger(dossier_id, acteur=acteur)
+    elements: dict[uuid.UUID, list[str]] = {}
+    for i in sorted(d.items, key=lambda i: (i.ordre, i.regle_code)):
+        if i.document_id:
+            elements.setdefault(i.document_id, []).append(i.libelle)
+    return [EerDocumentOut.model_validate(g).model_copy(update={"elements": elements.get(g.id, [])})
+            for g in await eer_documents.documents_du_dossier(svc, dossier_id)]
+
+
+@router.post("/dossiers/{dossier_id}/documents", response_model=EerMutationOut,
+             status_code=status.HTTP_201_CREATED)
+async def deposer_document(
+    dossier_id: uuid.UUID,
+    file: UploadFile = File(...),
+    revision: int = Form(..., ge=0),
+    doc_type: str | None = Form(None, max_length=40),
+    item_id: uuid.UUID | None = Form(None),
+    acteur: Acteur = Depends(_acteur("eer.document.upload")),
+    db: AsyncSession = Depends(get_db),
+):
+    async def op(svc: EerDossierService) -> None:
+        await eer_documents.deposer(svc, acteur, dossier_id, file, doc_type=doc_type or None, item_id=item_id)
+
+    return await _muter(db, acteur, dossier_id, revision, op, "Pièce déposée")
+
+
+@router.post("/dossiers/{dossier_id}/documents/{document_id}/retirer", response_model=EerMutationOut)
+async def retirer_document(
+    dossier_id: uuid.UUID,
+    document_id: uuid.UUID,
+    payload: EerActionIn,
+    acteur: Acteur = Depends(_acteur("eer.document.upload")),
+    db: AsyncSession = Depends(get_db),
+):
+    async def op(svc: EerDossierService) -> None:
+        await eer_documents.retirer(svc, acteur, dossier_id, document_id, payload.motif)
+
+    return await _muter(db, acteur, dossier_id, payload.revision, op, "Pièce retirée")
+
+
+@router.get("/dossiers/{dossier_id}/documents/{document_id}/download", response_class=FileResponse,
+            responses={200: {"content": {"application/octet-stream": {}}}})
+async def telecharger_document(
+    dossier_id: uuid.UUID,
+    document_id: uuid.UUID,
+    acteur: Acteur = Depends(_acteur("eer.document.download")),
+    db: AsyncSession = Depends(get_db),
+):
+    doc, chemin = await eer_documents.fichier_a_telecharger(EerDossierService(db), acteur, dossier_id, document_id)
+    await db.commit()
+    return FileResponse(chemin, filename=doc.filename, media_type=doc.mime_type or "application/octet-stream")
 
 
 @router.get("/dossiers/{dossier_id}/audit", response_model=list[EerAuditOut])
@@ -974,3 +1121,57 @@ async def audit(
         .order_by(AuditLog.created_at))).scalars()
     return [EerAuditOut(id=a.id, action=a.action, user_id=a.user_id, created_at=a.created_at, after=a.after_data)
             for a in lignes]
+
+
+@router.get("/dossiers/{dossier_id}/export", response_class=Response, responses=_REPONSES_FICHIER)
+async def exporter_fiche(
+    dossier_id: uuid.UUID,
+    format: Literal["pdf", "xlsx"] = "pdf",
+    acteur: Acteur = Depends(_acteur("eer.view", "eer.export")),
+    db: AsyncSession = Depends(get_db),
+):
+    acteur.exiger("eer.view", "eer.export")
+    svc = EerDossierService(db)
+    d = await svc.charger(dossier_id, acteur=acteur)
+    agence = await db.get(Agence, d.agence_id)
+    analyste = await db.get(User, d.analyste_id) if d.analyste_id else None
+    anomalies = (await db.scalars(select(EerAnomalie).where(EerAnomalie.dossier_id == d.id)
+                                  .order_by(EerAnomalie.created_at))).all()
+    visas = (await db.scalars(select(EerVisa).where(EerVisa.dossier_id == d.id).order_by(EerVisa.vise_le))).all()
+    docs = await eer_documents.documents_du_dossier(svc, d.id) if acteur.perimetre.peut("eer.document.view") else []
+    elements: dict[uuid.UUID, list[str]] = {}
+    for i in d.items:
+        if i.document_id:
+            elements.setdefault(i.document_id, []).append(i.libelle)
+    excel = classer_excel(d.conformite_physique, d.conformite_systeme)
+    dossier = {
+        "reference": d.reference, "agence": f"{agence.code} — {agence.libelle}" if agence else "—",
+        "date_eer": d.date_eer, "operation_type": d.operation_type, "type_client": d.type_client_code,
+        "profil": d.profil_code, "statut": d.statut, "etape": d.etape, "risque": d.risque_lbcft,
+        "ppe": d.ppe_dossier, "fatca": d.fatca_dossier, "avis_requis": d.avis_requis,
+        "version_courante": d.version_courante, "conformite_physique": d.conformite_physique,
+        "conformite_systeme": d.conformite_systeme, "conformite_excel": str(excel.classement),
+        "decision": d.decision_globale, "analyste": analyste.full_name if analyste else None,
+        "soumis_le": d.soumis_le, "valide_le": d.valide_le,
+    }
+    sections = eer_export.sections_fiche(
+        dossier,
+        [{"role": dp.role, "nom": dp.partie.nom, "nature": dp.partie.nature, "ppe": dp.ppe,
+          "fatca": dp.fatca_indice, "risque": dp.risque_lbcft} for dp in sorted(d.parties, key=lambda p: p.ordre)],
+        [{"libelle": i.libelle, "categorie": i.categorie, "obligatoire": i.obligatoire, "presence": i.presence,
+          "statut": i.statut, "motif": i.motif}
+         for i in sorted(d.items, key=lambda i: (i.ordre, i.regle_code)) if i.statut != "NON_APPLICABLE"],
+        [{"type_code": a.type_code, "gravite": a.gravite, "statut": a.statut, "description": a.description,
+          "echeance_regularisation": a.echeance_regularisation} for a in anomalies],
+        [{"fonction": v.fonction, "avis": v.avis, "version": v.version, "vise_le": v.vise_le,
+          "commentaire": v.commentaire} for v in visas],
+        [{"type": doc.title or doc.doc_type or "—", "filename": doc.filename, "elements": elements.get(doc.id, []),
+          "created_at": doc.created_at} for doc in docs],
+    )
+    titre = f"Dossier d'entrée en relation {d.reference}"
+    sous_titre = f"Version {d.version_courante} · {eer_export.libelle(d.statut)}"
+    contenu = (eer_export.sections_pdf(titre, sous_titre, sections) if format == "pdf"
+               else eer_export.sections_excel(titre, sous_titre, sections, d.reference))
+    await svc._audit(acteur, "eer.export.fiche", d, after={"format": format})
+    await db.commit()
+    return _fichier(contenu, f"eer-{d.reference}", format)

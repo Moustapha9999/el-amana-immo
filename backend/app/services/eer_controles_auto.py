@@ -42,13 +42,26 @@ class Constat:
                 "detail": self.detail}
 
 
+def jours_parametre(valeur: Any) -> int | None:
+    """Paramètre de délai en jours ; non renseigné ou invalide → ``None`` (aucune valeur inventée)."""
+    if valeur is None or isinstance(valeur, bool):
+        return None
+    try:
+        jours = int(valeur)
+    except (TypeError, ValueError):
+        return None
+    return jours if jours >= 0 else None
+
+
 def _piece(dp: EerDossierPartie | None):
     if dp is None or not dp.partie.pieces:
         return None
     return dp.partie.pieces[-1]
 
 
-def _expiration(code: str, item_id, dp: EerDossierPartie | None, a_date: date) -> Constat:
+def _expiration(code: str, item_id, dp: EerDossierPartie | None, a_date: date,
+                jours_proche: int | None = None) -> Constat:
+    """``jours_proche`` = paramètre ``controle.expiration_proche_jours`` ; vide → pas d'alerte anticipée."""
     piece = _piece(dp)
     if piece is None:
         return Constat(code, TypeControle.AUTO_EXPIRATION, MANQUANT, "Aucune pièce d'identité saisie", item_id)
@@ -57,6 +70,10 @@ def _expiration(code: str, item_id, dp: EerDossierPartie | None, a_date: date) -
     detail = {"date_expiration": piece.date_expiration.isoformat(), "date_controle": a_date.isoformat()}
     if piece.date_expiration < a_date:
         return Constat(code, TypeControle.AUTO_EXPIRATION, NON_CONFORME, "Pièce d'identité expirée", item_id, detail)
+    restant = (piece.date_expiration - a_date).days
+    if jours_proche is not None and restant <= jours_proche:
+        return Constat(code, TypeControle.AUTO_EXPIRATION, A_VERIFIER,
+                       f"Pièce expirant dans {restant} jour(s)", item_id, {**detail, "jours_restants": restant})
     return Constat(code, TypeControle.AUTO_EXPIRATION, OK, "Pièce en cours de validité", item_id, detail)
 
 
@@ -80,6 +97,7 @@ async def executer(svc, acteur, dossier_id) -> list[Constat]:
     d: EerDossier = await svc.charger(dossier_id, verrou=True, acteur=acteur)
     svc._exiger_controle(acteur, d, {Etape.CHECKLIST, Etape.FICHES, Etape.CONTROLES})
     a_date = date.today()
+    jours_proche = jours_parametre((await svc.parametres()).get("controle.expiration_proche_jours"))
     parties = {dp.id: dp for dp in d.parties}
     client_dp = next(dp for dp in d.parties if dp.role == RoleDossier.CLIENT)
     constats: list[Constat] = []
@@ -90,7 +108,7 @@ async def executer(svc, acteur, dossier_id) -> list[Constat]:
         dp = parties.get(item.dossier_partie_id) if item.dossier_partie_id else client_dp
         type_ctrl = await _type_controle(svc, item)
         if type_ctrl == TypeControle.AUTO_EXPIRATION:
-            constats.append(_expiration(item.regle_code, item.id, dp, a_date))
+            constats.append(_expiration(item.regle_code, item.id, dp, a_date, jours_proche))
         elif type_ctrl == TypeControle.AUTO_COHERENCE:
             constats.extend(_coherence_piece(item.regle_code, item.id, dp))
         elif type_ctrl == TypeControle.AUTO_PRESENCE and item.nature == "DOCUMENT":

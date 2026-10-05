@@ -283,7 +283,15 @@ export interface EerDocument {
   size_bytes: number;
   version: number;
   created_at: string;
+  elements: string[];
 }
+
+export interface EerTypeDocument {
+  code: string;
+  libelle: string;
+}
+
+export type EerFormatExport = 'pdf' | 'xlsx';
 
 export interface EerAudit {
   id: string;
@@ -507,6 +515,15 @@ export function eerTone(statut: string | null | undefined): string {
 export function libelle(table: Record<string, string>, code: string | null | undefined): string {
   if (!code) return '—';
   return table[code] ?? code;
+}
+
+export function telechargerBlob(blob: Blob, nom: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nom;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function dateFr(iso: string | null | undefined, heure = false): string {

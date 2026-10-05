@@ -26,6 +26,12 @@
   margin-bottom: 0.75rem;
 }
 .eer-toolbar .bea-ct-note { margin: 0 auto 0 0; }
+.eer-depot { align-items: flex-end; justify-content: flex-start; }
+.eer-depot__field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.78rem; color: #475569; min-width: 14rem; }
+.eer-depot__field select { padding: 0.45rem 0.6rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; background: #fff; font: inherit; color: #0f172a; }
+.eer-depot .bea-mg__btn { cursor: pointer; }
+.eer-depot .bea-mg__btn.is-disabled { opacity: 0.55; pointer-events: none; }
+.eer-doc-actions { white-space: nowrap; text-align: right; }
 .eer-cols {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));

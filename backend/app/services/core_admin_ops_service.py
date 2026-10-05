@@ -18,6 +18,9 @@ from app.models.ged import GedDocument
 from app.models.plateforme import PlateformeModule
 from app.services.core_admin_audit_service import CoreAdminAuditService
 from app.services.core_admin_service import FUSEAU, day_bounds_nouakchott, platform_health
+from app.services.ged_service import MODULES_CLOISONNES
+
+_HORS_CLOISON = GedDocument.module_code.notin_(sorted(MODULES_CLOISONNES))
 
 
 def _iso(value) -> str | None:
@@ -357,7 +360,7 @@ class CoreAdminOpsService:
     ) -> tuple[list[dict], int, dict]:
         empty_kpis = {"total": 0, "modules": 0, "taille_octets": 0, "reservee": True}
         try:
-            stmt = select(GedDocument).where(GedDocument.deleted_at.is_(None))
+            stmt = select(GedDocument).where(GedDocument.deleted_at.is_(None), _HORS_CLOISON)
             if module_code:
                 stmt = stmt.where(GedDocument.module_code == module_code)
             if search and search.strip():
@@ -619,7 +622,7 @@ class CoreAdminOpsService:
         recent = (
             await self.db.execute(
                 select(GedDocument)
-                .where(GedDocument.deleted_at.is_(None))
+                .where(GedDocument.deleted_at.is_(None), _HORS_CLOISON)
                 .order_by(GedDocument.created_at.desc())
                 .limit(8)
             )
@@ -645,7 +648,7 @@ class CoreAdminOpsService:
         }
 
     async def ged_ocr(self, *, status: str | None, page: int, size: int) -> dict:
-        stmt = select(GedDocument).where(GedDocument.deleted_at.is_(None))
+        stmt = select(GedDocument).where(GedDocument.deleted_at.is_(None), _HORS_CLOISON)
         if status:
             stmt = stmt.where(GedDocument.ocr_status == status)
         total = await self._count(select(func.count()).select_from(stmt.order_by(None).subquery()))
@@ -683,7 +686,7 @@ class CoreAdminOpsService:
         }
 
     async def ged_trash(self, page: int, size: int) -> dict:
-        stmt = select(GedDocument).where(GedDocument.deleted_at.is_not(None))
+        stmt = select(GedDocument).where(GedDocument.deleted_at.is_not(None), _HORS_CLOISON)
         total = await self._count(select(func.count()).select_from(stmt.order_by(None).subquery()))
         rows = (
             await self.db.execute(

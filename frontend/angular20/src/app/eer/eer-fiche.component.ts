@@ -8,6 +8,7 @@ import { AuthService } from '../core/services/auth.service';
 import { ApiErrorInfo, describeApiErrorAsync } from '../core/feedback/api-error';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import { PIECES_ACCEPT, PIECES_FORMATS_LABEL, detacherReason, verifierPieceJointe } from '../shared/pieces-jointes';
 import { UiConfirmData, UiReasonData } from '../shared/ui-dialog/ui-dialog.types';
 import { EerAnalyste, EerService } from './eer.service';
 import {
@@ -28,8 +29,10 @@ import {
   EerDocument,
   EerDossier,
   EerFicheChamp,
+  EerFormatExport,
   EerHistorique,
   EerPerimetre,
+  EerTypeDocument,
   EerVersion,
   EerVersionLigne,
   EerVisa,
@@ -39,6 +42,7 @@ import {
   dateFr,
   eerTone,
   libelle,
+  telechargerBlob,
   valeurAffichee,
 } from './eer.models';
 
@@ -80,6 +84,9 @@ const TITRES_FICHES: Record<string, string> = {
   FICHE_MANDATAIRE: 'Fiche client mandataire',
   SPECIMEN_SIGNATURE: 'Spécimen de signature',
 };
+
+/** Statuts où le backend refuse tout dépôt / retrait de pièce (miroir de eer_documents.STATUTS_FIGES). */
+const STATUTS_FIGES = new Set(['VALIDE', 'CLOTURE', 'ARCHIVE', 'ABANDONNE']);
 
 const CHAMPS_BOOLEENS = new Set(['ppe', 'fatca_indice', 'impact_rse']);
 const RISQUES: Choix[] = [
@@ -187,6 +194,10 @@ export class EerFicheComponent implements OnInit {
   readonly versionDetail = signal<EerVersion | null>(null);
   readonly historique = signal<EerHistorique[]>([]);
   readonly documents = signal<EerDocument[]>([]);
+  readonly typesDocuments = signal<EerTypeDocument[]>([]);
+  readonly depotType = signal('');
+  readonly depotItem = signal('');
+  readonly exportEnCours = signal(false);
   readonly audit = signal<EerAudit[]>([]);
   readonly analystes = signal<EerAnalyste[]>([]);
   readonly chargementAnalystes = signal(false);
@@ -228,6 +239,12 @@ export class EerFicheComponent implements OnInit {
     const c = this.cap();
     return (s === 'BROUILLON' && !!c['modification']) || (s === 'EN_CONTROLE' && !!c['controle']) || (s === 'A_COMPLETER' && !!c['complement']);
   });
+  readonly depotPossible = computed(() => !!this.cap()['document_depot'] && !STATUTS_FIGES.has(this.statut()));
+  readonly itemsDocument = computed(() =>
+    (this.checklist()?.items ?? []).filter((i) => i.nature === 'DOCUMENT' && i.statut !== 'NON_APPLICABLE'),
+  );
+  readonly piecesAccept = PIECES_ACCEPT;
+  readonly piecesFormats = PIECES_FORMATS_LABEL;
   readonly client = computed(() => this.dossier()?.parties.find((p) => p.role === 'CLIENT') ?? null);
   readonly ficheCles = computed(() => Object.keys(this.fiches()));
   readonly nbSaisies = computed(() => Object.keys(this.saisies()).length);
@@ -516,6 +533,8 @@ export class EerFicheComponent implements OnInit {
         break;
       case 'documents':
         this.eer.documents(id).subscribe({ next: (d) => this.documents.set(d), error: err });
+        this.eer.checklist(id).subscribe({ next: (c) => this.checklist.set(c), error: err });
+        if (!this.typesDocuments().length) this.eer.typesDocuments().subscribe({ next: (t) => this.typesDocuments.set(t), error: err });
         break;
       case 'checklist':
         this.eer.checklist(id).subscribe({ next: (c) => this.checklist.set(c), error: err });
@@ -885,6 +904,67 @@ export class EerFicheComponent implements OnInit {
     if (!dp) return titre;
     const partie = this.dossier()?.parties.find((p) => p.dossier_partie_id === dp);
     return partie ? `${titre} — ${partie.nom}` : titre;
+  }
+
+  // --- Documents (GED cloisonnée EER) --------------------------------------------------------
+
+  choisirPiece(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+    const erreur = verifierPieceJointe(file);
+    if (erreur) {
+      this.feedback.warning({ title: 'Pièce refusée', message: erreur });
+      return;
+    }
+    const d = this.dossier();
+    if (!d) return;
+    const itemId = this.depotItem() || null;
+    this.muter((rev) => this.eer.deposerDocument(d.id, rev, file, this.depotType(), itemId), {
+      loading: 'Dépôt de la pièce…',
+      succes: 'Pièce déposée',
+      errorTitle: 'Dépôt refusé',
+    }, () => {
+      this.depotItem.set('');
+      this.depotType.set('');
+    });
+  }
+
+  telechargerPiece(doc: EerDocument): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.feedback
+      .run(() => this.eer.telechargerDocument(d.id, doc.id), { loading: 'Téléchargement…', success: () => null, retry: false, errorTitle: 'Téléchargement impossible' })
+      .subscribe((blob) => telechargerBlob(blob, doc.filename));
+  }
+
+  retirerPiece(doc: EerDocument): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.muterMotif(
+      {
+        ...detacherReason(doc.title || doc.filename),
+        title: 'Retirer la pièce',
+        hint: 'La pièce est retirée du dossier (corbeille GED) et les éléments de checklist rattachés sont détachés.',
+        confirmLabel: 'Retirer',
+      },
+      (rev, motif) => this.eer.retirerDocument(d.id, doc.id, rev, motif),
+      'Pièce retirée',
+      'Retrait refusé',
+    );
+  }
+
+  exporterFiche(format: EerFormatExport): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.feedback
+      .run(() => this.eer.exporterFiche(d.id, format), { loading: 'Génération de l’export…', success: () => ({ title: 'Export généré' }), busy: this.exportEnCours, retry: false, errorTitle: 'Export impossible' })
+      .subscribe((blob) => telechargerBlob(blob, `eer-${d.reference}.${format}`));
+  }
+
+  libTypeDocument(code: string | null): string {
+    return this.typesDocuments().find((t) => t.code === code)?.libelle ?? code ?? '—';
   }
 
   // --- Checklist / contrôles -----------------------------------------------------------------
