@@ -28,6 +28,8 @@ import {
   pct,
 } from './facturation.models';
 import { FacturationStore } from './facturation.store';
+import { RowMenu, RowMenuComponent, RowMenuItem } from '../shared/row-menu';
+import { PagerComponent, TableState } from '../shared/table-state';
 
 interface LigneImport {
   reference: string;
@@ -67,7 +69,7 @@ interface ResultatImport {
 @Component({
   selector: 'bea-fx-points',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MatIconModule, MontantPipe, FxSparkComponent, FactureDrawerComponent, FactureFormComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatIconModule, MontantPipe, FxSparkComponent, FactureDrawerComponent, FactureFormComponent, RowMenuComponent, PagerComponent],
   template: `
     <section class="bea-mg bea-nf bea-ct bea-fx">
       <header class="bea-mg__head">
@@ -132,15 +134,15 @@ interface ResultatImport {
             <thead>
               <tr>
                 <th>Code</th><th>Point</th><th>Référence</th><th>Fournisseur</th><th>Agence</th>
-                <th>Périodicité</th><th>Dernière facture</th><th class="is-num">Total {{ filtres.controls.year.value }}</th><th>Statut</th>
+                <th>Périodicité</th><th>Dernière facture</th><th class="is-num">Total {{ filtres.controls.year.value }}</th><th>Statut</th><th class="is-actions">Actions</th>
               </tr>
             </thead>
             <tbody>
               @if (points() === null) {
-                @for (i of [1, 2, 3, 4, 5]; track i) { <tr><td colspan="9"><span class="bea-fx-skel bea-fx-skel--line"></span></td></tr> }
+                @for (i of [1, 2, 3, 4, 5]; track i) { <tr><td colspan="10"><span class="bea-fx-skel bea-fx-skel--line"></span></td></tr> }
               } @else {
-                @for (p of points()!; track p.id; let i = $index) {
-                  <tr class="bea-fx-row" [class.is-active]="pointId() === p.id" [class.is-muted]="p.statut !== 'ACTIF'" [style.animation-delay.ms]="i * 15" (click)="ouvrir(p.id)">
+                @for (p of tPoints.lignes(); track p.id; let i = $index) {
+                  <tr class="bea-fx-row" [class.is-active]="pointId() === p.id" [class.is-muted]="p.statut !== 'ACTIF'" [style.animation-delay.ms]="i < 20 ? i * 15 : 0" (click)="ouvrir(p.id)">
                     <td><strong class="bea-fx-ref">{{ p.code }}</strong></td>
                     <td><span class="bea-fx-site"><mat-icon>{{ icone(p.type_point) }}</mat-icon> {{ p.nom }}</span><small class="bea-fx-sub">{{ p.type_point_label }}</small></td>
                     <td><code class="bea-fx-code">{{ p.reference_fournisseur }}</code>@if (p.compteur) { <small class="bea-fx-sub">Compteur {{ p.compteur }}</small> }</td>
@@ -150,9 +152,21 @@ interface ResultatImport {
                     <td>{{ p.derniere_periode_label || 'Aucune' }}</td>
                     <td class="is-num">{{ p.total_annee | montant }} <small class="bea-fx-sub">{{ p.nb_factures }} fact.</small></td>
                     <td><span class="bea-ct-badge" [attr.data-tone]="tone(p.statut)">{{ statut(p.statut) }}</span></td>
+                    <td class="is-nowrap" (click)="$event.stopPropagation()">
+                      <span class="bea-row-actions">
+                        <button type="button" class="bea-mg__icon-btn" title="Voir" (click)="ouvrir(p.id)"><mat-icon>visibility</mat-icon></button>
+                        @if (store.cap().manage) {
+                          <button type="button" class="bea-mg__icon-btn" title="Modifier" (click)="editer(p)"><mat-icon>edit</mat-icon></button>
+                        }
+                        @if (store.cap().create && p.statut === 'ACTIF') {
+                          <button type="button" class="bea-mg__icon-btn" title="Saisir une facture" (click)="saisirPour(p)"><mat-icon>post_add</mat-icon></button>
+                        }
+                        <button type="button" class="bea-mg__icon-btn" title="Plus d'actions" aria-haspopup="menu" (click)="menuPoint($event, p)"><mat-icon>more_vert</mat-icon></button>
+                      </span>
+                    </td>
                   </tr>
                 } @empty {
-                  <tr><td colspan="9">
+                  <tr><td colspan="10">
                     <div class="bea-ct-empty">
                       <mat-icon>location_off</mat-icon>
                       <p>Aucun point de facturation.</p>
@@ -164,8 +178,10 @@ interface ResultatImport {
             </tbody>
           </table>
         </div>
+        <bea-pager [etat]="tPoints" />
       </div>
     </section>
+    <bea-row-menu [menu]="rowMenu" />
 
     @if (pointId()) {
       <div class="bea-fx-drawer__backdrop" (click)="fermer()"></div>
@@ -227,6 +243,7 @@ interface ResultatImport {
               @if (s.date_fin) { <dt>Fin</dt><dd>{{ date(s.date_fin) }}</dd> }
               <dt>Contrat</dt><dd>@if (s.contrat; as c) { <a class="bea-ct-link" [routerLink]="'/contrats-echeances/' + c.id">{{ c.reference }} — {{ c.titre }}</a> } @else { — }</dd>
               @if (s.adresse) { <dt>Adresse</dt><dd>{{ s.adresse }}</dd> }
+              @if (s.telephone) { <dt>Téléphone</dt><dd>{{ s.telephone }}</dd> }
               @if (s.description) { <dt>Notes</dt><dd>{{ s.description }}</dd> }
             </dl>
 
@@ -306,6 +323,7 @@ interface ResultatImport {
             <label class="bea-mg__field">Suivi depuis<input type="date" formControlName="date_debut" /></label>
             <label class="bea-mg__field">Date de fin<input type="date" formControlName="date_fin" /></label>
             <label class="bea-mg__field bea-ct-span2">Adresse<textarea formControlName="adresse" rows="2"></textarea></label>
+            <label class="bea-mg__field">Téléphone<input formControlName="telephone" maxlength="40" inputmode="tel" placeholder="+222 …" /></label>
             <label class="bea-mg__field bea-ct-span2">Notes<textarea formControlName="description" rows="2"></textarea></label>
             <p class="bea-ct-help bea-ct-span2"><mat-icon>info</mat-icon> La référence fournisseur est unique par fournisseur (contrôle anti-doublon côté serveur).</p>
           </div>
@@ -471,6 +489,8 @@ export class FacturationPointsComponent implements OnInit {
   readonly edition = signal<PointRow | null>(null);
   readonly busy = signal(false);
   readonly saisie$ = new Subject<void>();
+  readonly rowMenu = new RowMenu();
+  readonly tPoints = new TableState<PointRow>(() => this.points() ?? [], {});
 
   readonly importOuvert = signal(false);
   readonly etape = signal(1);
@@ -508,6 +528,7 @@ export class FacturationPointsComponent implements OnInit {
     date_debut: [''],
     date_fin: [''],
     adresse: [''],
+    telephone: [''],
     description: [''],
   });
 
@@ -647,6 +668,7 @@ export class FacturationPointsComponent implements OnInit {
       date_debut: p?.date_debut ?? '',
       date_fin: p?.date_fin ?? '',
       adresse: p?.adresse ?? '',
+      telephone: p?.telephone ?? '',
       description: p?.description ?? '',
     });
     this.fournisseurForm.set(this.pointForm.controls.fournisseur_id.value);
@@ -662,7 +684,7 @@ export class FacturationPointsComponent implements OnInit {
     if (this.pointForm.invalid) return;
     const v = this.pointForm.getRawValue();
     const body: Record<string, unknown> = { ...v };
-    for (const k of ['compteur', 'agence_id', 'contrat_id', 'type_facture', 'date_debut', 'date_fin', 'adresse', 'description']) {
+    for (const k of ['compteur', 'agence_id', 'contrat_id', 'type_facture', 'date_debut', 'date_fin', 'adresse', 'telephone', 'description']) {
       if (body[k] === '') body[k] = null;
     }
     const p = this.edition();
@@ -680,12 +702,33 @@ export class FacturationPointsComponent implements OnInit {
         this.formPoint.set(false);
         this.store.rechargerRef();
         this.charger();
-        if (p) this.chargerSynthese(p.id);
+        if (p && this.pointId() === p.id) this.chargerSynthese(p.id);
         else this.ouvrir(r.id);
       });
   }
 
-  desactiver(s: PointSynthese): void {
+  saisirPour(p: PointRow): void {
+    if (!this.store.cap().create) return;
+    this.saisie.set({ point_facturation_id: p.id, annee: this.filtres.controls.year.value });
+  }
+
+  menuPoint(ev: MouseEvent, p: PointRow): void {
+    const items: RowMenuItem[] = [
+      { icone: 'receipt_long', label: 'Factures du point', action: () => void this.router.navigate([this.base, 'liste'], { queryParams: { pdv_id: p.id } }) },
+      { icone: 'history', label: 'Historique', action: () => this.ouvrir(p.id) },
+    ];
+    if (this.store.cap().manage) {
+      items.push(
+        p.statut === 'ACTIF'
+          ? { icone: 'pause_circle', label: 'Désactiver', action: () => this.desactiver(p) }
+          : { icone: 'play_circle', label: 'Réactiver', action: () => this.activer(p) },
+        { icone: 'delete', label: p.nb_factures ? 'Retirer (désactivation)' : 'Supprimer', danger: true, action: () => this.supprimer(p) },
+      );
+    }
+    this.rowMenu.ouvrir(ev, items);
+  }
+
+  desactiver(s: PointRow): void {
     this.feedback
       .runWithReason((motif) => this.api.post(`/mg/points-facturation/${s.id}/desactiver`, { motif }), {
         reason: {
@@ -703,7 +746,7 @@ export class FacturationPointsComponent implements OnInit {
       .subscribe(() => this.apresStatut());
   }
 
-  activer(s: PointSynthese): void {
+  activer(s: PointRow): void {
     this.feedback
       .run(() => this.api.post(`/mg/points-facturation/${s.id}/activer`, {}), {
         confirm: { title: `Réactiver ${s.code} ?`, message: 'Le suivi des factures reprendra pour ce point.', confirmLabel: 'Réactiver', tone: 'primary' },
@@ -714,7 +757,7 @@ export class FacturationPointsComponent implements OnInit {
       .subscribe(() => this.apresStatut());
   }
 
-  supprimer(s: PointSynthese): void {
+  supprimer(s: PointRow): void {
     const facture = s.nb_factures > 0;
     this.feedback
       .run(() => this.api.delete<{ supprime: boolean; desactive: boolean }>(`/mg/points-facturation/${s.id}`), {
@@ -733,7 +776,7 @@ export class FacturationPointsComponent implements OnInit {
       .subscribe((r) => {
         this.store.rechargerRef();
         if (r.supprime) {
-          this.fermer();
+          if (this.pointId() === s.id) this.fermer();
           this.charger();
         } else {
           this.apresStatut();

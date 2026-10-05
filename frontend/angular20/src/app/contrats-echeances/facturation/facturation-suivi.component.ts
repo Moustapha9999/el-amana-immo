@@ -8,10 +8,14 @@ import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ApiService } from '../../core/services/api.service';
 import { MontantPipe } from '../../shared/montant.pipe';
-import { FactureDrawerComponent } from './facture-drawer.component';
+import { FactureActionInitiale, FactureDrawerComponent } from './facture-drawer.component';
 import { FactureFormComponent } from './facture-form.component';
 import {
+  ACTION_LABELS,
   ALERTE_LABELS,
+  actionsFacture,
+  factureModifiable,
+  facturePayable,
   Bucket,
   FX_BASE,
   FactureDetail,
@@ -26,6 +30,10 @@ import {
   nettoyer,
 } from './facturation.models';
 import { FacturationStore } from './facturation.store';
+import { FxPaiementDrawerComponent } from './fx-paiement-drawer.component';
+import { imprimerTableau } from '../shared/impression';
+import { PagerComponent, TableState } from '../shared/table-state';
+import { RowMenu, RowMenuComponent, RowMenuItem } from '../shared/row-menu';
 
 type Mode = 'paiements' | 'echeances' | 'alertes';
 
@@ -56,7 +64,7 @@ const TITRES: Record<Mode, { titre: string; sous: string; icon: string }> = {
 @Component({
   selector: 'bea-fx-suivi',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MatIconModule, MontantPipe, FactureDrawerComponent, FactureFormComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatIconModule, MontantPipe, FactureDrawerComponent, FactureFormComponent, FxPaiementDrawerComponent, PagerComponent, RowMenuComponent],
   template: `
     <section class="bea-mg bea-nf bea-ct bea-fx">
       <header class="bea-mg__head">
@@ -66,6 +74,11 @@ const TITRES: Record<Mode, { titre: string; sous: string; icon: string }> = {
           <p class="bea-ct-head__sub">{{ titre().sous }}</p>
         </div>
         <div class="bea-mg__actions">
+          @if (mode() === 'paiements' && store.cap().payment_create) {
+            <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="nouveauPaiement()"><mat-icon>add_card</mat-icon> Nouveau paiement</button>
+          } @else if (mode() !== 'paiements' && store.cap().create) {
+            <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="nouvelleFacture()"><mat-icon>post_add</mat-icon> Nouvelle facture</button>
+          }
           <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="base"><mat-icon>dashboard</mat-icon> Vue 360°</a>
           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Actualiser" (click)="charger()"><mat-icon>refresh</mat-icon></button>
         </div>
@@ -137,17 +150,18 @@ const TITRES: Record<Mode, { titre: string; sous: string; icon: string }> = {
               <span><strong>{{ paiementsValides().length }}</strong> paiement(s) valide(s)</span>
               <span>Total réglé <strong>{{ totalPaye() | montant }}</strong></span>
               @if (paiementsAnnules()) { <span>{{ paiementsAnnules() }} annulé(s)</span> }
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!(paiements()?.length)" (click)="imprimer()"><mat-icon>print</mat-icon> Imprimer</button>
             </div>
             <div class="bea-mg__table-wrap">
               <table class="bea-mg__table bea-fx-table">
-                <thead><tr><th>Paiement</th><th>Date</th><th>Facture</th><th>Point / fournisseur</th><th>Mode</th><th>Réf. bancaire</th><th class="is-num">Montant</th><th>Statut</th><th></th></tr></thead>
+                <thead><tr><th>Paiement</th><th>Date</th><th>Facture</th><th>Point / fournisseur</th><th>Mode</th><th>Réf. bancaire</th><th class="is-num">Montant</th><th>Statut</th><th class="is-actions">Actions</th></tr></thead>
                 <tbody>
                   @if (paiements() === null) {
                     @for (i of [1, 2, 3, 4]; track i) { <tr><td colspan="9"><span class="bea-fx-skel bea-fx-skel--line"></span></td></tr> }
                   } @else {
-                    @for (p of paiements()!; track p.id; let i = $index) {
-                      <tr class="bea-fx-row" [class.is-muted]="p.statut === 'ANNULE'" [style.animation-delay.ms]="i * 15">
-                        <td><strong class="bea-fx-ref">{{ p.reference }}</strong></td>
+                    @for (p of tPaiements.lignes(); track p.id; let i = $index) {
+                      <tr class="bea-fx-row" [class.is-muted]="p.statut === 'ANNULE'" [style.animation-delay.ms]="i < 20 ? i * 15 : 0">
+                        <td><a class="bea-ct-link" (click)="voirPaiement(p)"><strong class="bea-fx-ref">{{ p.reference }}</strong></a></td>
                         <td>{{ date(p.date_paiement) }}</td>
                         <td><a class="bea-ct-link" (click)="ouvrir(p.facture_id)">{{ p.facture_reference }}</a><small class="bea-fx-sub">{{ p.periode_label }}</small></td>
                         <td>{{ p.point_nom || '—' }}<small class="bea-fx-sub">{{ p.fournisseur }}{{ p.agence ? ' · ' + p.agence : '' }}</small></td>
@@ -155,10 +169,14 @@ const TITRES: Record<Mode, { titre: string; sous: string; icon: string }> = {
                         <td>{{ p.reference_paiement || '—' }}</td>
                         <td class="is-num">{{ p.montant | montant }}</td>
                         <td><span class="bea-ct-badge" [attr.data-tone]="tone(p.statut)">{{ statut(p.statut) }}</span></td>
-                        <td>
-                          @if (p.statut !== 'ANNULE' && store.cap().payment_delete) {
-                            <button type="button" class="bea-mg__btn bea-mg__btn--ghost bea-fx-icon-btn" title="Annuler le paiement" (click)="annulerPaiement(p)"><mat-icon>undo</mat-icon></button>
-                          }
+                        <td class="is-nowrap">
+                          <span class="bea-row-actions">
+                            <button type="button" class="bea-mg__icon-btn" title="Voir" (click)="voirPaiement(p)"><mat-icon>visibility</mat-icon></button>
+                            @if (p.statut !== 'ANNULE' && store.cap().payment_update) {
+                              <button type="button" class="bea-mg__icon-btn" title="Modifier" (click)="voirPaiement(p, 'detail', true)"><mat-icon>edit</mat-icon></button>
+                            }
+                            <button type="button" class="bea-mg__icon-btn" title="Plus d'actions" aria-haspopup="menu" (click)="menuPaiement($event, p)"><mat-icon>more_vert</mat-icon></button>
+                          </span>
                         </td>
                       </tr>
                     } @empty {
@@ -168,6 +186,7 @@ const TITRES: Record<Mode, { titre: string; sous: string; icon: string }> = {
                 </tbody>
               </table>
             </div>
+            <bea-pager [etat]="tPaiements" />
           </div>
         }
 
@@ -182,13 +201,13 @@ const TITRES: Record<Mode, { titre: string; sous: string; icon: string }> = {
           <div class="bea-mg__panel bea-ct-panel">
             <div class="bea-mg__table-wrap">
               <table class="bea-mg__table bea-fx-table">
-                <thead><tr><th>Échéance</th><th>Facture</th><th>Point / site</th><th>Fournisseur</th><th>Période</th><th class="is-num">Reste</th><th>Statut</th></tr></thead>
+                <thead><tr><th>Échéance</th><th>Facture</th><th>Point / site</th><th>Fournisseur</th><th>Période</th><th class="is-num">Reste</th><th>Statut</th><th class="is-actions">Actions</th></tr></thead>
                 <tbody>
                   @if (echeances() === null) {
-                    @for (i of [1, 2, 3, 4]; track i) { <tr><td colspan="7"><span class="bea-fx-skel bea-fx-skel--line"></span></td></tr> }
+                    @for (i of [1, 2, 3, 4]; track i) { <tr><td colspan="8"><span class="bea-fx-skel bea-fx-skel--line"></span></td></tr> }
                   } @else {
-                    @for (r of echeancesFiltrees(); track r.id; let i = $index) {
-                      <tr class="bea-fx-row" [style.animation-delay.ms]="i * 15" (click)="ouvrir(r.id)">
+                    @for (r of tEcheances.lignes(); track r.id; let i = $index) {
+                      <tr class="bea-fx-row" [style.animation-delay.ms]="i < 20 ? i * 15 : 0" (click)="ouvrir(r.id)">
                         <td><strong>{{ date(r.date_echeance) }}</strong><small class="bea-fx-sub" [class.bea-ct-neg]="(r.jours_echeance ?? 0) < 0">{{ jours(r.jours_echeance) }}</small></td>
                         <td><strong class="bea-fx-ref">{{ r.reference }}</strong></td>
                         <td>{{ r.point_nom || '—' }}<small class="bea-fx-sub">{{ r.agence }}</small></td>
@@ -196,14 +215,27 @@ const TITRES: Record<Mode, { titre: string; sous: string; icon: string }> = {
                         <td>{{ r.periode_label || '—' }}</td>
                         <td class="is-num">{{ r.reste | montant }}</td>
                         <td><span class="bea-ct-badge" [attr.data-tone]="tone(r.statut_affiche)">{{ statut(r.statut_affiche) }}</span></td>
+                        <td class="is-nowrap" (click)="$event.stopPropagation()">
+                          <span class="bea-row-actions">
+                            <button type="button" class="bea-mg__icon-btn" title="Voir" (click)="ouvrir(r.id)"><mat-icon>visibility</mat-icon></button>
+                            @if (payable(r)) {
+                              <button type="button" class="bea-mg__icon-btn" title="Enregistrer un paiement" (click)="ouvrir(r.id, 'payer')"><mat-icon>payments</mat-icon></button>
+                            }
+                            @if (modifiable(r)) {
+                              <button type="button" class="bea-mg__icon-btn" title="Modifier" (click)="ouvrir(r.id, 'modifier')"><mat-icon>edit</mat-icon></button>
+                            }
+                            <button type="button" class="bea-mg__icon-btn" title="Plus d'actions" aria-haspopup="menu" (click)="menuFacture($event, r)"><mat-icon>more_vert</mat-icon></button>
+                          </span>
+                        </td>
                       </tr>
                     } @empty {
-                      <tr><td colspan="7"><div class="bea-ct-empty"><mat-icon>event_available</mat-icon><p>Aucune échéance ouverte.</p></div></td></tr>
+                      <tr><td colspan="8"><div class="bea-ct-empty"><mat-icon>event_available</mat-icon><p>Aucune échéance ouverte.</p></div></td></tr>
                     }
                   }
                 </tbody>
               </table>
             </div>
+            <bea-pager [etat]="tEcheances" />
           </div>
         }
 
@@ -240,12 +272,21 @@ const TITRES: Record<Mode, { titre: string; sous: string; icon: string }> = {
                   </div>
                   <div class="bea-fx-alert__actions">
                     @if (al.facture_id) {
-                      <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="ouvrir(al.facture_id)"><mat-icon>open_in_new</mat-icon> Facture</button>
-                    }
-                    @if (al.type === 'manquante' && al.point_id) {
-                      @if (store.cap().create) {
-                        <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="saisirManquante(al)"><mat-icon>post_add</mat-icon> Saisir</button>
+                      <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="ouvrir(al.facture_id)"><mat-icon>visibility</mat-icon> Voir</button>
+                      @if ((al.type === 'retard' || al.type === 'proche') && store.cap().payment_create) {
+                        <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="ouvrir(al.facture_id, 'payer')"><mat-icon>payments</mat-icon> Payer</button>
                       }
+                      @if (al.type === 'hausse' && store.cap().validate) {
+                        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="ouvrir(al.facture_id, 'contester')"><mat-icon>report</mat-icon> Contester</button>
+                      }
+                      @if (al.type === 'doublon' && store.cap().delete) {
+                        <button type="button" class="bea-mg__btn bea-mg__btn--ghost bea-mg__btn--danger" (click)="ouvrir(al.facture_id, 'annuler')"><mat-icon>block</mat-icon> Annuler</button>
+                      }
+                    }
+                    @if (al.type === 'manquante' && al.point_id && store.cap().create) {
+                      <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="saisirManquante(al)"><mat-icon>post_add</mat-icon> Saisir</button>
+                    }
+                    @if (al.point_id) {
                       <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="base + '/points'" [queryParams]="{ point: al.point_id }"><mat-icon>place</mat-icon> Point</a>
                     }
                   </div>
@@ -259,11 +300,41 @@ const TITRES: Record<Mode, { titre: string; sous: string; icon: string }> = {
       }
     </section>
 
+    @if (paiementVu(); as pv) {
+      <bea-fx-paiement-drawer [factureId]="pv.p.facture_id" [paiementId]="pv.p.id" [ongletInitial]="pv.onglet" [editionInitiale]="pv.edition"
+        (fermer)="paiementVu.set(null)" (modifie)="charger()" (ouvrirFacture)="paiementVu.set(null); ouvrir($event)" />
+    }
     @if (factureId(); as id) {
-      <bea-fx-facture-drawer [factureId]="id" (closed)="factureId.set(null)" (changed)="charger()" />
+      <bea-fx-facture-drawer [factureId]="id" [actionInitiale]="actionInitiale()" (closed)="fermerFacture()" (changed)="charger()" />
     }
     @if (saisie(); as p) {
       <bea-fx-facture-form [preset]="p" (saved)="apresSaisie($event)" (closed)="saisie.set(null)" />
+    }
+    <bea-row-menu [menu]="rowMenu" />
+
+    @if (choixFacture(); as liste) {
+      <div class="bea-mg__backdrop" (click)="choixFacture.set(null)"></div>
+      <div class="bea-mg__modal bea-ct-modal" role="dialog" aria-modal="true" aria-labelledby="bea-fx-choix-title">
+        <header class="bea-ct-modal__head">
+          <h2 id="bea-fx-choix-title"><mat-icon>add_card</mat-icon> Nouveau paiement — choisir la facture</h2>
+          <button type="button" class="bea-ct-view__close" aria-label="Fermer" (click)="choixFacture.set(null)"><mat-icon>close</mat-icon></button>
+        </header>
+        <div class="bea-ct-modal__body">
+          <label class="bea-mg__field">Rechercher <input type="search" [value]="choixQ()" (input)="choixQ.set($any($event.target).value)" placeholder="Référence, point, fournisseur…" /></label>
+          <ul class="bea-ct-dash__list bea-fx-choix">
+            @for (r of choixFiltre(); track r.id) {
+              <li>
+                <button type="button" class="bea-fx-choix__item" (click)="choixFacture.set(null); ouvrir(r.id, 'payer')">
+                  <span><strong>{{ r.reference }}</strong> · {{ r.point_nom || r.fournisseur || '—' }}<small class="bea-fx-sub">{{ r.periode_label }} · échéance {{ date(r.date_echeance) }}</small></span>
+                  <strong>{{ r.reste | montant }}</strong>
+                </button>
+              </li>
+            } @empty {
+              <li class="bea-ct-dash__none">{{ liste.length ? 'Aucune facture ne correspond.' : 'Aucune facture validée avec un reste à payer.' }}</li>
+            }
+          </ul>
+        </div>
+      </div>
     }
   `,
 })
@@ -289,7 +360,17 @@ export class FacturationSuiviComponent implements OnInit {
   readonly tranche = signal('');
   readonly typeAlerte = signal('');
   readonly factureId = signal<string | null>(null);
-  readonly saisie = signal<{ point_facturation_id: string; annee?: number; mois?: number } | null>(null);
+  readonly saisie = signal<{ point_facturation_id?: string; annee?: number; mois?: number } | null>(null);
+  readonly actionInitiale = signal<FactureActionInitiale | null>(null);
+  readonly rowMenu = new RowMenu();
+  readonly choixFacture = signal<FactureRow[] | null>(null);
+  readonly choixQ = signal('');
+  readonly choixFiltre = computed(() => {
+    const q = this.choixQ().trim().toLowerCase();
+    return (this.choixFacture() ?? []).filter((r) =>
+      !q || [r.reference, r.numero_fournisseur, r.point_nom, r.fournisseur, r.agence, r.periode_label].some((x) => (x ?? '').toLowerCase().includes(q)),
+    );
+  });
   readonly saisie$ = new Subject<void>();
   private readonly drawer = viewChild(FactureDrawerComponent);
   private readonly form = viewChild(FactureFormComponent);
@@ -332,6 +413,75 @@ export class FacturationSuiviComponent implements OnInit {
     return (this.alertes()?.items ?? []).filter((a) => !t || a.type === t);
   });
 
+  readonly paiementVu = signal<{ p: PaiementRow; onglet: string; edition: boolean } | null>(null);
+
+  voirPaiement(p: PaiementRow, onglet = 'detail', edition = false): void {
+    this.paiementVu.set({ p, onglet, edition });
+  }
+
+  menuPaiement(ev: MouseEvent, p: PaiementRow): void {
+    const items: RowMenuItem[] = [
+      { icone: 'attach_file', label: 'Justificatif', action: () => this.voirPaiement(p, 'justificatif') },
+      { icone: 'history', label: 'Historique', action: () => this.voirPaiement(p, 'historique') },
+      { icone: 'receipt_long', label: 'Ouvrir la facture', action: () => this.ouvrir(p.facture_id) },
+    ];
+    if (p.statut !== 'ANNULE' && this.store.cap().payment_delete) {
+      items.push({ icone: 'undo', label: 'Annuler le paiement', danger: true, action: () => this.annulerPaiement(p) });
+    }
+    this.rowMenu.ouvrir(ev, items);
+  }
+
+  modifiable(r: FactureRow): boolean {
+    return factureModifiable(r, this.store.cap());
+  }
+
+  payable(r: FactureRow): boolean {
+    return facturePayable(r, this.store.cap());
+  }
+
+  menuFacture(ev: MouseEvent, r: FactureRow): void {
+    const cap = this.store.cap();
+    const items: RowMenuItem[] = actionsFacture(r, cap).map((a) => ({
+      icone: ACTION_LABELS[a]?.icon ?? 'bolt',
+      label: ACTION_LABELS[a]?.label ?? a,
+      danger: a === 'annuler',
+      action: () => this.ouvrir(r.id, a),
+    }));
+    if (cap.documents_view) items.push({ icone: 'folder_open', label: 'Documents', action: () => this.ouvrir(r.id, 'documents') });
+    if (cap.payment_view) items.push({ icone: 'payments', label: 'Paiements', action: () => this.ouvrir(r.id, 'paiements') });
+    items.push({ icone: 'history', label: 'Historique', action: () => this.ouvrir(r.id, 'historique') });
+    this.rowMenu.ouvrir(ev, items);
+  }
+
+  nouvelleFacture(): void {
+    this.saisie.set({});
+  }
+
+  nouveauPaiement(): void {
+    this.choixQ.set('');
+    this.api.get<{ items: FactureRow[] }>('/mg/factures/echeances').subscribe({
+      next: (r) => this.choixFacture.set(r.items.filter((x) => (x.reste ?? 0) > 0)),
+      error: (e) => void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Factures à payer indisponibles')),
+    });
+  }
+
+  fermerFacture(): void {
+    this.actionInitiale.set(null);
+    this.factureId.set(null);
+  }
+  readonly tPaiements = new TableState<PaiementRow>(() => this.paiements() ?? [], {});
+  readonly tEcheances = new TableState<FactureRow>(() => this.echeancesFiltrees(), {});
+
+  imprimer(): void {
+    const rows = this.paiements() ?? [];
+    const ok = imprimerTableau(
+      'Paiements des factures',
+      ['Paiement', 'Date', 'Facture', 'Période', 'Point', 'Fournisseur', 'Agence', 'Mode', 'Réf. bancaire', 'Montant', 'Statut'],
+      rows.map((p) => [p.reference, this.date(p.date_paiement), p.facture_reference, p.periode_label, p.point_nom, p.fournisseur, p.agence, p.mode_paiement, p.reference_paiement, p.montant, this.statut(p.statut)]),
+    );
+    if (!ok) this.feedback.warning({ title: 'Impression bloquée', message: 'Autorisez les fenêtres pour ce site puis réessayez.' });
+  }
+
   ngOnInit(): void {
     this.store.charger();
     this.mode.set((this.route.snapshot.data['mode'] as Mode) ?? 'echeances');
@@ -366,7 +516,8 @@ export class FacturationSuiviComponent implements OnInit {
     this.router.navigate([], { queryParams: { echeance: this.tranche() || null }, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
-  ouvrir(id: string): void {
+  ouvrir(id: string, action: FactureActionInitiale | null = null): void {
+    this.actionInitiale.set(action);
     this.factureId.set(id);
   }
 
@@ -378,7 +529,7 @@ export class FacturationSuiviComponent implements OnInit {
   apresSaisie(f: FactureDetail): void {
     this.saisie.set(null);
     this.charger();
-    this.factureId.set(f.id);
+    this.ouvrir(f.id);
   }
 
   annulerPaiement(p: PaiementRow): void {

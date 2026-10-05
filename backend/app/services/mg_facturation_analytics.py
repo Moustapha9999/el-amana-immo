@@ -6,8 +6,6 @@ Aucune statistique stockée : tout est recalculé depuis les factures (origine F
 from __future__ import annotations
 
 import calendar
-import csv
-import io
 from collections import defaultdict
 from datetime import date, timedelta
 
@@ -590,16 +588,6 @@ class MgFacturationAnalytics:
         full_title = f"BEA DIGITAL — {title}"
         subtitle = f"Généré par {user.full_name or user.email}"
         filename = f"factures-{key}"
-        if fmt == "csv":
-            buf = io.StringIO()
-            w = csv.writer(buf, delimiter=";")
-            w.writerow(headers)
-            w.writerows(rows)
-            return Response(
-                content=buf.getvalue().encode("utf-8-sig"),
-                media_type="text/csv; charset=utf-8",
-                headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
-            )
         if fmt == "pdf":
             return Response(
                 content=build_styled_pdf(report_title=full_title, headers=headers, rows=rows, subtitle=subtitle,

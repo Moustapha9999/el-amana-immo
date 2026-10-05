@@ -138,6 +138,8 @@ export class ContratsDocumentsComponent implements OnChanges, OnDestroy {
   @Input() lectureSeule = false;
   @Input() typesDocument: { code: string; libelle: string }[] = [];
   @Input() tailleMaxMo = 15;
+  /** Typologie présélectionnée (ex. PREUVE_PAIEMENT depuis un paiement). */
+  @Input() typeInitial: string | null = null;
 
   private readonly api = inject(ApiService);
   private readonly feedback = inject(FeedbackService);
@@ -164,6 +166,7 @@ export class ContratsDocumentsComponent implements OnChanges, OnDestroy {
   });
 
   ngOnChanges(): void {
+    if (this.typeInitial) this.docType.set(this.typeInitial);
     this.reload();
   }
 

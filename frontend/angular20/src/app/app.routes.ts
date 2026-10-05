@@ -47,11 +47,8 @@ import { NotesRapportsComponent } from './notes-frais/notes-rapports.component';
 import { NotesPaiementsComponent } from './notes-frais/notes-paiements.component';
 import { NotesParametresComponent } from './notes-frais/notes-parametres.component';
 import { ContratsDashboardComponent } from './contrats-echeances/contrats-dashboard.component';
-import { ContratsListComponent } from './contrats-echeances/contrats-list.component';
 import { ContratsFicheComponent } from './contrats-echeances/contrats-fiche.component';
 import { withUnsavedChangesGuard } from './core/feedback/unsaved-changes.guard';
-import { ContratsParametresComponent } from './contrats-echeances/contrats-parametres.component';
-import { ContratsRapportsComponent } from './contrats-echeances/contrats-rapports.component';
 import {
   DmgBatchesComponent,
   DmgDashboardComponent,
@@ -100,6 +97,8 @@ import {
   ArchivesGeneralesParametresComponent,
   ArchivesGeneralesVerifierComponent,
 } from './archives-generales/archives-generales-pages.component';
+
+const contratsListe = () => import('./contrats-echeances/contrats-list.component').then((m) => m.ContratsListComponent);
 
 /**
  * Contrat de routes (voir plateforme/module-routing.contract.ts) :
@@ -190,14 +189,14 @@ export const routes: Routes = withUnsavedChangesGuard([
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
       { path: 'dashboard', component: ContratsDashboardComponent },
-      { path: 'liste', component: ContratsListComponent },
-      { path: 'alertes', component: ContratsListComponent },
-      { path: 'echeances', component: ContratsListComponent },
-      { path: 'paiements', component: ContratsListComponent },
-      { path: 'renouvellements', component: ContratsListComponent },
+      { path: 'liste', loadComponent: contratsListe },
+      { path: 'alertes', loadComponent: contratsListe },
+      { path: 'echeances', loadComponent: contratsListe },
+      { path: 'paiements', loadComponent: contratsListe },
+      { path: 'renouvellements', loadComponent: contratsListe },
       { path: 'nouveau', component: ContratsFicheComponent },
-      { path: 'rapports', component: ContratsRapportsComponent },
-      { path: 'parametres', component: ContratsParametresComponent },
+      { path: 'rapports', loadComponent: () => import('./contrats-echeances/contrats-rapports.component').then((m) => m.ContratsRapportsComponent) },
+      { path: 'parametres', loadComponent: () => import('./contrats-echeances/contrats-parametres.component').then((m) => m.ContratsParametresComponent) },
       {
         path: 'factures',
         loadComponent: () =>

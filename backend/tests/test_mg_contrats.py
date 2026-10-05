@@ -8,7 +8,9 @@ import pytest
 from app.core.exceptions import AppError
 from app.services.mg_contrats_service import (
     MgContratsService,
+    _match_ligne,
     ajouter_mois,
+    montant_annualise,
     doit_rappeler,
     echeance_statut,
     niveau_alerte,
@@ -192,3 +194,23 @@ def test_jalons_de_rappel():
     assert not doit_rappeler(8, 90)
     assert doit_rappeler(-1, 30) and doit_rappeler(-8, 30)
     assert not doit_rappeler(-2, 30)
+
+
+def test_montant_annualise_ramene_a_douze_mois():
+    assert montant_annualise(Decimal("1200"), date(2026, 1, 1), date(2026, 12, 31)) == Decimal("1200.00")
+    assert montant_annualise(Decimal("2400"), date(2026, 1, 1), date(2027, 12, 31)) == Decimal("1200.00")
+    assert montant_annualise(Decimal("600"), date(2026, 1, 1), date(2026, 6, 30)) == Decimal("1209.94")
+    assert montant_annualise(Decimal("500"), date(2026, 1, 1), None) == Decimal("500")
+
+
+def test_filtres_lignes_echeances_paiements():
+    r = {"reference": "CT-2026-0001", "titre": "Gardiennage", "fournisseur": "SECURIS", "agence": "Tevragh Zeina"}
+    base = dict(q=None, fournisseur=None, agence=None, jour=date(2026, 5, 10), date_du=None, date_au=None)
+    assert _match_ligne(r, **base)
+    assert _match_ligne(r, **{**base, "q": "garDi"})
+    assert not _match_ligne(r, **{**base, "q": "nettoyage"})
+    assert not _match_ligne(r, **{**base, "fournisseur": "AUTRE"})
+    assert _match_ligne(r, **{**base, "agence": "Tevragh Zeina"})
+    assert not _match_ligne(r, **{**base, "date_du": date(2026, 6, 1)})
+    assert not _match_ligne(r, **{**base, "date_au": date(2026, 5, 1)})
+    assert _match_ligne(r, **{**base, "date_du": date(2026, 5, 1), "date_au": date(2026, 5, 31)})

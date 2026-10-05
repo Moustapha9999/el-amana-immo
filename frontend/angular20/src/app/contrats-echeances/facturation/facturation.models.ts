@@ -213,6 +213,7 @@ export interface PointRow {
   type_facture: string | null;
   periodicite: string;
   adresse: string | null;
+  telephone: string | null;
   date_debut: string | null;
   date_fin: string | null;
   statut: string;
@@ -380,6 +381,41 @@ export const ACTION_LABELS: Record<string, { label: string; icon: string }> = {
   annuler: { label: 'Annuler', icon: 'block' },
   archiver: { label: 'Archiver', icon: 'inventory_2' },
 };
+
+/** Miroir de `TRANSITIONS` / `CAPACITE_ACTION` (backend) pour les menus de ligne ; le backend reste juge. */
+const TRANSITIONS_FX: Record<WorkflowFacture, { sources: string[]; cap: keyof FxCapacites }> = {
+  enregistrer: { sources: ['BROUILLON'], cap: 'update' },
+  controler: { sources: ['BROUILLON', 'RECUE', 'CONTESTEE'], cap: 'update' },
+  valider: { sources: ['RECUE', 'A_CONTROLER'], cap: 'validate' },
+  contester: { sources: ['RECUE', 'A_CONTROLER', 'VALIDEE'], cap: 'validate' },
+  annuler: { sources: ['BROUILLON', 'RECUE', 'A_CONTROLER', 'VALIDEE', 'CONTESTEE'], cap: 'delete' },
+  archiver: { sources: ['VALIDEE', 'ANNULEE'], cap: 'archive' },
+};
+
+export type WorkflowFacture = 'enregistrer' | 'controler' | 'valider' | 'contester' | 'annuler' | 'archiver';
+
+export function actionsFacture(r: FactureRow, cap: Partial<FxCapacites>): WorkflowFacture[] {
+  const paye = (r.montant_paye ?? 0) > 0;
+  return (Object.keys(TRANSITIONS_FX) as WorkflowFacture[]).filter((a) => {
+    const t = TRANSITIONS_FX[a];
+    if (!t.sources.includes(r.statut) || !cap[t.cap]) return false;
+    if ((a === 'contester' || a === 'annuler') && paye) return false;
+    if (a === 'archiver' && r.statut === 'VALIDEE' && r.statut_paiement !== 'PAYEE') return false;
+    return true;
+  });
+}
+
+export function factureModifiable(r: FactureRow, cap: Partial<FxCapacites>): boolean {
+  return !!cap.update && !['ANNULEE', 'ARCHIVEE'].includes(r.statut);
+}
+
+export function facturePayable(r: FactureRow, cap: Partial<FxCapacites>): boolean {
+  return !!cap.payment_create && r.statut === 'VALIDEE' && (r.reste ?? 0) > 0;
+}
+
+export function factureSupprimable(r: FactureRow, cap: Partial<FxCapacites>): boolean {
+  return !!cap.delete && ['BROUILLON', 'RECUE'].includes(r.statut) && !(r.montant_paye ?? 0);
+}
 
 export const ALERTE_LABELS: Record<string, { label: string; icon: string }> = {
   manquante: { label: 'Factures manquantes', icon: 'event_busy' },

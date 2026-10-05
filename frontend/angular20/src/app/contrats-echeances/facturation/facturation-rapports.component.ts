@@ -39,7 +39,7 @@ const CATALOGUE = [
         <div>
           <p class="bea-stock-page__kicker">Contrats &amp; échéances · Factures</p>
           <h1>Rapports</h1>
-          <p class="bea-ct-head__sub">Aperçu à l’écran puis export PDF, Excel ou CSV, ou impression. Chaque export est tracé dans l’audit.</p>
+          <p class="bea-ct-head__sub">Aperçu à l’écran puis export PDF ou Excel, ou impression. Chaque export est tracé dans l’audit.</p>
         </div>
         <div class="bea-mg__actions"><a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="base"><mat-icon>dashboard</mat-icon> Vue 360°</a></div>
       </header>
@@ -99,7 +99,6 @@ const CATALOGUE = [
             @if (store.cap().export || store.cap().reports) {
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="exporter('pdf')"><mat-icon>picture_as_pdf</mat-icon> PDF</button>
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="exporter('xlsx')"><mat-icon>table_view</mat-icon> Excel</button>
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="exporter('csv')"><mat-icon>description</mat-icon> CSV</button>
             }
           </div>
         </div>
@@ -184,7 +183,7 @@ export class FacturationRapportsComponent implements OnInit {
     });
   }
 
-  exporter(format: 'pdf' | 'xlsx' | 'csv'): void {
+  exporter(format: 'pdf' | 'xlsx'): void {
     const key = this.cle();
     this.feedback
       .run(() => this.api.download(`/mg/factures/rapports/${key}`, this.params(format)), {

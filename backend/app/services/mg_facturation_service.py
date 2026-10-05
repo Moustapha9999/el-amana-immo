@@ -1711,6 +1711,7 @@ class MgFacturationService:
             "type_facture": p.type_facture,
             "periodicite": p.periodicite,
             "adresse": p.adresse,
+            "telephone": p.telephone,
             "date_debut": _iso(p.date_debut),
             "date_fin": _iso(p.date_fin),
             "statut": p.statut,
@@ -1829,6 +1830,7 @@ class MgFacturationService:
             type_facture=(_clean(data.type_facture) or "").upper() or None,
             periodicite=periodicite,
             adresse=_clean(data.adresse),
+            telephone=_clean(data.telephone),
             date_debut=data.date_debut,
             date_fin=data.date_fin,
             statut=(data.statut or "ACTIF").upper(),
@@ -1892,7 +1894,7 @@ class MgFacturationService:
                 raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Agence hors de votre périmètre")
         if "contrat_id" in champs:
             p.contrat_id = (await self._contrat(data.contrat_id)).id if data.contrat_id else None
-        for champ in ("compteur", "adresse", "description"):
+        for champ in ("compteur", "adresse", "telephone", "description"):
             if champ in champs:
                 setattr(p, champ, _clean(getattr(data, champ)))
         if "type_facture" in champs:
@@ -1905,7 +1907,8 @@ class MgFacturationService:
         p.updated_by = user.id
         after = self._point_dict(p, None, None)
         changes = [k for k in ("nom", "type_point", "reference_fournisseur", "compteur", "agence_id", "fournisseur_id",
-                               "contrat_id", "type_facture", "periodicite", "statut", "date_debut", "date_fin", "adresse")
+                               "contrat_id", "type_facture", "periodicite", "statut", "date_debut", "date_fin", "adresse",
+                               "telephone")
                    if before.get(k) != after.get(k)]
         self._event(EVT_POINT, p.id, "MODIFICATION", "Modification : " + (", ".join(changes) or "aucun changement"), user)
         await self._audit(user, "factures.point.update", p.id, entity="point_facturation",

@@ -513,6 +513,7 @@ class MgPointFacturation(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, B
     type_facture: Mapped[str | None] = mapped_column(String(40), nullable=True)
     periodicite: Mapped[str] = mapped_column(String(20), default="MENSUEL")
     adresse: Mapped[str | None] = mapped_column(Text, nullable=True)
+    telephone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     date_debut: Mapped[date | None] = mapped_column(Date, nullable=True)
     date_fin: Mapped[date | None] = mapped_column(Date, nullable=True)
     statut: Mapped[str] = mapped_column(String(20), default="ACTIF")

@@ -19,6 +19,7 @@ import {
   Contrat,
   ContratsConfig,
   Echeance,
+  FacturesContrat,
   PERIODICITE_LABELS,
   Paiement,
   RECONDUCTION_LABELS,
@@ -37,23 +38,6 @@ import {
 
 type TransitionAction = 'soumettre' | 'valider' | 'suspendre' | 'reprendre' | 'expirer' | 'archiver';
 type Onglet = 'echeances' | 'paiements' | 'avenants' | 'factures' | 'documents' | 'historique';
-
-interface FacturesContrat {
-  nb: number;
-  total: number;
-  reste: number;
-  items: {
-    id: string;
-    reference: string;
-    numero_fournisseur: string | null;
-    point_nom: string | null;
-    periode_label: string | null;
-    date_facture: string;
-    montant_a_payer: number | null;
-    reste: number | null;
-    statut_affiche: string;
-  }[];
-}
 
 const TRANSITIONS: Record<TransitionAction, { preset: UiDialogAction; question: string; hint: string; loading: string; success: string; errorTitle: string }> = {
   soumettre: {

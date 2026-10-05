@@ -40,6 +40,9 @@ RAPPORTS = {
     "financier_agence",
     "financier_periode",
     "renouvellements",
+    "registre",
+    "echeancier",
+    "reglements",
 }
 
 
@@ -164,10 +167,18 @@ async def list_echeances(
     statut: str | None = None,
     type_echeance: str | None = None,
     contrat_id: UUID | None = None,
+    q: str | None = None,
+    fournisseur: str | None = None,
+    agence: str | None = None,
+    date_du: date | None = None,
+    date_au: date | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.contrats.view")),
 ):
-    return await (await _svc(db, user)).list_echeances(horizon, statut, type_echeance, contrat_id)
+    return await (await _svc(db, user)).list_echeances(
+        horizon, statut, type_echeance, contrat_id,
+        q=q, fournisseur=fournisseur, agence=agence, date_du=date_du, date_au=date_au,
+    )
 
 
 @router.patch("/echeances/{echeance_id}", dependencies=_module)
@@ -194,10 +205,20 @@ async def delete_echeance(
 async def list_paiements(
     statut: str | None = None,
     contrat_id: UUID | None = None,
+    q: str | None = None,
+    fournisseur: str | None = None,
+    agence: str | None = None,
+    date_du: date | None = None,
+    date_au: date | None = None,
+    montant_min: Decimal | None = Query(None, ge=0),
+    montant_max: Decimal | None = Query(None, ge=0),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.contrats.view")),
 ):
-    return await (await _svc(db, user)).list_paiements(statut, contrat_id)
+    return await (await _svc(db, user)).list_paiements(
+        statut, contrat_id, q=q, fournisseur=fournisseur, agence=agence, date_du=date_du, date_au=date_au,
+        montant_min=montant_min, montant_max=montant_max,
+    )
 
 
 @router.patch("/paiements/{paiement_id}", response_model=ContratDetail, dependencies=_module)
@@ -310,9 +331,24 @@ async def delete_parametre(
 @router.get("/rapports/{report_key}", dependencies=_module)
 async def rapport(
     report_key: str,
-    fmt: str = Query("json", pattern="^(json|csv|xlsx|pdf)$"),
+    fmt: str = Query("json", pattern="^(json|xlsx|pdf)$"),
     annee: int | None = Query(None, ge=2000, le=2100),
     periode: str | None = Query(None, pattern="^(trimestre|annee)$"),
+    q: str | None = None,
+    statut: str | None = None,
+    etat: str | None = None,
+    type_contrat: str | None = None,
+    agence_id: UUID | None = None,
+    fournisseur_id: UUID | None = None,
+    horizon: str | None = None,
+    type_echeance: str | None = None,
+    contrat_id: UUID | None = None,
+    fournisseur: str | None = None,
+    agence: str | None = None,
+    date_du: date | None = None,
+    date_au: date | None = None,
+    montant_min: Decimal | None = Query(None, ge=0),
+    montant_max: Decimal | None = Query(None, ge=0),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.contrats.view")),
 ):
@@ -320,7 +356,13 @@ async def rapport(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Rapport inconnu")
     if fmt != "json":
         await _require(user, db, "mg.contrats.export")
-    return await (await _svc(db, user)).export(user, report_key, fmt, annee=annee, periode=periode)
+    filtres = {
+        "q": q, "statut": statut, "etat": etat, "type_contrat": type_contrat, "agence_id": agence_id,
+        "fournisseur_id": fournisseur_id, "horizon": horizon, "type_echeance": type_echeance,
+        "contrat_id": contrat_id, "fournisseur": fournisseur, "agence": agence, "date_du": date_du, "date_au": date_au,
+        "montant_min": montant_min, "montant_max": montant_max,
+    }
+    return await (await _svc(db, user)).export(user, report_key, fmt, annee=annee, periode=periode, filtres=filtres)
 
 
 @router.get("", response_model=list[ContratOut], dependencies=_module)

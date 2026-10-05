@@ -288,6 +288,79 @@ export const ACTION_LABELS: Record<string, string> = {
   paiement_supprimer: 'Paiement supprimé',
 };
 
+export interface FacturesContrat {
+  nb: number;
+  total: number;
+  reste: number;
+  items: {
+    id: string;
+    reference: string;
+    numero_fournisseur: string | null;
+    point_nom: string | null;
+    periode_label: string | null;
+    date_facture: string;
+    montant_a_payer: number | null;
+    reste: number | null;
+    statut_affiche: string;
+  }[];
+}
+
+export interface DashboardContrats {
+  total: number;
+  actifs: number;
+  suspendus: number;
+  expires: number;
+  expirant_bientot: number;
+  a_renouveler: number;
+  montant_annuel: number;
+  montant_mensuel: number;
+  montant_actifs: number;
+}
+
+/** Libellés des statuts d'échéance tels qu'affichés dans les listes (codes serveur inchangés). */
+export const ECHEANCE_STATUT_LABELS: Record<string, string> = {
+  A_VENIR: 'À venir',
+  DUE: 'Bientôt',
+  EN_RETARD: 'Échue',
+  PAYEE: 'Payée',
+  FAITE: 'Réalisée',
+  ANNULEE: 'Annulée',
+};
+
+export const PREFIXE_REPORT = 'Reportée';
+
+export function echeanceStatutLabel(statut: string, commentaire?: string | null): string {
+  if (statut === 'A_VENIR' || statut === 'DUE') {
+    if (commentaire?.startsWith(PREFIXE_REPORT)) return 'Reportée';
+  }
+  return ECHEANCE_STATUT_LABELS[statut] ?? statutLabel(statut);
+}
+
+/** Statut d'un renouvellement, dérivé du contrat issu de la reconduction expresse. */
+export function renouvellementStatut(c: { statut: string; date_debut: string }): { code: string; label: string } {
+  switch (c.statut) {
+    case 'BROUILLON':
+    case 'EN_PREPARATION':
+      return { code: 'BROUILLON', label: 'En cours' };
+    case 'EN_VALIDATION':
+      return { code: 'EN_VALIDATION', label: 'En validation' };
+    case 'REJETE':
+      return { code: 'REJETE', label: 'Refusé' };
+    case 'ANNULE':
+      return { code: 'ANNULE', label: 'Annulé' };
+    case 'ACTIF':
+      return c.date_debut > aujourdhui() ? { code: 'A_VENIR', label: 'Validé' } : { code: 'ACTIF', label: 'Renouvelé' };
+    default:
+      return { code: 'ACTIF', label: 'Renouvelé' };
+  }
+}
+
+export function variation(avant: number, apres: number): { ecart: number; pct: number | null; sens: 'hausse' | 'baisse' | 'stable' } {
+  const ecart = Math.round((apres - avant) * 100) / 100;
+  const pct = avant ? Math.round((ecart / avant) * 10000) / 100 : null;
+  return { ecart, pct, sens: ecart > 0 ? 'hausse' : ecart < 0 ? 'baisse' : 'stable' };
+}
+
 export function num(v: Num | undefined): number {
   if (v === null || v === undefined || v === '') return 0;
   const n = typeof v === 'number' ? v : Number(v);

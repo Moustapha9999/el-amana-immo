@@ -8,12 +8,18 @@ import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ApiService } from '../../core/services/api.service';
 import { MontantPipe } from '../../shared/montant.pipe';
-import { FactureDrawerComponent } from './facture-drawer.component';
+import { FactureActionInitiale, FactureDrawerComponent } from './facture-drawer.component';
 import { FactureFormComponent } from './facture-form.component';
 import {
+  ACTION_LABELS,
   FX_BASE,
   FactureDetail,
   FacturePage,
+  FactureRow,
+  actionsFacture,
+  facturePayable,
+  factureModifiable,
+  factureSupprimable,
   MOIS,
   TYPE_POINT_ICONS,
   VUES,
@@ -26,6 +32,8 @@ import {
   telechargerBlob,
 } from './facturation.models';
 import { FacturationStore } from './facturation.store';
+import { imprimerTableau } from '../shared/impression';
+import { RowMenu, RowMenuComponent, RowMenuItem } from '../shared/row-menu';
 
 const FILTRES_VIDES = {
   q: '',
@@ -46,7 +54,7 @@ const FILTRES_VIDES = {
 @Component({
   selector: 'bea-fx-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MatIconModule, MontantPipe, FactureDrawerComponent, FactureFormComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatIconModule, MontantPipe, FactureDrawerComponent, FactureFormComponent, RowMenuComponent],
   template: `
     <section class="bea-mg bea-nf bea-ct bea-fx">
       <header class="bea-mg__head">
@@ -59,13 +67,13 @@ const FILTRES_VIDES = {
           @if (store.cap().create) {
             <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="nouvelle()"><mat-icon>post_add</mat-icon> Nouvelle facture</button>
           }
-          @if (store.cap().export || store.cap().reports) {
-            <div class="bea-fx-export">
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="exportBusy()" (click)="exporter('xlsx')"><mat-icon>table_view</mat-icon> Excel</button>
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="exportBusy()" (click)="exporter('csv')"><mat-icon>description</mat-icon> CSV</button>
+          <div class="bea-fx-export">
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="exportBusy()" (click)="imprimer()"><mat-icon>print</mat-icon> Imprimer</button>
+            @if (store.cap().export || store.cap().reports) {
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="exportBusy()" (click)="exporter('pdf')"><mat-icon>picture_as_pdf</mat-icon> PDF</button>
-            </div>
-          }
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="exportBusy()" (click)="exporter('xlsx')"><mat-icon>table_view</mat-icon> Excel</button>
+            }
+          </div>
         </div>
       </header>
 
@@ -189,16 +197,17 @@ const FILTRES_VIDES = {
                 <th class="is-num"><button type="button" class="bea-fx-sort" (click)="trier('montant')">Montant <mat-icon>{{ icone('montant') }}</mat-icon></button></th>
                 <th class="is-num">Reste</th>
                 <th><button type="button" class="bea-fx-sort" (click)="trier('statut')">Statut <mat-icon>{{ icone('statut') }}</mat-icon></button></th>
+                <th class="is-actions">Actions</th>
               </tr>
             </thead>
             <tbody>
               @if (page() === null) {
                 @for (i of [1, 2, 3, 4, 5, 6]; track i) {
-                  <tr class="bea-fx-skelrow"><td colspan="10"><span class="bea-fx-skel bea-fx-skel--line"></span></td></tr>
+                  <tr class="bea-fx-skelrow"><td colspan="11"><span class="bea-fx-skel bea-fx-skel--line"></span></td></tr>
                 }
               } @else {
                 @for (r of page()!.items; track r.id; let i = $index) {
-                  <tr class="bea-fx-row" [class.is-active]="factureId() === r.id" [style.animation-delay.ms]="i * 18" (click)="ouvrir(r.id)">
+                  <tr class="bea-fx-row" [class.is-active]="factureId() === r.id" [style.animation-delay.ms]="i < 20 ? i * 18 : 0" (click)="ouvrir(r.id)">
                     <td>
                       <strong class="bea-fx-ref">{{ r.reference }}</strong>
                       @if (r.numero_fournisseur) { <small class="bea-fx-sub">N° {{ r.numero_fournisseur }}</small> }
@@ -227,10 +236,22 @@ const FILTRES_VIDES = {
                       <span class="bea-ct-badge" [attr.data-tone]="tone(r.statut_affiche)">{{ statut(r.statut_affiche) }}</span>
                       @if (r.nb_documents) { <mat-icon class="bea-fx-clip" title="Pièces jointes">attach_file</mat-icon> }
                     </td>
+                    <td class="is-nowrap" (click)="$event.stopPropagation()">
+                      <span class="bea-row-actions">
+                        <button type="button" class="bea-mg__icon-btn" title="Voir" (click)="ouvrir(r.id)"><mat-icon>visibility</mat-icon></button>
+                        @if (modifiable(r)) {
+                          <button type="button" class="bea-mg__icon-btn" title="Modifier" (click)="ouvrir(r.id, 'modifier')"><mat-icon>edit</mat-icon></button>
+                        }
+                        @if (payable(r)) {
+                          <button type="button" class="bea-mg__icon-btn" title="Enregistrer un paiement" (click)="ouvrir(r.id, 'payer')"><mat-icon>payments</mat-icon></button>
+                        }
+                        <button type="button" class="bea-mg__icon-btn" title="Plus d'actions" aria-haspopup="menu" (click)="menuFacture($event, r)"><mat-icon>more_vert</mat-icon></button>
+                      </span>
+                    </td>
                   </tr>
                 } @empty {
                   <tr>
-                    <td colspan="10">
+                    <td colspan="11">
                       <div class="bea-ct-empty">
                         <mat-icon>receipt_long</mat-icon>
                         <p>Aucune facture ne correspond.</p>
@@ -260,8 +281,9 @@ const FILTRES_VIDES = {
     </section>
 
     @if (factureId(); as id) {
-      <bea-fx-facture-drawer [factureId]="id" (closed)="fermer()" (changed)="charger(true)" />
+      <bea-fx-facture-drawer [factureId]="id" [actionInitiale]="actionInitiale()" (closed)="fermer()" (changed)="charger(true)" />
     }
+    <bea-row-menu [menu]="rowMenu" />
     @if (formOuvert()) {
       <bea-fx-facture-form [preset]="preset()" (saved)="apresCreation($event)" (closed)="formOuvert.set(false)" />
     }
@@ -291,6 +313,8 @@ export class FacturationListComponent implements OnInit {
   readonly numero = signal(1);
   readonly taille = signal(25);
   readonly factureId = signal<string | null>(null);
+  readonly actionInitiale = signal<FactureActionInitiale | null>(null);
+  readonly rowMenu = new RowMenu();
   readonly formOuvert = signal(false);
   readonly preset = signal<{ point_facturation_id?: string; annee?: number; mois?: number } | null>(null);
   readonly saisie$ = new Subject<void>();
@@ -414,14 +438,40 @@ export class FacturationListComponent implements OnInit {
     this.charger(false);
   }
 
-  ouvrir(id: string): void {
+  ouvrir(id: string, action: FactureActionInitiale | null = null): void {
+    this.actionInitiale.set(action);
     this.factureId.set(id);
     this.syncUrl();
   }
 
   fermer(): void {
+    this.actionInitiale.set(null);
     this.factureId.set(null);
     this.syncUrl();
+  }
+
+  modifiable(r: FactureRow): boolean {
+    return factureModifiable(r, this.store.cap());
+  }
+
+  payable(r: FactureRow): boolean {
+    return facturePayable(r, this.store.cap());
+  }
+
+  menuFacture(ev: MouseEvent, r: FactureRow): void {
+    const cap = this.store.cap();
+    const items: RowMenuItem[] = actionsFacture(r, cap).map((a) => ({
+      icone: ACTION_LABELS[a]?.icon ?? 'bolt',
+      label: ACTION_LABELS[a]?.label ?? a,
+      danger: a === 'annuler',
+      action: () => this.ouvrir(r.id, a),
+    }));
+    if (cap.documents_view) items.push({ icone: 'folder_open', label: 'Documents', action: () => this.ouvrir(r.id, 'documents') });
+    if (cap.payment_view) items.push({ icone: 'payments', label: 'Paiements', action: () => this.ouvrir(r.id, 'paiements') });
+    items.push({ icone: 'history', label: 'Historique', action: () => this.ouvrir(r.id, 'historique') });
+    if (cap.create) items.push({ icone: 'content_copy', label: 'Dupliquer (période suivante)', action: () => this.ouvrir(r.id, 'dupliquer') });
+    if (factureSupprimable(r, cap)) items.push({ icone: 'delete', label: 'Supprimer', danger: true, action: () => this.ouvrir(r.id, 'supprimer') });
+    this.rowMenu.ouvrir(ev, items);
   }
 
   nouvelle(): void {
@@ -435,7 +485,23 @@ export class FacturationListComponent implements OnInit {
     this.ouvrir(f.id);
   }
 
-  exporter(format: 'xlsx' | 'csv' | 'pdf'): void {
+  imprimer(): void {
+    this.feedback
+      .run(() => this.api.get<{ title: string; headers: string[]; rows: (string | number | null)[][] }>('/mg/factures/rapports/factures', { ...this.params(), format: 'json' }), {
+        loading: 'Préparation de l’impression…',
+        busy: this.exportBusy,
+        errorTitle: 'Impression impossible',
+        success: (r) => {
+          if (!imprimerTableau(r.title, r.headers, r.rows, 'Filtres de la liste appliqués')) {
+            return { title: 'Impression bloquée', message: 'Autorisez les fenêtres pour ce site puis réessayez.' };
+          }
+          return null;
+        },
+      })
+      .subscribe();
+  }
+
+  exporter(format: 'xlsx' | 'pdf'): void {
     const stamp = new Date().toISOString().slice(0, 10);
     this.feedback
       .run(() => this.api.download('/mg/factures/rapports/factures', { ...this.params(), format }), {

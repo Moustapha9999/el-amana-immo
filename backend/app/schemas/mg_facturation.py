@@ -89,6 +89,7 @@ class PointFacturationIn(BaseModel):
     type_facture: str | None = Field(default=None, max_length=40)
     periodicite: str | None = Field(default=None, max_length=20)
     adresse: str | None = Field(default=None, max_length=2000)
+    telephone: str | None = Field(default=None, max_length=40)
     date_debut: date | None = None
     date_fin: date | None = None
     statut: str | None = Field(default=None, max_length=20)

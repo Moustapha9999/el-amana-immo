@@ -33,7 +33,7 @@ _module = [Depends(require_module_access("contrats-echeances"))]
 router = APIRouter(prefix="/mg/factures", tags=["mg-factures"], dependencies=_module)
 points_router = APIRouter(prefix="/mg/points-facturation", tags=["mg-factures"], dependencies=_module)
 
-FORMATS = {"json", "csv", "xlsx", "pdf"}
+FORMATS = {"json", "xlsx", "pdf"}
 
 
 class ParamIn(BaseModel):

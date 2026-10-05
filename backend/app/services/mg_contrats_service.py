@@ -6,8 +6,6 @@ Calculs financiers (TTC, échéancier, statuts d'échéance et de paiement) excl
 from __future__ import annotations
 
 import calendar
-import csv
-import io
 import uuid
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
@@ -196,6 +194,41 @@ def repartir(total: Decimal, n: int) -> list[Decimal]:
         return []
     part = (total / n).quantize(CENT, rounding=ROUND_DOWN)
     return [part] * (n - 1) + [total - part * (n - 1)]
+
+
+def _match_ligne(
+    r: dict,
+    *,
+    q: str | None,
+    fournisseur: str | None,
+    agence: str | None,
+    jour: date | None,
+    date_du: date | None,
+    date_au: date | None,
+) -> bool:
+    if fournisseur and (r.get("fournisseur") or "") != fournisseur:
+        return False
+    if agence and (r.get("agence") or "") != agence:
+        return False
+    if date_du and (jour is None or jour < date_du):
+        return False
+    if date_au and (jour is None or jour > date_au):
+        return False
+    if q and q.strip():
+        needle = q.strip().lower()
+        champs = ("reference", "titre", "fournisseur", "agence", "paiement_ref", "commentaire")
+        if not any(needle in str(r.get(k) or "").lower() for k in champs):
+            return False
+    return True
+
+
+def montant_annualise(montant: Decimal | None, debut: date, fin: date | None) -> Decimal:
+    """Engagement ramené à 12 mois : le montant TTC couvre toute la durée [début, fin]."""
+    total = montant or Decimal("0")
+    if fin is None or fin < debut:
+        return total
+    jours = (fin - debut).days + 1
+    return (total * Decimal(365) / Decimal(jours)).quantize(Decimal("0.01"))
 
 
 def plan_echeancier(debut: date, fin: date | None, periodicite: str | None, total: Decimal) -> list[tuple[date, Decimal]]:
@@ -1390,6 +1423,12 @@ class MgContratsService:
         statut: str | None = None,
         type_echeance: str | None = None,
         contrat_id: uuid.UUID | None = None,
+        *,
+        q: str | None = None,
+        fournisseur: str | None = None,
+        agence: str | None = None,
+        date_du: date | None = None,
+        date_au: date | None = None,
     ) -> list[dict]:
         rows = await self._echeances_rows()
         kept = []
@@ -1404,10 +1443,24 @@ class MgContratsService:
                 continue
             if contrat_id and r["contrat_id"] != str(contrat_id):
                 continue
+            if not _match_ligne(r, q=q, fournisseur=fournisseur, agence=agence, jour=r["_date"], date_du=date_du, date_au=date_au):
+                continue
             kept.append(r)
         return self._public(kept)
 
-    async def list_paiements(self, statut: str | None = None, contrat_id: uuid.UUID | None = None) -> list[dict]:
+    async def list_paiements(
+        self,
+        statut: str | None = None,
+        contrat_id: uuid.UUID | None = None,
+        *,
+        q: str | None = None,
+        fournisseur: str | None = None,
+        agence: str | None = None,
+        date_du: date | None = None,
+        date_au: date | None = None,
+        montant_min: Decimal | None = None,
+        montant_max: Decimal | None = None,
+    ) -> list[dict]:
         stmt = (
             select(MgContratPaiement, MgContrat, MgContratEcheance)
             .join(MgContrat, MgContrat.id == MgContratPaiement.contrat_id)
@@ -1419,6 +1472,10 @@ class MgContratsService:
             stmt = stmt.where(MgContrat.agence_id == self.scope_agence)
         if contrat_id:
             stmt = stmt.where(MgContrat.id == contrat_id)
+        if montant_min is not None:
+            stmt = stmt.where(MgContratPaiement.montant_paye >= montant_min)
+        if montant_max is not None:
+            stmt = stmt.where(MgContratPaiement.montant_paye <= montant_max)
         out = []
         for pay, contrat, ech in (await self.db.execute(stmt)).all():
             s = paiement_statut(
@@ -1428,6 +1485,18 @@ class MgContratsService:
                 montant_paye=pay.montant_paye,
             )
             if statut and s != statut:
+                continue
+            ligne = {
+                "reference": contrat.reference,
+                "titre": contrat.titre,
+                "paiement_ref": pay.reference,
+                "fournisseur": contrat.fournisseur_snapshot,
+                "agence": contrat.agence_libelle_snapshot,
+            }
+            if not _match_ligne(
+                ligne, q=q, fournisseur=fournisseur, agence=agence,
+                jour=pay.date_reelle or pay.date_prevue, date_du=date_du, date_au=date_au,
+            ):
                 continue
             out.append(
                 {
@@ -1577,8 +1646,14 @@ class MgContratsService:
             r for r in echeances if r["statut"] in {"A_VENIR", "DUE", "EN_RETARD"}
         ]
         prochaines.sort(key=lambda r: r["_date"])
+        annuel = sum((montant_annualise(c.montant, c.date_debut, c.date_fin) for c in actifs), Decimal("0"))
+        a_renouveler = await self.a_renouveler(90) if rows else []
         return {
             "total": len(rows),
+            "montant_annuel": float(annuel),
+            "montant_mensuel": float((annuel / 12).quantize(Decimal("0.01"))),
+            "a_renouveler": len(a_renouveler),
+            "expirant_bientot": sum(1 for c in rows if c.etat == "ECHEANCE_30"),
             "actifs": len(actifs),
             "brouillons": count("BROUILLON"),
             "en_validation": count("EN_VALIDATION"),
@@ -1790,10 +1865,75 @@ class MgContratsService:
 
     # ——— Rapports ———
 
-    async def rapport(self, report_key: str, *, annee: int | None = None, periode: str | None = None) -> dict:
+    async def rapport(
+        self, report_key: str, *, annee: int | None = None, periode: str | None = None, filtres: dict | None = None
+    ) -> dict:
         today = date.today()
         annee = annee or today.year
         types = {t.code: t.libelle for t in await self.list_types()}
+        f = {k: v for k, v in (filtres or {}).items() if v not in (None, "")}
+
+        def jj(iso: str | None) -> str:
+            return datetime.fromisoformat(iso).strftime("%d/%m/%Y") if iso else ""
+
+        if report_key == "registre":
+            src = await self.list_contrats(
+                q=f.get("q"), statut=f.get("statut"), etat=f.get("etat"), agence_id=f.get("agence_id"),
+                fournisseur_id=f.get("fournisseur_id"), type_contrat=f.get("type_contrat"), horizon=f.get("horizon"),
+            )
+            return {
+                "title": "Registre des contrats",
+                "headers": [
+                    "N° contrat", "Objet", "Fournisseur", "Type", "Agence", "Début", "Fin", "Montant TTC",
+                    "Périodicité", "Statut", "Reconduction", "Prochaine échéance",
+                ],
+                "rows": [
+                    [
+                        c.reference, c.titre, c.fournisseur_snapshot or "", types.get(c.type_contrat, c.type_contrat),
+                        c.agence_libelle_snapshot or "", c.date_debut.strftime("%d/%m/%Y"),
+                        c.date_fin.strftime("%d/%m/%Y") if c.date_fin else "", float(c.montant or 0),
+                        c.periodicite or "", c.statut, c.reconduction or "",
+                        c.prochain_echeance.strftime("%d/%m/%Y") if c.prochain_echeance else "",
+                    ]
+                    for c in src
+                ],
+            }
+        if report_key == "echeancier":
+            src = await self.list_echeances(
+                f.get("horizon"), f.get("statut"), f.get("type_echeance"), f.get("contrat_id"),
+                q=f.get("q"), fournisseur=f.get("fournisseur"), agence=f.get("agence"),
+                date_du=f.get("date_du"), date_au=f.get("date_au"),
+            )
+            return {
+                "title": "Échéancier des contrats",
+                "headers": ["Contrat", "Objet", "Fournisseur", "Agence", "Type", "Date prévue", "Jours", "Montant", "Payé", "Reste", "Statut"],
+                "rows": [
+                    [
+                        r["reference"], r["titre"], r["fournisseur"] or "", r["agence"] or "", r["type_echeance"],
+                        jj(r["date_prevue"]), r["jours"], r["montant"] or 0, r["montant_paye"], r["reste"], r["statut"],
+                    ]
+                    for r in src
+                ],
+            }
+        if report_key == "reglements":
+            src = await self.list_paiements(
+                f.get("statut"), f.get("contrat_id"), q=f.get("q"), fournisseur=f.get("fournisseur"),
+                agence=f.get("agence"), date_du=f.get("date_du"), date_au=f.get("date_au"),
+                montant_min=f.get("montant_min"), montant_max=f.get("montant_max"),
+            )
+            return {
+                "title": "Paiements des contrats",
+                "headers": ["Contrat", "Objet", "Fournisseur", "Agence", "N° pièce", "Prévu le", "Payé le", "Prévu", "Payé", "Reste", "Mode", "Statut"],
+                "rows": [
+                    [
+                        p["reference"], p["titre"], p["fournisseur"] or "", p["agence"] or "", p["paiement_ref"] or "",
+                        jj(p["date_prevue"]), jj(p["date_reelle"]), p["montant_prevu"], p["montant_paye"], p["reste"],
+                        p["mode"] or "", p["statut"],
+                    ]
+                    for p in src
+                ],
+            }
+
         contrats = await self.list_contrats()
 
         def ligne(c: MgContrat) -> list:
@@ -1928,29 +2068,35 @@ class MgContratsService:
 
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Rapport inconnu")
 
-    async def export(self, user: User, report_key: str, fmt: str, *, annee: int | None = None, periode: str | None = None):
-        data = await self.rapport(report_key, annee=annee, periode=periode)
+    async def export(
+        self,
+        user: User,
+        report_key: str,
+        fmt: str,
+        *,
+        annee: int | None = None,
+        periode: str | None = None,
+        filtres: dict | None = None,
+    ):
+        data = await self.rapport(report_key, annee=annee, periode=periode, filtres=filtres)
         headers, rows, title = data["headers"], data["rows"], data["title"]
         if fmt == "json":
             return {"key": report_key, "title": title, "headers": headers, "rows": rows, "count": len(rows)}
+        if fmt not in {"pdf", "xlsx"}:
+            raise AppError("Format d'export non pris en charge (PDF ou Excel)", code="FORMAT_INVALIDE")
         if not rows:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Aucune donnée pour ce rapport")
-        await self._audit(user, "contrats.export", None, after={"rapport": report_key, "format": fmt, "annee": annee})
+        actifs = {k: str(v) for k, v in (filtres or {}).items() if v not in (None, "")}
+        await self._audit(
+            user, "contrats.export", None, after={"rapport": report_key, "format": fmt, "annee": annee, "filtres": actifs}
+        )
         await self.db.commit()
         when = export_now()
         full_title = f"BEA DIGITAL — {title}"
         subtitle = f"Généré par {user.full_name or user.email}"
+        if actifs:
+            subtitle += f" · {len(rows)} ligne(s) · filtres appliqués"
         filename = f"contrats-{report_key}"
-        if fmt == "csv":
-            buf = io.StringIO()
-            w = csv.writer(buf, delimiter=";")
-            w.writerow(headers)
-            w.writerows(rows)
-            return Response(
-                content=buf.getvalue().encode("utf-8-sig"),
-                media_type="text/csv; charset=utf-8",
-                headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
-            )
         if fmt == "pdf":
             content = build_styled_pdf(
                 report_title=full_title,

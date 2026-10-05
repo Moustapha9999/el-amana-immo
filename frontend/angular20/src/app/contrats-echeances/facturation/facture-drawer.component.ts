@@ -26,8 +26,14 @@ import {
   telechargerBlob,
 } from './facturation.models';
 import { FacturationStore } from './facturation.store';
+import { JalonsComponent } from '../shared/detail-drawer.component';
 
 type Onglet = 'details' | 'documents' | 'paiements' | 'historique';
+
+/** Action déclenchée à l'ouverture depuis un menu de ligne ; les règles restent celles de la fiche. */
+export type FactureActionInitiale =
+  | 'modifier' | 'payer' | 'supprimer' | 'dupliquer' | 'documents' | 'paiements' | 'historique'
+  | 'enregistrer' | 'controler' | 'valider' | 'contester' | 'annuler' | 'archiver';
 
 const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enregistrement' | 'soumission'; message: string; hint?: string }> = {
   enregistrer: { action: 'enregistrement', message: 'Marquer cette facture comme reçue ?' },
@@ -40,7 +46,7 @@ const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enre
 @Component({
   selector: 'bea-fx-facture-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MatIconModule, MontantPipe, FactureFormComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatIconModule, MontantPipe, FactureFormComponent, JalonsComponent],
   template: `
     <div class="bea-fx-drawer__backdrop" (click)="fermer()"></div>
     <aside class="bea-fx-drawer" role="dialog" aria-modal="true" aria-labelledby="bea-fx-drawer-title">
@@ -96,6 +102,9 @@ const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enre
         <div class="bea-fx-drawer__body">
           @switch (onglet()) {
             @case ('details') {
+              @if (f.date_echeance) {
+                <bea-jalons [jours]="f.jours_echeance" [termine]="f.statut === 'ANNULEE' ? 'muted' : (f.reste === 0 && f.montant_paye) ? 'ok' : null" />
+              }
               <dl class="bea-fx-dl bea-ct-pane">
                 <dt>Fournisseur</dt><dd>{{ f.fournisseur || '—' }}</dd>
                 <dt>Point de facturation</dt>
@@ -217,7 +226,13 @@ const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enre
           <button type="button" class="bea-ct-view__close" aria-label="Fermer" (click)="fermerPaiement()"><mat-icon>close</mat-icon></button>
         </header>
         <div class="bea-ct-grid bea-ct-modal__body">
-          <p class="bea-ct-span2 bea-fx-pay__reste">Reste à payer : <strong>{{ f.reste | montant }} {{ f.devise }}</strong></p>
+          <div class="bea-ct-span2 bea-pay-recap">
+            <div><span>Montant facture</span><strong>{{ f.montant_a_payer | montant }}</strong></div>
+            <div><span>Déjà payé</span><strong>{{ f.montant_paye | montant }}</strong></div>
+            <div><span>Ce paiement</span><strong>{{ cePaiement() | montant }}</strong></div>
+            <div [attr.data-tone]="resteApres(f) < 0 ? 'danger' : resteApres(f) === 0 ? 'ok' : null"><span>Reste après</span><strong>{{ resteApres(f) | montant }}</strong></div>
+          </div>
+          @if (resteApres(f) < 0) { <p class="bea-ct-span2 bea-ct-help bea-ct-neg"><mat-icon>error</mat-icon> Le paiement dépasse le reste à payer ({{ f.reste | montant }} {{ f.devise }}).</p> }
           <label>Date de paiement * <input type="date" formControlName="date_paiement" [max]="today" /></label>
           <label>Montant * <input inputmode="decimal" formControlName="montant" /></label>
           <label>Mode
@@ -237,7 +252,7 @@ const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enre
         </div>
         <footer class="bea-ct-modal__foot">
           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="fermerPaiement()">Annuler</button>
-          <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="payForm.invalid || busy()"><mat-icon>save</mat-icon> {{ busy() ? 'Enregistrement…' : 'Enregistrer' }}</button>
+          <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="payForm.invalid || busy() || resteApres(f) < 0"><mat-icon>save</mat-icon> {{ busy() ? 'Enregistrement…' : 'Enregistrer' }}</button>
         </footer>
       </form>
     }
@@ -260,6 +275,7 @@ const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enre
 })
 export class FactureDrawerComponent {
   readonly factureId = input.required<string>();
+  readonly actionInitiale = input<FactureActionInitiale | null>(null);
   readonly changed = output<void>();
   readonly closed = output<void>();
 
@@ -279,6 +295,7 @@ export class FactureDrawerComponent {
   readonly fichierChoisi = signal<File | null>(null);
   readonly preview = signal<{ doc: FxDocument; url: SafeResourceUrl; raw: string; kind: 'pdf' | 'image' | 'autre' } | null>(null);
   private readonly courant = signal<string>('');
+  private enAttente: FactureActionInitiale | null = null;
   private readonly formRef = viewChild(FactureFormComponent);
 
   readonly paiementsActifs = computed(() => (this.f()?.paiements ?? []).filter((p) => p.statut === 'PAYE'));
@@ -299,9 +316,11 @@ export class FactureDrawerComponent {
     this.store.charger();
     effect(() => {
       const id = this.factureId();
+      const action = this.actionInitiale();
       untracked(() => {
         this.courant.set(id);
         this.onglet.set('details');
+        this.enAttente = action;
         this.recharger();
       });
     });
@@ -321,12 +340,46 @@ export class FactureDrawerComponent {
       next: (d) => {
         this.f.set(d);
         if (notifier) this.changed.emit();
+        const action = this.enAttente;
+        this.enAttente = null;
+        if (action) this.appliquerActionInitiale(d, action);
       },
       error: (e) => {
         void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Facture indisponible'));
         this.closed.emit();
       },
     });
+  }
+
+  private appliquerActionInitiale(d: FactureDetail, action: FactureActionInitiale): void {
+    const refus = (message: string) => this.feedback.warning({ title: 'Action indisponible', message });
+    switch (action) {
+      case 'modifier':
+        if (d.modifiable) this.formOuvert.set(true);
+        else refus(`La facture ${d.reference} (${fxStatut(d.statut)}) n'est plus modifiable.`);
+        break;
+      case 'payer':
+        if (d.statut === 'VALIDEE' && d.reste && d.capacites.payment_create) {
+          this.onglet.set('paiements');
+          this.ouvrirPaiement();
+        } else refus(d.statut !== 'VALIDEE' ? 'Le paiement est possible après validation de la facture.' : 'Aucun reste à payer sur cette facture.');
+        break;
+      case 'supprimer':
+        if (d.supprimable) this.supprimer();
+        else refus(`La facture ${d.reference} ne peut pas être supprimée : annulez-la plutôt.`);
+        break;
+      case 'dupliquer':
+        this.dupliquer();
+        break;
+      case 'documents':
+      case 'paiements':
+      case 'historique':
+        this.onglet.set(action);
+        break;
+      default:
+        if (d.actions.includes(action)) this.transition(action);
+        else refus(`Action non disponible pour une facture ${fxStatut(d.statut).toLowerCase()}.`);
+    }
   }
 
   private appliquer(d: FactureDetail): void {
@@ -439,6 +492,14 @@ export class FactureDrawerComponent {
     if (this.busy()) return;
     this.paiementOuvert.set(false);
     this.payForm.markAsPristine();
+  }
+
+  cePaiement(): number {
+    return parseMontant(this.payForm.controls.montant.value ?? '') ?? 0;
+  }
+
+  resteApres(f: FactureDetail): number {
+    return Math.round(((f.reste ?? 0) - this.cePaiement()) * 100) / 100;
   }
 
   payer(): void {

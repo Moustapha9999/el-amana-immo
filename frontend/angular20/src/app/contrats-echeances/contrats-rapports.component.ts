@@ -6,6 +6,7 @@ import { describeApiErrorAsync } from '../core/feedback/api-error';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { ApiService } from '../core/services/api.service';
 import { ContratsConfig, telechargerBlob } from './contrats.models';
+import { imprimerTableau } from './shared/impression';
 
 interface ReportJson {
   key: string;
@@ -83,6 +84,7 @@ const RAPPORTS: RapportDef[] = [
           </label>
         }
         <div class="bea-ct-filters__btns">
+          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!report()?.count" (click)="imprimer()"><mat-icon>print</mat-icon> Imprimer</button>
           @if (peutExporter()) {
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!report()?.count || busy()" (click)="download('xlsx')"><mat-icon>table_view</mat-icon> Excel</button>
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!report()?.count || busy()" (click)="download('pdf')"><mat-icon>picture_as_pdf</mat-icon> PDF</button>
@@ -177,6 +179,14 @@ export class ContratsRapportsComponent implements OnInit {
         },
       })
       .subscribe();
+  }
+
+  imprimer(): void {
+    const r = this.report();
+    if (!r) return;
+    if (!imprimerTableau(r.title, r.headers, r.rows)) {
+      this.feedback.warning({ title: 'Impression bloquée', message: 'Autorisez les fenêtres pour ce site puis réessayez.' });
+    }
   }
 
   isNum(cell: string | number): boolean {
