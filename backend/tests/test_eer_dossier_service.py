@@ -52,8 +52,11 @@ SUPERVISEUR = frozenset({"eer.assign", "eer.validate", "eer.avis", "eer.archive"
 @pytest.fixture
 async def db():
     engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
-    async with engine.connect() as conn:
-        pret = await _tables(conn) and await conn.scalar(text("SELECT count(*) FROM eer_checklist_regles"))
+    try:
+        async with engine.connect() as conn:
+            pret = await _tables(conn) and await conn.scalar(text("SELECT count(*) FROM eer_checklist_regles"))
+    except Exception:
+        pret = False
     if not pret:
         await engine.dispose()
         pytest.skip("Tables EER absentes ou référentiel non chargé (migrations eer_* non appliquées)")
@@ -417,10 +420,14 @@ async def test_eer_admin_couvre_le_module_et_document_ged_etranger_refuse(db: As
 @pytest.mark.asyncio
 async def test_references_concurrentes_sans_doublon():
     engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
-    async with engine.connect() as conn:
-        if not await _tables(conn):
-            await engine.dispose()
-            pytest.skip("Tables EER absentes")
+    try:
+        async with engine.connect() as conn:
+            pret = await _tables(conn)
+    except Exception:
+        pret = False
+    if not pret:
+        await engine.dispose()
+        pytest.skip("Base PostgreSQL indisponible ou tables EER absentes")
     fabrique = async_sessionmaker(engine, expire_on_commit=False)
 
     async def une() -> str:

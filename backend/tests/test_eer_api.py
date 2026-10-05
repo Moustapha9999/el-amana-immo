@@ -47,10 +47,13 @@ def _email(nom: str) -> str:
 @pytest.fixture
 async def env():
     engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
-    async with engine.connect() as conn:
-        base = await conn.scalar(text("SELECT current_database()"))
-        pret = await conn.scalar(text("SELECT to_regclass('public.eer_dossiers') IS NOT NULL"))
-        regles = pret and await conn.scalar(text("SELECT count(*) FROM eer_checklist_regles"))
+    try:
+        async with engine.connect() as conn:
+            base = await conn.scalar(text("SELECT current_database()"))
+            pret = await conn.scalar(text("SELECT to_regclass('public.eer_dossiers') IS NOT NULL"))
+            regles = pret and await conn.scalar(text("SELECT count(*) FROM eer_checklist_regles"))
+    except Exception:
+        base, regles = None, 0
     if not regles or base == "bea_digital":
         await engine.dispose()
         pytest.skip("API EER : copie de base avec migrations eer_* requise (jamais la base réelle)")
