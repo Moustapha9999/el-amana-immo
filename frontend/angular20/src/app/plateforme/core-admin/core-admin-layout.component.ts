@@ -5,6 +5,7 @@ import { CoreAdminDialogComponent } from './core-admin-dialog.component';
 import { BeaAdminDialogService } from './core-admin-dialog.service';
 import { CoreAdminIconComponent } from './core-admin-icon.component';
 import { CORE_ADMIN_NAV } from './core-admin-nav';
+import { ThemeToggleComponent } from '../chrome/theme-toggle.component';
 
 const SIDEBAR_COLLAPSED_KEY = 'bea.coreAdmin.sidebarCollapsed';
 
@@ -17,7 +18,7 @@ interface SidebarTooltip {
 @Component({
   selector: 'bea-core-admin-layout',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, RouterLinkActive, RouterOutlet, CoreAdminDialogComponent, CoreAdminIconComponent],
+  imports: [RouterLink, RouterLinkActive, RouterOutlet, CoreAdminDialogComponent, CoreAdminIconComponent, ThemeToggleComponent],
   template: `
     <div class="bea-admin" [class.bea-admin--collapsed]="collapsed()">
       <aside class="bea-admin__side" aria-label="Navigation CORE ADMIN">
@@ -100,6 +101,7 @@ interface SidebarTooltip {
         <header class="bea-admin__top">
           <div class="bea-admin__top-title">Pilotage plateforme</div>
           <div class="bea-admin__top-actions">
+            <bea-theme-toggle />
             @if (auth.user(); as u) {
               <div class="bea-admin__userchip">
                 <span class="bea-admin__avatar" aria-hidden="true">{{ u.full_name.charAt(0) }}</span>

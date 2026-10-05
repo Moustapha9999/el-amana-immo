@@ -13,6 +13,7 @@ import { ApiService } from '../../core/services/api.service';
 import { SystemClockService } from '../../core/services/system-clock.service';
 import { PlateformeContextService } from '../../plateforme/plateforme-context.service';
 import { LEGACY_ROOT_MODULE_CODE } from '../../plateforme/module-routing.contract';
+import { ThemeToggleComponent } from '../../plateforme/chrome/theme-toggle.component';
 import { filterNavByPermissions, navForModule, shellNavSections } from './shell-nav';
 
 interface ModuleInfo {
@@ -41,6 +42,7 @@ const SIDEBAR_COLLAPSED_KEY = 'bea.moduleShell.sidebarCollapsed';
     MatListModule,
     MatIconModule,
     MatButtonModule,
+    ThemeToggleComponent,
   ],
   templateUrl: './shell.component.html',
   styleUrl: './shell.component.scss',

@@ -57,7 +57,12 @@
               "src/app/plateforme/plateforme-ui.css",
               "src/app/achats-appro/achats-ui.css",
               "src/app/achats-appro/achats-apercu.css",
-              "src/styles.scss"
+              "src/styles.scss",
+              {
+                "input": "src/theme-dark.css",
+                "bundleName": "theme-dark",
+                "inject": false
+              }
             ]
           },
           "configurations": {

@@ -1,11 +1,12 @@
 import { ChangeDetectionStrategy, Component, inject, OnInit } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
+import { ThemeToggleComponent } from './theme-toggle.component';
 
 @Component({
   selector: 'bea-chrome',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink],
+  imports: [RouterLink, ThemeToggleComponent],
   template: `
     <header class="bea-chrome">
       <a routerLink="/accueil" class="bea-chrome__brand">
@@ -22,6 +23,7 @@ import { AuthService } from '../../core/services/auth.service';
         </div>
       </a>
       <div class="bea-chrome__actions">
+        <bea-theme-toggle />
         @if (auth.user(); as u) {
           <div class="bea-chrome__userchip">
             <span class="bea-chrome__avatar" aria-hidden="true">

@@ -61,6 +61,7 @@
     <header class="app-shell__topbar">
       <div class="app-shell__topbar-title">{{ moduleTitle() }}</div>
       <div class="app-shell__topbar-actions">
+        <bea-theme-toggle />
         @if (auth.user(); as u) {
           <div class="app-shell__user">
             <span class="app-shell__user-avatar" aria-hidden="true">{{ u.full_name.charAt(0) }}</span>
