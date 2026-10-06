@@ -73,6 +73,12 @@ const TONS_STATUT: Record<string, string> = {
             @for (f of store.ref()?.fournisseurs ?? []; track f.id) { <option [value]="f.id">{{ f.libelle }}</option> }
           </select>
         </label>
+        <label class="bea-mg__field">Profil
+          <select formControlName="profil_id" (change)="appliquer()">
+            <option value="">Tous</option>
+            @for (p of store.ref()?.profils ?? []; track p.id) { <option [value]="p.id">{{ p.libelle }}</option> }
+          </select>
+        </label>
         <label class="bea-mg__field">Type de site
           <select formControlName="type" (change)="appliquer()">
             <option value="">Tous</option>
@@ -200,7 +206,7 @@ const TONS_STATUT: Record<string, string> = {
             <div class="bea-mg__panel-top"><h2><mat-icon>local_shipping</mat-icon> Par fournisseur</h2><a class="bea-ct-link" [routerLink]="base + '/analyses'" [queryParams]="{ vue: 'fournisseurs' }">Analyse</a></div>
             <ul class="bea-ct-bars">
               @for (g of d.by_supplier; track g.id) {
-                <li class="is-click" (click)="filtrer('supplier_id', g.id)">
+                <li class="is-click" (click)="filtrer('profil_id', g.id)">
                   <span class="bea-ct-bars__label">{{ g.label }} <small>{{ g.nb }}</small></span>
                   <span class="bea-ct-bars__track"><span class="bea-ct-bars__fill" [style.width.%]="part(g.montant, d.by_supplier)"></span></span>
                   <span class="bea-ct-bars__value">{{ g.montant | montant }}</span>
@@ -212,6 +218,20 @@ const TONS_STATUT: Record<string, string> = {
           <div class="bea-mg__panel bea-ct-panel">
             <div class="bea-mg__panel-top"><h2><mat-icon>category</mat-icon> Par type de site</h2></div>
             <bea-fx-donut [parts]="typesSite()" unite="MRU (k)" />
+          </div>
+
+          <div class="bea-mg__panel bea-ct-panel">
+            <div class="bea-mg__panel-top"><h2><mat-icon>bolt</mat-icon> Par nature de facture</h2></div>
+            <bea-fx-donut [parts]="natures()" unite="MRU (k)" />
+          </div>
+
+          <div class="bea-mg__panel bea-ct-panel">
+            <div class="bea-mg__panel-top"><h2><mat-icon>fact_check</mat-icon> Contrôles</h2><a class="bea-ct-link" [routerLink]="base + '/controles'">File de contrôle</a></div>
+            <div class="bea-fx-buckets">
+              <a class="bea-fx-bucket" data-tone="warn" [routerLink]="base + '/controles'"><span>À contrôler</span><strong>{{ d.kpis.a_controler }}</strong><small>Reçues / en contrôle</small></a>
+              <a class="bea-fx-bucket" data-tone="info" [routerLink]="base + '/controles'"><span>À valider</span><strong>{{ d.kpis.controlees ?? 0 }}</strong><small>Contrôle clôturé</small></a>
+            </div>
+            <p class="bea-ct-help"><mat-icon>rule</mat-icon> Contrôles selon le profil de chaque fournisseur : champs obligatoires, TVA configurée, période, pièces.</p>
           </div>
 
           <div class="bea-mg__panel bea-ct-panel">
@@ -289,6 +309,7 @@ export class FacturationDashboardComponent implements OnInit {
     year: this.fb.control<number>(new Date().getFullYear()),
     month: this.fb.control<number | null>(null),
     supplier_id: [''],
+    profil_id: [''],
     type: [''],
     agency_id: [''],
     pdv_id: [''],
@@ -306,6 +327,7 @@ export class FacturationDashboardComponent implements OnInit {
     const out: { key: string; label: string }[] = [];
     if (v['month']) out.push({ key: 'month', label: `${MOIS[(v['month'] as number) - 1]} ${v['year']}` });
     if (v['supplier_id']) out.push({ key: 'supplier_id', label: ref?.fournisseurs.find((f) => f.id === v['supplier_id'])?.libelle ?? 'Fournisseur' });
+    if (v['profil_id']) out.push({ key: 'profil_id', label: ref?.profils.find((p) => p.id === v['profil_id'])?.libelle ?? 'Profil' });
     if (v['type']) out.push({ key: 'type', label: TYPE_POINT_LABELS[v['type'] as string] ?? String(v['type']) });
     if (v['agency_id']) out.push({ key: 'agency_id', label: ref?.agences.find((a) => a.id === v['agency_id'])?.libelle ?? 'Agence' });
     if (v['pdv_id']) out.push({ key: 'pdv_id', label: ref?.points.find((p) => p.id === v['pdv_id'])?.nom ?? 'Point' });
@@ -330,6 +352,10 @@ export class FacturationDashboardComponent implements OnInit {
     (this.dash()?.by_status ?? []).map((s) => ({ label: s.label, value: s.nb, tone: TONS_STATUT[s.code] })),
   );
 
+  readonly natures = computed<PartDonut[]>(() =>
+    (this.dash()?.by_type ?? []).map((g) => ({ label: g.label, value: Math.round(g.montant / 1000) })),
+  );
+
   readonly typesSite = computed<PartDonut[]>(() =>
     (this.dash()?.by_type_point ?? []).map((g) => ({ label: g.label, value: Math.round(g.montant / 1000) })),
   );
@@ -341,6 +367,7 @@ export class FacturationDashboardComponent implements OnInit {
       year: Number(q.get('year')) || new Date().getFullYear(),
       month: Number(q.get('month')) || null,
       supplier_id: q.get('supplier_id') ?? '',
+      profil_id: q.get('profil_id') ?? '',
       type: q.get('type') ?? '',
       agency_id: q.get('agency_id') ?? '',
       pdv_id: q.get('pdv_id') ?? '',
@@ -368,7 +395,7 @@ export class FacturationDashboardComponent implements OnInit {
     this.appliquer();
   }
 
-  filtrer(key: 'agency_id' | 'pdv_id' | 'supplier_id', id: string): void {
+  filtrer(key: 'agency_id' | 'pdv_id' | 'supplier_id' | 'profil_id', id: string): void {
     this.filtres.patchValue({ [key]: id });
     this.appliquer();
   }
@@ -379,7 +406,7 @@ export class FacturationDashboardComponent implements OnInit {
   }
 
   reinitialiser(): void {
-    this.filtres.reset({ year: new Date().getFullYear(), month: null, supplier_id: '', type: '', agency_id: '', pdv_id: '', status: '' });
+    this.filtres.reset({ year: new Date().getFullYear(), month: null, supplier_id: '', profil_id: '', type: '', agency_id: '', pdv_id: '', status: '' });
     this.appliquer();
   }
 

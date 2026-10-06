@@ -3289,6 +3289,126 @@ html[data-theme='dark'] .app-shell__topbar-actions .bea-theme-toggle {
 html[data-theme='dark'] .bea-admin__top-actions .bea-theme-toggle {
   border-color: #2a4b6f;
 }
+html[data-theme='dark'] .bea-fx-check {
+  color: #bfc6d0;
+}
+html[data-theme='dark'] .bea-fx-seg {
+  background: #142839;
+}
+html[data-theme='dark'] .bea-fx-seg button {
+  color: #b3bbc7;
+}
+html[data-theme='dark'] .bea-fx-seg button.is-on {
+  background: #1f1f1f;
+  color: #a5cfec;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+html[data-theme='dark'] .bea-fx-seg button[data-etat=obligatoire].is-on {
+  color: #ea7474;
+}
+html[data-theme='dark'] .bea-fx-seg button[data-etat=masque].is-on {
+  color: #9fa9b8;
+}
+html[data-theme='dark'] .bea-fx-champs__nom {
+  color: #bfc6d0;
+}
+html[data-theme='dark'] .bea-fx-champs__lib {
+  border: 1px solid #363c45;
+}
+html[data-theme='dark'] .bea-fx-champs__lib:disabled {
+  background: #152332;
+  color: #94a3b8;
+}
+html[data-theme='dark'] .bea-fx-supplier {
+  background: #1f1f1f;
+  border: 1px solid #333a41;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+html[data-theme='dark'] .bea-fx-supplier__head small {
+  color: #9fa9b8;
+}
+html[data-theme='dark'] .bea-fx-supplier__avatar {
+  background: #142839;
+  color: #a5cfec;
+}
+html[data-theme='dark'] .bea-fx-supplier__stats dt {
+  color: #9fa9b8;
+}
+html[data-theme='dark'] .bea-fx-supplier .bea-fx-spark {
+  stroke: #a5cfec;
+}
+html[data-theme='dark'] .bea-fx-supplier__champs {
+  color: #b3bbc7;
+}
+html[data-theme='dark'] .bea-fx-supplier__champs mat-icon {
+  color: #a5cfec;
+}
+html[data-theme='dark'] .bea-fx-supplier__foot {
+  border-top: 1px dashed #353b43;
+}
+html[data-theme='dark'] .bea-fx-tags span[data-tone=muted] {
+  background: #172635;
+  color: #9fa9b8;
+}
+html[data-theme='dark'] .bea-fx-tags span[data-tone=warn] {
+  background: #382713;
+  color: #ec9a78;
+}
+html[data-theme='dark'] .bea-fx-tab {
+  border: 1px solid #353b43;
+  background: #1f1f1f;
+  color: #b3bbc7;
+}
+html[data-theme='dark'] .bea-fx-tab.is-active {
+  border-color: #1a5278;
+  background: #142839;
+  color: #a5cfec;
+}
+html[data-theme='dark'] .bea-fx-bulk {
+  background: #142839;
+}
+html[data-theme='dark'] .bea-fx-ctrl-table tr.is-selected {
+  background: #122837;
+}
+html[data-theme='dark'] .bea-fx-verdict[data-niveau=bloquant] {
+  color: #ea7474;
+}
+html[data-theme='dark'] .bea-fx-verdict[data-niveau=attention] {
+  color: #edb183;
+}
+html[data-theme='dark'] .bea-fx-verdict[data-niveau=ok] {
+  color: #9fefbd;
+}
+html[data-theme='dark'] .bea-fx-ctrl-list {
+  color: #9fa9b8;
+}
+html[data-theme='dark'] .bea-fx-ctrl-list li[data-niveau=bloquant] {
+  color: #ea7474;
+}
+html[data-theme='dark'] .bea-fx-ctrl-list li[data-niveau=attention] {
+  color: #edb183;
+}
+html[data-theme='dark'] .bea-fx-journal {
+  border-left: 2px solid #353b43;
+}
+html[data-theme='dark'] .bea-fx-journal__day {
+  color: #9fa9b8;
+}
+html[data-theme='dark'] .bea-fx-journal__dot {
+  background: #142839;
+  color: #a5cfec;
+  box-shadow: 0 0 0 3px #333333;
+}
+html[data-theme='dark'] .bea-fx-journal__item[data-entite=point_facturation] .bea-fx-journal__dot {
+  color: #a8f3ed;
+  background: #133927;
+}
+html[data-theme='dark'] .bea-fx-journal__body small {
+  color: #9fa9b8;
+}
+html[data-theme='dark'] .bea-fx-journal__meta {
+  color: #9fa9b8;
+}
 /* src/app/achats-appro/achats-ui.css */
 html[data-theme='dark'] .bea-ach__kpi {
   background: #1f1f1f;

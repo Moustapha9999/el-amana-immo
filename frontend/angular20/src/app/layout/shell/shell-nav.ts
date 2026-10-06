@@ -323,6 +323,13 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
     },
     {
       section: 'Gestion',
+      label: 'Fournisseurs',
+      path: '/facturation-fournisseurs/fournisseurs',
+      icon: 'local_shipping',
+      permissions: ['mg.factures.view'],
+    },
+    {
+      section: 'Gestion',
       label: 'Points de facturation',
       path: '/facturation-fournisseurs/points',
       icon: 'place',
@@ -340,6 +347,20 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
       label: 'Échéances',
       path: '/facturation-fournisseurs/echeances',
       icon: 'event_note',
+      permissions: ['mg.factures.view'],
+    },
+    {
+      section: 'Suivi',
+      label: 'Contrôles',
+      path: '/facturation-fournisseurs/controles',
+      icon: 'fact_check',
+      permissions: ['mg.factures.view'],
+    },
+    {
+      section: 'Suivi',
+      label: 'Historique',
+      path: '/facturation-fournisseurs/historique',
+      icon: 'history',
       permissions: ['mg.factures.view'],
     },
     {

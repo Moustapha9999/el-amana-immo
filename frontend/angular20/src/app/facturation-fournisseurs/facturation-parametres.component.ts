@@ -89,7 +89,7 @@ export class FacturationParametresComponent implements OnInit {
   private readonly feedback = inject(FeedbackService);
 
   readonly base = FX_BASE;
-  readonly flux = ['BROUILLON', 'RECUE', 'A_CONTROLER', 'VALIDEE', 'A_PAYER', 'PAYEE', 'ARCHIVEE'];
+  readonly flux = ['BROUILLON', 'RECUE', 'A_CONTROLER', 'CONTROLEE', 'VALIDEE', 'A_PAYER', 'PAYEE', 'ARCHIVEE'];
   readonly params = signal<Parametre[] | null>(null);
   readonly brouillon = signal<Record<string, string>>({});
   readonly busy = signal(false);

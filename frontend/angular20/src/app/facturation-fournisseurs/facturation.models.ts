@@ -343,6 +343,7 @@ export interface FxDashboard {
     en_retard: number;
     montant_retard: number;
     a_controler: number;
+    controlees?: number;
     moyenne_mensuelle: number;
     nb_alertes: number;
   };
@@ -554,6 +555,74 @@ export function tailleFichier(octets: number): string {
   if (octets < 1024) return `${octets} o`;
   if (octets < 1024 * 1024) return `${Math.round(octets / 1024)} Ko`;
   return `${(octets / 1024 / 1024).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Mo`;
+}
+
+export interface FxFournisseurStat {
+  cle: string;
+  profil_id: string | null;
+  fournisseur_id: string | null;
+  profil: FxProfil | null;
+  libelle: string;
+  fournisseur: string | null;
+  fournisseur_code: string | null;
+  fournisseur_actif: boolean;
+  telephone: string | null;
+  email: string | null;
+  nb: number;
+  montant: number;
+  mensuel: number[];
+  reste: number;
+  nb_ouvertes: number;
+  a_controler: number;
+  points: number;
+  derniere_facture: string | null;
+  part_pct: number;
+  actif: boolean;
+}
+
+export interface FxFournisseursStats {
+  annee: number;
+  items: FxFournisseurStat[];
+  total: number;
+  reste: number;
+  nb_profils: number;
+}
+
+export interface FxControleRow extends FactureRow {
+  controles: FxControle[];
+  niveau_controle: 'bloquant' | 'attention' | 'ok';
+  nb_bloquants: number;
+  nb_attention: number;
+}
+
+export interface FxControles {
+  items: FxControleRow[];
+  compteurs: { a_controler: number; bloquant: number; attention: number; pret: number; controlee: number };
+}
+
+export interface FxLotResultat {
+  resultats: { id: string; ok: boolean; reference?: string; message?: string }[];
+  succes: number;
+  echecs: number;
+}
+
+export interface FxJournalItem {
+  id: string;
+  entite: 'facture' | 'point_facturation';
+  entity_id: string;
+  action: string;
+  action_label: string;
+  message: string | null;
+  user_nom: string | null;
+  reference: string | null;
+  created_at: string;
+}
+
+export interface FxJournal {
+  items: FxJournalItem[];
+  total: number;
+  page: number;
+  size: number;
 }
 
 /** Retire les valeurs vides avant envoi en query string. */

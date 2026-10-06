@@ -6,6 +6,8 @@ Aucune statistique stockée : tout est recalculé depuis les factures (origine F
 from __future__ import annotations
 
 import calendar
+import csv
+import io
 from collections import defaultdict
 from datetime import date, timedelta
 
@@ -31,7 +33,13 @@ from app.services.mg_facturation_service import (
     tranche_echeance,
     variation_pct,
 )
-from app.services.reporting_export import build_styled_pdf, build_styled_workbook, export_now
+from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
+from app.services.reporting_export import (
+    build_styled_pdf,
+    build_styled_workbook,
+    build_styled_workbook_multi,
+    export_now,
+)
 
 LIEN_FACTURE = "/facturation-fournisseurs/factures?facture={id}"
 LIEN_POINT = "/facturation-fournisseurs/points?point={id}"
@@ -198,6 +206,7 @@ class MgFacturationAnalytics:
                 "en_retard": buckets["retard"]["nb"],
                 "montant_retard": round(buckets["retard"]["montant"], 2),
                 "a_controler": sum(1 for r in tous if r["statut"] in {"RECUE", "A_CONTROLER"}),
+                "controlees": sum(1 for r in tous if r["statut"] == "CONTROLEE"),
                 "moyenne_mensuelle": round(total / (1 if mois else max(1, len({r["mois"] for r in periode if r["mois"]}))), 2),
                 "nb_alertes": len(alertes["items"]),
             },
@@ -505,6 +514,9 @@ class MgFacturationAnalytics:
         "agences": "Factures par agence",
         "pdv": "Factures des PDV Amanty",
         "fournisseurs": "Factures par fournisseur",
+        "fournisseurs_mois": "Fournisseurs — détail mensuel",
+        "controles": "Contrôles en attente",
+        "classeur": "Classeur de synthèse",
         "factures": "Registre des factures",
         "retards": "Factures en retard",
         "paiements": "Paiements de factures",
@@ -549,7 +561,23 @@ class MgFacturationAnalytics:
             rows.sort(key=lambda r: r["date_echeance"] or "")
             return {"title": title, "headers": entetes_factures + ["Jours de retard"],
                     "rows": [ligne_facture(r) + [abs(r["jours_echeance"] or 0)] for r in rows]}
-        if key == "annuel":
+        if key == "fournisseurs_mois":
+            data = await self.suppliers({**filtres, "annee": annee})
+            rows = [[i["label"], *i["mensuel"], i["montant"], i["nb"]] for i in data["items"]]
+            if rows:
+                rows.append(["Total", *[round(sum(i["mensuel"][m] for i in data["items"]), 2) for m in range(12)],
+                             data["total"], sum(i["nb"] for i in data["items"])])
+            return {"title": f"{title} — {annee}", "headers": ["Fournisseur", *MOIS_COURTS, "Total", "Nb factures"],
+                    "rows": rows}
+        if key == "controles":
+            data = await self.svc.file_controles(base)
+            return {"title": title, "headers": ["Référence", "Période", "Fournisseur", "Point", "Montant TTC", "Statut",
+                                                "Résultat", "Anomalies"],
+                    "rows": [[r["reference"], r["periode_label"] or "", r["profil"] or r["fournisseur"] or "",
+                              r["point_nom"] or "", float(r["montant_ttc"] or 0), STATUT_LABELS.get(r["statut"], r["statut"]),
+                              {"bloquant": "Bloquant", "attention": "À vérifier", "ok": "Conforme"}[r["niveau_controle"]],
+                              " ; ".join(c["message"] for c in r["controles"])] for r in data["items"]]}
+        if key in {"annuel", "classeur"}:
             data = await self.monthly({**filtres, "annee": annee})
             rows = [[e["label"], e["nb"], e["montant"], e["paye"], e["n1"],
                      f"{e['variation_pct']} %" if e["variation_pct"] is not None else "—"] for e in data["items"]]
@@ -582,6 +610,12 @@ class MgFacturationAnalytics:
                 "rows": [[a["point_nom"], a["reference"], a["agence"] or "", a["fournisseur"] or "", len(a["periodes"]),
                           ", ".join(libelle_periode(p["annee"], p["mois"]) for p in a["periodes"])] for a in rows]}
 
+    async def _voit_paiements(self, user: User) -> bool:
+        if user.is_superuser:
+            return True
+        have = await load_user_permission_codes(self.db, user)
+        return user_has_permission_codes(have, "mg.factures.payment.view")
+
     async def export(self, user: User, key: str, fmt: str, filtres: dict):
         data = await self.rapport(key, filtres)
         headers, rows, title = data["headers"], data["rows"], data["title"]
@@ -597,6 +631,37 @@ class MgFacturationAnalytics:
         full_title = f"BEA DIGITAL — {title}"
         subtitle = f"Généré par {user.full_name or user.email}"
         filename = f"factures-{key}"
+        if fmt == "csv":
+            buf = io.StringIO()
+            writer = csv.writer(buf, delimiter=";", lineterminator="\r\n")
+            writer.writerow(headers)
+            for row in rows:
+                writer.writerow([_csv(v) for v in row])
+            return Response(
+                content=("\ufeff" + buf.getvalue()).encode("utf-8"),
+                media_type="text/csv; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
+            )
+        if fmt == "xlsx" and key == "classeur":
+            onglets = [("Synthèse", data)]
+            for k, nom in (("fournisseurs", "Fournisseurs"), ("fournisseurs_mois", "Fournisseurs mois"),
+                           ("agences", "Agences"), ("pdv", "PDV Amanty"), ("retards", "Retards"),
+                           ("manquantes", "Manquantes")):
+                onglets.append((nom, await self.rapport(k, filtres)))
+            annee = int(filtres.get("annee") or date.today().year)
+            onglets.append(("Registre", await self.rapport("factures", {**filtres, "annee": annee})))
+            if await self._voit_paiements(user):
+                onglets.append(("Paiements", await self.rapport("paiements", filtres)))
+            return Response(
+                content=build_styled_workbook_multi(
+                    report_title=full_title,
+                    sheets=[(nom, d["title"], d["headers"], d["rows"] or []) for nom, d in onglets if d.get("headers")],
+                    subtitle=subtitle,
+                    exported_at=when,
+                ),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f'attachment; filename="{filename}.xlsx"'},
+            )
         if fmt == "pdf":
             return Response(
                 content=build_styled_pdf(report_title=full_title, headers=headers, rows=rows, subtitle=subtitle,
@@ -610,6 +675,12 @@ class MgFacturationAnalytics:
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f'attachment; filename="{filename}.xlsx"'},
         )
+
+
+def _csv(value):
+    if isinstance(value, float):
+        return f"{value:.2f}".replace(".", ",")
+    return "" if value is None else value
 
 
 def _fr(iso: str | None) -> str:

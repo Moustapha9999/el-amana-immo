@@ -22,7 +22,10 @@ const CATALOGUE = [
   { key: 'annuel', label: 'Rapport annuel', icon: 'stacked_bar_chart', desc: 'Synthèse mois par mois et comparaison à l’année précédente.' },
   { key: 'agences', label: 'Par agence', icon: 'account_balance', desc: 'Montants, moyennes, part et variation N-1 par agence.' },
   { key: 'pdv', label: 'PDV Amanty', icon: 'storefront', desc: 'Consommation et coûts des points de vente Amanty.' },
-  { key: 'fournisseurs', label: 'Par fournisseur', icon: 'local_shipping', desc: 'Volumes facturés par fournisseur.' },
+  { key: 'fournisseurs', label: 'Par fournisseur', icon: 'local_shipping', desc: 'Montants, moyenne, part et variation N-1 par fournisseur / profil.' },
+  { key: 'fournisseurs_mois', label: 'Fournisseurs × mois', icon: 'grid_on', desc: 'Matrice mensuelle par fournisseur / profil avec totaux.' },
+  { key: 'controles', label: 'Contrôles en attente', icon: 'fact_check', desc: 'Factures à contrôler avec le résultat des contrôles automatiques.' },
+  { key: 'classeur', label: 'Classeur complet', icon: 'library_books', desc: 'Excel multi-onglets : synthèse, fournisseurs, agences, PDV, retards, manquantes, registre, paiements.' },
   { key: 'factures', label: 'Registre des factures', icon: 'receipt_long', desc: 'Liste détaillée filtrée (toutes colonnes).', mois: true },
   { key: 'retards', label: 'Factures en retard', icon: 'running_with_errors', desc: 'Factures échues non soldées et jours de retard.' },
   { key: 'paiements', label: 'Paiements', icon: 'payments', desc: 'Règlements de l’année (y compris annulations).', mois: true },
@@ -37,9 +40,9 @@ const CATALOGUE = [
     <section class="bea-mg bea-nf bea-ct bea-fx">
       <header class="bea-mg__head">
         <div>
-          <p class="bea-stock-page__kicker">Contrats &amp; échéances · Factures</p>
+          <p class="bea-stock-page__kicker">Moyens Généraux · Facturation fournisseurs</p>
           <h1>Rapports</h1>
-          <p class="bea-ct-head__sub">Aperçu à l’écran puis export PDF ou Excel, ou impression. Chaque export est tracé dans l’audit.</p>
+          <p class="bea-ct-head__sub">Aperçu à l’écran puis export PDF, Excel ou CSV, ou impression. Chaque export est tracé dans l’audit.</p>
         </div>
         <div class="bea-mg__actions"><a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="base"><mat-icon>dashboard</mat-icon> Vue 360°</a></div>
       </header>
@@ -72,6 +75,12 @@ const CATALOGUE = [
             @for (f of store.ref()?.fournisseurs ?? []; track f.id) { <option [value]="f.id">{{ f.libelle }}</option> }
           </select>
         </label>
+        <label class="bea-mg__field">Profil
+          <select formControlName="profil_id">
+            <option value="">Tous</option>
+            @for (p of store.ref()?.profils ?? []; track p.id) { <option [value]="p.id">{{ p.libelle }}</option> }
+          </select>
+        </label>
         @if (!store.config()?.agence_scope) {
           <label class="bea-mg__field">Agence
             <select formControlName="agency_id">
@@ -98,7 +107,10 @@ const CATALOGUE = [
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!rapport()?.count" (click)="imprimer()"><mat-icon>print</mat-icon> Imprimer</button>
             @if (store.cap().export || store.cap().reports) {
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="exporter('pdf')"><mat-icon>picture_as_pdf</mat-icon> PDF</button>
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="exporter('xlsx')"><mat-icon>table_view</mat-icon> Excel</button>
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="exporter('xlsx')"><mat-icon>table_view</mat-icon> {{ cle() === 'classeur' ? 'Excel multi-onglets' : 'Excel' }}</button>
+              @if (cle() !== 'classeur') {
+                <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="exporter('csv')"><mat-icon>data_object</mat-icon> CSV</button>
+              }
             }
           </div>
         </div>
@@ -142,6 +154,7 @@ export class FacturationRapportsComponent implements OnInit {
     year: [new Date().getFullYear()],
     month: this.fb.control<number | null>(null),
     supplier_id: [''],
+    profil_id: [''],
     agency_id: [''],
     type: [''],
   });
@@ -183,7 +196,7 @@ export class FacturationRapportsComponent implements OnInit {
     });
   }
 
-  exporter(format: 'pdf' | 'xlsx'): void {
+  exporter(format: 'pdf' | 'xlsx' | 'csv'): void {
     const key = this.cle();
     this.feedback
       .run(() => this.api.download(`/mg/factures/rapports/${key}`, this.params(format)), {

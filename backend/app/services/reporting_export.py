@@ -128,8 +128,41 @@ def build_styled_workbook(
     wb = Workbook()
     ws = wb.active
     ws.title = sheet_title[:31]
+    _remplir_feuille(ws, report_title=report_title, headers=headers, rows=rows, subtitle=subtitle, when=when)
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
-    n_cols = len(headers)
+
+def build_styled_workbook_multi(
+    *,
+    report_title: str,
+    sheets: Sequence[tuple[str, str, Sequence[str], Sequence[Sequence[Any]]]],
+    subtitle: str | None = None,
+    exported_at: datetime | None = None,
+) -> bytes:
+    """Classeur Excel multi-onglets : ``sheets`` = (onglet, titre, en-têtes, lignes), même habillage banque."""
+    when = exported_at or export_now()
+    wb = Workbook()
+    wb.remove(wb.active)
+    for sheet_title, title, headers, rows in sheets:
+        ws = wb.create_sheet(sheet_title[:31])
+        _remplir_feuille(ws, report_title=f"{report_title} — {title}", headers=headers, rows=rows, subtitle=subtitle, when=when)
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _remplir_feuille(
+    ws,
+    *,
+    report_title: str,
+    headers: Sequence[str],
+    rows: Sequence[Sequence[Any]],
+    subtitle: str | None,
+    when: datetime,
+) -> None:
+    n_cols = max(len(headers), 1)
     last_col = get_column_letter(n_cols)
 
     # Ligne 1 — Banque (+ logo BEA si disponible)
@@ -218,10 +251,6 @@ def build_styled_workbook(
     ws.oddHeader.center.text = report_title
     ws.oddFooter.center.text = f"Exporté le {format_export_datetime(when)} — Page &P / &N"
     ws.oddFooter.left.text = BANQUE_EL_AMANA["raison_sociale"]
-
-    buf = BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
 
 
 def _pdf_styles():

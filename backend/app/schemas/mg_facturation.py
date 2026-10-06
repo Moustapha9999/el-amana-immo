@@ -129,10 +129,25 @@ class ProfilIn(BaseModel):
     ordre: int | None = Field(default=None, ge=0, le=9999)
 
 
+class NouveauFournisseurIn(BaseModel):
+    raison_sociale: str = Field(min_length=2, max_length=255)
+    telephone: str | None = Field(default=None, max_length=40)
+    email: str | None = Field(default=None, max_length=255)
+    nif: str | None = Field(default=None, max_length=60)
+    delai_paiement_jours: int | None = Field(default=None, ge=0, le=365)
+
+
 class ProfilCreate(ProfilIn):
     code: str = Field(min_length=2, max_length=40)
     libelle: str = Field(min_length=1, max_length=120)
-    fournisseur_id: UUID
+    fournisseur_id: UUID | None = None
+    nouveau_fournisseur: NouveauFournisseurIn | None = None
+
+
+class ControleLotIn(BaseModel):
+    ids: list[UUID] = Field(min_length=1, max_length=200)
+    action: str = Field(default="valider_controle", pattern="^(valider_controle|valider)$")
+    motif: str | None = Field(default=None, max_length=2000)
 
 
 class ImportChoix(BaseModel):

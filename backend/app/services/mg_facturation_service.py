@@ -37,6 +37,7 @@ from app.schemas.mg_facturation import (
     FacturePaiementIn,
     FacturePaiementUpdate,
     FactureUpdate,
+    NouveauFournisseurIn,
     PointFacturationCreate,
     PointFacturationIn,
     ProfilCreate,
@@ -2514,8 +2515,13 @@ class MgFacturationService:
         code = re.sub(r"[^A-Z0-9_]", "_", data.code.strip().upper())
         if await self.db.scalar(select(MgFacturationProfil.id).where(MgFacturationProfil.code == code)):
             raise AppError("Ce code de profil existe déjà", status_code=409, code="PROFIL_CODE_EXISTANT")
-        fr = await self._fournisseur(data.fournisseur_id)
         champs, libelles = self._valider_champs_profil(data.champs, data.libelles)
+        if data.fournisseur_id:
+            fr = await self._fournisseur(data.fournisseur_id)
+        elif data.nouveau_fournisseur:
+            fr = await self._creer_fournisseur(data.nouveau_fournisseur, user)
+        else:
+            raise AppError("Choisissez un fournisseur existant ou saisissez-en un nouveau", code="PROFIL_FOURNISSEUR_REQUIS")
         p = MgFacturationProfil(
             id=uuid.uuid4(),
             code=code,
@@ -2535,6 +2541,303 @@ class MgFacturationService:
         await self._audit(user, "factures.profil.create", p.id, entity="profil_facturation", after=_profil_dict(p, fr.raison_sociale))
         await self.db.commit()
         return _profil_dict(p, fr.raison_sociale)
+
+    async def _creer_fournisseur(self, data: NouveauFournisseurIn, user: User) -> Fournisseur:
+        nom = " ".join(data.raison_sociale.split())
+        existant = await self.db.scalar(
+            select(Fournisseur.id).where(
+                Fournisseur.deleted_at.is_(None), func.upper(func.trim(Fournisseur.raison_sociale)) == nom.upper()
+            )
+        )
+        if existant:
+            raise AppError(
+                f"Le fournisseur « {nom} » existe déjà : sélectionnez-le dans la liste",
+                status_code=409,
+                code="FOURNISSEUR_EXISTANT",
+            )
+        codes = (await self.db.execute(select(Fournisseur.code).where(Fournisseur.code.op("~")(r"^FRS-[0-9]+$")))).scalars().all()
+        n = max((int(c.split("-")[1]) for c in codes), default=0) + 1
+        fr = Fournisseur(
+            id=uuid.uuid4(),
+            code=f"FRS-{n:03d}",
+            raison_sociale=nom,
+            type_fournisseur="SERVICE",
+            telephone=_clean(data.telephone),
+            email=_clean(data.email),
+            nif=_clean(data.nif),
+            delai_paiement_jours=data.delai_paiement_jours,
+            pays="Mauritanie",
+            devise_defaut="MRU",
+            is_active=True,
+            created_by=user.id,
+            updated_by=user.id,
+        )
+        self.db.add(fr)
+        await self._audit(
+            user, "factures.fournisseur.create", fr.id, entity="fournisseur",
+            after={"code": fr.code, "raison_sociale": nom},
+        )
+        return fr
+
+    async def stats_fournisseurs(self, annee: int | None) -> dict:
+        """Synthèse par profil (et par fournisseur facturé sans profil) pour la page Fournisseurs."""
+        annee = annee or date.today().year
+        F = MgAchatFacture
+        filtre = [F.deleted_at.is_(None), F.origine == ORIGINE_FACTURATION]
+        if self.scope_agence:
+            filtre.append(F.agence_id == self.scope_agence)
+        comptes = F.statut.in_(tuple(STATUTS_COMPTES))
+        rows = (
+            await self.db.execute(
+                select(
+                    F.profil_id,
+                    F.fournisseur_id,
+                    F.mois,
+                    func.count(F.id),
+                    func.coalesce(func.sum(F.montant_ttc), 0),
+                )
+                .where(*filtre, comptes, F.annee == annee)
+                .group_by(F.profil_id, F.fournisseur_id, F.mois)
+            )
+        ).all()
+        ouvertes = (
+            await self.db.execute(
+                select(
+                    F.profil_id, F.fournisseur_id, func.count(F.id),
+                    func.coalesce(func.sum(func.greatest(func.coalesce(F.montant_a_payer, F.montant_ttc, 0) - func.coalesce(F.montant_paye, 0), 0)), 0),
+                )
+                .where(*filtre, F.statut.in_(tuple(STATUTS_OUVERTS)), func.coalesce(F.statut_paiement, "") != "PAYEE")
+                .group_by(F.profil_id, F.fournisseur_id)
+            )
+        ).all()
+        a_controler = (
+            await self.db.execute(
+                select(F.profil_id, F.fournisseur_id, func.count(F.id))
+                .where(*filtre, F.statut.in_(("RECUE", "A_CONTROLER")))
+                .group_by(F.profil_id, F.fournisseur_id)
+            )
+        ).all()
+        dernieres = (
+            await self.db.execute(
+                select(F.profil_id, F.fournisseur_id, func.max(F.date_facture))
+                .where(*filtre, F.statut != "ANNULEE")
+                .group_by(F.profil_id, F.fournisseur_id)
+            )
+        ).all()
+        P = MgPointFacturation
+        pt_stmt = (
+            select(P.profil_id, P.fournisseur_id, func.count(P.id))
+            .where(P.deleted_at.is_(None), P.statut == "ACTIF")
+            .group_by(P.profil_id, P.fournisseur_id)
+        )
+        if self.scope_agence:
+            pt_stmt = pt_stmt.where(P.agence_id == self.scope_agence)
+        points = (await self.db.execute(pt_stmt)).all()
+
+        profils = await self.list_profils(actifs=False)
+        par_cle: dict[str, dict] = {}
+
+        def item(profil_id, fournisseur_id) -> dict | None:
+            pid = str(profil_id) if profil_id else None
+            fid = str(fournisseur_id) if fournisseur_id else None
+            if not pid and not fid:
+                return None
+            cle = f"p:{pid}" if pid else f"f:{fid}"
+            if cle not in par_cle:
+                par_cle[cle] = {
+                    "cle": cle, "profil_id": pid, "fournisseur_id": fid,
+                    "nb": 0, "montant": 0.0, "mensuel": [0.0] * 12, "reste": 0.0, "nb_ouvertes": 0,
+                    "a_controler": 0, "points": 0, "derniere_facture": None,
+                }
+            elif fid and not par_cle[cle]["fournisseur_id"]:
+                par_cle[cle]["fournisseur_id"] = fid
+            return par_cle[cle]
+
+        for p in profils:
+            item(p["id"], p["fournisseur_id"])
+        for profil_id, fournisseur_id, mois, nb, montant in rows:
+            it = item(profil_id, fournisseur_id)
+            if it is None:
+                continue
+            it["nb"] += nb
+            it["montant"] += float(montant or 0)
+            if mois:
+                it["mensuel"][mois - 1] += float(montant or 0)
+        for profil_id, fournisseur_id, nb, reste in ouvertes:
+            if (it := item(profil_id, fournisseur_id)) is not None:
+                it["nb_ouvertes"] += nb
+                it["reste"] += float(reste or 0)
+        for profil_id, fournisseur_id, nb in a_controler:
+            if (it := item(profil_id, fournisseur_id)) is not None:
+                it["a_controler"] += nb
+        for profil_id, fournisseur_id, d in dernieres:
+            if (it := item(profil_id, fournisseur_id)) is not None and d:
+                iso = d.isoformat()
+                it["derniere_facture"] = max(it["derniere_facture"] or iso, iso)
+        for profil_id, fournisseur_id, nb in points:
+            if (it := item(profil_id, fournisseur_id)) is not None:
+                it["points"] += nb
+
+        fournisseur_ids = {uuid.UUID(i["fournisseur_id"]) for i in par_cle.values() if i["fournisseur_id"]}
+        frs = {
+            str(f.id): f
+            for f in (await self.db.execute(select(Fournisseur).where(Fournisseur.id.in_(fournisseur_ids)))).scalars().all()
+        } if fournisseur_ids else {}
+        profils_par_id = {p["id"]: p for p in profils}
+        items = []
+        for it in par_cle.values():
+            fr = frs.get(it["fournisseur_id"] or "")
+            p = profils_par_id.get(it["profil_id"] or "")
+            it.update(
+                {
+                    "profil": p,
+                    "libelle": p["libelle"] if p else (fr.raison_sociale if fr else "—"),
+                    "fournisseur": fr.raison_sociale if fr else None,
+                    "fournisseur_code": fr.code if fr else None,
+                    "fournisseur_actif": bool(fr and fr.deleted_at is None and fr.is_active),
+                    "telephone": fr.telephone if fr else None,
+                    "email": fr.email if fr else None,
+                    "montant": round(it["montant"], 2),
+                    "reste": round(it["reste"], 2),
+                    "mensuel": [round(v, 2) for v in it["mensuel"]],
+                    "actif": p["actif"] if p else True,
+                }
+            )
+            if p or it["nb"] or it["nb_ouvertes"]:
+                items.append(it)
+        items.sort(key=lambda x: (not x["actif"], x["profil"] is None, -x["montant"], x["libelle"]))
+        total = sum(i["montant"] for i in items)
+        for i in items:
+            i["part_pct"] = round(i["montant"] / total * 100, 1) if total else 0.0
+        return {
+            "annee": annee,
+            "items": items,
+            "total": round(total, 2),
+            "reste": round(sum(i["reste"] for i in items), 2),
+            "nb_profils": sum(1 for i in items if i["profil"] and i["actif"]),
+        }
+
+    # ——— Contrôles ———
+
+    async def file_controles(self, filtres: dict) -> dict:
+        """Factures en attente de contrôle / de validation avec le résultat des contrôles automatiques."""
+        statuts = ("RECUE", "A_CONTROLER", "CONTROLEE")
+        base = {k: v for k, v in filtres.items() if v and k not in {"statut", "vue"}}
+        rows = await self.fetch_rows({**base, "statut": ",".join(statuts)}, order=None)
+        ids = [uuid.UUID(r["id"]) for r in rows]
+        factures = {
+            str(f.id): f
+            for f in (await self.db.execute(select(MgAchatFacture).where(MgAchatFacture.id.in_(ids)))).scalars().all()
+        } if ids else {}
+        profils = {
+            p.id: p for p in (await self.db.execute(select(MgFacturationProfil))).scalars().all()
+        }
+        fr_ids = {f.fournisseur_id for f in factures.values() if f.fournisseur_id}
+        actifs = {
+            fid for fid, deleted, active in (
+                await self.db.execute(
+                    select(Fournisseur.id, Fournisseur.deleted_at, Fournisseur.is_active).where(Fournisseur.id.in_(fr_ids))
+                )
+            ).all()
+            if deleted is None and active
+        } if fr_ids else set()
+        compteurs = {"a_controler": 0, "bloquant": 0, "attention": 0, "pret": 0, "controlee": 0}
+        items = []
+        for r in rows:
+            f = factures.get(r["id"])
+            if f is None:
+                continue
+            profil = profils.get(f.profil_id) if f.profil_id else None
+            ctrl = controles_facture(
+                f, profil.champs if profil else None, profil.taux_tva if profil else None,
+                r.get("nb_documents") or 0, fournisseur_actif=f.fournisseur_id in actifs,
+            )
+            bloquants = sum(1 for c in ctrl if c["niveau"] == "bloquant")
+            attention = len(ctrl) - bloquants
+            niveau = "bloquant" if bloquants else ("attention" if attention else "ok")
+            if r["statut"] == "CONTROLEE":
+                compteurs["controlee"] += 1
+            else:
+                compteurs["a_controler"] += 1
+                compteurs[{"bloquant": "bloquant", "attention": "attention", "ok": "pret"}[niveau]] += 1
+            items.append({**r, "controles": ctrl, "niveau_controle": niveau, "nb_bloquants": bloquants, "nb_attention": attention})
+        ordre = {"bloquant": 0, "attention": 1, "ok": 2}
+        items.sort(key=lambda x: (x["statut"] == "CONTROLEE", ordre[x["niveau_controle"]], x["date_facture"] or ""))
+        niveau_filtre = filtres.get("niveau")
+        if niveau_filtre:
+            items = [i for i in items if i["niveau_controle"] == niveau_filtre]
+        return {"items": items, "compteurs": compteurs}
+
+    async def transition_lot(self, ids: list[uuid.UUID], action: str, user: User, motif: str | None) -> dict:
+        resultats = []
+        for fid in dict.fromkeys(ids):
+            try:
+                r = await self.transition(fid, action, user, motif)
+                resultats.append({"id": str(fid), "ok": True, "reference": r.get("reference")})
+            except (AppError, HTTPException) as exc:
+                message = getattr(exc, "message", None) or getattr(exc, "detail", None) or str(exc)
+                resultats.append({"id": str(fid), "ok": False, "message": str(message)})
+        return {
+            "resultats": resultats,
+            "succes": sum(1 for r in resultats if r["ok"]),
+            "echecs": sum(1 for r in resultats if not r["ok"]),
+        }
+
+    # ——— Historique global ———
+
+    async def journal(self, filtres: dict, *, page: int = 1, size: int = 50) -> dict:
+        E, F, P = MgAchatEvenement, MgAchatFacture, MgPointFacturation
+        stmt = (
+            select(E, User.full_name, F.reference, F.agence_id, P.nom, P.code, P.agence_id)
+            .outerjoin(User, User.id == E.user_id)
+            .outerjoin(F, and_(E.entity_type == EVT_FACTURE, F.id == E.entity_id))
+            .outerjoin(P, and_(E.entity_type == EVT_POINT, P.id == E.entity_id))
+            .where(
+                or_(
+                    and_(E.entity_type == EVT_FACTURE, F.origine == ORIGINE_FACTURATION),
+                    and_(E.entity_type == EVT_POINT, P.id.is_not(None)),
+                )
+            )
+        )
+        if self.scope_agence:
+            stmt = stmt.where(or_(F.agence_id == self.scope_agence, P.agence_id == self.scope_agence))
+        if filtres.get("entite") in {EVT_FACTURE, EVT_POINT}:
+            stmt = stmt.where(E.entity_type == filtres["entite"])
+        if filtres.get("action"):
+            stmt = stmt.where(E.action == filtres["action"])
+        if filtres.get("date_from"):
+            stmt = stmt.where(E.created_at >= datetime.combine(filtres["date_from"], datetime.min.time(), tzinfo=timezone.utc))
+        if filtres.get("date_to"):
+            stmt = stmt.where(
+                E.created_at < datetime.combine(filtres["date_to"] + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+            )
+        q = (filtres.get("q") or "").strip()
+        if q:
+            like = f"%{q}%"
+            stmt = stmt.where(
+                or_(E.message.ilike(like), F.reference.ilike(like), P.nom.ilike(like), P.code.ilike(like), User.full_name.ilike(like))
+            )
+        total = await self.db.scalar(select(func.count()).select_from(stmt.subquery()))
+        rows = (
+            await self.db.execute(stmt.order_by(E.created_at.desc()).offset((page - 1) * size).limit(size))
+        ).all()
+        items = []
+        for e, nom, ref, _fag, pnom, pcode, _pag in rows:
+            facture = e.entity_type == EVT_FACTURE
+            items.append(
+                {
+                    "id": str(e.id),
+                    "entite": e.entity_type,
+                    "entity_id": str(e.entity_id),
+                    "action": e.action,
+                    "action_label": ACTION_LABELS.get(e.action.lower(), e.action.replace("_", " ").capitalize()),
+                    "message": e.message,
+                    "user_nom": nom,
+                    "reference": ref if facture else (f"{pnom} ({pcode})" if pnom else pcode),
+                    "created_at": _iso(e.created_at),
+                }
+            )
+        return {"items": items, "total": total or 0, "page": page, "size": size}
 
     async def update_profil(self, profil_id: uuid.UUID, data: ProfilIn, user: User) -> dict:
         p = await self._profil(profil_id, actif=False)

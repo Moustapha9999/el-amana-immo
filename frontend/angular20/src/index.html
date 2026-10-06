@@ -18,7 +18,7 @@
       var t = null;
       try { t = localStorage.getItem('bea.theme'); } catch (e) {}
       if (t !== 'dark' && t !== 'light') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      if (t === 'dark') document.write('<link id="bea-theme-dark" rel="stylesheet" href="theme-dark.css?v=b912868215">');
+      if (t === 'dark') document.write('<link id="bea-theme-dark" rel="stylesheet" href="theme-dark.css?v=f2162b9e76">');
       document.documentElement.dataset.theme = t;
       document.documentElement.style.colorScheme = t;
     })();

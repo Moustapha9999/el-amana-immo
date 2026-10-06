@@ -15,6 +15,7 @@ from app.api.deps import get_db, require_module_access, require_permission
 from app.core.exceptions import AppError
 from app.models.auth import User
 from app.schemas.mg_facturation import (
+    ControleLotIn,
     FactureCreate,
     FacturePaiementIn,
     FacturePaiementUpdate,
@@ -35,7 +36,7 @@ _module = [Depends(require_module_access("facturation-fournisseurs"))]
 router = APIRouter(prefix="/mg/factures", tags=["mg-factures"], dependencies=_module)
 points_router = APIRouter(prefix="/mg/points-facturation", tags=["mg-factures"], dependencies=_module)
 
-FORMATS = {"json", "xlsx", "pdf"}
+FORMATS = {"json", "xlsx", "pdf", "csv"}
 
 
 class ParamIn(BaseModel):
@@ -192,6 +193,53 @@ async def search(
 @router.get("/compteurs")
 async def compteurs(db: AsyncSession = Depends(get_db), user: User = Depends(require_permission("mg.factures.view"))):
     return await (await _svc(db, user)).compteurs_vues()
+
+
+@router.get("/fournisseurs")
+async def stats_fournisseurs(
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.factures.view")),
+):
+    return await (await _svc(db, user)).stats_fournisseurs(year)
+
+
+# ——— Contrôles et historique ———
+
+
+@router.get("/controles")
+async def file_controles(
+    niveau: str | None = Query(default=None, pattern="^(bloquant|attention|ok)$"),
+    filtres: dict = Depends(_filtres),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.factures.view")),
+):
+    return await (await _svc(db, user)).file_controles({**filtres, "niveau": niveau})
+
+
+@router.post("/controles/lot")
+async def transition_lot(
+    body: ControleLotIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.factures.view")),
+):
+    return await (await _svc(db, user)).transition_lot(body.ids, body.action, user, body.motif)
+
+
+@router.get("/historique")
+async def journal(
+    q: str | None = Query(default=None, max_length=120),
+    entite: str | None = Query(default=None, pattern="^(facture|point_facturation)$"),
+    action: str | None = Query(default=None, max_length=60),
+    date_from: date | None = None,
+    date_to: date | None = None,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.factures.view")),
+):
+    filtres = {"q": q, "entite": entite, "action": action, "date_from": date_from, "date_to": date_to}
+    return await (await _svc(db, user)).journal(filtres, page=page, size=size)
 
 
 # ——— Analyses ———

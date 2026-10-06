@@ -108,6 +108,12 @@ const fxAnalyses = () =>
   import('./facturation-fournisseurs/facturation-analyses.component').then((m) => m.FacturationAnalysesComponent);
 const fxRapports = () =>
   import('./facturation-fournisseurs/facturation-rapports.component').then((m) => m.FacturationRapportsComponent);
+const fxFournisseurs = () =>
+  import('./facturation-fournisseurs/facturation-fournisseurs.component').then((m) => m.FacturationFournisseursComponent);
+const fxControles = () =>
+  import('./facturation-fournisseurs/facturation-controles.component').then((m) => m.FacturationControlesComponent);
+const fxHistorique = () =>
+  import('./facturation-fournisseurs/facturation-historique.component').then((m) => m.FacturationHistoriqueComponent);
 const fxParametres = () =>
   import('./facturation-fournisseurs/facturation-parametres.component').then((m) => m.FacturationParametresComponent);
 
@@ -223,7 +229,10 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
       { path: 'dashboard', loadComponent: fxDashboard },
       { path: 'factures', loadComponent: fxListe },
+      { path: 'fournisseurs', loadComponent: fxFournisseurs },
       { path: 'points', loadComponent: fxPoints },
+      { path: 'controles', loadComponent: fxControles },
+      { path: 'historique', loadComponent: fxHistorique },
       { path: 'paiements', data: { mode: 'paiements' }, loadComponent: fxSuivi },
       { path: 'echeances', data: { mode: 'echeances' }, loadComponent: fxSuivi },
       { path: 'alertes', data: { mode: 'alertes' }, loadComponent: fxSuivi },
