@@ -511,6 +511,26 @@ class MgFacturationProfil(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+class MgFacturationTva(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Taux de TVA d'un profil sur une période (bornes facultatives). Aucun taux = aucun calcul."""
+
+    __tablename__ = "mg_facturation_tva"
+
+    profil_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_facturation_profils.id", ondelete="CASCADE"), index=True
+    )
+    taux: Mapped[Decimal] = mapped_column(Numeric(5, 2))
+    date_debut: Mapped[date | None] = mapped_column(Date, nullable=True)
+    date_fin: Mapped[date | None] = mapped_column(Date, nullable=True)
+    observation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
+
 class MgPointFacturation(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     """Compteur / abonnement d'un fournisseur pour un site (agence, siège, PDV Amanty…).
 

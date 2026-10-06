@@ -30,7 +30,13 @@ from app.models.mg_achats import (
     MgAchatFactureLigne,
     MgAchatPaiement,
 )
-from app.models.mg_ops import MgContrat, MgContratParametre, MgFacturationProfil, MgPointFacturation
+from app.models.mg_ops import (
+    MgContrat,
+    MgContratParametre,
+    MgFacturationProfil,
+    MgFacturationTva,
+    MgPointFacturation,
+)
 from app.models.organisation import Fournisseur
 from app.schemas.mg_facturation import (
     FactureCreate,
@@ -42,6 +48,8 @@ from app.schemas.mg_facturation import (
     PointFacturationIn,
     ProfilCreate,
     ProfilIn,
+    TvaIn,
+    TvaUpdate,
 )
 from app.services.audit_helpers import record_audit
 from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
@@ -462,6 +470,19 @@ def detail_paiement(mode: str, valeurs: dict, observation: str | None = None) ->
     return propres
 
 
+def taux_applicable(taux: list, jour: date | None) -> Decimal | None:
+    """Taux en vigueur à ``jour`` parmi des lignes (taux, date_debut, date_fin) ; None si aucun."""
+    jour = jour or date.today()
+    retenus = [t for t in taux if (t.date_debut is None or t.date_debut <= jour) and (t.date_fin is None or jour <= t.date_fin)]
+    if not retenus:
+        return None
+    return max(retenus, key=lambda t: t.date_debut or date.min).taux
+
+
+def periodes_chevauchent(a_debut: date | None, a_fin: date | None, b_debut: date | None, b_fin: date | None) -> bool:
+    return (a_debut is None or b_fin is None or a_debut <= b_fin) and (b_debut is None or a_fin is None or b_debut <= a_fin)
+
+
 def controles_facture(
     f: MgAchatFacture,
     profil_champs: dict | None,
@@ -511,6 +532,10 @@ def _iso(value) -> str | None:
     return value.isoformat() if value else None
 
 
+def _fr_date(value: date | None) -> str | None:
+    return value.strftime("%d/%m/%Y") if value else None
+
+
 def _json_value(value):
     if isinstance(value, (date, datetime)):
         return value.isoformat()
@@ -544,7 +569,27 @@ def _detail_paiement(p: MgAchatPaiement) -> dict:
     }
 
 
-def _profil_dict(p: MgFacturationProfil, fournisseur: str | None = None) -> dict:
+def _tva_dict(t: MgFacturationTva) -> dict:
+    today = date.today()
+    if t.date_debut and t.date_debut > today:
+        etat = "A_VENIR"
+    elif t.date_fin and t.date_fin < today:
+        etat = "EXPIRE"
+    else:
+        etat = "EN_VIGUEUR"
+    return {
+        "id": str(t.id),
+        "profil_id": str(t.profil_id),
+        "taux": to_float(t.taux),
+        "date_debut": _iso(t.date_debut),
+        "date_fin": _iso(t.date_fin),
+        "observation": t.observation,
+        "etat": etat,
+    }
+
+
+def _profil_dict(p: MgFacturationProfil, fournisseur: str | None = None, taux: list | None = None) -> dict:
+    taux = taux or []
     return {
         "id": str(p.id),
         "code": p.code,
@@ -552,7 +597,8 @@ def _profil_dict(p: MgFacturationProfil, fournisseur: str | None = None) -> dict
         "fournisseur_id": str(p.fournisseur_id),
         "fournisseur": fournisseur,
         "type_facture": p.type_facture,
-        "taux_tva": to_float(p.taux_tva),
+        "taux_tva": to_float(taux_applicable(taux, date.today())),
+        "taux_tva_liste": [_tva_dict(t) for t in sorted(taux, key=lambda t: t.date_debut or date.min)],
         "champs": {c: etat_champ(p.champs, c) for c in CHAMPS_PROFIL},
         "libelles": {c: (p.libelles or {}).get(c) or lib for c, lib in CHAMPS_PROFIL.items()},
         "description": p.description,
@@ -805,10 +851,25 @@ class MgFacturationService:
         return profil
 
     async def _profil_champs(self, f: MgAchatFacture) -> tuple[dict | None, Decimal | None]:
+        """Champs du profil et taux de TVA en vigueur à la date de la facture."""
         if not f.profil_id:
             return None, None
         profil = await self.db.get(MgFacturationProfil, f.profil_id)
-        return (profil.champs, profil.taux_tva) if profil else (None, None)
+        if not profil:
+            return None, None
+        taux = (await self._taux_par_profil([profil.id])).get(str(profil.id), [])
+        return profil.champs, taux_applicable(taux, f.date_facture)
+
+    async def _taux_par_profil(self, profil_ids: list | None = None) -> dict[str, list[MgFacturationTva]]:
+        stmt = select(MgFacturationTva)
+        if profil_ids is not None:
+            if not profil_ids:
+                return {}
+            stmt = stmt.where(MgFacturationTva.profil_id.in_(profil_ids))
+        out: dict[str, list[MgFacturationTva]] = {}
+        for t in (await self.db.execute(stmt)).scalars().all():
+            out.setdefault(str(t.profil_id), []).append(t)
+        return out
 
     async def _exiger_champs(self, f: MgAchatFacture) -> None:
         """Champs obligatoires du profil : exigés dès que la facture quitte le brouillon."""
@@ -1272,11 +1333,13 @@ class MgFacturationService:
         controleur = await self.db.get(User, f.controle_by) if f.controle_by else None
         profil = await self.db.get(MgFacturationProfil, f.profil_id) if f.profil_id else None
         fr = await self.db.get(Fournisseur, f.fournisseur_id) if f.fournisseur_id else None
+        taux = (await self._taux_par_profil([profil.id])).get(str(profil.id), []) if profil else []
         data.update(
             {
-                "profil_config": _profil_dict(profil, fournisseur) if profil else None,
+                "profil_config": _profil_dict(profil, fournisseur, taux) if profil else None,
+                "taux_tva_facture": to_float(taux_applicable(taux, f.date_facture)) if profil else None,
                 "controles": controles_facture(
-                    f, profil.champs if profil else None, profil.taux_tva if profil else None, nb_docs,
+                    f, profil.champs if profil else None, taux_applicable(taux, f.date_facture), nb_docs,
                     fournisseur_actif=bool(fr and fr.deleted_at is None and fr.is_active),
                 ),
                 "controle_at": _iso(f.controle_at),
@@ -2495,7 +2558,9 @@ class MgFacturationService:
         )
         if actifs:
             stmt = stmt.where(MgFacturationProfil.actif.is_(True))
-        return [_profil_dict(p, fr) for p, fr in (await self.db.execute(stmt)).all()]
+        rows = (await self.db.execute(stmt)).all()
+        taux = await self._taux_par_profil()
+        return [_profil_dict(p, fr, taux.get(str(p.id), [])) for p, fr in rows]
 
     @staticmethod
     def _valider_champs_profil(champs: dict | None, libelles: dict | None) -> tuple[dict | None, dict | None]:
@@ -2538,9 +2603,19 @@ class MgFacturationService:
             updated_by=user.id,
         )
         self.db.add(p)
-        await self._audit(user, "factures.profil.create", p.id, entity="profil_facturation", after=_profil_dict(p, fr.raison_sociale))
+        taux = []
+        if data.taux_tva is not None:
+            await self.db.flush()
+            t = MgFacturationTva(
+                id=uuid.uuid4(), profil_id=p.id, taux=q2(data.taux_tva), observation="Saisi à la création du profil",
+                created_by=user.id, updated_by=user.id,
+            )
+            self.db.add(t)
+            taux = [t]
+        after = _profil_dict(p, fr.raison_sociale, taux)
+        await self._audit(user, "factures.profil.create", p.id, entity="profil_facturation", after=after)
         await self.db.commit()
-        return _profil_dict(p, fr.raison_sociale)
+        return after
 
     async def _creer_fournisseur(self, data: NouveauFournisseurIn, user: User) -> Fournisseur:
         nom = " ".join(data.raison_sociale.split())
@@ -2732,6 +2807,7 @@ class MgFacturationService:
         profils = {
             p.id: p for p in (await self.db.execute(select(MgFacturationProfil))).scalars().all()
         }
+        taux_profils = await self._taux_par_profil()
         fr_ids = {f.fournisseur_id for f in factures.values() if f.fournisseur_id}
         actifs = {
             fid for fid, deleted, active in (
@@ -2749,7 +2825,8 @@ class MgFacturationService:
                 continue
             profil = profils.get(f.profil_id) if f.profil_id else None
             ctrl = controles_facture(
-                f, profil.champs if profil else None, profil.taux_tva if profil else None,
+                f, profil.champs if profil else None,
+                taux_applicable(taux_profils.get(str(profil.id), []), f.date_facture) if profil else None,
                 r.get("nb_documents") or 0, fournisseur_actif=f.fournisseur_id in actifs,
             )
             bloquants = sum(1 for c in ctrl if c["niveau"] == "bloquant")
@@ -2842,7 +2919,12 @@ class MgFacturationService:
     async def update_profil(self, profil_id: uuid.UUID, data: ProfilIn, user: User) -> dict:
         p = await self._profil(profil_id, actif=False)
         champs_set = data.model_fields_set
-        before = _profil_dict(p)
+        if "taux_tva" in champs_set:
+            raise AppError(
+                "La TVA d'un profil se gère dans Paramètres › TVA par profil (taux datés)", code="PROFIL_TVA_PARAMETRES"
+            )
+        taux = (await self._taux_par_profil([p.id])).get(str(p.id), [])
+        before = _profil_dict(p, None, taux)
         if "fournisseur_id" in champs_set and data.fournisseur_id and data.fournisseur_id != p.fournisseur_id:
             utilise = await self.db.scalar(
                 select(func.count()).select_from(MgAchatFacture).where(
@@ -2863,8 +2945,6 @@ class MgFacturationService:
             p.libelle = data.libelle.strip()
         if "type_facture" in champs_set:
             p.type_facture = (_clean(data.type_facture) or "").upper() or None
-        if "taux_tva" in champs_set:
-            p.taux_tva = q2(data.taux_tva) if data.taux_tva is not None else None
         if "description" in champs_set:
             p.description = _clean(data.description)
         if "actif" in champs_set and data.actif is not None:
@@ -2873,10 +2953,89 @@ class MgFacturationService:
             p.ordre = data.ordre
         p.updated_by = user.id
         fr = await self.db.get(Fournisseur, p.fournisseur_id)
-        after = _profil_dict(p, fr.raison_sociale if fr else None)
+        after = _profil_dict(p, fr.raison_sociale if fr else None, taux)
         await self._audit(user, "factures.profil.update", p.id, entity="profil_facturation", before=before, after=after)
         await self.db.commit()
         return after
+
+    # ——— TVA par profil (taux datés) ———
+
+    async def list_tva(self) -> list[dict]:
+        """Tous les profils avec leurs taux ; un profil sans taux = TVA non configurée."""
+        return await self.list_profils(actifs=False)
+
+    async def _tva(self, tva_id: uuid.UUID) -> MgFacturationTva:
+        t = await self.db.get(MgFacturationTva, tva_id)
+        if not t:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Taux de TVA introuvable")
+        return t
+
+    async def _verifier_tva(self, profil_id, taux, debut: date | None, fin: date | None, *, exclure=None) -> None:
+        if taux is None or Decimal(taux) < 0 or Decimal(taux) > 100:
+            raise AppError("Le taux doit être compris entre 0 et 100 %", code="TVA_TAUX_INVALIDE")
+        if debut and fin and fin < debut:
+            raise AppError("La date de fin précède la date de début", code="TVA_PERIODE_INVALIDE")
+        for t in (await self._taux_par_profil([profil_id])).get(str(profil_id), []):
+            if t.id != exclure and periodes_chevauchent(debut, fin, t.date_debut, t.date_fin):
+                periode = f"{_fr_date(t.date_debut) or 'origine'} → {_fr_date(t.date_fin) or 'sans fin'}"
+                raise AppError(
+                    f"Période en conflit avec le taux {Decimal(t.taux).normalize()} % ({periode}) : "
+                    "clôturez-le d'abord (date de fin) ou ajustez les dates",
+                    status_code=409,
+                    code="TVA_CHEVAUCHEMENT",
+                )
+
+    async def _tva_resultat(self, profil: MgFacturationProfil) -> dict:
+        """Recalcule la valeur courante du profil et renvoie sa fiche à jour."""
+        taux = (await self._taux_par_profil([profil.id])).get(str(profil.id), [])
+        profil.taux_tva = taux_applicable(taux, date.today())
+        fr = await self.db.get(Fournisseur, profil.fournisseur_id)
+        return _profil_dict(profil, fr.raison_sociale if fr else None, taux)
+
+    async def create_tva(self, data: TvaIn, user: User) -> dict:
+        profil = await self._profil(data.profil_id, actif=False)
+        await self._verifier_tva(profil.id, data.taux, data.date_debut, data.date_fin)
+        t = MgFacturationTva(
+            id=uuid.uuid4(), profil_id=profil.id, taux=q2(data.taux), date_debut=data.date_debut, date_fin=data.date_fin,
+            observation=_clean(data.observation), created_by=user.id, updated_by=user.id,
+        )
+        self.db.add(t)
+        await self.db.flush()
+        out = await self._tva_resultat(profil)
+        await self._audit(user, "factures.tva.create", t.id, entity="tva_profil", after={"profil": profil.code, **_tva_dict(t)})
+        await self.db.commit()
+        return out
+
+    async def update_tva(self, tva_id: uuid.UUID, data: TvaUpdate, user: User) -> dict:
+        t = await self._tva(tva_id)
+        profil = await self._profil(t.profil_id, actif=False)
+        champs = data.model_fields_set
+        before = _tva_dict(t)
+        taux = data.taux if "taux" in champs and data.taux is not None else t.taux
+        debut = data.date_debut if "date_debut" in champs else t.date_debut
+        fin = data.date_fin if "date_fin" in champs else t.date_fin
+        await self._verifier_tva(profil.id, taux, debut, fin, exclure=t.id)
+        t.taux, t.date_debut, t.date_fin = q2(taux), debut, fin
+        if "observation" in champs:
+            t.observation = _clean(data.observation)
+        t.updated_by = user.id
+        await self.db.flush()
+        out = await self._tva_resultat(profil)
+        await self._audit(user, "factures.tva.update", t.id, entity="tva_profil", before=before,
+                          after={"profil": profil.code, **_tva_dict(t)})
+        await self.db.commit()
+        return out
+
+    async def delete_tva(self, tva_id: uuid.UUID, user: User) -> dict:
+        t = await self._tva(tva_id)
+        profil = await self._profil(t.profil_id, actif=False)
+        before = {"profil": profil.code, **_tva_dict(t)}
+        await self.db.delete(t)
+        await self.db.flush()
+        out = await self._tva_resultat(profil)
+        await self._audit(user, "factures.tva.delete", tva_id, entity="tva_profil", before=before)
+        await self.db.commit()
+        return out
 
     async def referentiels(self) -> dict:
         ag_stmt = select(Agence).where(Agence.is_active.is_(True), Agence.deleted_at.is_(None))

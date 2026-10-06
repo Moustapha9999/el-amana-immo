@@ -10959,6 +10959,42 @@ table.bea-fx-mini { display: table; width: 100%; font-size: 0.8rem; }
 .bea-fx-tags span { padding: 0.15rem 0.55rem; border-radius: 999px; background: #eef4f9; color: #1a5278; font-size: 0.75rem; font-weight: 600; }
 .bea-fx .bea-mg__panel > .bea-fx-h3, .bea-fx .bea-mg__panel > .bea-fx-tags, .bea-fx .bea-mg__panel > .bea-ct-help { margin-left: 1rem; margin-right: 1rem; }
 
+/* TVA par profil */
+.bea-fx-tva__compte { font-size: 0.78rem; font-weight: 700; color: #64748b; }
+.bea-fx-tva { display: flex; flex-direction: column; padding: 0.2rem 1rem 0.8rem; }
+.bea-fx-tva__row { display: grid; grid-template-columns: minmax(10rem, 1.1fr) 9.5rem minmax(0, 3fr) auto; align-items: start; gap: 0.75rem; padding: 0.7rem 0; border-bottom: 1px solid #f1f5f9; animation: beaMgRise 0.25s ease both; }
+.bea-fx-tva__row.is-off { opacity: 0.6; }
+.bea-fx-tva__profil { display: flex; flex-direction: column; font-size: 0.86rem; min-width: 0; }
+.bea-fx-tva__profil small { color: #94a3b8; }
+.bea-fx-tva__courant { padding-top: 0.1rem; }
+.bea-fx-tva__liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.bea-fx-tva__liste li { --tva-accent: #15803d; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.3rem 0.4rem 0.3rem 0.6rem; border-radius: 0.55rem; background: #f8fafc; border-left: 3px solid var(--tva-accent); font-size: 0.8rem; }
+.bea-fx-tva__liste li[data-etat='A_VENIR'] { --tva-accent: #1a5278; }
+.bea-fx-tva__liste li[data-etat='EXPIRE'] { --tva-accent: #cbd5e1; color: #64748b; }
+.bea-fx-tva__liste li.bea-fx-tva__vide { --tva-accent: #e2e8f0; color: #94a3b8; font-style: italic; }
+.bea-fx-tva__taux { font-weight: 800; color: #0f172a; min-width: 3.2rem; }
+.bea-fx-tva__liste li[data-etat='EXPIRE'] .bea-fx-tva__taux { color: #64748b; }
+.bea-fx-tva__periode { color: #334155; font-weight: 600; }
+.bea-fx-tva__etat { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--tva-accent); }
+.bea-fx-tva__obs { flex: 1 1 8rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #64748b; }
+.bea-fx-tva__actions { display: flex; gap: 0.15rem; margin-left: auto; }
+.bea-fx-tva__btn { display: inline-flex; align-items: center; justify-content: center; width: 1.8rem; height: 1.8rem; border: 0; border-radius: 0.45rem; background: transparent; color: #475569; cursor: pointer; }
+.bea-fx-tva__btn mat-icon { font-size: 1.05rem; width: 1.05rem; height: 1.05rem; }
+.bea-fx-tva__btn:hover { background: #e8f1f8; color: #1a5278; }
+.bea-fx-tva__btn--danger:hover { background: #fef2f2; color: #b91c1c; }
+.bea-fx-tva__btn:disabled { opacity: 0.4; cursor: default; }
+.bea-fx-tva__add { white-space: nowrap; }
+.bea-fx-tva-form__profil { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; margin: 0; font-size: 0.9rem; }
+.bea-fx-tva-form__profil span { color: #64748b; font-size: 0.8rem; }
+.bea-fx-form__err { font-size: 0.7rem; color: #b91c1c; font-weight: 600; }
+.bea-fx-form__ro { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.82rem; font-weight: 600; color: #334155; }
+.bea-fx-form__ro strong { padding: 0.45rem 0.6rem; border: 1px dashed #dbe3ee; border-radius: 0.6rem; background: #f8fafc; color: #0f172a; }
+.bea-fx-form__ro a { color: #1a5278; }
+@media (max-width: 900px) {
+  .bea-fx-tva__row { grid-template-columns: 1fr auto; }
+  .bea-fx-tva__liste { grid-column: 1 / -1; }
+}
+
 @media (max-width: 1100px) {
   .bea-fx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

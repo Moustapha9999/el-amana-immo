@@ -1,12 +1,13 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, input, output, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
+import { RouterLink } from '@angular/router';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 import { ApiService } from '../core/services/api.service';
 import { parseMontant } from '../shared/montant.pipe';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
-import { ChampProfil, EtatChamp, FxProfil, LIBELLES_CHAMPS } from './facturation.models';
+import { ChampProfil, EtatChamp, FX_BASE, FxProfil, LIBELLES_CHAMPS } from './facturation.models';
 import { FacturationStore } from './facturation.store';
 
 const CHAMPS = Object.keys(LIBELLES_CHAMPS) as ChampProfil[];
@@ -20,7 +21,7 @@ const ETATS: { code: EtatChamp; label: string }[] = [
 @Component({
   selector: 'bea-fx-profil-form',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MatIconModule],
+  imports: [ReactiveFormsModule, MatIconModule, RouterLink],
   template: `
     <div class="bea-mg__backdrop" (click)="fermer()"></div>
     <form class="bea-mg__modal bea-mg__modal--lg bea-ct-modal bea-fx-form" role="dialog" aria-modal="true" aria-labelledby="bea-fx-profil-title"
@@ -75,10 +76,19 @@ const ETATS: { code: EtatChamp; label: string }[] = [
                 @for (t of store.config()?.types_facture ?? []; track t.code) { <option [value]="t.code">{{ t.libelle }}</option> }
               </select>
             </label>
-            <label>Taux de TVA (%)
-              <input inputmode="decimal" formControlName="taux_tva" placeholder="Non configuré" />
-              <small class="bea-fx-form__hint">Laisser vide tant que le taux n’est pas confirmé : aucune TVA ne sera proposée ni contrôlée.</small>
-            </label>
+            @if (profil(); as p) {
+              <div class="bea-fx-form__ro">
+                <span>TVA en vigueur</span>
+                <strong>{{ p.taux_tva === null ? 'Non configurée' : p.taux_tva + ' %' }}</strong>
+                <small class="bea-fx-form__hint">{{ p.taux_tva_liste.length }} taux daté(s) ·
+                  <a [routerLink]="base + '/parametres'" fragment="tva">Gérer dans Paramètres</a></small>
+              </div>
+            } @else {
+              <label>Taux de TVA (%)
+                <input inputmode="decimal" formControlName="taux_tva" placeholder="Non configuré" />
+                <small class="bea-fx-form__hint">Laisser vide tant que le taux n’est pas confirmé : aucune TVA ne sera proposée ni contrôlée. Les changements de taux se gèrent ensuite dans Paramètres.</small>
+              </label>
+            }
             @if (!profil()) {
               <label>Partir du modèle
                 <select (change)="copierModele($any($event.target).value)">
@@ -129,6 +139,7 @@ export class FxProfilFormComponent implements OnInit {
   readonly profilUtilise = input(false);
   readonly saved = output<FxProfil>();
   readonly closed = output<void>();
+  readonly base = FX_BASE;
 
   readonly store = inject(FacturationStore);
   private readonly api = inject(ApiService);
@@ -258,7 +269,6 @@ export class FxProfilFormComponent implements OnInit {
     const body: Record<string, unknown> = {
       libelle: v.libelle.trim(),
       type_facture: v.type_facture || null,
-      taux_tva: this.taux(),
       description: v.description.trim() || null,
       ordre: v.ordre || 0,
       actif: v.actif,
@@ -270,6 +280,7 @@ export class FxProfilFormComponent implements OnInit {
       if (!this.profilUtilise()) body['fournisseur_id'] = v.fournisseur_id;
     } else {
       body['code'] = v.code.trim().toUpperCase();
+      body['taux_tva'] = this.taux();
       if (this.mode() === 'existant') {
         body['fournisseur_id'] = v.fournisseur_id;
       } else {

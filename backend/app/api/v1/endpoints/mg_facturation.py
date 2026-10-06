@@ -26,6 +26,8 @@ from app.schemas.mg_facturation import (
     PointFacturationIn,
     ProfilCreate,
     ProfilIn,
+    TvaIn,
+    TvaUpdate,
 )
 from app.services.mg_facturation_analytics import MgFacturationAnalytics
 from app.services.mg_facturation_import import MgFacturationImport
@@ -132,6 +134,39 @@ async def update_profil(
     user: User = Depends(require_permission("mg.facturation.manage")),
 ):
     return await (await _svc(db, user)).update_profil(profil_id, body, user)
+
+
+@router.get("/tva")
+async def list_tva(db: AsyncSession = Depends(get_db), user: User = Depends(require_permission("mg.factures.view"))):
+    return await (await _svc(db, user)).list_tva()
+
+
+@router.post("/tva", status_code=status.HTTP_201_CREATED)
+async def create_tva(
+    body: TvaIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.facturation.manage")),
+):
+    return await (await _svc(db, user)).create_tva(body, user)
+
+
+@router.patch("/tva/{tva_id}")
+async def update_tva(
+    tva_id: UUID,
+    body: TvaUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.facturation.manage")),
+):
+    return await (await _svc(db, user)).update_tva(tva_id, body, user)
+
+
+@router.delete("/tva/{tva_id}")
+async def delete_tva(
+    tva_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.facturation.manage")),
+):
+    return await (await _svc(db, user)).delete_tva(tva_id, user)
 
 
 @router.get("/parametres")

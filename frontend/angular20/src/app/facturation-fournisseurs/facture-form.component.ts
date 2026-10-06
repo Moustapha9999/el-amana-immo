@@ -7,7 +7,7 @@ import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 import { ApiService } from '../core/services/api.service';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 import { MontantPipe, parseMontant } from '../shared/montant.pipe';
-import { ChampProfil, FactureDetail, FxProfil, LIBELLES_CHAMPS, MOIS, TYPE_POINT_LABELS, aujourdhui, etatChamp } from './facturation.models';
+import { ChampProfil, FactureDetail, FxProfil, LIBELLES_CHAMPS, MOIS, TYPE_POINT_LABELS, aujourdhui, dateFr, etatChamp, fxTauxALaDate } from './facturation.models';
 import { FacturationStore } from './facturation.store';
 
 type Num = number | null;
@@ -40,7 +40,7 @@ type Num = number | null;
                 @for (p of profilsDisponibles(); track p.id) { <option [value]="p.id">{{ p.libelle }}{{ p.actif ? '' : ' (inactif)' }}</option> }
               </select>
               @if (profil(); as pr) {
-                <small class="bea-fx-form__hint">{{ pr.fournisseur }}{{ pr.taux_tva !== null ? ' · TVA ' + pr.taux_tva + ' %' : ' · TVA non configurée' }}</small>
+                <small class="bea-fx-form__hint">{{ pr.fournisseur }}{{ tauxFacture() !== null ? ' · TVA ' + tauxFacture() + ' % à la date de facture' : ' · TVA non configurée à cette date' }}</small>
               }
             </label>
             <label class="bea-ct-span2">Point de facturation
@@ -89,7 +89,7 @@ type Num = number | null;
             @if (voir('numero_fournisseur')) {
               <label>{{ lib('numero_fournisseur') }}{{ req('numero_fournisseur') }} <input formControlName="numero_fournisseur" maxlength="80" /></label>
             }
-            <label>Date de facture * <input type="date" formControlName="date_facture" /></label>
+            <label>Date de facture * <input type="date" formControlName="date_facture" (change)="onDateFacture()" /></label>
             <label>Date de réception <input type="date" formControlName="date_reception" /></label>
             @if (voir('date_echeance')) {
               <label>{{ lib('date_echeance') }}{{ req('date_echeance') }} <input type="date" formControlName="date_echeance" /></label>
@@ -121,7 +121,7 @@ type Num = number | null;
             @if (voir('montant_tva')) {
               <label>{{ lib('montant_tva') }}{{ req('montant_tva') }}
                 <input inputmode="decimal" formControlName="montant_tva" (input)="onTva()" [class.is-auto]="tvaAuto()" />
-                @if (tvaAuto()) { <small class="bea-fx-form__hint">Proposée : {{ profil()?.taux_tva }} % du HT (modifiable)</small> }
+                @if (tvaAuto()) { <small class="bea-fx-form__hint">Proposée : {{ tauxFacture() }} % du HT au {{ dateFr(dateFacture()) }} (modifiable)</small> }
               </label>
             }
             @if (voir('autres_taxes')) {
@@ -254,6 +254,10 @@ export class FactureFormComponent implements OnInit {
 
   readonly profil = computed<FxProfil | null>(() => (this.store.ref()?.profils ?? []).find((p) => p.id === this.profilSel()) ?? null);
 
+  readonly dateFacture = signal<string | null>(aujourdhui());
+  readonly dateFr = dateFr;
+  readonly tauxFacture = computed(() => (this.profil() ? fxTauxALaDate(this.profil()!.taux_tva_liste, this.dateFacture()) : null));
+
   readonly profilsDisponibles = computed(() => {
     const actuel = this.facture()?.profil_id;
     return (this.store.ref()?.profils ?? []).filter((p) => p.actif || p.id === actuel);
@@ -334,6 +338,7 @@ export class FactureFormComponent implements OnInit {
       this.lignesOuvertes.set(f.lignes.length > 0);
       this.fournisseurSel.set(f.fournisseur_id ?? '');
       this.profilSel.set(f.profil_id ?? '');
+      this.dateFacture.set(f.date_facture);
       if (f.profil_id) this.form.controls.fournisseur_id.disable();
       if (this.verrouMontants()) {
         for (const k of ['profil_id', 'arrieres', 'reglage', 'point_facturation_id', 'fournisseur_id', 'agence_id', 'contrat_id', 'numero_fournisseur', 'date_facture', 'periode_debut', 'periode_fin', 'mois', 'annee', 'montant_ht', 'montant_tva', 'autres_taxes', 'remise', 'montant_ttc', 'montant_a_payer', 'devise', 'lignes'] as const) {
@@ -447,9 +452,15 @@ export class FactureFormComponent implements OnInit {
     this.recalculer();
   }
 
-  /** TVA proposée uniquement si le profil porte un taux configuré ; jamais de taux supposé. */
+  onDateFacture(): void {
+    this.dateFacture.set(this.form.controls.date_facture.value || null);
+    if (this.tvaAuto() || !this.form.controls.montant_tva.value) this.proposerTva();
+    this.recalculer();
+  }
+
+  /** TVA proposée uniquement si le profil a un taux en vigueur à la date de facture ; jamais de taux supposé. */
   private proposerTva(): void {
-    const taux = this.profil()?.taux_tva;
+    const taux = this.tauxFacture();
     const ht = parseMontant(this.form.controls.montant_ht.value);
     if (taux === null || taux === undefined || ht === null || !this.voir('montant_tva')) {
       if (this.tvaAuto()) this.form.controls.montant_tva.setValue('');

@@ -3135,6 +3135,58 @@ html[data-theme='dark'] .bea-fx-tags span {
   background: #142839;
   color: #a5cfec;
 }
+html[data-theme='dark'] .bea-fx-tva__compte {
+  color: #9fa9b8;
+}
+html[data-theme='dark'] .bea-fx-tva__row {
+  border-bottom: 1px solid #30373e;
+}
+html[data-theme='dark'] .bea-fx-tva__liste li {
+  background: #152332;
+}
+html[data-theme='dark'] .bea-fx-tva__liste li[data-etat=EXPIRE] {
+  color: #9fa9b8;
+}
+html[data-theme='dark'] .bea-fx-tva__taux {
+  color: #e0e6f4;
+}
+html[data-theme='dark'] .bea-fx-tva__liste li[data-etat=EXPIRE] .bea-fx-tva__taux {
+  color: #9fa9b8;
+}
+html[data-theme='dark'] .bea-fx-tva__periode {
+  color: #bfc6d0;
+}
+html[data-theme='dark'] .bea-fx-tva__obs {
+  color: #9fa9b8;
+}
+html[data-theme='dark'] .bea-fx-tva__btn {
+  color: #b3bbc7;
+}
+html[data-theme='dark'] .bea-fx-tva__btn:hover {
+  background: #142a3c;
+  color: #a5cfec;
+}
+html[data-theme='dark'] .bea-fx-tva__btn--danger:hover {
+  background: #361212;
+  color: #ea7474;
+}
+html[data-theme='dark'] .bea-fx-tva-form__profil span {
+  color: #9fa9b8;
+}
+html[data-theme='dark'] .bea-fx-form__err {
+  color: #ea7474;
+}
+html[data-theme='dark'] .bea-fx-form__ro {
+  color: #bfc6d0;
+}
+html[data-theme='dark'] .bea-fx-form__ro strong {
+  border: 1px dashed #363c45;
+  background: #152332;
+  color: #e0e6f4;
+}
+html[data-theme='dark'] .bea-fx-form__ro a {
+  color: #a5cfec;
+}
 html[data-theme='dark'] .bea-mg__table-wrap {
   border-top: 1px solid #31373f;
 }

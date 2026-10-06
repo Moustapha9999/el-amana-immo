@@ -1,5 +1,7 @@
 /** Types et libellés — Moyens Généraux › Facturation Fournisseurs. */
 
+import { aujourdhui } from '../contrats-echeances/contrats.models';
+
 export { aujourdhui, dateFr, dateHeureFr, joursLabel, telechargerBlob } from '../contrats-echeances/contrats.models';
 
 export const FX_BASE = '/facturation-fournisseurs';
@@ -64,12 +66,33 @@ export interface FxProfil {
   fournisseur_id: string;
   fournisseur: string | null;
   type_facture: string | null;
+  /** Taux en vigueur aujourd’hui (null = non configuré : aucun calcul ni contrôle de TVA). */
   taux_tva: number | null;
+  taux_tva_liste: FxTva[];
   champs: Record<ChampProfil, EtatChamp>;
   libelles: Record<ChampProfil, string>;
   description: string | null;
   actif: boolean;
   ordre: number;
+}
+
+/** Taux de TVA daté d’un profil (bornes incluses ; null = sans limite). */
+export interface FxTva {
+  id: string;
+  profil_id: string;
+  taux: number;
+  date_debut: string | null;
+  date_fin: string | null;
+  observation: string | null;
+  etat: 'EN_VIGUEUR' | 'A_VENIR' | 'EXPIRE';
+}
+
+/** Taux applicable à une date (ISO) parmi les taux datés d’un profil — même règle que le backend. */
+export function fxTauxALaDate(liste: FxTva[] | undefined, jour: string | null | undefined): number | null {
+  const j = jour || aujourdhui();
+  const retenus = (liste ?? []).filter((t) => (!t.date_debut || t.date_debut <= j) && (!t.date_fin || j <= t.date_fin));
+  if (!retenus.length) return null;
+  return retenus.reduce((a, b) => ((b.date_debut ?? '') > (a.date_debut ?? '') ? b : a)).taux;
 }
 
 export interface ChampPaiement {

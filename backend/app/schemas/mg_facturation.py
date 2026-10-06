@@ -144,6 +144,18 @@ class ProfilCreate(ProfilIn):
     nouveau_fournisseur: NouveauFournisseurIn | None = None
 
 
+class TvaUpdate(BaseModel):
+    taux: Decimal | None = Field(default=None, ge=0, le=100)
+    date_debut: date | None = None
+    date_fin: date | None = None
+    observation: str | None = Field(default=None, max_length=2000)
+
+
+class TvaIn(TvaUpdate):
+    profil_id: UUID
+    taux: Decimal = Field(ge=0, le=100)
+
+
 class ControleLotIn(BaseModel):
     ids: list[UUID] = Field(min_length=1, max_length=200)
     action: str = Field(default="valider_controle", pattern="^(valider_controle|valider)$")
