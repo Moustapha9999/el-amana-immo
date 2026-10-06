@@ -71,6 +71,7 @@ def _filtres(
     type: str | None = None,
     type_facture: str | None = None,
     echeance: str | None = None,
+    mode_paiement: str | None = None,
     inclure_historique: bool = False,
 ) -> dict:
     """Filtres communs (noms du cahier des charges : year, month, agency_id, pdv_id, supplier_id, type, status)."""
@@ -91,6 +92,7 @@ def _filtres(
         "type_point": type,
         "type_facture": type_facture,
         "echeance": echeance,
+        "mode_paiement": mode_paiement,
         "inclure_historique": inclure_historique,
     }
 

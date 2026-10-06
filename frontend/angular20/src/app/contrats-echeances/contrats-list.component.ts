@@ -36,7 +36,6 @@ import {
   typeEcheanceLabel,
   variation,
 } from './contrats.models';
-import { Cellule, imprimerTableau } from './shared/impression';
 import { PagerComponent, TableState } from './shared/table-state';
 
 type Mode = 'liste' | 'alertes' | 'echeances' | 'paiements' | 'renouvellements';
@@ -180,7 +179,6 @@ interface RenouvRow {
           <div class="bea-list-tools">
             <span class="bea-list-tools__count">{{ contrats().length }} contrat{{ contrats().length > 1 ? 's' : '' }} · {{ totalListe() | montant }} TTC @if (filtresActifs()) { · filtres appliqués }</span>
             <span class="bea-list-tools__btns">
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!contrats().length" (click)="imprimer()"><mat-icon>print</mat-icon> Imprimer</button>
               @if (cap().export) {
                 <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!contrats().length || busy()" (click)="exporter('pdf')"><mat-icon>picture_as_pdf</mat-icon> PDF</button>
                 <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!contrats().length || busy()" (click)="exporter('xlsx')"><mat-icon>table_view</mat-icon> Excel</button>
@@ -344,7 +342,6 @@ interface RenouvRow {
           <div class="bea-list-tools">
             <span class="bea-list-tools__count">{{ echeances().length }} échéance(s) · reste {{ resteEcheances() | montant }}</span>
             <span class="bea-list-tools__btns">
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!echeances().length" (click)="imprimer()"><mat-icon>print</mat-icon> Imprimer</button>
               @if (cap().export) {
                 <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!echeances().length || busy()" (click)="exporter('pdf')"><mat-icon>picture_as_pdf</mat-icon> PDF</button>
                 <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!echeances().length || busy()" (click)="exporter('xlsx')"><mat-icon>table_view</mat-icon> Excel</button>
@@ -442,7 +439,6 @@ interface RenouvRow {
           <div class="bea-list-tools">
             <span class="bea-list-tools__count">{{ paiements().length }} paiement(s)</span>
             <span class="bea-list-tools__btns">
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!paiements().length" (click)="imprimer()"><mat-icon>print</mat-icon> Imprimer</button>
               @if (cap().export) {
                 <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!paiements().length || busy()" (click)="exporter('pdf')"><mat-icon>picture_as_pdf</mat-icon> PDF</button>
                 <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!paiements().length || busy()" (click)="exporter('xlsx')"><mat-icon>table_view</mat-icon> Excel</button>
@@ -1130,43 +1126,6 @@ export class ContratsListComponent implements OnInit {
   exporter(fmt: 'pdf' | 'xlsx'): void {
     const e = this.exportCourant();
     if (e) this.actions.exporter(e.rapport, fmt, e.filtres, this.busy);
-  }
-
-  imprimer(): void {
-    let titre = '';
-    let entetes: string[] = [];
-    let lignes: Cellule[][] = [];
-    if (this.mode() === 'liste') {
-      titre = 'Registre des contrats';
-      entetes = this.colsListe.map((c) => c[1]);
-      lignes = this.tListe.triees().map((c) => [
-        c.reference, c.titre, c.fournisseur_snapshot || '', this.typeLabel(c.type_contrat), c.agence_libelle_snapshot || '', this.date(c.date_debut),
-        this.date(c.date_fin), num(c.montant), this.periodicite(c.periodicite), this.statut(c.etat), this.reconductionCourt(c.reconduction), this.date(c.prochain_echeance),
-      ]);
-    } else if (this.mode() === 'echeances') {
-      titre = 'Échéancier des contrats';
-      entetes = this.colsEcheances.map((c) => c[1]);
-      lignes = this.tEcheances.triees().map((e) => [
-        this.date(e.date_prevue), this.ouverte(e) ? e.jours : '', e.reference + ' — ' + e.titre, e.fournisseur || '', e.agence || '',
-        this.typeEcheance(e.type_echeance), e.montant, e.montant_paye, e.reste, this.statutEch(e),
-      ]);
-    } else if (this.mode() === 'paiements') {
-      titre = 'Paiements des contrats';
-      entetes = this.colsPaiements.map((c) => c[1]);
-      lignes = this.tPaiements.triees().map((p) => [
-        p.paiement_ref || '', p.reference + ' — ' + p.titre, p.fournisseur || '', p.agence || '', this.date(p.date_reelle),
-        p.montant_prevu, p.montant_paye, p.ecart, p.mode || '', this.statut(p.statut),
-      ]);
-    }
-    if (!imprimerTableau(titre, entetes, lignes, this.filtresResume())) {
-      this.feedback.warning({ title: 'Impression bloquée', message: 'Autorisez les fenêtres pour ce site puis réessayez.' });
-    }
-  }
-
-  private filtresResume(): string {
-    const e = this.exportCourant();
-    const n = e ? Object.keys(e.filtres).length : 0;
-    return n ? `${n} filtre(s) appliqué(s)` : 'Sans filtre';
   }
 
   supprimerContrat(c: Contrat): void {

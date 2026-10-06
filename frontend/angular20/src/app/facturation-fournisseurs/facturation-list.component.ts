@@ -32,7 +32,6 @@ import {
   telechargerBlob,
 } from './facturation.models';
 import { FacturationStore } from './facturation.store';
-import { imprimerTableau } from '../contrats-echeances/shared/impression';
 import { RowMenu, RowMenuComponent, RowMenuItem } from '../contrats-echeances/shared/row-menu';
 
 const FILTRES_VIDES = {
@@ -69,7 +68,6 @@ const FILTRES_VIDES = {
             <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="nouvelle()"><mat-icon>post_add</mat-icon> Nouvelle facture</button>
           }
           <div class="bea-fx-export">
-            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="exportBusy()" (click)="imprimer()"><mat-icon>print</mat-icon> Imprimer</button>
             @if (store.cap().export || store.cap().reports) {
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="exportBusy()" (click)="exporter('pdf')"><mat-icon>picture_as_pdf</mat-icon> PDF</button>
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="exportBusy()" (click)="exporter('xlsx')"><mat-icon>table_view</mat-icon> Excel</button>
@@ -488,22 +486,6 @@ export class FacturationListComponent implements OnInit {
     this.formOuvert.set(false);
     this.charger(true);
     this.ouvrir(f.id);
-  }
-
-  imprimer(): void {
-    this.feedback
-      .run(() => this.api.get<{ title: string; headers: string[]; rows: (string | number | null)[][] }>('/mg/factures/rapports/factures', { ...this.params(), format: 'json' }), {
-        loading: 'Préparation de l’impression…',
-        busy: this.exportBusy,
-        errorTitle: 'Impression impossible',
-        success: (r) => {
-          if (!imprimerTableau(r.title, r.headers, r.rows, 'Filtres de la liste appliqués')) {
-            return { title: 'Impression bloquée', message: 'Autorisez les fenêtres pour ce site puis réessayez.' };
-          }
-          return null;
-        },
-      })
-      .subscribe();
   }
 
   exporter(format: 'xlsx' | 'pdf'): void {

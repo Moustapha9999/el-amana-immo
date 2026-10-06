@@ -597,8 +597,9 @@ class MgFacturationAnalytics:
                                                                 "Moyenne mensuelle", f"Montant {annee - 1}", "Variation",
                                                                 "Part", "Reste à payer"], "rows": rows}
         if key == "paiements":
-            rows = await self.svc.list_paiements({**filtres, "annee": annee if not filtres.get("date_from") else None})
-            return {"title": f"{title} — {annee}", "headers": ["Référence", "Date", "Facture", "Période", "Fournisseur",
+            annee_p = filtres.get("annee") if not filtres.get("date_from") else None
+            rows = await self.svc.list_paiements({**filtres, "annee": annee_p})
+            return {"title": f"{title} — {annee_p}" if annee_p else title, "headers": ["Référence", "Date", "Facture", "Période", "Fournisseur",
                                                                 "Agence", "Point", "Mode", "Réf. paiement", "Montant", "Statut"],
                     "rows": [[p["reference"], _fr(p["date_paiement"]), p["facture_reference"], p["periode_label"] or "",
                               p["fournisseur"] or "", p["agence"] or "", p["point_nom"] or "", p["mode_paiement"] or "",
@@ -651,7 +652,7 @@ class MgFacturationAnalytics:
             annee = int(filtres.get("annee") or date.today().year)
             onglets.append(("Registre", await self.rapport("factures", {**filtres, "annee": annee})))
             if await self._voit_paiements(user):
-                onglets.append(("Paiements", await self.rapport("paiements", filtres)))
+                onglets.append(("Paiements", await self.rapport("paiements", {**filtres, "annee": annee})))
             return Response(
                 content=build_styled_workbook_multi(
                     report_title=full_title,

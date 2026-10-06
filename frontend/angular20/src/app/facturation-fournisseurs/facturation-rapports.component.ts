@@ -104,7 +104,6 @@ const CATALOGUE = [
         <div class="bea-mg__panel-top">
           <h2><mat-icon>summarize</mat-icon> {{ rapport()?.title || libelle() }}</h2>
           <div class="bea-fx-export">
-            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!rapport()?.count" (click)="imprimer()"><mat-icon>print</mat-icon> Imprimer</button>
             @if (store.cap().export || store.cap().reports) {
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="exporter('pdf')"><mat-icon>picture_as_pdf</mat-icon> PDF</button>
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="exporter('xlsx')"><mat-icon>table_view</mat-icon> {{ cle() === 'classeur' ? 'Excel multi-onglets' : 'Excel' }}</button>
@@ -209,25 +208,6 @@ export class FacturationRapportsComponent implements OnInit {
         },
       })
       .subscribe();
-  }
-
-  imprimer(): void {
-    const r = this.rapport();
-    if (!r) return;
-    const popup = window.open('', '_blank');
-    if (!popup) {
-      this.feedback.warning({ title: 'Impression bloquée', message: 'Autorisez les fenêtres pour ce site puis réessayez.' });
-      return;
-    }
-    const esc = (v: string) => v.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-    const head = r.headers.map((h) => `<th>${esc(h)}</th>`).join('');
-    const body = r.rows.map((row) => `<tr>${row.map((c) => `<td${this.isNum(c) ? ' class="n"' : ''}>${esc(this.cellule(c))}</td>`).join('')}</tr>`).join('');
-    popup.document.write(`<!DOCTYPE html><html><head><title>${esc(r.title)}</title>
-      <style>body{font-family:sans-serif;padding:1rem;color:#0f172a}h1{font-size:16px;color:#1a5278}p{font-size:11px;color:#64748b}
-      table{border-collapse:collapse;width:100%}td,th{border:1px solid #cbd5e1;padding:4px 6px;font-size:11px}th{background:#eef4f9;text-align:left}td.n{text-align:right;white-space:nowrap}</style></head>
-      <body><h1>BEA DIGITAL — ${esc(r.title)}</h1><p>Édité le ${new Date().toLocaleString('fr-FR')}</p><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
-      <script>window.onload=function(){window.print()}<\/script></body></html>`);
-    popup.document.close();
   }
 
   isNum(c: unknown): boolean {

@@ -29,10 +29,10 @@ import {
   fxTone,
   joursLabel,
   nettoyer,
+  telechargerBlob,
 } from './facturation.models';
 import { FacturationStore } from './facturation.store';
 import { FxPaiementDrawerComponent } from './fx-paiement-drawer.component';
-import { imprimerTableau } from '../contrats-echeances/shared/impression';
 import { PagerComponent, TableState } from '../contrats-echeances/shared/table-state';
 import { RowMenu, RowMenuComponent, RowMenuItem } from '../contrats-echeances/shared/row-menu';
 
@@ -155,7 +155,12 @@ const TITRES: Record<Mode, { titre: string; sous: string; icon: string }> = {
               <span><strong>{{ paiementsValides().length }}</strong> paiement(s) valide(s)</span>
               <span>Total réglé <strong>{{ totalPaye() | montant }}</strong></span>
               @if (paiementsAnnules()) { <span>{{ paiementsAnnules() }} annulé(s)</span> }
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!(paiements()?.length)" (click)="imprimer()"><mat-icon>print</mat-icon> Imprimer</button>
+              @if (store.cap().export || store.cap().reports) {
+                <span class="bea-fx-export">
+                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!(paiements()?.length) || exportBusy()" (click)="exporterPaiements('pdf')"><mat-icon>picture_as_pdf</mat-icon> PDF</button>
+                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="!(paiements()?.length) || exportBusy()" (click)="exporterPaiements('xlsx')"><mat-icon>table_view</mat-icon> Excel</button>
+                </span>
+              }
             </div>
             <div class="bea-mg__table-wrap">
               <table class="bea-mg__table bea-fx-table">
@@ -477,14 +482,23 @@ export class FacturationSuiviComponent implements OnInit {
   readonly tPaiements = new TableState<PaiementRow>(() => this.paiements() ?? [], {});
   readonly tEcheances = new TableState<FactureRow>(() => this.echeancesFiltrees(), {});
 
-  imprimer(): void {
-    const rows = this.paiements() ?? [];
-    const ok = imprimerTableau(
-      'Paiements des factures',
-      ['Paiement', 'Date', 'Facture', 'Période', 'Point', 'Fournisseur', 'Agence', 'Mode', 'Réf. bancaire', 'Montant', 'Statut'],
-      rows.map((p) => [p.reference, this.date(p.date_paiement), p.facture_reference, p.periode_label, p.point_nom, p.fournisseur, p.agence, p.mode_paiement, this.detail(p), p.montant, this.statut(p.statut)]),
-    );
-    if (!ok) this.feedback.warning({ title: 'Impression bloquée', message: 'Autorisez les fenêtres pour ce site puis réessayez.' });
+  readonly exportBusy = signal(false);
+
+  exporterPaiements(format: 'pdf' | 'xlsx'): void {
+    const v = this.filtres.getRawValue();
+    const params = nettoyer({ q: v.q, year: v.year, month: v.month, mode_paiement: v.mode_paiement, statut: v.statut, supplier_id: v.supplier_id, agency_id: v.agency_id, format });
+    const stamp = new Date().toISOString().slice(0, 10);
+    this.feedback
+      .run(() => this.api.download('/mg/factures/rapports/paiements', params), {
+        loading: 'Préparation de l’export…',
+        busy: this.exportBusy,
+        errorTitle: 'Export impossible',
+        success: (blob) => {
+          telechargerBlob(blob, `paiements-factures_${stamp}.${format}`);
+          return { title: 'Export prêt', message: 'Le fichier a été téléchargé.' };
+        },
+      })
+      .subscribe();
   }
 
   ngOnInit(): void {

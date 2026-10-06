@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
@@ -33,6 +34,8 @@ _COLOR_ZEBRA = "F8FAFC"
 _COLOR_META = "64748B"
 _COLOR_TITLE = "0F172A"
 _COLOR_BORDER = "CBD5E1"
+_COLOR_TOTAL = "E3EDF7"
+_DATE_RE = re.compile(r"^\d{2}/\d{2}/\d{4}( (à )?\d{2}:\d{2})?$")
 
 
 def resolve_bea_logo_path() -> Path | None:
@@ -103,15 +106,38 @@ def _bank_line() -> str:
     )
 
 
-def _autosize_columns(ws, min_width: int = 10, max_width: int = 42) -> None:
+def _excel_len(value: Any) -> int:
+    if value is None:
+        return 0
+    if _is_montant_number(value):
+        return len(format_montant(value))
+    return max((len(part) for part in str(value).splitlines()), default=0)
+
+
+def _autosize_columns(ws, min_width: int = 10, max_width: int = 48, start_row: int = 1) -> None:
+    """Largeur = contenu réel (lignes ≥ start_row) ; au-delà de max_width, retour à la ligne."""
     for col_idx in range(1, ws.max_column + 1):
         letter = get_column_letter(col_idx)
         max_len = min_width
-        for cell in ws[letter]:
-            if cell.value is None:
-                continue
-            max_len = max(max_len, min(max_width, len(str(cell.value)) + 2))
+        trop_long = False
+        for (cell,) in ws.iter_rows(min_row=start_row, min_col=col_idx, max_col=col_idx):
+            n = _excel_len(cell.value)
+            if cell.row == start_row:
+                n = max((len(w) for w in str(cell.value or "").split()), default=0) + 4
+            if n + 2 > max_width:
+                trop_long = True
+            max_len = max(max_len, min(max_width, n + 2))
         ws.column_dimensions[letter].width = max_len
+        if trop_long:
+            for (cell,) in ws.iter_rows(min_row=start_row + 1, min_col=col_idx, max_col=col_idx):
+                cell.alignment = Alignment(horizontal=cell.alignment.horizontal, vertical="top", wrap_text=True)
+
+
+def _est_ligne_total(row: Sequence[Any]) -> bool:
+    for value in list(row)[:2]:
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower().startswith(("total", "sous-total"))
+    return False
 
 
 def build_styled_workbook(
@@ -221,20 +247,29 @@ def _remplir_feuille(
 
     # Données
     zebra = PatternFill("solid", fgColor=_COLOR_ZEBRA)
+    total_fill = PatternFill("solid", fgColor=_COLOR_TOTAL)
     data_font = Font(name="Calibri", size=10, color=_COLOR_TITLE)
+    total_font = Font(name="Calibri", size=10, bold=True, color=_COLOR_NAVY)
     for r_idx, row in enumerate(rows):
         excel_row = header_row + 1 + r_idx
+        total = _est_ligne_total(row)
         for c_idx, value in enumerate(row, start=1):
             cell_value = float(value) if _is_montant_number(value) else value
             cell = ws.cell(row=excel_row, column=c_idx, value=cell_value)
-            cell.font = data_font
+            cell.font = total_font if total else data_font
             cell.border = _THIN
             if _is_montant_number(value):
                 cell.number_format = _EXCEL_MONTANT_FORMAT
                 cell.alignment = Alignment(horizontal="right", vertical="center", wrap_text=False)
+            elif isinstance(value, int) and not isinstance(value, bool):
+                cell.alignment = Alignment(horizontal="right", vertical="center", wrap_text=False)
+            elif isinstance(value, str) and _DATE_RE.match(value.strip()):
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
             else:
                 cell.alignment = Alignment(vertical="center", wrap_text=False)
-            if r_idx % 2 == 1:
+            if total:
+                cell.fill = total_fill
+            elif r_idx % 2 == 1:
                 cell.fill = zebra
 
     # Bandeau décoratif haut + accent
@@ -245,7 +280,11 @@ def _remplir_feuille(
 
     ws.freeze_panes = "A6"
     ws.auto_filter.ref = f"A{header_row}:{last_col}{header_row + max(len(rows), 1)}"
-    _autosize_columns(ws)
+    _autosize_columns(ws, start_row=header_row)
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
 
     ws.print_title_rows = f"1:{header_row}"
     ws.oddHeader.center.text = report_title
@@ -323,6 +362,99 @@ def _pdf_styles():
     }
 
 
+_PDF_PAD = 4
+_NUM_TXT_RE = re.compile(r"^[+-]?[\d \u202f\u00a0]+(,\d+)?\s?(%|MRU|j)?$")
+
+
+def _texte_cellule(value: Any) -> str:
+    if value is None:
+        return ""
+    if _is_montant_number(value):
+        return format_montant(value)
+    return str(value)
+
+
+def _auto_aligns(headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> list[str]:
+    """Montants / nombres à droite, dates centrées, texte à gauche."""
+    aligns: list[str] = []
+    for i in range(len(headers)):
+        vals = [r[i] for r in rows if i < len(r) and r[i] not in (None, "", "—") and not _est_ligne_total(r)]
+        if vals and all(
+            (isinstance(v, (int, float, Decimal)) and not isinstance(v, bool))
+            or (isinstance(v, str) and ("," in v or "%" in v) and _NUM_TXT_RE.match(v.strip()))
+            for v in vals
+        ):
+            aligns.append("right")
+        elif vals and all(isinstance(v, str) and _DATE_RE.match(v.strip()) for v in vals):
+            aligns.append("center")
+        else:
+            aligns.append("left")
+    return aligns
+
+
+def _auto_widths(
+    headers: Sequence[str], rows: Sequence[Sequence[Any]], aligns: Sequence[str], usable: float
+) -> tuple[float, list[float]]:
+    """Largeurs calées sur le contenu : nombres/dates jamais coupés, texte replié entre les mots.
+
+    Réduit la police seulement si le minimum lisible ne tient pas dans la page.
+    """
+    textes = [[_texte_cellule(r[i]) if i < len(r) else "" for r in rows] for i in range(len(headers))]
+    stats = []
+    for i, h in enumerate(headers):
+        col = textes[i]
+        longest = max((len(t) for t in col), default=0)
+        longest_word = max((len(w) for t in col for w in t.split()), default=0)
+        header_word = max((len(w) for w in str(h).split()), default=1)
+        stats.append((longest, longest_word, header_word, len(str(h))))
+
+    def calcul(size: float) -> tuple[list[float], list[float]]:
+        cw, hw, pad = size * 0.6, (size + 0.5) * 0.66, 2 * _PDF_PAD + 2
+        mins, nats = [], []
+        for i, (longest, word, h_word, h_len) in enumerate(stats):
+            if aligns[i] in ("right", "center"):
+                mn = max(longest * cw, h_word * hw)
+                nat = mn
+            else:
+                mn = max(min(word, 26) * cw, h_word * hw, 5 * cw)
+                nat = max(mn, min(longest, 70) * cw, min(h_len, 18) * hw)
+            mins.append(mn + pad)
+            nats.append(nat + pad)
+        return mins, nats
+
+    for size in (8.0, 7.5, 7.0, 6.5, 6.0, 5.5):
+        mins, nats = calcul(size)
+        if sum(nats) <= usable:
+            souples = [i for i, a in enumerate(aligns) if a == "left"] or list(range(len(nats)))
+            extra = usable - sum(nats)
+            base = sum(nats[i] for i in souples) or 1
+            return size, [n + (extra * n / base if i in souples else 0) for i, n in enumerate(nats)]
+        if sum(mins) <= usable:
+            flex = [n - m for n, m in zip(nats, mins)]
+            dispo = usable - sum(mins)
+            total_flex = sum(flex) or 1
+            return size, [m + f * dispo / total_flex for m, f in zip(mins, flex)]
+    mins, _ = calcul(5.5)
+    return 5.5, [m * usable / sum(mins) for m in mins]
+
+
+def _pdf_cell_styles(size: float) -> dict[tuple[str, bool], ParagraphStyle]:
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+
+    out: dict[tuple[str, bool], ParagraphStyle] = {}
+    for align, enum in (("left", TA_LEFT), ("center", TA_CENTER), ("right", TA_RIGHT)):
+        for total in (False, True):
+            out[(align, total)] = ParagraphStyle(
+                f"AutoCell-{align}-{int(total)}-{size}",
+                fontName="Helvetica-Bold" if total else "Helvetica",
+                fontSize=size,
+                leading=size + 2,
+                textColor=colors.HexColor(f"#{_COLOR_NAVY if total else _COLOR_TITLE}"),
+                alignment=enum,
+            )
+    return out
+
+
 def _pdf_footer(canvas, doc, *, exported_label: str, report_title: str) -> None:
     canvas.saveState()
     page_w, _ = canvas._pagesize
@@ -395,55 +527,54 @@ def build_styled_pdf(
         ]
     )
 
-    n_cols = len(headers)
-    aligns = list(col_aligns) if col_aligns else ["left"] * n_cols
-    style_map = {
-        "left": styles["cell"],
-        "center": styles["cell_center"],
-        "right": styles["cell_right"],
-    }
-
-    def _cell(value: Any, align: str) -> Paragraph:
-        if value is None:
-            text = ""
-        elif _is_montant_number(value):
-            text = format_montant(value)
-        else:
-            text = str(value)
-        # Échapper pour ReportLab Paragraph
-        text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        return Paragraph(text or "—", style_map.get(align, styles["cell"]))
-
-    data = [[Paragraph(h, styles["header"]) for h in headers]]
-    for row in rows:
-        data.append([_cell(v, aligns[i] if i < len(aligns) else "left") for i, v in enumerate(row)])
+    aligns = list(col_aligns) if col_aligns else _auto_aligns(headers, rows)
 
     if col_widths:
+        font_size = 7.0
         widths = list(col_widths)
         total = sum(widths)
         if total > 0 and abs(total - usable_width) > 0.5:
             # Normaliser pour occuper toute la largeur utile
             widths = [w * usable_width / total for w in widths]
     else:
-        widths = [usable_width / n_cols] * n_cols
+        font_size, widths = _auto_widths(headers, rows, aligns, usable_width)
 
-    table = Table(data, repeatRows=1, colWidths=widths, hAlign="LEFT")
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(f"#{_COLOR_NAVY}")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor(f"#{_COLOR_BORDER}")),
-                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor(f"#{_COLOR_NAVY}")),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor(f"#{_COLOR_ZEBRA}")]),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                ("LEFTPADDING", (0, 0), (-1, -1), 5),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-            ]
-        )
+    cell_styles = _pdf_cell_styles(font_size)
+    header_style = ParagraphStyle(
+        "HeaderCellAuto", parent=styles["header"], fontSize=font_size + 0.5, leading=font_size + 2.5
     )
+
+    def _cell(value: Any, align: str, total: bool) -> Paragraph:
+        text = _texte_cellule(value)
+        # Échapper pour ReportLab Paragraph
+        text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return Paragraph(text or "—", cell_styles[(align if align in ("center", "right") else "left", total)])
+
+    data = [[Paragraph(h, header_style) for h in headers]]
+    total_rows: list[int] = []
+    for row in rows:
+        total = _est_ligne_total(row)
+        if total:
+            total_rows.append(len(data))
+        data.append([_cell(v, aligns[i] if i < len(aligns) else "left", total) for i, v in enumerate(row)])
+
+    commands = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(f"#{_COLOR_NAVY}")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor(f"#{_COLOR_BORDER}")),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor(f"#{_COLOR_NAVY}")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor(f"#{_COLOR_ZEBRA}")]),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), _PDF_PAD),
+        ("RIGHTPADDING", (0, 0), (-1, -1), _PDF_PAD),
+    ]
+    for r in total_rows:
+        commands.append(("BACKGROUND", (0, r), (-1, r), colors.HexColor(f"#{_COLOR_TOTAL}")))
+        commands.append(("LINEABOVE", (0, r), (-1, r), 0.8, colors.HexColor(f"#{_COLOR_NAVY}")))
+    table = Table(data, repeatRows=1, colWidths=widths, hAlign="LEFT")
+    table.setStyle(TableStyle(commands))
     story.append(table)
 
     def _on_page(canvas, document):
