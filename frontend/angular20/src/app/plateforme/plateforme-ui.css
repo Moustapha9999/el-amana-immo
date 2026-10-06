@@ -11216,6 +11216,16 @@ table.bea-fx-mini { display: table; width: 100%; font-size: 0.8rem; }
 .bea-fx .bea-mg__table-wrap { overflow-x: auto; }
 .bea-fx-table { min-width: 72rem; }
 .bea-fx-table td .bea-ct-badge, .bea-fx-table td .bea-fx-code, .bea-fx-table td .bea-fx-ref, .bea-fx-table td .bea-fx-sub { white-space: nowrap; }
+.bea-fx .bea-fx-table--fit { min-width: 0; font-size: 0.8rem; }
+.bea-fx .bea-fx-table--fit th { padding: 0.55rem 0.45rem; }
+.bea-fx .bea-fx-table--fit td { padding: 0.55rem 0.45rem; }
+.bea-fx .bea-fx-table--fit th:first-child, .bea-fx .bea-fx-table--fit td:first-child { padding-left: 0.85rem; }
+.bea-fx .bea-fx-table--fit th:last-child, .bea-fx .bea-fx-table--fit td:last-child { padding-right: 0.85rem; }
+.bea-fx .bea-fx-table--fit td .bea-fx-sub { white-space: normal; }
+.bea-fx .bea-fx-table--fit td.is-num .bea-fx-sub, .bea-fx .bea-fx-table--fit td:nth-child(6) .bea-fx-sub { white-space: nowrap; }
+.bea-fx .bea-fx-table--fit .bea-row-actions { gap: 0.1rem; }
+.bea-fx .bea-fx-table--fit .bea-mg__icon-btn { width: 1.75rem; height: 1.75rem; }
+.bea-fx .bea-fx-table--fit .bea-mg__icon-btn mat-icon { font-size: 1.05rem; width: 1.05rem; height: 1.05rem; }
 .bea-fx-report-table .bea-mg__table { min-width: max-content; }
 .bea-fx-report-table .bea-mg__table th, .bea-fx-report-table .bea-mg__table td { white-space: nowrap; }
 .bea-fx-report-table .bea-mg__table td.is-num { text-align: right; font-variant-numeric: tabular-nums; }

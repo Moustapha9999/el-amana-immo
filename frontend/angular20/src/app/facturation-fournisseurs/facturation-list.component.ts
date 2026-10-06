@@ -191,7 +191,7 @@ const FILTRES_VIDES = {
         </div>
 
         <div class="bea-mg__table-wrap">
-          <table class="bea-mg__table bea-fx-table">
+          <table class="bea-mg__table bea-fx-table bea-fx-table--fit">
             <thead>
               <tr>
                 <th><button type="button" class="bea-fx-sort" (click)="trier('reference')">Référence <mat-icon>{{ icone('reference') }}</mat-icon></button></th>
@@ -200,9 +200,7 @@ const FILTRES_VIDES = {
                 <th><button type="button" class="bea-fx-sort" (click)="trier('agence')">Agence <mat-icon>{{ icone('agence') }}</mat-icon></button></th>
                 <th><button type="button" class="bea-fx-sort" (click)="trier('periode')">Période <mat-icon>{{ icone('periode') }}</mat-icon></button></th>
                 <th><button type="button" class="bea-fx-sort" (click)="trier('date_facture')">Date <mat-icon>{{ icone('date_facture') }}</mat-icon></button></th>
-                <th><button type="button" class="bea-fx-sort" (click)="trier('echeance')">Échéance <mat-icon>{{ icone('echeance') }}</mat-icon></button></th>
                 <th class="is-num"><button type="button" class="bea-fx-sort" (click)="trier('montant')">Montant <mat-icon>{{ icone('montant') }}</mat-icon></button></th>
-                <th class="is-num">Reste</th>
                 <th><button type="button" class="bea-fx-sort" (click)="trier('statut')">Statut <mat-icon>{{ icone('statut') }}</mat-icon></button></th>
                 <th class="is-actions">Actions</th>
               </tr>
@@ -210,7 +208,7 @@ const FILTRES_VIDES = {
             <tbody>
               @if (page() === null) {
                 @for (i of [1, 2, 3, 4, 5, 6]; track i) {
-                  <tr class="bea-fx-skelrow"><td colspan="11"><span class="bea-fx-skel bea-fx-skel--line"></span></td></tr>
+                  <tr class="bea-fx-skelrow"><td colspan="9"><span class="bea-fx-skel bea-fx-skel--line"></span></td></tr>
                 }
               } @else {
                 @for (r of page()!.items; track r.id; let i = $index) {
@@ -228,17 +226,17 @@ const FILTRES_VIDES = {
                     <td>{{ r.profil || r.fournisseur || '—' }}@if (r.profil && r.fournisseur) { <small class="bea-fx-sub">{{ r.fournisseur }}</small> }</td>
                     <td>{{ r.agence || '—' }}</td>
                     <td>{{ r.periode_label || '—' }}</td>
-                    <td>{{ date(r.date_facture) }}</td>
                     <td>
-                      {{ date(r.date_echeance) }}
+                      {{ date(r.date_facture) }}
+                      @if (r.date_echeance) { <small class="bea-fx-sub">Éch. {{ date(r.date_echeance) }}</small> }
                       @if (r.etat_echeance === 'EN_RETARD' || r.etat_echeance === 'PROCHE') {
                         <small class="bea-fx-sub" [class.bea-ct-neg]="r.etat_echeance === 'EN_RETARD'">{{ jours(r.jours_echeance) }}</small>
                       }
                     </td>
                     <td class="is-num">
                       @if (r.montant_a_payer !== null) { {{ r.montant_a_payer | montant }} <small>{{ r.devise }}</small> } @else { <span class="bea-fx-sub">Non saisi</span> }
+                      @if ((r.reste ?? 0) > 0) { <small class="bea-fx-sub bea-ct-neg">Reste {{ r.reste | montant }}</small> }
                     </td>
-                    <td class="is-num">@if ((r.reste ?? 0) > 0) { {{ r.reste | montant }} } @else { — }</td>
                     <td>
                       <span class="bea-ct-badge" [attr.data-tone]="tone(r.statut_affiche)">{{ statut(r.statut_affiche) }}</span>
                       @if (r.nb_documents) { <mat-icon class="bea-fx-clip" title="Pièces jointes">attach_file</mat-icon> }
@@ -258,7 +256,7 @@ const FILTRES_VIDES = {
                   </tr>
                 } @empty {
                   <tr>
-                    <td colspan="11">
+                    <td colspan="9">
                       <div class="bea-ct-empty">
                         <mat-icon>receipt_long</mat-icon>
                         <p>Aucune facture ne correspond.</p>
