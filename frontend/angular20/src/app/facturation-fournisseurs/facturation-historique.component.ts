@@ -60,7 +60,16 @@ const ICONES: Record<string, string> = {
         @if (journal() === null) {
           @for (i of [1, 2, 3, 4, 5, 6]; track i) { <span class="bea-fx-skel bea-fx-skel--line"></span> }
         } @else {
-          <p class="bea-fx-sub">{{ journal()!.total }} opération(s)</p>
+          <div class="bea-fx-journal-head">
+            <p class="bea-fx-sub">{{ journal()!.total }} opération(s)</p>
+            <label class="bea-fx-journal-size">Afficher
+              <select [value]="taille()" (change)="changerTaille(+$any($event.target).value)">
+                @for (t of tailles; track t) { <option [value]="t">{{ t }}</option> }
+              </select>
+              par page
+            </label>
+          </div>
+          <div class="bea-fx-journal-wrap">
           <ol class="bea-fx-journal">
             @for (g of groupes(); track g.jour) {
               <li class="bea-fx-journal__day"><span>{{ g.jour }}</span></li>
@@ -85,11 +94,15 @@ const ICONES: Record<string, string> = {
               <li><div class="bea-ct-empty"><mat-icon>history</mat-icon><p>Aucune opération pour ces critères.</p></div></li>
             }
           </ol>
-          @if (pages() > 1) {
-            <nav class="bea-fx-pager" aria-label="Pagination">
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="page() <= 1" (click)="aller(page() - 1)"><mat-icon>chevron_left</mat-icon></button>
+          </div>
+          @if (journal()!.total > 0) {
+            <nav class="bea-fx-pager bea-fx-journal-pager" aria-label="Pagination">
+              <span class="bea-fx-sub">{{ debut() }}–{{ fin() }} sur {{ journal()!.total }}</span>
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="page() <= 1" (click)="aller(1)" title="Première page"><mat-icon>first_page</mat-icon></button>
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="page() <= 1" (click)="aller(page() - 1)" title="Page précédente"><mat-icon>chevron_left</mat-icon></button>
               <span>Page {{ page() }} / {{ pages() }}</span>
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="page() >= pages()" (click)="aller(page() + 1)"><mat-icon>chevron_right</mat-icon></button>
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="page() >= pages()" (click)="aller(page() + 1)" title="Page suivante"><mat-icon>chevron_right</mat-icon></button>
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="page() >= pages()" (click)="aller(pages())" title="Dernière page"><mat-icon>last_page</mat-icon></button>
             </nav>
           }
         }
@@ -118,7 +131,11 @@ export class FacturationHistoriqueComponent implements OnInit {
 
   readonly filtres = this.fb.nonNullable.group({ q: [''], entite: [''], date_from: [''], date_to: [''] });
 
-  readonly pages = computed(() => Math.max(1, Math.ceil((this.journal()?.total ?? 0) / TAILLE)));
+  readonly tailles = [25, 50, 100, 200];
+  readonly taille = signal(TAILLE);
+  readonly pages = computed(() => Math.max(1, Math.ceil((this.journal()?.total ?? 0) / this.taille())));
+  readonly debut = computed(() => (this.page() - 1) * this.taille() + 1);
+  readonly fin = computed(() => Math.min(this.page() * this.taille(), this.journal()?.total ?? 0));
 
   readonly groupes = computed(() => {
     const out: { jour: string; items: FxJournalItem[] }[] = [];
@@ -146,11 +163,16 @@ export class FacturationHistoriqueComponent implements OnInit {
     this.charger();
   }
 
+  changerTaille(taille: number): void {
+    this.taille.set(taille);
+    this.aller(1);
+  }
+
   charger(): void {
-    this.api.get<FxJournal>('/mg/factures/historique', this.params(this.page(), TAILLE)).subscribe({
+    this.api.get<FxJournal>('/mg/factures/historique', this.params(this.page(), this.taille())).subscribe({
       next: (j) => this.journal.set(j),
       error: (e) => {
-        this.journal.set({ items: [], total: 0, page: 1, size: TAILLE });
+        this.journal.set({ items: [], total: 0, page: 1, size: this.taille() });
         void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Historique indisponible'));
       },
     });
