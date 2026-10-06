@@ -7946,7 +7946,7 @@ button.bea-admin-kpi {
 
 /* Paiements notes de frais */
 .bea-pay-filters .bea-mg__field { min-width: 9rem; }
-.bea-pay-table th.is-sortable { cursor: pointer; user-select: none; }
+.bea-pay-table th.is-sortable { cursor: pointer; -webkit-user-select: none; user-select: none; }
 .bea-pay-table th.is-sortable:hover { color: #1a5278; }
 .bea-pay-sort { font-size: 0.9rem; width: 0.9rem; height: 0.9rem; vertical-align: -0.15rem; color: #1a5278; }
 .bea-nf-table tr.is-cancelled td { color: #94a3b8; }
@@ -9132,6 +9132,7 @@ button.bea-admin-kpi {
   border: 1px solid #dbe3ee;
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.1);
   backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 .bea-ct-savebar span { font-size: 0.84rem; color: #64748b; font-weight: 600; }
 
