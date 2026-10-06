@@ -233,15 +233,17 @@ def test_controle_bloquant_si_champs_manquants():
     niveaux = {c["code"]: c["niveau"] for c in controles_facture(f, {"numero_fournisseur": "obligatoire"}, None, 0)}
     assert niveaux["champs_obligatoires"] == "bloquant"
     assert niveaux["document_absent"] == "attention"
+    niveaux = {c["code"]: c["niveau"] for c in controles_facture(f, None, None, 0, piece_obligatoire=True)}
+    assert niveaux["document_absent"] == "bloquant"
 
 
-def test_validation_seulement_apres_controle():
+def test_circuit_court_sans_etape_controle():
     sources, cible = TRANSITIONS["valider"]
-    assert sources == {"CONTROLEE"} and cible == "VALIDEE"
+    assert sources == {"RECUE", "CONTESTEE"} and cible == "VALIDEE"
+    assert "controler" not in TRANSITIONS and "valider_controle" not in TRANSITIONS
     caps = {"update": True, "validate": True, "delete": True, "archive": True}
-    assert "valider" not in actions_possibles(_facture(statut="A_CONTROLER"), caps, 0)
-    assert "valider_controle" in actions_possibles(_facture(statut="A_CONTROLER"), caps, 0)
-    assert "valider" in actions_possibles(_facture(statut="CONTROLEE"), caps, 0)
+    assert "valider" in actions_possibles(_facture(statut="RECUE"), caps, 0)
+    assert "valider" not in actions_possibles(_facture(statut="RECUE"), {**caps, "validate": False}, 0)
 
 
 def test_carte_jamais_stockee_en_clair():

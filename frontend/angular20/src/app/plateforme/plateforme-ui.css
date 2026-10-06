@@ -10952,6 +10952,8 @@ table.bea-fx-mini { display: table; width: 100%; font-size: 0.8rem; }
 .bea-fx-params__input { display: flex; align-items: center; gap: 0.35rem; }
 .bea-fx-params__input input { width: 100%; border: 1px solid #dbe3ee; border-radius: 0.55rem; padding: 0.45rem 0.55rem; font: inherit; text-align: right; }
 .bea-fx-params__input input:disabled { background: #f8fafc; color: #64748b; }
+.bea-fx-params__input select { width: 100%; border: 1px solid #dbe3ee; border-radius: 0.55rem; padding: 0.45rem 0.55rem; font: inherit; background: #fff; }
+.bea-fx-params__input select:disabled { background: #f8fafc; color: #64748b; }
 .bea-fx-params__input em { font-style: normal; font-size: 0.78rem; color: #64748b; }
 .bea-fx-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; margin: 0.4rem 1rem 0.6rem; padding: 0; list-style: none; }
 .bea-fx-flow li + li::before { content: '→'; margin-right: 0.3rem; color: #94a3b8; }
@@ -11168,6 +11170,22 @@ table.bea-fx-mini { display: table; width: 100%; font-size: 0.8rem; }
 .bea-fx-col-check { width: 2rem; }
 .bea-fx-ctrl-table tr.is-selected { background: #f0f9ff; }
 .bea-fx-ctrl-table small.bea-fx-sub { display: block; }
+.bea-fx-ctrl-actions { white-space: nowrap; text-align: right; }
+.bea-fx-ctrl-actions .bea-mg__btn + .bea-mg__btn { margin-left: 0.3rem; }
+
+/* Circuit court de la facture (fiche) */
+.bea-fx-circuit { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem; margin: 0 1.1rem 0.6rem; padding: 0.6rem 0.75rem; border: 1px solid #e8eef4; border-radius: 0.8rem; background: #f8fafc; animation: beaMgRise 0.25s ease both; }
+.bea-fx-circuit__steps { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin: 0; padding: 0; list-style: none; }
+.bea-fx-circuit__steps li { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.76rem; font-weight: 700; color: #94a3b8; background: #fff; border: 1px solid #e2e8f0; }
+.bea-fx-circuit__steps li + li::before { content: ''; display: none; }
+.bea-fx-circuit__steps li mat-icon { font-size: 1rem; width: 1rem; height: 1rem; }
+.bea-fx-circuit__steps li[data-etat='fait'] { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+.bea-fx-circuit__steps li[data-etat='courant'] { color: #1a5278; background: #e8f1f8; border-color: #1a5278; box-shadow: 0 0 0 2px rgba(26, 82, 120, 0.12); }
+.bea-fx-circuit__steps li[data-etat='facultatif'] { color: #94a3b8; border-style: dashed; }
+.bea-fx-circuit__next { display: flex; align-items: center; gap: 0.6rem; }
+.bea-fx-circuit__next small { font-size: 0.75rem; color: #475569; max-width: 16rem; }
+.bea-fx-circuit__next--ko { color: #b91c1c; }
+.bea-fx-circuit__next--ko small { color: #b91c1c; max-width: 28rem; }
 .bea-fx-verdict { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.78rem; font-weight: 700; }
 .bea-fx-verdict mat-icon { font-size: 1rem; width: 1rem; height: 1rem; }
 .bea-fx-verdict[data-niveau='bloquant'] { color: #b91c1c; }

@@ -158,7 +158,7 @@ class TvaIn(TvaUpdate):
 
 class ControleLotIn(BaseModel):
     ids: list[UUID] = Field(min_length=1, max_length=200)
-    action: str = Field(default="valider_controle", pattern="^(valider_controle|valider)$")
+    action: str = Field(default="valider", pattern="^valider$")
     motif: str | None = Field(default=None, max_length=2000)
 
 

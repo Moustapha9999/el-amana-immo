@@ -351,9 +351,9 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
     },
     {
       section: 'Suivi',
-      label: 'Contrôles',
+      label: 'À valider',
       path: '/facturation-fournisseurs/controles',
-      icon: 'fact_check',
+      icon: 'pending_actions',
       permissions: ['mg.factures.view'],
     },
     {

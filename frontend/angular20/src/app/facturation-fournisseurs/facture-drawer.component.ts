@@ -37,15 +37,28 @@ type Onglet = 'details' | 'documents' | 'paiements' | 'historique';
 /** Action déclenchée à l'ouverture depuis un menu de ligne ; les règles restent celles de la fiche. */
 export type FactureActionInitiale =
   | 'modifier' | 'payer' | 'supprimer' | 'dupliquer' | 'documents' | 'paiements' | 'historique'
-  | 'enregistrer' | 'controler' | 'valider_controle' | 'valider' | 'contester' | 'annuler' | 'archiver';
+  | 'enregistrer' | 'valider' | 'contester' | 'annuler' | 'archiver';
 
-const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enregistrement' | 'soumission'; message: string; hint?: string }> = {
+const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enregistrement'; message: string; hint?: string }> = {
   enregistrer: { action: 'enregistrement', message: 'Marquer cette facture comme reçue ?' },
-  controler: { action: 'soumission', message: 'Envoyer cette facture en contrôle ?' },
-  valider_controle: { action: 'validation', message: 'Clore le contrôle de cette facture ?', hint: 'Les contrôles bloquants sont revérifiés ; la facture passera « Contrôlée », prête à valider.' },
   valider: { action: 'validation', message: 'Valider cette facture ?', hint: 'Les montants seront figés ; la facture passera « À payer ».' },
   archiver: { action: 'archivage', message: 'Archiver cette facture ?', hint: 'Elle restera consultable dans l’historique.' },
 };
+
+interface Etape {
+  code: 'saisie' | 'piece' | 'validation' | 'paiement';
+  label: string;
+  icon: string;
+  etat: 'fait' | 'courant' | 'a_venir' | 'facultatif';
+}
+
+/** Prochaine action du circuit court (saisie → facture scannée → validation → paiement). */
+interface Prochaine {
+  code: 'enregistrer' | 'joindre' | 'valider' | 'payer';
+  label: string;
+  icon: string;
+  aide?: string;
+}
 
 /** Fiche facture en panneau latéral : détails, documents (GED), paiements, historique, actions. */
 @Component({
@@ -79,18 +92,34 @@ const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enre
         </div>
 
         <input #fichier type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff,.doc,.docx,.xls,.xlsx" (change)="choisirFichier($event)" />
+        @if (f.statut !== 'ANNULEE') {
+          <div class="bea-fx-circuit">
+            <ol class="bea-fx-circuit__steps" aria-label="Circuit de la facture">
+              @for (e of etapes(); track e.code) {
+                <li [attr.data-etat]="e.etat"><mat-icon>{{ e.etat === 'fait' ? 'check_circle' : e.icon }}</mat-icon> {{ e.label }}</li>
+              }
+            </ol>
+            @if (prochaine(); as p) {
+              <div class="bea-fx-circuit__next">
+                @if (p.aide) { <small>{{ p.aide }}</small> }
+                <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()" (click)="executerProchaine(p, fichier)"><mat-icon>{{ p.icon }}</mat-icon> {{ p.label }}</button>
+              </div>
+            } @else if (bloquants().length && (f.statut === 'RECUE' || f.statut === 'CONTESTEE')) {
+              <div class="bea-fx-circuit__next bea-fx-circuit__next--ko"><mat-icon>block</mat-icon> <small>Avant validation : {{ bloquants().join(' · ') }}</small></div>
+            }
+          </div>
+        }
         <div class="bea-fx-drawer__actions">
           @if (f.modifiable) { <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="formOuvert.set(true)"><mat-icon>edit</mat-icon> Modifier</button> }
-          @for (a of f.actions; track a) {
-            <button type="button" class="bea-mg__btn" [class.bea-mg__btn--primary]="a === 'valider' || a === 'valider_controle'" [class.bea-mg__btn--ghost]="a !== 'valider' && a !== 'valider_controle'"
-              [class.bea-mg__btn--danger]="a === 'annuler'" [disabled]="busy()" (click)="transition(a)">
+          @for (a of autresActions(); track a) {
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [class.bea-mg__btn--danger]="a === 'annuler'" [disabled]="busy()" (click)="transition(a)">
               <mat-icon>{{ action(a).icon }}</mat-icon> {{ action(a).label }}
             </button>
           }
-          @if (f.statut === 'VALIDEE' && f.reste && f.capacites.payment_create) {
-            <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="ouvrirPaiement()"><mat-icon>payments</mat-icon> Enregistrer un paiement</button>
+          @if (f.statut === 'VALIDEE' && f.reste && f.capacites.payment_create && prochaine()?.code !== 'payer') {
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="ouvrirPaiement()"><mat-icon>payments</mat-icon> Enregistrer un paiement</button>
           }
-          @if (f.capacites.documents_create && f.statut !== 'ARCHIVEE') {
+          @if (f.capacites.documents_create && f.statut !== 'ARCHIVEE' && prochaine()?.code !== 'joindre') {
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="onglet.set('documents'); fichier.click()"><mat-icon>attach_file</mat-icon> Ajouter un document</button>
           }
           @if (f.capacites.create) { <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="dupliquer()"><mat-icon>content_copy</mat-icon> Dupliquer</button> }
@@ -142,7 +171,6 @@ const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enre
                 @if (f.reglage !== null) { <dt>{{ lib(f, 'reglage') }}</dt><dd>{{ f.reglage | montant }} <small>(tel que figurant sur la facture)</small></dd> }
                 <dt>{{ lib(f, 'montant_a_payer') }}</dt><dd>{{ f.montant_a_payer | montant }} {{ f.devise }}</dd>
                 <dt>Saisie par</dt><dd>{{ f.created_by_nom || '—' }} <small>{{ dateHeure(f.created_at) }}</small></dd>
-                @if (f.controle_at) { <dt>Contrôlée par</dt><dd>{{ f.controle_by_nom || '—' }} <small>{{ dateHeure(f.controle_at) }}</small></dd> }
                 @if (f.valide_at) { <dt>Validée par</dt><dd>{{ f.valide_by_nom || '—' }} <small>{{ dateHeure(f.valide_at) }}</small></dd> }
                 @if (f.motif) { <dt>Motif</dt><dd>{{ f.motif }}</dd> }
                 @if (f.observation) { <dt>Observation</dt><dd class="bea-fx-dl__wrap">{{ f.observation }}</dd> }
@@ -180,7 +208,7 @@ const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enre
                 } @else if (f.capacites.documents_create && f.statut !== 'ARCHIVEE') {
                   <button type="button" class="bea-fx-dropzone" (click)="fichier.click()" (dragover)="$event.preventDefault()" (drop)="deposer($event)">
                     <mat-icon>cloud_upload</mat-icon> Glisser un fichier ou cliquer — facture originale, scan, justificatif, preuve de paiement…
-                    <small>Facultatif · max {{ store.config()?.ged_taille_max_mo ?? 15 }} Mo · stocké dans la GED centrale</small>
+                    <small>{{ f.piece_obligatoire ? 'Facture scannée obligatoire avant validation' : 'Facultatif' }} · max {{ store.config()?.ged_taille_max_mo ?? 15 }} Mo · stocké dans la GED centrale</small>
                   </button>
                 }
                 <ul class="bea-ct-list">
@@ -195,7 +223,7 @@ const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enre
                       }
                     </li>
                   } @empty {
-                    <li class="bea-ct-dash__none">Aucun document. Les pièces sont facultatives.</li>
+                    <li class="bea-ct-dash__none">Aucun document.{{ f.piece_obligatoire ? ' Joignez la facture scannée pour pouvoir valider.' : ' Les pièces sont facultatives.' }}</li>
                   }
                 </ul>
               </div>
@@ -315,6 +343,52 @@ export class FactureDrawerComponent {
 
   readonly paiementsActifs = computed(() => (this.f()?.paiements ?? []).filter((p) => p.statut === 'PAYE'));
 
+  readonly bloquants = computed(() => (this.f()?.controles ?? []).filter((c) => c.niveau === 'bloquant').map((c) => c.message));
+
+  readonly etapes = computed<Etape[]>(() => {
+    const f = this.f();
+    if (!f) return [];
+    const valide = f.statut === 'VALIDEE' || f.statut === 'ARCHIVEE';
+    const piece = f.documents.length > 0 || (f.nb_documents ?? 0) > 0;
+    const paye = f.statut_paiement === 'PAYEE';
+    const etat = (fait: boolean, courant: boolean): Etape['etat'] => (fait ? 'fait' : courant ? 'courant' : 'a_venir');
+    return [
+      { code: 'saisie', label: 'Saisie', icon: 'edit_note', etat: etat(f.statut !== 'BROUILLON', f.statut === 'BROUILLON') },
+      {
+        code: 'piece', label: 'Facture scannée', icon: 'attach_file',
+        etat: piece ? 'fait' : valide ? 'facultatif' : f.statut === 'BROUILLON' ? 'a_venir' : 'courant',
+      },
+      { code: 'validation', label: 'Validation', icon: 'verified', etat: etat(valide, !valide && f.statut !== 'BROUILLON' && (piece || !f.piece_obligatoire)) },
+      { code: 'paiement', label: 'Paiement', icon: 'payments', etat: etat(paye, valide && !paye) },
+    ];
+  });
+
+  readonly prochaine = computed<Prochaine | null>(() => {
+    const f = this.f();
+    if (!f) return null;
+    const piece = f.documents.length > 0 || (f.nb_documents ?? 0) > 0;
+    if (f.statut === 'BROUILLON' && f.actions.includes('enregistrer')) {
+      return { code: 'enregistrer', label: 'Marquer reçue', icon: 'inbox', aide: 'Brouillon : à compléter puis enregistrer.' };
+    }
+    if (f.statut === 'RECUE' || f.statut === 'CONTESTEE') {
+      if (!piece && f.capacites.documents_create) {
+        return { code: 'joindre', label: 'Joindre la facture scannée', icon: 'upload_file', aide: f.piece_obligatoire ? 'Étape suivante : la pièce est requise pour valider.' : 'Recommandé avant validation.' };
+      }
+      if (f.actions.includes('valider') && !this.bloquants().length) {
+        return { code: 'valider', label: 'Valider la facture', icon: 'verified', aide: 'La facture deviendra payable.' };
+      }
+    }
+    if (f.statut === 'VALIDEE' && f.reste && f.capacites.payment_create) {
+      return { code: 'payer', label: 'Enregistrer le paiement', icon: 'payments', aide: 'Facture validée : prête à payer.' };
+    }
+    return null;
+  });
+
+  readonly autresActions = computed(() => {
+    const code = this.prochaine()?.code;
+    return (this.f()?.actions ?? []).filter((a) => a !== code);
+  });
+
   readonly payForm = this.fb.group({
     date_paiement: [aujourdhui(), Validators.required],
     montant: ['', Validators.required],
@@ -362,6 +436,7 @@ export class FactureDrawerComponent {
         const action = this.enAttente;
         this.enAttente = null;
         if (action) this.appliquerActionInitiale(d, action);
+        else if (!notifier && d.statut === 'RECUE' && !d.documents.length && d.capacites.documents_create) this.onglet.set('documents');
       },
       error: (e) => {
         void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Facture indisponible'));
@@ -419,6 +494,21 @@ export class FactureDrawerComponent {
     this.closed.emit();
   }
 
+  executerProchaine(p: Prochaine, fichier: HTMLInputElement): void {
+    switch (p.code) {
+      case 'joindre':
+        this.onglet.set('documents');
+        fichier.click();
+        break;
+      case 'payer':
+        this.onglet.set('paiements');
+        this.ouvrirPaiement();
+        break;
+      default:
+        this.transition(p.code);
+    }
+  }
+
   transition(action: string): void {
     const f = this.f();
     if (!f) return;
@@ -454,7 +544,10 @@ export class FactureDrawerComponent {
         errorTitle: 'Action refusée',
         success,
       })
-      .subscribe((d) => this.appliquer(d));
+      .subscribe((d) => {
+        this.appliquer(d);
+        if (action === 'valider' && d.capacites.payment_view) this.onglet.set('paiements');
+      });
   }
 
   dupliquer(): void {

@@ -1,4 +1,4 @@
-"""Facturation Fournisseurs sur PostgreSQL — profils, contrôle, validation, paiements détaillés.
+"""Facturation Fournisseurs sur PostgreSQL — profils, validation (circuit court), paiements détaillés.
 
 Ignoré si la migration ``20261006_mg_facturation_profils`` n'est pas appliquée.
 Exécution sur une copie de la base (bea_digital_eer_test) : chaque test tourne dans une transaction
@@ -19,8 +19,9 @@ from sqlalchemy.pool import NullPool
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.models import MgFacturationProfil, User
+from app.models.ged import GedDocument
 from app.schemas.mg_facturation import FactureCreate, FacturePaiementIn, FactureUpdate
-from app.services.mg_facturation_service import MgFacturationService
+from app.services.mg_facturation_service import ESPACE, GED_ENTITY, MODULE, MgFacturationService
 
 
 @pytest.fixture
@@ -58,6 +59,17 @@ def _numero() -> str:
     return f"T-{uuid.uuid4().hex[:10]}"
 
 
+def _joindre_scan(db: AsyncSession, facture_id: uuid.UUID, user: User) -> None:
+    """Pièce GED rattachée à la facture (métadonnées seules : aucun fichier écrit)."""
+    db.add(
+        GedDocument(
+            espace_code=ESPACE, module_code=MODULE, entity=GED_ENTITY, entity_id=str(facture_id),
+            filename="scan.pdf", stored_path="tests/scan.pdf", mime_type="application/pdf", size_bytes=10,
+            uploaded_by_id=user.id, title="Facture scannée", doc_type="FACTURE_SCANNEE",
+        )
+    )
+
+
 async def test_profils_initiaux(db):
     _user, profils, _svc = await _contexte(db)
     assert {"SOMELEC", "MATTEL_USSD", "MATTEL_SMS", "MAURITEL_ADSL", "MAURITEL_GFU",
@@ -80,14 +92,14 @@ async def test_cycle_controle_validation_paiement_carte(db):
     f = await svc.create_facture(FactureCreate(**base, numero_fournisseur=_numero()), user)
     assert f["statut"] == "RECUE" and f["montant_ttc"] == 1180.0
     assert f["fournisseur_id"] == str(mattel.fournisseur_id) and f["profil"] == "MATTEL SMS"
-    assert "valider_controle" in f["actions"] and "valider" not in f["actions"]
+    assert "valider" in f["actions"] and "valider_controle" not in f["actions"]
     assert "tva_incoherente" not in {c["code"] for c in f["controles"]}
     fid = uuid.UUID(f["id"])
 
-    with pytest.raises(AppError):
+    with pytest.raises(AppError) as err:
         await svc.transition(fid, "valider", user, None)
-    f = await svc.transition(fid, "valider_controle", user, None)
-    assert f["statut"] == "CONTROLEE" and f["controle_at"]
+    assert err.value.code == "FACTURE_CONTROLE_BLOQUANT" and "scannée" in err.value.message
+    _joindre_scan(db, fid, user)
     f = await svc.transition(fid, "valider", user, None)
     assert f["statut"] == "VALIDEE" and f["statut_paiement"] == "A_PAYER"
 
@@ -115,7 +127,7 @@ async def test_cycle_controle_validation_paiement_carte(db):
     assert f["paiements"][0]["carte_masquee"] == "•••• 4242"
 
 
-async def test_arrieres_et_modification_apres_controle(db):
+async def test_arrieres_et_modification_avant_validation(db):
     user, profils, svc = await _contexte(db)
     somelec = profils["SOMELEC"]
     f = await svc.create_facture(
@@ -126,9 +138,24 @@ async def test_arrieres_et_modification_apres_controle(db):
     assert f["montant_a_payer"] == 1200.0 and f["arrieres"] == 200.0
     assert f["montant_ht"] is None, f["montant_ht"]
     fid = uuid.UUID(f["id"])
-    await svc.transition(fid, "valider_controle", user, None)
     f = await svc.update_facture(fid, FactureUpdate(montant_ttc=Decimal("1100")), user)
-    assert f["statut"] == "A_CONTROLER" and f["montant_a_payer"] == 1300.0
+    assert f["statut"] == "RECUE" and f["montant_a_payer"] == 1300.0
+
+
+async def test_piece_facultative_si_parametre_non(db):
+    user, profils, svc = await _contexte(db)
+    await svc.set_param("factures.piece_obligatoire", "non", user)
+    f = await svc.create_facture(
+        FactureCreate(profil_id=profils["SNDE"].id, date_facture=date.today(), numero_fournisseur=_numero(),
+                      montant_ttc=Decimal("800")),
+        user,
+    )
+    assert {c["code"]: c["niveau"] for c in f["controles"]}["document_absent"] == "attention"
+    f = await svc.transition(uuid.UUID(f["id"]), "valider", user, None)
+    assert f["statut"] == "VALIDEE"
+    with pytest.raises(AppError) as err:
+        await svc.set_param("factures.piece_obligatoire", "peut-être", user)
+    assert err.value.code == "PARAMETRE_INVALIDE"
 
 
 async def test_rimatel_sans_numero(db):

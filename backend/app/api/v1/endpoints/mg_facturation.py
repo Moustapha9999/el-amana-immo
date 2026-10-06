@@ -462,7 +462,7 @@ async def dupliquer(
     return await (await _svc(db, user)).dupliquer(facture_id, user)
 
 
-for _action in ("enregistrer", "controler", "valider_controle", "valider", "contester", "annuler", "archiver"):
+for _action in ("enregistrer", "valider", "contester", "annuler", "archiver"):
 
     def _make(action: str):
         async def _transition(

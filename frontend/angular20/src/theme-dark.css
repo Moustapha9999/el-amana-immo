@@ -3128,6 +3128,14 @@ html[data-theme='dark'] .bea-fx-params__input input:disabled {
   background: #152332;
   color: #9fa9b8;
 }
+html[data-theme='dark'] .bea-fx-params__input select {
+  border: 1px solid #363c45;
+  background: #1f1f1f;
+}
+html[data-theme='dark'] .bea-fx-params__input select:disabled {
+  background: #152332;
+  color: #9fa9b8;
+}
 html[data-theme='dark'] .bea-fx-params__input em {
   color: #9fa9b8;
 }

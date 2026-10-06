@@ -62,7 +62,7 @@ const FILTRES_VIDES = {
         <div>
           <p class="bea-stock-page__kicker">Contrats &amp; échéances · Factures</p>
           <h1>Facturation</h1>
-          <p class="bea-ct-head__sub">Registre unique des factures (agences, sièges, PDV Amanty, autres fournisseurs) : contrôle, validation, paiements et pièces justificatives.</p>
+          <p class="bea-ct-head__sub">Registre unique des factures (agences, sièges, PDV Amanty, autres fournisseurs) : saisie, facture scannée, validation, paiement.</p>
         </div>
         <div class="bea-mg__actions">
           @if (store.cap().create) {

@@ -28,7 +28,7 @@ import { FacturationStore } from './facturation.store';
 
 const TONS_STATUT: Record<string, string> = {
   PAYEE: '#0f766e', VALIDEE: '#1a5278', A_PAYER: '#c2410c', PARTIELLEMENT_PAYEE: '#ca8a04', EN_RETARD: '#b91c1c',
-  RECUE: '#0891b2', A_CONTROLER: '#7c3aed', BROUILLON: '#94a3b8', CONTESTEE: '#be123c', ANNULEE: '#cbd5e1', ARCHIVEE: '#64748b',
+  RECUE: '#0891b2', BROUILLON: '#94a3b8', CONTESTEE: '#be123c', ANNULEE: '#cbd5e1', ARCHIVEE: '#64748b',
 };
 
 @Component({
@@ -124,7 +124,7 @@ const TONS_STATUT: Record<string, string> = {
         <div class="bea-fx-kpis">
           <a class="bea-fx-kpi" [routerLink]="base + '/factures'" [queryParams]="listeParams()">
             <mat-icon>receipt_long</mat-icon><p>Factures {{ d.periode_label }}</p><strong>{{ d.kpis.nb_factures }}</strong>
-            <small>{{ d.kpis.a_controler }} à contrôler</small>
+            <small>{{ d.kpis.a_valider }} à valider</small>
           </a>
           <article class="bea-fx-kpi" data-tone="brand">
             <mat-icon>account_balance_wallet</mat-icon><p>Total facturé</p><strong>{{ d.kpis.total | montant }}</strong>
@@ -226,12 +226,12 @@ const TONS_STATUT: Record<string, string> = {
           </div>
 
           <div class="bea-mg__panel bea-ct-panel">
-            <div class="bea-mg__panel-top"><h2><mat-icon>fact_check</mat-icon> Contrôles</h2><a class="bea-ct-link" [routerLink]="base + '/controles'">File de contrôle</a></div>
+            <div class="bea-mg__panel-top"><h2><mat-icon>pending_actions</mat-icon> À valider</h2><a class="bea-ct-link" [routerLink]="base + '/controles'">Ouvrir la file</a></div>
             <div class="bea-fx-buckets">
-              <a class="bea-fx-bucket" data-tone="warn" [routerLink]="base + '/controles'"><span>À contrôler</span><strong>{{ d.kpis.a_controler }}</strong><small>Reçues / en contrôle</small></a>
-              <a class="bea-fx-bucket" data-tone="info" [routerLink]="base + '/controles'"><span>À valider</span><strong>{{ d.kpis.controlees ?? 0 }}</strong><small>Contrôle clôturé</small></a>
+              <a class="bea-fx-bucket" data-tone="info" [routerLink]="base + '/controles'"><span>À valider</span><strong>{{ d.kpis.a_valider }}</strong><small>Factures reçues</small></a>
+              <a class="bea-fx-bucket" data-tone="warn" [routerLink]="base + '/controles'"><span>Sans pièce</span><strong>{{ d.kpis.sans_piece }}</strong><small>Facture scannée à joindre</small></a>
             </div>
-            <p class="bea-ct-help"><mat-icon>rule</mat-icon> Contrôles selon le profil de chaque fournisseur : champs obligatoires, TVA configurée, période, pièces.</p>
+            <p class="bea-ct-help"><mat-icon>route</mat-icon> Circuit : saisie → facture scannée → validation → paiement.</p>
           </div>
 
           <div class="bea-mg__panel bea-ct-panel">

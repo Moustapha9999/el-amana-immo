@@ -24,7 +24,7 @@ const CATALOGUE = [
   { key: 'pdv', label: 'PDV Amanty', icon: 'storefront', desc: 'Consommation et coûts des points de vente Amanty.' },
   { key: 'fournisseurs', label: 'Par fournisseur', icon: 'local_shipping', desc: 'Montants, moyenne, part et variation N-1 par fournisseur / profil.' },
   { key: 'fournisseurs_mois', label: 'Fournisseurs × mois', icon: 'grid_on', desc: 'Matrice mensuelle par fournisseur / profil avec totaux.' },
-  { key: 'controles', label: 'Contrôles en attente', icon: 'fact_check', desc: 'Factures à contrôler avec le résultat des contrôles automatiques.' },
+  { key: 'controles', label: 'Factures à valider', icon: 'pending_actions', desc: 'Factures reçues en attente de validation, avec les vérifications automatiques.' },
   { key: 'classeur', label: 'Classeur complet', icon: 'library_books', desc: 'Excel multi-onglets : synthèse, fournisseurs, agences, PDV, retards, manquantes, registre, paiements.' },
   { key: 'factures', label: 'Registre des factures', icon: 'receipt_long', desc: 'Liste détaillée filtrée (toutes colonnes).', mois: true },
   { key: 'retards', label: 'Factures en retard', icon: 'running_with_errors', desc: 'Factures échues non soldées et jours de retard.' },

@@ -34,7 +34,7 @@ const ICONES: Record<string, string> = {
         <div>
           <p class="bea-stock-page__kicker">Moyens Généraux · Facturation fournisseurs</p>
           <h1>Historique</h1>
-          <p class="bea-ct-head__sub">Toutes les opérations sur les factures et les points de facturation : saisie, contrôle, validation, paiements, pièces. Journal non modifiable.</p>
+          <p class="bea-ct-head__sub">Toutes les opérations sur les factures et les points de facturation : saisie, pièces, validation, paiements. Journal non modifiable.</p>
         </div>
         <div class="bea-mg__actions">
           @if (store.cap().export || store.cap().reports) {

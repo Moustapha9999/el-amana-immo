@@ -247,8 +247,7 @@ export interface FactureDetail extends FactureRow {
   contrat: { id: string; reference: string; titre: string; statut: string } | null;
   profil_config: FxProfil | null;
   controles: FxControle[];
-  controle_at: string | null;
-  controle_by_nom: string | null;
+  piece_obligatoire: boolean;
   created_by_nom: string | null;
   valide_at: string | null;
   valide_by_nom: string | null;
@@ -365,8 +364,8 @@ export interface FxDashboard {
     nb_a_payer: number;
     en_retard: number;
     montant_retard: number;
-    a_controler: number;
-    controlees?: number;
+    a_valider: number;
+    sans_piece: number;
     moyenne_mensuelle: number;
     nb_alertes: number;
   };
@@ -387,8 +386,6 @@ export interface FxDashboard {
 export const STATUT_LABELS: Record<string, string> = {
   BROUILLON: 'Brouillon',
   RECUE: 'Reçue',
-  A_CONTROLER: 'À contrôler',
-  CONTROLEE: 'Contrôlée',
   VALIDEE: 'Validée',
   CONTESTEE: 'Contestée',
   ANNULEE: 'Annulée',
@@ -413,8 +410,6 @@ export const STATUT_LABELS: Record<string, string> = {
 export const STATUT_TONES: Record<string, string> = {
   BROUILLON: 'BROUILLON',
   RECUE: 'INFO',
-  A_CONTROLER: 'ATTENTION',
-  CONTROLEE: 'INFO',
   VALIDEE: 'ACTIF',
   CONTESTEE: 'URGENT',
   ANNULEE: 'EXPIRE',
@@ -454,8 +449,6 @@ export const TYPE_POINT_ICONS: Record<string, string> = {
 
 export const ACTION_LABELS: Record<string, { label: string; icon: string }> = {
   enregistrer: { label: 'Marquer reçue', icon: 'inbox' },
-  controler: { label: 'Mettre en contrôle', icon: 'fact_check' },
-  valider_controle: { label: 'Contrôle terminé', icon: 'rule' },
   valider: { label: 'Valider', icon: 'verified' },
   contester: { label: 'Contester', icon: 'report' },
   annuler: { label: 'Annuler', icon: 'block' },
@@ -465,15 +458,13 @@ export const ACTION_LABELS: Record<string, { label: string; icon: string }> = {
 /** Miroir de `TRANSITIONS` / `CAPACITE_ACTION` (backend) pour les menus de ligne ; le backend reste juge. */
 const TRANSITIONS_FX: Record<WorkflowFacture, { sources: string[]; cap: keyof FxCapacites }> = {
   enregistrer: { sources: ['BROUILLON'], cap: 'update' },
-  controler: { sources: ['BROUILLON', 'RECUE', 'CONTROLEE', 'CONTESTEE'], cap: 'update' },
-  valider_controle: { sources: ['RECUE', 'A_CONTROLER'], cap: 'update' },
-  valider: { sources: ['CONTROLEE'], cap: 'validate' },
-  contester: { sources: ['RECUE', 'A_CONTROLER', 'CONTROLEE', 'VALIDEE'], cap: 'validate' },
-  annuler: { sources: ['BROUILLON', 'RECUE', 'A_CONTROLER', 'CONTROLEE', 'VALIDEE', 'CONTESTEE'], cap: 'delete' },
+  valider: { sources: ['RECUE', 'CONTESTEE'], cap: 'validate' },
+  contester: { sources: ['RECUE', 'VALIDEE'], cap: 'validate' },
+  annuler: { sources: ['BROUILLON', 'RECUE', 'VALIDEE', 'CONTESTEE'], cap: 'delete' },
   archiver: { sources: ['VALIDEE', 'ANNULEE'], cap: 'archive' },
 };
 
-export type WorkflowFacture = 'enregistrer' | 'controler' | 'valider_controle' | 'valider' | 'contester' | 'annuler' | 'archiver';
+export type WorkflowFacture = 'enregistrer' | 'valider' | 'contester' | 'annuler' | 'archiver';
 
 export function actionsFacture(r: FactureRow, cap: Partial<FxCapacites>): WorkflowFacture[] {
   const paye = (r.montant_paye ?? 0) > 0;
@@ -510,7 +501,7 @@ export const VUES: { code: string; label: string; icon: string }[] = [
   { code: 'toutes', label: 'Toutes', icon: 'receipt_long' },
   { code: 'agences', label: 'Agences & sièges', icon: 'account_balance' },
   { code: 'pdv', label: 'PDV Amanty', icon: 'storefront' },
-  { code: 'a_controler', label: 'À contrôler', icon: 'fact_check' },
+  { code: 'a_valider', label: 'À valider', icon: 'pending_actions' },
   { code: 'a_payer', label: 'À payer', icon: 'payments' },
   { code: 'payees', label: 'Payées', icon: 'task_alt' },
   { code: 'retard', label: 'En retard', icon: 'running_with_errors' },
@@ -596,7 +587,7 @@ export interface FxFournisseurStat {
   mensuel: number[];
   reste: number;
   nb_ouvertes: number;
-  a_controler: number;
+  a_valider: number;
   points: number;
   derniere_facture: string | null;
   part_pct: number;
@@ -620,7 +611,7 @@ export interface FxControleRow extends FactureRow {
 
 export interface FxControles {
   items: FxControleRow[];
-  compteurs: { a_controler: number; bloquant: number; attention: number; pret: number; controlee: number };
+  compteurs: { a_valider: number; bloquant: number; attention: number; pret: number };
 }
 
 export interface FxLotResultat {

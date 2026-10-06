@@ -64,7 +64,7 @@ CENT = Decimal("0.01")
 ZERO = Decimal("0")
 TOLERANCE = Decimal("0.005")
 
-STATUTS = ("BROUILLON", "RECUE", "A_CONTROLER", "CONTROLEE", "VALIDEE", "CONTESTEE", "ANNULEE", "ARCHIVEE")
+STATUTS = ("BROUILLON", "RECUE", "VALIDEE", "CONTESTEE", "ANNULEE", "ARCHIVEE")
 STATUT_LABELS = {
     "BROUILLON": "Brouillon",
     "RECUE": "Reçue",
@@ -78,25 +78,22 @@ STATUT_LABELS = {
 STATUTS_PAIEMENT = ("A_PAYER", "PARTIELLEMENT_PAYEE", "PAYEE")
 STATUT_PAIEMENT_LABELS = {"A_PAYER": "À payer", "PARTIELLEMENT_PAYEE": "Partiellement payée", "PAYEE": "Payée"}
 # Dette reconnue ou en cours de reconnaissance : suivie pour les échéances et retards.
-STATUTS_OUVERTS = frozenset({"RECUE", "A_CONTROLER", "CONTROLEE", "VALIDEE"})
+STATUTS_OUVERTS = frozenset({"RECUE", "VALIDEE"})
 # Inclus dans les montants facturés (analyses, tableaux de bord).
-STATUTS_COMPTES = frozenset({"RECUE", "A_CONTROLER", "CONTROLEE", "VALIDEE", "CONTESTEE", "ARCHIVEE"})
+STATUTS_COMPTES = frozenset({"RECUE", "VALIDEE", "CONTESTEE", "ARCHIVEE"})
 STATUTS_PAYABLES = frozenset({"VALIDEE", "ARCHIVEE"})
 VERROUILLES = frozenset({"ANNULEE", "ARCHIVEE"})
 
+# Circuit court : saisie (reçue) → pièce scannée → validation (contrôles bloquants revérifiés) → paiement.
 TRANSITIONS: dict[str, tuple[frozenset[str], str]] = {
     "enregistrer": (frozenset({"BROUILLON"}), "RECUE"),
-    "controler": (frozenset({"BROUILLON", "RECUE", "CONTROLEE", "CONTESTEE"}), "A_CONTROLER"),
-    "valider_controle": (frozenset({"RECUE", "A_CONTROLER"}), "CONTROLEE"),
-    "valider": (frozenset({"CONTROLEE"}), "VALIDEE"),
-    "contester": (frozenset({"RECUE", "A_CONTROLER", "CONTROLEE", "VALIDEE"}), "CONTESTEE"),
-    "annuler": (frozenset({"BROUILLON", "RECUE", "A_CONTROLER", "CONTROLEE", "VALIDEE", "CONTESTEE"}), "ANNULEE"),
+    "valider": (frozenset({"RECUE", "CONTESTEE"}), "VALIDEE"),
+    "contester": (frozenset({"RECUE", "VALIDEE"}), "CONTESTEE"),
+    "annuler": (frozenset({"BROUILLON", "RECUE", "VALIDEE", "CONTESTEE"}), "ANNULEE"),
     "archiver": (frozenset({"VALIDEE", "ANNULEE"}), "ARCHIVEE"),
 }
 PERMISSION_ACTION = {
     "enregistrer": "mg.factures.update",
-    "controler": "mg.factures.update",
-    "valider_controle": "mg.factures.update",
     "valider": "mg.factures.validate",
     "contester": "mg.factures.validate",
     "annuler": "mg.factures.delete",
@@ -151,8 +148,12 @@ DEFAULT_PARAMS = [
     ("factures.alerte_echeance_jours", "7", "Factures — jours avant échéance pour l'alerte « échéance proche »"),
     ("factures.seuil_hausse_pct", "30", "Factures — hausse anormale (% au-dessus de la moyenne des 6 dernières)"),
     ("factures.delai_reception_jours", "5", "Factures — jours après la fin du mois avant d'alerter « facture manquante »"),
+    ("factures.piece_obligatoire", "OUI", "Facture scannée obligatoire avant validation (OUI / NON)"),
 ]
-PARAMS_NUMERIQUES = frozenset(k for k, _, _ in DEFAULT_PARAMS if not k.startswith("factures.prefixe"))
+PARAMS_BOOLEENS = frozenset({"factures.piece_obligatoire"})
+PARAMS_NUMERIQUES = frozenset(
+    k for k, _, _ in DEFAULT_PARAMS if not k.startswith("factures.prefixe") and k not in PARAMS_BOOLEENS
+)
 
 GESTION_PERMISSIONS = ("mg.factures.create", "mg.factures.update", "mg.factures.validate", "mg.facturation.manage")
 
@@ -489,8 +490,9 @@ def controles_facture(
     taux_tva,
     nb_documents: int,
     fournisseur_actif: bool = True,
+    piece_obligatoire: bool = False,
 ) -> list[dict]:
-    """Contrôles automatiques. « bloquant » empêche le passage à CONTRÔLÉE ; « attention » informe.
+    """Contrôles automatiques. « bloquant » empêche la validation ; « attention » informe.
 
     Aucune règle fiscale n'est supposée : la TVA n'est contrôlée que si le profil porte un taux.
     """
@@ -522,7 +524,7 @@ def controles_facture(
         if abs(Decimal(f.montant_a_payer) - attendu) > TOLERANCE:
             add("total_a_payer", "attention", f"Total à payer ≠ TTC + arriérés ({attendu})")
     if nb_documents == 0:
-        add("document_absent", "attention", "Aucune facture scannée jointe")
+        add("document_absent", "bloquant" if piece_obligatoire else "attention", "Aucune facture scannée jointe")
     if f.date_echeance is None:
         add("echeance_absente", "attention", "Aucune date limite de paiement")
     return out
@@ -649,8 +651,6 @@ async def capacites(db: AsyncSession, user: User) -> dict[str, bool]:
 
 CAPACITE_ACTION = {
     "enregistrer": "update",
-    "controler": "update",
-    "valider_controle": "update",
     "valider": "validate",
     "contester": "validate",
     "annuler": "delete",
@@ -711,6 +711,9 @@ class MgFacturationService:
         except (ArithmeticError, ValueError):
             return default
 
+    async def _piece_obligatoire(self) -> bool:
+        return (await self._param("factures.piece_obligatoire", "OUI")).upper() != "NON"
+
     async def seuils(self) -> dict[str, int]:
         return {
             "delai_paiement_jours": await self._param_int("factures.delai_paiement_jours", 0),
@@ -736,6 +739,9 @@ class MgFacturationService:
                     raise ValueError
             except (ArithmeticError, ValueError):
                 raise AppError("Valeur numérique positive attendue", code="PARAMETRE_INVALIDE")
+        elif cle in PARAMS_BOOLEENS:
+            if value.upper() not in {"OUI", "NON"}:
+                raise AppError("Valeur attendue : OUI ou NON", code="PARAMETRE_INVALIDE")
         elif not re.fullmatch(r"[A-Za-z0-9]{1,10}", value):
             raise AppError("Préfixe : 1 à 10 lettres ou chiffres", code="PARAMETRE_INVALIDE")
         before = row.valeur
@@ -963,8 +969,8 @@ class MgFacturationService:
             stmt = stmt.where(P.type_point.in_(("AGENCE", "SIEGE")))
         elif vue == "pdv":
             stmt = stmt.where(P.type_point == "PDV")
-        elif vue == "a_controler":
-            stmt = stmt.where(F.statut.in_(("RECUE", "A_CONTROLER")))
+        elif vue in {"a_valider", "a_controler"}:
+            stmt = stmt.where(F.statut == "RECUE")
         elif vue == "a_payer":
             stmt = stmt.where(F.statut == "VALIDEE", F.statut_paiement.in_(("A_PAYER", "PARTIELLEMENT_PAYEE")))
         elif vue == "payees":
@@ -1159,7 +1165,8 @@ class MgFacturationService:
         if limit:
             stmt = stmt.limit(limit)
         rows = (await self.db.execute(stmt)).all()
-        return [self._row(f, p, fr, ag, today, proche, profil=pr) for f, p, fr, ag, pr in rows]
+        docs = await self._nb_documents([r[0].id for r in rows])
+        return [self._row(f, p, fr, ag, today, proche, docs.get(str(f.id), 0), profil=pr) for f, p, fr, ag, pr in rows]
 
     SORTS = {
         "date_facture": MgAchatFacture.date_facture,
@@ -1219,7 +1226,7 @@ class MgFacturationService:
     async def compteurs_vues(self) -> dict[str, int]:
         today = date.today()
         out: dict[str, int] = {}
-        for vue in ("toutes", "agences", "pdv", "a_controler", "a_payer", "payees", "retard", "historique"):
+        for vue in ("toutes", "agences", "pdv", "a_valider", "a_payer", "payees", "retard", "historique"):
             stmt = self._apply_filters(self._select(func.count(MgAchatFacture.id)), {"vue": vue}, today)
             out[vue] = int(await self.db.scalar(stmt) or 0)
         return out
@@ -1330,7 +1337,6 @@ class MgFacturationService:
         contrat = await self.db.get(MgContrat, f.contrat_id) if f.contrat_id else None
         createur = await self.db.get(User, f.created_by) if f.created_by else None
         valideur = await self.db.get(User, f.valide_by) if f.valide_by else None
-        controleur = await self.db.get(User, f.controle_by) if f.controle_by else None
         profil = await self.db.get(MgFacturationProfil, f.profil_id) if f.profil_id else None
         fr = await self.db.get(Fournisseur, f.fournisseur_id) if f.fournisseur_id else None
         taux = (await self._taux_par_profil([profil.id])).get(str(profil.id), []) if profil else []
@@ -1341,9 +1347,9 @@ class MgFacturationService:
                 "controles": controles_facture(
                     f, profil.champs if profil else None, taux_applicable(taux, f.date_facture), nb_docs,
                     fournisseur_actif=bool(fr and fr.deleted_at is None and fr.is_active),
+                    piece_obligatoire=await self._piece_obligatoire(),
                 ),
-                "controle_at": _iso(f.controle_at),
-                "controle_by_nom": controleur.full_name if controleur else None,
+                "piece_obligatoire": await self._piece_obligatoire(),
                 "lignes": [
                     {
                         "id": str(l.id),
@@ -1386,8 +1392,7 @@ class MgFacturationService:
                 "archived_at": _iso(f.archived_at),
                 "actions": actions_possibles(f, caps, nb_actifs),
                 "modifiable": f.statut not in VERROUILLES and caps["update"],
-                "montants_modifiables": f.statut in {"BROUILLON", "RECUE", "A_CONTROLER", "CONTROLEE", "CONTESTEE"}
-                and caps["update"],
+                "montants_modifiables": f.statut in {"BROUILLON", "RECUE", "CONTESTEE"} and caps["update"],
                 "supprimable": f.statut in {"BROUILLON", "RECUE"} and nb_actifs == 0 and caps["delete"],
                 "capacites": caps,
             }
@@ -1661,17 +1666,9 @@ class MgFacturationService:
         changes = [CHAMPS_LABELS.get(k, k) for k in CHAMPS_LABELS if before.get(k) != after.get(k)]
         if "lignes" in champs:
             changes.append("Lignes")
-        recontrole = f.statut == "CONTROLEE" and any(
-            before.get(k) != after.get(k) for k in CHAMPS_FINANCIERS | {"point_facturation_id", "mois", "annee", "periode_debut"}
-        )
-        if recontrole:
-            f.statut = "A_CONTROLER"
-            f.controle_at = None
-            f.controle_by = None
         self._event(
             EVT_FACTURE, f.id, "MODIFICATION",
-            "Modification : " + (", ".join(changes) if changes else "aucun changement de valeur")
-            + (" — contrôle à refaire (À contrôler)" if recontrole else ""),
+            "Modification : " + (", ".join(changes) if changes else "aucun changement de valeur"),
             user,
         )
         await self._audit(user, "factures.update", f.id, before=before, after=after)
@@ -1717,7 +1714,7 @@ class MgFacturationService:
                 status_code=409,
                 code="FACTURE_PAIEMENTS_EXISTANTS",
             )
-        if action in {"enregistrer", "controler", "valider_controle", "valider"}:
+        if action in {"enregistrer", "valider"}:
             champs_profil, taux = await self._profil_champs(f)
             manquants = champs_manquants(f, champs_profil)
             if manquants:
@@ -1725,22 +1722,22 @@ class MgFacturationService:
                     "Champs obligatoires pour ce fournisseur : " + ", ".join(CHAMPS_PROFIL[c] for c in manquants),
                     code="FACTURE_CHAMPS_OBLIGATOIRES",
                 )
-        if action == "valider_controle":
-            fr = await self.db.get(Fournisseur, f.fournisseur_id)
+        if action == "valider":
+            if a_payer_effectif(f) <= 0:
+                raise AppError("Montant à payer requis avant validation", code="FACTURE_MONTANT_REQUIS")
+            fr = await self.db.get(Fournisseur, f.fournisseur_id) if f.fournisseur_id else None
             nb_docs = (await self._nb_documents([f.id])).get(str(f.id), 0)
             bloquants = [
                 c["message"]
                 for c in controles_facture(
-                    f, champs_profil, taux, nb_docs, fournisseur_actif=bool(fr and fr.deleted_at is None and fr.is_active)
+                    f, champs_profil, taux, nb_docs,
+                    fournisseur_actif=bool(fr and fr.deleted_at is None and fr.is_active),
+                    piece_obligatoire=await self._piece_obligatoire(),
                 )
                 if c["niveau"] == "bloquant"
             ]
             if bloquants:
-                raise AppError("Contrôle non concluant : " + " ; ".join(bloquants), code="FACTURE_CONTROLE_BLOQUANT")
-            await self._check_doublons(f, forcer=True)
-        if action == "valider":
-            if a_payer_effectif(f) <= 0:
-                raise AppError("Montant à payer requis avant validation", code="FACTURE_MONTANT_REQUIS")
+                raise AppError("Validation impossible : " + " ; ".join(bloquants), code="FACTURE_CONTROLE_BLOQUANT")
             await self._check_doublons(f, forcer=True)
         if action == "archiver" and f.statut == "VALIDEE":
             await self._recalculer_paiements(f)
@@ -1754,12 +1751,6 @@ class MgFacturationService:
         f.updated_by = user.id
         if action == "enregistrer" and f.date_reception is None:
             f.date_reception = date.today()
-        elif action == "valider_controle":
-            f.controle_at = now
-            f.controle_by = user.id
-        elif action == "controler":
-            f.controle_at = None
-            f.controle_by = None
         elif action == "valider":
             f.valide_at = now
             f.valide_by = user.id
@@ -2685,10 +2676,10 @@ class MgFacturationService:
                 .group_by(F.profil_id, F.fournisseur_id)
             )
         ).all()
-        a_controler = (
+        a_valider = (
             await self.db.execute(
                 select(F.profil_id, F.fournisseur_id, func.count(F.id))
-                .where(*filtre, F.statut.in_(("RECUE", "A_CONTROLER")))
+                .where(*filtre, F.statut == "RECUE")
                 .group_by(F.profil_id, F.fournisseur_id)
             )
         ).all()
@@ -2722,7 +2713,7 @@ class MgFacturationService:
                 par_cle[cle] = {
                     "cle": cle, "profil_id": pid, "fournisseur_id": fid,
                     "nb": 0, "montant": 0.0, "mensuel": [0.0] * 12, "reste": 0.0, "nb_ouvertes": 0,
-                    "a_controler": 0, "points": 0, "derniere_facture": None,
+                    "a_valider": 0, "points": 0, "derniere_facture": None,
                 }
             elif fid and not par_cle[cle]["fournisseur_id"]:
                 par_cle[cle]["fournisseur_id"] = fid
@@ -2742,9 +2733,9 @@ class MgFacturationService:
             if (it := item(profil_id, fournisseur_id)) is not None:
                 it["nb_ouvertes"] += nb
                 it["reste"] += float(reste or 0)
-        for profil_id, fournisseur_id, nb in a_controler:
+        for profil_id, fournisseur_id, nb in a_valider:
             if (it := item(profil_id, fournisseur_id)) is not None:
-                it["a_controler"] += nb
+                it["a_valider"] += nb
         for profil_id, fournisseur_id, d in dernieres:
             if (it := item(profil_id, fournisseur_id)) is not None and d:
                 iso = d.isoformat()
@@ -2792,13 +2783,13 @@ class MgFacturationService:
             "nb_profils": sum(1 for i in items if i["profil"] and i["actif"]),
         }
 
-    # ——— Contrôles ———
+    # ——— File « À valider » ———
 
     async def file_controles(self, filtres: dict) -> dict:
-        """Factures en attente de contrôle / de validation avec le résultat des contrôles automatiques."""
-        statuts = ("RECUE", "A_CONTROLER", "CONTROLEE")
+        """Factures reçues en attente de validation, avec le résultat des contrôles automatiques."""
         base = {k: v for k, v in filtres.items() if v and k not in {"statut", "vue"}}
-        rows = await self.fetch_rows({**base, "statut": ",".join(statuts)}, order=None)
+        rows = await self.fetch_rows({**base, "statut": "RECUE"}, order=None)
+        piece_obligatoire = await self._piece_obligatoire()
         ids = [uuid.UUID(r["id"]) for r in rows]
         factures = {
             str(f.id): f
@@ -2817,7 +2808,7 @@ class MgFacturationService:
             ).all()
             if deleted is None and active
         } if fr_ids else set()
-        compteurs = {"a_controler": 0, "bloquant": 0, "attention": 0, "pret": 0, "controlee": 0}
+        compteurs = {"a_valider": 0, "bloquant": 0, "attention": 0, "pret": 0}
         items = []
         for r in rows:
             f = factures.get(r["id"])
@@ -2828,18 +2819,16 @@ class MgFacturationService:
                 f, profil.champs if profil else None,
                 taux_applicable(taux_profils.get(str(profil.id), []), f.date_facture) if profil else None,
                 r.get("nb_documents") or 0, fournisseur_actif=f.fournisseur_id in actifs,
+                piece_obligatoire=piece_obligatoire,
             )
             bloquants = sum(1 for c in ctrl if c["niveau"] == "bloquant")
             attention = len(ctrl) - bloquants
             niveau = "bloquant" if bloquants else ("attention" if attention else "ok")
-            if r["statut"] == "CONTROLEE":
-                compteurs["controlee"] += 1
-            else:
-                compteurs["a_controler"] += 1
-                compteurs[{"bloquant": "bloquant", "attention": "attention", "ok": "pret"}[niveau]] += 1
+            compteurs["a_valider"] += 1
+            compteurs[{"bloquant": "bloquant", "attention": "attention", "ok": "pret"}[niveau]] += 1
             items.append({**r, "controles": ctrl, "niveau_controle": niveau, "nb_bloquants": bloquants, "nb_attention": attention})
         ordre = {"bloquant": 0, "attention": 1, "ok": 2}
-        items.sort(key=lambda x: (x["statut"] == "CONTROLEE", ordre[x["niveau_controle"]], x["date_facture"] or ""))
+        items.sort(key=lambda x: (ordre[x["niveau_controle"]], x["date_facture"] or ""))
         niveau_filtre = filtres.get("niveau")
         if niveau_filtre:
             items = [i for i in items if i["niveau_controle"] == niveau_filtre]

@@ -7,21 +7,20 @@ import { FeedbackService } from '../core/feedback/feedback.service';
 import { ApiService } from '../core/services/api.service';
 import { MontantPipe } from '../shared/montant.pipe';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
-import { FX_BASE, FxControleRow, FxControles, FxLotResultat, fxStatut, fxTone, nettoyer } from './facturation.models';
+import { FX_BASE, FxControleRow, FxControles, FxLotResultat, nettoyer } from './facturation.models';
 import { FacturationStore } from './facturation.store';
-import { FactureDrawerComponent } from './facture-drawer.component';
+import { FactureActionInitiale, FactureDrawerComponent } from './facture-drawer.component';
 
-type Onglet = 'tous' | 'bloquant' | 'attention' | 'ok' | 'controlee';
+type Onglet = 'tous' | 'ok' | 'attention' | 'bloquant';
 
 const ONGLETS: { code: Onglet; label: string; icon: string; tone: string }[] = [
-  { code: 'tous', label: 'À contrôler', icon: 'fact_check', tone: 'INFO' },
-  { code: 'bloquant', label: 'Bloquantes', icon: 'block', tone: 'DANGER' },
+  { code: 'tous', label: 'À valider', icon: 'pending_actions', tone: 'INFO' },
+  { code: 'ok', label: 'Prêtes', icon: 'task_alt', tone: 'OK' },
   { code: 'attention', label: 'À vérifier', icon: 'warning', tone: 'WARN' },
-  { code: 'ok', label: 'Conformes', icon: 'task_alt', tone: 'OK' },
-  { code: 'controlee', label: 'Contrôlées, à valider', icon: 'verified', tone: 'BRAND' },
+  { code: 'bloquant', label: 'Incomplètes', icon: 'block', tone: 'DANGER' },
 ];
 
-/** File de contrôle : résultat des contrôles automatiques et clôture / validation en lot. */
+/** Factures reçues en attente de validation : contrôles automatiques indicatifs, validation en lot. */
 @Component({
   selector: 'bea-fx-controles',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -31,8 +30,8 @@ const ONGLETS: { code: Onglet; label: string; icon: string; tone: string }[] = [
       <header class="bea-mg__head">
         <div>
           <p class="bea-stock-page__kicker">Moyens Généraux · Facturation fournisseurs</p>
-          <h1>Contrôles</h1>
-          <p class="bea-ct-head__sub">Factures reçues passées au crible du profil fournisseur : champs obligatoires, cohérence TVA, période, pièces. Les anomalies bloquantes empêchent la clôture du contrôle.</p>
+          <h1>À valider</h1>
+          <p class="bea-ct-head__sub">Factures saisies en attente de validation. Circuit : saisie → facture scannée → validation → paiement. Les factures incomplètes (pièce ou champ obligatoire manquant) ne peuvent pas être validées.</p>
         </div>
         <div class="bea-mg__actions">
           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="chargement()" (click)="charger()"><mat-icon>refresh</mat-icon> Actualiser</button>
@@ -69,11 +68,11 @@ const ONGLETS: { code: Onglet; label: string; icon: string; tone: string }[] = [
         @if (selection().size) {
           <div class="bea-fx-bulk">
             <span><strong>{{ selection().size }}</strong> sélectionnée(s)</span>
-            @if (store.cap().update && cloturables().length) {
-              <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()" (click)="lot('valider_controle')"><mat-icon>verified</mat-icon> Clore le contrôle ({{ cloturables().length }})</button>
-            }
             @if (store.cap().validate && validables().length) {
-              <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()" (click)="lot('valider')"><mat-icon>task_alt</mat-icon> Valider ({{ validables().length }})</button>
+              <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()" (click)="valider(validables())"><mat-icon>verified</mat-icon> Valider ({{ validables().length }})</button>
+            }
+            @if (selection().size > validables().length) {
+              <small class="bea-fx-sub">{{ selection().size - validables().length }} incomplète(s) ignorée(s)</small>
             }
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="toutSelectionner(false)">Désélectionner</button>
           </div>
@@ -86,41 +85,55 @@ const ONGLETS: { code: Onglet; label: string; icon: string; tone: string }[] = [
               <thead>
                 <tr>
                   <th class="bea-fx-col-check"><input type="checkbox" aria-label="Tout sélectionner" [checked]="toutSelectionne()" (change)="toutSelectionner($any($event.target).checked)" /></th>
-                  <th>Facture</th><th>Fournisseur</th><th>Point / agence</th><th class="is-num">Montant TTC</th><th>Statut</th><th>Résultat des contrôles</th>
+                  <th>Facture</th><th>Fournisseur</th><th>Point / agence</th><th class="is-num">Montant TTC</th><th>Pièce</th><th>Vérifications</th><th></th>
                 </tr>
               </thead>
               <tbody>
                 @for (r of visibles(); track r.id; let i = $index) {
                   <tr class="bea-fx-row-in" [style.--i]="i" [class.is-selected]="selection().has(r.id)">
                     <td class="bea-fx-col-check"><input type="checkbox" [attr.aria-label]="'Sélectionner ' + r.reference" [checked]="selection().has(r.id)" (change)="basculer(r.id)" /></td>
-                    <td><button type="button" class="bea-ct-link" (click)="factureId.set(r.id)"><strong>{{ r.reference }}</strong></button><small class="bea-fx-sub">{{ r.numero_fournisseur || 'Sans n°' }} · {{ r.periode_label || '—' }}</small></td>
+                    <td><button type="button" class="bea-ct-link" (click)="ouvrir(r.id)"><strong>{{ r.reference }}</strong></button><small class="bea-fx-sub">{{ r.numero_fournisseur || 'Sans n°' }} · {{ r.periode_label || '—' }}</small></td>
                     <td>{{ r.profil || r.fournisseur || '—' }}</td>
                     <td>{{ r.point_nom || '—' }}<small class="bea-fx-sub">{{ r.agence || '' }}</small></td>
                     <td class="is-num">{{ r.montant_ttc | montant }}</td>
-                    <td><span class="bea-ct-badge" [attr.data-tone]="tone(r.statut)">{{ statut(r.statut) }}</span></td>
+                    <td>
+                      @if (r.nb_documents) {
+                        <span class="bea-fx-verdict" data-niveau="ok"><mat-icon>attach_file</mat-icon> {{ r.nb_documents }}</span>
+                      } @else {
+                        <span class="bea-fx-verdict" [attr.data-niveau]="pieceBloquante(r) ? 'bloquant' : 'attention'"><mat-icon>attach_file</mat-icon> Aucune</span>
+                      }
+                    </td>
                     <td>
                       <span class="bea-fx-verdict" [attr.data-niveau]="r.niveau_controle">
                         <mat-icon>{{ r.niveau_controle === 'bloquant' ? 'block' : r.niveau_controle === 'attention' ? 'warning' : 'task_alt' }}</mat-icon>
-                        {{ r.niveau_controle === 'bloquant' ? r.nb_bloquants + ' bloquant(s)' : r.niveau_controle === 'attention' ? r.nb_attention + ' point(s) à vérifier' : 'Conforme' }}
+                        {{ r.niveau_controle === 'bloquant' ? 'Incomplète' : r.niveau_controle === 'attention' ? r.nb_attention + ' point(s) à vérifier' : 'Prête' }}
                       </span>
                       @if (r.controles.length) {
                         <ul class="bea-fx-ctrl-list">@for (c of r.controles; track c.code) { <li [attr.data-niveau]="c.niveau">{{ c.message }}</li> }</ul>
                       }
                     </td>
+                    <td class="bea-fx-ctrl-actions">
+                      @if (!r.nb_documents && store.cap().documents_create) {
+                        <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="ouvrir(r.id, 'documents')"><mat-icon>upload_file</mat-icon> Joindre le scan</button>
+                      }
+                      @if (r.niveau_controle !== 'bloquant' && store.cap().validate) {
+                        <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()" (click)="valider([r])"><mat-icon>verified</mat-icon> Valider</button>
+                      }
+                    </td>
                   </tr>
                 } @empty {
-                  <tr><td colspan="7"><div class="bea-ct-empty"><mat-icon>verified</mat-icon><p>{{ onglet() === 'tous' ? 'Aucune facture en attente de contrôle.' : 'Aucune facture dans cette catégorie.' }}</p></div></td></tr>
+                  <tr><td colspan="8"><div class="bea-ct-empty"><mat-icon>verified</mat-icon><p>{{ onglet() === 'tous' ? 'Aucune facture en attente de validation.' : 'Aucune facture dans cette catégorie.' }}</p></div></td></tr>
                 }
               </tbody>
             </table>
           </div>
         }
       </div>
-      <p class="bea-ct-help"><mat-icon>info</mat-icon> Les contrôles sont recalculés à chaque affichage ; la décision finale reste au contrôleur. <a class="bea-ct-link" [routerLink]="base + '/fournisseurs'">Configurer les profils</a></p>
+      <p class="bea-ct-help"><mat-icon>info</mat-icon> Les vérifications « à vérifier » (TVA, échéance…) n’empêchent pas la validation. <a class="bea-ct-link" [routerLink]="base + '/parametres'">Pièce obligatoire : Paramètres</a></p>
     </section>
 
     @if (factureId(); as id) {
-      <bea-fx-facture-drawer [factureId]="id" (closed)="factureId.set(null)" (changed)="charger()" />
+      <bea-fx-facture-drawer [factureId]="id" [actionInitiale]="actionInitiale()" (closed)="factureId.set(null)" (changed)="charger()" />
     }
   `,
 })
@@ -144,22 +157,22 @@ export class FacturationControlesComponent implements OnInit {
   readonly fournisseurId = signal('');
   readonly selection = signal<Set<string>>(new Set());
   readonly factureId = signal<string | null>(null);
+  readonly actionInitiale = signal<FactureActionInitiale | null>(null);
   private readonly drawer = viewChild(FactureDrawerComponent);
   readonly hasUnsavedChanges = () => !!this.drawer()?.dirty();
 
   readonly visibles = computed(() => {
     const o = this.onglet();
     const q = this.q().trim().toLowerCase();
-    return (this.data()?.items ?? []).filter((r) => {
-      const dansOnglet =
-        o === 'controlee' ? r.statut === 'CONTROLEE' : r.statut !== 'CONTROLEE' && (o === 'tous' || r.niveau_controle === o);
-      return dansOnglet && (!q || [r.reference, r.numero_fournisseur, r.profil, r.fournisseur, r.point_nom, r.agence].some((v) => v?.toLowerCase().includes(q)));
-    });
+    return (this.data()?.items ?? []).filter(
+      (r) =>
+        (o === 'tous' || r.niveau_controle === o) &&
+        (!q || [r.reference, r.numero_fournisseur, r.profil, r.fournisseur, r.point_nom, r.agence].some((v) => v?.toLowerCase().includes(q))),
+    );
   });
 
   private readonly selectionnees = computed(() => (this.data()?.items ?? []).filter((r) => this.selection().has(r.id)));
-  readonly cloturables = computed(() => this.selectionnees().filter((r) => r.statut !== 'CONTROLEE' && r.niveau_controle !== 'bloquant'));
-  readonly validables = computed(() => this.selectionnees().filter((r) => r.statut === 'CONTROLEE'));
+  readonly validables = computed(() => this.selectionnees().filter((r) => r.niveau_controle !== 'bloquant'));
   readonly toutSelectionne = computed(() => this.visibles().length > 0 && this.visibles().every((r) => this.selection().has(r.id)));
 
   ngOnInit(): void {
@@ -183,8 +196,8 @@ export class FacturationControlesComponent implements OnInit {
       },
       error: (e) => {
         this.chargement.set(false);
-        if (!this.data()) this.data.set({ items: [], compteurs: { a_controler: 0, bloquant: 0, attention: 0, pret: 0, controlee: 0 } });
-        void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Contrôles indisponibles'));
+        if (!this.data()) this.data.set({ items: [], compteurs: { a_valider: 0, bloquant: 0, attention: 0, pret: 0 } });
+        void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Factures à valider indisponibles'));
       },
     });
   }
@@ -192,7 +205,16 @@ export class FacturationControlesComponent implements OnInit {
   compte(o: Onglet): number {
     const c = this.data()?.compteurs;
     if (!c) return 0;
-    return { tous: c.a_controler, bloquant: c.bloquant, attention: c.attention, ok: c.pret, controlee: c.controlee }[o];
+    return { tous: c.a_valider, bloquant: c.bloquant, attention: c.attention, ok: c.pret }[o];
+  }
+
+  pieceBloquante(r: FxControleRow): boolean {
+    return r.controles.some((c) => c.code === 'document_absent' && c.niveau === 'bloquant');
+  }
+
+  ouvrir(id: string, action: FactureActionInitiale | null = null): void {
+    this.actionInitiale.set(action);
+    this.factureId.set(id);
   }
 
   choisirOnglet(o: Onglet): void {
@@ -213,46 +235,42 @@ export class FacturationControlesComponent implements OnInit {
     this.selection.set(on ? new Set(this.visibles().map((r) => r.id)) : new Set());
   }
 
-  lot(action: 'valider_controle' | 'valider'): void {
-    const cibles: FxControleRow[] = action === 'valider' ? this.validables() : this.cloturables();
+  valider(cibles: FxControleRow[]): void {
     if (!cibles.length) return;
-    const titre = action === 'valider' ? `Valider ${cibles.length} facture(s) ?` : `Clore le contrôle de ${cibles.length} facture(s) ?`;
-    const message =
-      action === 'valider'
-        ? 'Les factures validées deviennent payables.'
-        : 'Les factures passent au statut « Contrôlée ». Les points « à vérifier » restent visibles dans chaque fiche.';
-    this.dialog.confirm({ title: titre, message, confirmLabel: action === 'valider' ? 'Valider' : 'Clore le contrôle', tone: 'primary', icon: 'verified' }).subscribe((ok) => {
-      if (!ok) return;
-      this.feedback
-        .run(() => this.api.post<FxLotResultat>('/mg/factures/controles/lot', { ids: cibles.map((r) => r.id), action }), {
-          loading: 'Traitement en cours…',
-          busy: this.busy,
-          retry: false,
-          errorTitle: 'Traitement impossible',
-          success: (r) => ({
-            title: r.echecs ? 'Traitement partiel' : action === 'valider' ? 'Factures validées' : 'Contrôles clôturés',
-            details: [
-              { label: 'Réussies', value: String(r.succes) },
-              ...(r.echecs ? [{ label: 'Refusées', value: String(r.echecs) }] : []),
-              ...r.resultats.filter((x) => !x.ok).slice(0, 5).map((x) => ({
-                label: cibles.find((c) => c.id === x.id)?.reference ?? 'Facture',
-                value: x.message ?? 'Refusée',
-              })),
-            ],
-          }),
-        })
-        .subscribe(() => {
-          this.selection.set(new Set());
-          this.charger();
-        });
-    });
-  }
-
-  statut(code: string): string {
-    return fxStatut(code);
-  }
-
-  tone(code: string): string {
-    return fxTone(code);
+    const une = cibles.length === 1;
+    this.dialog
+      .confirm({
+        title: une ? `Valider ${cibles[0].reference} ?` : `Valider ${cibles.length} factures ?`,
+        message: une ? 'La facture devient payable ; les montants sont figés.' : 'Les factures validées deviennent payables ; les montants sont figés.',
+        confirmLabel: 'Valider',
+        tone: 'primary',
+        icon: 'verified',
+      })
+      .subscribe((ok) => {
+        if (!ok) return;
+        this.feedback
+          .run(() => this.api.post<FxLotResultat>('/mg/factures/controles/lot', { ids: cibles.map((r) => r.id), action: 'valider' }), {
+            loading: 'Validation en cours…',
+            busy: this.busy,
+            retry: false,
+            errorTitle: 'Validation impossible',
+            success: (r) => ({
+              title: r.echecs ? 'Validation partielle' : une ? 'Facture validée' : 'Factures validées',
+              message: r.succes ? 'Prêtes pour le paiement.' : undefined,
+              details: [
+                { label: 'Validées', value: String(r.succes) },
+                ...(r.echecs ? [{ label: 'Refusées', value: String(r.echecs) }] : []),
+                ...r.resultats.filter((x) => !x.ok).slice(0, 5).map((x) => ({
+                  label: cibles.find((c) => c.id === x.id)?.reference ?? 'Facture',
+                  value: x.message ?? 'Refusée',
+                })),
+              ],
+            }),
+          })
+          .subscribe(() => {
+            this.selection.set(new Set());
+            this.charger();
+          });
+      });
   }
 }

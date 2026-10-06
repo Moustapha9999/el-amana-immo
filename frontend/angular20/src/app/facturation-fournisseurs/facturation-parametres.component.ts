@@ -49,8 +49,15 @@ const UNITES: Record<string, string> = {
                 <li>
                   <div><strong>{{ p.libelle || p.cle }}</strong><small><code>{{ p.cle }}</code></small></div>
                   <span class="bea-fx-params__input">
-                    <input [value]="valeur(p)" [disabled]="!store.cap().manage" [attr.inputmode]="unite(p.cle) ? 'numeric' : 'text'"
-                      (input)="modifier(p.cle, $any($event.target).value)" (keydown.enter)="enregistrer(p)" [attr.aria-label]="p.libelle || p.cle" />
+                    @if (booleen(p.cle)) {
+                      <select [value]="valeur(p)" [disabled]="!store.cap().manage" (change)="modifier(p.cle, $any($event.target).value)" [attr.aria-label]="p.libelle || p.cle">
+                        <option value="OUI" [selected]="valeur(p) === 'OUI'">Oui</option>
+                        <option value="NON" [selected]="valeur(p) === 'NON'">Non</option>
+                      </select>
+                    } @else {
+                      <input [value]="valeur(p)" [disabled]="!store.cap().manage" [attr.inputmode]="unite(p.cle) ? 'numeric' : 'text'"
+                        (input)="modifier(p.cle, $any($event.target).value)" (keydown.enter)="enregistrer(p)" [attr.aria-label]="p.libelle || p.cle" />
+                    }
                     @if (unite(p.cle)) { <em>{{ unite(p.cle) }}</em> }
                   </span>
                   @if (store.cap().manage) {
@@ -121,7 +128,7 @@ const UNITES: Record<string, string> = {
           <ol class="bea-fx-flow">
             @for (s of flux; track s) { <li><span class="bea-ct-badge" [attr.data-tone]="tone(s)">{{ statut(s) }}</span></li> }
           </ol>
-          <p class="bea-ct-help"><mat-icon>info</mat-icon> Exceptions : Contestée, Annulée (motif obligatoire). Paiement calculé automatiquement : À payer, Partiellement payée, Payée. Aucune suppression physique de l’historique financier.</p>
+          <p class="bea-ct-help"><mat-icon>info</mat-icon> Circuit court : saisie, facture scannée, validation (les vérifications bloquantes sont refaites à ce moment), puis paiement. Exceptions : Contestée, Annulée (motif obligatoire). Paiement calculé automatiquement : À payer, Partiellement payée, Payée. Aucune suppression physique de l’historique financier.</p>
         </div>
 
         <div class="bea-mg__panel bea-ct-panel">
@@ -149,7 +156,7 @@ export class FacturationParametresComponent implements OnInit {
   private readonly dialog = inject(UiDialogService);
 
   readonly base = FX_BASE;
-  readonly flux = ['BROUILLON', 'RECUE', 'A_CONTROLER', 'CONTROLEE', 'VALIDEE', 'A_PAYER', 'PAYEE', 'ARCHIVEE'];
+  readonly flux = ['RECUE', 'VALIDEE', 'A_PAYER', 'PAYEE', 'ARCHIVEE'];
   readonly params = signal<Parametre[] | null>(null);
   readonly brouillon = signal<Record<string, string>>({});
   readonly busy = signal(false);
@@ -179,6 +186,10 @@ export class FacturationParametresComponent implements OnInit {
 
   unite(cle: string): string {
     return UNITES[cle] ?? '';
+  }
+
+  booleen(cle: string): boolean {
+    return cle === 'factures.piece_obligatoire';
   }
 
   valeur(p: Parametre): string {

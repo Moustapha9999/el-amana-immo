@@ -39,7 +39,7 @@ import { FxProfilFormComponent } from './fx-profil-form.component';
           <article class="bea-fx-kpi" data-tone="brand"><mat-icon>local_shipping</mat-icon><p>Profils actifs</p><strong>{{ s.nb_profils }}</strong><small>{{ s.items.length }} fournisseur(s) suivis</small></article>
           <article class="bea-fx-kpi"><mat-icon>account_balance_wallet</mat-icon><p>Facturé {{ s.annee }}</p><strong>{{ s.total | montant }}</strong><small>Montants TTC comptés</small></article>
           <a class="bea-fx-kpi" data-tone="warn" [routerLink]="base + '/factures'" [queryParams]="{ vue: 'a_payer' }"><mat-icon>payments</mat-icon><p>Reste à payer</p><strong>{{ s.reste | montant }}</strong><small>Toutes périodes</small></a>
-          <a class="bea-fx-kpi" data-tone="alert" [routerLink]="base + '/controles'"><mat-icon>fact_check</mat-icon><p>À contrôler</p><strong>{{ aControler() }}</strong><small>Factures reçues non contrôlées</small></a>
+          <a class="bea-fx-kpi" data-tone="alert" [routerLink]="base + '/controles'"><mat-icon>pending_actions</mat-icon><p>À valider</p><strong>{{ aValider() }}</strong><small>Factures reçues non validées</small></a>
         </div>
 
         <div class="bea-mg__search bea-ct-filters bea-fx-filters">
@@ -98,8 +98,8 @@ import { FxProfilFormComponent } from './fx-profil-form.component';
               <footer class="bea-fx-supplier__foot">
                 <small>{{ it.derniere_facture ? 'Dernière facture ' + date(it.derniere_facture) : 'Aucune facture' }}</small>
                 <span>
-                  @if (it.a_controler) {
-                    <a class="bea-ct-badge" data-tone="WARN" [routerLink]="base + '/controles'" [queryParams]="filtre(it)">{{ it.a_controler }} à contrôler</a>
+                  @if (it.a_valider) {
+                    <a class="bea-ct-badge" data-tone="WARN" [routerLink]="base + '/controles'" [queryParams]="filtre(it)">{{ it.a_valider }} à valider</a>
                   }
                   <a class="bea-ct-link" [routerLink]="base + '/factures'" [queryParams]="filtre(it)">Factures <mat-icon>chevron_right</mat-icon></a>
                 </span>
@@ -145,7 +145,7 @@ export class FacturationFournisseursComponent implements OnInit {
     );
   });
 
-  readonly aControler = computed(() => (this.stats()?.items ?? []).reduce((a, i) => a + i.a_controler, 0));
+  readonly aValider = computed(() => (this.stats()?.items ?? []).reduce((a, i) => a + i.a_valider, 0));
 
   ngOnInit(): void {
     this.store.charger();

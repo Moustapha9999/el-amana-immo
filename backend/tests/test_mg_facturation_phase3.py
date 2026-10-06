@@ -16,7 +16,7 @@ from openpyxl import load_workbook
 from app.core.exceptions import AppError
 from app.schemas.mg_facturation import FactureCreate, NouveauFournisseurIn, ProfilCreate
 from app.services.mg_facturation_analytics import MgFacturationAnalytics
-from tests.test_mg_facturation_profils import _contexte, _numero, db  # noqa: F401
+from tests.test_mg_facturation_profils import _contexte, _joindre_scan, _numero, db  # noqa: F401
 
 
 async def test_nouveau_fournisseur_et_profil(db):  # noqa: F811
@@ -52,7 +52,7 @@ async def test_nouveau_fournisseur_et_profil(db):  # noqa: F811
     stats = await svc.stats_fournisseurs(date.today().year)
     item = next(i for i in stats["items"] if i["profil_id"] == p["id"])
     assert item["nb"] == 1 and item["montant"] == 750.0 and item["reste"] == 750.0
-    assert item["a_controler"] == 1 and item["mensuel"][date.today().month - 1] == 750.0
+    assert item["a_valider"] == 1 and item["mensuel"][date.today().month - 1] == 750.0
     assert f["fournisseur"] == nom
 
 
@@ -69,20 +69,29 @@ async def test_file_controles_et_validation_en_lot(db):  # noqa: F811
                       montant_ht=Decimal("1000"), montant_tva=Decimal("50")),
         user,
     )
+    sans_piece = await svc.create_facture(
+        FactureCreate(profil_id=profils["MATTEL_SMS"].id, date_facture=date.today(), numero_fournisseur=_numero(),
+                      montant_ht=Decimal("1000"), montant_tva=Decimal("180")),
+        user,
+    )
+    _joindre_scan(db, uuid.UUID(ok["id"]), user)
+    _joindre_scan(db, uuid.UUID(incoherente["id"]), user)
     file = await svc.file_controles({})
     par_id = {i["id"]: i for i in file["items"]}
-    assert par_id[ok["id"]]["niveau_controle"] in {"ok", "attention"}
+    assert par_id[ok["id"]]["niveau_controle"] == "ok" and par_id[ok["id"]]["nb_documents"] == 1
     assert par_id[incoherente["id"]]["niveau_controle"] == "attention"
     assert "tva_incoherente" in {c["code"] for c in par_id[incoherente["id"]]["controles"]}
+    assert par_id[sans_piece["id"]]["niveau_controle"] == "bloquant"
+    assert file["compteurs"]["a_valider"] >= 3
 
-    res = await svc.transition_lot([uuid.UUID(ok["id"]), uuid.UUID(incoherente["id"])], "valider_controle", user, None)
-    assert res["succes"] == 2 and res["echecs"] == 0
-    res = await svc.transition_lot([uuid.UUID(ok["id"]), uuid.uuid4()], "valider", user, None)
-    assert res["succes"] == 1 and res["echecs"] == 1
+    ids = [uuid.UUID(x["id"]) for x in (ok, incoherente, sans_piece)] + [uuid.uuid4()]
+    res = await svc.transition_lot(ids, "valider", user, None)
+    assert res["succes"] == 2 and res["echecs"] == 2
+    assert {i["id"] for i in (await svc.file_controles({}))["items"]} & {ok["id"], incoherente["id"]} == set()
 
     journal = await svc.journal({"q": ok["reference"]})
     actions = {i["action"] for i in journal["items"]}
-    assert {"VALIDER_CONTROLE", "VALIDER"} <= actions
+    assert "VALIDER" in actions
     assert all(i["reference"] == ok["reference"] for i in journal["items"])
 
 
