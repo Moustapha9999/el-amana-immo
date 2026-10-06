@@ -17,6 +17,7 @@ const PLATEFORME_FIXED = [
   'achats-appro',
   'notes-frais',
   'contrats-echeances',
+  'facturation-fournisseurs',
   'archives-mg',
   'archives-generales',
   'archive-generale',

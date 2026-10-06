@@ -3,11 +3,11 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
-import { describeApiErrorAsync } from '../../core/feedback/api-error';
-import { FeedbackService } from '../../core/feedback/feedback.service';
-import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
-import { ApiService } from '../../core/services/api.service';
-import { MontantPipe, formatMontant, parseMontant } from '../../shared/montant.pipe';
+import { describeApiErrorAsync } from '../core/feedback/api-error';
+import { FeedbackService } from '../core/feedback/feedback.service';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import { ApiService } from '../core/services/api.service';
+import { MontantPipe, formatMontant, parseMontant } from '../shared/montant.pipe';
 import { FactureFormComponent } from './facture-form.component';
 import {
   ACTION_LABELS,
@@ -26,7 +26,7 @@ import {
   telechargerBlob,
 } from './facturation.models';
 import { FacturationStore } from './facturation.store';
-import { JalonsComponent } from '../shared/detail-drawer.component';
+import { JalonsComponent } from '../contrats-echeances/shared/detail-drawer.component';
 
 type Onglet = 'details' | 'documents' | 'paiements' | 'historique';
 

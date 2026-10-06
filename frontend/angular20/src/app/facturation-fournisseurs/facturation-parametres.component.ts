@@ -1,10 +1,10 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
-import { describeApiErrorAsync } from '../../core/feedback/api-error';
-import { FeedbackService } from '../../core/feedback/feedback.service';
-import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
-import { ApiService } from '../../core/services/api.service';
+import { describeApiErrorAsync } from '../core/feedback/api-error';
+import { FeedbackService } from '../core/feedback/feedback.service';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import { ApiService } from '../core/services/api.service';
 import { FX_BASE, fxStatut, fxTone } from './facturation.models';
 import { FacturationStore } from './facturation.store';
 

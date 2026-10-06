@@ -48,6 +48,7 @@ interface Paginated<T> {
             <option value="achats-appro">Achats</option>
             <option value="notes-frais">Notes de frais</option>
             <option value="contrats-echeances">Contrats</option>
+            <option value="facturation-fournisseurs">Facturation</option>
           </select>
         </label>
         <label class="bea-mg__field bea-mg__field--grow">
@@ -158,6 +159,7 @@ export class ArchivesRegistreComponent implements OnInit {
       'achats-appro': 'Achats',
       'notes-frais': 'Notes de frais',
       'contrats-echeances': 'Contrats',
+      'facturation-fournisseurs': 'Facturation',
     };
     return (code && map[code]) || code || '—';
   }
@@ -170,6 +172,7 @@ export class ArchivesRegistreComponent implements OnInit {
       bon_commande: 'Bon de commande',
       note_frais: 'Note de frais',
       contrat: 'Contrat',
+      facture: 'Facture',
     };
     return (entity && map[entity]) || entity || '—';
   }

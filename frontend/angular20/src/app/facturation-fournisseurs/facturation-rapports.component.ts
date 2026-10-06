@@ -2,10 +2,10 @@ import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@ang
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
-import { describeApiErrorAsync } from '../../core/feedback/api-error';
-import { FeedbackService } from '../../core/feedback/feedback.service';
-import { ApiService } from '../../core/services/api.service';
-import { formatMontant } from '../../shared/montant.pipe';
+import { describeApiErrorAsync } from '../core/feedback/api-error';
+import { FeedbackService } from '../core/feedback/feedback.service';
+import { ApiService } from '../core/services/api.service';
+import { formatMontant } from '../shared/montant.pipe';
 import { FX_BASE, MOIS, annees, nettoyer, telechargerBlob } from './facturation.models';
 import { FacturationStore } from './facturation.store';
 

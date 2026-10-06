@@ -3,10 +3,10 @@ import { NgTemplateOutlet } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
-import { describeApiErrorAsync } from '../../core/feedback/api-error';
-import { FeedbackService } from '../../core/feedback/feedback.service';
-import { ApiService } from '../../core/services/api.service';
-import { MontantPipe } from '../../shared/montant.pipe';
+import { describeApiErrorAsync } from '../core/feedback/api-error';
+import { FeedbackService } from '../core/feedback/feedback.service';
+import { ApiService } from '../core/services/api.service';
+import { MontantPipe } from '../shared/montant.pipe';
 import { FxBarsComponent, FxSparkComponent, SerieMois } from './facturation-charts';
 import { FX_BASE, FactureRow, Groupe, MOIS_COURTS, PointRow, annees, dateFr, fxStatut, fxTone, nettoyer, pct } from './facturation.models';
 import { FacturationStore } from './facturation.store';
@@ -227,7 +227,7 @@ interface Synthese {
             <button type="button" class="bea-ct-view__close" aria-label="Fermer" (click)="fermer()"><mat-icon>close</mat-icon></button>
           </header>
           <div class="bea-fx-drawer__actions">
-            <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="base + '/liste'" [queryParams]="s.libelle ? { agency_id: s.id, year: s.annee } : { supplier_id: s.id, year: s.annee }"><mat-icon>receipt_long</mat-icon> Toutes les factures</a>
+            <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="base + '/factures'" [queryParams]="s.libelle ? { agency_id: s.id, year: s.annee } : { supplier_id: s.id, year: s.annee }"><mat-icon>receipt_long</mat-icon> Toutes les factures</a>
           </div>
           <div class="bea-fx-drawer__body">
             <div class="bea-fx-mini">
@@ -265,7 +265,7 @@ interface Synthese {
             <h3 class="bea-fx-h3"><mat-icon>receipt_long</mat-icon> Factures récentes</h3>
             <ul class="bea-ct-dash__list">
               @for (r of s.factures.slice(0, 15); track r.id) {
-                <li><a [routerLink]="base + '/liste'" [queryParams]="{ facture: r.id }">
+                <li><a [routerLink]="base + '/factures'" [queryParams]="{ facture: r.id }">
                   <span class="bea-ct-dash__date"><strong>{{ r.periode_label || date(r.date_facture) }}</strong><small>{{ r.reference }}</small></span>
                   <span class="bea-ct-dash__main">{{ r.point_nom || r.fournisseur }}</span>
                   <span class="bea-ct-dash__amount">{{ r.montant_a_payer === null ? '—' : (r.montant_a_payer | montant) }}</span>
@@ -364,7 +364,7 @@ export class FacturationAnalysesComponent implements OnInit {
   }
 
   voirMois(annee: number, mois: number): void {
-    this.router.navigate([this.base + '/liste'], { queryParams: nettoyer({ ...this.filtresListe(), year: annee, month: mois }) });
+    this.router.navigate([this.base + '/factures'], { queryParams: nettoyer({ ...this.filtresListe(), year: annee, month: mois }) });
   }
 
   voirAnnee(index: number): void {

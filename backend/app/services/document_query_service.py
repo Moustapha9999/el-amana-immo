@@ -289,6 +289,7 @@ class DocumentQueryService:
             "stock-fournitures": "Stock",
             "notes-frais": "Notes de frais",
             "contrats-echeances": "Contrats",
+            "facturation-fournisseurs": "Facturation",
             "archives-mg": "Archives MG",
             "immobilisations": "Immobilisations",
         }

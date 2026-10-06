@@ -111,6 +111,7 @@ const MODULE: Record<string, string> = {
   'stock-fournitures': 'Stock & Fournitures',
   'achats-appro': 'Achats',
   'contrats-echeances': 'Contrats',
+  'facturation-fournisseurs': 'Facturation',
   'archives-mg': 'Archives MG',
   documents: 'Documents',
 };

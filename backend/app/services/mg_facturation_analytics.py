@@ -33,8 +33,8 @@ from app.services.mg_facturation_service import (
 )
 from app.services.reporting_export import build_styled_pdf, build_styled_workbook, export_now
 
-LIEN_FACTURE = "/contrats-echeances/factures/liste?facture={id}"
-LIEN_POINT = "/contrats-echeances/factures/points?point={id}"
+LIEN_FACTURE = "/facturation-fournisseurs/factures?facture={id}"
+LIEN_POINT = "/facturation-fournisseurs/points?point={id}"
 
 FILTRES_DASHBOARD = ("agence_id", "point_id", "fournisseur_id", "type_point", "type_facture", "statut")
 NIVEAUX = {"critique": 0, "attention": 1, "info": 2}

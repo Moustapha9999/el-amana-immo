@@ -1,7 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { describeApiErrorAsync } from '../../core/feedback/api-error';
-import { FeedbackService } from '../../core/feedback/feedback.service';
-import { ApiService } from '../../core/services/api.service';
+import { describeApiErrorAsync } from '../core/feedback/api-error';
+import { FeedbackService } from '../core/feedback/feedback.service';
+import { ApiService } from '../core/services/api.service';
 import { FxCapacites, FxConfig, FxReferentiels } from './facturation.models';
 
 const AUCUNE: FxCapacites = {

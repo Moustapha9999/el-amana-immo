@@ -4,10 +4,10 @@ import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { Subject, debounceTime } from 'rxjs';
-import { describeApiErrorAsync } from '../../core/feedback/api-error';
-import { FeedbackService } from '../../core/feedback/feedback.service';
-import { ApiService } from '../../core/services/api.service';
-import { MontantPipe } from '../../shared/montant.pipe';
+import { describeApiErrorAsync } from '../core/feedback/api-error';
+import { FeedbackService } from '../core/feedback/feedback.service';
+import { ApiService } from '../core/services/api.service';
+import { MontantPipe } from '../shared/montant.pipe';
 import { FactureActionInitiale, FactureDrawerComponent } from './facture-drawer.component';
 import { FactureFormComponent } from './facture-form.component';
 import {
@@ -32,8 +32,8 @@ import {
   telechargerBlob,
 } from './facturation.models';
 import { FacturationStore } from './facturation.store';
-import { imprimerTableau } from '../shared/impression';
-import { RowMenu, RowMenuComponent, RowMenuItem } from '../shared/row-menu';
+import { imprimerTableau } from '../contrats-echeances/shared/impression';
+import { RowMenu, RowMenuComponent, RowMenuItem } from '../contrats-echeances/shared/row-menu';
 
 const FILTRES_VIDES = {
   q: '',

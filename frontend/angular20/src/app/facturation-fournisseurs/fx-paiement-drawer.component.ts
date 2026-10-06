@@ -2,11 +2,11 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, input, ou
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
-import { FeedbackService } from '../../core/feedback/feedback.service';
-import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
-import { ApiService } from '../../core/services/api.service';
-import { formatMontant, parseMontant } from '../../shared/montant.pipe';
-import { DetailDrawerComponent, DetailTimelineComponent, DrawerKpi, TimelineItem } from '../shared/detail-drawer.component';
+import { FeedbackService } from '../core/feedback/feedback.service';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import { ApiService } from '../core/services/api.service';
+import { formatMontant, parseMontant } from '../shared/montant.pipe';
+import { DetailDrawerComponent, DetailTimelineComponent, DrawerKpi, TimelineItem } from '../contrats-echeances/shared/detail-drawer.component';
 import { ACTION_LABELS, FactureDetail, FxDocument, FxPaiement, aujourdhui, dateFr, dateHeureFr, fxStatut, fxTone, telechargerBlob } from './facturation.models';
 import { FacturationStore } from './facturation.store';
 

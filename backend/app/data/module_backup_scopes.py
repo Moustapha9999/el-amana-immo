@@ -144,6 +144,11 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
             "mg_contrat_parametres",
         ],
     ),
+    "facturation-fournisseurs": make_module_scope(
+        label="Facturation Fournisseurs",
+        uploads_subdir="facturation-fournisseurs",
+        exclusive_tables=["mg_points_facturation"],
+    ),
     "archives-mg": make_module_scope(
         label="Archives MG",
         uploads_subdir="archives-mg",
@@ -186,6 +191,7 @@ ESPACE_MODULES: dict[str, list[str]] = {
         "achats-appro",
         "notes-frais",
         "contrats-echeances",
+        "facturation-fournisseurs",
         "archives-mg",
         "demandes-mg",
     ],

@@ -1,4 +1,4 @@
-﻿import { DatePipe } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -62,6 +62,7 @@ interface Paginated<T> {
             <option value="achats-appro">Achats</option>
             <option value="notes-frais">Notes de frais</option>
             <option value="contrats-echeances">Contrats</option>
+            <option value="facturation-fournisseurs">Facturation</option>
           </select>
         </label>
         <label class="bea-mg__field">
@@ -277,6 +278,7 @@ export class ArchivesDocumentsComponent implements OnInit {
       if (this.moduleFilter === 'stock-fournitures') this.pageTitle.set('Documents Stock');
       if (this.moduleFilter === 'notes-frais') this.pageTitle.set('Documents Notes de frais');
       if (this.moduleFilter === 'contrats-echeances') this.pageTitle.set('Documents Contrats');
+      if (this.moduleFilter === 'facturation-fournisseurs') this.pageTitle.set('Documents Facturation');
       this.page.set(1);
       this.load();
     });
@@ -301,6 +303,7 @@ export class ArchivesDocumentsComponent implements OnInit {
       'achats-appro': 'Achats',
       'notes-frais': 'Notes de frais',
       'contrats-echeances': 'Contrats',
+      'facturation-fournisseurs': 'Facturation',
     };
     return (code && map[code]) || code || '—';
   }
@@ -318,6 +321,7 @@ export class ArchivesDocumentsComponent implements OnInit {
       fournisseur: 'Fournisseur',
       note_frais: 'Note de frais',
       contrat: 'Contrat',
+      facture: 'Facture',
     };
     return (entity && map[entity]) || entity || '—';
   }

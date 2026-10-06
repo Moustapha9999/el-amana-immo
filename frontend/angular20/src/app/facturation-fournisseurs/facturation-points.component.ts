@@ -4,11 +4,11 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { Subject, debounceTime } from 'rxjs';
-import { describeApiErrorAsync } from '../../core/feedback/api-error';
-import { FeedbackService } from '../../core/feedback/feedback.service';
-import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
-import { ApiService } from '../../core/services/api.service';
-import { MontantPipe } from '../../shared/montant.pipe';
+import { describeApiErrorAsync } from '../core/feedback/api-error';
+import { FeedbackService } from '../core/feedback/feedback.service';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import { ApiService } from '../core/services/api.service';
+import { MontantPipe } from '../shared/montant.pipe';
 import { FactureDrawerComponent } from './facture-drawer.component';
 import { FactureFormComponent } from './facture-form.component';
 import { FxSparkComponent } from './facturation-charts';
@@ -28,8 +28,8 @@ import {
   pct,
 } from './facturation.models';
 import { FacturationStore } from './facturation.store';
-import { RowMenu, RowMenuComponent, RowMenuItem } from '../shared/row-menu';
-import { PagerComponent, TableState } from '../shared/table-state';
+import { RowMenu, RowMenuComponent, RowMenuItem } from '../contrats-echeances/shared/row-menu';
+import { PagerComponent, TableState } from '../contrats-echeances/shared/table-state';
 
 interface LigneImport {
   reference: string;
@@ -203,7 +203,7 @@ interface ResultatImport {
             @if (store.cap().create && s.statut === 'ACTIF') {
               <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="saisir(s, null)"><mat-icon>post_add</mat-icon> Saisir une facture</button>
             }
-            <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="base + '/liste'" [queryParams]="{ pdv_id: s.id, inclure_historique: true }"><mat-icon>receipt_long</mat-icon> Factures</a>
+            <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="base + '/factures'" [queryParams]="{ pdv_id: s.id, inclure_historique: true }"><mat-icon>receipt_long</mat-icon> Factures</a>
             @if (store.cap().manage) {
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="editer(s)"><mat-icon>edit</mat-icon> Modifier</button>
               @if (s.statut === 'ACTIF') {

@@ -13,7 +13,7 @@ import { MontantPipe, TauxPipe } from '../shared/montant.pipe';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 import { UiDialogAction } from '../shared/ui-dialog/ui-dialog.types';
 import { ContratsDocumentsComponent } from './contrats-documents.component';
-import { fxStatut, fxTone } from './facturation/facturation.models';
+import { fxStatut, fxTone } from '../facturation-fournisseurs/facturation.models';
 import {
   ACTION_LABELS,
   Contrat,
@@ -577,7 +577,7 @@ interface Simulation {
                 <ul class="bea-ct-dash__list">
                   @for (r of fx.items; track r.id) {
                     <li>
-                      <a [routerLink]="'/contrats-echeances/factures/liste'" [queryParams]="{ facture: r.id }">
+                      <a [routerLink]="'/facturation-fournisseurs/factures'" [queryParams]="{ facture: r.id }">
                         <span class="bea-ct-dash__date"><strong>{{ r.periode_label || date(r.date_facture) }}</strong><small>{{ r.reference }}</small></span>
                         <span class="bea-ct-dash__main">{{ r.point_nom || r.numero_fournisseur || '—' }}</span>
                         <span class="bea-ct-dash__amount">{{ r.montant_a_payer === null ? '—' : (r.montant_a_payer | montant) }}</span>
@@ -1346,7 +1346,7 @@ export class ContratsFicheComponent implements OnInit {
     this.facturesContrat = contratId;
     this.factures.set(null);
     this.facturesErreur.set(null);
-    this.api.get<FacturesContrat>(`/mg/factures/contrats/${contratId}`).subscribe({
+    this.api.get<FacturesContrat>(`/mg/contrats/${contratId}/factures`).subscribe({
       next: (r) => this.factures.set(r),
       error: (e: { status?: number }) =>
         this.facturesErreur.set(e?.status === 403 ? 'Vous n’avez pas accès à la gestion des factures.' : 'Factures indisponibles pour le moment.'),

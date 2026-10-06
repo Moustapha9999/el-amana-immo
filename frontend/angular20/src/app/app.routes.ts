@@ -99,6 +99,17 @@ import {
 } from './archives-generales/archives-generales-pages.component';
 
 const contratsListe = () => import('./contrats-echeances/contrats-list.component').then((m) => m.ContratsListComponent);
+const fxDashboard = () =>
+  import('./facturation-fournisseurs/facturation-dashboard.component').then((m) => m.FacturationDashboardComponent);
+const fxListe = () => import('./facturation-fournisseurs/facturation-list.component').then((m) => m.FacturationListComponent);
+const fxPoints = () => import('./facturation-fournisseurs/facturation-points.component').then((m) => m.FacturationPointsComponent);
+const fxSuivi = () => import('./facturation-fournisseurs/facturation-suivi.component').then((m) => m.FacturationSuiviComponent);
+const fxAnalyses = () =>
+  import('./facturation-fournisseurs/facturation-analyses.component').then((m) => m.FacturationAnalysesComponent);
+const fxRapports = () =>
+  import('./facturation-fournisseurs/facturation-rapports.component').then((m) => m.FacturationRapportsComponent);
+const fxParametres = () =>
+  import('./facturation-fournisseurs/facturation-parametres.component').then((m) => m.FacturationParametresComponent);
 
 /**
  * Contrat de routes (voir plateforme/module-routing.contract.ts) :
@@ -197,50 +208,28 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'nouveau', component: ContratsFicheComponent },
       { path: 'rapports', loadComponent: () => import('./contrats-echeances/contrats-rapports.component').then((m) => m.ContratsRapportsComponent) },
       { path: 'parametres', loadComponent: () => import('./contrats-echeances/contrats-parametres.component').then((m) => m.ContratsParametresComponent) },
-      {
-        path: 'factures',
-        loadComponent: () =>
-          import('./contrats-echeances/facturation/facturation-dashboard.component').then((m) => m.FacturationDashboardComponent),
-      },
-      {
-        path: 'factures/liste',
-        loadComponent: () => import('./contrats-echeances/facturation/facturation-list.component').then((m) => m.FacturationListComponent),
-      },
-      {
-        path: 'factures/points',
-        loadComponent: () => import('./contrats-echeances/facturation/facturation-points.component').then((m) => m.FacturationPointsComponent),
-      },
-      {
-        path: 'factures/paiements',
-        data: { mode: 'paiements' },
-        loadComponent: () => import('./contrats-echeances/facturation/facturation-suivi.component').then((m) => m.FacturationSuiviComponent),
-      },
-      {
-        path: 'factures/echeances',
-        data: { mode: 'echeances' },
-        loadComponent: () => import('./contrats-echeances/facturation/facturation-suivi.component').then((m) => m.FacturationSuiviComponent),
-      },
-      {
-        path: 'factures/alertes',
-        data: { mode: 'alertes' },
-        loadComponent: () => import('./contrats-echeances/facturation/facturation-suivi.component').then((m) => m.FacturationSuiviComponent),
-      },
-      {
-        path: 'factures/analyses',
-        loadComponent: () =>
-          import('./contrats-echeances/facturation/facturation-analyses.component').then((m) => m.FacturationAnalysesComponent),
-      },
-      {
-        path: 'factures/rapports',
-        loadComponent: () =>
-          import('./contrats-echeances/facturation/facturation-rapports.component').then((m) => m.FacturationRapportsComponent),
-      },
-      {
-        path: 'factures/parametres',
-        loadComponent: () =>
-          import('./contrats-echeances/facturation/facturation-parametres.component').then((m) => m.FacturationParametresComponent),
-      },
+      // Anciennes URLs de la facturation (avant le module Facturation Fournisseurs).
+      { path: 'factures', pathMatch: 'full', redirectTo: '/facturation-fournisseurs/dashboard' },
+      { path: 'factures/liste', redirectTo: '/facturation-fournisseurs/factures' },
+      { path: 'factures/:page', redirectTo: '/facturation-fournisseurs/:page' },
       { path: ':id', component: ContratsFicheComponent },
+    ],
+  },
+  {
+    path: 'facturation-fournisseurs',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('facturation-fournisseurs')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      { path: 'dashboard', loadComponent: fxDashboard },
+      { path: 'factures', loadComponent: fxListe },
+      { path: 'points', loadComponent: fxPoints },
+      { path: 'paiements', data: { mode: 'paiements' }, loadComponent: fxSuivi },
+      { path: 'echeances', data: { mode: 'echeances' }, loadComponent: fxSuivi },
+      { path: 'alertes', data: { mode: 'alertes' }, loadComponent: fxSuivi },
+      { path: 'analyses', loadComponent: fxAnalyses },
+      { path: 'rapports', loadComponent: fxRapports },
+      { path: 'parametres', loadComponent: fxParametres },
     ],
   },
   {

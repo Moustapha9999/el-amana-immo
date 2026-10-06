@@ -28,6 +28,7 @@ MODULE_LABELS = {
     "stock-fournitures": "Stock",
     "notes-frais": "Notes de frais",
     "contrats-echeances": "Contrats",
+    "facturation-fournisseurs": "Facturation",
 }
 
 

@@ -1,4 +1,4 @@
-"""API Gestion des factures — Moyens Généraux › Contrats & échéances."""
+"""API Facturation Fournisseurs — Moyens Généraux (module ``facturation-fournisseurs``)."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ from app.services.mg_facturation_import import MgFacturationImport
 from app.services.mg_facturation_service import MgFacturationService
 from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
 
-_module = [Depends(require_module_access("contrats-echeances"))]
+_module = [Depends(require_module_access("facturation-fournisseurs"))]
 router = APIRouter(prefix="/mg/factures", tags=["mg-factures"], dependencies=_module)
 points_router = APIRouter(prefix="/mg/points-facturation", tags=["mg-factures"], dependencies=_module)
 

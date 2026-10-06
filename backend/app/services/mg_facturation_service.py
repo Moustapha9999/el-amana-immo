@@ -44,7 +44,7 @@ from app.services.audit_helpers import record_audit
 from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
 
 ESPACE = "moyens-generaux"
-MODULE = "contrats-echeances"
+MODULE = "facturation-fournisseurs"
 GED_ENTITY = "facture"
 EVT_FACTURE = "facture"
 EVT_POINT = "point_facturation"

@@ -1,12 +1,12 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
-import { ApiErrorInfo } from '../../core/feedback/api-error';
-import { FeedbackService } from '../../core/feedback/feedback.service';
-import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
-import { ApiService } from '../../core/services/api.service';
-import { UiDialogService } from '../../shared/ui-dialog/ui-dialog.service';
-import { MontantPipe, parseMontant } from '../../shared/montant.pipe';
+import { ApiErrorInfo } from '../core/feedback/api-error';
+import { FeedbackService } from '../core/feedback/feedback.service';
+import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import { ApiService } from '../core/services/api.service';
+import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
+import { MontantPipe, parseMontant } from '../shared/montant.pipe';
 import { FactureDetail, MOIS, TYPE_POINT_LABELS, aujourdhui } from './facturation.models';
 import { FacturationStore } from './facturation.store';
 

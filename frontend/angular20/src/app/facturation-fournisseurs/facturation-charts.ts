@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
-import { formatMontant } from '../../shared/montant.pipe';
+import { formatMontant } from '../shared/montant.pipe';
 
 export interface SerieMois {
   label: string;

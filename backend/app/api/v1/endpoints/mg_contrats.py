@@ -25,6 +25,7 @@ from app.schemas.mg_ops import (
     ContratUpdate,
 )
 from app.services.mg_contrats_service import VALIDATION_ACTIONS, MgContratsService
+from app.services.mg_facturation_service import MgFacturationService
 from app.services.mg_pdf_service import pdf_contrat
 from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
 
@@ -410,6 +411,17 @@ async def get_contrat(
     user: User = Depends(require_permission("mg.contrats.view")),
 ):
     return await (await _svc(db, user)).get_contrat(contrat_id)
+
+
+@router.get("/{contrat_id}/factures", dependencies=_module)
+async def factures_du_contrat(
+    contrat_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.contrats.view")),
+):
+    """Lecture seule des factures rattachées (module Facturation Fournisseurs) depuis la fiche contrat."""
+    await (await _svc(db, user)).get_contrat(contrat_id)
+    return await (await MgFacturationService.for_user(db, user)).factures_du_contrat(contrat_id)
 
 
 @router.get("/{contrat_id}/pdf", dependencies=_module)

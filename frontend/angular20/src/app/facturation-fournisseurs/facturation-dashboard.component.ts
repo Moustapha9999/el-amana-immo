@@ -2,10 +2,10 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, v
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
-import { describeApiErrorAsync } from '../../core/feedback/api-error';
-import { FeedbackService } from '../../core/feedback/feedback.service';
-import { ApiService } from '../../core/services/api.service';
-import { MontantPipe } from '../../shared/montant.pipe';
+import { describeApiErrorAsync } from '../core/feedback/api-error';
+import { FeedbackService } from '../core/feedback/feedback.service';
+import { ApiService } from '../core/services/api.service';
+import { MontantPipe } from '../shared/montant.pipe';
 import { FactureDrawerComponent } from './facture-drawer.component';
 import { FactureFormComponent } from './facture-form.component';
 import { FxBarsComponent, FxDonutComponent, PartDonut } from './facturation-charts';
@@ -50,7 +50,7 @@ const TONS_STATUT: Record<string, string> = {
           @if (store.cap().create) {
             <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="formOuvert.set(true)"><mat-icon>post_add</mat-icon> Nouvelle facture</button>
           }
-          <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="base + '/liste'"><mat-icon>receipt_long</mat-icon> Facturation</a>
+          <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="base + '/factures'"><mat-icon>receipt_long</mat-icon> Facturation</a>
           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Actualiser" (click)="charger()"><mat-icon>refresh</mat-icon></button>
         </div>
       </header>
@@ -116,7 +116,7 @@ const TONS_STATUT: Record<string, string> = {
 
       @if (dash(); as d) {
         <div class="bea-fx-kpis">
-          <a class="bea-fx-kpi" [routerLink]="base + '/liste'" [queryParams]="listeParams()">
+          <a class="bea-fx-kpi" [routerLink]="base + '/factures'" [queryParams]="listeParams()">
             <mat-icon>receipt_long</mat-icon><p>Factures {{ d.periode_label }}</p><strong>{{ d.kpis.nb_factures }}</strong>
             <small>{{ d.kpis.a_controler }} à contrôler</small>
           </a>
@@ -124,11 +124,11 @@ const TONS_STATUT: Record<string, string> = {
             <mat-icon>account_balance_wallet</mat-icon><p>Total facturé</p><strong>{{ d.kpis.total | montant }}</strong>
             <small [class.bea-ct-neg]="(d.kpis.variation_pct ?? 0) > 0">{{ pct(d.kpis.variation_pct) }} vs {{ d.mois ? 'même mois N-1' : 'N-1 (même période)' }}</small>
           </article>
-          <a class="bea-fx-kpi" data-tone="warn" [routerLink]="base + '/liste'" [queryParams]="{ vue: 'a_payer' }">
+          <a class="bea-fx-kpi" data-tone="warn" [routerLink]="base + '/factures'" [queryParams]="{ vue: 'a_payer' }">
             <mat-icon>payments</mat-icon><p>Reste à payer</p><strong>{{ d.kpis.a_payer | montant }}</strong>
             <small>{{ d.kpis.nb_a_payer }} facture{{ d.kpis.nb_a_payer > 1 ? 's' : '' }} ouvertes</small>
           </a>
-          <a class="bea-fx-kpi" data-tone="danger" [routerLink]="base + '/liste'" [queryParams]="{ vue: 'retard' }">
+          <a class="bea-fx-kpi" data-tone="danger" [routerLink]="base + '/factures'" [queryParams]="{ vue: 'retard' }">
             <mat-icon>running_with_errors</mat-icon><p>En retard</p><strong>{{ d.kpis.en_retard }}</strong>
             <small>{{ d.kpis.montant_retard | montant }} à régulariser</small>
           </a>
@@ -229,7 +229,7 @@ const TONS_STATUT: Record<string, string> = {
           </div>
 
           <div class="bea-mg__panel bea-ct-panel bea-fx-span2">
-            <div class="bea-mg__panel-top"><h2><mat-icon>history</mat-icon> Dernières factures</h2><a class="bea-ct-link" [routerLink]="base + '/liste'">Tout voir</a></div>
+            <div class="bea-mg__panel-top"><h2><mat-icon>history</mat-icon> Dernières factures</h2><a class="bea-ct-link" [routerLink]="base + '/factures'">Tout voir</a></div>
             <ul class="bea-ct-dash__list">
               @for (r of d.recentes; track r.id) {
                 <li>

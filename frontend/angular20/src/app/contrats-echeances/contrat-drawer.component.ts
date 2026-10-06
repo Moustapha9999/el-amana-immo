@@ -25,7 +25,7 @@ import {
   typeEcheanceLabel,
   variation,
 } from './contrats.models';
-import { fxStatut, fxTone } from './facturation/facturation.models';
+import { fxStatut, fxTone } from '../facturation-fournisseurs/facturation.models';
 import { DetailDrawerComponent, DetailTimelineComponent, DrawerKpi, DrawerTab } from './shared/detail-drawer.component';
 
 const VERROUILLES = new Set(['ARCHIVE', 'ANNULE']);
@@ -141,7 +141,7 @@ interface Periode {
                       <td>{{ f.periode_label || date(f.date_facture) }}</td><td><code class="bea-mg__code">{{ f.reference }}</code></td><td>{{ f.point_nom || f.numero_fournisseur || '—' }}</td>
                       <td class="is-num">{{ f.montant_a_payer === null ? '—' : m(f.montant_a_payer) }}</td><td class="is-num">{{ f.reste === null ? '—' : m(f.reste) }}</td>
                       <td><span class="bea-ct-badge" [attr.data-tone]="fxTone(f.statut_affiche)">{{ fx(f.statut_affiche) }}</span></td>
-                      <td><a class="bea-mg__icon-btn" title="Voir la facture" [routerLink]="'/contrats-echeances/factures/liste'" [queryParams]="{ facture: f.id }"><mat-icon>visibility</mat-icon></a></td>
+                      <td><a class="bea-mg__icon-btn" title="Voir la facture" [routerLink]="'/facturation-fournisseurs/factures'" [queryParams]="{ facture: f.id }"><mat-icon>visibility</mat-icon></a></td>
                     </tr>
                   } @empty { <tr><td colspan="7"><div class="bea-ct-empty"><mat-icon>receipt_long</mat-icon><p>Aucune facture rattachée à ce contrat.</p></div></td></tr> }
                 </tbody>
@@ -387,7 +387,7 @@ export class ContratDrawerComponent {
   }
 
   private chargerLies(c: Contrat): void {
-    this.api.get<FacturesContrat>(`/mg/factures/contrats/${c.id}`).subscribe({
+    this.api.get<FacturesContrat>(`/mg/contrats/${c.id}/factures`).subscribe({
       next: (r) => {
         this.factures.set(r);
         this.facturesErreur.set(null);

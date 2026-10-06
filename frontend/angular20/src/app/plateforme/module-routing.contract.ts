@@ -117,6 +117,13 @@ export const MODULE_ROUTE_CONTRACTS: Readonly<Record<string, ModuleRouteContract
     espacePath: '/moyens-generaux',
     urlPrefix: '/contrats-echeances',
   },
+  'facturation-fournisseurs': {
+    code: 'facturation-fournisseurs',
+    strategy: 'prefixed',
+    entryPath: '/facturation-fournisseurs/dashboard',
+    espacePath: '/moyens-generaux',
+    urlPrefix: '/facturation-fournisseurs',
+  },
   'archives-mg': {
     code: 'archives-mg',
     strategy: 'prefixed',
@@ -184,6 +191,7 @@ export const MODULES_WITH_METIER_SHELL = new Set<string>([
   'achats-appro',
   'notes-frais',
   'contrats-echeances',
+  'facturation-fournisseurs',
   'archives-mg',
   'archives-generales',
   'demandes-mg',

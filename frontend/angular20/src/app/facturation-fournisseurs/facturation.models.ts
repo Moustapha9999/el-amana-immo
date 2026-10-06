@@ -1,8 +1,8 @@
 /** Types et libellés — Contrats & échéances › Gestion des factures. */
 
-export { aujourdhui, dateFr, dateHeureFr, joursLabel, telechargerBlob } from '../contrats.models';
+export { aujourdhui, dateFr, dateHeureFr, joursLabel, telechargerBlob } from '../contrats-echeances/contrats.models';
 
-export const FX_BASE = '/contrats-echeances/factures';
+export const FX_BASE = '/facturation-fournisseurs';
 
 export interface Libelle {
   code: string;

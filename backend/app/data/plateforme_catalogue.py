@@ -56,6 +56,7 @@ SEED_LOCKED_MODULE_CODES = frozenset(
         "achats-appro",
         "notes-frais",
         "contrats-echeances",
+        "facturation-fournisseurs",
         "archives-mg",
         "archives-generales",
         "demandes-mg",
@@ -408,6 +409,18 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "sort_order": 5,
     },
     {
+        "code": "facturation-fournisseurs",
+        "espace_code": "moyens-generaux",
+        "label": "Facturation Fournisseurs",
+        "description": (
+            "Factures récurrentes (SOMELEC, télécoms, eau…) : fournisseurs, points de facturation, "
+            "contrôles, échéances, paiements multiples, pièces GED, dashboard 360° et reporting."
+        ),
+        "entry_path": "/facturation-fournisseurs/dashboard",
+        "statut": "actif",
+        "sort_order": 6,
+    },
+    {
         "code": "archives-mg",
         "espace_code": "moyens-generaux",
         "label": "Archives",
@@ -417,7 +430,7 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         ),
         "entry_path": "/archives-mg/dashboard",
         "statut": "actif",
-        "sort_order": 6,
+        "sort_order": 7,
     },
     {
         "code": "archives-generales",
@@ -540,23 +553,23 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("mg.contrats.validate", "Validation / rejet / annulation contrats", "contrats-echeances"),
     ("mg.contrats.settings", "Paramètres contrats", "contrats-echeances"),
     ("mg.contrats.export", "Exports contrats", "contrats-echeances"),
-    ("mg.factures.view", "Consultation des factures (facturation)", "contrats-echeances"),
-    ("mg.factures.create", "Saisie des factures", "contrats-echeances"),
-    ("mg.factures.update", "Modification / contrôle des factures", "contrats-echeances"),
-    ("mg.factures.delete", "Suppression de brouillons / annulation de factures", "contrats-echeances"),
-    ("mg.factures.validate", "Validation / contestation des factures", "contrats-echeances"),
-    ("mg.factures.archive", "Archivage des factures", "contrats-echeances"),
-    ("mg.factures.export", "Exports des factures", "contrats-echeances"),
-    ("mg.factures.payment.view", "Consultation des paiements de factures", "contrats-echeances"),
-    ("mg.factures.payment.create", "Enregistrement des paiements de factures", "contrats-echeances"),
-    ("mg.factures.payment.update", "Modification des paiements de factures", "contrats-echeances"),
-    ("mg.factures.payment.delete", "Annulation des paiements de factures", "contrats-echeances"),
-    ("mg.factures.documents.view", "Consultation des pièces de factures", "contrats-echeances"),
-    ("mg.factures.documents.create", "Dépôt de pièces sur les factures", "contrats-echeances"),
-    ("mg.factures.documents.delete", "Détachement de pièces de factures", "contrats-echeances"),
-    ("mg.factures.analytics.view", "Dashboard 360° et analyses de facturation", "contrats-echeances"),
-    ("mg.factures.reports.export", "Rapports de facturation (PDF, Excel, CSV)", "contrats-echeances"),
-    ("mg.facturation.manage", "Points de facturation, import et paramètres de facturation", "contrats-echeances"),
+    ("mg.factures.view", "Consultation des factures (facturation)", "facturation-fournisseurs"),
+    ("mg.factures.create", "Saisie des factures", "facturation-fournisseurs"),
+    ("mg.factures.update", "Modification / contrôle des factures", "facturation-fournisseurs"),
+    ("mg.factures.delete", "Suppression de brouillons / annulation de factures", "facturation-fournisseurs"),
+    ("mg.factures.validate", "Validation / contestation des factures", "facturation-fournisseurs"),
+    ("mg.factures.archive", "Archivage des factures", "facturation-fournisseurs"),
+    ("mg.factures.export", "Exports des factures", "facturation-fournisseurs"),
+    ("mg.factures.payment.view", "Consultation des paiements de factures", "facturation-fournisseurs"),
+    ("mg.factures.payment.create", "Enregistrement des paiements de factures", "facturation-fournisseurs"),
+    ("mg.factures.payment.update", "Modification des paiements de factures", "facturation-fournisseurs"),
+    ("mg.factures.payment.delete", "Annulation des paiements de factures", "facturation-fournisseurs"),
+    ("mg.factures.documents.view", "Consultation des pièces de factures", "facturation-fournisseurs"),
+    ("mg.factures.documents.create", "Dépôt de pièces sur les factures", "facturation-fournisseurs"),
+    ("mg.factures.documents.delete", "Détachement de pièces de factures", "facturation-fournisseurs"),
+    ("mg.factures.analytics.view", "Dashboard 360° et analyses de facturation", "facturation-fournisseurs"),
+    ("mg.factures.reports.export", "Rapports de facturation (PDF, Excel, CSV)", "facturation-fournisseurs"),
+    ("mg.facturation.manage", "Points de facturation, import et paramètres de facturation", "facturation-fournisseurs"),
     ("mg.archives.view", "Consultation archives MG", "archives-mg"),
     ("mg.archives.create", "Ajout / archivage manuel archives MG", "archives-mg"),
     ("mg.archives.update", "Modification metadonnees archives MG", "archives-mg"),
@@ -640,6 +653,10 @@ RBAC_ROLES: list[tuple[str, str, str]] = [
     ("contrats-echeances.gestionnaire", "Contrats — Gestionnaire", "Création / alertes contrats"),
     ("contrats-echeances.valideur", "Contrats — Valideur", "Validation, annulation, rapports et paramètres"),
     ("contrats-echeances.admin", "Contrats — Admin", "Administration contrats"),
+    ("facturation-fournisseurs.lecteur", "Facturation — Lecteur", "Consultation des factures, paiements et analyses"),
+    ("facturation-fournisseurs.gestionnaire", "Facturation — Gestionnaire", "Saisie des factures, paiements et pièces"),
+    ("facturation-fournisseurs.valideur", "Facturation — Valideur", "Validation, archivage, points et paramètres"),
+    ("facturation-fournisseurs.admin", "Facturation — Admin", "Administration complète de la facturation fournisseurs"),
     ("archives-mg.lecteur", "Archives MG — Lecteur", "Consultation archives MG"),
     ("archives-mg.admin", "Archives MG — Admin", "Administration archives MG"),
     ("archives-generales.lecteur", "Archive Générale — Lecteur", "Consultation Archive Générale"),
@@ -688,6 +705,9 @@ _MG_NOTES_ALL = tuple(
 )
 _MG_CONTRATS_ALL = tuple(
     code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "contrats-echeances"
+)
+_MG_FACTURATION_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "facturation-fournisseurs"
 )
 _MG_FACTURES_LECTURE = (
     "mg.factures.view",
@@ -808,7 +828,7 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "mg.notes.export",
     ),
     "notes-frais.admin": _MG_NOTES_ALL + _GED_RW,
-    "contrats-echeances.lecteur": ("mg.contrats.view", "ged.read", "ged.download") + _MG_FACTURES_LECTURE,
+    "contrats-echeances.lecteur": ("mg.contrats.view", "ged.read", "ged.download"),
     "contrats-echeances.gestionnaire": (
         "mg.contrats.view",
         "mg.contrats.create",
@@ -817,7 +837,18 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "ged.read",
         "ged.write",
         "ged.download",
-    )
+    ),
+    "contrats-echeances.valideur": (
+        "mg.contrats.view",
+        "mg.contrats.validate",
+        "mg.contrats.settings",
+        "mg.contrats.export",
+        "ged.read",
+        "ged.download",
+    ),
+    "contrats-echeances.admin": _MG_CONTRATS_ALL + _GED_RW,
+    "facturation-fournisseurs.lecteur": ("ged.read", "ged.download") + _MG_FACTURES_LECTURE,
+    "facturation-fournisseurs.gestionnaire": ("ged.read", "ged.write", "ged.download")
     + _MG_FACTURES_LECTURE
     + (
         "mg.factures.create",
@@ -830,14 +861,7 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "mg.factures.documents.delete",
         "mg.factures.reports.export",
     ),
-    "contrats-echeances.valideur": (
-        "mg.contrats.view",
-        "mg.contrats.validate",
-        "mg.contrats.settings",
-        "mg.contrats.export",
-        "ged.read",
-        "ged.download",
-    )
+    "facturation-fournisseurs.valideur": ("ged.read", "ged.download")
     + _MG_FACTURES_LECTURE
     + (
         "mg.factures.validate",
@@ -848,7 +872,7 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "mg.factures.reports.export",
         "mg.facturation.manage",
     ),
-    "contrats-echeances.admin": _MG_CONTRATS_ALL + _GED_RW,
+    "facturation-fournisseurs.admin": _MG_FACTURATION_ALL + _GED_RW,
     "archives-mg.lecteur": (
         "mg.archives.view",
         "mg.archives.download",
