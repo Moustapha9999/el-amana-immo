@@ -24,6 +24,7 @@ import {
   MOIS,
   annees,
   dateFr,
+  detailPaiement,
   fxStatut,
   fxTone,
   joursLabel,
@@ -51,6 +52,10 @@ interface PaiementRow {
   montant: number;
   mode_paiement: string | null;
   reference_paiement: string | null;
+  compte: string | null;
+  banque: string | null;
+  numero_cheque: string | null;
+  carte_masquee: string | null;
   statut: string;
   observation: string | null;
 }
@@ -154,7 +159,7 @@ const TITRES: Record<Mode, { titre: string; sous: string; icon: string }> = {
             </div>
             <div class="bea-mg__table-wrap">
               <table class="bea-mg__table bea-fx-table">
-                <thead><tr><th>Paiement</th><th>Date</th><th>Facture</th><th>Point / fournisseur</th><th>Mode</th><th>Réf. bancaire</th><th class="is-num">Montant</th><th>Statut</th><th class="is-actions">Actions</th></tr></thead>
+                <thead><tr><th>Paiement</th><th>Date</th><th>Facture</th><th>Point / fournisseur</th><th>Moyen</th><th>Détail</th><th class="is-num">Montant</th><th>Statut</th><th class="is-actions">Actions</th></tr></thead>
                 <tbody>
                   @if (paiements() === null) {
                     @for (i of [1, 2, 3, 4]; track i) { <tr><td colspan="9"><span class="bea-fx-skel bea-fx-skel--line"></span></td></tr> }
@@ -166,7 +171,7 @@ const TITRES: Record<Mode, { titre: string; sous: string; icon: string }> = {
                         <td><a class="bea-ct-link" (click)="ouvrir(p.facture_id)">{{ p.facture_reference }}</a><small class="bea-fx-sub">{{ p.periode_label }}</small></td>
                         <td>{{ p.point_nom || '—' }}<small class="bea-fx-sub">{{ p.fournisseur }}{{ p.agence ? ' · ' + p.agence : '' }}</small></td>
                         <td>{{ p.mode_paiement || '—' }}</td>
-                        <td>{{ p.reference_paiement || '—' }}</td>
+                        <td>{{ detail(p) || '—' }}</td>
                         <td class="is-num">{{ p.montant | montant }}</td>
                         <td><span class="bea-ct-badge" [attr.data-tone]="tone(p.statut)">{{ statut(p.statut) }}</span></td>
                         <td class="is-nowrap">
@@ -477,7 +482,7 @@ export class FacturationSuiviComponent implements OnInit {
     const ok = imprimerTableau(
       'Paiements des factures',
       ['Paiement', 'Date', 'Facture', 'Période', 'Point', 'Fournisseur', 'Agence', 'Mode', 'Réf. bancaire', 'Montant', 'Statut'],
-      rows.map((p) => [p.reference, this.date(p.date_paiement), p.facture_reference, p.periode_label, p.point_nom, p.fournisseur, p.agence, p.mode_paiement, p.reference_paiement, p.montant, this.statut(p.statut)]),
+      rows.map((p) => [p.reference, this.date(p.date_paiement), p.facture_reference, p.periode_label, p.point_nom, p.fournisseur, p.agence, p.mode_paiement, this.detail(p), p.montant, this.statut(p.statut)]),
     );
     if (!ok) this.feedback.warning({ title: 'Impression bloquée', message: 'Autorisez les fenêtres pour ce site puis réessayez.' });
   }
@@ -560,6 +565,10 @@ export class FacturationSuiviComponent implements OnInit {
 
   tone(code: string | null | undefined): string {
     return fxTone(code);
+  }
+
+  detail(p: PaiementRow): string {
+    return detailPaiement(p);
   }
 
   date(iso: string | null | undefined): string {

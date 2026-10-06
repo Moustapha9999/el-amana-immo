@@ -23,6 +23,8 @@ from app.schemas.mg_facturation import (
     ImportChoix,
     PointFacturationCreate,
     PointFacturationIn,
+    ProfilCreate,
+    ProfilIn,
 )
 from app.services.mg_facturation_analytics import MgFacturationAnalytics
 from app.services.mg_facturation_import import MgFacturationImport
@@ -61,6 +63,7 @@ def _filtres(
     pdv_id: UUID | None = None,
     point_id: UUID | None = None,
     supplier_id: UUID | None = None,
+    profil_id: UUID | None = None,
     contrat_id: UUID | None = None,
     type: str | None = None,
     type_facture: str | None = None,
@@ -80,6 +83,7 @@ def _filtres(
         "agence_id": agency_id,
         "point_id": pdv_id or point_id,
         "fournisseur_id": supplier_id,
+        "profil_id": profil_id,
         "contrat_id": contrat_id,
         "type_point": type,
         "type_facture": type_facture,
@@ -99,6 +103,34 @@ async def config(db: AsyncSession = Depends(get_db), user: User = Depends(requir
 @router.get("/referentiels")
 async def referentiels(db: AsyncSession = Depends(get_db), user: User = Depends(require_permission("mg.factures.view"))):
     return await (await _svc(db, user)).referentiels()
+
+
+@router.get("/profils")
+async def list_profils(
+    tous: bool = False,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.factures.view")),
+):
+    return await (await _svc(db, user)).list_profils(actifs=not tous)
+
+
+@router.post("/profils", status_code=status.HTTP_201_CREATED)
+async def create_profil(
+    body: ProfilCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.facturation.manage")),
+):
+    return await (await _svc(db, user)).create_profil(body, user)
+
+
+@router.patch("/profils/{profil_id}")
+async def update_profil(
+    profil_id: UUID,
+    body: ProfilIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.facturation.manage")),
+):
+    return await (await _svc(db, user)).update_profil(profil_id, body, user)
 
 
 @router.get("/parametres")
@@ -347,7 +379,7 @@ async def dupliquer(
     return await (await _svc(db, user)).dupliquer(facture_id, user)
 
 
-for _action in ("enregistrer", "controler", "valider", "contester", "annuler", "archiver"):
+for _action in ("enregistrer", "controler", "valider_controle", "valider", "contester", "annuler", "archiver"):
 
     def _make(action: str):
         async def _transition(

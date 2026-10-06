@@ -295,6 +295,12 @@ interface ResultatImport {
                 @for (f of store.ref()?.fournisseurs ?? []; track f.id) { <option [value]="f.id">{{ f.libelle }}</option> }
               </select>
             </label>
+            <label class="bea-mg__field">Profil de facturation
+              <select formControlName="profil_id">
+                <option value="">— Aucun —</option>
+                @for (pr of profilsFournisseur(); track pr.id) { <option [value]="pr.id">{{ pr.libelle }}</option> }
+              </select>
+            </label>
             <label class="bea-mg__field">Référence fournisseur *<input formControlName="reference_fournisseur" maxlength="80" placeholder="Ex. 363215238221" /></label>
             <label class="bea-mg__field">Compteur<input formControlName="compteur" maxlength="40" /></label>
             <label class="bea-mg__field">Agence de rattachement
@@ -519,6 +525,7 @@ export class FacturationPointsComponent implements OnInit {
     type_point: ['AGENCE', Validators.required],
     nom: ['', [Validators.required, Validators.maxLength(255)]],
     fournisseur_id: ['', Validators.required],
+    profil_id: [''],
     reference_fournisseur: ['', [Validators.required, Validators.maxLength(80)]],
     compteur: [''],
     agence_id: [''],
@@ -537,6 +544,11 @@ export class FacturationPointsComponent implements OnInit {
     this.pointDirty() || (this.importOuvert() && this.etape() === 2) || !!this.factureForm()?.isDirty() || !!this.drawer()?.dirty();
 
   private readonly fournisseurForm = signal('');
+  readonly profilsFournisseur = computed(() => {
+    const f = this.fournisseurForm();
+    return (this.store.ref()?.profils ?? []).filter((p) => p.actif && (!f || p.fournisseur_id === f));
+  });
+
   readonly contratsFournisseur = computed(() => {
     const f = this.fournisseurForm();
     return (this.store.ref()?.contrats ?? []).filter((c) => !f || !c.fournisseur_id || c.fournisseur_id === f);
@@ -557,7 +569,11 @@ export class FacturationPointsComponent implements OnInit {
   ngOnInit(): void {
     this.store.charger();
     this.saisie$.pipe(debounceTime(300), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.charger());
-    this.pointForm.controls.fournisseur_id.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.fournisseurForm.set(v));
+    this.pointForm.controls.fournisseur_id.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => {
+      this.fournisseurForm.set(v);
+      const pr = (this.store.ref()?.profils ?? []).find((p) => p.id === this.pointForm.controls.profil_id.value);
+      if (pr && pr.fournisseur_id !== v) this.pointForm.controls.profil_id.setValue('');
+    });
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((m) => {
       const id = m.get('point');
       if (id !== this.pointId()) {
@@ -659,6 +675,7 @@ export class FacturationPointsComponent implements OnInit {
       type_point: p?.type_point ?? 'AGENCE',
       nom: p?.nom ?? '',
       fournisseur_id: p?.fournisseur_id ?? (this.store.ref()?.fournisseurs.length === 1 ? this.store.ref()!.fournisseurs[0].id : ''),
+      profil_id: p?.profil_id ?? '',
       reference_fournisseur: p?.reference_fournisseur ?? '',
       compteur: p?.compteur ?? '',
       agence_id: p?.agence_id ?? '',
@@ -684,7 +701,7 @@ export class FacturationPointsComponent implements OnInit {
     if (this.pointForm.invalid) return;
     const v = this.pointForm.getRawValue();
     const body: Record<string, unknown> = { ...v };
-    for (const k of ['compteur', 'agence_id', 'contrat_id', 'type_facture', 'date_debut', 'date_fin', 'adresse', 'telephone', 'description']) {
+    for (const k of ['profil_id', 'compteur', 'agence_id', 'contrat_id', 'type_facture', 'date_debut', 'date_fin', 'adresse', 'telephone', 'description']) {
       if (body[k] === '') body[k] = null;
     }
     const p = this.edition();

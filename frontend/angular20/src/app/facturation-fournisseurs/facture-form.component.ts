@@ -7,7 +7,7 @@ import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 import { ApiService } from '../core/services/api.service';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 import { MontantPipe, parseMontant } from '../shared/montant.pipe';
-import { FactureDetail, MOIS, TYPE_POINT_LABELS, aujourdhui } from './facturation.models';
+import { ChampProfil, FactureDetail, FxProfil, LIBELLES_CHAMPS, MOIS, TYPE_POINT_LABELS, aujourdhui, etatChamp } from './facturation.models';
 import { FacturationStore } from './facturation.store';
 
 type Num = number | null;
@@ -34,6 +34,15 @@ type Num = number | null;
         <fieldset class="bea-fx-form__set">
           <legend>Rattachement</legend>
           <div class="bea-ct-grid">
+            <label>Profil fournisseur
+              <select formControlName="profil_id" (change)="onProfil()">
+                <option value="">— Autre fournisseur (sans profil) —</option>
+                @for (p of profilsDisponibles(); track p.id) { <option [value]="p.id">{{ p.libelle }}{{ p.actif ? '' : ' (inactif)' }}</option> }
+              </select>
+              @if (profil(); as pr) {
+                <small class="bea-fx-form__hint">{{ pr.fournisseur }}{{ pr.taux_tva !== null ? ' · TVA ' + pr.taux_tva + ' %' : ' · TVA non configurée' }}</small>
+              }
+            </label>
             <label class="bea-ct-span2">Point de facturation
               <select formControlName="point_facturation_id" (change)="onPoint()">
                 <option value="">— Aucun (facture ponctuelle) —</option>
@@ -66,45 +75,76 @@ type Num = number | null;
                 @for (c of contratsFiltres(); track c.id) { <option [value]="c.id">{{ c.reference }} — {{ c.titre }}</option> }
               </select>
             </label>
-            <label>Réf. fournisseur (compteur / abonnement)
-              <input formControlName="reference_fournisseur" maxlength="80" placeholder="Reprise du point si vide" />
-            </label>
+            @if (voir('reference_fournisseur')) {
+              <label>{{ lib('reference_fournisseur') }}{{ req('reference_fournisseur') }}
+                <input formControlName="reference_fournisseur" maxlength="80" placeholder="Reprise du point si vide" />
+              </label>
+            }
           </div>
         </fieldset>
 
         <fieldset class="bea-fx-form__set">
           <legend>Facture</legend>
           <div class="bea-ct-grid">
-            <label>N° facture fournisseur <input formControlName="numero_fournisseur" maxlength="80" /></label>
+            @if (voir('numero_fournisseur')) {
+              <label>{{ lib('numero_fournisseur') }}{{ req('numero_fournisseur') }} <input formControlName="numero_fournisseur" maxlength="80" /></label>
+            }
             <label>Date de facture * <input type="date" formControlName="date_facture" /></label>
             <label>Date de réception <input type="date" formControlName="date_reception" /></label>
-            <label>Échéance <input type="date" formControlName="date_echeance" /></label>
-            <label>Début de période <input type="date" formControlName="periode_debut" /></label>
-            <label>Fin de période <input type="date" formControlName="periode_fin" /></label>
-            <label>Mois facturé
-              <select formControlName="mois">
-                <option [ngValue]="null">Auto ({{ periodeAuto() }})</option>
-                @for (m of mois; track $index) { <option [ngValue]="$index + 1">{{ m }}</option> }
-              </select>
-            </label>
-            <label>Année <input type="number" min="2000" max="2100" formControlName="annee" placeholder="Auto" /></label>
+            @if (voir('date_echeance')) {
+              <label>{{ lib('date_echeance') }}{{ req('date_echeance') }} <input type="date" formControlName="date_echeance" /></label>
+            }
+            @if (voir('periode_debut')) {
+              <label>{{ lib('periode_debut') }}{{ req('periode_debut') }} <input type="date" formControlName="periode_debut" /></label>
+            }
+            @if (voir('periode_fin')) {
+              <label>{{ lib('periode_fin') }}{{ req('periode_fin') }} <input type="date" formControlName="periode_fin" /></label>
+            }
+            @if (voir('periode')) {
+              <label>{{ lib('periode') }}{{ req('periode') }}
+                <select formControlName="mois">
+                  <option [ngValue]="null">Auto ({{ periodeAuto() }})</option>
+                  @for (m of mois; track $index) { <option [ngValue]="$index + 1">{{ m }}</option> }
+                </select>
+              </label>
+              <label>Année <input type="number" min="2000" max="2100" formControlName="annee" placeholder="Auto" /></label>
+            }
           </div>
         </fieldset>
 
         <fieldset class="bea-fx-form__set">
-          <legend>Montants <small>(facultatifs — saisir uniquement ce qui figure sur la facture)</small></legend>
+          <legend>Montants <small>(saisir uniquement ce qui figure sur la facture)</small></legend>
           <div class="bea-ct-grid bea-fx-form__montants">
-            <label>Montant HT <input inputmode="decimal" formControlName="montant_ht" (input)="recalculer()" /></label>
-            <label>TVA <input inputmode="decimal" formControlName="montant_tva" (input)="recalculer()" /></label>
-            <label>Autres taxes / redevances <input inputmode="decimal" formControlName="autres_taxes" (input)="recalculer()" /></label>
-            <label>Remise <input inputmode="decimal" formControlName="remise" (input)="recalculer()" /></label>
-            <label>Montant TTC
+            @if (voir('montant_ht')) {
+              <label>{{ lib('montant_ht') }}{{ req('montant_ht') }} <input inputmode="decimal" formControlName="montant_ht" (input)="onHt()" /></label>
+            }
+            @if (voir('montant_tva')) {
+              <label>{{ lib('montant_tva') }}{{ req('montant_tva') }}
+                <input inputmode="decimal" formControlName="montant_tva" (input)="onTva()" [class.is-auto]="tvaAuto()" />
+                @if (tvaAuto()) { <small class="bea-fx-form__hint">Proposée : {{ profil()?.taux_tva }} % du HT (modifiable)</small> }
+              </label>
+            }
+            @if (voir('autres_taxes')) {
+              <label>{{ lib('autres_taxes') }}{{ req('autres_taxes') }} <input inputmode="decimal" formControlName="autres_taxes" (input)="recalculer()" /></label>
+            }
+            @if (voir('remise')) {
+              <label>{{ lib('remise') }}{{ req('remise') }} <input inputmode="decimal" formControlName="remise" (input)="recalculer()" /></label>
+            }
+            <label>{{ lib('montant_ttc') }} *
               <input inputmode="decimal" formControlName="montant_ttc" [readonly]="ttcCalcule()" [class.is-auto]="ttcCalcule()" />
               @if (ttcCalcule()) { <small class="bea-fx-form__hint">Calculé : HT + TVA + taxes − remise</small> }
             </label>
-            <label>Montant à payer
-              <input inputmode="decimal" formControlName="montant_a_payer" [placeholder]="'= TTC'" />
-            </label>
+            @if (voir('arrieres')) {
+              <label>{{ lib('arrieres') }}{{ req('arrieres') }} <input inputmode="decimal" formControlName="arrieres" /></label>
+            }
+            @if (voir('reglage')) {
+              <label>{{ lib('reglage') }}{{ req('reglage') }} <input inputmode="decimal" formControlName="reglage" /></label>
+            }
+            @if (voir('montant_a_payer')) {
+              <label>{{ lib('montant_a_payer') }}{{ req('montant_a_payer') }}
+                <input inputmode="decimal" formControlName="montant_a_payer" [placeholder]="voir('arrieres') ? '= TTC + arriérés' : '= TTC'" />
+              </label>
+            }
             <label>Devise
               <select formControlName="devise">
                 @for (d of store.config()?.devises ?? ['MRU']; track d) { <option [value]="d">{{ d }}</option> }
@@ -138,6 +178,9 @@ type Num = number | null;
         <label class="bea-fx-form__obs">Observation
           <textarea formControlName="observation" rows="2" maxlength="4000"></textarea>
         </label>
+        @if (manquants().length) {
+          <p class="bea-ct-help bea-fx-form__manquants"><mat-icon>info</mat-icon> Obligatoire pour {{ profil()?.libelle }} : {{ manquants().join(', ') }} (un brouillon reste possible).</p>
+        }
       </div>
 
       <footer class="bea-ct-modal__foot">
@@ -145,7 +188,7 @@ type Num = number | null;
         @if (!facture()) {
           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="form.invalid || busy()" (click)="enregistrer(false)"><mat-icon>edit_note</mat-icon> Brouillon</button>
         }
-        <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="form.invalid || busy()">
+        <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="form.invalid || busy() || (manquants().length > 0 && facture()?.statut !== 'BROUILLON')">
           <mat-icon>save</mat-icon> {{ busy() ? 'Enregistrement…' : facture() ? 'Enregistrer' : 'Enregistrer (reçue)' }}
         </button>
       </footer>
@@ -168,9 +211,12 @@ export class FactureFormComponent implements OnInit {
   readonly busy = signal(false);
   readonly lignesOuvertes = signal(false);
   readonly ttcCalcule = signal(false);
+  readonly tvaAuto = signal(false);
   private readonly fournisseurSel = signal('');
+  private readonly profilSel = signal('');
 
   readonly form = this.fb.group({
+    profil_id: [''],
     point_facturation_id: [''],
     fournisseur_id: ['', Validators.required],
     agence_id: [''],
@@ -190,6 +236,8 @@ export class FactureFormComponent implements OnInit {
     autres_taxes: [''],
     remise: [''],
     montant_ttc: [''],
+    arrieres: [''],
+    reglage: [''],
     montant_a_payer: [''],
     devise: ['MRU'],
     observation: [''],
@@ -204,11 +252,47 @@ export class FactureFormComponent implements OnInit {
 
   readonly verrouMontants = computed(() => !!this.facture() && !this.facture()!.montants_modifiables);
 
+  readonly profil = computed<FxProfil | null>(() => (this.store.ref()?.profils ?? []).find((p) => p.id === this.profilSel()) ?? null);
+
+  readonly profilsDisponibles = computed(() => {
+    const actuel = this.facture()?.profil_id;
+    return (this.store.ref()?.profils ?? []).filter((p) => p.actif || p.id === actuel);
+  });
+
   readonly pointsFiltres = computed(() => {
     const f = this.fournisseurSel();
+    const pr = this.profilSel();
     const actuel = this.facture()?.point_facturation_id;
-    return (this.store.ref()?.points ?? []).filter((p) => (!f || p.fournisseur_id === f) && (p.statut === 'ACTIF' || p.id === actuel));
+    return (this.store.ref()?.points ?? []).filter(
+      (p) => (!f || p.fournisseur_id === f) && (!pr || !p.profil_id || p.profil_id === pr) && (p.statut === 'ACTIF' || p.id === actuel),
+    );
   });
+
+  voir(champ: ChampProfil): boolean {
+    return etatChamp(this.profil(), champ) !== 'masque';
+  }
+
+  req(champ: ChampProfil): string {
+    return etatChamp(this.profil(), champ) === 'obligatoire' ? ' *' : '';
+  }
+
+  lib(champ: ChampProfil): string {
+    return this.profil()?.libelles?.[champ] ?? LIBELLES_CHAMPS[champ];
+  }
+
+  /** Champs obligatoires du profil encore vides (le backend reste juge). */
+  manquants(): string[] {
+    const pr = this.profil();
+    if (!pr) return [];
+    const v = this.form.getRawValue();
+    const vide = (c: ChampProfil): boolean => {
+      if (c === 'periode') return false;
+      if (c === 'montant_ttc') return !(parseMontant(v.montant_ttc) ?? 0);
+      const val = (v as Record<string, unknown>)[c];
+      return val === null || val === undefined || String(val).trim() === '';
+    };
+    return (Object.keys(pr.champs) as ChampProfil[]).filter((c) => pr.champs[c] === 'obligatoire' && vide(c)).map((c) => this.lib(c));
+  }
 
   readonly contratsFiltres = computed(() => {
     const f = this.fournisseurSel();
@@ -220,6 +304,7 @@ export class FactureFormComponent implements OnInit {
     const f = this.facture();
     if (f) {
       this.form.reset({
+        profil_id: f.profil_id ?? '',
         point_facturation_id: f.point_facturation_id ?? '',
         fournisseur_id: f.fournisseur_id ?? '',
         agence_id: f.agence_id ?? '',
@@ -239,15 +324,19 @@ export class FactureFormComponent implements OnInit {
         autres_taxes: f.autres_taxes ? this.txt(f.autres_taxes) : '',
         remise: f.remise ? this.txt(f.remise) : '',
         montant_ttc: f.montant_ttc ? this.txt(f.montant_ttc) : '',
-        montant_a_payer: f.montant_a_payer && f.montant_a_payer !== f.montant_ttc ? this.txt(f.montant_a_payer) : '',
+        arrieres: this.txt(f.arrieres),
+        reglage: this.txt(f.reglage),
+        montant_a_payer: f.montant_a_payer !== null && Math.abs(f.montant_a_payer - ((f.montant_ttc ?? 0) + (f.arrieres ?? 0))) > 0.005 ? this.txt(f.montant_a_payer) : '',
         devise: f.devise || 'MRU',
         observation: f.observation ?? '',
       });
       for (const l of f.lignes) this.lignes.push(this.ligneGroup(l));
       this.lignesOuvertes.set(f.lignes.length > 0);
       this.fournisseurSel.set(f.fournisseur_id ?? '');
+      this.profilSel.set(f.profil_id ?? '');
+      if (f.profil_id) this.form.controls.fournisseur_id.disable();
       if (this.verrouMontants()) {
-        for (const k of ['point_facturation_id', 'fournisseur_id', 'agence_id', 'contrat_id', 'numero_fournisseur', 'date_facture', 'periode_debut', 'periode_fin', 'mois', 'annee', 'montant_ht', 'montant_tva', 'autres_taxes', 'remise', 'montant_ttc', 'montant_a_payer', 'devise', 'lignes'] as const) {
+        for (const k of ['profil_id', 'arrieres', 'reglage', 'point_facturation_id', 'fournisseur_id', 'agence_id', 'contrat_id', 'numero_fournisseur', 'date_facture', 'periode_debut', 'periode_fin', 'mois', 'annee', 'montant_ht', 'montant_tva', 'autres_taxes', 'remise', 'montant_ttc', 'montant_a_payer', 'devise', 'lignes'] as const) {
           this.form.controls[k].disable();
         }
       }
@@ -313,6 +402,24 @@ export class FactureFormComponent implements OnInit {
     if (p && p.fournisseur_id !== f) this.form.patchValue({ point_facturation_id: '' });
   }
 
+  onProfil(): void {
+    this.profilSel.set(this.form.controls.profil_id.value ?? '');
+    const pr = this.profil();
+    const fournisseur = this.form.controls.fournisseur_id;
+    if (pr) {
+      fournisseur.setValue(pr.fournisseur_id);
+      fournisseur.disable();
+      if (pr.type_facture && !this.form.controls.type_facture.value) this.form.patchValue({ type_facture: pr.type_facture });
+      this.onFournisseur();
+      const point = this.store.ref()?.points.find((x) => x.id === this.form.controls.point_facturation_id.value);
+      if (point?.profil_id && point.profil_id !== pr.id) this.form.patchValue({ point_facturation_id: '' });
+    } else {
+      fournisseur.enable();
+    }
+    if (this.tvaAuto() || !this.form.controls.montant_tva.value) this.proposerTva();
+    this.recalculer();
+  }
+
   onPoint(): void {
     const p = this.store.ref()?.points.find((x) => x.id === this.form.controls.point_facturation_id.value);
     if (!p) return;
@@ -324,6 +431,33 @@ export class FactureFormComponent implements OnInit {
       reference_fournisseur: p.reference_fournisseur,
     });
     this.fournisseurSel.set(p.fournisseur_id);
+    if (p.profil_id && p.profil_id !== this.profilSel()) {
+      this.form.patchValue({ profil_id: p.profil_id });
+      this.onProfil();
+    }
+  }
+
+  onHt(): void {
+    if (this.tvaAuto() || !this.form.controls.montant_tva.value) this.proposerTva();
+    this.recalculer();
+  }
+
+  onTva(): void {
+    this.tvaAuto.set(false);
+    this.recalculer();
+  }
+
+  /** TVA proposée uniquement si le profil porte un taux configuré ; jamais de taux supposé. */
+  private proposerTva(): void {
+    const taux = this.profil()?.taux_tva;
+    const ht = parseMontant(this.form.controls.montant_ht.value);
+    if (taux === null || taux === undefined || ht === null || !this.voir('montant_tva')) {
+      if (this.tvaAuto()) this.form.controls.montant_tva.setValue('');
+      this.tvaAuto.set(false);
+      return;
+    }
+    this.form.controls.montant_tva.setValue(((ht * taux) / 100).toFixed(2));
+    this.tvaAuto.set(true);
   }
 
   recalculer(): void {
@@ -389,6 +523,7 @@ export class FactureFormComponent implements OnInit {
     const v = this.form.getRawValue();
     const ht = parseMontant(v.montant_ht);
     const body: Record<string, unknown> = {
+      profil_id: v.profil_id || null,
       point_facturation_id: v.point_facturation_id || null,
       fournisseur_id: v.fournisseur_id || null,
       agence_id: v.agence_id || null,
@@ -408,6 +543,8 @@ export class FactureFormComponent implements OnInit {
       autres_taxes: parseMontant(v.autres_taxes) ?? 0,
       remise: parseMontant(v.remise) ?? 0,
       montant_ttc: ht === null ? parseMontant(v.montant_ttc) : null,
+      arrieres: parseMontant(v.arrieres),
+      reglage: parseMontant(v.reglage),
       montant_a_payer: parseMontant(v.montant_a_payer),
       devise: v.devise || 'MRU',
       observation: v.observation?.trim() || null,
@@ -422,6 +559,17 @@ export class FactureFormComponent implements OnInit {
     };
     if (this.verrouMontants()) {
       return { date_reception: body['date_reception'], date_echeance: body['date_echeance'], observation: body['observation'], type_facture: body['type_facture'], reference_fournisseur: body['reference_fournisseur'] };
+    }
+    for (const champ of Object.keys(LIBELLES_CHAMPS) as ChampProfil[]) {
+      if (this.voir(champ)) continue;
+      if (champ === 'periode') {
+        body['mois'] = null;
+        body['annee'] = null;
+      } else if (champ === 'autres_taxes' || champ === 'remise') {
+        body[champ] = 0;
+      } else if (champ !== 'montant_ttc' && champ !== 'reference_fournisseur') {
+        body[champ] = null;
+      }
     }
     return body;
   }

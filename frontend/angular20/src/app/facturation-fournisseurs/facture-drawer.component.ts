@@ -9,9 +9,12 @@ import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 import { ApiService } from '../core/services/api.service';
 import { MontantPipe, formatMontant, parseMontant } from '../shared/montant.pipe';
 import { FactureFormComponent } from './facture-form.component';
+import { FxPaiementDetailComponent, corpsDetailPaiement } from './fx-paiement-detail.component';
 import {
   ACTION_LABELS,
+  ChampProfil,
   FX_BASE,
+  LIBELLES_CHAMPS,
   FactureDetail,
   FxDocument,
   FxPaiement,
@@ -19,6 +22,7 @@ import {
   aujourdhui,
   dateFr,
   dateHeureFr,
+  detailPaiement,
   fxStatut,
   fxTone,
   joursLabel,
@@ -33,11 +37,12 @@ type Onglet = 'details' | 'documents' | 'paiements' | 'historique';
 /** Action déclenchée à l'ouverture depuis un menu de ligne ; les règles restent celles de la fiche. */
 export type FactureActionInitiale =
   | 'modifier' | 'payer' | 'supprimer' | 'dupliquer' | 'documents' | 'paiements' | 'historique'
-  | 'enregistrer' | 'controler' | 'valider' | 'contester' | 'annuler' | 'archiver';
+  | 'enregistrer' | 'controler' | 'valider_controle' | 'valider' | 'contester' | 'annuler' | 'archiver';
 
 const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enregistrement' | 'soumission'; message: string; hint?: string }> = {
   enregistrer: { action: 'enregistrement', message: 'Marquer cette facture comme reçue ?' },
   controler: { action: 'soumission', message: 'Envoyer cette facture en contrôle ?' },
+  valider_controle: { action: 'validation', message: 'Clore le contrôle de cette facture ?', hint: 'Les contrôles bloquants sont revérifiés ; la facture passera « Contrôlée », prête à valider.' },
   valider: { action: 'validation', message: 'Valider cette facture ?', hint: 'Les montants seront figés ; la facture passera « À payer ».' },
   archiver: { action: 'archivage', message: 'Archiver cette facture ?', hint: 'Elle restera consultable dans l’historique.' },
 };
@@ -46,7 +51,7 @@ const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enre
 @Component({
   selector: 'bea-fx-facture-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MatIconModule, MontantPipe, FactureFormComponent, JalonsComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatIconModule, MontantPipe, FactureFormComponent, JalonsComponent, FxPaiementDetailComponent],
   template: `
     <div class="bea-fx-drawer__backdrop" (click)="fermer()"></div>
     <aside class="bea-fx-drawer" role="dialog" aria-modal="true" aria-labelledby="bea-fx-drawer-title">
@@ -77,7 +82,7 @@ const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enre
         <div class="bea-fx-drawer__actions">
           @if (f.modifiable) { <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="formOuvert.set(true)"><mat-icon>edit</mat-icon> Modifier</button> }
           @for (a of f.actions; track a) {
-            <button type="button" class="bea-mg__btn" [class.bea-mg__btn--primary]="a === 'valider'" [class.bea-mg__btn--ghost]="a !== 'valider'"
+            <button type="button" class="bea-mg__btn" [class.bea-mg__btn--primary]="a === 'valider' || a === 'valider_controle'" [class.bea-mg__btn--ghost]="a !== 'valider' && a !== 'valider_controle'"
               [class.bea-mg__btn--danger]="a === 'annuler'" [disabled]="busy()" (click)="transition(a)">
               <mat-icon>{{ action(a).icon }}</mat-icon> {{ action(a).label }}
             </button>
@@ -105,8 +110,15 @@ const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enre
               @if (f.date_echeance) {
                 <bea-jalons [jours]="f.jours_echeance" [termine]="f.statut === 'ANNULEE' ? 'muted' : (f.reste === 0 && f.montant_paye) ? 'ok' : null" />
               }
+              @if (f.controles.length && f.statut !== 'ANNULEE' && f.statut !== 'ARCHIVEE') {
+                <ul class="bea-fx-controles bea-ct-pane" aria-label="Contrôles automatiques">
+                  @for (c of f.controles; track c.code) {
+                    <li [attr.data-niveau]="c.niveau"><mat-icon>{{ c.niveau === 'bloquant' ? 'block' : 'warning_amber' }}</mat-icon> {{ c.message }}</li>
+                  }
+                </ul>
+              }
               <dl class="bea-fx-dl bea-ct-pane">
-                <dt>Fournisseur</dt><dd>{{ f.fournisseur || '—' }}</dd>
+                <dt>Fournisseur</dt><dd>{{ f.fournisseur || '—' }}@if (f.profil) { <small> · profil {{ f.profil }}</small> }</dd>
                 <dt>Point de facturation</dt>
                 <dd>@if (f.point) { <a class="bea-ct-link" [routerLink]="base + '/points'" [queryParams]="{ point: f.point.id }">{{ f.point.code }} · {{ f.point.nom }}</a> <small>{{ typePoint(f.point.type_point) }}</small> } @else { — }</dd>
                 <dt>Agence</dt><dd>{{ f.agence || '—' }}</dd>
@@ -117,11 +129,20 @@ const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enre
                 <dt>Réception</dt><dd>{{ date(f.date_reception) }}</dd>
                 <dt>Période</dt><dd>{{ f.periode_label || '—' }}@if (f.periode_debut) { <small> du {{ date(f.periode_debut) }} au {{ date(f.periode_fin) }}</small> }</dd>
                 <dt>Échéance</dt><dd>{{ date(f.date_echeance) }}@if (f.jours_echeance !== null) { <small [class.bea-ct-neg]="f.jours_echeance < 0"> {{ jours(f.jours_echeance) }}</small> }</dd>
-                <dt>Montant HT</dt><dd>{{ f.montant_ht === null ? 'Non renseigné' : (f.montant_ht | montant) }}</dd>
-                <dt>TVA</dt><dd>{{ f.montant_tva === null ? 'Non renseignée' : (f.montant_tva | montant) }}</dd>
-                @if (f.autres_taxes) { <dt>Autres taxes</dt><dd>{{ f.autres_taxes | montant }}</dd> }
-                @if (f.remise) { <dt>Remise</dt><dd>− {{ f.remise | montant }}</dd> }
+                @if (f.profil_config?.champs?.montant_ht !== 'masque') {
+                  <dt>{{ lib(f, 'montant_ht') }}</dt><dd>{{ f.montant_ht === null ? 'Non renseigné' : (f.montant_ht | montant) }}</dd>
+                }
+                @if (f.profil_config?.champs?.montant_tva !== 'masque') {
+                  <dt>{{ lib(f, 'montant_tva') }}</dt><dd>{{ f.montant_tva === null ? 'Non renseignée' : (f.montant_tva | montant) }}</dd>
+                }
+                @if (f.autres_taxes) { <dt>{{ lib(f, 'autres_taxes') }}</dt><dd>{{ f.autres_taxes | montant }}</dd> }
+                @if (f.remise) { <dt>{{ lib(f, 'remise') }}</dt><dd>− {{ f.remise | montant }}</dd> }
+                <dt>{{ lib(f, 'montant_ttc') }}</dt><dd>{{ f.montant_ttc | montant }} {{ f.devise }}</dd>
+                @if (f.arrieres !== null) { <dt>{{ lib(f, 'arrieres') }}</dt><dd>{{ f.arrieres | montant }}</dd> }
+                @if (f.reglage !== null) { <dt>{{ lib(f, 'reglage') }}</dt><dd>{{ f.reglage | montant }} <small>(tel que figurant sur la facture)</small></dd> }
+                <dt>{{ lib(f, 'montant_a_payer') }}</dt><dd>{{ f.montant_a_payer | montant }} {{ f.devise }}</dd>
                 <dt>Saisie par</dt><dd>{{ f.created_by_nom || '—' }} <small>{{ dateHeure(f.created_at) }}</small></dd>
+                @if (f.controle_at) { <dt>Contrôlée par</dt><dd>{{ f.controle_by_nom || '—' }} <small>{{ dateHeure(f.controle_at) }}</small></dd> }
                 @if (f.valide_at) { <dt>Validée par</dt><dd>{{ f.valide_by_nom || '—' }} <small>{{ dateHeure(f.valide_at) }}</small></dd> }
                 @if (f.motif) { <dt>Motif</dt><dd>{{ f.motif }}</dd> }
                 @if (f.observation) { <dt>Observation</dt><dd class="bea-fx-dl__wrap">{{ f.observation }}</dd> }
@@ -184,7 +205,7 @@ const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enre
                 @for (p of f.paiements; track p.id) {
                   <li class="bea-fx-pay" [class.is-off]="p.statut !== 'PAYE'">
                     <span class="bea-fx-pay__date"><strong>{{ date(p.date_paiement) }}</strong><small>{{ p.reference }}</small></span>
-                    <span class="bea-fx-doc__main"><strong>{{ p.montant | montant }} {{ f.devise }}</strong><small>{{ p.mode_paiement || '—' }}{{ p.reference_paiement ? ' · ' + p.reference_paiement : '' }} · {{ p.created_by || '—' }}</small>
+                    <span class="bea-fx-doc__main"><strong>{{ p.montant | montant }} {{ f.devise }}</strong><small>{{ p.mode_paiement || '—' }}{{ detail(p) ? ' · ' + detail(p) : '' }} · {{ p.created_by || '—' }}</small>
                       @if (p.observation) { <small>{{ p.observation }}</small> }</span>
                     <span class="bea-ct-badge" [attr.data-tone]="tone(p.statut)">{{ statut(p.statut) }}</span>
                     @if (p.statut === 'PAYE' && f.statut === 'VALIDEE' && f.capacites.payment_delete) {
@@ -235,13 +256,7 @@ const CONFIRMATIONS: Record<string, { action: 'validation' | 'archivage' | 'enre
           @if (resteApres(f) < 0) { <p class="bea-ct-span2 bea-ct-help bea-ct-neg"><mat-icon>error</mat-icon> Le paiement dépasse le reste à payer ({{ f.reste | montant }} {{ f.devise }}).</p> }
           <label>Date de paiement * <input type="date" formControlName="date_paiement" [max]="today" /></label>
           <label>Montant * <input inputmode="decimal" formControlName="montant" /></label>
-          <label>Mode
-            <select formControlName="mode_paiement">
-              <option value="">—</option>
-              @for (m of store.config()?.modes_paiement ?? []; track m) { <option [value]="m">{{ m }}</option> }
-            </select>
-          </label>
-          <label>Référence (OV, chèque…) <input formControlName="reference_paiement" maxlength="120" /></label>
+          <bea-fx-paiement-detail [group]="payForm" [moyens]="store.config()?.moyens_paiement ?? {}" [modesListe]="store.config()?.modes_paiement ?? []" />
           <label class="bea-ct-span2">Justificatif (document de la facture)
             <select formControlName="justificatif_document_id">
               <option value="">— Aucun —</option>
@@ -303,8 +318,12 @@ export class FactureDrawerComponent {
   readonly payForm = this.fb.group({
     date_paiement: [aujourdhui(), Validators.required],
     montant: ['', Validators.required],
-    mode_paiement: [''],
+    mode_paiement: ['', Validators.required],
     reference_paiement: [''],
+    compte: [''],
+    banque: [''],
+    numero_cheque: [''],
+    carte_derniers_chiffres: ['', Validators.pattern(/^\d{4}$/)],
     justificatif_document_id: [''],
     observation: [''],
   });
@@ -484,7 +503,7 @@ export class FactureDrawerComponent {
   ouvrirPaiement(): void {
     const f = this.f();
     if (!f) return;
-    this.payForm.reset({ date_paiement: aujourdhui(), montant: f.reste ? String(f.reste) : '', mode_paiement: '', reference_paiement: '', justificatif_document_id: '', observation: '' });
+    this.payForm.reset({ date_paiement: aujourdhui(), montant: f.reste ? String(f.reste) : '', mode_paiement: '', reference_paiement: '', compte: '', banque: '', numero_cheque: '', carte_derniers_chiffres: '', justificatif_document_id: '', observation: '' });
     this.paiementOuvert.set(true);
   }
 
@@ -515,7 +534,7 @@ export class FactureDrawerComponent {
       date_paiement: v.date_paiement,
       montant,
       mode_paiement: v.mode_paiement || null,
-      reference_paiement: v.reference_paiement?.trim() || null,
+      ...corpsDetailPaiement(v, this.store.config()?.moyens_paiement?.[v.mode_paiement ?? '']),
       justificatif_document_id: v.justificatif_document_id || null,
       observation: v.observation?.trim() || null,
     };
@@ -682,6 +701,15 @@ export class FactureDrawerComponent {
 
   typePoint(code: string): string {
     return TYPE_POINT_LABELS[code] ?? code;
+  }
+
+  detail(p: FxPaiement): string {
+    return detailPaiement(p);
+  }
+
+  /** Libellé du profil (« Total facture » pour SOMELEC…) ou libellé générique. */
+  lib(f: FactureDetail, champ: ChampProfil): string {
+    return f.profil_config?.libelles?.[champ] ?? LIBELLES_CHAMPS[champ];
   }
 
   date(iso: string | null | undefined): string {

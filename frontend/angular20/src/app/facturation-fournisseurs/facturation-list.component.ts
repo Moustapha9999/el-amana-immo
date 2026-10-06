@@ -40,6 +40,7 @@ const FILTRES_VIDES = {
   year: null as number | null,
   month: null as number | null,
   supplier_id: '',
+  profil_id: '',
   agency_id: '',
   type: '',
   pdv_id: '',
@@ -109,6 +110,12 @@ const FILTRES_VIDES = {
           <select formControlName="supplier_id" (change)="rechercher()">
             <option value="">Tous</option>
             @for (f of store.ref()?.fournisseurs ?? []; track f.id) { <option [value]="f.id">{{ f.libelle }}</option> }
+          </select>
+        </label>
+        <label class="bea-mg__field">Profil
+          <select formControlName="profil_id" (change)="rechercher()">
+            <option value="">Tous</option>
+            @for (p of store.ref()?.profils ?? []; track p.id) { <option [value]="p.id">{{ p.libelle }}</option> }
           </select>
         </label>
         <label class="bea-mg__field">Statut
@@ -218,7 +225,7 @@ const FILTRES_VIDES = {
                         <small class="bea-fx-sub">{{ r.reference_fournisseur }}</small>
                       } @else { <span class="bea-fx-sub">—</span> }
                     </td>
-                    <td>{{ r.fournisseur || '—' }}</td>
+                    <td>{{ r.profil || r.fournisseur || '—' }}@if (r.profil && r.fournisseur) { <small class="bea-fx-sub">{{ r.fournisseur }}</small> }</td>
                     <td>{{ r.agence || '—' }}</td>
                     <td>{{ r.periode_label || '—' }}</td>
                     <td>{{ date(r.date_facture) }}</td>

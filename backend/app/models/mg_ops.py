@@ -18,7 +18,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -480,6 +480,37 @@ class MgContratType(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     actif: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class MgFacturationProfil(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Profil de facturation d'un fournisseur (SOMELEC, MATTEL SMS, MAURITEL ADSL…).
+
+    Données de référence, jamais codées en dur : champs applicables (obligatoire / facultatif /
+    masqué), libellés affichés et taux de TVA par défaut (NULL = non confirmé, aucun calcul).
+    Plusieurs profils peuvent partager le même fournisseur du référentiel ``fournisseurs``.
+    """
+
+    __tablename__ = "mg_facturation_profils"
+    __table_args__ = (UniqueConstraint("code", name="uq_mg_facturation_profils_code"),)
+
+    code: Mapped[str] = mapped_column(String(40))
+    libelle: Mapped[str] = mapped_column(String(120))
+    fournisseur_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("fournisseurs.id"), index=True
+    )
+    type_facture: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    taux_tva: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    champs: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    libelles: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    ordre: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
+
 class MgPointFacturation(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     """Compteur / abonnement d'un fournisseur pour un site (agence, siège, PDV Amanty…).
 
@@ -502,6 +533,9 @@ class MgPointFacturation(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, B
     )
     fournisseur_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("fournisseurs.id"), index=True
+    )
+    profil_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_facturation_profils.id"), nullable=True, index=True
     )
     contrat_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("mg_contrats.id"), nullable=True

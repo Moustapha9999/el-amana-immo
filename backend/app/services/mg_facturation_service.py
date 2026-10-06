@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, null, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -30,7 +30,7 @@ from app.models.mg_achats import (
     MgAchatFactureLigne,
     MgAchatPaiement,
 )
-from app.models.mg_ops import MgContrat, MgContratParametre, MgPointFacturation
+from app.models.mg_ops import MgContrat, MgContratParametre, MgFacturationProfil, MgPointFacturation
 from app.models.organisation import Fournisseur
 from app.schemas.mg_facturation import (
     FactureCreate,
@@ -39,6 +39,8 @@ from app.schemas.mg_facturation import (
     FactureUpdate,
     PointFacturationCreate,
     PointFacturationIn,
+    ProfilCreate,
+    ProfilIn,
 )
 from app.services.audit_helpers import record_audit
 from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
@@ -53,11 +55,12 @@ CENT = Decimal("0.01")
 ZERO = Decimal("0")
 TOLERANCE = Decimal("0.005")
 
-STATUTS = ("BROUILLON", "RECUE", "A_CONTROLER", "VALIDEE", "CONTESTEE", "ANNULEE", "ARCHIVEE")
+STATUTS = ("BROUILLON", "RECUE", "A_CONTROLER", "CONTROLEE", "VALIDEE", "CONTESTEE", "ANNULEE", "ARCHIVEE")
 STATUT_LABELS = {
     "BROUILLON": "Brouillon",
     "RECUE": "Reçue",
     "A_CONTROLER": "À contrôler",
+    "CONTROLEE": "Contrôlée",
     "VALIDEE": "Validée",
     "CONTESTEE": "Contestée",
     "ANNULEE": "Annulée",
@@ -66,23 +69,25 @@ STATUT_LABELS = {
 STATUTS_PAIEMENT = ("A_PAYER", "PARTIELLEMENT_PAYEE", "PAYEE")
 STATUT_PAIEMENT_LABELS = {"A_PAYER": "À payer", "PARTIELLEMENT_PAYEE": "Partiellement payée", "PAYEE": "Payée"}
 # Dette reconnue ou en cours de reconnaissance : suivie pour les échéances et retards.
-STATUTS_OUVERTS = frozenset({"RECUE", "A_CONTROLER", "VALIDEE"})
+STATUTS_OUVERTS = frozenset({"RECUE", "A_CONTROLER", "CONTROLEE", "VALIDEE"})
 # Inclus dans les montants facturés (analyses, tableaux de bord).
-STATUTS_COMPTES = frozenset({"RECUE", "A_CONTROLER", "VALIDEE", "CONTESTEE", "ARCHIVEE"})
+STATUTS_COMPTES = frozenset({"RECUE", "A_CONTROLER", "CONTROLEE", "VALIDEE", "CONTESTEE", "ARCHIVEE"})
 STATUTS_PAYABLES = frozenset({"VALIDEE", "ARCHIVEE"})
 VERROUILLES = frozenset({"ANNULEE", "ARCHIVEE"})
 
 TRANSITIONS: dict[str, tuple[frozenset[str], str]] = {
     "enregistrer": (frozenset({"BROUILLON"}), "RECUE"),
-    "controler": (frozenset({"BROUILLON", "RECUE", "CONTESTEE"}), "A_CONTROLER"),
-    "valider": (frozenset({"RECUE", "A_CONTROLER"}), "VALIDEE"),
-    "contester": (frozenset({"RECUE", "A_CONTROLER", "VALIDEE"}), "CONTESTEE"),
-    "annuler": (frozenset({"BROUILLON", "RECUE", "A_CONTROLER", "VALIDEE", "CONTESTEE"}), "ANNULEE"),
+    "controler": (frozenset({"BROUILLON", "RECUE", "CONTROLEE", "CONTESTEE"}), "A_CONTROLER"),
+    "valider_controle": (frozenset({"RECUE", "A_CONTROLER"}), "CONTROLEE"),
+    "valider": (frozenset({"CONTROLEE"}), "VALIDEE"),
+    "contester": (frozenset({"RECUE", "A_CONTROLER", "CONTROLEE", "VALIDEE"}), "CONTESTEE"),
+    "annuler": (frozenset({"BROUILLON", "RECUE", "A_CONTROLER", "CONTROLEE", "VALIDEE", "CONTESTEE"}), "ANNULEE"),
     "archiver": (frozenset({"VALIDEE", "ANNULEE"}), "ARCHIVEE"),
 }
 PERMISSION_ACTION = {
     "enregistrer": "mg.factures.update",
     "controler": "mg.factures.update",
+    "valider_controle": "mg.factures.update",
     "valider": "mg.factures.validate",
     "contester": "mg.factures.validate",
     "annuler": "mg.factures.delete",
@@ -91,6 +96,7 @@ PERMISSION_ACTION = {
 ACTION_LABELS = {
     "enregistrer": "Facture enregistrée (reçue)",
     "controler": "Facture mise en contrôle",
+    "valider_controle": "Contrôle terminé",
     "valider": "Facture validée",
     "contester": "Facture contestée",
     "annuler": "Facture annulée",
@@ -121,7 +127,7 @@ TYPES_DOCUMENT = [
     ("AVOIR", "Avoir"),
     ("AUTRE", "Autre"),
 ]
-MODES_PAIEMENT = ["Virement", "Espèces", "Amanty", "Chèque", "Carte", "Prélèvement"]
+MODES_PAIEMENT = ["Amanty", "Virement", "Carte", "Chèque", "Espèces", "Prélèvement"]
 DEVISES = ["MRU", "EUR", "USD"]
 MOIS_LABELS = [
     "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
@@ -143,11 +149,12 @@ GESTION_PERMISSIONS = ("mg.factures.create", "mg.factures.update", "mg.factures.
 
 CHAMPS_FINANCIERS = frozenset(
     {"montant_ht", "montant_tva", "autres_taxes", "remise", "montant_ttc", "montant_a_payer", "devise", "lignes",
-     "fournisseur_id", "numero_fournisseur"}
+     "fournisseur_id", "numero_fournisseur", "arrieres", "reglage", "profil_id"}
 )
 CHAMPS_LABELS = {
     "numero_fournisseur": "N° facture fournisseur",
     "fournisseur_id": "Fournisseur",
+    "profil_id": "Profil de facturation",
     "point_facturation_id": "Point de facturation",
     "agence_id": "Agence",
     "contrat_id": "Contrat",
@@ -165,10 +172,50 @@ CHAMPS_LABELS = {
     "autres_taxes": "Autres taxes",
     "remise": "Remise",
     "montant_ttc": "Montant TTC",
+    "arrieres": "Arriérés",
+    "reglage": "Réglage",
     "montant_a_payer": "Montant à payer",
     "devise": "Devise",
     "observation": "Observation",
 }
+
+# Champs configurables par profil de facturation (libellé par défaut). Les champs communs
+# (fournisseur, point, agence, date de facture, réception, devise, observation) restent toujours affichés.
+CHAMPS_PROFIL = {
+    "numero_fournisseur": "N° facture",
+    "reference_fournisseur": "Référence (compteur / abonnement)",
+    "periode": "Période facturée",
+    "periode_debut": "Début de période",
+    "periode_fin": "Fin de période",
+    "montant_ht": "Montant HT",
+    "montant_tva": "TVA",
+    "autres_taxes": "Autres taxes / redevances",
+    "remise": "Remise",
+    "montant_ttc": "Montant TTC",
+    "arrieres": "Arriérés",
+    "reglage": "Réglage",
+    "montant_a_payer": "Total à payer",
+    "date_echeance": "Échéance",
+}
+ETATS_CHAMP = ("obligatoire", "facultatif", "masque")
+
+# Détail exigé par moyen de paiement : champ → (libellé, obligatoire).
+MOYENS_PAIEMENT: dict[str, dict[str, tuple[str, bool]]] = {
+    "Amanty": {"compte": ("N° / compte Amanty", True), "reference_paiement": ("Référence transaction", False)},
+    "Virement": {
+        "compte": ("RIB / compte émetteur", True),
+        "banque": ("Banque", False),
+        "reference_paiement": ("Référence du virement", False),
+    },
+    "Carte": {
+        "carte_derniers_chiffres": ("4 derniers chiffres de la carte", True),
+        "reference_paiement": ("Référence transaction", False),
+    },
+    "Chèque": {"numero_cheque": ("N° de chèque", True), "banque": ("Banque", False), "compte": ("Compte", False)},
+    "Espèces": {"reference_paiement": ("Caisse / référence", False)},
+    "Prélèvement": {"compte": ("Compte prélevé", False), "reference_paiement": ("Référence", False)},
+}
+CHAMPS_DETAIL_PAIEMENT = ("compte", "banque", "numero_cheque", "carte_derniers_chiffres", "reference_paiement")
 
 
 # ——— Règles pures (testées unitairement) ———
@@ -303,10 +350,160 @@ def variation_pct(valeur, reference) -> float | None:
     return round(float((Decimal(valeur) - Decimal(reference)) / Decimal(reference) * 100), 1)
 
 
+def total_a_payer_auto(ttc, arrieres) -> Decimal:
+    """Total à payer non saisi = TTC + arriérés (les arriérés ne sont jamais déduits ni écrasés)."""
+    return q2(Decimal(ttc or 0) + Decimal(arrieres or 0))
+
+
 def a_payer_effectif(f: MgAchatFacture) -> Decimal:
     if f.montant_a_payer is not None:
         return Decimal(f.montant_a_payer)
-    return Decimal(f.montant_ttc or 0)
+    return total_a_payer_auto(f.montant_ttc, getattr(f, "arrieres", None))
+
+
+def etat_champ(champs: dict | None, champ: str) -> str:
+    """État d'un champ pour un profil ; champ non configuré (ou pas de profil) = facultatif."""
+    etat = (champs or {}).get(champ)
+    return etat if etat in ETATS_CHAMP else "facultatif"
+
+
+def _champ_renseigne(f: MgAchatFacture, champ: str) -> bool:
+    if champ == "periode":
+        return bool(f.annee and f.mois)
+    value = getattr(f, champ, None)
+    if champ == "montant_ttc":
+        return value is not None and Decimal(value) > 0
+    if isinstance(value, str):
+        return bool(value.strip())
+    return value is not None
+
+
+def champs_manquants(f: MgAchatFacture, champs: dict | None) -> list[str]:
+    """Champs obligatoires du profil non renseignés (clés de ``CHAMPS_PROFIL``)."""
+    return [c for c in CHAMPS_PROFIL if etat_champ(champs, c) == "obligatoire" and not _champ_renseigne(f, c)]
+
+
+def ecart_tva(ht, tva, taux) -> Decimal | None:
+    """Écart TVA saisie − HT × taux. None si le taux n'est pas configuré ou HT / TVA absents."""
+    if taux is None or ht is None or tva is None:
+        return None
+    return q2(Decimal(tva) - Decimal(ht) * Decimal(taux) / Decimal(100))
+
+
+def tolerance_tva(ht) -> Decimal:
+    """Arrondis fournisseurs : 1 MRU ou 0,5 % du HT."""
+    return max(Decimal("1"), Decimal(ht or 0) * Decimal("0.005"))
+
+
+_PAN_RE = re.compile(r"\d(?:[ -]?\d)*")
+
+
+def _luhn(digits: str) -> bool:
+    total = 0
+    for i, ch in enumerate(reversed(digits)):
+        n = int(ch)
+        if i % 2:
+            n *= 2
+            if n > 9:
+                n -= 9
+        total += n
+    return total % 10 == 0
+
+
+def contient_numero_carte(text: str | None) -> bool:
+    """Détecte un numéro de carte complet dans un texte libre.
+
+    Une suite de chiffres (espaces / tirets admis) de 13 à 19 chiffres valide Luhn ; une suite plus
+    longue (RIB 24 chiffres) n'est pas une carte.
+    """
+    if not text:
+        return False
+    for m in _PAN_RE.finditer(text):
+        digits = re.sub(r"\D", "", m.group(0))
+        if 13 <= len(digits) <= 19 and _luhn(digits):
+            return True
+    return False
+
+
+def masquer_carte(raw: str | None) -> str | None:
+    """« 1234 » → « •••• 1234 ». Tout autre format (dont le numéro complet) est refusé, jamais stocké."""
+    if raw is None or not str(raw).strip():
+        return None
+    digits = re.sub(r"[\s•*xX.-]", "", str(raw))
+    if not re.fullmatch(r"\d{4}", digits):
+        raise AppError(
+            "Carte bancaire : saisissez uniquement les 4 derniers chiffres (le numéro complet n'est jamais conservé)",
+            code="PAIEMENT_CARTE_INVALIDE",
+        )
+    return f"•••• {digits}"
+
+
+def detail_paiement(mode: str, valeurs: dict, observation: str | None = None) -> dict:
+    """Colonnes de détail d'un paiement selon son moyen ; champs non applicables vidés.
+
+    Refuse tout numéro de carte complet, quel que soit le champ (observation comprise).
+    """
+    if mode not in MOYENS_PAIEMENT:
+        raise AppError("Moyen de paiement non pris en charge", code="PAIEMENT_MODE_INVALIDE")
+    textes = [observation] + [v for v in valeurs.values() if isinstance(v, str)]
+    if any(contient_numero_carte(t) for t in textes):
+        raise AppError(
+            "Numéro de carte bancaire complet détecté : seuls les 4 derniers chiffres sont autorisés",
+            code="PAIEMENT_CARTE_INVALIDE",
+        )
+    attendus = MOYENS_PAIEMENT[mode]
+    propres = {k: _clean(valeurs.get(k)) if k in attendus else None for k in CHAMPS_DETAIL_PAIEMENT}
+    manquants = [lib for k, (lib, req) in attendus.items() if req and not propres.get(k)]
+    if manquants:
+        raise AppError(f"{mode} : " + ", ".join(manquants) + " obligatoire(s)", code="PAIEMENT_DETAIL_MANQUANT")
+    carte = propres.pop("carte_derniers_chiffres")
+    propres["carte_masquee"] = masquer_carte(carte) if carte else None
+    return propres
+
+
+def controles_facture(
+    f: MgAchatFacture,
+    profil_champs: dict | None,
+    taux_tva,
+    nb_documents: int,
+    fournisseur_actif: bool = True,
+) -> list[dict]:
+    """Contrôles automatiques. « bloquant » empêche le passage à CONTRÔLÉE ; « attention » informe.
+
+    Aucune règle fiscale n'est supposée : la TVA n'est contrôlée que si le profil porte un taux.
+    """
+    out: list[dict] = []
+
+    def add(code: str, niveau: str, message: str) -> None:
+        out.append({"code": code, "niveau": niveau, "message": message})
+
+    if not fournisseur_actif:
+        add("fournisseur_inactif", "bloquant", "Fournisseur inactif ou supprimé")
+    manquants = champs_manquants(f, profil_champs)
+    if manquants:
+        add(
+            "champs_obligatoires", "bloquant",
+            "Champs obligatoires manquants : " + ", ".join(CHAMPS_PROFIL[c] for c in manquants),
+        )
+    if a_payer_effectif(f) <= 0:
+        add("montant_absent", "bloquant", "Montant à payer nul ou absent")
+    if f.periode_debut and f.periode_fin and f.periode_fin < f.periode_debut:
+        add("periode_incoherente", "bloquant", "La fin de période précède son début")
+    ecart = ecart_tva(f.montant_ht, f.montant_tva, taux_tva)
+    if ecart is not None and abs(ecart) > tolerance_tva(f.montant_ht):
+        add(
+            "tva_incoherente", "attention",
+            f"TVA saisie ≠ HT × {Decimal(taux_tva).normalize()} % (écart {ecart})",
+        )
+    if f.montant_a_payer is not None and f.arrieres:
+        attendu = total_a_payer_auto(f.montant_ttc, f.arrieres)
+        if abs(Decimal(f.montant_a_payer) - attendu) > TOLERANCE:
+            add("total_a_payer", "attention", f"Total à payer ≠ TTC + arriérés ({attendu})")
+    if nb_documents == 0:
+        add("document_absent", "attention", "Aucune facture scannée jointe")
+    if f.date_echeance is None:
+        add("echeance_absente", "attention", "Aucune date limite de paiement")
+    return out
 
 
 def _iso(value) -> str | None:
@@ -328,6 +525,39 @@ def _clean(value: str | None) -> str | None:
         return None
     text = value.strip()
     return text or None
+
+
+def _forcer_null(f: MgAchatFacture) -> None:
+    """HT / TVA absents restent NULL : sans cela le défaut ORM du circuit Achats (0) s'appliquerait à l'INSERT."""
+    for champ in ("montant_ht", "montant_tva"):
+        if getattr(f, champ) is None:
+            setattr(f, champ, null())
+
+
+def _detail_paiement(p: MgAchatPaiement) -> dict:
+    return {
+        "compte": p.compte,
+        "banque": p.banque,
+        "numero_cheque": p.numero_cheque,
+        "carte_masquee": p.carte_masquee,
+    }
+
+
+def _profil_dict(p: MgFacturationProfil, fournisseur: str | None = None) -> dict:
+    return {
+        "id": str(p.id),
+        "code": p.code,
+        "libelle": p.libelle,
+        "fournisseur_id": str(p.fournisseur_id),
+        "fournisseur": fournisseur,
+        "type_facture": p.type_facture,
+        "taux_tva": to_float(p.taux_tva),
+        "champs": {c: etat_champ(p.champs, c) for c in CHAMPS_PROFIL},
+        "libelles": {c: (p.libelles or {}).get(c) or lib for c, lib in CHAMPS_PROFIL.items()},
+        "description": p.description,
+        "actif": p.actif,
+        "ordre": p.ordre,
+    }
 
 
 # ——— Périmètre et capacités ———
@@ -373,6 +603,7 @@ async def capacites(db: AsyncSession, user: User) -> dict[str, bool]:
 CAPACITE_ACTION = {
     "enregistrer": "update",
     "controler": "update",
+    "valider_controle": "update",
     "valider": "validate",
     "contester": "validate",
     "annuler": "delete",
@@ -481,6 +712,12 @@ class MgFacturationService:
             "types_document": [{"code": c, "libelle": l} for c, l in TYPES_DOCUMENT],
             "periodicites": list(PERIODICITES_POINT.keys()),
             "modes_paiement": MODES_PAIEMENT,
+            "moyens_paiement": {
+                mode: [{"champ": k, "libelle": lib, "obligatoire": req} for k, (lib, req) in champs.items()]
+                for mode, champs in MOYENS_PAIEMENT.items()
+            },
+            "champs_profil": [{"code": k, "libelle": v} for k, v in CHAMPS_PROFIL.items()],
+            "profils": await self.list_profils(actifs=False),
             "devises": DEVISES,
             "devise": "MRU",
             "mois": MOIS_LABELS,
@@ -558,6 +795,32 @@ class MgFacturationService:
             raise AppError("Contrat introuvable", code="REFERENCE_INTROUVABLE")
         return ct
 
+    async def _profil(self, profil_id, *, actif: bool = True) -> MgFacturationProfil:
+        profil = await self.db.get(MgFacturationProfil, profil_id)
+        if not profil:
+            raise AppError("Profil de facturation introuvable", code="REFERENCE_INTROUVABLE")
+        if actif and not profil.actif:
+            raise AppError("Profil de facturation inactif", code="PROFIL_INACTIF")
+        return profil
+
+    async def _profil_champs(self, f: MgAchatFacture) -> tuple[dict | None, Decimal | None]:
+        if not f.profil_id:
+            return None, None
+        profil = await self.db.get(MgFacturationProfil, f.profil_id)
+        return (profil.champs, profil.taux_tva) if profil else (None, None)
+
+    async def _exiger_champs(self, f: MgAchatFacture) -> None:
+        """Champs obligatoires du profil : exigés dès que la facture quitte le brouillon."""
+        if f.statut == "BROUILLON":
+            return
+        champs, _taux = await self._profil_champs(f)
+        manquants = champs_manquants(f, champs)
+        if manquants:
+            raise AppError(
+                "Champs obligatoires pour ce fournisseur : " + ", ".join(CHAMPS_PROFIL[c] for c in manquants),
+                code="FACTURE_CHAMPS_OBLIGATOIRES",
+            )
+
     async def _point(self, point_id, *, lock: bool = False) -> MgPointFacturation:
         stmt = select(MgPointFacturation).where(
             MgPointFacturation.id == point_id, MgPointFacturation.deleted_at.is_(None)
@@ -618,11 +881,12 @@ class MgFacturationService:
     def _select(self, *columns):
         P = MgPointFacturation
         return (
-            select(*(columns or (MgAchatFacture, P, Fournisseur.raison_sociale, Agence.libelle)))
+            select(*(columns or (MgAchatFacture, P, Fournisseur.raison_sociale, Agence.libelle, MgFacturationProfil.libelle)))
             .select_from(MgAchatFacture)
             .outerjoin(P, P.id == MgAchatFacture.point_facturation_id)
             .outerjoin(Fournisseur, Fournisseur.id == MgAchatFacture.fournisseur_id)
             .outerjoin(Agence, Agence.id == MgAchatFacture.agence_id)
+            .outerjoin(MgFacturationProfil, MgFacturationProfil.id == MgAchatFacture.profil_id)
             .where(MgAchatFacture.origine == ORIGINE_FACTURATION, MgAchatFacture.deleted_at.is_(None))
         )
 
@@ -682,6 +946,8 @@ class MgFacturationService:
             stmt = stmt.where(F.date_facture <= filtres["date_to"])
         if filtres.get("fournisseur_id"):
             stmt = stmt.where(F.fournisseur_id == filtres["fournisseur_id"])
+        if filtres.get("profil_id"):
+            stmt = stmt.where(F.profil_id == filtres["profil_id"])
         if filtres.get("agence_id"):
             stmt = stmt.where(F.agence_id == filtres["agence_id"])
         if filtres.get("point_id"):
@@ -712,6 +978,7 @@ class MgFacturationService:
             P.compteur.ilike(like),
             Fournisseur.raison_sociale.ilike(like),
             Agence.libelle.ilike(like),
+            MgFacturationProfil.libelle.ilike(like),
         ]
         digits = re.sub(r"\D", "", q)
         if len(digits) >= 4:
@@ -747,6 +1014,8 @@ class MgFacturationService:
         today: date,
         proche: int,
         nb_documents: int | None = None,
+        *,
+        profil: str | None = None,
     ) -> dict:
         a_payer = a_payer_effectif(f)
         paye = Decimal(f.montant_paye or 0)
@@ -763,6 +1032,8 @@ class MgFacturationService:
             "numero_fournisseur": f.numero_fournisseur,
             "fournisseur_id": str(f.fournisseur_id) if f.fournisseur_id else None,
             "fournisseur": fournisseur,
+            "profil_id": str(f.profil_id) if f.profil_id else None,
+            "profil": profil,
             "point_facturation_id": str(f.point_facturation_id) if f.point_facturation_id else None,
             "point_code": point.code if point else None,
             "point_nom": point.nom if point else None,
@@ -787,6 +1058,8 @@ class MgFacturationService:
             "autres_taxes": to_float(f.autres_taxes),
             "remise": to_float(f.remise),
             "montant_ttc": to_float(f.montant_ttc),
+            "arrieres": to_float(f.arrieres),
+            "reglage": to_float(f.reglage),
             "montant_a_payer": to_float(a_payer),
             "montant_paye": to_float(paye),
             "reste": to_float(reste),
@@ -824,7 +1097,7 @@ class MgFacturationService:
         if limit:
             stmt = stmt.limit(limit)
         rows = (await self.db.execute(stmt)).all()
-        return [self._row(f, p, fr, ag, today, proche) for f, p, fr, ag in rows]
+        return [self._row(f, p, fr, ag, today, proche, profil=pr) for f, p, fr, ag, pr in rows]
 
     SORTS = {
         "date_facture": MgAchatFacture.date_facture,
@@ -871,7 +1144,7 @@ class MgFacturationService:
         current = max(1, int(page or 1))
         rows = (await self.db.execute(base.order_by(*order).offset((current - 1) * size).limit(size))).all()
         docs = await self._nb_documents([r[0].id for r in rows])
-        items = [self._row(f, p, fr, ag, today, proche, docs.get(str(f.id), 0)) for f, p, fr, ag in rows]
+        items = [self._row(f, p, fr, ag, today, proche, docs.get(str(f.id), 0), profil=pr) for f, p, fr, ag, pr in rows]
         return {
             "items": items,
             "total": int(totals[0] or 0),
@@ -962,6 +1235,7 @@ class MgFacturationService:
                 "montant": to_float(p.montant),
                 "mode_paiement": p.mode_paiement,
                 "reference_paiement": p.reference_paiement,
+                **_detail_paiement(p),
                 "observation": p.observation,
                 "statut": p.statut,
                 "justificatif_document_id": str(p.justificatif_document_id) if p.justificatif_document_id else None,
@@ -982,19 +1256,30 @@ class MgFacturationService:
         ).first()
         if not row or (self.scope_agence and row[0].agence_id != self.scope_agence):
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Facture introuvable")
-        f, point, fournisseur, agence = row
+        f, point, fournisseur, agence, profil_libelle = row
         caps = await capacites(self.db, user)
         paiements = await self._paiements_dicts(f.id) if caps["payment_view"] else []
         documents = await self.list_documents(f.id) if caps["documents_view"] else []
         nb_actifs = sum(1 for p in paiements if p["statut"] == "PAYE") if caps["payment_view"] else len(
             await self._paiements_actifs(f.id)
         )
-        data = self._row(f, point, fournisseur, agence, today, proche, len(documents))
+        nb_docs = len(documents) if caps["documents_view"] else (await self._nb_documents([f.id])).get(str(f.id), 0)
+        data = self._row(f, point, fournisseur, agence, today, proche, nb_docs, profil=profil_libelle)
         contrat = await self.db.get(MgContrat, f.contrat_id) if f.contrat_id else None
         createur = await self.db.get(User, f.created_by) if f.created_by else None
         valideur = await self.db.get(User, f.valide_by) if f.valide_by else None
+        controleur = await self.db.get(User, f.controle_by) if f.controle_by else None
+        profil = await self.db.get(MgFacturationProfil, f.profil_id) if f.profil_id else None
+        fr = await self.db.get(Fournisseur, f.fournisseur_id) if f.fournisseur_id else None
         data.update(
             {
+                "profil_config": _profil_dict(profil, fournisseur) if profil else None,
+                "controles": controles_facture(
+                    f, profil.champs if profil else None, profil.taux_tva if profil else None, nb_docs,
+                    fournisseur_actif=bool(fr and fr.deleted_at is None and fr.is_active),
+                ),
+                "controle_at": _iso(f.controle_at),
+                "controle_by_nom": controleur.full_name if controleur else None,
                 "lignes": [
                     {
                         "id": str(l.id),
@@ -1037,7 +1322,8 @@ class MgFacturationService:
                 "archived_at": _iso(f.archived_at),
                 "actions": actions_possibles(f, caps, nb_actifs),
                 "modifiable": f.statut not in VERROUILLES and caps["update"],
-                "montants_modifiables": f.statut in {"BROUILLON", "RECUE", "A_CONTROLER", "CONTESTEE"} and caps["update"],
+                "montants_modifiables": f.statut in {"BROUILLON", "RECUE", "A_CONTROLER", "CONTROLEE", "CONTESTEE"}
+                and caps["update"],
                 "supprimable": f.statut in {"BROUILLON", "RECUE"} and nb_actifs == 0 and caps["delete"],
                 "capacites": caps,
             }
@@ -1109,8 +1395,11 @@ class MgFacturationService:
             if data.lignes and "montant_ht" not in champs:
                 f.montant_ht = q2(total_lignes)
 
-        ancien_ttc = Decimal(f.montant_ttc or 0)
+        ancien_auto = total_a_payer_auto(f.montant_ttc, f.arrieres)
         ancien_a_payer = f.montant_a_payer
+        for champ in ("arrieres", "reglage"):
+            if champ in champs:
+                setattr(f, champ, q2(getattr(data, champ)))
         for champ in ("montant_ht", "montant_tva", "autres_taxes", "remise"):
             if champ in champs:
                 value = getattr(data, champ)
@@ -1125,12 +1414,12 @@ class MgFacturationService:
                     "Montant TTC incohérent avec HT + TVA + autres taxes − remise",
                     code="FACTURE_MONTANT_INCOHERENT",
                 )
-        if "montant_a_payer" in champs:
+        # Total à payer : saisi tel quel, sinon TTC + arriérés (suit le TTC tant qu'il n'a pas été forcé).
+        auto = total_a_payer_auto(f.montant_ttc, f.arrieres)
+        if "montant_a_payer" in champs and data.montant_a_payer is not None:
             f.montant_a_payer = q2(data.montant_a_payer)
-        elif ancien_a_payer is not None and Decimal(ancien_a_payer) == ancien_ttc:
-            f.montant_a_payer = f.montant_ttc
-        if f.montant_a_payer is None and f.montant_ttc > 0:
-            f.montant_a_payer = f.montant_ttc
+        elif "montant_a_payer" in champs or ancien_a_payer is None or Decimal(ancien_a_payer) == ancien_auto:
+            f.montant_a_payer = auto if auto > 0 else None
 
         if f.date_echeance is None and "date_echeance" not in champs:
             delai = await self._param_int("factures.delai_paiement_jours", 0)
@@ -1187,9 +1476,33 @@ class MgFacturationService:
         elif f.point_facturation_id:
             point = await self.db.get(MgPointFacturation, f.point_facturation_id)
 
+        profil = None
+        if "profil_id" in champs:
+            profil = await self._profil(data.profil_id, actif=data.profil_id != f.profil_id) if data.profil_id else None
+            f.profil_id = profil.id if profil else None
+        elif f.profil_id:
+            profil = await self.db.get(MgFacturationProfil, f.profil_id)
+        elif point and point.profil_id:
+            profil = await self.db.get(MgFacturationProfil, point.profil_id)
+            f.profil_id = profil.id if profil else None
+        fournisseur_saisi = data.fournisseur_id if "fournisseur_id" in champs else None
+        if profil and "profil_id" not in champs and (
+            (point and point.fournisseur_id != profil.fournisseur_id)
+            or (fournisseur_saisi and fournisseur_saisi != profil.fournisseur_id)
+        ):
+            profil, f.profil_id = None, None
+        if profil and point and point.fournisseur_id != profil.fournisseur_id:
+            raise AppError("Le point de facturation appartient à un autre fournisseur que le profil", code="POINT_FOURNISSEUR_DIFFERENT")
+        if profil and fournisseur_saisi and fournisseur_saisi != profil.fournisseur_id:
+            raise AppError("Le profil choisi appartient à un autre fournisseur", code="PROFIL_FOURNISSEUR_DIFFERENT")
+        if profil and not f.type_facture and not ("type_facture" in champs and data.type_facture):
+            f.type_facture = profil.type_facture
+
         fournisseur_id = data.fournisseur_id if "fournisseur_id" in champs and data.fournisseur_id else None
         if fournisseur_id is None:
-            fournisseur_id = f.fournisseur_id or (point.fournisseur_id if point else None)
+            fournisseur_id = (profil.fournisseur_id if profil else None) or f.fournisseur_id or (
+                point.fournisseur_id if point else None
+            )
         if point and fournisseur_id and point.fournisseur_id != fournisseur_id:
             if "fournisseur_id" in champs and data.fournisseur_id:
                 raise AppError(
@@ -1238,7 +1551,10 @@ class MgFacturationService:
         await self._appliquer(f, data, champs, point)
         if f.date_reception is None and data.enregistrer:
             f.date_reception = date.today()
+        await self._exiger_champs(f)
         await self._check_doublons(f, data.forcer)
+        apres = self._snapshot(f)
+        _forcer_null(f)
         self.db.add(f)
         periode = libelle_periode(f.annee, f.mois)
         self._event(
@@ -1248,7 +1564,7 @@ class MgFacturationService:
         )
         if point:
             self._event(EVT_POINT, point.id, "FACTURE", f"Facture {f.reference} saisie" + (f" — {periode}" if periode else ""), user)
-        await self._audit(user, "factures.create", f.id, after=self._snapshot(f))
+        await self._audit(user, "factures.create", f.id, after=apres)
         try:
             await self.db.commit()
         except IntegrityError:
@@ -1272,6 +1588,7 @@ class MgFacturationService:
         before = self._snapshot(f)
         point = await self._resoudre_rattachements(f, data, champs)
         await self._appliquer(f, data, champs, point)
+        await self._exiger_champs(f)
         await self._check_doublons(f, data.forcer)
         f.updated_by = user.id
         if f.statut in STATUTS_PAYABLES:
@@ -1280,9 +1597,17 @@ class MgFacturationService:
         changes = [CHAMPS_LABELS.get(k, k) for k in CHAMPS_LABELS if before.get(k) != after.get(k)]
         if "lignes" in champs:
             changes.append("Lignes")
+        recontrole = f.statut == "CONTROLEE" and any(
+            before.get(k) != after.get(k) for k in CHAMPS_FINANCIERS | {"point_facturation_id", "mois", "annee", "periode_debut"}
+        )
+        if recontrole:
+            f.statut = "A_CONTROLER"
+            f.controle_at = None
+            f.controle_by = None
         self._event(
             EVT_FACTURE, f.id, "MODIFICATION",
-            "Modification : " + (", ".join(changes) if changes else "aucun changement de valeur"),
+            "Modification : " + (", ".join(changes) if changes else "aucun changement de valeur")
+            + (" — contrôle à refaire (À contrôler)" if recontrole else ""),
             user,
         )
         await self._audit(user, "factures.update", f.id, before=before, after=after)
@@ -1328,6 +1653,27 @@ class MgFacturationService:
                 status_code=409,
                 code="FACTURE_PAIEMENTS_EXISTANTS",
             )
+        if action in {"enregistrer", "controler", "valider_controle", "valider"}:
+            champs_profil, taux = await self._profil_champs(f)
+            manquants = champs_manquants(f, champs_profil)
+            if manquants:
+                raise AppError(
+                    "Champs obligatoires pour ce fournisseur : " + ", ".join(CHAMPS_PROFIL[c] for c in manquants),
+                    code="FACTURE_CHAMPS_OBLIGATOIRES",
+                )
+        if action == "valider_controle":
+            fr = await self.db.get(Fournisseur, f.fournisseur_id)
+            nb_docs = (await self._nb_documents([f.id])).get(str(f.id), 0)
+            bloquants = [
+                c["message"]
+                for c in controles_facture(
+                    f, champs_profil, taux, nb_docs, fournisseur_actif=bool(fr and fr.deleted_at is None and fr.is_active)
+                )
+                if c["niveau"] == "bloquant"
+            ]
+            if bloquants:
+                raise AppError("Contrôle non concluant : " + " ; ".join(bloquants), code="FACTURE_CONTROLE_BLOQUANT")
+            await self._check_doublons(f, forcer=True)
         if action == "valider":
             if a_payer_effectif(f) <= 0:
                 raise AppError("Montant à payer requis avant validation", code="FACTURE_MONTANT_REQUIS")
@@ -1344,6 +1690,12 @@ class MgFacturationService:
         f.updated_by = user.id
         if action == "enregistrer" and f.date_reception is None:
             f.date_reception = date.today()
+        elif action == "valider_controle":
+            f.controle_at = now
+            f.controle_by = user.id
+        elif action == "controler":
+            f.controle_at = None
+            f.controle_by = None
         elif action == "valider":
             f.valide_at = now
             f.valide_by = user.id
@@ -1384,6 +1736,7 @@ class MgFacturationService:
             bon_id=None,
             statut="BROUILLON",
             fournisseur_id=src.fournisseur_id,
+            profil_id=src.profil_id,
             point_facturation_id=src.point_facturation_id,
             agence_id=src.agence_id,
             contrat_id=src.contrat_id,
@@ -1404,6 +1757,7 @@ class MgFacturationService:
         )
         if annee and mois:
             f.periode_debut = date(annee, mois, 1)
+        _forcer_null(f)
         self.db.add(f)
         self._event(EVT_FACTURE, f.id, "CREATION", f"Brouillon créé par duplication de {src.reference}", user)
         self._event(EVT_FACTURE, src.id, "DUPLICATION", f"Dupliquée vers {f.reference}", user)
@@ -1429,6 +1783,9 @@ class MgFacturationService:
             raise AppError("Date de paiement future", code="PAIEMENT_DATE_INVALIDE")
         await self._check_justificatif(f, data.justificatif_document_id)
         mode = _clean(data.mode_paiement)
+        if not mode:
+            raise AppError("Moyen de paiement obligatoire", code="CHAMP_OBLIGATOIRE")
+        detail = detail_paiement(mode, {k: getattr(data, k) for k in CHAMPS_DETAIL_PAIEMENT}, _clean(data.observation))
         p = MgAchatPaiement(
             id=uuid.uuid4(),
             reference=await self._next_paiement_ref(),
@@ -1439,11 +1796,11 @@ class MgFacturationService:
             date_echeance=f.date_echeance,
             date_paiement=data.date_paiement,
             mode_paiement=mode,
-            reference_paiement=_clean(data.reference_paiement),
             observation=_clean(data.observation),
             justificatif_document_id=data.justificatif_document_id,
             statut="PAYE",
             created_by=user.id,
+            **detail,
         )
         self.db.add(p)
         await self._recalculer_paiements(f)
@@ -1503,12 +1860,21 @@ class MgFacturationService:
             if data.date_paiement > date.today():
                 raise AppError("Date de paiement future", code="PAIEMENT_DATE_INVALIDE")
             p.date_paiement = data.date_paiement
-        if "mode_paiement" in champs:
-            p.mode_paiement = _clean(data.mode_paiement)
-        if "reference_paiement" in champs:
-            p.reference_paiement = _clean(data.reference_paiement)
         if "observation" in champs:
             p.observation = _clean(data.observation)
+        if champs & ({"mode_paiement", "observation"} | set(CHAMPS_DETAIL_PAIEMENT)):
+            mode = _clean(data.mode_paiement) if "mode_paiement" in champs else p.mode_paiement
+            if not mode:
+                raise AppError("Moyen de paiement obligatoire", code="CHAMP_OBLIGATOIRE")
+            actuels = {
+                "compte": p.compte, "banque": p.banque, "numero_cheque": p.numero_cheque,
+                "reference_paiement": p.reference_paiement,
+                "carte_derniers_chiffres": re.sub(r"\D", "", p.carte_masquee) if p.carte_masquee else None,
+            }
+            valeurs = {k: getattr(data, k) if k in champs else actuels[k] for k in CHAMPS_DETAIL_PAIEMENT}
+            for k, v in detail_paiement(mode, valeurs, p.observation).items():
+                setattr(p, k, v)
+            p.mode_paiement = mode
         if "justificatif_document_id" in champs:
             await self._check_justificatif(f, data.justificatif_document_id)
             p.justificatif_document_id = data.justificatif_document_id
@@ -1596,6 +1962,7 @@ class MgFacturationService:
                 "montant": to_float(p.montant),
                 "mode_paiement": p.mode_paiement,
                 "reference_paiement": p.reference_paiement,
+                **_detail_paiement(p),
                 "statut": p.statut,
                 "observation": p.observation,
             }
@@ -1704,6 +2071,7 @@ class MgFacturationService:
             "agence": agence,
             "fournisseur_id": str(p.fournisseur_id),
             "fournisseur": fournisseur,
+            "profil_id": str(p.profil_id) if p.profil_id else None,
             "contrat_id": str(p.contrat_id) if p.contrat_id else None,
             "reference_fournisseur": p.reference_fournisseur,
             "reference_normalisee": p.reference_normalisee,
@@ -1814,6 +2182,9 @@ class MgFacturationService:
         if self.scope_agence and agence_id != self.scope_agence:
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Agence hors de votre périmètre")
         contrat_id = (await self._contrat(data.contrat_id)).id if data.contrat_id else None
+        profil = await self._profil(data.profil_id) if data.profil_id else None
+        if profil and profil.fournisseur_id != fr.id:
+            raise AppError("Le profil choisi appartient à un autre fournisseur", code="PROFIL_FOURNISSEUR_DIFFERENT")
         if data.date_debut and data.date_fin and data.date_fin < data.date_debut:
             raise AppError("La date de fin précède la date de début", code="POINT_DATES_INVALIDES")
         p = MgPointFacturation(
@@ -1823,6 +2194,7 @@ class MgFacturationService:
             nom=data.nom.strip(),
             agence_id=agence_id,
             fournisseur_id=fr.id,
+            profil_id=profil.id if profil else None,
             contrat_id=contrat_id,
             reference_fournisseur=affichee[:80],
             reference_normalisee=normalisee[:80],
@@ -1894,6 +2266,14 @@ class MgFacturationService:
                 raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Agence hors de votre périmètre")
         if "contrat_id" in champs:
             p.contrat_id = (await self._contrat(data.contrat_id)).id if data.contrat_id else None
+        if "profil_id" in champs:
+            p.profil_id = (await self._profil(data.profil_id, actif=data.profil_id != p.profil_id)).id if data.profil_id else None
+        if p.profil_id:
+            profil = await self.db.get(MgFacturationProfil, p.profil_id)
+            if profil and profil.fournisseur_id != p.fournisseur_id:
+                if "profil_id" in champs:
+                    raise AppError("Le profil choisi appartient à un autre fournisseur", code="PROFIL_FOURNISSEUR_DIFFERENT")
+                p.profil_id = None
         for champ in ("compteur", "adresse", "telephone", "description"):
             if champ in champs:
                 setattr(p, champ, _clean(getattr(data, champ)))
@@ -1907,7 +2287,7 @@ class MgFacturationService:
         p.updated_by = user.id
         after = self._point_dict(p, None, None)
         changes = [k for k in ("nom", "type_point", "reference_fournisseur", "compteur", "agence_id", "fournisseur_id",
-                               "contrat_id", "type_facture", "periodicite", "statut", "date_debut", "date_fin", "adresse",
+                               "contrat_id", "profil_id", "type_facture", "periodicite", "statut", "date_debut", "date_fin", "adresse",
                                "telephone")
                    if before.get(k) != after.get(k)]
         self._event(EVT_POINT, p.id, "MODIFICATION", "Modification : " + (", ".join(changes) or "aucun changement"), user)
@@ -2104,6 +2484,97 @@ class MgFacturationService:
         points = (await self.list_points({"q": q}))[:10]
         return {"factures": factures, "points": points}
 
+    # ——— Profils de facturation (configuration par fournisseur) ———
+
+    async def list_profils(self, *, actifs: bool = True) -> list[dict]:
+        stmt = (
+            select(MgFacturationProfil, Fournisseur.raison_sociale)
+            .join(Fournisseur, Fournisseur.id == MgFacturationProfil.fournisseur_id)
+            .order_by(MgFacturationProfil.ordre, MgFacturationProfil.libelle)
+        )
+        if actifs:
+            stmt = stmt.where(MgFacturationProfil.actif.is_(True))
+        return [_profil_dict(p, fr) for p, fr in (await self.db.execute(stmt)).all()]
+
+    @staticmethod
+    def _valider_champs_profil(champs: dict | None, libelles: dict | None) -> tuple[dict | None, dict | None]:
+        if champs is not None:
+            inconnus = set(champs) - set(CHAMPS_PROFIL)
+            if inconnus or any(v not in ETATS_CHAMP for v in champs.values()):
+                raise AppError("Configuration des champs invalide", code="PROFIL_CHAMPS_INVALIDES")
+            if champs.get("montant_ttc") == "masque":
+                raise AppError("Le montant TTC ne peut pas être masqué", code="PROFIL_CHAMPS_INVALIDES")
+        if libelles is not None:
+            if set(libelles) - set(CHAMPS_PROFIL):
+                raise AppError("Libellés : champ inconnu", code="PROFIL_CHAMPS_INVALIDES")
+            libelles = {k: v.strip()[:80] for k, v in libelles.items() if v and v.strip()}
+        return champs, libelles
+
+    async def create_profil(self, data: ProfilCreate, user: User) -> dict:
+        code = re.sub(r"[^A-Z0-9_]", "_", data.code.strip().upper())
+        if await self.db.scalar(select(MgFacturationProfil.id).where(MgFacturationProfil.code == code)):
+            raise AppError("Ce code de profil existe déjà", status_code=409, code="PROFIL_CODE_EXISTANT")
+        fr = await self._fournisseur(data.fournisseur_id)
+        champs, libelles = self._valider_champs_profil(data.champs, data.libelles)
+        p = MgFacturationProfil(
+            id=uuid.uuid4(),
+            code=code,
+            libelle=data.libelle.strip(),
+            fournisseur_id=fr.id,
+            type_facture=(_clean(data.type_facture) or "").upper() or None,
+            taux_tva=q2(data.taux_tva) if data.taux_tva is not None else None,
+            champs=champs or {},
+            libelles=libelles or {},
+            description=_clean(data.description),
+            actif=True if data.actif is None else data.actif,
+            ordre=data.ordre or 0,
+            created_by=user.id,
+            updated_by=user.id,
+        )
+        self.db.add(p)
+        await self._audit(user, "factures.profil.create", p.id, entity="profil_facturation", after=_profil_dict(p, fr.raison_sociale))
+        await self.db.commit()
+        return _profil_dict(p, fr.raison_sociale)
+
+    async def update_profil(self, profil_id: uuid.UUID, data: ProfilIn, user: User) -> dict:
+        p = await self._profil(profil_id, actif=False)
+        champs_set = data.model_fields_set
+        before = _profil_dict(p)
+        if "fournisseur_id" in champs_set and data.fournisseur_id and data.fournisseur_id != p.fournisseur_id:
+            utilise = await self.db.scalar(
+                select(func.count()).select_from(MgAchatFacture).where(
+                    MgAchatFacture.profil_id == p.id, MgAchatFacture.deleted_at.is_(None)
+                )
+            )
+            if utilise:
+                raise AppError("Profil déjà utilisé : le fournisseur n'est plus modifiable", code="PROFIL_UTILISE")
+            p.fournisseur_id = (await self._fournisseur(data.fournisseur_id)).id
+        champs, libelles = self._valider_champs_profil(
+            data.champs if "champs" in champs_set else None, data.libelles if "libelles" in champs_set else None
+        )
+        if champs is not None:
+            p.champs = champs
+        if libelles is not None:
+            p.libelles = libelles
+        if "libelle" in champs_set and data.libelle and data.libelle.strip():
+            p.libelle = data.libelle.strip()
+        if "type_facture" in champs_set:
+            p.type_facture = (_clean(data.type_facture) or "").upper() or None
+        if "taux_tva" in champs_set:
+            p.taux_tva = q2(data.taux_tva) if data.taux_tva is not None else None
+        if "description" in champs_set:
+            p.description = _clean(data.description)
+        if "actif" in champs_set and data.actif is not None:
+            p.actif = data.actif
+        if "ordre" in champs_set and data.ordre is not None:
+            p.ordre = data.ordre
+        p.updated_by = user.id
+        fr = await self.db.get(Fournisseur, p.fournisseur_id)
+        after = _profil_dict(p, fr.raison_sociale if fr else None)
+        await self._audit(user, "factures.profil.update", p.id, entity="profil_facturation", before=before, after=after)
+        await self.db.commit()
+        return after
+
     async def referentiels(self) -> dict:
         ag_stmt = select(Agence).where(Agence.is_active.is_(True), Agence.deleted_at.is_(None))
         if self.scope_agence:
@@ -2132,12 +2603,14 @@ class MgFacturationService:
         return {
             "agences": [{"id": str(a.id), "code": a.code, "libelle": a.libelle} for a in agences],
             "fournisseurs": [{"id": str(f.id), "code": f.code, "libelle": f.raison_sociale} for f in fournisseurs],
+            "profils": await self.list_profils(actifs=False),
             "points": [
                 {
                     "id": str(p.id), "code": p.code, "nom": p.nom, "type_point": p.type_point,
                     "fournisseur_id": str(p.fournisseur_id), "agence_id": str(p.agence_id) if p.agence_id else None,
                     "contrat_id": str(p.contrat_id) if p.contrat_id else None,
                     "reference_fournisseur": p.reference_fournisseur, "type_facture": p.type_facture,
+                    "profil_id": str(p.profil_id) if p.profil_id else None,
                     "periodicite": p.periodicite, "statut": p.statut,
                 }
                 for p in points

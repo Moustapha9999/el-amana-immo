@@ -36,8 +36,17 @@ from app.services.reporting_export import build_styled_pdf, build_styled_workboo
 LIEN_FACTURE = "/facturation-fournisseurs/factures?facture={id}"
 LIEN_POINT = "/facturation-fournisseurs/points?point={id}"
 
-FILTRES_DASHBOARD = ("agence_id", "point_id", "fournisseur_id", "type_point", "type_facture", "statut")
+FILTRES_DASHBOARD = ("agence_id", "point_id", "fournisseur_id", "profil_id", "type_point", "type_facture", "statut")
 NIVEAUX = {"critique": 0, "attention": 1, "info": 2}
+
+
+def _cle_fournisseur(r: dict):
+    """Regroupement « fournisseur » au niveau du profil (MATTEL SMS ≠ MATTEL USSD) quand il existe."""
+    return r.get("profil_id") or r.get("fournisseur_id")
+
+
+def _libelle_fournisseur(r: dict) -> str:
+    return r.get("profil") or r.get("fournisseur") or "—"
 
 
 def _montant(r: dict) -> float:
@@ -197,7 +206,7 @@ class MgFacturationAnalytics:
             "by_pdv": _grouper(
                 [r for r in periode if r["type_point"] == "PDV"], lambda r: r["point_facturation_id"], lambda r: r["point_nom"]
             )[:15],
-            "by_supplier": _grouper(periode, lambda r: r["fournisseur_id"], lambda r: r["fournisseur"] or "—")[:15],
+            "by_supplier": _grouper(periode, _cle_fournisseur, _libelle_fournisseur)[:15],
             "by_type": [
                 {**g, "label": dict(TYPES_FACTURE).get(g["id"], g["id"])}
                 for g in _grouper(periode, lambda r: r["type_facture"] or "AUTRE", lambda r: r["type_facture"] or "AUTRE")
@@ -450,7 +459,7 @@ class MgFacturationAnalytics:
         )
 
     async def suppliers(self, filtres: dict) -> dict:
-        return await self._par_dimension(filtres, lambda r: r["fournisseur_id"], lambda r: r["fournisseur"] or "—")
+        return await self._par_dimension(filtres, _cle_fournisseur, _libelle_fournisseur)
 
     async def points(self, filtres: dict) -> dict:
         return await self._par_dimension(

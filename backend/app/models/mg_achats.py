@@ -308,6 +308,14 @@ class MgAchatFacture(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base)
     autres_taxes: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), server_default="0")
     remise: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), server_default="0")
     montant_a_payer: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    # Facturation fournisseurs : profil (champs applicables), arriérés et réglage tels que saisis.
+    profil_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_facturation_profils.id"), nullable=True, index=True
+    )
+    arrieres: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    reglage: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    controle_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    controle_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     statut_paiement: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
@@ -398,6 +406,11 @@ class MgAchatPaiement(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base
     date_paiement: Mapped[date | None] = mapped_column(Date, nullable=True)
     mode_paiement: Mapped[str | None] = mapped_column(String(80), nullable=True)
     reference_paiement: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    compte: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    banque: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    numero_cheque: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Jamais le numéro complet : uniquement « •••• 1234 ».
+    carte_masquee: Mapped[str | None] = mapped_column(String(25), nullable=True)
     statut: Mapped[str] = mapped_column(String(30), default="A_PAYER", index=True)
     observation: Mapped[str | None] = mapped_column(Text, nullable=True)
     annule_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

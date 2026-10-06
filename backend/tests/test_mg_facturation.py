@@ -17,7 +17,16 @@ from app.services.mg_facturation_import import (
     suggerer_agence,
 )
 from app.services.mg_facturation_service import (
+    TRANSITIONS,
+    actions_possibles,
     calculer_ttc,
+    champs_manquants,
+    contient_numero_carte,
+    controles_facture,
+    detail_paiement,
+    ecart_tva,
+    masquer_carte,
+    total_a_payer_auto,
     decouper_reference,
     etat_echeance,
     mois_suivant,
@@ -180,3 +189,76 @@ def test_analyse_classeur_somelec():
     doublons = [l for l in analyse.lignes if l.statut == "DOUBLON_FICHIER"]
     assert [l.normalisee for l in doublons] == ["414844008443"]
     assert analyse.montants_detectes == 0
+
+# ——— Profils fournisseurs, contrôles, détail des paiements ———
+
+
+def _facture(**kw):
+    from app.models.mg_achats import MgAchatFacture
+
+    base = dict(
+        statut="RECUE", numero_fournisseur=None, reference_fournisseur=None, annee=2026, mois=8,
+        periode_debut=None, periode_fin=None, montant_ht=None, montant_tva=None, autres_taxes=Decimal("0"),
+        remise=Decimal("0"), montant_ttc=Decimal("0"), arrieres=None, reglage=None, montant_a_payer=None,
+        date_echeance=None, statut_paiement=None,
+    )
+    base.update(kw)
+    return MgAchatFacture(**base)
+
+
+def test_total_a_payer_ajoute_les_arrieres():
+    assert total_a_payer_auto(Decimal("1000"), Decimal("250.5")) == Decimal("1250.50")
+    assert total_a_payer_auto(Decimal("1000"), None) == Decimal("1000.00")
+
+
+def test_champs_obligatoires_du_profil():
+    champs = {"numero_fournisseur": "obligatoire", "montant_ttc": "obligatoire", "arrieres": "facultatif"}
+    assert champs_manquants(_facture(), champs) == ["numero_fournisseur", "montant_ttc"]
+    assert champs_manquants(_facture(numero_fournisseur="F1", montant_ttc=Decimal("10")), champs) == []
+    # Sans profil : aucun champ n'est imposé (pas de N° obligatoire inventé, ex. RIMATEL).
+    assert champs_manquants(_facture(), None) == []
+
+
+def test_tva_controlee_seulement_si_taux_configure():
+    assert ecart_tva(Decimal("1000"), Decimal("180"), Decimal("18")) == Decimal("0.00")
+    assert ecart_tva(Decimal("1000"), Decimal("160"), None) is None  # SNDE : taux non supposé
+    f = _facture(numero_fournisseur="X", montant_ht=Decimal("1000"), montant_tva=Decimal("100"), montant_ttc=Decimal("1100"))
+    codes = {c["code"] for c in controles_facture(f, None, Decimal("18"), 1)}
+    assert "tva_incoherente" in codes
+    assert "tva_incoherente" not in {c["code"] for c in controles_facture(f, None, None, 1)}
+
+
+def test_controle_bloquant_si_champs_manquants():
+    f = _facture(montant_ttc=Decimal("500"))
+    niveaux = {c["code"]: c["niveau"] for c in controles_facture(f, {"numero_fournisseur": "obligatoire"}, None, 0)}
+    assert niveaux["champs_obligatoires"] == "bloquant"
+    assert niveaux["document_absent"] == "attention"
+
+
+def test_validation_seulement_apres_controle():
+    sources, cible = TRANSITIONS["valider"]
+    assert sources == {"CONTROLEE"} and cible == "VALIDEE"
+    caps = {"update": True, "validate": True, "delete": True, "archive": True}
+    assert "valider" not in actions_possibles(_facture(statut="A_CONTROLER"), caps, 0)
+    assert "valider_controle" in actions_possibles(_facture(statut="A_CONTROLER"), caps, 0)
+    assert "valider" in actions_possibles(_facture(statut="CONTROLEE"), caps, 0)
+
+
+def test_carte_jamais_stockee_en_clair():
+    assert masquer_carte("1234") == "•••• 1234"
+    with pytest.raises(AppError):
+        masquer_carte("4111111111111111")
+    assert contient_numero_carte("payé avec 4111 1111 1111 1111")
+    assert not contient_numero_carte("RIB 00012 00034 5678901234 56")  # non Luhn
+    with pytest.raises(AppError):
+        detail_paiement("Carte", {"carte_derniers_chiffres": "1234", "reference_paiement": "4111111111111111"})
+
+
+def test_detail_paiement_par_moyen():
+    d = detail_paiement("Virement", {"compte": " MR13 0001 ", "banque": "BEA", "numero_cheque": "99"})
+    assert d["compte"] == "MR13 0001" and d["banque"] == "BEA" and d["numero_cheque"] is None
+    with pytest.raises(AppError):
+        detail_paiement("Chèque", {"banque": "BEA"})
+    with pytest.raises(AppError):
+        detail_paiement("Bitcoin", {})
+    assert detail_paiement("Espèces", {})["carte_masquee"] is None

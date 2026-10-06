@@ -3048,6 +3048,19 @@ html[data-theme='dark'] .bea-fx-form__montants input.is-auto {
 html[data-theme='dark'] .bea-fx-form__hint {
   color: #9fefbd;
 }
+html[data-theme='dark'] .bea-fx-form__manquants {
+  color: #f0b896;
+  background: #383113;
+}
+html[data-theme='dark'] .bea-fx-controles {
+  background: #152332;
+}
+html[data-theme='dark'] .bea-fx-controles li[data-niveau=bloquant] {
+  color: #ea7474;
+}
+html[data-theme='dark'] .bea-fx-controles li[data-niveau=attention] {
+  color: #edb183;
+}
 html[data-theme='dark'] .bea-fx-form__obs {
   color: #bfc6d0;
 }

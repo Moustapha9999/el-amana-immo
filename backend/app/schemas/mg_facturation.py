@@ -21,6 +21,7 @@ class FactureLigneIn(BaseModel):
 class FactureBase(BaseModel):
     numero_fournisseur: str | None = Field(default=None, max_length=80)
     fournisseur_id: UUID | None = None
+    profil_id: UUID | None = None
     point_facturation_id: UUID | None = None
     agence_id: UUID | None = None
     contrat_id: UUID | None = None
@@ -38,6 +39,8 @@ class FactureBase(BaseModel):
     autres_taxes: Decimal | None = Field(default=None, ge=0)
     remise: Decimal | None = Field(default=None, ge=0)
     montant_ttc: Decimal | None = Field(default=None, ge=0)
+    arrieres: Decimal | None = Field(default=None, ge=0)
+    reglage: Decimal | None = None
     montant_a_payer: Decimal | None = Field(default=None, ge=0)
     devise: str | None = Field(default=None, max_length=10)
     observation: str | None = Field(default=None, max_length=4000)
@@ -65,6 +68,11 @@ class FacturePaiementIn(BaseModel):
     montant: Decimal = Field(gt=0)
     mode_paiement: str | None = Field(default=None, max_length=80)
     reference_paiement: str | None = Field(default=None, max_length=120)
+    compte: str | None = Field(default=None, max_length=80)
+    banque: str | None = Field(default=None, max_length=120)
+    numero_cheque: str | None = Field(default=None, max_length=40)
+    # 4 derniers chiffres uniquement : le numéro complet est refusé.
+    carte_derniers_chiffres: str | None = Field(default=None, max_length=25)
     observation: str | None = Field(default=None, max_length=2000)
     justificatif_document_id: UUID | None = None
 
@@ -74,6 +82,11 @@ class FacturePaiementUpdate(BaseModel):
     montant: Decimal | None = Field(default=None, gt=0)
     mode_paiement: str | None = Field(default=None, max_length=80)
     reference_paiement: str | None = Field(default=None, max_length=120)
+    compte: str | None = Field(default=None, max_length=80)
+    banque: str | None = Field(default=None, max_length=120)
+    numero_cheque: str | None = Field(default=None, max_length=40)
+    # 4 derniers chiffres uniquement : le numéro complet est refusé.
+    carte_derniers_chiffres: str | None = Field(default=None, max_length=25)
     observation: str | None = Field(default=None, max_length=2000)
     justificatif_document_id: UUID | None = None
 
@@ -83,6 +96,7 @@ class PointFacturationIn(BaseModel):
     nom: str | None = Field(default=None, max_length=255)
     agence_id: UUID | None = None
     fournisseur_id: UUID | None = None
+    profil_id: UUID | None = None
     contrat_id: UUID | None = None
     reference_fournisseur: str | None = Field(default=None, max_length=80)
     compteur: str | None = Field(default=None, max_length=40)
@@ -101,6 +115,24 @@ class PointFacturationCreate(PointFacturationIn):
     nom: str = Field(min_length=1, max_length=255)
     fournisseur_id: UUID
     reference_fournisseur: str = Field(min_length=1, max_length=80)
+
+
+class ProfilIn(BaseModel):
+    libelle: str | None = Field(default=None, max_length=120)
+    fournisseur_id: UUID | None = None
+    type_facture: str | None = Field(default=None, max_length=40)
+    taux_tva: Decimal | None = Field(default=None, ge=0, le=100)
+    champs: dict[str, str] | None = None
+    libelles: dict[str, str] | None = None
+    description: str | None = Field(default=None, max_length=4000)
+    actif: bool | None = None
+    ordre: int | None = Field(default=None, ge=0, le=9999)
+
+
+class ProfilCreate(ProfilIn):
+    code: str = Field(min_length=2, max_length=40)
+    libelle: str = Field(min_length=1, max_length=120)
+    fournisseur_id: UUID
 
 
 class ImportChoix(BaseModel):

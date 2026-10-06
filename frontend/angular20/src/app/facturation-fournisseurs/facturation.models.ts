@@ -1,4 +1,4 @@
-/** Types et libellés — Contrats & échéances › Gestion des factures. */
+/** Types et libellés — Moyens Généraux › Facturation Fournisseurs. */
 
 export { aujourdhui, dateFr, dateHeureFr, joursLabel, telechargerBlob } from '../contrats-echeances/contrats.models';
 
@@ -37,6 +37,9 @@ export interface FxConfig {
   types_document: Libelle[];
   periodicites: string[];
   modes_paiement: string[];
+  moyens_paiement: Record<string, ChampPaiement[]>;
+  champs_profil: Libelle[];
+  profils: FxProfil[];
   devises: string[];
   devise: string;
   mois: string[];
@@ -44,6 +47,41 @@ export interface FxConfig {
   ged_taille_max_mo: number;
   capacites: FxCapacites;
   agence_scope: { id: string; libelle: string | null } | null;
+}
+
+export type EtatChamp = 'obligatoire' | 'facultatif' | 'masque';
+
+export type ChampProfil =
+  | 'numero_fournisseur' | 'reference_fournisseur' | 'periode' | 'periode_debut' | 'periode_fin'
+  | 'montant_ht' | 'montant_tva' | 'autres_taxes' | 'remise' | 'montant_ttc' | 'arrieres' | 'reglage'
+  | 'montant_a_payer' | 'date_echeance';
+
+/** Profil de facturation (SOMELEC, MATTEL SMS…) : champs applicables et libellés, sans code par fournisseur. */
+export interface FxProfil {
+  id: string;
+  code: string;
+  libelle: string;
+  fournisseur_id: string;
+  fournisseur: string | null;
+  type_facture: string | null;
+  taux_tva: number | null;
+  champs: Record<ChampProfil, EtatChamp>;
+  libelles: Record<ChampProfil, string>;
+  description: string | null;
+  actif: boolean;
+  ordre: number;
+}
+
+export interface ChampPaiement {
+  champ: 'compte' | 'banque' | 'numero_cheque' | 'carte_derniers_chiffres' | 'reference_paiement';
+  libelle: string;
+  obligatoire: boolean;
+}
+
+export interface FxControle {
+  code: string;
+  niveau: 'bloquant' | 'attention';
+  message: string;
 }
 
 export interface FxRefPoint {
@@ -56,6 +94,7 @@ export interface FxRefPoint {
   contrat_id: string | null;
   reference_fournisseur: string;
   type_facture: string | null;
+  profil_id: string | null;
   periodicite: string;
   statut: string;
 }
@@ -63,6 +102,7 @@ export interface FxRefPoint {
 export interface FxReferentiels {
   agences: { id: string; code: string; libelle: string }[];
   fournisseurs: { id: string; code: string; libelle: string }[];
+  profils: FxProfil[];
   points: FxRefPoint[];
   contrats: { id: string; reference: string; titre: string; fournisseur_id: string | null }[];
 }
@@ -73,6 +113,8 @@ export interface FactureRow {
   numero_fournisseur: string | null;
   fournisseur_id: string | null;
   fournisseur: string | null;
+  profil_id: string | null;
+  profil: string | null;
   point_facturation_id: string | null;
   point_code: string | null;
   point_nom: string | null;
@@ -97,6 +139,8 @@ export interface FactureRow {
   autres_taxes: number | null;
   remise: number | null;
   montant_ttc: number | null;
+  arrieres: number | null;
+  reglage: number | null;
   montant_a_payer: number | null;
   montant_paye: number | null;
   reste: number | null;
@@ -128,6 +172,10 @@ export interface FxPaiement {
   montant: number;
   mode_paiement: string | null;
   reference_paiement: string | null;
+  compte: string | null;
+  banque: string | null;
+  numero_cheque: string | null;
+  carte_masquee: string | null;
   observation: string | null;
   statut: string;
   justificatif_document_id: string | null;
@@ -174,6 +222,10 @@ export interface FactureDetail extends FactureRow {
     statut: string;
   } | null;
   contrat: { id: string; reference: string; titre: string; statut: string } | null;
+  profil_config: FxProfil | null;
+  controles: FxControle[];
+  controle_at: string | null;
+  controle_by_nom: string | null;
   created_by_nom: string | null;
   valide_at: string | null;
   valide_by_nom: string | null;
@@ -206,6 +258,7 @@ export interface PointRow {
   agence: string | null;
   fournisseur_id: string;
   fournisseur: string | null;
+  profil_id: string | null;
   contrat_id: string | null;
   reference_fournisseur: string;
   reference_normalisee: string;
@@ -311,6 +364,7 @@ export const STATUT_LABELS: Record<string, string> = {
   BROUILLON: 'Brouillon',
   RECUE: 'Reçue',
   A_CONTROLER: 'À contrôler',
+  CONTROLEE: 'Contrôlée',
   VALIDEE: 'Validée',
   CONTESTEE: 'Contestée',
   ANNULEE: 'Annulée',
@@ -336,6 +390,7 @@ export const STATUT_TONES: Record<string, string> = {
   BROUILLON: 'BROUILLON',
   RECUE: 'INFO',
   A_CONTROLER: 'ATTENTION',
+  CONTROLEE: 'INFO',
   VALIDEE: 'ACTIF',
   CONTESTEE: 'URGENT',
   ANNULEE: 'EXPIRE',
@@ -376,6 +431,7 @@ export const TYPE_POINT_ICONS: Record<string, string> = {
 export const ACTION_LABELS: Record<string, { label: string; icon: string }> = {
   enregistrer: { label: 'Marquer reçue', icon: 'inbox' },
   controler: { label: 'Mettre en contrôle', icon: 'fact_check' },
+  valider_controle: { label: 'Contrôle terminé', icon: 'rule' },
   valider: { label: 'Valider', icon: 'verified' },
   contester: { label: 'Contester', icon: 'report' },
   annuler: { label: 'Annuler', icon: 'block' },
@@ -385,14 +441,15 @@ export const ACTION_LABELS: Record<string, { label: string; icon: string }> = {
 /** Miroir de `TRANSITIONS` / `CAPACITE_ACTION` (backend) pour les menus de ligne ; le backend reste juge. */
 const TRANSITIONS_FX: Record<WorkflowFacture, { sources: string[]; cap: keyof FxCapacites }> = {
   enregistrer: { sources: ['BROUILLON'], cap: 'update' },
-  controler: { sources: ['BROUILLON', 'RECUE', 'CONTESTEE'], cap: 'update' },
-  valider: { sources: ['RECUE', 'A_CONTROLER'], cap: 'validate' },
-  contester: { sources: ['RECUE', 'A_CONTROLER', 'VALIDEE'], cap: 'validate' },
-  annuler: { sources: ['BROUILLON', 'RECUE', 'A_CONTROLER', 'VALIDEE', 'CONTESTEE'], cap: 'delete' },
+  controler: { sources: ['BROUILLON', 'RECUE', 'CONTROLEE', 'CONTESTEE'], cap: 'update' },
+  valider_controle: { sources: ['RECUE', 'A_CONTROLER'], cap: 'update' },
+  valider: { sources: ['CONTROLEE'], cap: 'validate' },
+  contester: { sources: ['RECUE', 'A_CONTROLER', 'CONTROLEE', 'VALIDEE'], cap: 'validate' },
+  annuler: { sources: ['BROUILLON', 'RECUE', 'A_CONTROLER', 'CONTROLEE', 'VALIDEE', 'CONTESTEE'], cap: 'delete' },
   archiver: { sources: ['VALIDEE', 'ANNULEE'], cap: 'archive' },
 };
 
-export type WorkflowFacture = 'enregistrer' | 'controler' | 'valider' | 'contester' | 'annuler' | 'archiver';
+export type WorkflowFacture = 'enregistrer' | 'controler' | 'valider_controle' | 'valider' | 'contester' | 'annuler' | 'archiver';
 
 export function actionsFacture(r: FactureRow, cap: Partial<FxCapacites>): WorkflowFacture[] {
   const paye = (r.montant_paye ?? 0) > 0;
@@ -438,6 +495,42 @@ export const VUES: { code: string; label: string; icon: string }[] = [
 
 export const MOIS_COURTS = ['Janv.', 'Févr.', 'Mars', 'Avr.', 'Mai', 'Juin', 'Juil.', 'Août', 'Sept.', 'Oct.', 'Nov.', 'Déc.'];
 export const MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+
+/** Libellés par défaut (miroir de `CHAMPS_PROFIL` backend) ; un profil peut les renommer. */
+export const LIBELLES_CHAMPS: Record<ChampProfil, string> = {
+  numero_fournisseur: 'N° facture',
+  reference_fournisseur: 'Référence (compteur / abonnement)',
+  periode: 'Période facturée',
+  periode_debut: 'Début de période',
+  periode_fin: 'Fin de période',
+  montant_ht: 'Montant HT',
+  montant_tva: 'TVA',
+  autres_taxes: 'Autres taxes / redevances',
+  remise: 'Remise',
+  montant_ttc: 'Montant TTC',
+  arrieres: 'Arriérés',
+  reglage: 'Réglage',
+  montant_a_payer: 'Total à payer',
+  date_echeance: 'Échéance',
+};
+
+/** État d'un champ pour un profil ; sans profil, tout est facultatif (aucune règle supposée). */
+export function etatChamp(profil: FxProfil | null | undefined, champ: ChampProfil): EtatChamp {
+  return profil?.champs?.[champ] ?? 'facultatif';
+}
+
+/** Détail lisible d'un paiement selon son moyen (compte, chèque, carte masquée…). */
+export function detailPaiement(p: Pick<FxPaiement, 'compte' | 'banque' | 'numero_cheque' | 'carte_masquee' | 'reference_paiement'>): string {
+  return [
+    p.carte_masquee ? `Carte ${p.carte_masquee}` : null,
+    p.numero_cheque ? `Chèque n° ${p.numero_cheque}` : null,
+    p.compte,
+    p.banque,
+    p.reference_paiement,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
 
 export function fxStatut(code: string | null | undefined): string {
   return (code && STATUT_LABELS[code]) || code || '—';

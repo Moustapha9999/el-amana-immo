@@ -9,12 +9,13 @@ import { formatMontant, parseMontant } from '../shared/montant.pipe';
 import { DetailDrawerComponent, DetailTimelineComponent, DrawerKpi, TimelineItem } from '../contrats-echeances/shared/detail-drawer.component';
 import { ACTION_LABELS, FactureDetail, FxDocument, FxPaiement, aujourdhui, dateFr, dateHeureFr, fxStatut, fxTone, telechargerBlob } from './facturation.models';
 import { FacturationStore } from './facturation.store';
+import { FxPaiementDetailComponent, corpsDetailPaiement } from './fx-paiement-detail.component';
 
 /** Mini-page paiement de facture : montant facture, déjà payé, ce paiement, reste après ; justificatif ; historique. */
 @Component({
   selector: 'bea-fx-paiement-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MatIconModule, DetailDrawerComponent, DetailTimelineComponent],
+  imports: [ReactiveFormsModule, MatIconModule, DetailDrawerComponent, DetailTimelineComponent, FxPaiementDetailComponent],
   template: `
     <bea-detail-drawer
       kicker="Paiement de facture"
@@ -51,8 +52,12 @@ import { FacturationStore } from './facturation.store';
             </div>
             <dl class="bea-fx-dl">
               <dt>Date de paiement</dt><dd>{{ date(p.date_paiement) }}</dd>
-              <dt>Mode</dt><dd>{{ p.mode_paiement || '—' }}</dd>
-              <dt>Réf. bancaire</dt><dd>{{ p.reference_paiement || '—' }}</dd>
+              <dt>Moyen</dt><dd>{{ p.mode_paiement || '—' }}</dd>
+              @if (p.carte_masquee) { <dt>Carte</dt><dd><code class="bea-mg__code">{{ p.carte_masquee }}</code></dd> }
+              @if (p.numero_cheque) { <dt>N° de chèque</dt><dd>{{ p.numero_cheque }}</dd> }
+              @if (p.compte) { <dt>Compte</dt><dd>{{ p.compte }}</dd> }
+              @if (p.banque) { <dt>Banque</dt><dd>{{ p.banque }}</dd> }
+              <dt>Référence</dt><dd>{{ p.reference_paiement || '—' }}</dd>
               <dt>Saisi par</dt><dd>{{ p.created_by || '—' }}@if (p.created_at) { <small> {{ dateHeure(p.created_at) }}</small> }</dd>
               @if (p.annule_at) { <dt>Annulé le</dt><dd>{{ dateHeure(p.annule_at) }}</dd> }
               @if (p.observation) { <dt>Observation</dt><dd class="bea-fx-dl__wrap">{{ p.observation }}</dd> }
@@ -94,13 +99,7 @@ import { FacturationStore } from './facturation.store';
           @if (resteEdition() < 0) { <p class="bea-ct-span2 bea-ct-help bea-ct-neg"><mat-icon>error</mat-icon> Le montant dépasse le reste à payer de la facture.</p> }
           <label>Date de paiement * <input type="date" formControlName="date_paiement" [max]="today" /></label>
           <label>Montant * <input inputmode="decimal" formControlName="montant" /></label>
-          <label>Mode
-            <select formControlName="mode_paiement">
-              <option value="">—</option>
-              @for (mo of store.config()?.modes_paiement ?? []; track mo) { <option [value]="mo">{{ mo }}</option> }
-            </select>
-          </label>
-          <label>Référence (OV, chèque…) <input formControlName="reference_paiement" maxlength="120" /></label>
+          <bea-fx-paiement-detail [group]="form" [moyens]="store.config()?.moyens_paiement ?? {}" [modesListe]="store.config()?.modes_paiement ?? []" />
           <label class="bea-ct-span2">Justificatif (document de la facture)
             <select formControlName="justificatif_document_id">
               <option value="">— Aucun —</option>
@@ -143,8 +142,12 @@ export class FxPaiementDrawerComponent {
   readonly form = this.fb.nonNullable.group({
     date_paiement: ['', Validators.required],
     montant: ['', Validators.required],
-    mode_paiement: [''],
+    mode_paiement: ['', Validators.required],
     reference_paiement: [''],
+    compte: [''],
+    banque: [''],
+    numero_cheque: [''],
+    carte_derniers_chiffres: ['', Validators.pattern(/^\d{4}$/)],
     justificatif_document_id: [''],
     observation: [''],
   });
@@ -260,6 +263,10 @@ export class FxPaiementDrawerComponent {
       montant: String(p.montant),
       mode_paiement: p.mode_paiement ?? '',
       reference_paiement: p.reference_paiement ?? '',
+      compte: p.compte ?? '',
+      banque: p.banque ?? '',
+      numero_cheque: p.numero_cheque ?? '',
+      carte_derniers_chiffres: p.carte_masquee ? p.carte_masquee.replace(/\D/g, '') : '',
       justificatif_document_id: p.justificatif_document_id ?? '',
       observation: p.observation ?? '',
     });
@@ -285,7 +292,7 @@ export class FxPaiementDrawerComponent {
       date_paiement: v.date_paiement,
       montant,
       mode_paiement: v.mode_paiement || null,
-      reference_paiement: v.reference_paiement.trim() || null,
+      ...corpsDetailPaiement(v, this.store.config()?.moyens_paiement?.[v.mode_paiement]),
       justificatif_document_id: v.justificatif_document_id || null,
       observation: v.observation.trim() || null,
     };
