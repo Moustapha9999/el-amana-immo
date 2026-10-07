@@ -41,6 +41,17 @@ from app.models.eer import (
     EerVersion,
     EerVisa,
 )
+from app.models.formation import (
+    FormationCompteur,
+    FormationEmploye,
+    FormationEntite,
+    FormationImport,
+    FormationParticipant,
+    FormationReferentiel,
+    FormationSession,
+    FormationSessionFormateur,
+    FormationSessionTheme,
+)
 from app.models.mg_stock import (
     MgArticle,
     MgArticleFamille,
@@ -180,6 +191,15 @@ __all__ = [
     "EerDecision",
     "EerHistorique",
     "EerVisa",
+    "FormationReferentiel",
+    "FormationEntite",
+    "FormationImport",
+    "FormationEmploye",
+    "FormationSession",
+    "FormationSessionTheme",
+    "FormationSessionFormateur",
+    "FormationParticipant",
+    "FormationCompteur",
     "MgArticleFamille",
     "MgArticle",
     "MgStockMouvement",

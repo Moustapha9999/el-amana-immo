@@ -43,6 +43,7 @@ DEFAULT_ESPACE_CODE = "comptabilite"
 DEFAULT_MODULE_CODE = "immobilisations"
 ACC_ESPACE_CODE = "audit-controle-conformite"
 EER_MODULE_CODE = "eer"
+FORMATION_MODULE_CODE = "formation"
 
 # Toujours (re)créés s’ils manquent. Le reste du catalogue = seed **bootstrap**
 # seulement (CORE ADMIN peut supprimer sans resurrection au refresh).
@@ -461,6 +462,21 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "icon": "person_add",
         "sort_order": 1,
     },
+    # --- Audit, Contrôle & Conformité → Conformité & sécurité financière ---
+    {
+        "code": FORMATION_MODULE_CODE,
+        "espace_code": ACC_ESPACE_CODE,
+        "domaine_code": "conformite-securite-financiere",
+        "label": "Formation & Sensibilisation",
+        "description": (
+            "Sessions de formation Conformité (LBC-FT, EER, FATCA…) : employés attendus, "
+            "feuille de présence PDF, présents / absents, historique, statistiques et rapports."
+        ),
+        "entry_path": "/formation/dashboard",
+        "statut": "actif",
+        "icon": "school",
+        "sort_order": 2,
+    },
 ]
 
 # Permissions CORE (tous les départements). `{module}.admin` couvre `{module}.*`.
@@ -622,6 +638,22 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("eer.scope.all", "Périmètre EER : toutes les agences", "eer"),
     ("eer.audit.view", "Consultation de l'audit EER", "eer"),
     ("eer.admin", "Administration du module EER", "eer"),
+    ("formation.view", "Consultation des formations", "formation"),
+    ("formation.create", "Création de formations", "formation"),
+    ("formation.update", "Modification de formations et des participants", "formation"),
+    ("formation.cancel", "Annulation de formations", "formation"),
+    ("formation.close", "Clôture, réouverture et archivage des formations", "formation"),
+    ("formation.employees.view", "Consultation du référentiel employés formation", "formation"),
+    ("formation.employees.manage", "Gestion du référentiel employés formation", "formation"),
+    ("formation.attendance.view", "Consultation des présences", "formation"),
+    ("formation.attendance.manage", "Saisie des présences / absences", "formation"),
+    ("formation.references.view", "Consultation des référentiels formation", "formation"),
+    ("formation.references.manage", "Gestion des référentiels formation", "formation"),
+    ("formation.import.view", "Consultation des imports Excel formation", "formation"),
+    ("formation.import.execute", "Import de l'historique Excel des formations", "formation"),
+    ("formation.reporting.view", "Reporting formation", "formation"),
+    ("formation.reporting.export", "Exports PDF / Excel formation", "formation"),
+    ("formation.admin", "Administration du module Formation & Sensibilisation", "formation"),
 ]
 
 # Rôles figés Login 2 / module Immobilisations (codes courts = legacy).
@@ -675,6 +707,9 @@ RBAC_ROLES: list[tuple[str, str, str]] = [
     ("eer.analyste", "EER — Analyste conformité", "Saisie, contrôle KYC et compléments"),
     ("eer.superviseur", "EER — Superviseur", "Affectation, validation, rejet et archivage"),
     ("eer.admin", "EER — Admin", "Administration complète du module EER et des règles KYC"),
+    ("formation.lecteur", "Formation — Lecteur", "Consultation des formations, présences et du reporting"),
+    ("formation.gestionnaire", "Formation — Gestionnaire", "Sessions, participants, présences, employés et exports"),
+    ("formation.admin", "Formation — Admin", "Administration complète : référentiels, imports, clôtures"),
 ]
 
 # Codes courts réservés au module Immobilisations (ne pas créer pour Crédit / RH / …).
@@ -754,6 +789,26 @@ _EER_CHARGE = (
     "eer.document.view",
     "eer.document.upload",
     "eer.document.download",
+)
+_FORMATION_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "formation"
+)
+_FORMATION_LECTEUR = (
+    "formation.view",
+    "formation.employees.view",
+    "formation.attendance.view",
+    "formation.references.view",
+    "formation.reporting.view",
+)
+_FORMATION_GESTIONNAIRE = _FORMATION_LECTEUR + (
+    "formation.create",
+    "formation.update",
+    "formation.cancel",
+    "formation.close",
+    "formation.employees.manage",
+    "formation.attendance.manage",
+    "formation.import.view",
+    "formation.reporting.export",
 )
 _CORE_ADMIN = (
     "plateforme.users.read",
@@ -926,6 +981,9 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "eer.superviseur": _EER_ANALYSTE
     + ("eer.assign", "eer.avis", "eer.validate", "eer.reject", "eer.archive", "eer.audit.view"),
     "eer.admin": _EER_ALL,
+    "formation.lecteur": _FORMATION_LECTEUR,
+    "formation.gestionnaire": _FORMATION_GESTIONNAIRE,
+    "formation.admin": _FORMATION_ALL,
 }
 
 SYSTEM_ROLE_CODES = frozenset(code for code, _label, _desc in RBAC_ROLES)

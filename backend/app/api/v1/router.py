@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     documents,
     eer,
     exercices,
+    formation,
     ged,
     immobilisations,
     mg_achats,
@@ -60,6 +61,7 @@ api_router.include_router(mg_requests.me_router)
 api_router.include_router(mg_requests.mg_router)
 api_router.include_router(mg_requests.batch_router)
 api_router.include_router(eer.router, dependencies=[Depends(require_module_access("eer"))])
+api_router.include_router(formation.router, dependencies=[Depends(require_module_access("formation"))])
 
 _immo = [Depends(require_module_access("immobilisations"))]
 api_router.include_router(organisation.router, dependencies=_immo)

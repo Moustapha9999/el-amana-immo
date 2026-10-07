@@ -59,6 +59,17 @@ const eerDashboard = () => import('./eer/eer-dashboard.component').then((m) => m
 const eerList = () => import('./eer/eer-list.component').then((m) => m.EerListComponent);
 const eerNouveau = () => import('./eer/eer-nouveau.component').then((m) => m.EerNouveauComponent);
 const eerFiche = () => import('./eer/eer-fiche.component').then((m) => m.EerFicheComponent);
+const foDashboard = () => import('./formation/pages/fo-dashboard.component').then((m) => m.FoDashboardComponent);
+const foSessions = () => import('./formation/pages/fo-sessions.component').then((m) => m.FoSessionsComponent);
+const foSessionForm = () => import('./formation/pages/fo-session-form.component').then((m) => m.FoSessionFormComponent);
+const foSessionDetail = () => import('./formation/pages/fo-session-detail.component').then((m) => m.FoSessionDetailComponent);
+const foPresences = () => import('./formation/pages/fo-presences.component').then((m) => m.FoPresencesComponent);
+const foEmployes = () => import('./formation/pages/fo-employes.component').then((m) => m.FoEmployesComponent);
+const foEmployeFiche = () => import('./formation/pages/fo-employe-fiche.component').then((m) => m.FoEmployeFicheComponent);
+const foReferentiels = () => import('./formation/pages/fo-referentiels.component').then((m) => m.FoReferentielsComponent);
+const foImports = () => import('./formation/pages/fo-imports.component').then((m) => m.FoImportsComponent);
+const foHistorique = () => import('./formation/pages/fo-historique.component').then((m) => m.FoHistoriqueComponent);
+const foReporting = () => import('./formation/pages/fo-reporting.component').then((m) => m.FoReportingComponent);
 const achatsBons = () => import('./achats-appro/achats-bons.component').then((m) => m.AchatsBonsComponent);
 const achatsReceptions = () =>
   import('./achats-appro/achats-receptions.component').then((m) => m.AchatsReceptionsComponent);
@@ -251,6 +262,26 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'dossiers', loadComponent: eerList },
       { path: 'dossiers/nouveau', loadComponent: eerNouveau },
       { path: 'dossiers/:id', loadComponent: eerFiche },
+    ],
+  },
+  {
+    path: 'formation',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('formation')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      { path: 'dashboard', loadComponent: foDashboard },
+      { path: 'sessions', loadComponent: foSessions },
+      { path: 'sessions/nouvelle', loadComponent: foSessionForm },
+      { path: 'sessions/:id', loadComponent: foSessionDetail },
+      { path: 'sessions/:id/modifier', loadComponent: foSessionForm },
+      { path: 'presences', loadComponent: foPresences },
+      { path: 'employes', loadComponent: foEmployes },
+      { path: 'employes/:id', loadComponent: foEmployeFiche },
+      { path: 'referentiels', loadComponent: foReferentiels },
+      { path: 'imports', loadComponent: foImports },
+      { path: 'historique', loadComponent: foHistorique },
+      { path: 'reporting', loadComponent: foReporting },
     ],
   },
   {

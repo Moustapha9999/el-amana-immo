@@ -1,0 +1,26 @@
+/* Feuilles de présence signées (GED) */
+.bea-fo-side { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
+.bea-fo-docs { display: flex; flex-direction: column; gap: 0.55rem; padding: 0.9rem 1.1rem 1.1rem; }
+.bea-fo-doc { display: flex; align-items: center; gap: 0.65rem; padding: 0.6rem 0.7rem; border: 1px solid #e2e8f0; border-radius: 0.75rem; background: #f8fafc; animation: beaFoDocIn 0.28s ease both; animation-delay: calc(var(--i, 0) * 50ms); }
+.bea-fo-doc > mat-icon { flex: none; width: 2.1rem; height: 2.1rem; font-size: 1.25rem; display: grid; place-items: center; border-radius: 0.6rem; background: #e0f2fe; color: #0369a1; }
+.bea-fo-doc[data-k='pdf'] > mat-icon { background: #fee2e2; color: #b91c1c; }
+.bea-fo-doc__txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bea-fo-doc__txt strong { font-size: 0.8rem; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bea-fo-doc__txt small { font-size: 0.7rem; color: #64748b; }
+.bea-fo-doc .bea-mg__icon-btn { flex: none; }
+.bea-fo-docs__empty { display: flex; align-items: center; gap: 0.5rem; margin: 0; padding: 0.6rem 0.7rem; border-radius: 0.75rem; background: #fffbeb; color: #92400e; font-size: 0.78rem; font-weight: 600; }
+.bea-fo-docs__empty mat-icon { font-size: 1.1rem; width: 1.1rem; height: 1.1rem; }
+.bea-fo-docs__ok { display: flex; align-items: center; gap: 0.4rem; font-size: 0.74rem; font-weight: 700; color: #15803d; }
+.bea-fo-docs__ok mat-icon { font-size: 1rem; width: 1rem; height: 1rem; }
+.bea-fo-drop { display: flex; flex-direction: column; align-items: center; gap: 0.2rem; padding: 1rem 0.8rem; border: 2px dashed #cbd5e1; border-radius: 0.85rem; background: #fff; color: #475569; text-align: center; cursor: pointer; transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease; }
+.bea-fo-drop:hover, .bea-fo-drop.is-over { border-color: #0e5a8a; background: #f0f7fc; transform: translateY(-1px); }
+.bea-fo-drop.is-busy { cursor: progress; opacity: 0.8; }
+.bea-fo-drop mat-icon { font-size: 1.6rem; width: 1.6rem; height: 1.6rem; color: #0e5a8a; }
+.bea-fo-drop strong { font-size: 0.8rem; color: #0f172a; }
+.bea-fo-drop span { font-size: 0.7rem; color: #64748b; }
+.bea-fo-feuille-ok { display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: #dcfce7; color: #15803d; }
+.bea-fo-feuille-ok mat-icon { font-size: 1rem; width: 1rem; height: 1rem; }
+.bea-fo-feuille-ko { display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: #fef3c7; color: #b45309; }
+.bea-fo-feuille-ko mat-icon { font-size: 1rem; width: 1rem; height: 1rem; }
+@keyframes beaFoDocIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .bea-fo-doc { animation: none; } .bea-fo-drop { transition: none; } }

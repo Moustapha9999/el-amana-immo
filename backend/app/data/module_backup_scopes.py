@@ -178,6 +178,20 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
     "eer": make_module_scope(
         label="Gestion des Entrées en Relation", uploads_subdir="eer", exclusive_tables=[]
     ),
+    "formation": make_module_scope(
+        label="Formation & Sensibilisation",
+        exclusive_tables=[
+            "formation_referentiels",
+            "formation_entites",
+            "formation_imports",
+            "formation_employes",
+            "formation_sessions",
+            "formation_session_themes",
+            "formation_session_formateurs",
+            "formation_participants",
+            "formation_compteurs",
+        ],
+    ),
 }
 
 ESPACE_MODULES: dict[str, list[str]] = {
@@ -196,7 +210,7 @@ ESPACE_MODULES: dict[str, list[str]] = {
         "demandes-mg",
     ],
     "archives": ["archives-generales"],
-    "audit-controle-conformite": ["eer"],
+    "audit-controle-conformite": ["eer", "formation"],
 }
 
 

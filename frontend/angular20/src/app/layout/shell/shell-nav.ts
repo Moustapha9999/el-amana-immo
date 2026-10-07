@@ -418,6 +418,20 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
       permissions: ['eer.create'],
     },
   ],
+  formation: [
+    { section: 'Pilotage', label: 'Dashboard', path: '/formation/dashboard', icon: 'dashboard', exact: true, permissions: ['formation.view', 'formation.reporting.view'] },
+    { section: 'Formations', label: 'Toutes les formations', path: '/formation/sessions', icon: 'event_note', exact: true, permissions: ['formation.view'] },
+    { section: 'Formations', label: 'Présences', path: '/formation/presences', icon: 'fact_check', permissions: ['formation.attendance.view', 'formation.attendance.manage'] },
+    { section: 'Formations', label: 'Employés', path: '/formation/employes', icon: 'badge', permissions: ['formation.employees.view'] },
+    { section: 'Référentiels', label: 'Thèmes', path: '/formation/referentiels', icon: 'category', queryParams: { onglet: 'THEME' }, permissions: ['formation.references.view'] },
+    { section: 'Référentiels', label: 'Formateurs', path: '/formation/referentiels', icon: 'record_voice_over', queryParams: { onglet: 'FORMATEUR' }, permissions: ['formation.references.view'] },
+    { section: 'Référentiels', label: 'Lieux', path: '/formation/referentiels', icon: 'place', queryParams: { onglet: 'LIEU' }, permissions: ['formation.references.view'] },
+    { section: 'Référentiels', label: 'Fonctions', path: '/formation/referentiels', icon: 'work_outline', queryParams: { onglet: 'FONCTION' }, permissions: ['formation.references.view'] },
+    { section: 'Référentiels', label: 'Entités / Périmètres', path: '/formation/referentiels', icon: 'account_tree', queryParams: { onglet: 'ENTITE' }, permissions: ['formation.references.view'] },
+    { section: 'Suivi', label: 'Imports Excel', path: '/formation/imports', icon: 'upload_file', permissions: ['formation.import.view', 'formation.import.execute'] },
+    { section: 'Suivi', label: 'Historique', path: '/formation/historique', icon: 'history', permissions: ['formation.view', 'formation.reporting.view'] },
+    { section: 'Suivi', label: 'Reporting', path: '/formation/reporting', icon: 'insights', permissions: ['formation.reporting.view'] },
+  ],
   'archives-mg': [
     {
       section: 'Pilotage',

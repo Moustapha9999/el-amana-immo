@@ -182,6 +182,14 @@ export const MODULE_ROUTE_CONTRACTS: Readonly<Record<string, ModuleRouteContract
     espacePath: '/audit-controle-conformite',
     urlPrefix: '/eer',
   },
+  // Audit, Contrôle & Conformité → Conformité & sécurité financière.
+  formation: {
+    code: 'formation',
+    strategy: 'prefixed',
+    entryPath: '/formation/dashboard',
+    espacePath: '/audit-controle-conformite',
+    urlPrefix: '/formation',
+  },
 };
 
 /** Modules dont le shell métier Angular est branché (Login 2 peut naviguer). */
@@ -200,6 +208,7 @@ export const MODULES_WITH_METIER_SHELL = new Set<string>([
   'demandes-rh',
   'demandes-informatique',
   'eer',
+  'formation',
 ]);
 
 export function moduleHasMetierShell(moduleCode: string): boolean {

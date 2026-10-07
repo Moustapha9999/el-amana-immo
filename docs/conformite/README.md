@@ -13,6 +13,7 @@ Audit, Contrôle & Conformité            (plateforme_espaces)
 ├── Conformité & sécurité financière     domaine — actif
 │   ├── KYC                              sous-domaine — actif
 │   │   └── Gestion des Entrées en Relation (module eer) — en développement
+│   ├── Formation & Sensibilisation (module formation) — actif
 │   └── LBC-FT, FATCA, Gestion des dossiers clients, Demandes de prêt,
 │       Déclarations BCM, Correspondants bancaires,
 │       Vérification des procurations    sous-domaines — bientôt (CORE ADMIN, 04/10/2026)
@@ -92,3 +93,26 @@ Reste dépendant du métier ou de l’exploitation :
   historique (§22, test `test_eer_suivi_excel.py` prêt, sauté sans le fichier).
 - **RLS** : rôle PostgreSQL applicatif non superuser à créer (section ci-dessus).
 - **Questions ouvertes** : [eer-matrices.md §7](eer-matrices.md#7-questions-ouvertes).
+
+## Module Formation & Sensibilisation (07/10/2026)
+
+Remplace le fichier Excel de suivi des formations. Code `formation`, URLs `/formation/...`,
+API `/api/v1/formation/...`, migration `20261007_formation_module` (tables `formation_*`,
+référentiels initiaux issus de l’Excel, ligne `plateforme_modules`).
+
+| Sujet | Décision |
+|-------|----------|
+| Employé | Nom, Prénom, Fonction, Entité, Périmètre (déduit de l’entité), Email, Téléphone. Doublons bloqués (clé d’identité : mots normalisés, ordre indifférent) ; création forcée seulement après confirmation explicite |
+| Formation | Date*, Thème(s)*, Lieu*, Formateur(s)*, participants multi-sélection. Aucun présent par défaut |
+| Présence | `PRESENT` / `ABSENT` uniquement ; saisie impossible avant la date ; correction d’une présence existante = motif obligatoire |
+| Statuts | `PLANIFIEE` → `REALISEE` (toutes présences saisies) → `CLOTUREE` ; `ANNULEE` (motif) ; `ARCHIVEE`. Pas de suppression si des présences existent (suppression réservée à `formation.admin`, avec motif) |
+| Concurrence | Champ `revision` : toute écriture concurrente renvoie `409 CONFLIT_REVISION` |
+| Historique | Fonction / entité / périmètre figés sur la participation à la date de la formation |
+| Référentiels | Thèmes, Formateurs, Lieux, Fonctions, Périmètres, Entités : modifiables, désactivables, fusionnables ; une valeur utilisée ne se supprime pas |
+| Import Excel | Analyse → aperçu → correspondances → découpage Nom/Prénom **proposé puis vérifié** (case obligatoire) → confirmation. Ré-import du même fichier détecté (SHA-256), sans doublon de participation |
+| Exports | Feuille de présence PDF/Excel (en-tête BANQUE EL AMANA, N° / Nom et prénom / Signature) ; `Rapport_Formation.pdf` et `Rapport_Formation.xlsx` (8 onglets). Pas de CSV |
+| Droits | `formation.view`, `create`, `update`, `cancel`, `close`, `employees.*`, `attendance.*`, `references.*`, `import.*`, `reporting.*`, `admin` ; rôles `formation.lecteur`, `formation.gestionnaire`, `formation.admin` |
+| Audit | Toute action (y compris exports) dans `audit_logs` (`module_code = formation`), consultable dans Historique → Journal d’audit |
+| Feuille signée (GED) | Scan PDF / image déposé sur la fiche formation → `ged_documents` (module `formation`, entité `formation_session`, type `FEUILLE_PRESENCE_SIGNEE`, OCR). Dépôt dès que la date est passée (planifiée, réalisée, clôturée) ; retrait avec motif tant qu’elle n’est pas clôturée (corbeille GED). Droit `formation.attendance.manage`. Liste : colonne et filtre « Feuille signée manquante » |
+
+Hors périmètre V1 : évaluations, attestations, QR codes.
