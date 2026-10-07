@@ -6,7 +6,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
 import { downloadBlob } from '../demandes-employes/demandes-employe.models';
-import { MontantPipe, QuantitePipe, formatQuantite, quantiteEntiere } from '../shared/montant.pipe';
+import { MontantPipe, QuantitePipe, formatQuantite, quantiteDecimale } from '../shared/montant.pipe';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
 
 interface Dash {
@@ -373,7 +373,7 @@ export class DmgDashboardComponent implements OnInit {
                             type="number"
                             min="0"
                             [max]="it.quantity"
-                            step="1"
+                            step="0.001"
                             [(ngModel)]="it.granted"
                             [name]="'g' + it.id"
                             [readonly]="mode() === 'view'"
@@ -525,10 +525,10 @@ export class DmgInboxComponent implements OnInit {
     return {
       id: it.id,
       description: it.description,
-      quantity: quantiteEntiere(it.quantity),
+      quantity: quantiteDecimale(it.quantity),
       unit: it.unit,
       article_id: it.article_id,
-      granted: granted === null || granted === undefined ? null : quantiteEntiere(granted),
+      granted: granted === null || granted === undefined ? null : quantiteDecimale(granted),
     };
   }
   stockLabel(it: GrantLine): string {
@@ -548,7 +548,7 @@ export class DmgInboxComponent implements OnInit {
       item_id: it.id,
       quantity_granted: it.granted === null || it.granted === undefined || String(it.granted) === ''
         ? null
-        : quantiteEntiere(it.granted),
+        : quantiteDecimale(it.granted),
     }));
     this.api.post<RequestRow>(`/mg/requests/${id}/granted`, { lines }).subscribe({
       next: (r) => {

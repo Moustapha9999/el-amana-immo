@@ -12,7 +12,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
-import { bcRecevable, chargerModeTest, modeTestAchats } from './achats-circuit';
+import { bcRecevable } from './achats-circuit';
+import { quantiteDecimale } from '../shared/montant.pipe';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 import { AchatsBonApercuComponent, AchatsReceptionApercuComponent } from './achats-apercu.component';
 
@@ -119,10 +120,7 @@ export class AchatsReceptionsComponent implements OnInit {
     return this.form.get('lignes') as FormArray;
   }
 
-  readonly modeTest = modeTestAchats;
-
   ngOnInit(): void {
-    chargerModeTest(this.api);
     this.api.get<Agence[]>('/mg/achats/agences').subscribe({
       next: (r) => this.agences.set(r),
     });
@@ -159,7 +157,7 @@ export class AchatsReceptionsComponent implements OnInit {
       bc_ligne_id: [bcLigneId],
       designation: [{ value: designation, disabled: true }],
       reste: [{ value: reste, disabled: true }],
-      quantite_recue: [reste > 0 ? reste : 0, [Validators.required, Validators.min(1)]],
+      quantite_recue: [reste > 0 ? reste : 0, [Validators.required, Validators.min(0.001)]],
     });
   }
 
@@ -169,7 +167,7 @@ export class AchatsReceptionsComponent implements OnInit {
         this.bonDetail.set(bon);
         this.lignes.clear();
         for (const l of bon.lignes ?? []) {
-          const reste = Math.max(0, Number(l.quantite) - Number(l.quantite_recue || 0));
+          const reste = Math.max(0, quantiteDecimale(Number(l.quantite) - Number(l.quantite_recue || 0)));
           if (reste <= 0) continue;
           this.lignes.push(this.newLigne(l.id, l.description, reste));
         }
@@ -235,7 +233,7 @@ export class AchatsReceptionsComponent implements OnInit {
       .run(() => this.api.delete(`/mg/achats/receptions/${row.id}`), {
         confirm: {
           action: 'suppression',
-          message: `Mode test : la réception ${row.reference} sera supprimée, le stock contre-passé et les quantités rendues au BC.`,
+          message: `La réception ${row.reference} sera supprimée, le stock contre-passé et les quantités rendues au BC.`,
         },
         loading: 'Suppression…',
         errorTitle: 'Suppression refusée',

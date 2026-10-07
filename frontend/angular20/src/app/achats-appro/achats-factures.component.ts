@@ -4,7 +4,7 @@ import {
   formatMontant,
   formatQuantite,
   montantArrondi,
-  quantiteEntiere,
+  quantiteDecimale,
 } from '../shared/montant.pipe';
 import {
   ChangeDetectionStrategy,
@@ -37,7 +37,6 @@ import {
   chargerModeTest,
   factureModifiable,
   facturePayable,
-  modeTestAchats,
   totaliser,
 } from './achats-circuit';
 
@@ -270,8 +269,8 @@ export class AchatsFacturesComponent implements OnInit {
   /** Écart quantité ligne à ligne : somme des dépassements du reçu non encore facturé. */
   ecartQuantite(m: ThreeWayMatch): number {
     return (m.lignes ?? []).reduce((s, l) => {
-      const dispo = quantiteEntiere(l.quantite_recue) - quantiteEntiere(l.quantite_deja_facturee);
-      return s + Math.max(0, quantiteEntiere(l.quantite_facturee) - dispo);
+      const dispo = quantiteDecimale(l.quantite_recue) - quantiteDecimale(l.quantite_deja_facturee);
+      return s + Math.max(0, quantiteDecimale(l.quantite_facturee) - dispo);
     }, 0);
   }
 
@@ -294,7 +293,6 @@ export class AchatsFacturesComponent implements OnInit {
     return this.form.get('lignes') as FormArray;
   }
 
-  readonly modeTest = modeTestAchats;
   readonly aValider = computed(() => ['BROUILLON', 'RECUE', 'ANOMALIE'].includes(this.current()?.statut ?? ''));
   private readonly reappliquerVerrou = effect(() => {
     if (!this.current()) return;
@@ -507,7 +505,7 @@ export class AchatsFacturesComponent implements OnInit {
       .run(() => this.api.delete(`/mg/achats/factures/${row.id}`), {
         confirm: {
           action: 'suppression',
-          message: `Mode test : la facture ${row.reference} et ses paiements seront supprimés ; ses quantités redeviennent facturables.`,
+          message: `La facture ${row.reference} et ses paiements seront supprimés ; ses quantités redeviennent facturables.`,
         },
         loading: 'Suppression…',
         errorTitle: 'Suppression refusée',

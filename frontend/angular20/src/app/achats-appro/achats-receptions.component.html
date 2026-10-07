@@ -78,11 +78,9 @@
                   <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Annuler la réception (contre-passation)" [disabled]="r.statut === 'ANNULEE' || saving()" (click)="annuler(r)">
                     <mat-icon>undo</mat-icon>
                   </button>
-                  @if (modeTest()) {
-                    <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer (mode test)" [disabled]="saving()" (click)="supprimer(r)">
-                      <mat-icon>delete</mat-icon>
-                    </button>
-                  }
+                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer" [disabled]="saving()" (click)="supprimer(r)">
+                    <mat-icon>delete</mat-icon>
+                  </button>
                 </td>
               </tr>
             } @empty {
@@ -150,7 +148,7 @@
                 <input formControlName="designation" />
               </label>
               <label>Reste à recevoir <input formControlName="reste" type="number" /></label>
-              <label>Qté reçue * <input type="number" formControlName="quantite_recue" min="1" step="1" /></label>
+              <label>Qté reçue * <input type="number" formControlName="quantite_recue" min="0.001" step="0.001" /></label>
             </div>
           }
         </div>
@@ -176,11 +174,9 @@
           } @else {
             <p class="bea-ach__muted">Annulée — {{ c.motif_annulation }}</p>
           }
-          @if (modeTest()) {
-            <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="supprimer(c)">
-              <mat-icon>delete</mat-icon> Supprimer (mode test)
-            </button>
-          }
+          <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="supprimer(c)">
+            <mat-icon>delete</mat-icon> Supprimer
+          </button>
         }
       </div>
     </form>

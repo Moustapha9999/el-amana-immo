@@ -1091,10 +1091,7 @@ export class ImmobilisationFormComponent implements OnInit {
       return of(existing.id);
     }
     return this.api
-      .post<Fournisseur>('/fournisseurs', {
-        code: this.referentielCode(libre, 'FRN'),
-        raison_sociale: libre,
-      })
+      .post<Fournisseur>('/fournisseurs', { raison_sociale: libre })
       .pipe(
         map((created) => {
           this.fournisseurs.update((list) => [...list, created]);

@@ -63,7 +63,7 @@ class CentreCoutRead(CentreCoutCreate, ORMModel):
 
 
 class FournisseurCreate(BaseModel):
-    code: str = Field(min_length=1, max_length=30)
+    code: str | None = Field(default=None, max_length=30)
     raison_sociale: str = Field(min_length=1, max_length=255)
     nom_commercial: str | None = Field(default=None, max_length=255)
     type_fournisseur: str = Field(default="FOURNITURE", max_length=40)

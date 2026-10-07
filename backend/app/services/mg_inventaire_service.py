@@ -35,7 +35,7 @@ from app.schemas.mg_stock import (
     InventaireLigneSaisie,
     InventaireUpdate,
 )
-from app.schemas.nombres import as_qty
+from app.schemas.nombres import as_qty, format_qty_signe
 from app.services.mg_stock_events import audit_stock
 from app.services.mg_stock_periodes import MOIS_FR, MgStockPeriodeService, nature_ecart
 from app.services.permission_service import user_has_permission_codes
@@ -1192,11 +1192,11 @@ class MgInventaireService:
                 for lg in lignes
                 if lg.article_id in articles and ajustement_ligne(lg)
             }
-            if prevu != {code: int(q) for code, q in plan.items()}:
-                ecarts_plan = sorted(set(prevu.items()) ^ {(c, int(q)) for c, q in plan.items()})
+            if prevu != {code: as_qty(q) for code, q in plan.items()}:
+                ecarts_plan = sorted(set(prevu.items()) ^ {(c, as_qty(q)) for c, q in plan.items()})
                 raise AppError(
                     "Les ajustements calculés ne correspondent pas au plan de rapprochement chargé : "
-                    + ", ".join(f"{c} {q:+d}" for c, q in ecarts_plan[:20])
+                    + ", ".join(f"{c} {format_qty_signe(q)}" for c, q in ecarts_plan[:20])
                     + ". Aucun mouvement n'a été créé.",
                     status.HTTP_409_CONFLICT,
                     code="RAPPROCHEMENT_PLAN",
@@ -1220,7 +1220,7 @@ class MgInventaireService:
                     observation += f" · Stock retenu {as_qty(ligne.stock_cible)}"
                     reste = ecart_a_regulariser(ligne)
                     if reste:
-                        observation += f" · Écart physique {as_qty(reste):+d} à régulariser (non intégré)"
+                        observation += f" · Écart physique {format_qty_signe(reste)} à régulariser (non intégré)"
                 await stock._apply_mouvement(
                     article=article,
                     type_mouvement="AJUSTEMENT",
@@ -1228,7 +1228,7 @@ class MgInventaireService:
                     agence_id=inv.agence_id or article.agence_id,
                     initiateur=self.user,
                     motif=(f"{source} — {inv.reference}" if source else f"Ajustement inventaire {inv.reference}")[:255],
-                    observation=f"{observation} · Ajustement {as_qty(quantite):+d}",
+                    observation=f"{observation} · Ajustement {format_qty_signe(quantite)}",
                     source_type="inventaire",
                     source_id=inv.id,
                     date_mouvement=date_mvt,
@@ -1427,7 +1427,7 @@ class MgInventaireService:
         registre = await self.registre_ecarts(inv.id)
         registre_obtenu = sorted((e["code"], e["ecart"]) for e in registre)
         registre_attendu = (
-            sorted((e["code"], int(e["ecart"])) for e in attendu["ecarts"]) if "ecarts" in attendu else registre_obtenu
+            sorted((e["code"], as_qty(e["ecart"])) for e in attendu["ecarts"]) if "ecarts" in attendu else registre_obtenu
         )
         nb_plan = len(rappro.get("mouvements") or {}) if rappro.get("mouvements") is not None else s["ajustements_prevus"]
 
@@ -1460,8 +1460,8 @@ class MgInventaireService:
                   as_qty(s["total_physique"])),
             ligne("ecart_restant", "Écart physique restant", val("ecart_restant", regul), regul),
             ligne("registre_ecarts", "Registre des écarts à régulariser",
-                  ", ".join(f"{c} {e:+d}" for c, e in registre_attendu) or "aucun",
-                  ", ".join(f"{c} {e:+d}" for c, e in registre_obtenu) or "aucun"),
+                  ", ".join(f"{c} {format_qty_signe(e)}" for c, e in registre_attendu) or "aucun",
+                  ", ".join(f"{c} {format_qty_signe(e)}" for c, e in registre_obtenu) or "aucun"),
             ligne("anciens_non_ajustes", "Aucun article d'ancienne agence ajusté", 0, anciens_ajustes),
             ligne("anciens_hors_stock", "Anciens articles exclus du stock actuel", 0, anciens_actifs, applicable=ajuste),
             ligne("historique_non_rejoue", "Aucun mouvement historique rejoué", 0, rejoues),

@@ -333,12 +333,12 @@ async def test_bc_brouillon_edition_en_place_sans_reset_recu():
 
 
 @pytest.mark.asyncio
-async def test_suppression_bc_hors_brouillon_refusee():
+async def test_suppression_bc_hors_brouillon_en_cascade():
     bon = _bon("VALIDE", [_ligne()])
     svc = _svc_bc(bon)
-    with pytest.raises(HTTPException) as exc:
-        await svc.delete_bon(bon.id, _user())
-    assert exc.value.status_code == 409
+    svc._supprimer_bon_cascade = AsyncMock(return_value=bon)
+    await svc.delete_bon(bon.id, _user())
+    svc._supprimer_bon_cascade.assert_awaited_once()
 
 
 # --- Transitions BC ---
@@ -571,10 +571,11 @@ async def test_mode_test_bc_recu_lignes_modifiables_mais_jamais_sous_le_recu():
 
 
 @pytest.mark.asyncio
-async def test_mode_test_suppression_paiement_recalcule_la_facture():
+@pytest.mark.parametrize("mode_test", [True, False])
+async def test_suppression_paiement_recalcule_la_facture(mode_test):
     facture = SimpleNamespace(id=uuid4(), reference="FAC-1", statut="PAYEE")
     paiement = SimpleNamespace(id=uuid4(), reference="PAY-1", facture_id=facture.id, deleted_at=None)
-    svc = MgAchatsService(_db(), mode_test=True)
+    svc = MgAchatsService(_db(), mode_test=mode_test)
     svc.get_paiement = AsyncMock(return_value=paiement)
     svc._facture_pour_paiement = AsyncMock(return_value=facture)
     svc.recalculate_invoice_payment = AsyncMock()
@@ -582,11 +583,3 @@ async def test_mode_test_suppression_paiement_recalcule_la_facture():
     await svc.soft_delete_entity("paiement", paiement.id, _user())
     assert paiement.deleted_at is not None
     svc.recalculate_invoice_payment.assert_awaited_once_with(facture)
-
-
-@pytest.mark.asyncio
-async def test_hors_mode_test_suppression_paiement_refusee():
-    svc = MgAchatsService(_db(), mode_test=False)
-    with pytest.raises(HTTPException) as exc:
-        await svc.soft_delete_entity("paiement", uuid4(), _user())
-    assert exc.value.status_code == 409

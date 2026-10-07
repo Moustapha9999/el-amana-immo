@@ -9,7 +9,6 @@ import {
   bcEditable,
   bcLignesEditables,
   bcRecevable,
-  bcSupprimable,
   calculerLigne,
   chargerModeTest,
   modeTestAchats,
@@ -100,7 +99,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
                     <button type="button" class="bea-ach__icon-btn" title="Voir" (click)="apercuId.set(b.id)"><mat-icon>visibility</mat-icon></button>
                     <button type="button" class="bea-ach__icon-btn" [title]="canEdit(b) ? 'Éditer' : 'Bon figé (' + statutLabel(b.statut) + ')'" [disabled]="!canEdit(b)" (click)="edit(b)"><mat-icon>edit</mat-icon></button>
                     <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Annuler le bon" [disabled]="!canCancel(b)" (click)="askCancel(b, 'desactiver')"><mat-icon>block</mat-icon></button>
-                    <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" [title]="modeTest() ? 'Supprimer (mode test : avec réceptions, factures et paiements)' : 'Supprimer (brouillon uniquement)'" [disabled]="!canDelete(b)" (click)="askCancel(b, 'supprimer')"><mat-icon>delete</mat-icon></button>
+                    <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" [title]="b.statut === 'BROUILLON' ? 'Supprimer' : 'Supprimer (avec réceptions, factures et paiements)'" [disabled]="busy()" (click)="askCancel(b, 'supprimer')"><mat-icon>delete</mat-icon></button>
                   </td></tr>
               } @empty { <tr class="bea-ach__empty"><td colspan="6"><mat-icon>receipt_long</mat-icon><p>Aucun bon pour ces critères.</p></td></tr> }
             </tbody>
@@ -226,7 +225,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
               <div class="bea-ach__line" [formGroupName]="i">
                 <span class="bea-ach__line-num">{{ i + 1 }}</span>
                 <label><span class="bea-ach__line-label">Description</span><input formControlName="description" placeholder="Article, service…" /></label>
-                <label><span class="bea-ach__line-label">Qté</span><input type="number" formControlName="quantite" min="1" step="1" /></label>
+                <label><span class="bea-ach__line-label">Qté</span><input type="number" formControlName="quantite" min="0.001" step="0.001" /></label>
                 <label><span class="bea-ach__line-label">UOM</span><input formControlName="uom" /></label>
                 <label><span class="bea-ach__line-label">PU (MRU)</span><input type="number" formControlName="prix_unitaire" min="0" step="0.01" /></label>
                 <span class="bea-ach__line-total"><span class="bea-ach__line-label">Total HT</span>{{ ligneHt(i) | montant }}</span>
@@ -597,10 +596,6 @@ export class AchatsBonsComponent implements OnInit {
     return bcAnnulable(b.statut);
   }
 
-  canDelete(b: Bon): boolean {
-    return bcSupprimable(b.statut);
-  }
-
   private apiDetail(err: unknown, fallback: string): string {
     const detail = (err as { error?: { detail?: unknown } })?.error?.detail;
     if (typeof detail === 'string' && detail.trim()) return detail;
@@ -619,7 +614,6 @@ export class AchatsBonsComponent implements OnInit {
 
   askCancel(row: Bon, action: 'desactiver' | 'supprimer'): void {
     if (action === 'supprimer') {
-      if (!this.canDelete(row)) return;
       this.feedback
         .run(() => this.api.delete(`/mg/achats/bons/${row.id}`), {
           confirm: {
@@ -627,7 +621,7 @@ export class AchatsBonsComponent implements OnInit {
             message:
               row.statut === 'BROUILLON'
                 ? `Le brouillon ${row.reference} sera retiré de la liste.`
-                : `Mode test : le bon ${row.reference} sera supprimé avec ses réceptions (stock restitué), factures et paiements.`,
+                : `Le bon ${row.reference} sera supprimé avec ses réceptions (stock restitué), factures et paiements.`,
           },
           loading: 'Suppression…',
           errorTitle: 'Suppression refusée',

@@ -190,12 +190,12 @@ interface Paginated<T> {
               @if (!editingId()) {
                 <label>
                   Stock initial
-                  <input type="number" formControlName="stock_initial" min="0" step="1" />
+                  <input type="number" formControlName="stock_initial" min="0" step="0.001" />
                 </label>
               } @else {
                 <label>
                   Stock actuel
-                  <input type="number" formControlName="stock_actuel" min="0" step="1" />
+                  <input type="number" formControlName="stock_actuel" min="0" step="0.001" />
                 </label>
                 @if (stockModifie()) {
                   <label class="bea-art__span2">
@@ -207,7 +207,7 @@ interface Paginated<T> {
               }
               <label>
                 Stock minimum
-                <input type="number" formControlName="stock_min" min="0" step="1" />
+                <input type="number" formControlName="stock_min" min="0" step="0.001" />
               </label>
               <label>
                 Agence

@@ -15,6 +15,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 
+from app.schemas.nombres import QTY_DEC, format_qty
 from app.services.reporting_export import format_montant
 
 ZERO = Decimal("0")
@@ -38,11 +39,11 @@ def arrondi_montant(v: Any) -> Decimal:
 
 
 def arrondi_quantite(v: Any) -> Decimal:
-    return Decimal(str(v or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return Decimal(str(v or 0)).quantize(QTY_DEC, rounding=ROUND_HALF_UP)
 
 
 def qte(v: Any) -> str:
-    return str(int(arrondi_quantite(v)))
+    return format_qty(arrondi_quantite(v))
 
 
 def prix_net(prix_unitaire: Any, remise_pct: Any = ZERO) -> Decimal:

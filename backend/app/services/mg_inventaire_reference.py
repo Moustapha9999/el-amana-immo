@@ -18,7 +18,7 @@ from sqlalchemy import select
 
 from app.core.exceptions import AppError
 from app.models.mg_stock import MgArticle, MgInventaireLigne
-from app.schemas.nombres import as_qty
+from app.schemas.nombres import as_qty, format_qty_signe
 from app.services.mg_inventaire_import import InventaireImportService, _quantite, normaliser
 from app.services.mg_inventaire_service import MgInventaireService
 from app.services.mg_stock_periodes import nature_ecart
@@ -94,7 +94,7 @@ def _table(ws, colonnes: dict[str, tuple[str, ...]]) -> list[dict]:
     return out
 
 
-def _entier(valeur) -> int | None:
+def _entier(valeur) -> int | float | None:
     if valeur is None or (isinstance(valeur, str) and not valeur.strip()):
         return None
     try:
@@ -180,7 +180,7 @@ class InventaireReferenceService:
                     anomalies.append(f"{code} : {champ.replace('_', ' ')} — {err}.")
                 valeurs[champ] = as_qty(q) if q is not None else None
             si, e, s, theo = (valeurs[k] for k in ("stock_initial", "entrees", "sorties", "stock_final_theorique"))
-            if None not in (si, e, s, theo) and si + e - s != theo:
+            if None not in (si, e, s, theo) and as_qty(si + e - s) != theo:
                 erreurs_formule += 1
                 anomalies.append(f"{code} : stock initial + entrées − sorties ≠ stock final théorique.")
             if not ancienne and (valeurs["stock_physique"] is None or valeurs["stock_actuel_agence"] is None):
@@ -191,10 +191,10 @@ class InventaireReferenceService:
                 continue
             lg, art = couple
             cible = None if ancienne else valeurs["stock_actuel_agence"]
-            ajustement = None if cible is None else cible - as_qty(lg.stock_theorique or 0)
+            ajustement = None if cible is None else as_qty(cible - as_qty(lg.stock_theorique or 0))
             reste = (
                 None if ancienne or valeurs["stock_physique"] is None or cible is None
-                else valeurs["stock_physique"] - cible
+                else as_qty(valeurs["stock_physique"] - cible)
             )
             apercu.append(
                 {
@@ -231,7 +231,7 @@ class InventaireReferenceService:
             anomalies.append(f"{len(absents)} article(s) de l'inventaire absent(s) du classeur : {', '.join(absents[:15])}.")
 
         par_code = {a["code"]: a for a in apercu}
-        mouvements: dict[str, int] = {}
+        mouvements: dict[str, int | float] = {}
         source_libelle = None
         for p in plan:
             code = _texte(p["code"])
@@ -264,7 +264,8 @@ class InventaireReferenceService:
                     "(mouvement saisi depuis la photo)."
                 )
             if a["ajustement"] != qte:
-                anomalies.append(f"Plan {code} : ajustement {qte:+d} ≠ stock retenu − stock BEA ({a['ajustement']:+d}).")
+                anomalies.append(f"Plan {code} : ajustement {format_qty_signe(qte)} ≠ stock retenu − stock BEA "
+                    f"({format_qty_signe(a['ajustement'])}).")
         hors_plan = [a["code"] for a in apercu if a["ajustement"] and a["code"] not in mouvements]
         if hors_plan:
             anomalies.append("Écart système non couvert par le plan : " + ", ".join(hors_plan[:15]) + ".")
@@ -275,11 +276,11 @@ class InventaireReferenceService:
             "agence_actuelle": len(actuels),
             "ancienne_agence": len(apercu) - len(actuels),
             "erreurs_formule": erreurs_formule,
-            "stock_systeme": sum(a["stock_systeme"] for a in actuels),
-            "stock_final": sum(a["stock_cible"] or 0 for a in actuels),
-            "stock_physique": sum(a["stock_physique"] or 0 for a in actuels),
-            "ecart_restant": sum(a["ecart_a_regulariser"] or 0 for a in actuels),
-            "variation": sum(mouvements.values()),
+            "stock_systeme": as_qty(sum(a["stock_systeme"] for a in actuels)),
+            "stock_final": as_qty(sum(a["stock_cible"] or 0 for a in actuels)),
+            "stock_physique": as_qty(sum(a["stock_physique"] or 0 for a in actuels)),
+            "ecart_restant": as_qty(sum(a["ecart_a_regulariser"] or 0 for a in actuels)),
+            "variation": as_qty(sum(mouvements.values())),
             "nb_mouvements": len(mouvements),
         }
         for cle, attendu in controle.items():

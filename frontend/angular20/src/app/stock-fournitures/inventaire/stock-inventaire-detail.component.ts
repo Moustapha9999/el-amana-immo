@@ -22,6 +22,7 @@ import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { MgGedPanelComponent } from '../../moyens-generaux/mg-ged-panel.component';
 import { PaginationComponent } from '../../shared/pagination.component';
+import { quantiteDecimale } from '../../shared/montant.pipe';
 import { StockAlertesWatcherService } from '../stock-alertes-watcher.service';
 import {
   ACTION_LABELS,
@@ -365,9 +366,9 @@ const KPIS: { id: LigneFiltre; label: string; icon: string; cle: keyof Inventair
                           <input
                             #saisie
                             type="number"
-                            inputmode="numeric"
+                            inputmode="decimal"
                             min="0"
-                            step="1"
+                            step="0.001"
                             [attr.data-index]="i"
                             [attr.data-etat]="etats()[l.id]"
                             [value]="brouillons()[l.id] ?? l.stock_physique ?? ''"
@@ -1000,13 +1001,13 @@ export class StockInventaireDetailComponent implements OnInit {
     if (texte === '') {
       body = { effacer: true };
     } else {
-      const n = Number(texte);
-      if (!Number.isInteger(n) || n < 0) {
+      const n = Number(texte.replace(',', '.'));
+      if (!Number.isFinite(n) || n < 0) {
         this.setEtat(l.id, 'erreur');
-        this.feedback.warning({ title: 'Quantité invalide', message: `${l.article_code} : saisissez un entier positif ou nul.` });
+        this.feedback.warning({ title: 'Quantité invalide', message: `${l.article_code} : saisissez une quantité positive ou nulle.` });
         return;
       }
-      body = { stock_physique: n };
+      body = { stock_physique: quantiteDecimale(n) };
     }
     if (this.enregistrements.has(l.id)) return;
     this.enregistrements.add(l.id);

@@ -81,11 +81,9 @@
                   <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Annuler le paiement" [disabled]="r.statut === 'ANNULE' || saving()" (click)="annuler(r)">
                     <mat-icon>block</mat-icon>
                   </button>
-                  @if (modeTest()) {
-                    <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer (mode test)" [disabled]="saving()" (click)="supprimer(r)">
-                      <mat-icon>delete</mat-icon>
-                    </button>
-                  }
+                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer" [disabled]="saving()" (click)="supprimer(r)">
+                    <mat-icon>delete</mat-icon>
+                  </button>
                 </td>
               </tr>
             } @empty {
@@ -195,11 +193,9 @@
               <mat-icon>block</mat-icon> Annuler le paiement
             </button>
           }
-          @if (modeTest()) {
-            <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="supprimer(c)">
-              <mat-icon>delete</mat-icon> Supprimer (mode test)
-            </button>
-          }
+          <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="supprimer(c)">
+            <mat-icon>delete</mat-icon> Supprimer
+          </button>
         }
         @if (current()?.facture_id; as fid) {
           <a class="bea-ach__btn bea-ach__btn--ghost" [routerLink]="['/achats-appro/factures', fid]">

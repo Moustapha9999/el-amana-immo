@@ -90,7 +90,7 @@ export function decomposerMoyen(valeur: string | null | undefined): { liste: str
   return { liste: MOYEN_AUTRE, autre: norm };
 }
 
-/** ACHATS_MODE_TEST=1 côté backend : verrous de statut levés, suppression en cascade. */
+/** ACHATS_MODE_TEST=1 côté backend : verrous de statut levés (édition des pièces figées). */
 export const modeTestAchats = signal(false);
 let modeTestCharge = false;
 
@@ -108,7 +108,6 @@ export const bcEditable = (statut: string | null | undefined): boolean =>
 export const bcLignesEditables = (statut: string | null | undefined): boolean =>
   !statut || statut === 'BROUILLON' || modeTestAchats();
 export const bcAnnulable = (statut: string): boolean => ['BROUILLON', 'SOUMIS', 'VALIDE', 'ENVOYE'].includes(statut);
-export const bcSupprimable = (statut: string): boolean => statut === 'BROUILLON' || modeTestAchats();
 export const bcRecevable = (statut: string): boolean => ['VALIDE', 'ENVOYE', 'PARTIEL'].includes(statut);
 export const bcFacturable = (statut: string): boolean => ['VALIDE', 'ENVOYE', 'PARTIEL', 'RECU', 'CLOTURE'].includes(statut);
 

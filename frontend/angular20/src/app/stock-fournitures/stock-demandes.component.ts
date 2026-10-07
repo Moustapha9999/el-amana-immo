@@ -246,7 +246,7 @@ interface Paginated<T> {
                         />
                       </td>
                       <td>
-                        <input type="number" formControlName="quantite_demandee" min="1" step="1" />
+                        <input type="number" formControlName="quantite_demandee" min="0.001" step="0.001" />
                       </td>
                       <td class="bea-mg__actions-cell">
                         <button

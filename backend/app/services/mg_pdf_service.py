@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from pathlib import Path
 from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
@@ -29,6 +29,7 @@ from reportlab.platypus import (
 )
 
 from app.data.el_amana_referentiel import BANQUE_EL_AMANA
+from app.schemas.nombres import format_qty
 from app.services.reporting_export import (
     format_export_datetime,
     resolve_bea_logo_path,
@@ -219,14 +220,10 @@ def _box(label: str, value: str, styles, *, min_h: float = 8 * mm, width: float 
 
 
 def _qty_int(value) -> str:
-    """Quantité affichée en entier, sans décimales (pas comme les prix)."""
+    """Quantité sans zéros inutiles : « 12 », « 41,19 »."""
     if value is None or value == "":
         return "—"
-    try:
-        number = Decimal(str(value))
-        return str(int(number.to_integral_value(rounding=ROUND_HALF_UP)))
-    except Exception:
-        return "—"
+    return format_qty(value)
 
 
 def _plain_line(label: str, value: str, styles) -> Paragraph:

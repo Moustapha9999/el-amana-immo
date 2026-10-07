@@ -143,7 +143,7 @@ type Tab = 'infos' | 'stock' | 'mouvements' | 'demandes' | 'documents';
                 </label>
                 <label>
                   Stock actuel ({{ form.controls.uom.value }})
-                  <input type="number" formControlName="stock_actuel" min="0" step="1" />
+                  <input type="number" formControlName="stock_actuel" min="0" step="0.001" />
                 </label>
                 @if (ecartStock() !== 0) {
                   <label class="bea-mg__span2">
@@ -170,11 +170,11 @@ type Tab = 'infos' | 'stock' | 'mouvements' | 'demandes' | 'documents';
                 </label>
                 <label>
                   Stock min
-                  <input type="number" formControlName="stock_min" min="0" step="1" />
+                  <input type="number" formControlName="stock_min" min="0" step="0.001" />
                 </label>
                 <label>
                   Stock max
-                  <input type="number" formControlName="stock_max" min="0" step="1" />
+                  <input type="number" formControlName="stock_max" min="0" step="0.001" />
                 </label>
                 <label>
                   Agence

@@ -94,7 +94,7 @@ export class AchatsFournisseursComponent implements OnInit {
   });
 
   readonly form = this.fb.nonNullable.group({
-    code: ['', [Validators.required, Validators.maxLength(30)]],
+    code: [{ value: '', disabled: true }],
     raison_sociale: ['', [Validators.required, Validators.maxLength(255)]],
     nom_commercial: [''],
     type_fournisseur: ['FOURNITURE', Validators.required],
@@ -243,14 +243,13 @@ export class AchatsFournisseursComponent implements OnInit {
   save(): void {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
-      this.erreur.set('Complétez les champs obligatoires (code, raison sociale).');
+      this.erreur.set('Complétez les champs obligatoires (raison sociale).');
       return;
     }
     this.saving.set(true);
     this.erreur.set('');
     const raw = this.form.getRawValue();
     const body = {
-      code: raw.code.trim(),
       raison_sociale: raw.raison_sociale.trim(),
       nom_commercial: raw.nom_commercial.trim() || null,
       type_fournisseur: raw.type_fournisseur,
@@ -277,7 +276,7 @@ export class AchatsFournisseursComponent implements OnInit {
     req.subscribe({
       next: (created) => {
         this.saving.set(false);
-        this.msg.set(id ? 'Fournisseur mis à jour.' : 'Fournisseur créé.');
+        this.msg.set(id ? 'Fournisseur mis à jour.' : `Fournisseur ${created.code} créé.`);
         void this.router.navigateByUrl(`/achats-appro/fournisseurs/${created.id}`);
       },
       error: (err) => {

@@ -3,7 +3,8 @@ import { Pipe, PipeTransform } from '@angular/core';
 /**
  * Règles BEA DIGITAL :
  * - Montant : 2 décimales, virgule, espace milliers (1 250,00)
- * - Quantité, stock, entrée, sortie : entier sans séparateur (1000, 50000)
+ * - Quantité, stock, entrée, sortie : 3 décimales max., sans séparateur de milliers
+ *   (1000, 50000, 41,19) ; une quantité entière s'affiche sans décimales
  * - Taux : 2 décimales + « % » (18,00 %)
  * - Null / vide : 0,00 (montant) ou 0 (quantité)
  */
@@ -29,19 +30,19 @@ export function montantArrondi(value: number | string | null | undefined): numbe
   return Math.round(n * 100) / 100;
 }
 
-/** Quantité entière (half-up). */
-export function quantiteEntiere(value: number | string | null | undefined): number {
+/** Quantité à 3 décimales max. (half-up) : 41,19 L de carburant, 12 ramettes. */
+export function quantiteDecimale(value: number | string | null | undefined): number {
   const n = asNumber(value);
   if (n === null) return 0;
-  return Math.round(n);
+  return Math.round(n * 1000) / 1000;
 }
 
-/** Total ligne = quantité (entier) × prix unitaire (2 décimales), arrondi à 2 décimales. */
+/** Total ligne = quantité (3 décimales) × prix unitaire (2 décimales), arrondi à 2 décimales. */
 export function montantLigne(
   quantite: number | string | null | undefined,
   prixUnitaire: number | string | null | undefined,
 ): number {
-  return montantArrondi(quantiteEntiere(quantite) * montantArrondi(prixUnitaire));
+  return montantArrondi(quantiteDecimale(quantite) * montantArrondi(prixUnitaire));
 }
 
 export function formatMontant(
@@ -76,8 +77,9 @@ export function formatMontant(
   return devise ? `${formatted} ${devise}` : formatted;
 }
 
+/** Entier tel quel (« 1000 ») ; décimale éventuelle sans zéros inutiles (« 41,19 »). */
 export function formatQuantite(value: number | string | null | undefined): string {
-  return String(quantiteEntiere(value));
+  return String(quantiteDecimale(value)).replace('.', ',');
 }
 
 export function formatTaux(value: number | string | null | undefined): string {

@@ -262,7 +262,7 @@ export class AchatsPaiementsComponent implements OnInit {
       .run(() => this.api.delete(`/mg/achats/paiements/${row.id}`), {
         confirm: {
           action: 'suppression',
-          message: `Mode test : le paiement ${row.reference} sera supprimé et le reste à payer de la facture recalculé.`,
+          message: `Le paiement ${row.reference} sera supprimé et le reste à payer de la facture recalculé.`,
         },
         loading: 'Suppression…',
         errorTitle: 'Suppression refusée',

@@ -1,3 +1,4 @@
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Agence, CentreCout, Departement, Direction, Fournisseur, Journal, ComptePlanComptable
@@ -41,11 +42,21 @@ class CentreCoutService(BaseCrudService[CentreCout, CentreCoutCreate, CentreCout
         super().__init__(db, CentreCout)
 
 
+async def prochain_code_fournisseur(db: AsyncSession) -> str:
+    """Code FRS-NNN suivant, attribué par la séquence PostgreSQL `fournisseurs_code_seq`."""
+    return await db.scalar(select(func.fournisseur_code_suivant()))
+
+
 class FournisseurService(BaseCrudService[Fournisseur, FournisseurCreate, FournisseurCreate]):
     entity_label = "Fournisseur"
 
     def __init__(self, db: AsyncSession):
         super().__init__(db, Fournisseur)
+
+    async def create(self, payload: FournisseurCreate) -> Fournisseur:
+        data = payload.model_dump()
+        data["code"] = (data.get("code") or "").strip().upper() or await prochain_code_fournisseur(self.db)
+        return await self.repo.add(Fournisseur(**data))
 
     async def list(self, page: int, size: int, search: str | None = None):
         return await self.repo.list(page, size, search, search_columns=("raison_sociale", "code"))

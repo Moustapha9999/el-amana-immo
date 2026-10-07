@@ -15,8 +15,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.models.auth import Agence, User
-from app.schemas.nombres import as_qty
 from app.services import mg_achats_regles as R
+from app.services.organisation_service import prochain_code_fournisseur
 from app.services.reporting_export import format_montant
 from app.models.mg_achats import (
     ORIGINE_ACHAT,
@@ -531,29 +531,28 @@ class MgAchatsService:
     async def _assert_fournisseur_unique(
         self,
         *,
-        code: str,
+        code: str | None,
         raison_sociale: str,
         email: str | None = None,
         exclude_id: uuid.UUID | None = None,
     ) -> None:
-        code_n = code.strip().upper()
         rs_n = raison_sociale.strip()
-        filters_code = [
-            func.upper(Fournisseur.code) == code_n,
-            Fournisseur.deleted_at.is_(None),
-        ]
         filters_rs = [
             func.lower(Fournisseur.raison_sociale) == rs_n.lower(),
             Fournisseur.deleted_at.is_(None),
         ]
         if exclude_id:
-            filters_code.append(Fournisseur.id != exclude_id)
             filters_rs.append(Fournisseur.id != exclude_id)
-        if await self.db.scalar(select(func.count()).select_from(Fournisseur).where(*filters_code)):
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail=f"Un fournisseur avec le code « {code_n} » existe déjà",
-            )
+        if code:
+            code_n = code.strip().upper()
+            filters_code = [func.upper(Fournisseur.code) == code_n, Fournisseur.deleted_at.is_(None)]
+            if exclude_id:
+                filters_code.append(Fournisseur.id != exclude_id)
+            if await self.db.scalar(select(func.count()).select_from(Fournisseur).where(*filters_code)):
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail=f"Un fournisseur avec le code « {code_n} » existe déjà",
+                )
         if await self.db.scalar(select(func.count()).select_from(Fournisseur).where(*filters_rs)):
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
@@ -742,12 +741,12 @@ class MgAchatsService:
 
     async def create_fournisseur(self, data: FournisseurCreate, user: User) -> Fournisseur:
         await self._assert_fournisseur_unique(
-            code=data.code,
+            code=None,
             raison_sociale=data.raison_sociale,
             email=data.email,
         )
         payload = data.model_dump()
-        payload["code"] = data.code.strip().upper()
+        payload["code"] = await prochain_code_fournisseur(self.db)
         payload["raison_sociale"] = data.raison_sociale.strip()
         payload["type_fournisseur"] = (data.type_fournisseur or "FOURNITURE").strip().upper()
         fr = Fournisseur(**payload, created_by=user.id, updated_by=user.id, is_active=True)
@@ -764,14 +763,13 @@ class MgAchatsService:
         fr = await self.get_fournisseur(fournisseur_id)
         before = self._frs_snapshot(fr)
         patch = data.model_dump(exclude_unset=True)
-        if "code" in patch and patch["code"]:
-            patch["code"] = patch["code"].strip().upper()
+        patch.pop("code", None)
         if "raison_sociale" in patch and patch["raison_sociale"]:
             patch["raison_sociale"] = patch["raison_sociale"].strip()
         if "type_fournisseur" in patch and patch["type_fournisseur"]:
             patch["type_fournisseur"] = patch["type_fournisseur"].strip().upper()
         await self._assert_fournisseur_unique(
-            code=patch.get("code") or fr.code,
+            code=None,
             raison_sociale=patch.get("raison_sociale") or fr.raison_sociale,
             email=patch["email"] if "email" in patch else fr.email,
             exclude_id=fr.id,
@@ -1730,8 +1728,8 @@ class MgAchatsService:
                 lg = existantes[i]
                 if _qty(row.quantite) < _qty(lg.quantite_recue):
                     raise R.refus(
-                        f"« {lg.description} » : quantité {as_qty(row.quantite)} inférieure au déjà reçu "
-                        f"({as_qty(lg.quantite_recue)}). Supprimez d'abord la réception."
+                        f"« {lg.description} » : quantité {R.qte(row.quantite)} inférieure au déjà reçu "
+                        f"({R.qte(lg.quantite_recue)}). Supprimez d'abord la réception."
                     )
             else:
                 lg = MgBcLigne(quantite_recue=Decimal("0"))
@@ -1923,20 +1921,9 @@ class MgAchatsService:
         return await self.get_bon(bon.id)
 
     async def delete_bon(self, bon_id: uuid.UUID, user: User) -> MgBonCommande:
-        """Suppression logique réservée aux brouillons ; sinon il faut annuler."""
+        """Suppression logique quel que soit le statut, avec réceptions, factures et paiements."""
         bon = await self.get_bon(bon_id, for_update=True)
-        if self.mode_test:
-            return await self._supprimer_bon_cascade(bon, user)
-        if bon.statut != R.BC_BROUILLON:
-            raise R.verrou(
-                f"Bon {bon.reference} au statut {bon.statut} : suppression impossible, utilisez Annuler."
-            )
-        if await self._lignes_bc_referencees(bon):
-            raise R.verrou(f"Bon {bon.reference} référencé par une réception ou une facture : suppression impossible.")
-        bon.deleted_at = datetime.now(timezone.utc)
-        await self._append_event("bon", bon.id, "delete", bon.reference, user)
-        await self.db.commit()
-        return bon
+        return await self._supprimer_bon_cascade(bon, user)
 
     async def _bc_a_des_suites_actives(self, bon_id: uuid.UUID) -> str | None:
         rec = await self.db.scalar(
@@ -2169,7 +2156,7 @@ class MgAchatsService:
             reste = _qty(ligne.quantite) - _qty(ligne.quantite_recue)
             if total > reste:
                 raise R.refus(
-                    f"Quantité reçue {as_qty(total)} > reste à recevoir {as_qty(max(reste, Decimal('0')))} "
+                    f"Quantité reçue {R.qte(total)} > reste à recevoir {R.qte(max(reste, Decimal('0')))} "
                     f"pour « {ligne.description} »."
                 )
         reception = MgAchatReception(
@@ -2330,8 +2317,8 @@ class MgAchatsService:
             nouveau = _qty(lg.quantite_recue) - q
             if facture.get(lid, Decimal("0")) > nouveau:
                 raise R.verrou(
-                    f"« {lg.description} » : {as_qty(facture[lid])} déjà facturé(s), l'annulation ramènerait "
-                    f"le reçu à {as_qty(max(nouveau, Decimal('0')))}. Annulez d'abord la facture."
+                    f"« {lg.description} » : {R.qte(facture[lid])} déjà facturé(s), l'annulation ramènerait "
+                    f"le reçu à {R.qte(max(nouveau, Decimal('0')))}. Annulez d'abord la facture."
                 )
         await self._contrepasser_reception(bon, row, user, f"Annulation réception {row.reference} — {motif}")
         now = datetime.now(timezone.utc)
@@ -3200,7 +3187,7 @@ class MgAchatsService:
         await self.db.refresh(row)
         return row
 
-    # --- Mode test : suppression logique en cascade, quel que soit le statut ---
+    # --- Suppression logique en cascade, quel que soit le statut ---
 
     async def _supprimer_paiements(self, facture_id: uuid.UUID, user: User, now: datetime) -> None:
         rows = (
@@ -3212,12 +3199,12 @@ class MgAchatsService:
         ).scalars().all()
         for p in rows:
             p.deleted_at = now
-            await self._append_event("paiement", p.id, "delete", f"{p.reference} (mode test)", user)
+            await self._append_event("paiement", p.id, "delete", p.reference, user)
 
     async def _supprimer_facture(self, facture: MgAchatFacture, user: User, now: datetime) -> None:
         await self._supprimer_paiements(facture.id, user, now)
         facture.deleted_at = now
-        await self._append_event("facture", facture.id, "delete", f"{facture.reference} (mode test)", user)
+        await self._append_event("facture", facture.id, "delete", facture.reference, user)
 
     async def _supprimer_reception(
         self, reception_id: uuid.UUID, bon: MgBonCommande, user: User, now: datetime
@@ -3231,9 +3218,9 @@ class MgAchatsService:
         if row is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Réception introuvable")
         if row.statut != "ANNULEE":
-            await self._contrepasser_reception(bon, row, user, f"Suppression réception {row.reference} (mode test)")
+            await self._contrepasser_reception(bon, row, user, f"Suppression réception {row.reference}")
         row.deleted_at = now
-        await self._append_event("reception", row.id, "delete", f"{row.reference} (mode test)", user)
+        await self._append_event("reception", row.id, "delete", row.reference, user)
         return row
 
     async def _supprimer_bon_cascade(self, bon: MgBonCommande, user: User) -> MgBonCommande:
@@ -3250,17 +3237,17 @@ class MgAchatsService:
         for rid in rec_ids:
             await self._supprimer_reception(rid, bon, user, now)
         bon.deleted_at = now
-        await self._append_event("bon", bon.id, "delete", f"{bon.reference} + suites (mode test)", user)
+        await self._append_event("bon", bon.id, "delete", f"{bon.reference} + suites", user)
         await self.db.commit()
         return bon
 
-    async def _supprimer_en_mode_test(self, kind: str, entity_id: uuid.UUID, user: User):
+    async def _supprimer_piece(self, kind: str, entity_id: uuid.UUID, user: User):
         now = datetime.now(timezone.utc)
         if kind == "paiement":
             row = await self.get_paiement(entity_id)
             facture = await self._facture_pour_paiement(row.facture_id)
             row.deleted_at = now
-            await self._append_event("paiement", row.id, "delete", f"{row.reference} (mode test)", user)
+            await self._append_event("paiement", row.id, "delete", row.reference, user)
             await self.recalculate_invoice_payment(facture)
         elif kind == "facture":
             row = await self.get_facture(entity_id)
@@ -3293,13 +3280,8 @@ class MgAchatsService:
             "facture": self.get_facture,
             "paiement": self.get_paiement,
         }
-        if kind in {"reception", "facture", "paiement"} and self.mode_test:
-            return await self._supprimer_en_mode_test(kind, entity_id, user)
         if kind in {"reception", "facture", "paiement"}:
-            raise R.verrou(
-                "Suppression interdite : une réception, une facture ou un paiement s'annule "
-                "(avec motif) pour conserver la traçabilité."
-            )
+            return await self._supprimer_piece(kind, entity_id, user)
         if kind == "demande":
             return await self.delete_demande(entity_id, user)
         getter = getters.get(kind)

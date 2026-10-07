@@ -491,7 +491,7 @@ def test_normalisation_et_mapping_entetes():
 @pytest.mark.parametrize(
     "valeur, attendu, erreur",
     [(5, Decimal(5), False), ("12", Decimal(12), False), (None, None, False), ("", None, False),
-     (-1, None, True), ("abc", None, True), (2.5, None, True)],
+         (-1, None, True), ("abc", None, True), (2.5, Decimal("2.5"), False), ("41,19", Decimal("41.19"), False)],
 )
 def test_quantite(valeur, attendu, erreur):
     q, err = _quantite(valeur)

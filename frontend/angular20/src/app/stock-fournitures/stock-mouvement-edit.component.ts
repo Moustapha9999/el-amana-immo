@@ -345,7 +345,7 @@ function toLocalInput(iso: string): string {
             </label>
             <label>
               {{ ajustement() ? 'Correction (+ ajoute, − retire)' : 'Quantité' }}
-              <input type="number" formControlName="quantite" [attr.min]="ajustement() ? null : 1" step="1" />
+              <input type="number" formControlName="quantite" [attr.min]="ajustement() ? null : 0.001" step="0.001" />
             </label>
             <label>
               Agence
@@ -418,7 +418,7 @@ export class StockMouvementEditComponent implements OnInit {
     q.addValidators(
       this.ajustement()
         ? (c) => (Number(c.value) === 0 ? { nul: true } : null)
-        : Validators.min(1),
+        : Validators.min(0.001),
     );
     q.updateValueAndValidity({ emitEvent: false });
     if (!m.quantite_modifiable) {

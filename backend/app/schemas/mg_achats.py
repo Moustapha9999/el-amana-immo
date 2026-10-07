@@ -9,7 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.mg_ops import BonOut, TransitionIn
-from app.schemas.nombres import Qty, QtyPos
+from app.schemas.nombres import QtyDec, QtyDecPos
 
 __all__ = [
     "TransitionIn",
@@ -100,7 +100,7 @@ class DashboardAchatsOut(BaseModel):
 class DemandeLigneIn(BaseModel):
     designation: str = Field(min_length=1, max_length=255)
     description: str | None = None
-    quantite: QtyPos
+    quantite: QtyDecPos
     uom: str = "U"
     prix_estime: Decimal = Field(default=Decimal("0"), ge=0)
     article_id: UUID | None = None
@@ -224,7 +224,7 @@ class ConsultationOut(BaseModel):
 
 class DevisLigneIn(BaseModel):
     designation: str = Field(min_length=1, max_length=255)
-    quantite: QtyPos
+    quantite: QtyDecPos
     prix_unitaire: Decimal = Field(ge=0)
     remise_pct: Decimal = Field(default=Decimal("0"), ge=0)
     taux_tva: Decimal = Field(default=Decimal("0"), ge=0)
@@ -345,7 +345,7 @@ class BlOut(BaseModel):
 
 class ReceptionLigneIn(BaseModel):
     bc_ligne_id: UUID
-    quantite_recue: QtyPos
+    quantite_recue: QtyDecPos
     article_id: UUID | None = None
 
 
@@ -354,7 +354,7 @@ class ReceptionLigneOut(BaseModel):
 
     id: UUID
     bc_ligne_id: UUID
-    quantite_recue: Qty
+    quantite_recue: QtyDec
     article_id: UUID | None
 
 
@@ -400,7 +400,7 @@ class FactureLigneIn(BaseModel):
     # Lien prioritaire vers la ligne BC ; à défaut, rapprochement par désignation.
     bc_ligne_id: UUID | None = None
     designation: str = Field(min_length=1, max_length=255)
-    quantite: QtyPos
+    quantite: QtyDecPos
     prix_unitaire: Decimal = Field(ge=0)
     # Absent → taux de la ligne BC rapprochée.
     taux_tva: Decimal | None = Field(default=None, ge=0, le=100)

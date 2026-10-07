@@ -52,6 +52,7 @@ from app.schemas.mg_facturation import (
     TvaUpdate,
 )
 from app.services.audit_helpers import record_audit
+from app.services.organisation_service import prochain_code_fournisseur
 from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
 
 ESPACE = "moyens-generaux"
@@ -2621,11 +2622,9 @@ class MgFacturationService:
                 status_code=409,
                 code="FOURNISSEUR_EXISTANT",
             )
-        codes = (await self.db.execute(select(Fournisseur.code).where(Fournisseur.code.op("~")(r"^FRS-[0-9]+$")))).scalars().all()
-        n = max((int(c.split("-")[1]) for c in codes), default=0) + 1
         fr = Fournisseur(
             id=uuid.uuid4(),
-            code=f"FRS-{n:03d}",
+            code=await prochain_code_fournisseur(self.db),
             raison_sociale=nom,
             type_fournisseur="SERVICE",
             telephone=_clean(data.telephone),

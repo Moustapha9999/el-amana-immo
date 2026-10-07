@@ -22,7 +22,7 @@ from sqlalchemy import select
 from app.core.exceptions import AppError
 from app.models.mg_stock import MgArticle, MgInventaireLigne
 from app.schemas.mg_stock import InventaireCreate, InventaireImportOptions
-from app.schemas.nombres import as_qty
+from app.schemas.nombres import as_qty, as_qty_dec
 from app.services.mg_inventaire_service import (
     PERM_SAISIE,
     MgInventaireService,
@@ -104,9 +104,7 @@ def _quantite(valeur) -> tuple[Decimal | None, str | None]:
         return None, f"valeur « {valeur} » non numérique"
     if q < 0:
         return None, f"quantité négative ({valeur})"
-    if q != q.to_integral_value():
-        return None, f"quantité non entière ({valeur})"
-    return q, None
+    return as_qty_dec(q), None
 
 
 def _detecter_entete(ws) -> tuple[int | None, dict[int, str], list[str]]:

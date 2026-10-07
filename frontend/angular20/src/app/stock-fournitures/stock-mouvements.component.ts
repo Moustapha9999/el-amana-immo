@@ -197,7 +197,7 @@ interface Paginated<T> {
                 </label>
                 <label>
                   Quantité
-                  <input type="number" formControlName="quantite" min="1" step="1" />
+                  <input type="number" formControlName="quantite" min="0.001" step="0.001" />
                 </label>
                 <label class="bea-mg__span2">
                   Motif
@@ -281,7 +281,7 @@ export class StockMouvementsComponent implements OnInit {
   readonly form = this.fb.nonNullable.group({
     article_id: ['', Validators.required],
     type_mouvement: ['ENTREE', Validators.required],
-    quantite: [1, [Validators.required, Validators.min(1)]],
+    quantite: [1, [Validators.required, Validators.min(0.001)]],
     motif: [''],
     agence_id: [''],
   });

@@ -90,11 +90,9 @@
                   <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--warn" title="Annuler la facture" [disabled]="r.statut === 'ANNULEE' || saving()" (click)="annuler(r)">
                     <mat-icon>block</mat-icon>
                   </button>
-                  @if (modeTest()) {
-                    <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer (mode test)" [disabled]="saving()" (click)="supprimer(r)">
-                      <mat-icon>delete</mat-icon>
-                    </button>
-                  }
+                  <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Supprimer" [disabled]="saving()" (click)="supprimer(r)">
+                    <mat-icon>delete</mat-icon>
+                  </button>
                 </td>
               </tr>
             } @empty {
@@ -217,7 +215,7 @@
         @for (ctrl of lignes.controls; track ctrl; let i = $index) {
           <div class="bea-fac__ligne" [formGroupName]="i">
             <input formControlName="designation" placeholder="Désignation *" />
-            <input type="number" formControlName="quantite" min="1" step="1" />
+            <input type="number" formControlName="quantite" min="0.001" step="0.001" />
             <input type="number" formControlName="prix_unitaire" step="0.01" />
             <input type="number" formControlName="taux_tva" min="0" max="100" step="0.01" placeholder="BC" />
             <strong>{{ totalLigne(i) | montant }}</strong>
@@ -267,11 +265,9 @@
           </button>
         }
         @if (current(); as c) {
-          @if (modeTest()) {
-            <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="supprimer(c)">
-              <mat-icon>delete</mat-icon> Supprimer (mode test)
-            </button>
-          }
+          <button type="button" class="bea-ach__btn bea-ach__btn--ghost" [disabled]="saving()" (click)="supprimer(c)">
+            <mat-icon>delete</mat-icon> Supprimer
+          </button>
           @if (payable(c.statut)) {
             <a class="bea-ach__btn bea-ach__btn--ghost" routerLink="/achats-appro/paiements/nouveau" [queryParams]="{ facture_id: c.id }">
               <mat-icon>payments</mat-icon> Payer
