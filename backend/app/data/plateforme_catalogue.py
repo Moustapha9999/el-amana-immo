@@ -515,6 +515,11 @@ CORE_ADMIN_PERMISSIONS: list[tuple[str, str, str]] = [
     ("core.admin.module_status.manage", "Gestion état des modules (CORE ADMIN)", "core"),
     ("core.admin.versions.view", "Consultation versions modules (CORE ADMIN)", "core"),
     ("core.admin.versions.manage", "Gestion versions modules (CORE ADMIN)", "core"),
+    ("core.admin.query.view", "CORE QUERY — consultation et analyse (CORE ADMIN)", "core"),
+    ("core.admin.query.execute", "CORE QUERY — exécution assistant / builder (CORE ADMIN)", "core"),
+    ("core.admin.query.sql", "CORE QUERY — exécution SQL libre (CORE ADMIN)", "core"),
+    ("core.admin.query.export", "CORE QUERY — export des résultats (CORE ADMIN)", "core"),
+    ("core.admin.query.admin", "CORE QUERY — mode administrateur : SQL sans restriction, écriture (CORE ADMIN)", "core"),
 ]
 
 FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [

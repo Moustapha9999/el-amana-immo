@@ -36,12 +36,6 @@ import { CoreAdminPermissionFicheComponent } from './core-admin/core-admin-permi
 import { CoreAdminPermissionsComponent } from './core-admin/core-admin-permissions.component';
 import { CoreAdminRoleFicheComponent } from './core-admin/core-admin-role-fiche.component';
 import { CoreAdminRolesComponent } from './core-admin/core-admin-roles.component';
-import {
-  CoreAdminSauvegardesBackupComponent,
-  CoreAdminSauvegardesHistoryComponent,
-  CoreAdminSauvegardesOverviewComponent,
-  CoreAdminSauvegardesRecoveryComponent,
-} from './core-admin/core-admin-sauvegardes.component';
 import { CoreAdminSessionsComponent } from './core-admin/core-admin-sessions.component';
 import {
   CoreAdminGeneralComponent,
@@ -147,10 +141,49 @@ export const PLATEFORME_ROUTES: Routes = [
       { path: 'general', component: CoreAdminGeneralComponent },
       { path: 'security', component: CoreAdminSecurityComponent },
       { path: 'maintenance', component: CoreAdminMaintenanceComponent },
-      { path: 'sauvegardes', component: CoreAdminSauvegardesOverviewComponent },
-      { path: 'sauvegardes/sauvegarde', component: CoreAdminSauvegardesBackupComponent },
-      { path: 'sauvegardes/recovery', component: CoreAdminSauvegardesRecoveryComponent },
-      { path: 'sauvegardes/historique', component: CoreAdminSauvegardesHistoryComponent },
+      {
+        path: 'core-query',
+        loadComponent: () => import('./core-admin/core-admin-query.component').then((m) => m.CoreAdminQueryAssistantComponent),
+      },
+      {
+        path: 'core-query/builder',
+        loadComponent: () =>
+          import('./core-admin/core-admin-query-builder.component').then((m) => m.CoreAdminQueryBuilderComponent),
+      },
+      {
+        path: 'core-query/sql',
+        loadComponent: () => import('./core-admin/core-admin-query.component').then((m) => m.CoreAdminQuerySqlComponent),
+      },
+      {
+        path: 'core-query/favoris',
+        loadComponent: () =>
+          import('./core-admin/core-admin-query-history.component').then((m) => m.CoreAdminQueryFavoritesComponent),
+      },
+      {
+        path: 'core-query/historique',
+        loadComponent: () =>
+          import('./core-admin/core-admin-query-history.component').then((m) => m.CoreAdminQueryHistoryComponent),
+      },
+      {
+        path: 'sauvegardes',
+        loadComponent: () =>
+          import('./core-admin/core-admin-sauvegardes.component').then((m) => m.CoreAdminSauvegardesOverviewComponent),
+      },
+      {
+        path: 'sauvegardes/sauvegarde',
+        loadComponent: () =>
+          import('./core-admin/core-admin-sauvegardes.component').then((m) => m.CoreAdminSauvegardesBackupComponent),
+      },
+      {
+        path: 'sauvegardes/recovery',
+        loadComponent: () =>
+          import('./core-admin/core-admin-sauvegardes.component').then((m) => m.CoreAdminSauvegardesRecoveryComponent),
+      },
+      {
+        path: 'sauvegardes/historique',
+        loadComponent: () =>
+          import('./core-admin/core-admin-sauvegardes.component').then((m) => m.CoreAdminSauvegardesHistoryComponent),
+      },
       { path: 'backups', pathMatch: 'full', redirectTo: 'sauvegardes' },
       { path: 'recovery', pathMatch: 'full', redirectTo: 'sauvegardes/recovery' },
       { path: 'supervision', component: CoreAdminSupervisionComponent },

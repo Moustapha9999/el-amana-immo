@@ -3640,6 +3640,9 @@ html[data-theme='dark'] .bea-sr-list__row:hover {
 html[data-theme='dark'] .bea-sr-list__main strong {
   color: #e0e6f4;
 }
+html[data-theme='dark'] .bea-admin-table tr.bea-sr-row--selected td {
+  background: #361212;
+}
 html[data-theme='dark'] .bea-sr-iconbtn {
   background: #1f1f1f;
 }
@@ -3676,6 +3679,100 @@ html[data-theme='dark'] .bea-sr-progress__steps {
 }
 html[data-theme='dark'] .bea-sr-progress__hint {
   color: #edb183;
+}
+html[data-theme='dark'] .bea-cq-ask__input {
+  border: 1px solid #3b434b;
+  background: #1f1f1f;
+}
+html[data-theme='dark'] .bea-cq-chip {
+  border: 1px solid #383f47;
+  background: #122436;
+}
+html[data-theme='dark'] .bea-cq-chip:hover {
+  background: #14283c;
+}
+html[data-theme='dark'] .bea-cq-confidence {
+  color: #b3efca;
+  background: #153f23;
+}
+html[data-theme='dark'] .bea-cq-confidence[data-level=moyenne] {
+  color: #f0b896;
+  background: #453c17;
+}
+html[data-theme='dark'] .bea-cq-confidence[data-level=faible] {
+  color: #eb8c8c;
+  background: #3c1414;
+}
+html[data-theme='dark'] .bea-cq-tag--code {
+  color: #bfc6d0;
+  background: #172635;
+}
+html[data-theme='dark'] .bea-cq-tag--system {
+  color: #a277e6;
+  background: #1a1339;
+}
+html[data-theme='dark'] .bea-cq-assumptions li,
+html[data-theme='dark'] .bea-cq-note {
+  color: #98ace9;
+}
+html[data-theme='dark'] .bea-cq-note {
+  background: #122237;
+}
+html[data-theme='dark'] .bea-cq-note[data-tone=ok] {
+  color: #b3efca;
+  background: #12371e;
+}
+html[data-theme='dark'] .bea-cq-note[data-tone=warn] {
+  color: #f0b896;
+  background: #383113;
+}
+html[data-theme='dark'] .bea-cq-note[data-tone=danger] {
+  color: #eb8c8c;
+  background: #361212;
+}
+html[data-theme='dark'] .bea-cq-editor__input::placeholder {
+  color: #9fa9b8;
+}
+html[data-theme='dark'] .bea-cq-steps li[data-status=ok] bea-admin-icon {
+  color: #86eeac;
+}
+html[data-theme='dark'] .bea-cq-steps li[data-status=failed] {
+  color: #ea7474;
+}
+html[data-theme='dark'] .bea-cq-failure h2 {
+  color: #eb8c8c;
+}
+html[data-theme='dark'] .bea-cq-favlist__run {
+  background: #1f1f1f;
+}
+html[data-theme='dark'] .bea-cq-favlist__run:hover:not(:disabled) {
+  background: #122436;
+}
+html[data-theme='dark'] .bea-cq-schema__cols button {
+  color: #bfc6d0;
+}
+html[data-theme='dark'] .bea-cq-schema__cols bea-admin-icon {
+  color: #eab06d;
+}
+html[data-theme='dark'] .bea-cq-col--on {
+  background: #122237;
+}
+html[data-theme='dark'] .bea-cq-col select {
+  border: 1px solid #3b434b;
+}
+html[data-theme='dark'] .bea-cq-error-text {
+  color: #ea7474;
+}
+html[data-theme='dark'] .bea-cq-admin {
+  border-color: #6f2a2a;
+  box-shadow: inset 4px 0 0 #dc2626;
+}
+html[data-theme='dark'] .bea-cq-admin .bea-cq-admin-toggle {
+  border-color: #6f2a2a;
+  background: #361212;
+}
+html[data-theme='dark'] .bea-cq-admin-tag {
+  color: #ea7474;
 }
 /* src/app/achats-appro/achats-ui.css */
 html[data-theme='dark'] .bea-ach__kpi {

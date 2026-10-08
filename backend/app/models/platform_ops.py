@@ -52,8 +52,8 @@ class PlatformBackup(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 class PlatformRestore(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "platform_restores"
 
-    backup_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("platform_backups.id", ondelete="RESTRICT"), index=True
+    backup_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("platform_backups.id", ondelete="SET NULL"), nullable=True, index=True
     )
     safety_backup_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("platform_backups.id", ondelete="SET NULL"), nullable=True
@@ -75,7 +75,7 @@ class PlatformRestore(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     options: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
-    backup: Mapped[PlatformBackup] = relationship(
+    backup: Mapped[PlatformBackup | None] = relationship(
         back_populates="restores",
         foreign_keys=[backup_id],
     )

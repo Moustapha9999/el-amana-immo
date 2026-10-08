@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from app.data.module_backup_scopes import MODULE_BACKUP_SCOPES
+from app.data.module_backup_scopes import MODULE_BACKUP_SCOPES, resolve_tables
 from app.data.plateforme_catalogue import FUNCTIONAL_PERMISSIONS, PLATEFORME_MODULES, ROLE_PERMISSIONS
 from app.models.mg_ops import (
     MgNoteFrais,
@@ -53,15 +53,15 @@ def test_notes_role_grants():
 
 
 def test_notes_backup_scope():
-    scope = MODULE_BACKUP_SCOPES["notes-frais"]
-    for t in (
+    tables = {
         "mg_notes_frais",
         "mg_note_frais_lignes",
         "mg_note_frais_categories",
         "mg_note_frais_historique",
         "mg_note_frais_parametres",
-    ):
-        assert t in scope["exclusive_tables"]
+    }
+    assert "mg_notes_frais" in MODULE_BACKUP_SCOPES["notes-frais"]["exclusive_tables"]
+    assert set(resolve_tables("notes-frais", tables)) == tables
 
 
 def test_notes_models():
@@ -182,7 +182,9 @@ def test_paiements_table_linked_to_note():
     fk = next(iter(MgNoteFraisPaiement.__table__.c.note_id.foreign_keys))
     assert fk.column.table.name == "mg_notes_frais"
     assert MgNoteFraisPaiement.__table__.c.note_id.nullable is False
-    assert "mg_note_frais_paiements" in MODULE_BACKUP_SCOPES["notes-frais"]["exclusive_tables"]
+    assert "mg_note_frais_paiements" in resolve_tables(
+        "notes-frais", {"mg_notes_frais", "mg_note_frais_paiements"}
+    )
 
 
 def test_notes_front_routes():

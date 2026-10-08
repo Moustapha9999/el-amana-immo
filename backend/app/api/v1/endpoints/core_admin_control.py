@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
 
@@ -190,6 +191,32 @@ async def delete_backup(
     await PlatformBackupService(db).delete_backup(backup_id, user=user, request=request)
     await db.commit()
     return {"ok": True}
+
+
+class BackupBulkDelete(BaseModel):
+    ids: list[UUID] = Field(min_length=1, max_length=200)
+
+
+@router.post("/backups/bulk-delete")
+async def bulk_delete_backups(
+    payload: BackupBulkDelete,
+    request: Request,
+    user: User = Depends(_BACKUP_DELETE),
+    db: AsyncSession = Depends(get_db),
+):
+    svc = PlatformBackupService(db)
+    deleted: list[str] = []
+    failed: list[dict] = []
+    for backup_id in dict.fromkeys(payload.ids):
+        try:
+            async with db.begin_nested():
+                await svc.delete_backup(backup_id, user=user, request=request)
+            deleted.append(str(backup_id))
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+            failed.append({"id": str(backup_id), "code": detail.get("code"), "message": detail.get("message")})
+    await db.commit()
+    return {"deleted": deleted, "failed": failed}
 
 
 @router.get("/recovery")

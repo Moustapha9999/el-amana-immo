@@ -213,3 +213,67 @@ async def test_recovery_refuses_without_strong_confirmation(client: AsyncClient)
     ):
         resp = await client.post(f"{API}/recovery/{backup_id}", json=payload, headers=headers)
         assert resp.status_code == 400, resp.text
+
+
+async def _insert_fake_backup(status: str = "failed") -> uuid.UUID:
+    """Sauvegarde sans artefact (aucun fichier touché) pour tester la suppression."""
+    backup_id = uuid.uuid4()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO platform_backups (id, level, backup_type, status, size_bytes, label, created_at, updated_at) "
+                "VALUES (:id, 'module', 'manuelle', :status, 0, 'Test suppression', now(), now())"
+            ),
+            {"id": backup_id, "status": status},
+        )
+    return backup_id
+
+
+@pytest.mark.asyncio
+async def test_delete_backup_used_by_restore_keeps_history(client: AsyncClient):
+    headers = await _headers(client)
+    backup_id = await _insert_fake_backup()
+    restore_id = uuid.uuid4()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO platform_restores (id, backup_id, level, status, acknowledged_dependencies, created_at, updated_at) "
+                "VALUES (:id, :b, 'module', 'failed', false, now(), now())"
+            ),
+            {"id": restore_id, "b": backup_id},
+        )
+    try:
+        resp = await client.delete(f"{API}/backups/{backup_id}", headers=headers)
+        assert resp.status_code == 200, resp.text
+        assert (await client.get(f"{API}/backups/{backup_id}", headers=headers)).status_code == 404
+        restore = (await client.get(f"{API}/recovery/restores/{restore_id}", headers=headers)).json()
+        assert restore["backup_id"] is None
+        assert restore["deleted_backup"]["id"] == str(backup_id)
+        assert restore["deleted_backup"]["label"] == "Test suppression"
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(text("DELETE FROM platform_restores WHERE id = :id"), {"id": restore_id})
+            await conn.execute(text("DELETE FROM platform_backups WHERE id = :id"), {"id": backup_id})
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_backups(client: AsyncClient):
+    headers = await _headers(client)
+    ok_ids = [await _insert_fake_backup(), await _insert_fake_backup("success")]
+    running = await _insert_fake_backup("running")
+    try:
+        resp = await client.post(
+            f"{API}/backups/bulk-delete",
+            json={"ids": [str(i) for i in ok_ids] + [str(running), str(uuid.uuid4())]},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert set(body["deleted"]) == {str(i) for i in ok_ids}
+        assert {f["code"] for f in body["failed"]} == {"BACKUP_RUNNING", "BACKUP_NOT_FOUND"}
+        assert (await client.get(f"{API}/backups/{running}", headers=headers)).status_code == 200
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("DELETE FROM platform_backups WHERE id = ANY(:ids)"), {"ids": [*ok_ids, running]}
+            )

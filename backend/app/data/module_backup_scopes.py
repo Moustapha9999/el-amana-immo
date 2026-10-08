@@ -63,6 +63,8 @@ SHARED_CORE_TABLES: list[str] = [
     "platform_restores",
     "platform_module_versions",
     "platform_ops_flags",
+    "core_query_logs",
+    "core_query_favorites",
     "alembic_version",
 ]
 
@@ -81,6 +83,7 @@ GLOBAL_RESTORE_JOURNAL_TABLES: list[str] = [
     "auth_login_attempts",
     "password_reset_jtis",
     "security_incidents",
+    "core_query_logs",
 ]
 
 # Plan sécurité : restauré en GLOBAL uniquement sur option explicite

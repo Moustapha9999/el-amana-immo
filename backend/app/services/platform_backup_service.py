@@ -487,19 +487,35 @@ class PlatformBackupService:
         row = await self.get(backup_id)
         if row is None:
             raise _error(404, "BACKUP_NOT_FOUND", "Sauvegarde introuvable.")
-        used = await self.db.scalar(
-            select(func.count()).select_from(PlatformRestore).where(PlatformRestore.backup_id == backup_id)
-        )
-        if used:
-            raise _error(
-                409,
-                "BACKUP_IN_USE",
-                "Cette sauvegarde a servi à une restauration : elle est conservée pour la traçabilité.",
+        if row.status == "running":
+            raise _error(409, "BACKUP_RUNNING", "Sauvegarde en cours : attendez la fin avant de la supprimer.")
+        running_restore = await self.db.scalar(
+            select(func.count()).select_from(PlatformRestore).where(
+                PlatformRestore.backup_id == backup_id, PlatformRestore.status == "running"
             )
+        )
+        if running_restore:
+            raise _error(409, "BACKUP_IN_USE", "Une restauration utilise cette sauvegarde en ce moment.")
         before = self._audit_payload(row)
+        restores = (
+            await self.db.execute(select(PlatformRestore).where(PlatformRestore.backup_id == backup_id))
+        ).scalars().all()
+        trace = {
+            "id": str(row.id),
+            "label": row.label,
+            "level": row.level,
+            "created_at": _iso(row.created_at),
+            "deleted_at": _iso(datetime.now(timezone.utc)),
+            "deleted_by": str(user.id),
+        }
+        for restore in restores:
+            restore.details = {**(restore.details or {}), "deleted_backup": trace}
+            restore.backup_id = None
+        await self.db.flush()
         await asyncio.to_thread(
             engine.remove_artifacts, engine.backup_root(), row.artifacts, [row.file_path, row.uploads_path]
         )
+        before["restores_linked"] = len(restores)
         await self.db.delete(row)
         await record_audit(
             self.db,
@@ -1135,9 +1151,10 @@ class PlatformBackupService:
               FROM platform_backups b
             UNION ALL
             SELECT 'restore', r.id, r.created_at, r.level, r.espace_code, r.module_code,
-                   r.status, COALESCE(b.size_bytes, 0), r.created_by_id, 'recovery', b.label,
+                   r.status, COALESCE(b.size_bytes, 0), r.created_by_id, 'recovery',
+                   COALESCE(b.label, r.details -> 'deleted_backup' ->> 'label'),
                    r.backup_id, r.duration_ms, NULL, r.error_message
-              FROM platform_restores r JOIN platform_backups b ON b.id = r.backup_id
+              FROM platform_restores r LEFT JOIN platform_backups b ON b.id = r.backup_id
         """
         total = int(
             await self.db.scalar(text(f"SELECT count(*) FROM ({union}) h {clause}"), params) or 0
@@ -1159,7 +1176,7 @@ class PlatformBackupService:
                 {
                     "kind": r["kind"],
                     "id": str(r["id"]),
-                    "backup_id": str(r["backup_id"]),
+                    "backup_id": str(r["backup_id"]) if r["backup_id"] else None,
                     "created_at": _iso(r["created_at"]),
                     "level": r["level"],
                     "type": LEVEL_CODES.get(r["level"], r["level"].upper()),
@@ -1278,7 +1295,7 @@ class PlatformBackupService:
     def _restore_audit_payload(row: PlatformRestore) -> dict:
         return {
             "restore_id": str(row.id),
-            "backup_id": str(row.backup_id),
+            "backup_id": str(row.backup_id) if row.backup_id else None,
             "safety_backup_id": str(row.safety_backup_id) if row.safety_backup_id else None,
             "level": row.level,
             "espace_code": row.espace_code,
@@ -1350,7 +1367,8 @@ class PlatformBackupService:
         esp_labels, mod_labels = await self._labels()
         return {
             "id": str(row.id),
-            "backup_id": str(row.backup_id),
+            "backup_id": str(row.backup_id) if row.backup_id else None,
+            "deleted_backup": (row.details or {}).get("deleted_backup"),
             "safety_backup_id": str(row.safety_backup_id) if row.safety_backup_id else None,
             "level": row.level,
             "type": LEVEL_CODES.get(row.level, row.level.upper()),

@@ -50,15 +50,78 @@ const SR_TABS = [
   { label: 'Historique', path: '/admin/sauvegardes/historique', icon: 'manage_history' },
 ];
 
+function srBackupLabel(b: { type: string; perimetre: string; created_at?: string | null }): string {
+  const when = b.created_at
+    ? new Date(b.created_at).toLocaleString('fr-FR', { timeZone: TZ, dateStyle: 'short', timeStyle: 'short' })
+    : '';
+  return [b.type, b.perimetre, when].filter(Boolean).join(' — ');
+}
+
 function levelLabel(level: string | null | undefined): string {
   return SR_LEVELS.find((l) => l.value === level)?.label ?? level ?? '—';
 }
 
-/** Actions partagées (vérification, téléchargement) — succès affiché après réponse backend. */
+interface SrBulkDeleteResult {
+  deleted: string[];
+  failed: { id: string; code?: string | null; message?: string | null }[];
+}
+
+/** Actions partagées (vérification, téléchargement, suppression) — succès affiché après réponse backend. */
 @Injectable({ providedIn: 'root' })
 export class SrActionsService {
   private readonly api = inject(ApiService);
   private readonly feedback = inject(FeedbackService);
+  private readonly dialog = inject(BeaAdminDialogService);
+
+  /** Supprime une ou plusieurs sauvegardes (fichiers + entrée). Résout `true` si au moins une est supprimée. */
+  async remove(items: { id: string; label: string }[], busy?: WritableSignal<boolean>): Promise<boolean> {
+    if (!items.length) return false;
+    const many = items.length > 1;
+    const list = items
+      .slice(0, 8)
+      .map((i) => `- ${i.label}`)
+      .join('\n');
+    const ok = await this.dialog.confirm({
+      title: many ? `Supprimer ${items.length} sauvegardes` : 'Supprimer la sauvegarde',
+      message:
+        `${list}${items.length > 8 ? `\n… et ${items.length - 8} autre(s)` : ''}\n\n` +
+        'Les fichiers (dump, archives) sont effacés du disque : action irréversible. ' +
+        'L’historique des restaurations est conservé.',
+      confirmLabel: 'Supprimer',
+      tone: 'danger',
+    });
+    if (!ok) return false;
+    return new Promise<boolean>((resolve) => {
+      this.feedback
+        .run(() => this.api.post<SrBulkDeleteResult>(`${SR_API}/backups/bulk-delete`, { ids: items.map((i) => i.id) }), {
+          loading: 'Suppression…',
+          busy,
+          retry: false,
+          errorTitle: 'Suppression impossible',
+          success: (r) =>
+            r.deleted.length
+              ? {
+                  title: r.deleted.length > 1 ? 'Sauvegardes supprimées' : 'Sauvegarde supprimée',
+                  message: `${r.deleted.length} sauvegarde(s) et leurs fichiers supprimés.`,
+                }
+              : null,
+        })
+        .subscribe({
+          next: (r) => {
+            if (r.failed.length) {
+              this.feedback.error({
+                title: `${r.failed.length} sauvegarde(s) non supprimée(s)`,
+                message: r.failed.map((f) => f.message || f.code || f.id).join('\n'),
+                duration: 0,
+              });
+            }
+            resolve(r.deleted.length > 0);
+          },
+          error: () => resolve(false),
+          complete: () => resolve(false),
+        });
+    });
+  }
 
   verify(id: string, busy?: WritableSignal<boolean>): Observable<SrVerifyResult> {
     return this.feedback
@@ -317,7 +380,16 @@ export class SrProgressComponent implements OnInit, OnDestroy {
               <div class="bea-sr-summary__wide"><dt>Motif</dt><dd>{{ r.reason || '—' }}</dd></div>
               <div class="bea-sr-summary__wide">
                 <dt>Sauvegarde source</dt>
-                <dd><button type="button" class="bea-admin-table__link bea-sr-mono" (click)="open('backup', r.backup_id)">{{ r.backup_id }}</button></dd>
+                <dd>
+                  @if (r.backup_id) {
+                    <button type="button" class="bea-admin-table__link bea-sr-mono" (click)="open('backup', r.backup_id)">{{ r.backup_id }}</button>
+                  } @else if (r.deleted_backup; as d) {
+                    Supprimée le {{ d.deleted_at | date: 'dd/MM/yyyy HH:mm' : tz }}
+                    <span class="bea-sr-mono">({{ d.label || d.id }})</span>
+                  } @else {
+                    Supprimée
+                  }
+                </dd>
               </div>
               <div class="bea-sr-summary__wide">
                 <dt>Sauvegarde de sécurité</dt>
@@ -376,6 +448,11 @@ export class SrProgressComponent implements OnInit, OnDestroy {
                   <bea-admin-icon name="settings_backup_restore" /> Restaurer
                 </button>
               }
+            }
+            @if (perms.delete() && b.status !== 'running') {
+              <button type="button" class="bea-admin-btn bea-admin-btn--danger" [disabled]="busy()" (click)="remove(b)">
+                <bea-admin-icon name="delete" /> Supprimer
+              </button>
             }
           }
           <button type="button" class="bea-admin-btn" (click)="close()">Fermer</button>
@@ -462,6 +539,13 @@ export class SrDetailsComponent implements OnInit {
 
   download(b: SrBackup): void {
     this.actions.download(b.id, b.type, this.busy).subscribe();
+  }
+
+  async remove(b: SrBackup): Promise<void> {
+    if (await this.actions.remove([{ id: b.id, label: srBackupLabel(b) }], this.busy)) {
+      this.changed.emit();
+      this.closed.emit();
+    }
   }
 
   goRestore(id: string): void {
@@ -881,7 +965,7 @@ interface SrBackupResult {
       <bea-sr-progress [title]="'Sauvegarde ' + (preview()?.type ?? '').toLowerCase() + ' en cours…'" [steps]="steps" />
     }
     @if (details(); as id) {
-      <bea-sr-details kind="backup" [itemId]="id" (closed)="details.set(null)" />
+      <bea-sr-details kind="backup" [itemId]="id" (closed)="details.set(null)" (changed)="result.set(null); refreshPreview()" />
     }
   `,
 })
@@ -968,7 +1052,7 @@ export class CoreAdminSauvegardesBackupComponent implements OnInit, OnDestroy {
     return params;
   }
 
-  private refreshPreview(): void {
+  refreshPreview(): void {
     this.preview.set(null);
     this.previewError.set(null);
     if (!this.ready()) return;
@@ -1523,6 +1607,11 @@ export class CoreAdminSauvegardesRecoveryComponent implements OnInit {
           </select>
         </label>
         <div class="bea-admin-toolbar__actions">
+          @if (perms.delete() && selected().size) {
+            <button type="button" class="bea-admin-btn bea-admin-btn--danger" [disabled]="rowBusy()" (click)="removeSelected()">
+              <bea-admin-icon name="delete" /> Supprimer la sélection ({{ selected().size }})
+            </button>
+          }
           <button type="button" class="bea-admin-btn bea-admin-btn--refresh" [disabled]="loading()" (click)="load()">
             <bea-admin-icon name="refresh" /> Actualiser
           </button>
@@ -1539,6 +1628,17 @@ export class CoreAdminSauvegardesRecoveryComponent implements OnInit {
             <table class="bea-admin-table">
               <thead>
                 <tr>
+                  @if (perms.delete()) {
+                    <th class="bea-sr-select">
+                      <input
+                        type="checkbox"
+                        aria-label="Sélectionner toutes les sauvegardes de la page"
+                        [checked]="allSelected()"
+                        [disabled]="!deletable().length"
+                        (change)="toggleAll($any($event.target).checked)"
+                      />
+                    </th>
+                  }
                   <th>Date</th>
                   <th>Type</th>
                   <th>Périmètre</th>
@@ -1550,7 +1650,19 @@ export class CoreAdminSauvegardesRecoveryComponent implements OnInit {
               </thead>
               <tbody>
                 @for (row of items(); track row.kind + row.id) {
-                  <tr>
+                  <tr [class.bea-sr-row--selected]="selected().has(row.id)">
+                    @if (perms.delete()) {
+                      <td class="bea-sr-select">
+                        @if (canDelete(row)) {
+                          <input
+                            type="checkbox"
+                            [attr.aria-label]="'Sélectionner la sauvegarde du ' + (row.created_at | date: 'dd/MM/yyyy HH:mm' : tz)"
+                            [checked]="selected().has(row.id)"
+                            (change)="toggle(row.id, $any($event.target).checked)"
+                          />
+                        }
+                      </td>
+                    }
                     <td>{{ row.created_at | date: 'dd/MM/yyyy HH:mm' : tz }}</td>
                     <td>
                       <span class="bea-sr-badge" [attr.data-level]="row.level">{{ row.type }}</span>
@@ -1588,8 +1700,13 @@ export class CoreAdminSauvegardesRecoveryComponent implements OnInit {
                             <bea-admin-icon name="verified" />
                           </button>
                         }
-                        @if (row.kind === 'restore') {
-                          <button type="button" class="bea-admin-icon-btn" title="Sauvegarde source" aria-label="Sauvegarde source" (click)="details.set({ kind: 'backup', id: row.backup_id })">
+                        @if (perms.delete() && canDelete(row)) {
+                          <button type="button" class="bea-admin-icon-btn bea-admin-icon-btn--danger" title="Supprimer" aria-label="Supprimer la sauvegarde" [disabled]="rowBusy()" (click)="removeOne(row)">
+                            <bea-admin-icon name="delete" />
+                          </button>
+                        }
+                        @if (row.kind === 'restore' && row.backup_id; as sourceId) {
+                          <button type="button" class="bea-admin-icon-btn" title="Sauvegarde source" aria-label="Sauvegarde source" (click)="details.set({ kind: 'backup', id: sourceId })">
                             <bea-admin-icon name="inventory_2" />
                           </button>
                         }
@@ -1632,12 +1749,49 @@ export class CoreAdminSauvegardesHistoryComponent implements OnInit {
   readonly loading = signal(false);
   readonly rowBusy = signal(false);
   readonly details = signal<{ kind: 'backup' | 'restore'; id: string } | null>(null);
+  readonly selected = signal<Set<string>>(new Set());
+  readonly deletable = computed(() => this.items().filter((r) => this.canDelete(r)));
+  readonly allSelected = computed(
+    () => this.deletable().length > 0 && this.deletable().every((r) => this.selected().has(r.id)),
+  );
 
   readonly status = srStatusLabel;
   readonly backupType = srBackupTypeLabel;
   readonly bytes = srBytes;
   readonly user = srUser;
   readonly levelLabel = levelLabel;
+
+  canDelete(row: SrHistoryItem): boolean {
+    return row.kind === 'backup' && row.status !== 'running';
+  }
+
+  toggle(id: string, on: boolean): void {
+    this.selected.update((s) => {
+      const next = new Set(s);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  toggleAll(on: boolean): void {
+    this.selected.set(on ? new Set(this.deletable().map((r) => r.id)) : new Set());
+  }
+
+  async removeOne(row: SrHistoryItem): Promise<void> {
+    if (await this.actions.remove([{ id: row.id, label: srBackupLabel(row) }], this.rowBusy)) this.afterDelete();
+  }
+
+  async removeSelected(): Promise<void> {
+    const rows = this.deletable().filter((r) => this.selected().has(r.id));
+    const items = rows.map((r) => ({ id: r.id, label: srBackupLabel(r) }));
+    if (await this.actions.remove(items, this.rowBusy)) this.afterDelete();
+  }
+
+  private afterDelete(): void {
+    this.selected.set(new Set());
+    this.load();
+  }
 
   ngOnInit(): void {
     this.load();
@@ -1662,6 +1816,7 @@ export class CoreAdminSauvegardesHistoryComponent implements OnInit {
       next: (res) => {
         this.items.set(res.items);
         this.total.set(res.total);
+        this.selected.update((s) => new Set([...s].filter((id) => res.items.some((i) => i.id === id))));
         this.loading.set(false);
       },
       error: () => this.loading.set(false),

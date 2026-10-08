@@ -6,6 +6,7 @@ from app.models.associations import (
 )
 from app.models.archive import ArchiveDossier, ArchiveFichier, ArchiveLigne
 from app.models.audit import AuditLog, Notification
+from app.models.core_query import CoreQueryFavorite, CoreQueryLog
 from app.models.auth import Agence, AuthLoginAttempt, AuthSession, Permission, Role, User
 from app.models.security_extra import PasswordHistory, PasswordResetJti, SecurityIncident
 from app.models.supervision import ApiErrorEvent
@@ -165,6 +166,8 @@ __all__ = [
     "PlateformeDomaine",
     "PlateformeModule",
     "PlatformBackup",
+    "CoreQueryLog",
+    "CoreQueryFavorite",
     "PlatformRestore",
     "PlatformModuleVersion",
     "PlatformOpsFlag",

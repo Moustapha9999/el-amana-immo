@@ -77,6 +77,8 @@ n'est qu'un confort : **chaque endpoint revérifie la permission**.
 | GET | `/backups/{id}` | Détail + manifeste + restaurations liées |
 | POST | `/backups/{id}/verify` | Contrôle d'intégrité (SHA-256, `pg_restore -l`, archive lisible) |
 | GET | `/backups/{id}/download` | Archive `.tar` des artefacts (`backup.download`) |
+| DELETE | `/backups/{id}` | Supprime la sauvegarde et ses artefacts (`backup.delete`) |
+| POST | `/backups/bulk-delete` | Suppression multiple `{ids: [...]}` (max 200) → `{deleted, failed}` (`backup.delete`) |
 | GET | `/recovery/{id}/preview?include_security` | Impact : tables, lignes actuelles/sauvegardées, dépendances, tables préservées |
 | POST | `/recovery/{id}` | Restauration (`confirmation`, `reason`, `acknowledge_dependencies`, `include_security`) |
 | GET | `/recovery/restores/{id}` | Détail d'une restauration |
@@ -117,3 +119,19 @@ sinon la restauration est refusée proprement (aucune donnée modifiée).
 
 Audit des sauvegardes : `backup_create`, `backup_failed`, `backup_verify`,
 `backup_verify_failed`, `backup_download`, `backup_delete`.
+
+### Suppression des sauvegardes
+
+L'administrateur (`core.admin.backup.delete`) peut supprimer n'importe quelle
+sauvegarde, y compris les sauvegardes de sécurité, depuis l'historique (sélection
+multiple ou icône par ligne) ou depuis le détail. Confirmation obligatoire
+(`BeaAdminDialogService`), suppression irréversible (ligne + artefacts disque).
+
+Seuls refus (409) : sauvegarde en cours (`BACKUP_RUNNING`) ou utilisée par une
+restauration en cours (`BACKUP_IN_USE`). En suppression multiple, chaque ID est
+traité dans un savepoint : un refus n'annule pas les autres.
+
+L'historique des restaurations est conservé : migration `20261008_admin_powers`
+(`platform_restores.backup_id` nullable, FK `ON DELETE SET NULL`) ; la trace de la
+sauvegarde supprimée (libellé, niveau, dates, auteur) est copiée dans
+`platform_restores.details.deleted_backup`.

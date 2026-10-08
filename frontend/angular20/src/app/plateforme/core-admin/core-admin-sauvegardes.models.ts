@@ -54,9 +54,18 @@ export interface SrBackup {
   manifest?: Record<string, unknown> | null;
 }
 
+export interface SrDeletedBackup {
+  id: string;
+  label?: string | null;
+  level?: string | null;
+  created_at?: string | null;
+  deleted_at?: string | null;
+}
+
 export interface SrRestore {
   id: string;
-  backup_id: string;
+  backup_id: string | null;
+  deleted_backup?: SrDeletedBackup | null;
   safety_backup_id?: string | null;
   level: SrLevel;
   type: string;
@@ -158,7 +167,7 @@ export interface SrRestorePreview {
 export interface SrHistoryItem {
   kind: 'backup' | 'restore';
   id: string;
-  backup_id: string;
+  backup_id: string | null;
   created_at?: string | null;
   level: SrLevel;
   type: string;
@@ -283,6 +292,7 @@ export function srPermissions() {
   return {
     view: has('core.admin.backup.view'),
     create: has('core.admin.backup.create'),
+    delete: has('core.admin.backup.delete'),
     download: has('core.admin.backup.download'),
     recoveryView: has('core.admin.recovery.view'),
     recoveryExec: has('core.admin.recovery.execute'),

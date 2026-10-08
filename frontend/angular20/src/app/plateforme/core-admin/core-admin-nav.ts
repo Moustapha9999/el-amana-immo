@@ -44,6 +44,16 @@ export const CORE_ADMIN_NAV: CoreAdminNavGroup[] = [
     ],
   },
   {
+    label: 'CORE QUERY',
+    items: [
+      { label: 'Assistant', path: '/admin/core-query', icon: 'manage_search', exact: true },
+      { label: 'Query Builder', path: '/admin/core-query/builder', icon: 'account_tree' },
+      { label: 'SQL', path: '/admin/core-query/sql', icon: 'code' },
+      { label: 'Requêtes favorites', path: '/admin/core-query/favoris', icon: 'star' },
+      { label: 'Historique', path: '/admin/core-query/historique', icon: 'history' },
+    ],
+  },
+  {
     label: 'Sauvegardes & Recovery',
     items: [
       { label: 'Vue générale', path: '/admin/sauvegardes', icon: 'insights', exact: true },

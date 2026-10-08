@@ -86,6 +86,13 @@ Sauvegardes & Recovery (voir [core-admin-ops.md](core-admin-ops.md#sauvegardes--
 
 Appliquer la migration : `.\scripts\apply-core-admin-ops.ps1` (crée un backup
 local avant Alembic `20260918_core_admin_ops`).
+
+### CORE QUERY (Data Explorer, lecture seule) — voir [core-query.md](core-query.md)
+
+Permissions : `core.admin.query.view|execute|sql|export`. Routes UI :
+`/admin/core-query` (Assistant), `/builder`, `/sql`, `/favoris`, `/historique`.
+API : `/api/v1/plateforme/admin/core-query/*`. Migration `20261008_core_query`.
+
 ## Phases
 
 | Phase | Contenu |
