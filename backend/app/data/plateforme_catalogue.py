@@ -44,6 +44,7 @@ DEFAULT_MODULE_CODE = "immobilisations"
 ACC_ESPACE_CODE = "audit-controle-conformite"
 EER_MODULE_CODE = "eer"
 FORMATION_MODULE_CODE = "formation"
+CLIENTELE_MODULE_CODE = "clientele"
 
 # Toujours (re)créés s’ils manquent. Le reste du catalogue = seed **bootstrap**
 # seulement (CORE ADMIN peut supprimer sans resurrection au refresh).
@@ -477,6 +478,21 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "icon": "school",
         "sort_order": 2,
     },
+    {
+        "code": CLIENTELE_MODULE_CODE,
+        "espace_code": ACC_ESPACE_CODE,
+        "domaine_code": "conformite-securite-financiere",
+        "label": "Référentiel clients",
+        "description": (
+            "Base clientèle consolidée sur la racine ORION (1 client, N comptes, N RIB) : "
+            "import État des comptes, Situation PP / PM, fiche client."
+        ),
+        "entry_path": "/clientele/dashboard",
+        "statut": "developpement",
+        "status_message": "Module en cours de construction — import, rapprochement, classification, filtrage.",
+        "icon": "groups",
+        "sort_order": 1,
+    },
 ]
 
 # Permissions CORE (tous les départements). `{module}.admin` couvre `{module}.*`.
@@ -660,6 +676,25 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("formation.reporting.view", "Reporting formation", "formation"),
     ("formation.reporting.export", "Exports PDF / Excel formation", "formation"),
     ("formation.admin", "Administration du module Formation & Sensibilisation", "formation"),
+    ("clientele.view", "Consultation du référentiel clients", "clientele"),
+    ("clientele.import.view", "Consultation des imports ORION", "clientele"),
+    ("clientele.import.execute", "Import de l'État des comptes ORION", "clientele"),
+    ("clientele.rapprochement.view", "Consultation des rapprochements d'imports", "clientele"),
+    ("clientele.rapprochement.execute", "Calcul des rapprochements d'imports ORION", "clientele"),
+    ("clientele.classif.view", "Consultation des classifications clients", "clientele"),
+    ("clientele.classif.execute", "Classification individuelle, de masse et moteur", "clientele"),
+    ("clientele.classif.admin", "Référentiels et versions de règles de classification", "clientele"),
+    ("clientele.filtrage.view", "Consultation du filtrage et des alertes", "clientele"),
+    ("clientele.filtrage.execute", "Lancement du filtrage et listes internes", "clientele"),
+    ("clientele.filtrage.decide", "Décision sur une alerte (analyse, faux positif, clôture)", "clientele"),
+    ("clientele.reporting.view", "Consultation du reporting indicateurs clientèle", "clientele"),
+    ("clientele.bcm.view", "Consultation des déclarations mensuelles BCM", "clientele"),
+    ("clientele.bcm.prepare", "Préparation et calcul d'une déclaration BCM", "clientele"),
+    ("clientele.bcm.valider", "Validation d'une déclaration BCM (snapshot figé)", "clientele"),
+    ("clientele.bcm.cloturer", "Clôture et archivage d'une déclaration BCM", "clientele"),
+    ("clientele.export", "Export du référentiel clients", "clientele"),
+    ("clientele.scope.all", "Périmètre clientèle : toutes les agences", "clientele"),
+    ("clientele.admin", "Administration du référentiel clients", "clientele"),
 ]
 
 # Rôles figés Login 2 / module Immobilisations (codes courts = legacy).
@@ -716,6 +751,9 @@ RBAC_ROLES: list[tuple[str, str, str]] = [
     ("formation.lecteur", "Formation — Lecteur", "Consultation des formations, présences et du reporting"),
     ("formation.gestionnaire", "Formation — Gestionnaire", "Sessions, participants, présences, employés et exports"),
     ("formation.admin", "Formation — Admin", "Administration complète : référentiels, imports, clôtures"),
+    ("clientele.lecteur", "Clientèle — Lecteur", "Consultation du référentiel, situations, classifications et alertes"),
+    ("clientele.gestionnaire", "Clientèle — Gestionnaire", "Imports, rapprochements, classification, filtrage et exports"),
+    ("clientele.admin", "Clientèle — Admin", "Administration complète du référentiel clients"),
 ]
 
 # Codes courts réservés au module Immobilisations (ne pas créer pour Crédit / RH / …).
@@ -815,6 +853,28 @@ _FORMATION_GESTIONNAIRE = _FORMATION_LECTEUR + (
     "formation.attendance.manage",
     "formation.import.view",
     "formation.reporting.export",
+)
+_CLIENTELE_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "clientele"
+)
+_CLIENTELE_LECTEUR = (
+    "clientele.view",
+    "clientele.import.view",
+    "clientele.rapprochement.view",
+    "clientele.classif.view",
+    "clientele.filtrage.view",
+    "clientele.reporting.view",
+    "clientele.bcm.view",
+    "clientele.scope.all",
+)
+_CLIENTELE_GESTIONNAIRE = _CLIENTELE_LECTEUR + (
+    "clientele.import.execute",
+    "clientele.rapprochement.execute",
+    "clientele.classif.execute",
+    "clientele.filtrage.execute",
+    "clientele.filtrage.decide",
+    "clientele.bcm.prepare",
+    "clientele.export",
 )
 _CORE_ADMIN = (
     "plateforme.users.read",
@@ -990,6 +1050,9 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "formation.lecteur": _FORMATION_LECTEUR,
     "formation.gestionnaire": _FORMATION_GESTIONNAIRE,
     "formation.admin": _FORMATION_ALL,
+    "clientele.lecteur": _CLIENTELE_LECTEUR,
+    "clientele.gestionnaire": _CLIENTELE_GESTIONNAIRE,
+    "clientele.admin": _CLIENTELE_ALL,
 }
 
 SYSTEM_ROLE_CODES = frozenset(code for code, _label, _desc in RBAC_ROLES)

@@ -4,6 +4,7 @@ from app.api.v1.endpoints import (
     archives,
     archives_vues,
     auth,
+    clientele,
     comptabilite,
     core_admin_audit,
     core_admin_catalogue,
@@ -64,6 +65,7 @@ api_router.include_router(mg_requests.mg_router)
 api_router.include_router(mg_requests.batch_router)
 api_router.include_router(eer.router, dependencies=[Depends(require_module_access("eer"))])
 api_router.include_router(formation.router, dependencies=[Depends(require_module_access("formation"))])
+api_router.include_router(clientele.router, dependencies=[Depends(require_module_access("clientele"))])
 
 _immo = [Depends(require_module_access("immobilisations"))]
 api_router.include_router(organisation.router, dependencies=_immo)

@@ -261,6 +261,35 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
         ],
         table_prefixes=["formation_"],
     ),
+    "clientele": make_module_scope(
+        label="Référentiel clients",
+        exclusive_tables=[
+            "clientele_clients",
+            "clientele_comptes",
+            "clientele_imports",
+            "clientele_import_lignes",
+            "clientele_import_anomalies",
+            "clientele_import_clients",
+            "clientele_import_comptes",
+            "clientele_rapprochements",
+            "clientele_rapprochement_ecarts",
+            "clientele_classif_niveaux",
+            "clientele_classif_criteres",
+            "clientele_classif_versions",
+            "clientele_classif_regles",
+            "clientele_classifications",
+            "clientele_classif_historique",
+            "clientele_filtrage_listes",
+            "clientele_filtrage_entrees",
+            "clientele_alertes",
+            "clientele_alerte_evenements",
+            "clientele_alerte_justificatifs",
+            "clientele_filtrage_empreintes",
+            "clientele_declarations_bcm",
+        ],
+        table_prefixes=["clientele_"],
+        uploads_subdir="clientele",
+    ),
 }
 
 ESPACE_MODULES: dict[str, list[str]] = {
@@ -279,7 +308,7 @@ ESPACE_MODULES: dict[str, list[str]] = {
         "demandes-mg",
     ],
     "archives": ["archives-generales"],
-    "audit-controle-conformite": ["eer", "formation"],
+    "audit-controle-conformite": ["eer", "formation", "clientele"],
 }
 
 

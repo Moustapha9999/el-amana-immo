@@ -1,0 +1,13 @@
+# Recette Clientèle / Déclaration BCM sur la base bea_digital_recette (base réelle intacte).
+# bea_digital_clientele_test reste réservée à pytest (les tests y vident les imports).
+#   docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.recette.yml up -d --build backend worker frontend
+# Retour à la base réelle :
+#   docker compose --env-file .env.docker up -d backend worker
+services:
+  backend:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD}@postgres:5432/bea_digital_recette
+      SKIP_MIGRATIONS: "1"
+  worker:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD}@postgres:5432/bea_digital_recette

@@ -52,7 +52,7 @@ def test_permissions_et_roles_eer():
         assert not any(p.startswith("ged.") for p in granted)
     assert "eer.validate" not in ROLE_PERMISSIONS["eer.analyste"]
     assert "eer.validate" in ROLE_PERMISSIONS["eer.superviseur"]
-    assert ESPACE_MODULES[ACC_ESPACE_CODE] == ["eer", "formation"]
+    assert ESPACE_MODULES[ACC_ESPACE_CODE] == ["eer", "formation", "clientele"]
     assert "eer" in MODULE_BACKUP_SCOPES
 
 
