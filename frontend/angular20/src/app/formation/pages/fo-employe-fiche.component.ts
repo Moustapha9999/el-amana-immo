@@ -50,6 +50,9 @@ import { FoEmployeFormComponent } from '../shared/fo-employe-form.component';
             @if (store.cap().reporting_voir) {
               <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/formation/reporting" [queryParams]="{ employe_id: x.id }"><mat-icon>assessment</mat-icon> Reporting</a>
             }
+            @if (store.cap().admin) {
+              <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer définitivement" (click)="supprimer()" [disabled]="busy()"><mat-icon>delete</mat-icon></button>
+            }
           </div>
         </section>
         @if (!x.actif && x.motif_desactivation) {
@@ -191,5 +194,27 @@ export class FoEmployeFicheComponent implements OnInit {
           },
         });
     flux.subscribe(() => this.charger(x.id));
+  }
+
+  supprimer(): void {
+    const x = this.e()!;
+    const n = x.historique.length;
+    this.feedback
+      .runWithReason((motif) => this.api.post<void>(`${FO_BASE}/employes/${x.id}/supprimer`, { motif }), {
+        reason: {
+          title: 'Supprimer définitivement l’employé',
+          message: n ? `${x.nom_complet} et ses ${n} participation(s), présences comprises.` : x.nom_complet,
+          hint: 'Suppression irréversible, retirée du reporting. Le détail est conservé dans le journal d’audit.',
+          reasonLabel: 'Motif de la suppression', required: true, maxLength: 1000, tone: 'danger', confirmLabel: 'Supprimer',
+        },
+        busy: this.busy,
+        loading: 'Suppression…',
+        success: { title: 'Employé supprimé', message: x.nom_complet },
+        errorTitle: 'Suppression impossible',
+      })
+      .subscribe(() => {
+        this.store.charger(true);
+        void this.router.navigate(['/formation/employes']);
+      });
   }
 }

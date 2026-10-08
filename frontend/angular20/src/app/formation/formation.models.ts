@@ -148,6 +148,7 @@ export interface ActionsSession {
   retablir: boolean;
   archiver: boolean;
   desarchiver: boolean;
+  retirer_participants: boolean;
   supprimer: boolean;
   exporter: boolean;
 }

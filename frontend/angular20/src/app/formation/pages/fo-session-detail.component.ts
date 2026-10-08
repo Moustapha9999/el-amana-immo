@@ -142,7 +142,7 @@ type Action = 'cloturer' | 'rouvrir' | 'annuler' | 'retablir' | 'archiver' | 'de
               </div>
               <div class="bea-mg__table-wrap">
                 <table class="bea-mg__table bea-fo-table">
-                  <thead><tr><th style="width:3rem">N°</th><th>Nom et prénom</th><th>Fonction</th><th>Entité</th><th>Périmètre</th><th style="width:15rem">Présence</th>@if (!saisie() && f.actions.participants) {<th></th>}</tr></thead>
+                  <thead><tr><th style="width:3rem">N°</th><th>Nom et prénom</th><th>Fonction</th><th>Entité</th><th>Périmètre</th><th style="width:15rem">Présence</th>@if (!saisie() && f.actions.retirer_participants) {<th></th>}</tr></thead>
                   <tbody>
                     @for (p of visibles(); track p.id; let i = $index) {
                       <tr class="bea-fx-row-in" [style.--i]="i < 25 ? i : 0" [class.is-muted]="!p.employe_actif">
@@ -166,7 +166,7 @@ type Action = 'cloturer' | 'rouvrir' | 'annuler' | 'retablir' | 'archiver' | 'de
                             <span class="bea-fo-badge" [attr.data-s]="p.presence ?? 'NON_SAISI'">{{ p.presence === 'PRESENT' ? 'PRÉSENT' : p.presence === 'ABSENT' ? 'ABSENT' : 'Non saisi' }}</span>
                           }
                         </td>
-                        @if (!saisie() && f.actions.participants) {
+                        @if (!saisie() && f.actions.retirer_participants) {
                           <td class="is-c"><button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Retirer de la formation" (click)="retirer(p)"><mat-icon>person_remove</mat-icon></button></td>
                         }
                       </tr>
@@ -613,12 +613,14 @@ export class FoSessionDetailComponent implements OnInit {
 
   supprimer(): void {
     const s = this.s()!;
+    const n = s.stats.participants;
+    const saisies = s.stats.presents + s.stats.absents;
     this.feedback
       .runWithReason((motif) => this.api.post<void>(`${FO_BASE}/sessions/${s.id}/supprimer`, { motif }), {
         reason: {
           title: 'Supprimer définitivement',
-          message: `${s.reference} — aucune présence n’a été saisie.`,
-          hint: 'Préférez l’annulation pour conserver une trace. La suppression est journalisée.',
+          message: `${s.reference} (${s.statut_libelle.toLowerCase()}) — ${n} participant(s)${saisies ? `, ${saisies} présence(s) saisie(s)` : ''}.`,
+          hint: 'Suppression irréversible : participants et présences sont effacés, les feuilles signées passent à la corbeille GED. Le détail est conservé dans le journal d’audit.',
           reasonLabel: 'Motif de la suppression', required: true, maxLength: 1000, tone: 'danger', confirmLabel: 'Supprimer',
         },
         busy: this.busy,

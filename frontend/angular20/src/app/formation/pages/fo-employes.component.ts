@@ -84,7 +84,7 @@ type Filtre = (typeof FILTRES)[number];
                 <th>Périmètre</th>
                 <th class="is-num"><button type="button" class="bea-fx-sort" (click)="trier('formations')">Formations suivies <mat-icon>{{ icone('formations') }}</mat-icon></button></th>
                 <th><button type="button" class="bea-fx-sort" (click)="trier('derniere')">Dernière <mat-icon>{{ icone('derniere') }}</mat-icon></button></th>
-                @if (store.cap().employes_gerer) { <th></th> }
+                @if (store.cap().employes_gerer || store.cap().admin) { <th></th> }
               </tr>
             </thead>
             <tbody>
@@ -108,9 +108,16 @@ type Filtre = (typeof FILTRES)[number];
                       @if (e.nb_absents) { <small>{{ e.nb_absents }} absence(s)</small> }
                     </td>
                     <td>{{ dateFr(e.derniere_formation) }}</td>
-                    @if (store.cap().employes_gerer) {
+                    @if (store.cap().employes_gerer || store.cap().admin) {
                       <td class="is-c" (click)="$event.stopPropagation()">
-                        <button type="button" class="bea-mg__icon-btn" title="Modifier" (click)="edition.set(e)"><mat-icon>edit</mat-icon></button>
+                        <span style="display:inline-flex;gap:0.3rem">
+                          @if (store.cap().employes_gerer) {
+                            <button type="button" class="bea-mg__icon-btn" title="Modifier" (click)="edition.set(e)"><mat-icon>edit</mat-icon></button>
+                          }
+                          @if (store.cap().admin) {
+                            <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer définitivement" (click)="supprimer(e)" [disabled]="busy()"><mat-icon>delete</mat-icon></button>
+                          }
+                        </span>
                       </td>
                     }
                   </tr>
@@ -152,9 +159,28 @@ export class FoEmployesComponent implements OnInit {
   readonly page = signal<Page<Employe> | null>(null);
   readonly charge = signal(true);
   readonly edition = signal<Employe | 'nouveau' | null>(null);
+  readonly busy = signal(false);
   private minuteur: ReturnType<typeof setTimeout> | null = null;
 
   readonly nbPages = computed(() => Math.max(1, Math.ceil((this.page()?.total ?? 0) / this.taille)));
+
+  supprimer(e: Employe): void {
+    const n = e.nb_formations ?? 0;
+    this.feedback
+      .runWithReason((motif) => this.api.post<void>(`${FO_BASE}/employes/${e.id}/supprimer`, { motif }), {
+        reason: {
+          title: 'Supprimer définitivement l’employé',
+          message: n ? `${e.nom_complet} et ses ${n} participation(s), présences comprises.` : e.nom_complet,
+          hint: 'Suppression irréversible, retirée du reporting. Le détail est conservé dans le journal d’audit.',
+          reasonLabel: 'Motif de la suppression', required: true, maxLength: 1000, tone: 'danger', confirmLabel: 'Supprimer',
+        },
+        busy: this.busy,
+        loading: 'Suppression…',
+        success: { title: 'Employé supprimé', message: e.nom_complet },
+        errorTitle: 'Suppression impossible',
+      })
+      .subscribe(() => this.charger());
+  }
 
   ngOnInit(): void {
     this.store.charger();

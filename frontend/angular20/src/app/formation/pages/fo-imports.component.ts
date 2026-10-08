@@ -101,7 +101,7 @@ function decouper(p: PersonneImport, mode: Mode): { nom: string; prenom: string 
           <div class="bea-mg__panel-top"><h2>Historique des imports</h2><span class="bea-mg__count">{{ historique().length }}</span></div>
           <div class="bea-mg__table-wrap">
             <table class="bea-mg__table bea-fo-table">
-              <thead><tr><th>Fichier</th><th>Analysé le</th><th>Par</th><th class="is-num">Lignes</th><th>Résultat</th><th>Statut</th></tr></thead>
+              <thead><tr><th>Fichier</th><th>Analysé le</th><th>Par</th><th class="is-num">Lignes</th><th>Résultat</th><th>Statut</th>@if (store.cap().admin) {<th></th>}</tr></thead>
               <tbody>
                 @for (h of historique(); track h.id; let i = $index) {
                   <tr class="is-click bea-fx-row-in" [style.--i]="i" (click)="reprendre(h)">
@@ -111,9 +111,14 @@ function decouper(p: PersonneImport, mode: Mode): { nom: string; prenom: string 
                     <td class="is-num">{{ h.nb_lignes }}</td>
                     <td>@if (h.resultat) { {{ h.resultat['sessions_creees'] || 0 }} formation(s), {{ h.resultat['participations_creees'] || 0 }} participation(s) } @else { — }</td>
                     <td><span class="bea-fo-badge" [attr.data-s]="h.statut">{{ libStatut[h.statut] }}</span></td>
+                    @if (store.cap().admin) {
+                      <td class="is-c" (click)="$event.stopPropagation()">
+                        <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer de l’historique" (click)="supprimerImport(h)" [disabled]="busy()"><mat-icon>delete</mat-icon></button>
+                      </td>
+                    }
                   </tr>
                 } @empty {
-                  <tr><td colspan="6"><div class="bea-fo-empty"><mat-icon>history</mat-icon>Aucun import.</div></td></tr>
+                  <tr><td [attr.colspan]="store.cap().admin ? 7 : 6"><div class="bea-fo-empty"><mat-icon>history</mat-icon>Aucun import.</div></td></tr>
                 }
               </tbody>
             </table>
@@ -635,6 +640,24 @@ export class FoImportsComponent implements OnInit {
         errorTitle: 'Action impossible',
       })
       .subscribe(() => this.reinitialiser());
+  }
+
+  supprimerImport(h: ImportFormation): void {
+    this.feedback
+      .run(() => this.api.delete<void>(`${FO_BASE}/imports/${h.id}`), {
+        confirm: {
+          action: 'suppression',
+          title: 'Supprimer de l’historique',
+          message: `Supprimer l’import « ${h.fichier_nom} » de l’historique ?`,
+          hint: h.statut === 'IMPORTE'
+            ? 'Les formations, employés et présences déjà importés sont conservés. Ce fichier ne sera plus signalé comme déjà importé.'
+            : 'Aucune donnée métier n’est touchée.',
+        },
+        busy: this.busy,
+        success: { title: 'Import supprimé de l’historique', message: h.fichier_nom },
+        errorTitle: 'Suppression impossible',
+      })
+      .subscribe(() => this.chargerHistorique());
   }
 
   reinitialiser(): void {

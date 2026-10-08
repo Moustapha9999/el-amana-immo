@@ -5,8 +5,10 @@ Règles clés :
 - saisie impossible avant la date de la formation ; REALISEE dès que tous les participants
   sont pointés ; CLOTUREE verrouille (réouverture motivée, ``formation.close``) ;
 - modification sensible (présences déjà saisies) = motif obligatoire + audit avant / après ;
-- annulation seulement sans présence ; suppression physique réservée ``formation.admin`` et
-  seulement sans présence ; ARCHIVEE depuis CLOTUREE / ANNULEE ;
+- annulation seulement sans présence ; ARCHIVEE depuis CLOTUREE / ANNULEE ;
+- ``formation.admin`` supprime définitivement, quel que soit l'état : formations (présences
+  comprises), employés (participations comprises), valeurs de référentiel et entités utilisées,
+  feuilles signées, historique d'import. Motif obligatoire et audit « avant » complet ;
 - concurrence optimiste : chaque mutation porte la ``revision`` connue du client (409).
 """
 
@@ -273,15 +275,61 @@ class FormationService:
         await self.audit("formation.referentiel.update", "formation_referentiel", r.id, before=avant, after=apres)
         return apres
 
-    async def supprimer_referentiel(self, rid: uuid.UUID) -> None:
+    async def supprimer_referentiel(self, rid: uuid.UUID, forcer: bool = False) -> None:
         self.ctx.exiger("formation.references.manage")
         r = await self._ref(rid)
-        if (await self._usages_referentiels()).get(r.id):
+        usage = (await self._usages_referentiels()).get(r.id, 0)
+        if usage and not (forcer and self.ctx.peut("formation.admin")):
             raise conflit("Valeur utilisée : désactivez-la plutôt que de la supprimer", "REFERENTIEL_UTILISE")
-        avant = self._ref_dict(r)
+        avant = {**self._ref_dict(r, usage)}
+        if usage:
+            avant["detachements"] = await self._detacher_referentiel(r)
         await self.db.delete(r)
         await self.db.flush()
-        await self.audit("formation.referentiel.delete", "formation_referentiel", rid, before=avant)
+        await self.audit("formation.referentiel.delete", "formation_referentiel", rid, before=avant,
+                         after={"force": bool(usage)})
+
+    async def _detacher_referentiel(self, r: FormationReferentiel) -> dict:
+        """Retire une valeur utilisée de partout avant suppression (administrateur).
+
+        Lieu d'une formation et périmètre d'une entité sont obligatoires : on refuse et on
+        oriente vers la fusion (remplacement par une autre valeur).
+        """
+        p = {"id": r.id}
+        if r.domaine == "LIEU":
+            n = await self.db.scalar(select(func.count()).where(FormationSession.lieu_id == r.id))
+            if n:
+                raise conflit(f"Lieu de {n} formation(s) : fusionnez-le d'abord avec un autre lieu",
+                              "REFERENTIEL_OBLIGATOIRE", formations=n)
+        if r.domaine == "PERIMETRE":
+            n = await self.db.scalar(select(func.count()).where(FormationEntite.perimetre_id == r.id))
+            if n:
+                raise conflit(f"Périmètre de {n} entité(s) : fusionnez-le d'abord avec un autre périmètre",
+                              "REFERENTIEL_OBLIGATOIRE", entites=n)
+        requetes = {
+            "THEME": [("themes_formations", "DELETE FROM formation_session_themes WHERE theme_id = :id")],
+            "FORMATEUR": [("formateurs_formations",
+                           "DELETE FROM formation_session_formateurs WHERE formateur_id = :id")],
+            "FONCTION": [("employes", "UPDATE formation_employes SET fonction_id = NULL WHERE fonction_id = :id"),
+                         ("participations",
+                          "UPDATE formation_participants SET fonction_id = NULL WHERE fonction_id = :id")],
+            "LIEU": [("entites", "UPDATE formation_entites SET lieu_id = NULL WHERE lieu_id = :id")],
+            "PERIMETRE": [("participations",
+                           "UPDATE formation_participants SET perimetre_id = NULL WHERE perimetre_id = :id")],
+        }[r.domaine]
+        out = {}
+        for cle_, sql in requetes:
+            out[cle_] = (await self.db.execute(text(sql), p)).rowcount or 0
+        self._expirer_apres_sql(r)
+        return out
+
+    def _expirer_apres_sql(self, sauf: object) -> None:
+        """Les UPDATE / DELETE SQL directs ne touchent pas les objets déjà chargés : on les périme."""
+        classes = (FormationSession, FormationSessionTheme, FormationSessionFormateur, FormationParticipant,
+                   FormationEmploye, FormationEntite)
+        for obj in list(self.db.identity_map.values()):
+            if obj is not sauf and isinstance(obj, classes):
+                self.db.expire(obj)
 
     async def fusionner_referentiel(self, source_id: uuid.UUID, cible_id: uuid.UUID) -> dict:
         """Remplace partout ``source`` par ``cible`` (même domaine) puis désactive la source."""
@@ -394,7 +442,7 @@ class FormationService:
         await self.audit("formation.entite.update", "formation_entite", e.id, before=avant, after=apres)
         return apres or {}
 
-    async def supprimer_entite(self, eid: uuid.UUID) -> None:
+    async def supprimer_entite(self, eid: uuid.UUID, forcer: bool = False) -> None:
         self.ctx.exiger("formation.references.manage")
         e = await self.db.get(FormationEntite, eid)
         if not e:
@@ -402,12 +450,20 @@ class FormationService:
         utilise = await self.db.scalar(select(
             exists().where(FormationEmploye.entite_id == eid)
             | exists().where(FormationParticipant.entite_id == eid)))
-        if utilise:
+        if utilise and not (forcer and self.ctx.peut("formation.admin")):
             raise conflit("Entité utilisée : désactivez-la plutôt que de la supprimer", "ENTITE_UTILISEE")
-        avant = {"libelle": e.libelle}
+        avant: dict[str, Any] = {"libelle": e.libelle}
+        if utilise:
+            p = {"id": eid}
+            avant["employes_detaches"] = (await self.db.execute(text(
+                "UPDATE formation_employes SET entite_id = NULL WHERE entite_id = :id"), p)).rowcount or 0
+            avant["participations_detachees"] = (await self.db.execute(text(
+                "UPDATE formation_participants SET entite_id = NULL WHERE entite_id = :id"), p)).rowcount or 0
+            self._expirer_apres_sql(e)
         await self.db.delete(e)
         await self.db.flush()
-        await self.audit("formation.entite.delete", "formation_entite", eid, before=avant)
+        await self.audit("formation.entite.delete", "formation_entite", eid, before=avant,
+                         after={"force": bool(utilise)})
 
     # --------------------------------------------------------------- employés
     def _stats_employes_subq(self):
@@ -594,6 +650,38 @@ class FormationService:
         refs = await Refs.charger(self.db)
         return employe_dict(e, refs)
 
+    async def supprimer_employe(self, eid: uuid.UUID, motif: str | None) -> str:
+        """Suppression définitive (administrateur) : l'employé et toutes ses participations."""
+        self.ctx.exiger("formation.admin")
+        motif = propre(motif)
+        if not motif:
+            raise AppError("Motif obligatoire", 422, code="MOTIF_OBLIGATOIRE")
+        e = await self._employe(eid)
+        refs = await Refs.charger(self.db)
+        avant = employe_dict(e, refs)
+        rows = (await self.db.execute(
+            select(FormationParticipant, FormationSession.reference, FormationSession.statut)
+            .join(FormationSession, FormationSession.id == FormationParticipant.session_id)
+            .where(FormationParticipant.employe_id == e.id)
+        )).all()
+        avant["participations"] = [{"formation": ref, "presence": p.presence} for p, ref, _st in rows]
+        sessions_touchees = {p.session_id for p, _r, _s in rows}
+        for p, _r, _s in rows:
+            await self.db.delete(p)
+        await self.db.flush()
+        if sessions_touchees:
+            for s in (await self.db.scalars(self._q_session().where(
+                    FormationSession.id.in_(sessions_touchees)))).unique().all():
+                await self.db.refresh(s, ["participants"])
+                self._recalculer_statut(s)
+                s.revision += 1
+        nom = nom_complet(e)
+        await self.db.delete(e)
+        await self.db.flush()
+        await self.audit("formation.employe.delete", "formation_employe", eid, before=avant,
+                         after={"motif": motif, "participations_supprimees": len(rows)})
+        return nom
+
     async def fiche_employe(self, eid: uuid.UUID) -> dict:
         e = await self._employe(eid)
         refs = await Refs.charger(self.db)
@@ -679,7 +767,8 @@ class FormationService:
             "retablir": s.statut == "ANNULEE" and self.ctx.peut("formation.cancel"),
             "archiver": s.statut in ("CLOTUREE", "ANNULEE") and self.ctx.peut("formation.close"),
             "desarchiver": s.statut == "ARCHIVEE" and self.ctx.peut("formation.close"),
-            "supprimer": s.statut in ("PLANIFIEE", "ANNULEE") and not a_presence and self.ctx.peut("formation.admin"),
+            "retirer_participants": (ouvert and self.ctx.peut("formation.update")) or self.ctx.peut("formation.admin"),
+            "supprimer": self.ctx.peut("formation.admin"),
             "exporter": self.ctx.peut("formation.view"),
         }
 
@@ -967,10 +1056,13 @@ class FormationService:
 
     async def retirer_participant(self, sid: uuid.UUID, participant_id: uuid.UUID, revision: int | None,
                                   motif: str | None) -> dict:
-        self.ctx.exiger("formation.update")
+        admin = self.ctx.peut("formation.admin")
+        if not admin:
+            self.ctx.exiger("formation.update")
         s = await self._session(sid, verrou=True)
         self._verifier_revision(s, revision)
-        self._exiger_ouverte(s)
+        if not admin:
+            self._exiger_ouverte(s)
         p = next((x for x in s.participants if x.id == participant_id), None)
         if not p:
             raise AppError("Participant introuvable", 404, code="NOT_FOUND")
@@ -1069,23 +1161,23 @@ class FormationService:
                          before={"statut": avant}, after={"statut": s.statut, "motif": motif})
         return self.session_dict(s, await Refs.charger(self.db))
 
-    async def supprimer_session(self, sid: uuid.UUID, motif: str | None) -> None:
+    async def supprimer_session(self, sid: uuid.UUID, motif: str | None) -> str:
+        """Suppression définitive (administrateur) quel que soit le statut, présences comprises."""
         self.ctx.exiger("formation.admin")
-        s = await self._session(sid, verrou=True)
-        if not self._actions(s)["supprimer"]:
-            raise AppError("Suppression impossible : présences saisies ou formation clôturée. Annulez ou archivez-la.",
-                           409, code="SUPPRESSION_INTERDITE")
         if not propre(motif):
             raise AppError("Motif obligatoire", 422, code="MOTIF_OBLIGATOIRE")
+        s = await self._session(sid, verrou=True)
         from app.services import formation_documents
 
         refs = await Refs.charger(self.db)
-        avant = {"reference": s.reference, **self._photo(s, refs)}
+        avant = {"reference": s.reference, "statut": s.statut, **self._photo(s, refs),
+                 **self._stats(s.participants)}
         await formation_documents.retirer_tous(self, s.id, propre(motif))
         await self.db.delete(s)
         await self.db.flush()
         await self.audit("formation.session.delete", "formation_session", sid, before=avant,
                          after={"motif": propre(motif)})
+        return s.reference
 
     # -------------------------------------------------------------- recherche
     async def rechercher(self, q: str, limite: int = 6) -> dict:

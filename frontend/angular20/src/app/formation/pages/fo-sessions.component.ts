@@ -114,12 +114,22 @@ type Filtre = (typeof FILTRES)[number];
       <section class="bea-mg__panel">
         <div class="bea-mg__panel-top">
           <h2>{{ libelleOnglet() }}</h2>
-          <span class="bea-mg__count">{{ page()?.total ?? 0 }} formation(s)</span>
+          <div class="bea-fo-panel-top-actions">
+            @if (admin() && selection().size) {
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" style="color:#b91c1c" (click)="supprimerSelection()" [disabled]="busy()"><mat-icon>delete</mat-icon> Supprimer la sélection ({{ selection().size }})</button>
+            }
+            <span class="bea-mg__count">{{ page()?.total ?? 0 }} formation(s)</span>
+          </div>
         </div>
         <div class="bea-mg__table-wrap">
           <table class="bea-mg__table bea-fo-table">
             <thead>
               <tr>
+                @if (admin()) {
+                  <th class="is-c" style="width:2.4rem">
+                    <input type="checkbox" aria-label="Sélectionner les formations de la page" [checked]="toutSelectionne()" [disabled]="!(page()?.items?.length)" (change)="toutBasculer($any($event.target).checked)" />
+                  </th>
+                }
                 <th><button type="button" class="bea-fx-sort" (click)="trier('date')">Date <mat-icon>{{ icone('date') }}</mat-icon></button></th>
                 <th><button type="button" class="bea-fx-sort" (click)="trier('reference')">Référence <mat-icon>{{ icone('reference') }}</mat-icon></button></th>
                 <th>Thème</th>
@@ -129,16 +139,22 @@ type Filtre = (typeof FILTRES)[number];
                 <th>Présence</th>
                 <th class="is-c" title="Feuille de présence signée dans la GED">Feuille</th>
                 <th><button type="button" class="bea-fx-sort" (click)="trier('statut')">Statut <mat-icon>{{ icone('statut') }}</mat-icon></button></th>
+                @if (admin()) { <th></th> }
               </tr>
             </thead>
             <tbody>
               @if (charge()) {
                 @for (i of [1, 2, 3, 4, 5, 6]; track i) {
-                  <tr>@for (j of [1, 2, 3, 4, 5, 6, 7, 8, 9]; track j) { <td><span class="bea-fx-skel"></span></td> }</tr>
+                  <tr>@for (j of colonnes(); track j) { <td><span class="bea-fx-skel"></span></td> }</tr>
                 }
               } @else {
                 @for (s of page()?.items ?? []; track s.id; let i = $index) {
-                  <tr class="is-click bea-fx-row-in" [style.--i]="i" (click)="ouvrir(s)">
+                  <tr class="is-click bea-fx-row-in" [style.--i]="i" [style.background]="selection().has(s.id) ? '#fef2f2' : null" (click)="ouvrir(s)">
+                    @if (admin()) {
+                      <td class="is-c" (click)="$event.stopPropagation()">
+                        <input type="checkbox" [attr.aria-label]="'Sélectionner ' + s.reference" [checked]="selection().has(s.id)" (change)="basculer(s.id)" />
+                      </td>
+                    }
                     <td><strong>{{ dateFr(s.date_session) }}</strong></td>
                     <td><span class="bea-mg__code">{{ s.reference }}</span></td>
                     <td>
@@ -171,9 +187,14 @@ type Filtre = (typeof FILTRES)[number];
                       }
                     </td>
                     <td><span class="bea-fo-badge" [attr.data-s]="st(s).code">{{ st(s).label }}</span></td>
+                    @if (admin()) {
+                      <td class="is-c" (click)="$event.stopPropagation()">
+                        <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer définitivement" (click)="supprimer([s])" [disabled]="busy()"><mat-icon>delete</mat-icon></button>
+                      </td>
+                    }
                   </tr>
                 } @empty {
-                  <tr><td colspan="9">
+                  <tr><td [attr.colspan]="colonnes().length">
                     <div class="bea-fo-empty"><mat-icon>event_note</mat-icon><strong>Aucune formation</strong>Modifiez les filtres ou créez une nouvelle formation.</div>
                   </td></tr>
                 }
@@ -215,6 +236,14 @@ export class FoSessionsComponent implements OnInit {
   readonly charge = signal(true);
   private minuteur: ReturnType<typeof setTimeout> | null = null;
 
+  readonly busy = signal(false);
+  readonly selection = signal<Set<string>>(new Set());
+  readonly admin = computed(() => this.store.cap().admin);
+  readonly colonnes = computed(() => Array.from({ length: this.admin() ? 11 : 9 }, (_, i) => i));
+  readonly toutSelectionne = computed(() => {
+    const items = this.page()?.items ?? [];
+    return items.length > 0 && items.every((s) => this.selection().has(s.id));
+  });
   readonly nbPages = computed(() => Math.max(1, Math.ceil((this.page()?.total ?? 0) / this.taille)));
   readonly libelleOnglet = computed(() => ONGLETS.find((o) => o.code === this.onglet())?.label ?? 'Formations');
   readonly actifs = computed(() => {
@@ -297,6 +326,65 @@ export class FoSessionsComponent implements OnInit {
     void this.router.navigate(['/formation/sessions', s.id]);
   }
 
+  basculer(id: string): void {
+    const s = new Set(this.selection());
+    if (s.has(id)) s.delete(id);
+    else s.add(id);
+    this.selection.set(s);
+  }
+
+  toutBasculer(on: boolean): void {
+    const s = new Set(this.selection());
+    for (const x of this.page()?.items ?? []) {
+      if (on) s.add(x.id);
+      else s.delete(x.id);
+    }
+    this.selection.set(s);
+  }
+
+  supprimerSelection(): void {
+    const ids = this.selection();
+    const items = (this.page()?.items ?? []).filter((s) => ids.has(s.id));
+    if (items.length) this.supprimer(items);
+  }
+
+  supprimer(items: Session[]): void {
+    const refs = items.slice(0, 6).map((s) => s.reference).join(', ') + (items.length > 6 ? ` et ${items.length - 6} autre(s)` : '');
+    const presences = items.reduce((n, s) => n + s.stats.presents + s.stats.absents, 0);
+    this.feedback
+      .runWithReason(
+        (motif) =>
+          this.api.post<{ supprimees: { id: string; reference: string }[]; echecs: { id: string; message: string }[] }>(
+            `${FO_BASE}/sessions/suppression-multiple`,
+            { ids: items.map((s) => s.id), motif },
+          ),
+        {
+          reason: {
+            title: items.length > 1 ? `Supprimer ${items.length} formations` : 'Supprimer définitivement',
+            message: `${refs}${presences ? ` — ${presences} présence(s) saisie(s)` : ''}.`,
+            hint: 'Suppression irréversible, quel que soit le statut : participants et présences sont effacés, les feuilles signées passent à la corbeille GED. Le détail est conservé dans le journal d’audit.',
+            reasonLabel: 'Motif de la suppression', required: true, maxLength: 1000, tone: 'danger', confirmLabel: 'Supprimer',
+          },
+          busy: this.busy,
+          loading: 'Suppression…',
+          success: (r) => ({
+            title: r.supprimees.length > 1 ? `${r.supprimees.length} formations supprimées` : 'Formation supprimée',
+            message: r.supprimees.map((x) => x.reference).join(', '),
+          }),
+          errorTitle: 'Suppression impossible',
+        },
+      )
+      .subscribe((r) => {
+        if (r.echecs.length) {
+          this.feedback.error({ title: `${r.echecs.length} formation(s) non supprimée(s)`, message: r.echecs.map((x) => x.message).join(' · ') });
+        }
+        const s = new Set(this.selection());
+        for (const x of r.supprimees) s.delete(x.id);
+        this.selection.set(s);
+        this.charger();
+      });
+  }
+
   private synchroniser(): void {
     const qp = nettoyer({ ...this.f(), statut: this.onglet() === 'ACTIVES' ? '' : this.onglet() });
     void this.router.navigate([], { relativeTo: this.route, queryParams: qp, replaceUrl: true });
@@ -318,6 +406,8 @@ export class FoSessionsComponent implements OnInit {
     this.api.get<Page<Session>>(`${FO_BASE}/sessions`, params).subscribe({
       next: (p) => {
         this.page.set(p);
+        const visibles = new Set(p.items.map((s) => s.id));
+        this.selection.set(new Set([...this.selection()].filter((id) => visibles.has(id))));
         this.charge.set(false);
       },
       error: (e) => {

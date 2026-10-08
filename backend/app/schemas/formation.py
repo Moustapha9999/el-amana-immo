@@ -99,6 +99,11 @@ class SuppressionIn(BaseModel):
     motif: str = Field(min_length=3, max_length=1000)
 
 
+class SuppressionMultipleIn(BaseModel):
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=200)
+    motif: str = Field(min_length=3, max_length=1000)
+
+
 class ImportConfirmIn(BaseModel):
     decisions: dict[str, dict[str, dict[str, Any]]] = Field(default_factory=dict)
     personnes: dict[str, dict[str, Any]] = Field(default_factory=dict)

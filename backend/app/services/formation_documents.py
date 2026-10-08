@@ -31,6 +31,8 @@ def peut_deposer(svc: FormationService, s: FormationSession) -> bool:
 
 
 def peut_retirer(svc: FormationService, s: FormationSession) -> bool:
+    if svc.ctx.peut("formation.admin"):
+        return True
     return s.statut in ("PLANIFIEE", "REALISEE") and svc.ctx.peut("formation.attendance.manage")
 
 
@@ -115,7 +117,8 @@ async def deposer(svc: FormationService, sid: uuid.UUID, fichier: UploadFile) ->
 
 
 async def retirer(svc: FormationService, sid: uuid.UUID, document_id: uuid.UUID, motif: str | None) -> dict:
-    svc.ctx.exiger("formation.attendance.manage")
+    if not svc.ctx.peut("formation.admin"):
+        svc.ctx.exiger("formation.attendance.manage")
     motif = propre(motif)
     if not motif:
         raise AppError("Motif obligatoire", 422, code="MOTIF_OBLIGATOIRE")

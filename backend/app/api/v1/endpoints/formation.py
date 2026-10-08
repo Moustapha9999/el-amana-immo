@@ -16,6 +16,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import auth_http_error, get_current_user
+from app.core.exceptions import AppError
 from app.db.session import get_db
 from app.models import FormationEmploye, User
 from app.schemas.formation import (
@@ -33,6 +34,7 @@ from app.schemas.formation import (
     SessionPatch,
     StatutIn,
     SuppressionIn,
+    SuppressionMultipleIn,
 )
 from app.services import formation_documents, formation_export
 from app.services.formation_import import FormationImportService
@@ -152,9 +154,10 @@ async def modifier_referentiel(rid: uuid.UUID, body: ReferentielPatch,
 
 
 @router.delete("/referentiels/{rid}", status_code=204)
-async def supprimer_referentiel(rid: uuid.UUID, c: Ctx = Depends(ctx("formation.references.manage")),
+async def supprimer_referentiel(rid: uuid.UUID, forcer: bool = False,
+                                c: Ctx = Depends(ctx("formation.references.manage")),
                                 db: AsyncSession = Depends(get_db)) -> Response:
-    await FormationService(db, c).supprimer_referentiel(rid)
+    await FormationService(db, c).supprimer_referentiel(rid, forcer=forcer)
     return Response(status_code=204)
 
 
@@ -176,9 +179,10 @@ async def modifier_entite(eid: uuid.UUID, body: EntiteIn, c: Ctx = Depends(ctx("
 
 
 @router.delete("/entites/{eid}", status_code=204)
-async def supprimer_entite(eid: uuid.UUID, c: Ctx = Depends(ctx("formation.references.manage")),
+async def supprimer_entite(eid: uuid.UUID, forcer: bool = False,
+                           c: Ctx = Depends(ctx("formation.references.manage")),
                            db: AsyncSession = Depends(get_db)) -> Response:
-    await FormationService(db, c).supprimer_entite(eid)
+    await FormationService(db, c).supprimer_entite(eid, forcer=forcer)
     return Response(status_code=204)
 
 
@@ -229,6 +233,13 @@ async def modifier_employe(eid: uuid.UUID, body: EmployeIn, forcer: bool = False
 async def activer_employe(eid: uuid.UUID, body: ActivationIn, c: Ctx = Depends(ctx("formation.employees.manage")),
                           db: AsyncSession = Depends(get_db)) -> dict:
     return await FormationService(db, c).activer_employe(eid, body.actif, body.motif)
+
+
+@router.post("/employes/{eid}/supprimer", status_code=204)
+async def supprimer_employe(eid: uuid.UUID, body: SuppressionIn, c: Ctx = Depends(ctx("formation.admin")),
+                            db: AsyncSession = Depends(get_db)) -> Response:
+    await FormationService(db, c).supprimer_employe(eid, body.motif)
+    return Response(status_code=204)
 
 
 # ---------------------------------------------------------------------- sessions
@@ -296,6 +307,23 @@ async def supprimer_session(sid: uuid.UUID, body: SuppressionIn, c: Ctx = Depend
                             db: AsyncSession = Depends(get_db)) -> Response:
     await FormationService(db, c).supprimer_session(sid, body.motif)
     return Response(status_code=204)
+
+
+@router.post("/sessions/suppression-multiple")
+async def supprimer_sessions(body: SuppressionMultipleIn, c: Ctx = Depends(ctx("formation.admin")),
+                             db: AsyncSession = Depends(get_db)) -> dict:
+    """Une suppression refusée n'annule pas les autres (savepoint par formation)."""
+    svc = FormationService(db, c)
+    supprimees: list[dict] = []
+    echecs: list[dict] = []
+    for sid in dict.fromkeys(body.ids):
+        try:
+            async with db.begin_nested():
+                supprimees.append({"id": str(sid), "reference": await svc.supprimer_session(sid, body.motif)})
+        except AppError as exc:
+            echecs.append({"id": str(sid), "code": exc.code, "message": exc.message})
+    await db.commit()
+    return {"supprimees": supprimees, "echecs": echecs}
 
 
 @router.get("/sessions/{sid}/historique")
@@ -434,3 +462,10 @@ async def confirmer_import(iid: uuid.UUID, body: ImportConfirmIn, c: Ctx = Depen
 async def abandonner_import(iid: uuid.UUID, c: Ctx = Depends(ctx("formation.import.execute")),
                             db: AsyncSession = Depends(get_db)) -> dict:
     return await FormationImportService(db, c).abandonner(iid)
+
+
+@router.delete("/imports/{iid}", status_code=204)
+async def supprimer_import(iid: uuid.UUID, c: Ctx = Depends(ctx("formation.admin")),
+                           db: AsyncSession = Depends(get_db)) -> Response:
+    await FormationImportService(db, c).supprimer(iid)
+    return Response(status_code=204)

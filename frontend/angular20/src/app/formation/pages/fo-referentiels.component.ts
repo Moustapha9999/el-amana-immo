@@ -84,7 +84,7 @@ interface Edition {
                         <span class="bea-row-actions" style="display:inline-flex;gap:0.3rem">
                           <button type="button" class="bea-mg__icon-btn" title="Modifier" (click)="editerEntite(e)"><mat-icon>edit</mat-icon></button>
                           <button type="button" class="bea-mg__icon-btn" [title]="e.actif ? 'Désactiver' : 'Réactiver'" (click)="basculerEntite(e)"><mat-icon>{{ e.actif ? 'toggle_on' : 'toggle_off' }}</mat-icon></button>
-                          @if (!e.usage) { <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer" (click)="supprimerEntite(e)"><mat-icon>delete</mat-icon></button> }
+                          @if (!e.usage || store.cap().admin) { <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer" (click)="supprimerEntite(e)"><mat-icon>delete</mat-icon></button> }
                         </span>
                       </td>
                     }
@@ -105,7 +105,7 @@ interface Edition {
                           <button type="button" class="bea-mg__icon-btn" title="Modifier" (click)="editer(r)"><mat-icon>edit</mat-icon></button>
                           <button type="button" class="bea-mg__icon-btn" [title]="r.actif ? 'Désactiver' : 'Réactiver'" (click)="basculer(r)"><mat-icon>{{ r.actif ? 'toggle_on' : 'toggle_off' }}</mat-icon></button>
                           <button type="button" class="bea-mg__icon-btn" title="Fusionner avec une autre valeur" (click)="fusion.set(r); cible = ''"><mat-icon>merge</mat-icon></button>
-                          @if (!r.usage) { <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer" (click)="supprimer(r)"><mat-icon>delete</mat-icon></button> }
+                          @if (!r.usage || store.cap().admin) { <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer" (click)="supprimer(r)"><mat-icon>delete</mat-icon></button> }
                         </span>
                       </td>
                     }
@@ -292,9 +292,18 @@ export class FoReferentielsComponent implements OnInit {
   }
 
   supprimer(r: RefItem): void {
+    const effets: Record<Domaine, string> = {
+      THEME: 'Elle sera retirée des formations qui l’utilisent.',
+      FORMATEUR: 'Il sera retiré des formations qui le citent.',
+      LIEU: 'Lieu obligatoire d’une formation : fusionnez-le d’abord s’il est encore utilisé par des formations.',
+      FONCTION: 'Les employés et participations concernés n’auront plus de fonction.',
+      PERIMETRE: 'Périmètre obligatoire d’une entité : fusionnez-le d’abord s’il est encore utilisé par des entités.',
+    };
     this.apres(
-      this.feedback.run(() => this.api.delete(`${FO_BASE}/referentiels/${r.id}`), {
-        confirm: { action: 'suppression', message: `Supprimer « ${r.libelle} » ? Elle n’est utilisée nulle part.` },
+      this.feedback.run(() => this.api.delete(`${FO_BASE}/referentiels/${r.id}${r.usage ? '?forcer=true' : ''}`), {
+        confirm: r.usage
+          ? { action: 'suppression', title: 'Supprimer une valeur utilisée', message: `« ${r.libelle} » est utilisée ${r.usage} fois.`, hint: `${effets[r.domaine]} Suppression irréversible, tracée dans le journal.` }
+          : { action: 'suppression', message: `Supprimer « ${r.libelle} » ? Elle n’est utilisée nulle part.` },
         busy: this.busy,
         success: { title: 'Valeur supprimée', message: r.libelle },
         errorTitle: 'Suppression impossible',
@@ -332,8 +341,10 @@ export class FoReferentielsComponent implements OnInit {
 
   supprimerEntite(e: Entite): void {
     this.apres(
-      this.feedback.run(() => this.api.delete(`${FO_BASE}/entites/${e.id}`), {
-        confirm: { action: 'suppression', message: `Supprimer l’entité « ${e.libelle} » ?` },
+      this.feedback.run(() => this.api.delete(`${FO_BASE}/entites/${e.id}${e.usage ? '?forcer=true' : ''}`), {
+        confirm: e.usage
+          ? { action: 'suppression', title: 'Supprimer une entité utilisée', message: `« ${e.libelle} » est utilisée ${e.usage} fois.`, hint: 'Les employés et participations rattachés n’auront plus d’entité. Suppression irréversible, tracée dans le journal.' }
+          : { action: 'suppression', message: `Supprimer l’entité « ${e.libelle} » ?` },
         busy: this.busy,
         success: { title: 'Entité supprimée', message: e.libelle },
         errorTitle: 'Suppression impossible',

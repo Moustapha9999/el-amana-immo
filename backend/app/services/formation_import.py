@@ -456,6 +456,18 @@ class FormationImportService:
         await self.svc.audit("formation.import.abandon", "formation_import", imp.id, after={"fichier": imp.fichier_nom})
         return self._import_dict(imp)
 
+    async def supprimer(self, iid: uuid.UUID) -> None:
+        """Retire une ligne de l'historique d'import (administrateur). Les données importées restent."""
+        self.ctx.exiger("formation.admin")
+        imp = await self.db.get(FormationImport, iid)
+        if not imp:
+            raise AppError("Import introuvable", 404, code="NOT_FOUND")
+        avant = {"fichier": imp.fichier_nom, "statut": imp.statut, "lignes": imp.nb_lignes,
+                 "resultat": imp.resultat}
+        await self.db.delete(imp)
+        await self.db.flush()
+        await self.svc.audit("formation.import.delete", "formation_import", iid, before=avant)
+
     # ------------------------------------------------------------- confirmation
     async def confirmer(self, iid: uuid.UUID, payload: dict) -> dict:
         self.ctx.exiger("formation.import.execute")

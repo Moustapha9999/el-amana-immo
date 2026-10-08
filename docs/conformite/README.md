@@ -105,14 +105,29 @@ référentiels initiaux issus de l’Excel, ligne `plateforme_modules`).
 | Employé | Nom, Prénom, Fonction, Entité, Périmètre (déduit de l’entité), Email, Téléphone. Doublons bloqués (clé d’identité : mots normalisés, ordre indifférent) ; création forcée seulement après confirmation explicite |
 | Formation | Date*, Thème(s)*, Lieu*, Formateur(s)*, participants multi-sélection. Aucun présent par défaut |
 | Présence | `PRESENT` / `ABSENT` uniquement ; saisie impossible avant la date ; correction d’une présence existante = motif obligatoire |
-| Statuts | `PLANIFIEE` → `REALISEE` (toutes présences saisies) → `CLOTUREE` ; `ANNULEE` (motif) ; `ARCHIVEE`. Pas de suppression si des présences existent (suppression réservée à `formation.admin`, avec motif) |
+| Statuts | `PLANIFIEE` → `REALISEE` (toutes présences saisies) → `CLOTUREE` ; `ANNULEE` (motif) ; `ARCHIVEE`. Suppression définitive réservée à `formation.admin` (voir « Suppressions administrateur ») |
 | Concurrence | Champ `revision` : toute écriture concurrente renvoie `409 CONFLIT_REVISION` |
 | Historique | Fonction / entité / périmètre figés sur la participation à la date de la formation |
-| Référentiels | Thèmes, Formateurs, Lieux, Fonctions, Périmètres, Entités : modifiables, désactivables, fusionnables ; une valeur utilisée ne se supprime pas |
+| Référentiels | Thèmes, Formateurs, Lieux, Fonctions, Périmètres, Entités : modifiables, désactivables, fusionnables ; une valeur utilisée ne se supprime pas (sauf `formation.admin`) |
 | Import Excel | Analyse → aperçu → correspondances → découpage Nom/Prénom **proposé puis vérifié** (case obligatoire) → confirmation. Ré-import du même fichier détecté (SHA-256), sans doublon de participation |
 | Exports | Feuille de présence PDF/Excel (en-tête BANQUE EL AMANA, N° / Nom et prénom / Signature) ; `Rapport_Formation.pdf` et `Rapport_Formation.xlsx` (8 onglets). Pas de CSV |
 | Droits | `formation.view`, `create`, `update`, `cancel`, `close`, `employees.*`, `attendance.*`, `references.*`, `import.*`, `reporting.*`, `admin` ; rôles `formation.lecteur`, `formation.gestionnaire`, `formation.admin` |
 | Audit | Toute action (y compris exports) dans `audit_logs` (`module_code = formation`), consultable dans Historique → Journal d’audit |
 | Feuille signée (GED) | Scan PDF / image déposé sur la fiche formation → `ged_documents` (module `formation`, entité `formation_session`, type `FEUILLE_PRESENCE_SIGNEE`, OCR). Dépôt dès que la date est passée (planifiée, réalisée, clôturée) ; retrait avec motif tant qu’elle n’est pas clôturée (corbeille GED). Droit `formation.attendance.manage`. Liste : colonne et filtre « Feuille signée manquante » |
+
+### Suppressions administrateur (`formation.admin`, superuser implicite)
+
+L’administrateur supprime définitivement, à tout moment et quel que soit le statut. Chaque
+suppression passe par une confirmation, et l’audit « avant » garde le détail complet.
+
+| Objet | Écran | API | Effet |
+|-------|-------|-----|-------|
+| Formation (même clôturée / archivée, présences saisies) | Liste (sélection multiple, icône par ligne) et fiche | `POST /sessions/{id}/supprimer`, `POST /sessions/suppression-multiple {ids, motif}` | Participants et présences effacés, feuilles signées en corbeille GED. Motif obligatoire. En suppression multiple, un échec n’annule pas les autres |
+| Participant d’une formation clôturée | Fiche formation | `POST /sessions/{id}/participants/{pid}/retrait` | Motif si présence saisie |
+| Employé | Liste et fiche employé | `POST /employes/{id}/supprimer {motif}` | Employé et toutes ses participations supprimés, statut des formations ouvertes recalculé |
+| Valeur de référentiel utilisée | Référentiels | `DELETE /referentiels/{id}?forcer=true` | Thème / formateur retiré des formations, fonction / périmètre mis à vide sur employés et participations, lieu retiré des entités. Lieu d’une formation ou périmètre d’une entité : refus `REFERENTIEL_OBLIGATOIRE` (fusionner d’abord) |
+| Entité utilisée | Référentiels → Entités | `DELETE /entites/{id}?forcer=true` | Employés et participations rattachés sans entité |
+| Feuille signée (formation clôturée) | Fiche formation | `POST /sessions/{id}/documents/{did}/retrait` | Corbeille GED, motif obligatoire |
+| Ligne d’historique d’import | Import Excel | `DELETE /imports/{id}` | Les données importées restent, le fichier n’est plus signalé « déjà importé » |
 
 Hors périmètre V1 : évaluations, attestations, QR codes.

@@ -202,8 +202,10 @@ async def test_cycle_session_presences_cloture(db):
     assert s["statut"] == "CLOTUREE" and not s["actions"]["modifier"]
     with pytest.raises(AppError):
         await svc.modifier_session(uuid.UUID(s["id"]), {"revision": s["revision"], "intitule": "x"})
-    with pytest.raises(AppError):
-        await svc.supprimer_session(uuid.UUID(s["id"]), "test")
+    gestionnaire = FormationService(db, await _ctx(db, "formation.view", "formation.update", "formation.close"))
+    with pytest.raises(HTTPException):
+        await gestionnaire.supprimer_session(uuid.UUID(s["id"]), "test")
+    assert not (await gestionnaire.detail_session(uuid.UUID(s["id"])))["actions"]["supprimer"]
 
     fiche = await svc.fiche_employe(uuid.UUID(e1["id"]))
     assert fiche["stats"]["presents"] == 1 and fiche["historique"][0]["presence"] == "PRESENT"
@@ -272,8 +274,9 @@ async def test_feuille_signee_ged(db, monkeypatch):
         p = s["participants"][0]["id"]
         s = await svc.saisir_presences(sid, {p: "PRESENT"}, s["revision"])
         s = await svc.changer_statut(sid, "cloturer", s["revision"], None)
+        gestionnaire = FormationService(db, await _ctx(db, "formation.view", "formation.attendance.manage"))
         with pytest.raises(AppError) as fige:
-            await formation_documents.retirer(svc, sid, doc.id, "erreur")
+            await formation_documents.retirer(gestionnaire, sid, doc.id, "erreur")
         assert fige.value.code == "RETRAIT_INTERDIT"
         s = await svc.changer_statut(sid, "rouvrir", s["revision"], "Mauvais scan")
         with pytest.raises(AppError):
@@ -301,6 +304,73 @@ async def test_doublon_employe_et_permissions(db):
     with pytest.raises(HTTPException) as refus:
         await lecteur.creer_employe({"nom": "Interdit"})
     assert refus.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_supprime_tout(db):
+    admin = FormationService(db, await _ctx(db))
+    gestionnaire = FormationService(db, await _ctx(
+        db, "formation.view", "formation.update", "formation.employees.manage", "formation.references.manage"))
+    suffixe = uuid.uuid4().hex[:6].upper()
+    e1, e2 = await _employe(admin, f"ZZS{suffixe}"), await _employe(admin, f"ZZT{suffixe}")
+    theme = await admin.creer_referentiel("THEME", f"Thème jetable {suffixe}")
+    fonction = await admin.creer_referentiel("FONCTION", f"Fonction jetable {suffixe}")
+    await admin.modifier_employe(uuid.UUID(e2["id"]), {"fonction_id": fonction["id"]})
+    base = {"theme_ids": [await _ref(db, "THEME"), theme["id"]], "lieu_id": await _ref(db, "LIEU"),
+            "formateur_ids": [await _ref(db, "FORMATEUR")]}
+    s = await admin.creer_session({"date_session": date.today() - timedelta(days=2), **base,
+                                   "employe_ids": [e1["id"], e2["id"]]})
+    sid = uuid.UUID(s["id"])
+    p1, p2 = (p["id"] for p in s["participants"])
+    s = await admin.saisir_presences(sid, {p1: "PRESENT", p2: "ABSENT"}, s["revision"])
+    s = await admin.changer_statut(sid, "cloturer", s["revision"], None)
+    assert s["actions"]["supprimer"] and s["actions"]["retirer_participants"]
+
+    # Valeurs utilisées : refusées au gestionnaire, détachées puis supprimées par l'administrateur.
+    with pytest.raises(HTTPException) as utilise:
+        await gestionnaire.supprimer_referentiel(uuid.UUID(theme["id"]), forcer=True)
+    assert utilise.value.detail["code"] == "REFERENTIEL_UTILISE"
+    await admin.supprimer_referentiel(uuid.UUID(theme["id"]), forcer=True)
+    await admin.supprimer_referentiel(uuid.UUID(fonction["id"]), forcer=True)
+    s = await admin.detail_session(sid)
+    assert theme["id"] not in {t["id"] for t in s["themes"]} and len(s["themes"]) == 1
+    with pytest.raises(HTTPException) as lieu:
+        await admin.supprimer_referentiel(uuid.UUID(base["lieu_id"]), forcer=True)
+    assert lieu.value.detail["code"] == "REFERENTIEL_OBLIGATOIRE"
+
+    # Participant retiré d'une formation clôturée, puis employé supprimé avec ses participations.
+    s = await admin.retirer_participant(sid, uuid.UUID(p2), s["revision"], "Erreur de saisie")
+    assert s["stats"]["participants"] == 1
+    with pytest.raises(HTTPException):
+        await gestionnaire.supprimer_employe(uuid.UUID(e1["id"]), "Doublon")
+    with pytest.raises(AppError):
+        await admin.supprimer_employe(uuid.UUID(e1["id"]), " ")
+    assert await admin.supprimer_employe(uuid.UUID(e1["id"]), "Doublon") == e1["nom_complet"]
+    with pytest.raises(AppError):
+        await admin.fiche_employe(uuid.UUID(e1["id"]))
+    s = await admin.detail_session(sid)
+    assert s["stats"]["participants"] == 0
+
+    # Formation clôturée supprimée définitivement.
+    assert await admin.supprimer_session(sid, "Formation de test") == s["reference"]
+    with pytest.raises(AppError):
+        await admin.detail_session(sid)
+    actions = set((await db.scalars(select(AuditLog.action).where(AuditLog.entity_id.in_(
+        [s["id"], e1["id"], theme["id"]])))).all())
+    assert {"formation.session.delete", "formation.employe.delete", "formation.referentiel.delete"} <= actions
+
+
+@pytest.mark.asyncio
+async def test_admin_supprime_entite_utilisee(db):
+    admin = FormationService(db, await _ctx(db))
+    perimetre = await _ref(db, "PERIMETRE")
+    entite = await admin.creer_entite({"libelle": f"Entité jetable {uuid.uuid4().hex[:6]}", "perimetre_id": perimetre})
+    e = await admin.creer_employe({"nom": f"ZZE{uuid.uuid4().hex[:6].upper()}", "entite_id": entite["id"]}, forcer=True)
+    gestionnaire = FormationService(db, await _ctx(db, "formation.view", "formation.references.manage"))
+    with pytest.raises(HTTPException):
+        await gestionnaire.supprimer_entite(uuid.UUID(entite["id"]), forcer=True)
+    await admin.supprimer_entite(uuid.UUID(entite["id"]), forcer=True)
+    assert (await admin.fiche_employe(uuid.UUID(e["id"])))["entite_id"] is None
 
 
 def _classeur_historique(suffixe: str) -> bytes:
@@ -363,3 +433,10 @@ async def test_import_excel_analyse_et_confirmation(db):
         await imp.confirmer(uuid.UUID(res2["id"]), {"verification_noms": True})
     fait2 = await imp.confirmer(uuid.UUID(res2["id"]), {"verification_noms": True, "forcer": True})
     assert fait2["resultat"].get("participations_creees", 0) == 0
+
+    with pytest.raises(HTTPException):
+        await FormationImportService(db, await _ctx(db, "formation.import.execute")).supprimer(uuid.UUID(res2["id"]))
+    await imp.supprimer(uuid.UUID(res2["id"]))
+    with pytest.raises(AppError):
+        await imp.detail(uuid.UUID(res2["id"]))
+    assert (await svc.detail_session(uuid.UUID(session["id"])))["source"] == "IMPORT"
