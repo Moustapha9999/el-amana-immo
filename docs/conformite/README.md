@@ -94,6 +94,24 @@ Reste dépendant du métier ou de l’exploitation :
 - **RLS** : rôle PostgreSQL applicatif non superuser à créer (section ci-dessus).
 - **Questions ouvertes** : [eer-matrices.md §7](eer-matrices.md#7-questions-ouvertes).
 
+## Base clientèle (08/10/2026, en construction)
+
+- [phase0-audit-referentiel-clients.md](phase0-audit-referentiel-clients.md) : audit de l'existant.
+- [clientele-phase1.md](clientele-phase1.md) : modèle CLIENT (racine ORION) / COMPTE / RIB,
+  migration `20261008_clientele_01` (appliquée sur copie de test uniquement).
+- [clientele-phase2.md](clientele-phase2.md) : import État des comptes ORION, vue Situation PP / PM
+  (sources de colonnes, sans copie ni invention), module `clientele`.
+- [clientele-phase4.md](clientele-phase4.md) : rapprochement d'imports, classification configurable,
+  filtrage / alertes (phases 4–6). Migration `20261008_clientele_03` (copie de test uniquement).
+- [clientele-moteur-scoring.md](clientele-moteur-scoring.md) : CDC 1.0, moteur SCORE uniquement,
+  INTERDIT bloquant, référentiel maître LOT 1. Migrations `06`/`07` (test/recette, pas de
+  classification massive, aucune valeur ACTIVE).
+- [roadmap-indicateurs-bcm.md](roadmap-indicateurs-bcm.md) : **ordre révisé** après BCM
+  (moteur **fait** → reporting **fait** → EER racine **fait** → Déclaration BCM **fait**).
+  Déclaration : `/clientele/declarations`, snapshot à la validation, pas d’invention de formules.
+  Ne pas exécuter les anciens prompts « 28 rapports » / « reporting BCM PDF ».
+  Pont EER : `GET /api/v1/eer/clientele/{racine}`, préremplissage ORION sans écrasement.
+
 ## Module Formation & Sensibilisation (07/10/2026)
 
 Remplace le fichier Excel de suivi des formations. Code `formation`, URLs `/formation/...`,
