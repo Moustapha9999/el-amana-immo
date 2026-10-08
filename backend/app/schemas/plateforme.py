@@ -487,6 +487,9 @@ class PlatformBackupCreate(BaseModel):
 
 class PlatformRestoreRequest(BaseModel):
     acknowledge_dependencies: bool = False
+    confirmation: str | None = Field(default=None, max_length=200)
+    reason: str | None = Field(default=None, max_length=2000)
+    include_security: bool = False
 
 
 class ModuleStatusUpdate(BaseModel):

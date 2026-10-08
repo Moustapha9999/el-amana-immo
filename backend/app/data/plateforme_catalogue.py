@@ -505,6 +505,7 @@ CORE_ADMIN_PERMISSIONS: list[tuple[str, str, str]] = [
     ("core.admin.backup.view", "Consultation des sauvegardes (CORE ADMIN)", "core"),
     ("core.admin.backup.create", "Création de sauvegardes (CORE ADMIN)", "core"),
     ("core.admin.backup.delete", "Suppression de sauvegardes (CORE ADMIN)", "core"),
+    ("core.admin.backup.download", "Téléchargement des sauvegardes (CORE ADMIN)", "core"),
     ("core.admin.recovery.view", "Consultation recovery (CORE ADMIN)", "core"),
     ("core.admin.recovery.execute", "Exécution recovery (CORE ADMIN)", "core"),
     ("core.admin.monitoring.view", "Supervision plateforme (CORE ADMIN)", "core"),

@@ -3511,6 +3511,172 @@ html[data-theme='dark'] .bea-fx-journal__body small {
 html[data-theme='dark'] .bea-fx-journal__meta {
   color: #9fa9b8;
 }
+html[data-theme='dark'] .bea-sr-tabs {
+  background: #152332;
+}
+html[data-theme='dark'] .bea-sr-tabs__item {
+  color: #b3bbc7;
+}
+html[data-theme='dark'] .bea-sr-tabs__item:hover {
+  background: #192535;
+}
+html[data-theme='dark'] .bea-sr-tabs__item--on {
+  background: #1f1f1f;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+html[data-theme='dark'] .bea-sr-level {
+  background: #1f1f1f;
+}
+html[data-theme='dark'] .bea-sr-level--on {
+  background: #122237;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+html[data-theme='dark'] .bea-sr-level__icon {
+  background: #14243c;
+}
+html[data-theme='dark'] .bea-sr-level__copy strong {
+  color: #e0e6f4;
+}
+html[data-theme='dark'] .bea-sr-chip {
+  color: #98ace9;
+  background: #15273e;
+}
+html[data-theme='dark'] .bea-sr-chip[data-off=true] {
+  color: #9fa9b8;
+  background: #172635;
+}
+html[data-theme='dark'] .bea-sr-summary > div {
+  background: #152332;
+  border: 1px solid #32383f;
+}
+html[data-theme='dark'] .bea-sr-summary dd {
+  color: #e0e6f4;
+}
+html[data-theme='dark'] .bea-sr-error {
+  color: #eb8c8c;
+}
+html[data-theme='dark'] .bea-sr-badge {
+  color: #bfc6d0;
+  background: #1d2939;
+}
+html[data-theme='dark'] .bea-sr-badge[data-level=global] {
+  color: #a277e6;
+  background: #1a1339;
+}
+html[data-theme='dark'] .bea-sr-badge[data-level=departement] {
+  color: #a3d6f2;
+  background: #142c3d;
+}
+html[data-theme='dark'] .bea-sr-badge[data-level=module] {
+  color: #b3efca;
+  background: #153f23;
+}
+html[data-theme='dark'] .bea-sr-status {
+  color: #b3bbc7;
+  background: #172635;
+}
+html[data-theme='dark'] .bea-sr-status[data-status=success] {
+  color: #b3efca;
+  background: #153f23;
+}
+html[data-theme='dark'] .bea-sr-status[data-status=failed] {
+  color: #eb8c8c;
+  background: #3c1414;
+}
+html[data-theme='dark'] .bea-sr-status[data-status=partial] {
+  color: #f0b896;
+  background: #453c17;
+}
+html[data-theme='dark'] .bea-sr-status[data-status=running],
+html[data-theme='dark'] .bea-sr-status[data-status=pending] {
+  color: #98ace9;
+  background: #15273e;
+}
+html[data-theme='dark'] .bea-sr-alert {
+  border: 1px solid #383f48;
+  background: #122237;
+  color: #98ace9;
+}
+html[data-theme='dark'] .bea-sr-alert[data-tone=warn] {
+  border-color: #fcd34d;
+  background: #383113;
+  color: #f0b896;
+}
+html[data-theme='dark'] .bea-sr-alert[data-tone=danger] {
+  border-color: #6f2a2a;
+  background: #361212;
+  color: #eb8c8c;
+}
+html[data-theme='dark'] .bea-sr-danger {
+  border: 1.5px solid #6f2a2a;
+  background: #361212;
+  color: #e9a0a0;
+}
+html[data-theme='dark'] .bea-sr-danger h3 {
+  color: #eb8c8c;
+}
+html[data-theme='dark'] .bea-sr-check {
+  background: #1f1f1f;
+  border: 1px solid #453636;
+  color: #e0e6f4;
+}
+html[data-theme='dark'] .bea-sr-check small {
+  color: #edb183;
+}
+html[data-theme='dark'] .bea-sr-pick tbody tr:hover {
+  background: #152332;
+}
+html[data-theme='dark'] .bea-sr-pick--on,
+html[data-theme='dark'] .bea-sr-pick tbody tr.bea-sr-pick--on:hover {
+  background: #122237;
+}
+html[data-theme='dark'] .bea-sr-list__row {
+  border: 1px solid #32383f;
+  background: #1f1f1f;
+}
+html[data-theme='dark'] .bea-sr-list__row:hover {
+  background: #152332;
+}
+html[data-theme='dark'] .bea-sr-list__main strong {
+  color: #e0e6f4;
+}
+html[data-theme='dark'] .bea-sr-iconbtn {
+  background: #1f1f1f;
+}
+html[data-theme='dark'] .bea-sr-iconbtn:hover:not(:disabled) {
+  background: #122237;
+}
+html[data-theme='dark'] .bea-sr-iconbtn--danger {
+  color: #ea7474;
+}
+html[data-theme='dark'] .bea-sr-iconbtn--danger:hover:not(:disabled) {
+  border-color: #6f2a2a;
+  background: #361212;
+}
+html[data-theme='dark'] .bea-sr-modal__card {
+  background: #1f1f1f;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3);
+}
+html[data-theme='dark'] .bea-sr-progress__card {
+  background: #1f1f1f;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3);
+}
+html[data-theme='dark'] .bea-sr-progress__spinner {
+  border: 4px solid #333941;
+}
+html[data-theme='dark'] .bea-sr-progress__card[data-tone=danger] .bea-sr-progress__spinner {
+  border-color: #403232;
+  border-top-color: #b91c1c;
+}
+html[data-theme='dark'] .bea-sr-progress__bar {
+  background: #1d2939;
+}
+html[data-theme='dark'] .bea-sr-progress__steps {
+  color: #bfc6d0;
+}
+html[data-theme='dark'] .bea-sr-progress__hint {
+  color: #edb183;
+}
 /* src/app/achats-appro/achats-ui.css */
 html[data-theme='dark'] .bea-ach__kpi {
   background: #1f1f1f;

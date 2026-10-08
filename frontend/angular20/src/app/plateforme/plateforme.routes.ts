@@ -7,9 +7,7 @@ import { CoreAdminActivityComponent } from './core-admin/core-admin-activity.com
 import { CoreAdminAlertsComponent } from './core-admin/core-admin-alerts.component';
 import { CoreAdminAuditComponent } from './core-admin/core-admin-audit.component';
 import {
-  CoreAdminBackupsComponent,
   CoreAdminModuleStatesComponent,
-  CoreAdminRecoveryComponent,
   CoreAdminSupervisionComponent,
   CoreAdminVersionsComponent,
 } from './core-admin/core-admin-control.component';
@@ -38,6 +36,12 @@ import { CoreAdminPermissionFicheComponent } from './core-admin/core-admin-permi
 import { CoreAdminPermissionsComponent } from './core-admin/core-admin-permissions.component';
 import { CoreAdminRoleFicheComponent } from './core-admin/core-admin-role-fiche.component';
 import { CoreAdminRolesComponent } from './core-admin/core-admin-roles.component';
+import {
+  CoreAdminSauvegardesBackupComponent,
+  CoreAdminSauvegardesHistoryComponent,
+  CoreAdminSauvegardesOverviewComponent,
+  CoreAdminSauvegardesRecoveryComponent,
+} from './core-admin/core-admin-sauvegardes.component';
 import { CoreAdminSessionsComponent } from './core-admin/core-admin-sessions.component';
 import {
   CoreAdminGeneralComponent,
@@ -143,8 +147,12 @@ export const PLATEFORME_ROUTES: Routes = [
       { path: 'general', component: CoreAdminGeneralComponent },
       { path: 'security', component: CoreAdminSecurityComponent },
       { path: 'maintenance', component: CoreAdminMaintenanceComponent },
-      { path: 'backups', component: CoreAdminBackupsComponent },
-      { path: 'recovery', component: CoreAdminRecoveryComponent },
+      { path: 'sauvegardes', component: CoreAdminSauvegardesOverviewComponent },
+      { path: 'sauvegardes/sauvegarde', component: CoreAdminSauvegardesBackupComponent },
+      { path: 'sauvegardes/recovery', component: CoreAdminSauvegardesRecoveryComponent },
+      { path: 'sauvegardes/historique', component: CoreAdminSauvegardesHistoryComponent },
+      { path: 'backups', pathMatch: 'full', redirectTo: 'sauvegardes' },
+      { path: 'recovery', pathMatch: 'full', redirectTo: 'sauvegardes/recovery' },
       { path: 'supervision', component: CoreAdminSupervisionComponent },
       { path: 'module-states', component: CoreAdminModuleStatesComponent },
       { path: 'versions', component: CoreAdminVersionsComponent },

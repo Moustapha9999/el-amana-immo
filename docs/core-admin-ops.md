@@ -15,31 +15,27 @@ le pilotage reste dans CORE ADMIN (Login 1).
 | Permissions | `core.admin.*` | Ajouter `backup` / `recovery` / `monitoring` / `maintenance` / `versions` |
 | Immo métier | tables immo | **Ne pas modifier** le schéma métier |
 
-## Recovery partiel — dépendances Immobilisations
-
-Tables **exclusives** (restaurables isolément) :
-
-`immobilisations`, `pieces_jointes`, `amortissements`, `cessions`, `rebuts`,
-`reevaluations`, `ajustements`, `ecritures_comptables`,
-`soldes_ouverture_immobilisations`, `soldes_compte_orion`,
-`periodes_amortissement`, `exercices_comptables`, `categories_immobilisation`,
-`parametrage_amortissement`, `parametrage_ecriture`, `inventaire_scans`,
-`archive_dossiers`, `archive_fichiers`, `archive_lignes`.
-
-Tables **partagées** (jamais écrasées par un recovery module) :
-
-`users`, `roles`, `permissions`, `agences`, `directions`, `departements`,
-`centres_cout`, `fournisseurs`, `journaux`, `comptes_plan_comptable`,
-`plateforme_*`, `auth_*`, `audit_logs`, `notifications`, `ged_documents`.
-
-Fichiers : sous-dossier `storage/uploads/immobilisations` (+ chemins `pieces_jointes`).
-
-Avant recovery module : backup de sécurité du même périmètre + avertissement
-dépendances.
+## Recovery partiel — périmètres des modules
 
 Source de vérité code : `backend/app/data/module_backup_scopes.py`
 (`make_module_scope`, `SHARED_CORE_TABLES`, `MODULE_BACKUP_SCOPES`).
-Nouveau module = une entrée factory, sans recopier le CORE.
+Nouveau module = une entrée factory, sans recopier le CORE :
+
+- `exclusive_tables` + `table_prefixes` (ex. `formation_`, `mg_achat_`) : les tables
+  sont résolues **dynamiquement** contre `pg_tables` (`resolve_tables`) — une
+  nouvelle table préfixée est sauvegardée sans modifier le code ;
+- `uploads_subdirs` (ex. immobilisations : `pieces`, `archives`) ;
+- `ged_module_codes` : lignes `ged_documents` + dossier `storage/ged/{code}` du module
+  (`None` = code du module, `[]` = pas de GED).
+
+Tables **partagées** (jamais écrasées par un recovery module ou département) :
+`SHARED_CORE_TABLES` — `users`, `roles`, `permissions`, `agences`, `directions`,
+`departements`, `centres_cout`, `fournisseurs`, `journaux`, `plan_comptable`,
+`plateforme_*`, `auth_*`, `audit_logs`, `notifications`, `ged_documents`
+(seules les lignes GED du périmètre sont restaurées), etc.
+
+Tests d'invariants : `backend/tests/test_core_admin_backups.py` (aucune table CORE
+revendiquée par un module, aucune table revendiquée par deux modules).
 
 ## Tables ops ajoutées
 
@@ -50,6 +46,74 @@ Nouveau module = une entrée factory, sans recopier le CORE.
 
 ## Permissions
 
-`core.admin.backup.view|create|delete`, `core.admin.recovery.view|execute`,
+`core.admin.backup.view|create|delete|download`, `core.admin.recovery.view|execute`,
 `core.admin.monitoring.view`, `core.admin.maintenance.view|manage`,
 `core.admin.module_status.view|manage`, `core.admin.versions.view|manage`.
+
+## Sauvegardes & Recovery (format v2)
+
+UI CORE ADMIN (Login 1) — groupe « Sauvegardes & Recovery » :
+
+| Route | Écran | Permission |
+|-------|-------|------------|
+| `/admin/sauvegardes` | Vue générale (KPI, dernières opérations, erreurs) | `backup.view` |
+| `/admin/sauvegardes/sauvegarde` | Sauvegarde globale / département / module | `backup.create` |
+| `/admin/sauvegardes/recovery` | Restauration globale / département / module | `recovery.execute` |
+| `/admin/sauvegardes/historique` | Historique unifié + actions | `backup.view` (+ `download`, `recovery.execute`) |
+
+`/admin/backups` et `/admin/recovery` redirigent vers ces écrans. Le masquage UI
+n'est qu'un confort : **chaque endpoint revérifie la permission**.
+
+### API (`/api/v1/plateforme/admin`)
+
+| Méthode | Route | Rôle |
+|---------|-------|------|
+| GET | `/backups/catalogue` | Départements (`plateforme_espaces`) → modules (`plateforme_modules`) + tables résolues |
+| GET | `/backups/preview?level&espace_code&module_code` | Récapitulatif avant exécution (modules, tables, lignes, taille estimée, admin) |
+| POST | `/backups` | Lance la sauvegarde (`level`, `espace_code`, `module_code`) |
+| GET | `/backups` | Liste filtrable (`level`, `espace_code`, `module_code`, `status`) |
+| GET | `/backups/history` | Historique unifié sauvegardes + restaurations (paginé, filtres) |
+| GET | `/backups/dashboard` | KPI |
+| GET | `/backups/{id}` | Détail + manifeste + restaurations liées |
+| POST | `/backups/{id}/verify` | Contrôle d'intégrité (SHA-256, `pg_restore -l`, archive lisible) |
+| GET | `/backups/{id}/download` | Archive `.tar` des artefacts (`backup.download`) |
+| GET | `/recovery/{id}/preview?include_security` | Impact : tables, lignes actuelles/sauvegardées, dépendances, tables préservées |
+| POST | `/recovery/{id}` | Restauration (`confirmation`, `reason`, `acknowledge_dependencies`, `include_security`) |
+| GET | `/recovery/restores/{id}` | Détail d'une restauration |
+
+### Artefacts d'une sauvegarde (`backups/`, volume `./backups`)
+
+`<base>.dump` (pg_dump custom, tables du périmètre), `<base>.ged.copy` (lignes
+`ged_documents` du périmètre), `<base>.files.tar.gz` (uploads + GED fichiers),
+`<base>.manifest.json`. Chaque artefact a son SHA-256 (`platform_backups.artifacts`) ;
+`checksum_sha256` = empreinte du dump. Migration : `20261008_backup_recovery_v2`
+(colonnes `checksum_sha256`, `artifacts`, `manifest`, `duration_ms`, `integrity_*`,
+`ip_address` ; `platform_restores.reason|options|details|duration_ms|ip_address`).
+
+### Mécanisme de restauration (jamais silencieuse)
+
+1. Confirmation forte côté **backend** : phrase `RESTAURER GLOBAL` /
+   `RESTAURER <CODE_DEPARTEMENT>` / `RESTAURER <CODE_MODULE>`, motif ≥ 10 caractères,
+   `acknowledge_dependencies`. Une seule restauration à la fois (409 sinon).
+2. Sauvegarde de **sécurité** du même périmètre (abandon si elle échoue).
+3. Un seul `psql --single-transaction` : `lock_timeout 30s`,
+   `session_replication_role = replica`, `DELETE` des tables du périmètre (+ lignes GED),
+   données du dump (TOC filtrée : TABLE DATA + SEQUENCE SET), lignes GED,
+   puis **contrôle d'intégrité référentielle** sur toutes les FK touchant le périmètre
+   (`BEA_FK_VIOLATION` → ROLLBACK complet, message explicite).
+4. Fichiers remplacés **après** succès SQL ; un échec fichiers = statut `partial`.
+5. Audit `recovery_start` / `recovery_success|partial|failed` (utilisateur, IP,
+   `request_id`, périmètre, ID sauvegarde, motif, erreur) + notification à tous les
+   administrateurs recovery.
+
+Restauration **globale** : les journaux (`GLOBAL_RESTORE_JOURNAL_TABLES` : audit,
+notifications, sauvegardes, restaurations, sessions…) ne sont jamais réécrits ; le
+plan sécurité (`SECURITY_PLANE_TABLES` : users, rôles, permissions, espaces, modules)
+n'est restauré que sur option explicite `include_security`.
+
+**DSI / TEST-PROD** : si le compte PostgreSQL applicatif n'est pas superutilisateur,
+accorder `GRANT SET ON PARAMETER session_replication_role TO <compte>;` (PG ≥ 15),
+sinon la restauration est refusée proprement (aucune donnée modifiée).
+
+Audit des sauvegardes : `backup_create`, `backup_failed`, `backup_verify`,
+`backup_verify_failed`, `backup_download`, `backup_delete`.

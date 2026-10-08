@@ -3,6 +3,7 @@ export interface CoreAdminNavItem {
   icon: string;
   path?: string;
   soon?: boolean;
+  exact?: boolean;
 }
 
 export interface CoreAdminNavGroup {
@@ -43,10 +44,17 @@ export const CORE_ADMIN_NAV: CoreAdminNavGroup[] = [
     ],
   },
   {
+    label: 'Sauvegardes & Recovery',
+    items: [
+      { label: 'Vue générale', path: '/admin/sauvegardes', icon: 'insights', exact: true },
+      { label: 'Sauvegarde', path: '/admin/sauvegardes/sauvegarde', icon: 'backup' },
+      { label: 'Recovery', path: '/admin/sauvegardes/recovery', icon: 'settings_backup_restore' },
+      { label: 'Historique', path: '/admin/sauvegardes/historique', icon: 'manage_history' },
+    ],
+  },
+  {
     label: 'Continuité',
     items: [
-      { label: 'Sauvegardes', path: '/admin/backups', icon: 'backup' },
-      { label: 'Recovery', path: '/admin/recovery', icon: 'restore' },
       { label: 'Maintenance', path: '/admin/maintenance', icon: 'build' },
       { label: 'État des modules', path: '/admin/module-states', icon: 'tune' },
       { label: 'Versions', path: '/admin/versions', icon: 'history' },

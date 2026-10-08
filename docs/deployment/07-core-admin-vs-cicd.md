@@ -13,8 +13,7 @@ Un utilisateur CORE ADMIN **n’obtient pas** automatiquement SSH, shell Postgre
 
 | Route UI | Rôle |
 |----------|------|
-| `/admin/backups` | Sauvegardes plateforme |
-| `/admin/recovery` | Restauration scoped (dépendances CORE) |
+| `/admin/sauvegardes` | Sauvegardes & Recovery : vue générale, sauvegarde, recovery, historique (global / département / module) |
 | `/admin/supervision` | État plateforme (données réelles) |
 | `/admin/maintenance` | Maintenance globale / message |
 | `/admin/module-states` | Statut modules |

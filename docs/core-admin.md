@@ -79,8 +79,10 @@ Permissions supplémentaires : `core.admin.backup.*`, `core.admin.recovery.*`,
 `core.admin.monitoring.view`, `core.admin.maintenance.view|manage`,
 `core.admin.module_status.view|manage`, `core.admin.versions.view|manage`.
 
-Routes UI : `/admin/backups`, `/admin/recovery`, `/admin/supervision`,
-`/admin/module-states`, `/admin/versions`, `/admin/maintenance`.
+Routes UI : `/admin/sauvegardes` (+ `/sauvegarde`, `/recovery`, `/historique`),
+`/admin/supervision`, `/admin/module-states`, `/admin/versions`, `/admin/maintenance`.
+Les anciennes URLs `/admin/backups` et `/admin/recovery` redirigent vers le module
+Sauvegardes & Recovery (voir [core-admin-ops.md](core-admin-ops.md#sauvegardes--recovery-format-v2)).
 
 Appliquer la migration : `.\scripts\apply-core-admin-ops.ps1` (crée un backup
 local avant Alembic `20260918_core_admin_ops`).

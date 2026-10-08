@@ -51,6 +51,16 @@ const ACTION_LABELS: Record<string, string> = {
   revoke_all: 'Révocation globale',
   deactivate: 'Désactivation',
   activate: 'Activation',
+  backup_create: 'Sauvegarde réussie',
+  backup_failed: 'Échec de sauvegarde',
+  backup_delete: 'Suppression de sauvegarde',
+  backup_verify: 'Vérification d’intégrité',
+  backup_verify_failed: 'Intégrité compromise',
+  backup_download: 'Téléchargement de sauvegarde',
+  recovery_start: 'Début de restauration',
+  recovery_success: 'Restauration réussie',
+  recovery_partial: 'Restauration partielle',
+  recovery_failed: 'Échec de restauration',
 };
 
 export function coreAdminAuditActionLabel(code: string): string {

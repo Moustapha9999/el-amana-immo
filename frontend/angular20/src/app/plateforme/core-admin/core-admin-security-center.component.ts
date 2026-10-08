@@ -858,8 +858,8 @@ const INCIDENT_STATUTS = ['ouvert', 'en_analyse', 'en_traitement', 'resolu', 'cl
                   >
                     Actualiser
                   </button>
-                  <a class="bea-admin-btn" routerLink="/admin/backups">Ouvrir Sauvegardes</a>
-                  <a class="bea-admin-btn bea-admin-btn--ghost" routerLink="/admin/recovery"
+                  <a class="bea-admin-btn" routerLink="/admin/sauvegardes">Ouvrir Sauvegardes</a>
+                  <a class="bea-admin-btn bea-admin-btn--ghost" routerLink="/admin/sauvegardes/recovery"
                     >Ouvrir Recovery</a
                   >
                 </div>

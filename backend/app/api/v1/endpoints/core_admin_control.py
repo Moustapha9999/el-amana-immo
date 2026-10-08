@@ -1,9 +1,13 @@
 """CORE ADMIN — sauvegardes, recovery, supervision, état modules, versions."""
 
+from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
 
 from app.api.deps import require_platform_permission
 from app.db.session import get_db
@@ -23,6 +27,7 @@ router = APIRouter(prefix="/plateforme/admin", tags=["core-admin-ops"])
 _BACKUP_VIEW = require_platform_permission("core.admin.backup.view")
 _BACKUP_CREATE = require_platform_permission("core.admin.backup.create")
 _BACKUP_DELETE = require_platform_permission("core.admin.backup.delete")
+_BACKUP_DOWNLOAD = require_platform_permission("core.admin.backup.download")
 _RECOVERY_VIEW = require_platform_permission("core.admin.recovery.view")
 _RECOVERY_EXEC = require_platform_permission("core.admin.recovery.execute")
 _MONITOR = require_platform_permission("core.admin.monitoring.view")
@@ -42,6 +47,50 @@ async def backups_dashboard(
     return await PlatformBackupService(db).dashboard()
 
 
+@router.get("/backups/catalogue")
+async def backups_catalogue(
+    _: User = Depends(_BACKUP_VIEW),
+    db: AsyncSession = Depends(get_db),
+):
+    return await PlatformBackupService(db).catalogue()
+
+
+@router.get("/backups/preview")
+async def backups_preview(
+    level: Literal["global", "departement", "module"],
+    espace_code: str | None = None,
+    module_code: str | None = None,
+    user: User = Depends(_BACKUP_VIEW),
+    db: AsyncSession = Depends(get_db),
+):
+    return await PlatformBackupService(db).preview_backup(
+        user=user, level=level, espace_code=espace_code, module_code=module_code
+    )
+
+
+@router.get("/backups/history")
+async def backups_history(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    kind: Literal["backup", "restore"] | None = None,
+    level: Literal["global", "departement", "module"] | None = None,
+    status: str | None = Query(None, max_length=20),
+    espace_code: str | None = None,
+    module_code: str | None = None,
+    _: User = Depends(_BACKUP_VIEW),
+    db: AsyncSession = Depends(get_db),
+):
+    return await PlatformBackupService(db).history(
+        page=page,
+        size=size,
+        kind=kind,
+        level=level,
+        status_filter=status,
+        espace_code=espace_code,
+        module_code=module_code,
+    )
+
+
 @router.get("/backups")
 async def list_backups(
     page: int = Query(1, ge=1),
@@ -49,6 +98,7 @@ async def list_backups(
     level: str | None = None,
     module_code: str | None = None,
     espace_code: str | None = None,
+    status: str | None = Query(None, max_length=20),
     _: User = Depends(_BACKUP_VIEW),
     db: AsyncSession = Depends(get_db),
 ):
@@ -58,6 +108,7 @@ async def list_backups(
         level=level,
         module_code=module_code,
         espace_code=espace_code,
+        status_filter=status,
     )
     return {"items": items, "total": total, "page": page, "size": size}
 
@@ -68,17 +119,45 @@ async def get_backup(
     _: User = Depends(_BACKUP_VIEW),
     db: AsyncSession = Depends(get_db),
 ):
-    row = await PlatformBackupService(db).get(backup_id)
-    if row is None:
-        from fastapi import HTTPException
-
-        raise HTTPException(status_code=404, detail="Sauvegarde introuvable")
     svc = PlatformBackupService(db)
-    data = svc._serialize(row)
-    data["dependencies"] = svc.analyze_dependencies(
-        level=row.level, module_code=row.module_code, espace_code=row.espace_code
-    )
+    row = await svc.get(backup_id)
+    if row is None:
+        raise HTTPException(
+            status_code=404, detail={"code": "BACKUP_NOT_FOUND", "message": "Sauvegarde introuvable."}
+        )
+    data = await svc.serialize(row)
+    data["manifest"] = row.manifest
+    data["restores"] = [await svc.serialize_restore(r) for r in await svc.restores_of(backup_id)]
     return data
+
+
+@router.post("/backups/{backup_id}/verify")
+async def verify_backup(
+    backup_id: UUID,
+    request: Request,
+    user: User = Depends(_BACKUP_VIEW),
+    db: AsyncSession = Depends(get_db),
+):
+    return await PlatformBackupService(db).verify(backup_id, user=user, request=request)
+
+
+@router.get("/backups/{backup_id}/download")
+async def download_backup(
+    backup_id: UUID,
+    request: Request,
+    user: User = Depends(_BACKUP_DOWNLOAD),
+    db: AsyncSession = Depends(get_db),
+):
+    path, filename, temporary = await PlatformBackupService(db).prepare_download(
+        backup_id, user=user, request=request
+    )
+    cleanup = BackgroundTask(Path(path).unlink, missing_ok=True) if temporary else None
+    return FileResponse(
+        path,
+        filename=filename,
+        media_type="application/x-tar" if filename.endswith(".tar") else "application/octet-stream",
+        background=cleanup,
+    )
 
 
 @router.post("/backups")
@@ -143,6 +222,31 @@ async def recovery_history(
     return {"items": items, "total": total, "page": page, "size": size}
 
 
+@router.get("/recovery/restores/{restore_id}")
+async def get_restore(
+    restore_id: UUID,
+    _: User = Depends(_RECOVERY_VIEW),
+    db: AsyncSession = Depends(get_db),
+):
+    svc = PlatformBackupService(db)
+    row = await svc.get_restore(restore_id)
+    if row is None:
+        raise HTTPException(
+            status_code=404, detail={"code": "RESTORE_NOT_FOUND", "message": "Restauration introuvable."}
+        )
+    return await svc.serialize_restore(row)
+
+
+@router.get("/recovery/{backup_id}/preview")
+async def recovery_preview(
+    backup_id: UUID,
+    include_security: bool = False,
+    _: User = Depends(_RECOVERY_VIEW),
+    db: AsyncSession = Depends(get_db),
+):
+    return await PlatformBackupService(db).preview_restore(backup_id, include_security=include_security)
+
+
 @router.post("/recovery/{backup_id}")
 async def execute_recovery(
     backup_id: UUID,
@@ -155,6 +259,9 @@ async def execute_recovery(
         backup_id,
         user=user,
         acknowledge_dependencies=payload.acknowledge_dependencies,
+        confirmation=payload.confirmation,
+        reason=payload.reason,
+        include_security=payload.include_security,
         request=request,
     )
     await db.commit()
@@ -271,15 +378,21 @@ async def create_version(
                 notify=True,
                 request=request,
             )
-        backup_info = await PlatformBackupService(db).create_backup(
-            user=user,
-            level="module",
-            backup_type="avant_mise_a_jour",
-            module_code=module.code,
-            espace_code=module.espace.code if module.espace else None,
-            request=request,
-            label=f"Avant version {payload.version}",
-        )
+        try:
+            backup_info = await PlatformBackupService(db).create_backup(
+                user=user,
+                level="module",
+                backup_type="avant_mise_a_jour",
+                module_code=module.code,
+                espace_code=module.espace.code if module.espace else None,
+                request=request,
+                label=f"Avant version {payload.version}",
+            )
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            if detail.get("code") != "BACKUP_SCOPE_EMPTY":
+                raise
+            backup_info = {"skipped": True, "message": detail.get("message")}
     result = await ops.add_version(
         module_id,
         user=user,
