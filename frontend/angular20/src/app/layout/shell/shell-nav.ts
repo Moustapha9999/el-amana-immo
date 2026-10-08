@@ -432,6 +432,17 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
     { section: 'Suivi', label: 'Historique', path: '/formation/historique', icon: 'history', permissions: ['formation.view', 'formation.reporting.view'] },
     { section: 'Suivi', label: 'Reporting', path: '/formation/reporting', icon: 'insights', permissions: ['formation.reporting.view'] },
   ],
+  clientele: [
+    { section: 'Pilotage', label: 'Dashboard', path: '/clientele/dashboard', icon: 'dashboard', exact: true, permissions: ['clientele.view'] },
+    { section: 'Pilotage', label: 'Reporting', path: '/clientele/reporting', icon: 'insights', permissions: ['clientele.reporting.view', 'clientele.view'] },
+    { section: 'Pilotage', label: 'Déclaration BCM', path: '/clientele/declarations', icon: 'assignment', permissions: ['clientele.bcm.view', 'clientele.reporting.view'] },
+    { section: 'Référentiel', label: 'Situation PP', path: '/clientele/situation-pp', icon: 'person', permissions: ['clientele.view'] },
+    { section: 'Référentiel', label: 'Situation PM', path: '/clientele/situation-pm', icon: 'apartment', permissions: ['clientele.view'] },
+    { section: 'Imports', label: 'Importer', path: '/clientele/imports', icon: 'upload_file', permissions: ['clientele.import.view', 'clientele.import.execute', 'clientele.classif.execute'] },
+    { section: 'Imports', label: 'Rapprochements', path: '/clientele/rapprochements', icon: 'compare_arrows', permissions: ['clientele.rapprochement.view'] },
+    { section: 'Risque', label: 'Classification', path: '/clientele/classification', icon: 'verified_user', permissions: ['clientele.classif.view'] },
+    { section: 'Risque', label: 'Filtrage & alertes', path: '/clientele/filtrage', icon: 'notification_important', permissions: ['clientele.filtrage.view'] },
+  ],
   'archives-mg': [
     {
       section: 'Pilotage',

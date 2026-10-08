@@ -190,6 +190,13 @@ export const MODULE_ROUTE_CONTRACTS: Readonly<Record<string, ModuleRouteContract
     espacePath: '/audit-controle-conformite',
     urlPrefix: '/formation',
   },
+  clientele: {
+    code: 'clientele',
+    strategy: 'prefixed',
+    entryPath: '/clientele/dashboard',
+    espacePath: '/audit-controle-conformite',
+    urlPrefix: '/clientele',
+  },
 };
 
 /** Modules dont le shell métier Angular est branché (Login 2 peut naviguer). */
@@ -209,6 +216,7 @@ export const MODULES_WITH_METIER_SHELL = new Set<string>([
   'demandes-informatique',
   'eer',
   'formation',
+  'clientele',
 ]);
 
 export function moduleHasMetierShell(moduleCode: string): boolean {
@@ -217,6 +225,18 @@ export function moduleHasMetierShell(moduleCode: string): boolean {
 
 export function getModuleRouteContract(moduleCode: string): ModuleRouteContract | null {
   return MODULE_ROUTE_CONTRACTS[moduleCode] ?? null;
+}
+
+/** Module préfixé propriétaire d’une URL (ex. /clientele/imports → clientele). */
+export function resolveModuleCodeFromUrl(url: string | null | undefined): string | null {
+  const path = (url ?? '').split(/[?#]/)[0];
+  for (const contract of Object.values(MODULE_ROUTE_CONTRACTS)) {
+    const prefix = contract.urlPrefix;
+    if (prefix && (path === prefix || path.startsWith(`${prefix}/`))) {
+      return contract.code;
+    }
+  }
+  return null;
 }
 
 export function isLegacyRootModule(moduleCode: string): boolean {

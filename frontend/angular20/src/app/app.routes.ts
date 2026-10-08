@@ -70,6 +70,17 @@ const foReferentiels = () => import('./formation/pages/fo-referentiels.component
 const foImports = () => import('./formation/pages/fo-imports.component').then((m) => m.FoImportsComponent);
 const foHistorique = () => import('./formation/pages/fo-historique.component').then((m) => m.FoHistoriqueComponent);
 const foReporting = () => import('./formation/pages/fo-reporting.component').then((m) => m.FoReportingComponent);
+const clDashboard = () => import('./clientele/pages/cl-dashboard.component').then((m) => m.ClDashboardComponent);
+const clImports = () => import('./clientele/pages/cl-imports.component').then((m) => m.ClImportsComponent);
+const clSituation = () => import('./clientele/pages/cl-situation.component').then((m) => m.ClSituationComponent);
+const clFiche = () => import('./clientele/pages/cl-fiche.component').then((m) => m.ClFicheComponent);
+const clRapprochements = () => import('./clientele/pages/cl-rapprochements.component').then((m) => m.ClRapprochementsComponent);
+const clClassification = () => import('./clientele/pages/cl-classification.component').then((m) => m.ClClassificationComponent);
+const clFiltrage = () => import('./clientele/pages/cl-filtrage.component').then((m) => m.ClFiltrageComponent);
+const clAlerte = () => import('./clientele/pages/cl-alerte.component').then((m) => m.ClAlerteComponent);
+const clReporting = () => import('./clientele/pages/cl-reporting.component').then((m) => m.ClReportingComponent);
+const clDeclarations = () => import('./clientele/pages/cl-declarations.component').then((m) => m.ClDeclarationsComponent);
+const clDeclaration = () => import('./clientele/pages/cl-declaration.component').then((m) => m.ClDeclarationComponent);
 const achatsBons = () => import('./achats-appro/achats-bons.component').then((m) => m.AchatsBonsComponent);
 const achatsReceptions = () =>
   import('./achats-appro/achats-receptions.component').then((m) => m.AchatsReceptionsComponent);
@@ -282,6 +293,26 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'imports', loadComponent: foImports },
       { path: 'historique', loadComponent: foHistorique },
       { path: 'reporting', loadComponent: foReporting },
+    ],
+  },
+  {
+    path: 'clientele',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('clientele')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      { path: 'dashboard', loadComponent: clDashboard },
+      { path: 'reporting', loadComponent: clReporting },
+      { path: 'declarations', loadComponent: clDeclarations },
+      { path: 'declarations/:id', loadComponent: clDeclaration },
+      { path: 'imports', loadComponent: clImports },
+      { path: 'rapprochements', loadComponent: clRapprochements },
+      { path: 'classification', loadComponent: clClassification },
+      { path: 'filtrage', loadComponent: clFiltrage },
+      { path: 'filtrage/:id', loadComponent: clAlerte },
+      { path: 'situation-pp', loadComponent: clSituation, data: { profil: 'PP' } },
+      { path: 'situation-pm', loadComponent: clSituation, data: { profil: 'PM' } },
+      { path: 'clients/:racine', loadComponent: clFiche },
     ],
   },
   {

@@ -3,6 +3,10 @@ import { inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { Observable, catchError, switchMap, throwError } from 'rxjs';
 import { AuthService } from '../services/auth.service';
+import {
+  LEGACY_ROOT_MODULE_CODE,
+  resolveModuleCodeFromUrl,
+} from '../../plateforme/module-routing.contract';
 
 function isModuleLoginUrl(url: string): boolean {
   return /\/auth\/modules\/[^/]+\/login/.test(url);
@@ -53,7 +57,9 @@ function attachBearer(req: HttpRequest<unknown>, token: string | null): HttpRequ
 }
 
 function redirectModuleLogin(auth: AuthService, router: Router, returnUrl: string): void {
-  const moduleCode = auth.moduleCode ?? 'immobilisations';
+  // Plusieurs 401 simultanés : le premier efface moduleCode, les suivants le déduisent de l’URL.
+  const moduleCode =
+    auth.moduleCode ?? resolveModuleCodeFromUrl(returnUrl) ?? LEGACY_ROOT_MODULE_CODE;
   auth.clearModuleSession();
   void router.navigate(['/modules', moduleCode, 'acces'], {
     queryParams: { returnUrl },
