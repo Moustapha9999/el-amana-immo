@@ -66,3 +66,12 @@ storage/imports/
 storage/Liste-Fournisseurs/
 storage/*.sql
 /*.tsv
+backend/storage/*.sql
+# Archives de sauvegarde (module Sauvegardes & Recovery)
+storage/*.tar
+storage/*.tar.gz
+# Réglages Cursor locaux
+.cursor/settings.json
+# Extraits ORION / classeurs Conformité (données clients nominatives)
+/*.xlsx
+/*.pdf
