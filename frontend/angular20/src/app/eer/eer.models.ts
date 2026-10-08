@@ -121,6 +121,8 @@ export interface EerDossier {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  racine_client: string | null;
+  numero_compte: string | null;
   parties: EerPartie[];
   transitions_possibles: string[];
 }
@@ -174,6 +176,7 @@ export interface EerFicheChamp {
   etat: string;
   valeur: unknown;
   bloquant: boolean;
+  source?: string | null;
 }
 
 export interface EerControle {

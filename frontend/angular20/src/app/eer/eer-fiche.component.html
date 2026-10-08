@@ -84,6 +84,11 @@
                 <dt>Type de client</dt><dd>{{ libType(d.type_client) }}</dd>
                 <dt>Profil</dt><dd>{{ d.profil }}{{ d.sous_profil ? ' / ' + d.sous_profil : '' }}</dd>
                 <dt>Opération</dt><dd>{{ d.operation_type === 'ENTREE_RELATION' ? 'Entrée en relation' : d.operation_type }}</dd>
+                <dt>Racine ORION</dt>
+                <dd>
+                  @if (d.racine_client) { <code>{{ d.racine_client }}</code> } @else { — }
+                  @if (d.numero_compte) { · compte {{ d.numero_compte }} }
+                </dd>
                 <dt>Date EER</dt><dd>{{ date(d.date_eer) }}</dd>
                 <dt>Risque LBC-FT</dt><dd>{{ d.risque || 'Non évalué' }}</dd>
                 <dt>Soumis le</dt><dd>{{ date(d.soumis_le, true) }}</dd>
@@ -91,6 +96,16 @@
                 <dt>Relances</dt><dd>{{ d.nb_relances }}</dd>
                 @if (d.motif_abandon) { <dt>Motif d’abandon</dt><dd>{{ d.motif_abandon }}</dd> }
               </dl>
+              @if (d.statut === 'BROUILLON') {
+                <div class="eer-orion" style="display:flex;gap:0.5rem;align-items:end;padding:0.75rem 0 0;flex-wrap:wrap">
+                  <label>Lier une racine ORION
+                    <input class="eer-input" maxlength="6" [(ngModel)]="racineLien" name="racineLien" placeholder="000001" />
+                  </label>
+                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy() || racineLien.trim().length !== 6" (click)="lierOrion()">
+                    <mat-icon>cloud_download</mat-icon> Préremplir depuis ORION
+                  </button>
+                </div>
+              }
             </article>
             <article class="bea-mg__panel eer-panel">
               <h2>Conformité</h2>
@@ -199,13 +214,13 @@
                         @if (modifiable() && c.etat !== 'NON_APPLICABLE') {
                           @switch (typeChamp(c.chemin)) {
                             @case ('choix') {
-                              <select class="eer-input" [ngModel]="valeurSaisie(g.cle, c)" (ngModelChange)="saisir(g.cle, c, $event)">
+                              <select class="eer-input" [ngModel]="valeurSaisie(g.cle, c)" (ngModelChange)="saisir(g.cle, c, $event)" [title]="c.libelle" [attr.aria-label]="c.libelle">
                                 <option value="">— Choisir —</option>
                                 @for (o of options(g.cle, c); track o.code) { <option [value]="o.code">{{ o.libelle }}</option> }
                               </select>
                             }
                             @case ('bool') {
-                              <select class="eer-input" [ngModel]="valeurSaisie(g.cle, c)" (ngModelChange)="saisir(g.cle, c, $event)">
+                              <select class="eer-input" [ngModel]="valeurSaisie(g.cle, c)" (ngModelChange)="saisir(g.cle, c, $event)" [title]="c.libelle" [attr.aria-label]="c.libelle">
                                 <option value="">—</option><option value="true">Oui</option><option value="false">Non</option>
                               </select>
                             }
@@ -225,6 +240,7 @@
                         @if (c.etat !== 'CONNU' && c.etat !== 'NON_APPLICABLE') {
                           <div class="eer-field__foot">
                             <span class="eer-chip" [attr.data-etat]="c.etat">{{ libEtatChamp(c.etat) }}</span>
+                            @if (c.source) { <span class="eer-chip" data-etat="CONNU">{{ c.source }}</span> }
                             @if (enControle() && c.etat === 'A_CONFIRMER') {
                               <button type="button" class="eer-link" [disabled]="busy()" (click)="confirmerChamp(g.cle, c)"><mat-icon>done</mat-icon> Confirmer</button>
                             }

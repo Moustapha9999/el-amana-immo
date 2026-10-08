@@ -254,6 +254,9 @@ def test_fiches_pre_remplies_saisie_unique():
 def test_fiches_origine_externe_a_confirmer_puis_confirme():
     source = _source_pp()
     faits = construire_faits({"type_client": TypeClient.PP}, [_client()])
+    champs = pre_remplir(FICHES["FICHE_PP"], source, faits, origines={"client.nom": "ORION"})
+    nom = next(c for c in champs if c.chemin == "client.nom")
+    assert nom.etat == EtatChamp.A_CONFIRMER and nom.source == "ORION"
     champs = pre_remplir(FICHES["FICHE_PP"], source, faits, origines={"client.nom": "VERSION_PRECEDENTE"})
     nom = next(c for c in champs if c.chemin == "client.nom")
     assert nom.etat == EtatChamp.A_CONFIRMER and nom in champs_a_completer(champs)

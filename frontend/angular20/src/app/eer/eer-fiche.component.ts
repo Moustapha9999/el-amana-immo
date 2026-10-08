@@ -205,6 +205,7 @@ export class EerFicheComponent implements OnInit {
 
   /** Saisies en cours dans l'onglet Formulaires : clé `${fiche}|${chemin}`. */
   readonly saisies = signal<Record<string, string>>({});
+  racineLien = '';
 
   readonly assignForm = this.fb.nonNullable.group({ analyste_id: ['', Validators.required] });
   readonly complementForm = this.fb.nonNullable.group({
@@ -495,6 +496,7 @@ export class EerFicheComponent implements OnInit {
     this.eer.lire(this.id()).subscribe({
       next: (d) => {
         this.dossier.set(d);
+        if (d.racine_client && !this.racineLien) this.racineLien = d.racine_client;
         if (this.affectationDemandee) {
           this.affectationDemandee = false;
           if (d.transitions_possibles.includes('AFFECTE')) this.ouvrirAffectation();
@@ -875,6 +877,17 @@ export class EerFicheComponent implements OnInit {
 
   annulerSaisies(): void {
     this.saisies.set({});
+  }
+
+  lierOrion(): void {
+    const d = this.dossier();
+    const racine = this.racineLien.trim();
+    if (!d || !/^[0-9]{6}$/.test(racine)) return;
+    this.muter((rev) => this.eer.lierClientele(d.id, rev, racine), {
+      loading: 'Chargement ORION…',
+      succes: 'Champs vides préremplis depuis ORION (non écrasés)',
+      errorTitle: 'Préremplissage refusé',
+    });
   }
 
   confirmerChamp(fiche: string, c: EerFicheChamp): void {

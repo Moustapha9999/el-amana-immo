@@ -50,6 +50,34 @@ export interface EerAnalyste {
   nom: string;
 }
 
+export interface EerApercuClientele {
+  present: boolean;
+  racine_client: string;
+  message?: string;
+  nom?: string;
+  prenoms?: string | null;
+  nationalite?: string | null;
+  profil_derive?: string | null;
+  nni?: string | null;
+  nif?: string | null;
+  nb_comptes?: number;
+  comptes?: Array<{ compte: string; rib: string; etat_compte: string; date_ouverture: string | null }>;
+  compte_retenu?: { compte: string; etat_compte: string; date_ouverture: string | null } | null;
+  propositions?: Array<{ chemin: string; valeur: unknown; source: string }>;
+  reserves?: string[];
+}
+
+export interface EerLienClientele {
+  present: boolean;
+  racine_client: string;
+  remplis: string[];
+  conserves: string[];
+  ecarts: Array<{ chemin: string; eer: string; orion: string }>;
+  reserves: string[];
+  revision?: number;
+  dossier?: EerDossier;
+}
+
 export type EerFiltres = Partial<{
   statut: string | string[];
   agence_id: string;
@@ -153,6 +181,14 @@ export class EerService {
 
   creer(payload: unknown): Observable<EerDossier> {
     return this.api.post(`${this.base}/dossiers`, payload);
+  }
+
+  apercuClientele(racine: string): Observable<EerApercuClientele> {
+    return this.api.get(`${this.base}/clientele/${racine}`);
+  }
+
+  lierClientele(id: string, revision: number, racine_client: string): Observable<EerLienClientele> {
+    return this.api.post(this.url(id, 'clientele'), { revision, racine_client });
   }
 
   lire(id: string): Observable<EerDossier> {

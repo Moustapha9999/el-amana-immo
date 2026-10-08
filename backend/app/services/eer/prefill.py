@@ -28,6 +28,7 @@ class ChampFiche:
     obligatoire: bool
     valeur: Any
     etat: EtatChamp
+    source: str | None = None
 
     @property
     def bloquant(self) -> bool:
@@ -85,7 +86,9 @@ def pre_remplir(
             etat = EtatChamp.A_CONFIRMER
         else:
             etat = EtatChamp.CONNU
-        champs.append(ChampFiche(chemin, d["libelle"], d["section"], d["obligatoire"], valeur, etat))
+        champs.append(ChampFiche(
+            chemin, d["libelle"], d["section"], d["obligatoire"], valeur, etat,
+            source=origines.get(chemin)))
     return champs
 
 

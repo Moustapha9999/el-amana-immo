@@ -74,6 +74,8 @@ from app.services.eer.constantes import (
     StatutElement,
     TypeClient,
 )
+from app.services.eer.clientele_pont import apercu as apercu_clientele
+from app.services.eer.clientele_pont import charger_client, normaliser_racine, propositions
 from app.services.eer.faits import PartieDossier, construire_faits, faits_partie
 from app.services.eer_access import EerScope, charger_permissions_eer, resolve_eer_access_scope
 from app.services.eer_controles_auto import jours_parametre
@@ -408,6 +410,12 @@ class EerDossierService:
         if not TYPES_CLIENT[TypeClient(type_client)]["ppe_fatca"] and set(client_role) & {"ppe", "fatca_indice"}:
             raise EerErreur("La fiche de ce type ne comporte ni PPE ni FATCA")
 
+        racine = normaliser_racine(
+            client.get("racine_client") or (dossier or {}).get("racine_client"))
+        if racine:
+            client = {**client, "racine_client": racine}
+            dossier = {**(dossier or {}), "racine_client": racine}
+
         nature = "PHYSIQUE" if type_client == TypeClient.PP else "MORALE"
         partie = await self._partie(nature, client, acteur)
         params = await self.parametres()
@@ -432,6 +440,9 @@ class EerDossierService:
         await self._audit(acteur, "eer.dossier.create", d, after={"reference": d.reference, "type": type_client})
         dossier_charge = await self.charger(d.id)
         await self.synchroniser(dossier_charge, acteur, journaliser=False)
+        if racine:
+            await self.prefill_depuis_clientele(acteur, dossier_charge.id, racine, ignorer_absent=True)
+            dossier_charge = await self.charger(d.id)
         return dossier_charge
 
     async def _verifier_codes_dossier(self, d: EerDossier) -> None:
@@ -652,26 +663,30 @@ class EerDossierService:
             source["role"] = {k: getattr(dp, k) for k in CHAMPS_ROLE}
         return source
 
-    async def _etats(self, d: EerDossier, dp_id: uuid.UUID | None) -> dict[str, prefill.EtatEnregistre]:
-        lignes = (await self.db.execute(select(EerChampEtat).where(
-            EerChampEtat.dossier_id == d.id, EerChampEtat.dossier_partie_id.is_not_distinct_from(dp_id)))).scalars()
-        return {e.chemin: prefill.EtatEnregistre(EtatChamp(e.etat), e.empreinte) for e in lignes}
+    async def _etats(self, d: EerDossier, dp_id: uuid.UUID | None
+                     ) -> tuple[dict[str, prefill.EtatEnregistre], dict[str, str]]:
+        lignes = list((await self.db.execute(select(EerChampEtat).where(
+            EerChampEtat.dossier_id == d.id, EerChampEtat.dossier_partie_id.is_not_distinct_from(dp_id)))).scalars())
+        etats = {e.chemin: prefill.EtatEnregistre(EtatChamp(e.etat), e.empreinte) for e in lignes}
+        origines = {e.chemin: e.source for e in lignes if e.source}
+        return etats, origines
 
     async def fiches(self, dossier_id: uuid.UUID) -> dict[str, list[prefill.ChampFiche]]:
         d = await self.charger(dossier_id)
         faits = self._faits(d)
         source = await self._source(d)
-        etats = await self._etats(d, None)
+        etats, origines = await self._etats(d, None)
         resultat = {
-            code: prefill.pre_remplir(FICHES[code], source, faits, etats=etats)
+            code: prefill.pre_remplir(FICHES[code], source, faits, etats=etats, origines=origines)
             for code in (FICHE_PAR_TYPE[TypeClient(d.type_client_code)], "SPECIMEN_SIGNATURE")
         }
         for dp in d.parties:
             if dp.role == RoleDossier.MANDATAIRE:
                 pd = next(p for p in self._parties_moteur(d) if p.partie_id == str(dp.id))
+                et, orig = await self._etats(d, dp.id)
                 resultat[f"FICHE_MANDATAIRE:{dp.id}"] = prefill.pre_remplir(
                     FICHES["FICHE_MANDATAIRE"], await self._source(d, dp), faits_partie(faits, pd),
-                    etats=await self._etats(d, dp.id))
+                    etats=et, origines=orig)
         return resultat
 
     async def donnees_connues(self, dossier_id: uuid.UUID) -> dict[uuid.UUID, bool | None]:
@@ -754,6 +769,8 @@ class EerDossierService:
         cible, attr = self._cible_ecriture(d, chemin, dp)
         if attr not in cible.__table__.columns:
             raise EerErreur(f"Chemin inconnu : {chemin}")
+        if chemin in ("dossier.racine_client", "client.racine_client") and valeur:
+            valeur = normaliser_racine(str(valeur), obligatoire=True)
         converti = _convertir(cible.__table__.columns[attr], valeur)
         domaine = DOMAINE_PAR_CHAMP.get(attr)
         if domaine and converti is not None and await self._referentiel(domaine, converti) is None:
@@ -766,6 +783,69 @@ class EerDossierService:
         await self._historique(d, acteur, "CHAMP_COMPLETE", details={"chemin": chemin})
         await self._audit(acteur, "eer.champ.update", d, after={"chemin": chemin})
         await self.synchroniser(await self.charger(d.id), acteur)
+        if chemin == "dossier.racine_client" and converti:
+            client_dp = next(x for x in d.parties if x.role == RoleDossier.CLIENT)
+            if not client_dp.partie.racine_client:
+                client_dp.partie.racine_client = converti
+                await self.db.flush()
+
+    async def apercu_orion(self, racine: str) -> dict:
+        return await apercu_clientele(self.db, racine)
+
+    async def prefill_depuis_clientele(
+        self, acteur: Acteur, dossier_id: uuid.UUID, racine: str, *, ignorer_absent: bool = False,
+    ) -> dict:
+        """Remplit les champs EER vides depuis ORION. N'écrase jamais une saisie existante."""
+        d = await self.charger(dossier_id, acteur=acteur)
+        if d.statut != Statut.BROUILLON:
+            raise EerErreur("Préremplissage ORION réservé aux brouillons")
+        racine = normaliser_racine(racine, obligatoire=True)  # type: ignore[assignment]
+        client = await charger_client(self.db, racine)
+        d.racine_client = racine
+        client_dp = next(x for x in d.parties if x.role == RoleDossier.CLIENT)
+        if not client_dp.partie.racine_client:
+            client_dp.partie.racine_client = racine
+        if client is None:
+            await self.db.flush()
+            if ignorer_absent:
+                return {"present": False, "racine_client": racine, "remplis": [], "conserves": [],
+                        "ecarts": [], "reserves": []}
+            raise AppError(
+                "Client absent du référentiel ORION. La racine est enregistrée : l'EER peut précéder ORION.",
+                404, code="CLIENTELE_ABSENTE")
+        props, reserves = propositions(client, type_client=d.type_client_code)
+        piece_type = next((v for c, v in props if c == "client.piece.type"), None)
+        piece_num = next((v for c, v in props if c == "client.piece.numero"), None)
+        piece_creee = False
+        if piece_type and piece_num and not client_dp.partie.pieces:
+            client_dp.partie.pieces.append(EerPieceIdentite(type_piece=str(piece_type), numero=str(piece_num)))
+            await self.db.flush()
+            piece_creee = True
+        remplis: list[str] = []
+        conserves: list[str] = []
+        ecarts: list[dict] = []
+        for chemin, valeur in props:
+            try:
+                cible, attr = self._cible_ecriture(d, chemin, None)
+            except EerErreur:
+                continue
+            actuel = getattr(cible, attr, None)
+            if actuel not in (None, "") and not (piece_creee and chemin.startswith("client.piece.")):
+                conserves.append(chemin)
+                converti_cmp = _convertir(cible.__table__.columns[attr], valeur)
+                if str(actuel) != str(converti_cmp):
+                    ecarts.append({"chemin": chemin, "eer": str(actuel), "orion": str(valeur)})
+                continue
+            setattr(cible, attr, _convertir(cible.__table__.columns[attr], valeur))
+            await self._etat_champ(d, chemin, None, EtatChamp.A_CONFIRMER, source="ORION")
+            remplis.append(chemin)
+        await self.db.flush()
+        await self._historique(d, acteur, "PREFILL_ORION", details={
+            "racine": racine, "remplis": remplis, "conserves": conserves})
+        await self._audit(acteur, "eer.clientele.prefill", d, after={"racine": racine, "remplis": remplis})
+        await self.synchroniser(await self.charger(d.id), acteur, journaliser=False)
+        return {"present": True, "racine_client": racine, "remplis": remplis, "conserves": conserves,
+                "ecarts": ecarts, "reserves": reserves}
 
     async def confirmer_champ(self, acteur: Acteur, dossier_id: uuid.UUID, chemin: str, *,
                               dossier_partie_id: uuid.UUID | None = None) -> None:

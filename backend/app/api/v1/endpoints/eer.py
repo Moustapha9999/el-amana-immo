@@ -53,6 +53,7 @@ from app.schemas.eer import (
     EerBeneficiairesOut,
     EerChecklistItemOut,
     EerChecklistOut,
+    EerClienteleBindIn,
     EerComplementFourniIn,
     EerComplementIn,
     EerComplementOut,
@@ -158,6 +159,7 @@ def _dossier_out(d: EerDossier, acteur: Acteur) -> EerDossierOut:
         created_by_id=d.created_by_id, analyste_id=d.analyste_id, controleur_id=d.controleur_id,
         date_eer=d.date_eer, soumis_le=d.soumis_le, valide_le=d.valide_le, archived_at=d.archived_at,
         created_at=d.created_at, updated_at=d.updated_at,
+        racine_client=d.racine_client, numero_compte=d.numero_compte,
         parties=[EerPartieOut(
             dossier_partie_id=dp.id, partie_id=dp.partie_id, role=dp.role, nature=dp.partie.nature,
             nom=dp.partie.nom, ordre=dp.ordre, ppe=dp.ppe, fatca_indice=dp.fatca_indice,
@@ -486,6 +488,34 @@ async def creer_dossier(
     return out
 
 
+@router.get("/clientele/{racine}")
+async def apercu_clientele(
+    racine: str,
+    acteur: Acteur = Depends(_acteur("eer.view", "eer.create")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Aperçu ORION pour préremplir un EER. Permission EER (pas clientele.view)."""
+    return await EerDossierService(db).apercu_orion(racine)
+
+
+@router.post("/dossiers/{dossier_id}/clientele")
+async def lier_clientele(
+    dossier_id: uuid.UUID,
+    payload: EerClienteleBindIn,
+    acteur: Acteur = Depends(_acteur("eer.update", "eer.create")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    captured: dict = {}
+
+    async def op(svc: EerDossierService) -> None:
+        captured.update(await svc.prefill_depuis_clientele(
+            acteur, dossier_id, payload.racine_client, ignorer_absent=True))
+
+    mut = await _muter(db, acteur, dossier_id, payload.revision, op, "Référentiel ORION appliqué")
+    d = await EerDossierService(db).charger(dossier_id, acteur=acteur)
+    return {"dossier": _dossier_out(d, acteur), "revision": mut.revision, **captured}
+
+
 @router.get("/dossiers/{dossier_id}", response_model=EerDossierOut)
 async def lire_dossier(
     dossier_id: uuid.UUID,
@@ -580,7 +610,7 @@ async def fiches(
     return {code: [EerFicheChampOut(chemin=c.chemin, libelle=c.libelle, section=c.section,
                                     obligatoire=c.obligatoire, etat=c.etat,
                                     valeur=c.valeur if isinstance(c.valeur, (str, int, float, bool, type(None)))
-                                    else str(c.valeur), bloquant=c.bloquant)
+                                    else str(c.valeur), bloquant=c.bloquant, source=c.source)
                    for c in champs] for code, champs in resultat.items()}
 
 

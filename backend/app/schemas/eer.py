@@ -253,6 +253,8 @@ class EerDossierOut(BaseModel):
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    racine_client: str | None = None
+    numero_compte: str | None = None
     parties: list[EerPartieOut]
     transitions_possibles: list[str] = Field(default_factory=list)
 
@@ -490,6 +492,11 @@ class EerFicheChampOut(BaseModel):
     etat: str
     valeur: Any = None
     bloquant: bool
+    source: str | None = None
+
+
+class EerClienteleBindIn(_Mutation):
+    racine_client: str = Field(min_length=6, max_length=6)
 
 
 class EerTableauDeBordOut(BaseModel):

@@ -6,7 +6,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { describeApiErrorAsync } from '../core/feedback/api-error';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
-import { EerAgence, EerReferentiel, EerService } from './eer.service';
+import { EerAgence, EerApercuClientele, EerReferentiel, EerService } from './eer.service';
 
 @Component({
   selector: 'bea-eer-nouveau',
@@ -81,9 +81,30 @@ import { EerAgence, EerReferentiel, EerService } from './eer.service';
             </label>
           }
           <label>Racine client (ORION)
-            <input formControlName="racine_client" maxlength="40" />
+            <input formControlName="racine_client" maxlength="6" placeholder="000001" />
+            <small class="bea-ct-sub">6 chiffres, zéros conservés. Un client = une racine, pas un compte.</small>
           </label>
+          <div style="display:flex;align-items:end">
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="chargerOrion()" [disabled]="busy() || form.controls.racine_client.value.trim().length !== 6">
+              <mat-icon>cloud_download</mat-icon> Charger ORION
+            </button>
+          </div>
         </div>
+        @if (orion(); as o) {
+          @if (o.present) {
+            <p class="bea-ct-note">
+              <strong>{{ o.nom }}</strong>
+              @if (o.prenoms) { — {{ o.prenoms }} }
+              · {{ o.nb_comptes }} compte(s)
+              @if (o.profil_derive) { · {{ o.profil_derive }} }
+              @if (o.compte_retenu) { · compte retenu {{ o.compte_retenu.compte }} }
+              <br />Les champs ORION seront préremplis (à confirmer). Une saisie déjà faite n’est pas écrasée.
+            </p>
+            @for (r of o.reserves ?? []; track r) { <p class="bea-ct-note">{{ r }}</p> }
+          } @else {
+            <p class="bea-ct-note">{{ o.message }}</p>
+          }
+        }
 
         @if (estPP()) {
           <h2>Pièce d’identité</h2>
@@ -161,6 +182,7 @@ export class EerNouveauComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
 
   readonly busy = signal(false);
+  readonly orion = signal<EerApercuClientele | null>(null);
   readonly agences = signal<EerAgence[]>([]);
   readonly types = signal<EerReferentiel[]>([]);
   readonly profils = signal<EerReferentiel[]>([]);
@@ -177,7 +199,7 @@ export class EerNouveauComponent implements OnInit {
     risque_lbcft: '',
     nom: ['', [Validators.required, Validators.maxLength(255)]],
     prenom: '',
-    racine_client: '',
+    racine_client: ['', Validators.pattern(/^[0-9]{6}$/)],
     piece_type: '',
     piece_numero: '',
     piece_delivrance: '',
@@ -215,6 +237,21 @@ export class EerNouveauComponent implements OnInit {
     this.form.controls.type_client.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((t) => {
       this.typeChoisi.set(t);
       this.form.patchValue({ profil: '', tranche_mouvement_code: '', ppe: '', fatca_indice: '' });
+    });
+  }
+
+  chargerOrion(): void {
+    const racine = this.form.controls.racine_client.value.trim();
+    if (!/^[0-9]{6}$/.test(racine)) return;
+    this.eer.apercuClientele(racine).subscribe({
+      next: (o) => {
+        this.orion.set(o);
+        if (o.present) {
+          if (o.nom) this.form.controls.nom.setValue(o.nom);
+          if (o.prenoms) this.form.controls.prenom.setValue(o.prenoms);
+        }
+      },
+      error: (e) => this.fail(e),
     });
   }
 
