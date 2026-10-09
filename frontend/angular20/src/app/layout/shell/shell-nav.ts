@@ -434,14 +434,15 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
   ],
   clientele: [
     { section: 'Pilotage', label: 'Dashboard', path: '/clientele/dashboard', icon: 'dashboard', exact: true, permissions: ['clientele.view'] },
-    { section: 'Pilotage', label: 'Reporting', path: '/clientele/reporting', icon: 'insights', permissions: ['clientele.reporting.view', 'clientele.view'] },
-    { section: 'Pilotage', label: 'Déclaration BCM', path: '/clientele/declarations', icon: 'assignment', permissions: ['clientele.bcm.view', 'clientele.reporting.view'] },
-    { section: 'Référentiel', label: 'Situation PP', path: '/clientele/situation-pp', icon: 'person', permissions: ['clientele.view'] },
-    { section: 'Référentiel', label: 'Situation PM', path: '/clientele/situation-pm', icon: 'apartment', permissions: ['clientele.view'] },
-    { section: 'Imports', label: 'Importer', path: '/clientele/imports', icon: 'upload_file', permissions: ['clientele.import.view', 'clientele.import.execute', 'clientele.classif.execute'] },
-    { section: 'Imports', label: 'Rapprochements', path: '/clientele/rapprochements', icon: 'compare_arrows', permissions: ['clientele.rapprochement.view'] },
-    { section: 'Risque', label: 'Classification', path: '/clientele/classification', icon: 'verified_user', permissions: ['clientele.classif.view'] },
-    { section: 'Risque', label: 'Filtrage & alertes', path: '/clientele/filtrage', icon: 'notification_important', permissions: ['clientele.filtrage.view'] },
+    { section: 'Pilotage', label: 'Reporting interne', path: '/clientele/reporting', icon: 'insights', permissions: ['clientele.reporting.view', 'clientele.view'] },
+    { section: 'Référentiel clients', label: 'Situation PP', path: '/clientele/situation-pp', icon: 'person', permissions: ['clientele.view'] },
+    { section: 'Référentiel clients', label: 'Situation PM', path: '/clientele/situation-pm', icon: 'apartment', permissions: ['clientele.view'] },
+    { section: 'Imports & qualité', label: 'Importer ORION', path: '/clientele/imports', icon: 'upload_file', permissions: ['clientele.import.view', 'clientele.import.execute', 'clientele.classif.execute'] },
+    { section: 'Imports & qualité', label: 'Rapprochements', path: '/clientele/rapprochements', icon: 'compare_arrows', permissions: ['clientele.rapprochement.view'] },
+    { section: 'Imports & qualité', label: 'Mapping & sources', path: '/clientele/mapping', icon: 'account_tree', permissions: ['clientele.view'] },
+    { section: 'Risque & conformité', label: 'Classification', path: '/clientele/classification', icon: 'verified_user', permissions: ['clientele.classif.view'] },
+    { section: 'Risque & conformité', label: 'Filtrage & alertes', path: '/clientele/filtrage', icon: 'notification_important', permissions: ['clientele.filtrage.view'] },
+    { section: 'Déclaration BCM', label: 'Déclarations', path: '/clientele/declarations', icon: 'assignment', permissions: ['clientele.bcm.view', 'clientele.reporting.view'] },
   ],
   'archives-mg': [
     {

@@ -7,7 +7,7 @@ import { FeedbackService } from '../../core/feedback/feedback.service';
 import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
 import { ApiService } from '../../core/services/api.service';
 import { ClienteleUiComponent } from '../clientele-ui.component';
-import { AnalyseImport, AnomaliePage, CL_BASE, ImportClientele, dateHeureFr, n } from '../clientele.models';
+import { AnalyseImport, AnomaliePage, CL_BASE, ImportClientele, dateHeureFr, n, telecharger } from '../clientele.models';
 import { ClienteleStore } from '../clientele.store';
 import { ClLotComponent } from './cl-lot.component';
 
@@ -142,7 +142,10 @@ const SOURCES: readonly Source[] = ['orion', 'situation', 'liste'];
         @if (etape() === 1) {
           <section class="bea-mg__panel">
             <div class="bea-mg__panel-top"><h2>Anomalies</h2>
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="chargerAnomalies()">Actualiser</button>
+              <span style="display:flex;gap:0.4rem">
+                <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="chargerAnomalies()"><mat-icon>refresh</mat-icon> Actualiser</button>
+                <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="exporterAnomalies()"><mat-icon>table_view</mat-icon> Excel</button>
+              </span>
             </div>
             <ul class="bea-cl-anoms">
               @for (x of anomalies(); track $index) {
@@ -331,6 +334,21 @@ export class ClImportsComponent implements OnInit {
     this.api.get<AnomaliePage>(`${CL_BASE}/imports/${r.id}/anomalies`, { taille: 80 }).subscribe({
       next: (p) => this.anomalies.set(p.items),
       error: () => this.anomalies.set([]),
+    });
+  }
+
+  exporterAnomalies(): void {
+    const r = this.imp()!;
+    this.busy.set(true);
+    this.api.download(`${CL_BASE}/imports/${r.id}/anomalies.xlsx`).subscribe({
+      next: (b) => {
+        this.busy.set(false);
+        telecharger(b, `anomalies-${r.fichier_nom.replace(/\.xlsx?m?$/i, '')}.xlsx`);
+      },
+      error: (e) => {
+        this.busy.set(false);
+        void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Export indisponible'));
+      },
     });
   }
 

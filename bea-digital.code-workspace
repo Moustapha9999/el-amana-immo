@@ -1,0 +1,25 @@
+{
+	"folders": [
+		{
+			"name": "bea-digital",
+			"path": "."
+		}
+	],
+	"settings": {
+		"typescript.tsdk": "frontend/angular20/node_modules/typescript/lib",
+		"typescript.enablePromptUseWorkspaceTsdk": true,
+		"eslint.workingDirectories": [
+			"frontend/angular20"
+		],
+		"python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+		"cursorpyright.analysis.extraPaths": [
+			"${workspaceFolder}/backend"
+		],
+		"cursorpyright.analysis.exclude": [
+			"${workspaceFolder}/app",
+			"**/node_modules",
+			"**/__pycache__",
+			"**/frontend"
+		]
+	}
+}

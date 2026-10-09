@@ -12,6 +12,8 @@ from io import BytesIO
 from typing import Any
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -77,6 +79,25 @@ def _match(operateur: str, observe: Any, attendu: Any) -> bool:
     if operateur == "NOT_IN":
         return obs is None or obs.upper() not in cible
     return False
+
+
+def _habiller_modele(ws, largeurs: list[int]) -> None:
+    """Style seulement : l'en-tête reste en ligne 1, lue telle quelle par ``analyser_excel``."""
+    entete = PatternFill("solid", fgColor="1E3A5F")
+    bord = Border(bottom=Side(style="thin", color="CBD5E1"))
+    for cell in ws[1]:
+        cell.fill = entete
+        cell.font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            cell.font = Font(name="Calibri", size=10, color="0F172A")
+            cell.border = bord
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+    ws.row_dimensions[1].height = 22
+    for i, largeur in enumerate(largeurs, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = largeur
+    ws.freeze_panes = "A2"
 
 
 class ClienteleClassificationService:
@@ -331,9 +352,14 @@ class ClienteleClassificationService:
         for code in NIVEAUX:
             ws2.append([code, code])
         note = wb.create_sheet("Lire")
+        note.append(["Notes de lecture"])
         note.append(["La colonne RACINE_CLIENT identifie le client. Elle n'est jamais modifiée."])
         note.append(["Niveaux autorisés : FAIBLE, MOYEN, ELEVE, INTERDIT."])
         note.append(["Les règles métier (matrice, listes, seuils) ne sont pas déduites de ce fichier."])
+        _habiller_modele(ws, [18, 14, 36, 44])
+        ws["A2"].number_format = "@"
+        _habiller_modele(ws2, [16, 24])
+        _habiller_modele(note, [90])
         buf = BytesIO()
         wb.save(buf)
         return buf.getvalue()

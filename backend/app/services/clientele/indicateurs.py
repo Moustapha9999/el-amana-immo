@@ -8,11 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from io import BytesIO
 from typing import Any
 from uuid import UUID
 
-from openpyxl import Workbook
 from sqlalchemy import Date, Select, case, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,6 +38,7 @@ from app.services.clientele.periodes import (
     resoudre,
 )
 from app.services.clientele.service import Ctx, ClienteleService
+from app.services.reporting_export import build_styled_pdf, build_styled_workbook, build_styled_workbook_multi
 
 PAGE_MAX = 200
 EXPORT_MAX = 20_000
@@ -95,6 +94,98 @@ def _cell(v: Any) -> Any:
     if isinstance(v, date):
         return v.isoformat()
     return v
+
+
+PDF_MAX = 3_000
+
+STATUTS_LISIBLES = {"PRET": "Prêt", "PRET_SOUS_RESERVE": "Sous réserve", "A_CONFIGURER": "À configurer"}
+_ENTETES_INDICATEURS = ["Indicateur", "Valeur", "Statut", "Fenêtre appliquée", "Tableau BCM", "Réserve", "Code"]
+_ORDRE_RUBRIQUES = ("Clientèle", "Risques", "Évolutions", "KYC - EER", "Opérations", "Qualité - alertes", "Autres")
+
+
+def _rubrique(code: str) -> str:
+    if code.startswith("eer."):
+        return "KYC - EER"
+    if code.startswith("alerte."):
+        return "Qualité - alertes"
+    if code.startswith(("bcm.t2", "bcm.t3")):
+        return "Opérations"
+    if "reclass" in code:
+        return "Évolutions"
+    if "risque" in code or code == "bcm.map.interdit":
+        return "Risques"
+    if code.startswith("cli."):
+        return "Clientèle"
+    return "Autres"
+
+
+_RUBRIQUES = tuple((r, lambda c, r=r: _rubrique(c) == r) for r in _ORDRE_RUBRIQUES)
+LIBELLES_COLONNES = {
+    "racine_client": "Racine client", "nom_client": "Nom client", "profil_derive": "Profil",
+    "code_agence": "Agence", "etat_client": "État client", "nb_comptes": "Nb comptes",
+    "premiere_extraction": "Première extraction", "compte": "Compte", "rib": "RIB",
+    "etat_compte": "État compte", "date_ouverture": "Date d'ouverture", "niveau": "Niveau de risque",
+    "ancienne_classe": "Ancienne classe", "nouvelle_classe": "Nouvelle classe", "created_at": "Date",
+    "id": "Identifiant", "statut": "Statut", "motif": "Motif", "reference": "Référence",
+    "date_eer": "Date EER", "operation_type": "Type d'opération",
+}
+
+
+def _date_fr(iso: str | None) -> str:
+    if not iso:
+        return "—"
+    a, m, j = iso[:10].split("-")
+    return f"{j}/{m}/{a}"
+
+
+def _ligne_indicateur(i: dict) -> list:
+    f = i["fenetre_appliquee"]
+    return [
+        i["libelle"],
+        "À configurer" if i["valeur"] is None else i["valeur"],
+        STATUTS_LISIBLES.get(i["statut"], i["statut"]),
+        f"{_date_fr(f['date_debut'])} → {_date_fr(f['date_fin'])}",
+        i.get("bcm_tableau") or "—",
+        i.get("reserve") or "",
+        i["code"],
+    ]
+
+
+def _sous_titre(data: dict) -> str:
+    f = data["fenetre"]
+    parts = [f"Période : {LIBELLES_PERIODES.get(f['code'], f['code'])} "
+             f"({_date_fr(f['date_debut'])} → {_date_fr(f['date_fin'])})"]
+    filtres = data.get("filtres") or {}
+    if filtres.get("agence"):
+        parts.append(f"Agence {filtres['agence']}")
+    if filtres.get("profil"):
+        parts.append(f"Profil {filtres['profil']}")
+    if filtres.get("residence"):
+        parts.append("Résidents" if filtres["residence"] == "R" else "Non-résidents")
+    if f.get("simulation"):
+        parts.append("Simulation — pas une déclaration BCM")
+    parts.append(f"Moteur {data['moteur_version']}")
+    return " · ".join(parts)
+
+
+def _milliers(v: Any) -> Any:
+    return f"{v:,}".replace(",", " ") if isinstance(v, int) and not isinstance(v, bool) else v
+
+
+def _sous_titre_population(d: dict, affichees: int) -> str:
+    f = d["fenetre_appliquee"]
+    texte = (f"{_date_fr(f['date_debut'])} → {_date_fr(f['date_fin'])} · "
+             f"{STATUTS_LISIBLES.get(d['statut'], d['statut'])} · {d['code']}")
+    if d["total"] > affichees:
+        texte += f" · {_milliers(affichees)} premières lignes sur {_milliers(d['total'])} (plafond d'export)"
+    return texte
+
+
+def _affichable(v: Any) -> Any:
+    v = _cell(v)
+    if isinstance(v, str) and len(v) >= 10 and v[4] == "-" and v[7] == "-" and v[:4].isdigit():
+        return _date_fr(v)
+    return "" if v is None else v
 
 
 def _rang(col, attr: str):
@@ -159,6 +250,7 @@ class ClienteleIndicateursService:
         residence: str | None = None,
         page: int = 1,
         taille: int = 50,
+        plafond: int = PAGE_MAX,
     ) -> dict:
         self.ctx.exiger("clientele.reporting.view", "clientele.view")
         defn = par_code(code)
@@ -171,7 +263,7 @@ class ClienteleIndicateursService:
         if defn["statut"] == "A_CONFIGURER":
             return {**item, "calcule": False, "total": 0, "page": 1, "taille": taille,
                     "colonnes": [], "items": []}
-        taille = min(max(taille, 1), PAGE_MAX)
+        taille = min(max(taille, 1), plafond)
         page = max(page, 1)
         total, colonnes, rows = await self._population(
             defn, appliquer(fenetre, defn["periode"]), filtres,
@@ -182,35 +274,64 @@ class ClienteleIndicateursService:
     async def exporter_tableau(self, **kwargs) -> bytes:
         self.ctx.exiger("clientele.export")
         data = await self.tableau(**kwargs)
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Indicateurs"
-        ws.append(["Code", "Libellé", "Valeur", "Statut", "Période appliquée", "Réserve", "BCM"])
-        for i in data["indicateurs"]:
-            val = "À CONFIGURER" if i["valeur"] is None else i["valeur"]
-            f = i["fenetre_appliquee"]
-            ws.append([i["code"], i["libelle"], val, i["statut"],
-                       f"{f['date_debut']} → {f['date_fin']}", i.get("reserve") or "",
-                       i.get("bcm_tableau") or ""])
-        buf = BytesIO()
-        wb.save(buf)
-        return buf.getvalue()
+        sheets = []
+        for titre, test in _RUBRIQUES:
+            lignes = [_ligne_indicateur(i) for i in data["indicateurs"] if test(i["code"])]
+            if lignes:
+                sheets.append((titre, titre, _ENTETES_INDICATEURS, lignes))
+        sheets.append(("Définitions", "Définitions et formules", ["Code", "Libellé", "Définition", "Formule", "Source"],
+                       [[i["code"], i["libelle"], i["definition"], i["formule"] or "—", i["source"]]
+                        for i in data["indicateurs"]]))
+        return build_styled_workbook_multi(
+            report_title="Reporting interne — Référentiel clients",
+            sheets=sheets,
+            subtitle=_sous_titre(data),
+        )
 
-    async def exporter_lignes(self, code: str, **kwargs) -> bytes:
+    async def exporter_tableau_pdf(self, **kwargs) -> bytes:
         self.ctx.exiger("clientele.export")
-        d = await self.detail(code, page=1, taille=EXPORT_MAX, **kwargs)
+        data = await self.tableau(**kwargs)
+        lignes = []
+        for titre, test in _RUBRIQUES:
+            lignes.extend([titre, *map(_milliers, _ligne_indicateur(i))]
+                          for i in data["indicateurs"] if test(i["code"]))
+        return build_styled_pdf(
+            report_title="Reporting interne — Référentiel clients",
+            headers=["Rubrique", *_ENTETES_INDICATEURS],
+            rows=lignes,
+            subtitle=_sous_titre(data),
+            col_aligns=["left", "left", "right", "center", "center", "center", "left", "left"],
+        )
+
+    async def _population_export(self, code: str, **kwargs) -> tuple[dict, list[str], list[list]]:
+        self.ctx.exiger("clientele.export")
+        d = await self.detail(code, page=1, taille=EXPORT_MAX, plafond=EXPORT_MAX, **kwargs)
         if not d["calcule"]:
             raise AppError("Cet indicateur n'est pas calculable (À CONFIGURER).", 422,
                            code="INDICATEUR_A_CONFIGURER")
-        wb = Workbook()
-        ws = wb.active
-        ws.title = code[:31]
-        ws.append(d["colonnes"])
-        for row in d["items"]:
-            ws.append([row.get(c) for c in d["colonnes"]])
-        buf = BytesIO()
-        wb.save(buf)
-        return buf.getvalue()
+        entetes = [LIBELLES_COLONNES.get(c, c) for c in d["colonnes"]]
+        lignes = [[_affichable(row.get(c)) for c in d["colonnes"]] for row in d["items"]]
+        return d, entetes, lignes
+
+    async def exporter_lignes(self, code: str, **kwargs) -> bytes:
+        d, entetes, lignes = await self._population_export(code, **kwargs)
+        return build_styled_workbook(
+            sheet_title=code,
+            report_title=f"Population — {d['libelle']}",
+            headers=entetes,
+            rows=lignes,
+            subtitle=_sous_titre_population(d, len(lignes)),
+        )
+
+    async def exporter_lignes_pdf(self, code: str, **kwargs) -> bytes:
+        d, entetes, lignes = await self._population_export(code, **kwargs)
+        lignes = lignes[:PDF_MAX]
+        return build_styled_pdf(
+            report_title=f"Population — {d['libelle']}",
+            headers=entetes,
+            rows=lignes,
+            subtitle=_sous_titre_population(d, len(lignes)),
+        )
 
     def _item(self, defn: IndicateurDef, fenetre: Fenetre, valeurs: dict[str, int]) -> dict:
         appl = appliquer(fenetre, defn["periode"])

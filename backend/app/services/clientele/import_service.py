@@ -11,10 +11,8 @@ import hashlib
 import uuid
 from collections import Counter
 from datetime import date
-from io import BytesIO
 from pathlib import Path
 
-from openpyxl import Workbook
 from sqlalchemy import delete, func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,6 +35,7 @@ from app.services.clientele.lecture import AnalyseClasseur, lire_classeur
 from app.services.clientele.persistance import enregistrer_depuis_staging
 from app.services.clientele.snapshots import photographier_import
 from app.services.clientele.service import Ctx, ClienteleService, conflit, maintenant
+from app.services.reporting_export import build_styled_workbook
 
 TAILLE_MAX = 40 * 1024 * 1024
 LOT_STAGING = 2000
@@ -391,15 +390,17 @@ class ClienteleImportService:
             select(ClienteleImportAnomalie).where(ClienteleImportAnomalie.import_id == iid)
             .order_by(ClienteleImportAnomalie.numero)
         )).all())
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Anomalies"
-        ws.append(["Ligne", "Racine", "Code", "Bloquante", "Message"])
-        for r in rows:
-            ws.append([r.numero, r.racine_client or "", r.code, "oui" if r.bloquante else "non", r.message])
-        buf = BytesIO()
-        wb.save(buf)
-        return buf.getvalue()
+        extraction = imp.date_extraction.strftime("%d/%m/%Y") if imp.date_extraction else "date inconnue"
+        bloquantes = sum(1 for r in rows if r.bloquante)
+        return build_styled_workbook(
+            sheet_title="Anomalies",
+            report_title="Anomalies d'import ORION",
+            headers=["Ligne", "Racine client", "Code anomalie", "Bloquante", "Message"],
+            rows=[[r.numero, r.racine_client or "—", r.code, "Oui" if r.bloquante else "Non", r.message]
+                  for r in rows],
+            subtitle=(f"Fichier {imp.fichier_nom} · extraction du {extraction} · "
+                      f"{len(rows)} anomalie(s) dont {bloquantes} bloquante(s)"),
+        )
 
     async def confirmer(self, iid: uuid.UUID, payload: dict) -> dict:
         self.ctx.exiger("clientele.import.execute")

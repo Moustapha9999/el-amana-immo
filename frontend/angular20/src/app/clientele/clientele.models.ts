@@ -52,6 +52,10 @@ export interface SourceColonne {
   source: string;
   champ: string | null;
   detail: string;
+  etat?: string;
+  colonne_orion?: string | null;
+  version_regle?: string;
+  verifie_le?: string | null;
 }
 
 export interface AgenceRef {
@@ -68,13 +72,62 @@ export interface ClConfig {
 export interface TableauBord {
   nb_clients: number;
   nb_comptes: number;
+  nb_rib?: number;
   pp: number;
   pm: number;
   non_identifies: number;
+  constructions_juridiques?: number | null;
   ouverts: number;
   clotures: number;
+  date_extraction?: string | null;
+  periode_libelle?: string;
+  dernier_import?: {
+    id: string;
+    fichier_nom: string;
+    statut: string;
+    importe_le: string | null;
+    cree_le: string | null;
+    date_extraction: string | null;
+    nb_clients: number;
+    nb_comptes: number;
+    nb_rejets: number;
+    nb_anomalies: number;
+  } | null;
+  anomalies?: {
+    a_traiter: number;
+    sans_identifiant: number;
+    agence_inconnue: number;
+    alertes_ouvertes: number;
+    rejets_dernier_import: number;
+    anomalies_dernier_import: number;
+    multi_agences: number;
+    secteur_vide: number;
+    nationalite_vide: number;
+  };
+  risques?: { niveau: string; libelle: string; clients: number }[];
+  non_classes?: number;
+  agences?: { code: string; libelle: string; clients: number }[];
+  evolution?: { mois: string; libelle: string; nouveaux: number }[];
+  activite?: { type: string; id: string; libelle: string; statut: string; le: string | null; detail: string | null }[];
   sources: SourceColonne[];
 }
+
+export function etatMapping(s: SourceColonne): string {
+  if (s.etat) return s.etat;
+  if (s.source === 'ABSENT') return 'ABSENT';
+  if (s.source === 'PARTIEL') return 'PARTIEL';
+  if (s.source === 'DERIVE_ORION') return 'DERIVE';
+  if (s.source === 'CLASSIFICATION') return 'A_VALIDER';
+  return 'CONFIRME';
+}
+
+export const ETAT_MAPPING: Record<string, string> = {
+  CONFIRME: 'Confirmé',
+  PARTIEL: 'Partiel',
+  DERIVE: 'Dérivé',
+  ABSENT: 'Absent',
+  A_VALIDER: 'À valider',
+};
 
 export interface SituationLigne {
   racine_client: string;

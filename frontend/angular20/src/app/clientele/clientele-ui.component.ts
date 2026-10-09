@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, ViewEncapsulation } from '@angular/
 @Component({
   selector: 'bea-cl-styles',
   template: '',
-  styleUrls: ['./clientele-ui.css'],
+  styleUrls: ['./clientele-ui.css', './clientele-motion.css'],
   encapsulation: ViewEncapsulation.None,
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { style: 'display:none' },

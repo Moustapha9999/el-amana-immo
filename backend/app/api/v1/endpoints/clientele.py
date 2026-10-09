@@ -549,6 +549,22 @@ async def exporter_indicateurs(
     return _xlsx(contenu, "indicateurs-clientele.xlsx")
 
 
+@router.get("/indicateurs.pdf")
+async def exporter_indicateurs_pdf(
+    periode: str = Query("mois_courant"),
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    agence: str | None = None,
+    profil: str | None = None,
+    residence: str | None = None,
+    c: Ctx = Depends(ctx("clientele.export")),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    contenu = await ClienteleIndicateursService(db, c).exporter_tableau_pdf(
+        **_params_indicateurs(periode, date_debut, date_fin, agence, profil, residence))
+    return _pdf(contenu, "indicateurs-clientele.pdf")
+
+
 @router.get("/indicateurs")
 async def lister_indicateurs(
     periode: str = Query("mois_courant"),
@@ -579,6 +595,23 @@ async def exporter_lignes_indicateur(
     contenu = await ClienteleIndicateursService(db, c).exporter_lignes(
         code, **_params_indicateurs(periode, date_debut, date_fin, agence, profil, residence))
     return _xlsx(contenu, f"indicateur-{code}.xlsx")
+
+
+@router.get("/indicateurs/{code}/lignes.pdf")
+async def exporter_lignes_indicateur_pdf(
+    code: str,
+    periode: str = Query("mois_courant"),
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    agence: str | None = None,
+    profil: str | None = None,
+    residence: str | None = None,
+    c: Ctx = Depends(ctx("clientele.export")),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    contenu = await ClienteleIndicateursService(db, c).exporter_lignes_pdf(
+        code, **_params_indicateurs(periode, date_debut, date_fin, agence, profil, residence))
+    return _pdf(contenu, f"indicateur-{code}.pdf")
 
 
 @router.get("/indicateurs/{code}")

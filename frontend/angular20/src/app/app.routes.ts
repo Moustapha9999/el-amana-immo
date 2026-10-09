@@ -79,6 +79,7 @@ const clClassification = () => import('./clientele/pages/cl-classification.compo
 const clFiltrage = () => import('./clientele/pages/cl-filtrage.component').then((m) => m.ClFiltrageComponent);
 const clAlerte = () => import('./clientele/pages/cl-alerte.component').then((m) => m.ClAlerteComponent);
 const clReporting = () => import('./clientele/pages/cl-reporting.component').then((m) => m.ClReportingComponent);
+const clMapping = () => import('./clientele/pages/cl-mapping.component').then((m) => m.ClMappingComponent);
 const clDeclarations = () => import('./clientele/pages/cl-declarations.component').then((m) => m.ClDeclarationsComponent);
 const clDeclaration = () => import('./clientele/pages/cl-declaration.component').then((m) => m.ClDeclarationComponent);
 const achatsBons = () => import('./achats-appro/achats-bons.component').then((m) => m.AchatsBonsComponent);
@@ -306,6 +307,7 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'declarations', loadComponent: clDeclarations },
       { path: 'declarations/:id', loadComponent: clDeclaration },
       { path: 'imports', loadComponent: clImports },
+      { path: 'mapping', loadComponent: clMapping },
       { path: 'rapprochements', loadComponent: clRapprochements },
       { path: 'classification', loadComponent: clClassification },
       { path: 'filtrage', loadComponent: clFiltrage },

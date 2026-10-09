@@ -20,7 +20,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from openpyxl import Workbook, load_workbook
+from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +31,7 @@ from app.models import ClienteleClassification, ClienteleClient
 from app.services.clientele.classification import NIVEAUX, ClienteleClassificationService
 from app.services.clientele.consolidation import normaliser_entete
 from app.services.clientele.service import Ctx, ClienteleService
+from app.services.reporting_export import build_styled_workbook_multi
 
 TAILLE_MAX = 40 * 1024 * 1024
 LIGNES_MAX = 80_000
@@ -422,25 +423,27 @@ class ClienteleLotService:
 
     async def exporter(self, lid: uuid.UUID) -> bytes:
         lot = self._charger(lid)
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Lot"
         extra = lot.get("colonnes_affichees") or []
-        ws.append(["Ligne", "Racine (fichier)", "Racine", "Statut", "Nom", *extra,
-                   "Niveau fichier", "Classe actuelle", "Source actuelle",
-                   "Score moteur", "Niveau moteur", "Statut moteur", "Motif moteur"])
+        lignes = []
         for x in lot["lignes"]:
             m = x.get("moteur") or {}
-            ws.append([x["ligne"], x.get("brut"), x.get("racine"), x.get("statut"),
-                       x.get("nom") or x.get("nom_fichier"),
-                       *[(x.get("colonnes") or {}).get(e) for e in extra],
-                       x.get("niveau_fichier") or x.get("niveau_fichier_brut"),
-                       x.get("classe_actuelle"), x.get("source_actuelle"),
-                       m.get("score"), m.get("niveau"), m.get("statut"), m.get("motif")])
-        note = wb.create_sheet("Lire")
-        note.append([f"Fichier source : {lot['fichier_nom']}"])
-        note.append(["Moteur SCORE (CDC 1.0) : résultat de simulation tant qu'il n'est pas appliqué."])
-        note.append(["Statut INCONNUE = racine absente du référentiel clients (jamais créée ici)."])
-        buf = BytesIO()
-        wb.save(buf)
-        return buf.getvalue()
+            lignes.append([x["ligne"], x.get("brut"), x.get("racine"), x.get("statut"),
+                           x.get("nom") or x.get("nom_fichier"),
+                           *[(x.get("colonnes") or {}).get(e) for e in extra],
+                           x.get("niveau_fichier") or x.get("niveau_fichier_brut"),
+                           x.get("classe_actuelle"), x.get("source_actuelle"),
+                           m.get("score"), m.get("niveau"), m.get("statut"), m.get("motif")])
+        entetes = ["Ligne", "Racine (fichier)", "Racine", "Statut", "Nom", *extra,
+                   "Niveau fichier", "Classe actuelle", "Source actuelle",
+                   "Score moteur", "Niveau moteur", "Statut moteur", "Motif moteur"]
+        notes = [
+            ["Fichier source", lot["fichier_nom"]],
+            ["Moteur SCORE (CDC 1.0)", "Résultat de simulation tant qu'il n'est pas appliqué."],
+            ["Statut INCONNUE", "Racine absente du référentiel clients (jamais créée ici)."],
+        ]
+        return build_styled_workbook_multi(
+            report_title="Lot de classification",
+            sheets=[("Lot", f"Lot — {lot['fichier_nom']}", entetes, lignes),
+                    ("Lire", "Notes de lecture", ["Élément", "Explication"], notes)],
+            subtitle=f"{len(lignes)} ligne(s) · fichier {lot['fichier_nom']}",
+        )
