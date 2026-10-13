@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -56,6 +56,14 @@ class LotDivergencesIn(BaseModel):
     confirmation: bool = False
 
 
+class LotControleDecisionIn(BaseModel):
+    ligne: int
+    choix: Literal["MOTEUR", "FICHIER"]
+    justification: str | None = Field(None, max_length=2000)
+    forcer: bool = False
+    confirmation: bool = False
+
+
 class ClassifMoteurScoringIn(BaseModel):
     motif: str
     forcer: bool = False
@@ -68,6 +76,12 @@ class ClassifMasseIn(BaseModel):
     code_agence: str | None = None
     apres: str | None = None
     taille: int | None = None
+
+
+class ClassifTacheIn(BaseModel):
+    motif: str
+    population: str = "TOUS"
+    code_agence: str | None = None
 
 
 class ReexamenTraiterIn(BaseModel):
@@ -149,6 +163,15 @@ class FiltrageEntreeIn(BaseModel):
 class AlerteDecisionIn(BaseModel):
     statut: str
     commentaire: str | None = None
+
+
+class AlerteAttribuerIn(BaseModel):
+    assignee_id: UUID | None = None
+    commentaire: str | None = Field(None, max_length=2000)
+
+
+class AlerteCommentaireIn(BaseModel):
+    commentaire: str = Field(..., min_length=1, max_length=2000)
 
 
 class DeclarationBcmCreerIn(BaseModel):

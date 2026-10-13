@@ -10,7 +10,7 @@ from typing import Literal, TypedDict
 
 from app.data.clientele_indicateurs import IndicateurStatut, par_code
 
-BCM_GRILLE_VERSION = "2026.10.bcm.1"
+BCM_GRILLE_VERSION = "2026.10.bcm.2"
 
 STATUTS_DECLARATION = (
     "BROUILLON",
@@ -102,36 +102,41 @@ TABLEAUX: tuple[TableauDef, ...] = (
             _ligne(
                 "stock_m1",
                 "Le nombre à la fin du mois précédent le mois de déclaration",
-                "Nombre de clients jusqu'au mois précédent (actif + inactif) — stock connu à cette date.",
+                "BCM : nbre de client jusqu'au mois précédent le mois de déclaration, actif+inactif. "
+                "Photographie à la clôture, pas le stock vivant.",
                 "PRET_SOUS_RESERVE",
-                reserve="Équivaut à tout le stock si la Conformité confirme que « actifs + inactifs » désigne la population connue.",
+                reserve="Reconstituable seulement si une extraction ORION (ou historique d'existence) couvre la date. "
+                "premiere_extraction = date d'import BEA DIGITAL, pas l'entrée en relation.",
                 indicateur_total="cli.stock",
                 cutoff="fin_mois_precedent",
             ),
             _ligne(
                 "cible",
                 "Nombre cible de clients à mettre à jour pendant le mois de référence",
-                "Clients actifs jusqu'au mois de déclaration. Actif n'est pas porté par ORION.",
+                "BCM : les clients actifs jusqu'au mois de déclaration. Actif n'est pas porté par ORION.",
                 "A_CONFIGURER",
-                reserve="Ne pas substituer silencieusement OUVERT.",
+                reserve="Ne pas substituer silencieusement OUVERT. Ne pas remplir avec le stock T1 ligne 1.",
                 indicateur_total="cli.actifs",
                 cutoff="date_fin",
             ),
             _ligne(
                 "maj_mois",
                 "Nombre de clients dont les données ont été mises à jour au cours du mois considéré",
-                "EER du mois de déclaration, racine 6 chiffres, statuts VALIDE / CLOTURE (sous réserve).",
+                "BCM : les EER du mois de déclaration. Ne pas remplacer silencieusement par les ouvertures de compte.",
                 "PRET_SOUS_RESERVE",
-                reserve="Statut EER « mis à jour » à valider. MISE_A_JOUR n'est pas ouvert en V1.",
+                reserve="Source : eer_dossiers. En août 2026 le fichier BCM (292) coincide avec les ouvertures de "
+                "compte ORION (259 PP + 33 PM) : arbitrage Conformité requis.",
                 indicateur_total="eer.maj_periode",
                 cutoff="mois",
             ),
             _ligne(
                 "maj_5ans",
                 "Nombre de clients dont les données ont été mises à jour au cours des cinq dernières années",
-                "Clients actifs depuis 5 ans avant l'année courante. Fenêtre et Actif à valider.",
+                "BCM : tous les clients actifs à partir de (5 ans avant l'année courante). "
+                "Ce n'est pas une date de mise à jour KYC tant que la Conformité ne l'a pas confirmé.",
                 "A_CONFIGURER",
-                reserve="Ne pas hardcoder 5.",
+                reserve="Le fichier août 2026 porte 6 883 PM ici contre 5 692 au stock : incohérence interne du "
+                "classeur si la ligne est un sous-ensemble. Ne pas hardcoder 5 ni copier 6 883.",
                 indicateur_total="eer.maj_5ans",
                 cutoff="date_fin",
             ),
@@ -147,36 +152,38 @@ TABLEAUX: tuple[TableauDef, ...] = (
             _ligne(
                 "stock_m1",
                 "Le nombre à la fin du mois précédent le mois de déclaration",
-                "Même stock que T1A, ventilé par classification historique à fin mois précédent.",
+                "BCM : nbre de client jusqu'au mois précédent, actif+inactif, par degré de risque. "
+                "Niveau connu à cette date, pas le SCORE d'une date ultérieure.",
                 "PRET_SOUS_RESERVE",
-                reserve="INTERDIT n'entre dans aucune colonne BCM (mapping à configurer).",
+                reserve="INTERDIT et non classés hors colonnes. Historique SCORE postérieur à la clôture = "
+                "photographie impossible.",
                 indicateur_total="cli.stock",
                 cutoff="fin_mois_precedent",
             ),
             _ligne(
                 "cible",
                 "Nombre cible de clients à mettre à jour pendant le mois de référence",
-                "Clients actifs, par degré de risque. Actif à valider.",
+                "BCM : les clients actifs jusqu'au mois de déclaration, par degré de risque.",
                 "A_CONFIGURER",
-                reserve=None,
+                reserve="Même trou Actif que T1A ligne 2.",
                 indicateur_total="cli.actifs",
                 cutoff="date_fin",
             ),
             _ligne(
                 "maj_mois",
                 "Nombre de clients dont les données ont été mises à jour au cours du mois considéré",
-                "EER du mois, ventilés par classification à la date de fin du mois de déclaration.",
+                "BCM : les EER du mois de déclaration, par degré de risque.",
                 "PRET_SOUS_RESERVE",
-                reserve="Classification à date_fin, pas le niveau courant.",
+                reserve="Ne pas attribuer le SCORE d'octobre aux EER d'août.",
                 indicateur_total="eer.maj_periode",
                 cutoff="mois",
             ),
             _ligne(
                 "maj_5ans",
                 "Nombre de clients dont les données ont été mises à jour au cours des cinq dernières années",
-                "Fenêtre et Actif à valider.",
+                "BCM : tous les clients actifs à partir de (5 ans avant l'année courante), par degré de risque.",
                 "A_CONFIGURER",
-                reserve=None,
+                reserve="Même définition que T1A ligne 4. Ne pas assimiler à une MAJ KYC.",
                 indicateur_total="eer.maj_5ans",
                 cutoff="date_fin",
             ),
@@ -192,27 +199,28 @@ TABLEAUX: tuple[TableauDef, ...] = (
             _ligne(
                 "extraites",
                 "Nombre d'opérations inhabituelles extraites du système",
-                "Alertes du début d'année jusqu'à la fin du mois de déclaration (YTD).",
-                "PRET_SOUS_RESERVE",
-                reserve="Quels statuts = « déclarées » ?",
+                "BCM : Alertes déclarées du début d'année jusqu'au mois de déclaration.",
+                "A_CONFIGURER",
+                reserve="clientele_alertes = correspondances de listes ORION, pas le système d'alertes déclarées "
+                "du fichier (2 492 en août 2026). Ne pas assimiler.",
                 indicateur_total="bcm.t2.extraites",
                 cutoff="ytd",
             ),
             _ligne(
                 "analysees",
                 "Nombre d'opérations analysées à partir de ces opérations",
-                "En cours d'analyse, clôturées et déclarées — mapping de statuts provisoire.",
-                "PRET_SOUS_RESERVE",
-                reserve=None,
+                "BCM : toutes les opérations en cours d'analyse, clôturées et déclarées.",
+                "A_CONFIGURER",
+                reserve="Pas de module d'opérations inhabituelles. Mapping de statuts d'alertes de listes interdit.",
                 indicateur_total="bcm.t2.analysees",
                 cutoff="ytd",
             ),
             _ligne(
                 "suivi",
                 "Nombre d'opérations pour lesquelles l'examen a donné lieu à un suivi continu",
-                "En cours d'analyse et en attente de réponse — mapping provisoire.",
-                "PRET_SOUS_RESERVE",
-                reserve="Pas d'état « attente réponse » dédié aujourd'hui.",
+                "BCM : toutes les opérations en cours d'analyse et en attente de réponse.",
+                "A_CONFIGURER",
+                reserve="Pas d'état « attente de réponse ». Ne pas compter les alertes NOUVELLE de listes.",
                 indicateur_total="bcm.t2.suivi",
                 cutoff="date_fin",
             ),
@@ -228,9 +236,9 @@ TABLEAUX: tuple[TableauDef, ...] = (
             _ligne(
                 "umef_mois",
                 "Nombre de déclarations de soupçon envoyées à l'UMEF (mois)",
-                "Déclarations effectuées durant le mois — pas YTD. Pas d'entité UMEF en base.",
+                "BCM : nombre de déclarations effectuées durant le mois de déclaration (pas YTD).",
                 "A_CONFIGURER",
-                reserve=None,
+                reserve="Pas d'entité UMEF ni de date d'envoi. Le fichier août porte 2 : ne pas copier ce chiffre.",
                 indicateur_total="bcm.t2.umef_mois",
                 cutoff="mois",
             ),
@@ -303,36 +311,39 @@ TABLEAUX: tuple[TableauDef, ...] = (
             _ligne(
                 "eleve",
                 "Clients à risque élevé",
-                "Stock connu jusqu'au mois de déclaration inclus, classification historique ÉLEVÉ.",
+                "BCM : tous les clients actifs / inactifs, jusqu'au mois de déclaration inclus, niveau élevé. "
+                "Niveau à la date de clôture, pas le SCORE ultérieur.",
                 "PRET_SOUS_RESERVE",
-                reserve="INTERDIT non mappé.",
+                reserve="INTERDIT non mappé. Photographie impossible sans historique à la clôture.",
                 indicateur_total="cli.risque.eleve",
                 cutoff="date_fin",
             ),
             _ligne(
                 "moyen",
                 "Clients à risque moyen",
-                "Idem, niveau MOYEN.",
+                "BCM : tous les clients actifs / inactifs, jusqu'au mois de déclaration inclus, niveau moyen.",
                 "PRET_SOUS_RESERVE",
-                reserve=None,
+                reserve="Même contrainte d'historique que T4 élevé.",
                 indicateur_total="cli.risque.moyen",
                 cutoff="date_fin",
             ),
             _ligne(
                 "faible",
                 "Clients à faible risque",
-                "Idem, niveau FAIBLE.",
+                "BCM : tous les clients actifs / inactifs, jusqu'au mois de déclaration inclus, niveau faible.",
                 "PRET_SOUS_RESERVE",
-                reserve="Les non classés ne sont pas du FAIBLE.",
+                reserve="Les non classés ne sont pas du FAIBLE. SCORE octobre ≠ faible août (38 685 dans le fichier).",
                 indicateur_total="cli.risque.faible",
                 cutoff="date_fin",
             ),
             _ligne(
                 "total",
                 "Total clients",
-                "Stock connu à la date de fin (COUNT DISTINCT racine). Contrôle : E+M+F vs total.",
+                "BCM : total des clients (actifs et inactifs) à la clôture du mois. COUNT DISTINCT racine. "
+                "Les non classés restent dans ce total.",
                 "PRET_SOUS_RESERVE",
-                reserve="L'identité T4.total − T1.stock_m1 = EER du mois est documentée, pas une règle figée.",
+                reserve="T4 − T1 = 292 dans le fichier août : égal aux EER déclarés et aux ouvertures de compte, "
+                "pas une règle à imposer.",
                 indicateur_total="cli.stock",
                 cutoff="date_fin",
             ),
@@ -367,8 +378,9 @@ def fiche_champ(
         "periode": ligne["cutoff"],
         "population": (indic or {}).get("cle"),
         "source": source,
-        "formule": (indic or {}).get("formule") or (
-            "À CONFIGURER" if ligne["statut"] == "A_CONFIGURER" else None),
+        "formule": (
+            "À CONFIGURER" if ligne["statut"] == "A_CONFIGURER"
+            else (indic or {}).get("formule")),
         "classification_utilisee": (
             "historique à la date de cutoff"
             if source and "classif" in source else "non"),

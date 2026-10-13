@@ -679,6 +679,36 @@ class ClienteleClassifLotLigne(UUIDPrimaryKeyMixin, Base):
     decision_detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
+class ClienteleClassifTache(UUIDPrimaryKeyMixin, Base):
+    """Classement de masse SCORE exécuté côté serveur, par paquets. La progression affichée = cette ligne.
+
+    ``curseur`` = dernière racine traitée : une tâche interrompue reprend après elle, sans doublon."""
+
+    __tablename__ = "clientele_classif_taches"
+    __table_args__ = (
+        CheckConstraint(
+            "statut IN ('EN_ATTENTE','EN_COURS','TERMINE','TERMINE_ERREURS','INTERROMPU','ECHEC')",
+            name="ck_clientele_classif_taches_statut"),
+        Index("ix_clientele_classif_taches_statut", "statut", "created_at"),
+    )
+
+    statut: Mapped[str] = mapped_column(String(16), default="EN_ATTENTE")
+    profil: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    code_agence: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    motif: Mapped[str] = mapped_column(Text)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    traites: Mapped[int] = mapped_column(Integer, default=0)
+    bilan: Mapped[dict] = mapped_column(JSONB, default=dict)
+    erreurs: Mapped[list] = mapped_column(JSONB, default=list)
+    curseur: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_id: Mapped[uuid.UUID | None] = _user_fk()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    debut: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fin: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    maj_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class ClienteleClassifReexamen(UUIDPrimaryKeyMixin, Base):
     """Signal : une source suggère de revoir une décision manuelle. Ne la remplace jamais."""
 

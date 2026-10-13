@@ -47,6 +47,16 @@ export { CoreAdminSecurityComponent } from './core-admin-security-center.compone
             <div><dt>Refresh module</dt><dd>{{ d.module_refresh_token_expire_minutes }} min</dd></div>
           </dl>
         </div>
+        <div class="bea-admin-panel">
+          <h2>Verrous métier</h2>
+          <dl class="bea-admin-dl">
+            <div>
+              <dt>Classement de masse clientèle</dt>
+              <dd>{{ d.clientele_classement_masse_actif ? 'Ouvert' : 'Suspendu' }}@if (d.clientele_classement_masse_reference) { · {{ d.clientele_classement_masse_reference }} }</dd>
+            </div>
+          </dl>
+          <p class="bea-admin-panel__hint">Réglage serveur uniquement (<code>CLIENTELE_CLASSEMENT_MASSE_ACTIF</code> + référence de PV). CORE ADMIN ne l’ouvre pas depuis cet écran.</p>
+        </div>
       }
     </section>
   `,

@@ -26,6 +26,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.models import (
     ClienteleAlerte,
@@ -58,6 +59,28 @@ NIVEAUX = ("FAIBLE", "MOYEN", "ELEVE", "INTERDIT")
 SOURCES_MANUELLES = ("MANUEL", "MANUEL_SURCHARGE")
 SOURCES_FICHIER = ("EXCEL", "EXCEL_CONFORMITE")
 TAILLE_PAQUET_MASSE = 300
+
+
+def autorisation_classement_masse() -> dict:
+    s = get_settings()
+    reference = (s.clientele_classement_masse_validation or "").strip()
+    actif = bool(s.clientele_classement_masse_actif and reference)
+    return {
+        "actif": actif, "reference_validation": reference or None,
+        "message": None if actif else (
+            "Classement de masse suspendu côté serveur : les règles du moteur SCORE (liste ORION, comptes "
+            "fermés, conflits Matrice / Fiche, complétude, doubles comptages) attendent la validation de la "
+            "Conformité. La simulation reste disponible (lecture seule) ; le classement individuel motivé "
+            "depuis la fiche client reste possible."),
+    }
+
+
+def exiger_classement_masse_autorise() -> str:
+    """Verrou serveur de tout classement moteur en masse. Retourne la référence de validation (audit)."""
+    a = autorisation_classement_masse()
+    if not a["actif"]:
+        raise AppError(a["message"], 409, code="CLASSEMENT_MASSE_SUSPENDU")
+    return a["reference_validation"]
 MODE_PAR_SOURCE = {
     "MOTEUR": "MOTEUR", "EXCEL": "FICHIER", "EXCEL_CONFORMITE": "FICHIER",
     "MANUEL": "MANUEL", "MANUEL_SURCHARGE": "MANUEL",
@@ -456,6 +479,7 @@ class ClienteleClassificationService:
         Résultats admissibles seulement. Classements MOTEUR mis à jour ; décisions manuelles et classes
         reprises d'un fichier jamais écrasées (réexamen ouvert si le moteur propose un autre niveau)."""
         self.ctx.exiger("clientele.classif.execute")
+        exiger_classement_masse_autorise()
         motif = (payload.get("motif") or "").strip()
         if not motif:
             raise AppError("Motif de classement obligatoire", 422, code="MOTIF_OBLIGATOIRE")
@@ -468,16 +492,40 @@ class ClienteleClassificationService:
         racines = list((await self.db.scalars(
             q.where(ClienteleClient.racine_client > apres).order_by(ClienteleClient.racine_client)
             .limit(taille))).all())
-        bilan = {"ECRIT": 0, "INCHANGE": 0, "MANUEL_PRESERVE": 0, "FICHIER_PRESERVE": 0, "NON_ADMISSIBLE": 0}
-        for r in racines:
-            ev = await self.evaluer_racine(r, persister=True)
-            bilan[await self.ecrire_resultat_moteur(r, ev, motif, preserver_fichier=True)] += 1
+        bilan, _ = await self.traiter_paquet_moteur(racines, motif, filtres)
         prochain = racines[-1] if len(racines) == taille else None
-        await self.svc.audit("clientele.classif.moteur_masse", "clientele_classification", None,
-                             after={**filtres, "motif": motif, "de": racines[0] if racines else None,
-                                    "a": racines[-1] if racines else None, **bilan})
         return {"total": total, "traites": len(racines), "bilan": bilan, "prochain": prochain,
                 "filtres": filtres}
+
+    async def traiter_paquet_moteur(self, racines: list[str], motif: str, filtres: dict, *,
+                                    isoler_erreurs: bool = False) -> tuple[dict, list[dict]]:
+        """Évalue et enregistre un paquet de racines (mêmes règles que la fiche). Un audit par paquet.
+
+        ``isoler_erreurs`` : chaque racine dans un point de sauvegarde ; une erreur technique est comptée
+        (``ERREUR``) sans annuler les autres racines du paquet."""
+        validation = exiger_classement_masse_autorise()
+        bilan = {"ECRIT": 0, "INCHANGE": 0, "MANUEL_PRESERVE": 0, "FICHIER_PRESERVE": 0, "NON_ADMISSIBLE": 0}
+        erreurs: list[dict] = []
+        if isoler_erreurs:
+            bilan["ERREUR"] = 0
+        for r in racines:
+            if not isoler_erreurs:
+                ev = await self.evaluer_racine(r, persister=True)
+                bilan[await self.ecrire_resultat_moteur(r, ev, motif, preserver_fichier=True)] += 1
+                continue
+            try:
+                async with self.db.begin_nested():
+                    ev = await self.evaluer_racine(r, persister=True)
+                    resultat = await self.ecrire_resultat_moteur(r, ev, motif, preserver_fichier=True)
+                bilan[resultat] += 1
+            except Exception as exc:  # noqa: BLE001 — compté et tracé, le paquet continue
+                bilan["ERREUR"] += 1
+                detail = getattr(exc, "message", None) or getattr(exc, "detail", None) or exc.__class__.__name__
+                erreurs.append({"racine": r, "message": str(detail)[:300]})
+        await self.svc.audit("clientele.classif.moteur_masse", "clientele_classification", None,
+                             after={**filtres, "motif": motif, "de": racines[0] if racines else None,
+                                    "a": racines[-1] if racines else None, "validation": validation, **bilan})
+        return bilan, erreurs
 
     async def ouvrir_reexamen(self, racine: str, *, origine: str, source_suggestion: str, niveau_suggere: str,
                               actuelle: ClienteleClassification | None, motif: str,
@@ -604,6 +652,8 @@ class ClienteleClassificationService:
 
     async def appliquer_moteur(self, *, racine: str | None = None, forcer: bool = False) -> dict:
         self.ctx.exiger("clientele.classif.execute")
+        if not racine:
+            exiger_classement_masse_autorise()
         version = await self._version_active()
         regles = list((await self.db.scalars(
             select(ClienteleClassifRegle)

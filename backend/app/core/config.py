@@ -103,6 +103,13 @@ class Settings(BaseSettings):
     # À couper (0) avant la mise en production.
     achats_mode_test: bool = Field(default=False, alias="ACHATS_MODE_TEST")
 
+    # Classement de masse par le moteur SCORE (bouton « Classer », moteur-masse, lots origine MOTEUR).
+    # Bloqué tant que la Conformité n'a pas validé les règles : il faut ACTIF=1 ET une référence de
+    # décision (ex. « PV Conformité 2026-10-20 ») pour réactiver ; la référence est tracée dans l'audit.
+    clientele_classement_masse_actif: bool = Field(default=False, alias="CLIENTELE_CLASSEMENT_MASSE_ACTIF")
+    clientele_classement_masse_validation: str = Field(
+        default="", alias="CLIENTELE_CLASSEMENT_MASSE_VALIDATION")
+
     # Envoi d'e-mails (rappels contrats…). Vide = notifications in-app uniquement.
     smtp_host: str = Field(default="", alias="SMTP_HOST")
     smtp_port: int = Field(default=587, alias="SMTP_PORT")

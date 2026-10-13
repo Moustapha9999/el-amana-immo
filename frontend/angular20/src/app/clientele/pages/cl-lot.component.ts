@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, ViewEncapsulation, computed, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
@@ -24,6 +24,21 @@ interface LigneLot {
   divergence: boolean;
   decision: string | null;
   decision_detail: Record<string, unknown> | null;
+  controle: Controle | null;
+  decision_controle: DecisionControle | null;
+}
+type StatutControle = 'CONFORME' | 'ECART' | 'DONNEE_MANQUANTE' | 'NON_COMPARABLE';
+interface Controle {
+  statut: StatutControle; message: string;
+  niveau_fichier_brut: string | null; niveau_fichier: string | null;
+  niveau_moteur: string | null; score_moteur: number | null; version_regles: string | null;
+  niveau_retenu: string | null; mode_retenu: string | null; controle_le: string | null;
+}
+interface DecisionControle {
+  choix: 'MOTEUR' | 'FICHIER'; libelle: string; niveau_retenu: string | null;
+  niveau_fichier: string | null; niveau_moteur: string | null; justification: string | null;
+  effet: 'AUCUNE_MODIFICATION' | 'CLASSIFICATION_MODIFIEE'; force: boolean;
+  par: string; par_nom: string | null; le: string;
 }
 interface Bilan {
   origine: string; ecrits: number; inchanges: number; manuels_preserves: number; non_classables: number;
@@ -79,14 +94,26 @@ const LIB_DECISION: Record<string, string> = {
   NON_ADMISSIBLE: 'Moteur non admissible', NON_CLASSABLE: 'Non classable',
   DIVERGENCE_A_TRAITER: 'Divergence à traiter', A_REEVALUER: 'À réévaluer',
   ARBITRE_MOTEUR: 'Arbitré : moteur', ARBITRE_FICHIER: 'Arbitré : fichier', ARBITRE_AUTRE: 'Arbitré : autre niveau',
+  CONSERVE_MOTEUR: 'Classement SCORE conservé', RETENU_FICHIER: 'Niveau du fichier retenu',
+};
+
+const LIB_CONTROLE: Record<StatutControle, string> = {
+  CONFORME: 'Conforme', ECART: 'Écart détecté',
+  DONNEE_MANQUANTE: 'Comparaison impossible — donnée manquante', NON_COMPARABLE: 'Non comparable — à vérifier',
+};
+const ICONE_CONTROLE: Record<StatutControle, string> = {
+  CONFORME: 'check_circle', ECART: 'compare_arrows', DONNEE_MANQUANTE: 'help', NON_COMPARABLE: 'report',
 };
 
 @Component({
   selector: 'bea-cl-lot',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, RouterLink, MatIconModule],
+  styleUrls: ['./cl-lot.css'],
+  encapsulation: ViewEncapsulation.None,
   template: `
     @let t = textes();
+    @let liste = type() === 'LISTE';
     @if (!lot()) {
       <section class="bea-mg__panel" style="padding:1rem">
         <div class="bea-cl-filters" style="padding:0 0 0.75rem">
@@ -215,6 +242,20 @@ const LIB_DECISION: Record<string, string> = {
             <div class="bea-cl-stat"><span>Déjà classés</span><strong>{{ n(l.stats['deja_classes']) }}</strong></div>
             <div class="bea-cl-stat"><span>Classés manuellement</span><strong>{{ n(l.stats['manuels']) }}</strong></div>
           </div>
+          @if (liste && l.colonne_niveau) {
+            @let aDecider = (l.stats['controle_ecarts'] || 0) - (l.stats['controle_ecarts_decides'] || 0);
+            <h3 class="bea-cl-ctl-titre">Contrôle fichier / moteur SCORE (niveau enregistré, moteur non relancé)</h3>
+            <div class="bea-cl-stats bea-cl-ctl-stats">
+              <button type="button" class="bea-cl-stat" data-tone="ok" (click)="filtrer('CONTROLE_CONFORME')"><span>Conformes</span><strong>{{ n(l.stats['controle_conformes']) }}</strong></button>
+              <button type="button" class="bea-cl-stat" [attr.data-tone]="aDecider ? 'danger' : ''" (click)="filtrer('CONTROLE_A_DECIDER')"><span>Écarts à décider</span><strong>{{ n(aDecider) }}</strong></button>
+              <button type="button" class="bea-cl-stat" (click)="filtrer('CONTROLE_DECIDE')"><span>Écarts décidés</span><strong>{{ n(l.stats['controle_ecarts_decides']) }}</strong></button>
+              <button type="button" class="bea-cl-stat" [attr.data-tone]="l.stats['controle_manquants'] ? 'warn' : ''" (click)="filtrer('CONTROLE_DONNEE_MANQUANTE')"><span>Comparaison impossible</span><strong>{{ n(l.stats['controle_manquants']) }}</strong></button>
+              <button type="button" class="bea-cl-stat" [attr.data-tone]="l.stats['controle_non_comparables'] ? 'warn' : ''" (click)="filtrer('CONTROLE_NON_COMPARABLE')"><span>Non comparables</span><strong>{{ n(l.stats['controle_non_comparables']) }}</strong></button>
+            </div>
+            <div class="bea-cl-note bea-cl-note--info" style="margin:0 1.1rem 0.9rem"><mat-icon>rule</mat-icon>
+              <span>Chaque niveau du fichier est comparé au niveau enregistré par le moteur SCORE. Seuls les écarts confirmés appellent une décision, ligne par ligne : conserver le classement du moteur SCORE (aucune modification) ou retenir le niveau du fichier (justification obligatoire, décision manuelle tracée). Correspondances admises : Faible, Moyen, Élevé, Interdit uniquement.</span>
+            </div>
+          }
           @if (l.stats['inconnues']) {
             <div class="bea-cl-note bea-cl-note--warn" style="margin:0 1.1rem 0.9rem"><mat-icon>info</mat-icon>
               <span>{{ n(l.stats['inconnues']) }} racine(s) absente(s) de la Base Clientèle. Le lot ne crée jamais de client : importez-les d’abord via l’import ORION, puis réimportez ce fichier.</span>
@@ -232,11 +273,11 @@ const LIB_DECISION: Record<string, string> = {
               <span>Score CDC 1.0 et comparaison fichier / moteur. Aucune classification écrite (≤ {{ n(l.limite_evaluation) }} racines).</span>
             </button>
             @if (store.cap().classif_executer) {
-              <button type="button" class="bea-cl-option" (click)="classer('MOTEUR')" [disabled]="busy() || fige || !l.evaluation?.classables">
-                <mat-icon>rule</mat-icon><strong>Enregistrer le niveau proposé par le moteur</strong>
-                <span>Résultats admissibles uniquement (jamais NON CLASSÉ ni À ARBITRER). Décisions manuelles préservées.</span>
+              <button type="button" class="bea-cl-option" (click)="classer('MOTEUR')" [disabled]="busy() || fige || !l.evaluation?.classables || !masseAutorisee()">
+                <mat-icon>{{ masseAutorisee() ? 'rule' : 'lock' }}</mat-icon><strong>Enregistrer le niveau proposé par le moteur</strong>
+                <span>{{ masseAutorisee() ? 'Résultats admissibles uniquement (jamais NON CLASSÉ ni À ARBITRER). Décisions manuelles préservées.' : 'Suspendu côté serveur : règles SCORE en attente de validation Conformité. Écart par écart : décision ligne à ligne ci-dessous.' }}</span>
               </button>
-              @if (l.colonne_niveau) {
+              @if (l.colonne_niveau && !liste) {
                 <button type="button" class="bea-cl-option" (click)="classer('FICHIER')" [disabled]="busy() || fige || !l.evaluation || !l.stats['avec_niveau']">
                   <mat-icon>file_download_done</mat-icon><strong>Enregistrer la classe du fichier</strong>
                   <span>Les divergences fichier / moteur ne sont pas écrites : décision humaine requise.</span>
@@ -252,7 +293,9 @@ const LIB_DECISION: Record<string, string> = {
               <div class="bea-cl-stat"><span>Évaluées</span><strong>{{ n(ev.nb) }}</strong></div>
               <div class="bea-cl-stat" data-tone="ok"><span>Admissibles</span><strong>{{ n(ev.classables) }}</strong></div>
               <div class="bea-cl-stat" [attr.data-tone]="ev.a_arbitrer ? 'warn' : ''"><span>À arbitrer (moteur)</span><strong>{{ n(ev.a_arbitrer) }}</strong></div>
-              <div class="bea-cl-stat" [attr.data-tone]="ev.divergences ? 'danger' : ''"><span>Divergences fichier / moteur</span><strong>{{ n(ev.divergences) }}</strong></div>
+              @if (!liste) {
+                <div class="bea-cl-stat" [attr.data-tone]="ev.divergences ? 'danger' : ''"><span>Divergences fichier / moteur</span><strong>{{ n(ev.divergences) }}</strong></div>
+              }
               <div class="bea-cl-stat" [attr.data-tone]="ev.contradictions_entreprise ? 'warn' : ''"><span>Entreprise récente à vérifier</span><strong>{{ n(ev.contradictions_entreprise) }}</strong></div>
               @for (k of niveaux; track k) {
                 <div class="bea-cl-stat"><span>{{ k === 'NON_CLASSE' ? 'Non classé' : k }}</span><strong>{{ n(ev.par_niveau[k] || 0) }}</strong></div>
@@ -274,8 +317,16 @@ const LIB_DECISION: Record<string, string> = {
               <select [(ngModel)]="filtre" (ngModelChange)="recharger()" style="font:inherit;padding:0.35rem 0.5rem;border:1px solid #dbe3ee;border-radius:0.5rem">
                 <option [ngValue]="''">Toutes</option>
                 <option value="OK">Reconnues</option>
-                <option value="DIVERGENCE">Divergences fichier / moteur</option>
-                <option value="A_TRAITER">À traiter</option>
+                @if (liste) {
+                  <option value="CONTROLE_A_DECIDER">Écarts à décider</option>
+                  <option value="CONTROLE_DECIDE">Écarts décidés</option>
+                  <option value="CONTROLE_CONFORME">Conformes</option>
+                  <option value="CONTROLE_DONNEE_MANQUANTE">Comparaison impossible</option>
+                  <option value="CONTROLE_NON_COMPARABLE">Non comparables</option>
+                } @else {
+                  <option value="DIVERGENCE">Divergences fichier / moteur</option>
+                  <option value="A_TRAITER">À traiter</option>
+                }
                 <option value="ANOMALIE">Anomalies</option>
                 <option value="INCONNUE">Inconnues</option>
                 <option value="INVALIDE">Invalides</option>
@@ -285,14 +336,20 @@ const LIB_DECISION: Record<string, string> = {
             </span>
           </div>
           <div class="bea-mg__table-wrap">
-            <table class="bea-mg__table bea-cl-lot-table">
+            <table class="bea-mg__table bea-cl-lot-table" [class.is-liste]="liste">
               <thead><tr>
                 <th>Racine</th><th>Nom</th><th>État</th>
-                <th>Fichier</th><th>Moteur</th><th>Anomalies</th><th>Décision</th>
+                @if (liste) {
+                  <th>Fichier</th><th>SCORE enregistré</th><th class="bea-cl-ctl">Contrôle fichier / SCORE</th><th>Anomalies</th>
+                } @else {
+                  <th>Fichier</th><th>Moteur</th><th>Anomalies</th><th>Décision</th>
+                }
               </tr></thead>
               <tbody>
                 @for (x of l.lignes; track x.ligne) {
-                  <tr [class.is-div]="x.divergence && !x.decision?.startsWith('ARBITRE')" [class.is-open]="detail()===x.ligne">
+                  @let c = x.controle;
+                  @let dc = x.decision_controle;
+                  <tr [class.is-div]="liste ? (c?.statut === 'ECART' && !dc) : (x.divergence && !x.decision?.startsWith('ARBITRE'))" [class.is-open]="detail()===x.ligne">
                     <td>
                       @if (x.statut === 'OK') { <a [routerLink]="['/clientele/clients', x.racine]"><code>{{ x.racine }}</code></a> }
                       @else { <code>{{ x.racine || x.brut || '—' }}</code> }
@@ -301,6 +358,48 @@ const LIB_DECISION: Record<string, string> = {
                       <button type="button" class="bea-cl-link" (click)="basculer(x.ligne)">{{ x.nom || x.nom_fichier || '—' }}</button>
                     </td>
                     <td><span class="bea-cl-badge" [attr.data-s]="x.statut" [attr.title]="aideStatut[x.statut] || null">{{ libStatut[x.statut] || x.statut }}</span></td>
+                    @if (liste) {
+                    <td>
+                      @if (c?.niveau_fichier) { <span class="bea-cl-badge" [attr.data-s]="c!.niveau_fichier">{{ c!.niveau_fichier }}</span> }
+                      @else if (x.niveau_fichier_brut) { <span class="bea-cl-brut" title="Libellé du fichier, tel quel">« {{ x.niveau_fichier_brut }} »</span> }
+                      @else { — }
+                    </td>
+                    <td>
+                      @if (c?.niveau_moteur) {
+                        <span class="bea-cl-badge" [attr.data-s]="c!.niveau_moteur">{{ c!.niveau_moteur }}</span>
+                        @if (c!.score_moteur !== null) { <small class="bea-cl-hint"> {{ n(c!.score_moteur) }}</small> }
+                      } @else { — }
+                    </td>
+                    <td class="bea-cl-ctl">
+                      @if (c) {
+                        <span class="bea-cl-ctl-badge" [attr.data-c]="dc ? 'DECIDE' : c.statut" [attr.title]="c.message">
+                          <mat-icon>{{ dc ? 'task_alt' : icone[c.statut] }}</mat-icon>{{ dc ? 'Écart décidé' : libControle[c.statut] }}
+                        </span>
+                        @if (dc) {
+                          <span class="bea-cl-ctl-l2">{{ dc.choix === 'MOTEUR' ? 'A' : 'B' }} · {{ dc.libelle }} → <strong>{{ dc.niveau_retenu }}</strong></span>
+                          <span class="bea-cl-ctl-l2 bea-cl-hint">{{ dc.par_nom || 'Utilisateur' }} · {{ dateHeureFr(dc.le) }}</span>
+                          @if (dc.justification) { <span class="bea-cl-ctl-l2 bea-cl-ctl-just" [attr.title]="dc.justification">« {{ dc.justification }} »</span> }
+                        } @else if (c.statut === 'ECART') {
+                          <span class="bea-cl-ctl-l2">Fichier <strong>{{ c.niveau_fichier }}</strong> ≠ SCORE <strong>{{ c.niveau_moteur }}</strong></span>
+                          @if (store.cap().classif_executer && !fige) {
+                            @let bloque = c.niveau_moteur === 'INTERDIT' && !store.cap().classif_forcer;
+                            <span class="bea-cl-ctl-actions">
+                              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="conserverMoteur(x)" [disabled]="busy()" title="Aucune modification de la classification enregistrée">A · Conserver le classement SCORE</button>
+                              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="retenirFichier(x)" [disabled]="busy() || bloque"
+                                [attr.title]="bloque ? 'Blocage INTERDIT du moteur SCORE : permission de forçage requise' : 'Justification obligatoire, décision manuelle tracée'">B · Retenir le niveau du fichier</button>
+                            </span>
+                          }
+                        } @else {
+                          <span class="bea-cl-ctl-l2 bea-cl-hint">{{ c.statut === 'CONFORME' ? 'Aucune décision requise.' : c.statut === 'NON_COMPARABLE' ? 'Vérification requise.' : 'Aucune décision automatique.' }}</span>
+                        }
+                      } @else { — }
+                    </td>
+                    <td>
+                      @if (x.anomalies.length) {
+                        <button type="button" class="bea-cl-chip bea-cl-chip--n" [attr.title]="x.anomalies.join(' · ')" (click)="basculer(x.ligne)">{{ x.anomalies.length }} anomalie(s)</button>
+                      } @else { — }
+                    </td>
+                    } @else {
                     <td>
                       @if (x.niveau_fichier) { <span class="bea-cl-badge" [attr.data-s]="x.niveau_fichier">{{ x.niveau_fichier }}</span> }
                       @else { {{ x.niveau_fichier_brut || '—' }} }
@@ -326,16 +425,34 @@ const LIB_DECISION: Record<string, string> = {
                         </span>
                       }
                     </td>
+                    }
                   </tr>
                   @if (detail() === x.ligne) {
                     <tr class="bea-cl-lot-detail">
                       <td colspan="7">
                         <div class="bea-cl-lot-detail__grid">
+                          @if (c) {
+                            <section>
+                              <h3>Contrôle fichier / moteur SCORE</h3>
+                              <p><span class="bea-cl-ctl-badge" [attr.data-c]="c.statut"><mat-icon>{{ icone[c.statut] }}</mat-icon>{{ libControle[c.statut] }}</span></p>
+                              <p>{{ c.message }}</p>
+                              <p class="bea-cl-hint">Fichier « {{ c.niveau_fichier_brut || '—' }} » → {{ c.niveau_fichier || 'hors correspondance' }} · SCORE enregistré {{ c.niveau_moteur || '—' }}{{ c.score_moteur !== null ? ' (' + n(c.score_moteur) + ')' : '' }}{{ c.version_regles ? ' · règles ' + c.version_regles : '' }}</p>
+                              <p class="bea-cl-hint">Classement en vigueur au contrôle : {{ c.niveau_retenu || '—' }}{{ c.mode_retenu ? ' (' + c.mode_retenu + ')' : '' }} · contrôlé le {{ dateHeureFr(c.controle_le) }}</p>
+                              @if (dc) {
+                                <p><strong>Décision :</strong> {{ dc.choix === 'MOTEUR' ? 'A' : 'B' }} · {{ dc.libelle }} — niveau retenu {{ dc.niveau_retenu }}{{ dc.force ? ' (forçage)' : '' }}</p>
+                                <p class="bea-cl-hint">Par {{ dc.par_nom || 'Utilisateur' }}, le {{ dateHeureFr(dc.le) }} · {{ dc.effet === 'CLASSIFICATION_MODIFIEE' ? 'classification modifiée (décision manuelle)' : 'classification enregistrée inchangée' }}</p>
+                                <p>Justification : {{ dc.justification || '—' }}</p>
+                              }
+                            </section>
+                          }
                           <section>
-                            <h3>Moteur</h3>
+                            <h3>{{ liste ? 'Évaluation du lot (non enregistrée)' : 'Moteur' }}</h3>
                             <p>{{ x.moteur?.motif || 'Pas encore évalué.' }}</p>
                             @if (x.classe_actuelle) {
                               <p class="bea-cl-hint">Classe actuelle : {{ x.classe_actuelle }} ({{ x.source_actuelle }})</p>
+                            }
+                            @if (liste && x.decision && !dc) {
+                              <p class="bea-cl-hint">Enregistrement du lot : {{ libDecision[x.decision] || x.decision }}</p>
                             }
                           </section>
                           <section>
@@ -390,6 +507,7 @@ export class ClLotComponent implements OnInit {
   readonly edition = signal<{ id: string; fichier_nom: string; periode_reference: string } | null>(null);
   readonly detail = signal<number | null>(null);
   readonly busy = signal(false);
+  readonly masseAutorisee = signal(false);
   readonly survol = signal(false);
   readonly niveaux = ['FAIBLE', 'MOYEN', 'ELEVE', 'INTERDIT', 'NON_CLASSE'];
   readonly cibles = CIBLES;
@@ -402,6 +520,8 @@ export class ClLotComponent implements OnInit {
   };
   readonly libLot: Record<string, string> = { ANALYSE: 'Analysé', EVALUE: 'Évalué', ENREGISTRE: 'Enregistré', FERME: 'Fermé' };
   readonly libDecision = LIB_DECISION;
+  readonly libControle = LIB_CONTROLE;
+  readonly icone = ICONE_CONTROLE;
   readonly n = n;
   readonly dateFr = dateFr;
   readonly dateHeureFr = dateHeureFr;
@@ -414,6 +534,10 @@ export class ClLotComponent implements OnInit {
 
   ngOnInit(): void {
     this.chargerHistorique();
+    this.api.get<{ actif: boolean }>(`${CL_BASE}/classification/taches/autorisation`).subscribe({
+      next: (v) => this.masseAutorisee.set(v.actif),
+      error: () => this.masseAutorisee.set(false),
+    });
   }
 
   chargerHistorique(): void {
@@ -567,6 +691,58 @@ export class ClLotComponent implements OnInit {
         errorTitle: 'Décision refusée', retry: false,
       },
     ).subscribe(() => this.recharger(l.page));
+  }
+
+  filtrer(statut: string): void {
+    this.filtre = this.filtre === statut ? '' : statut;
+    this.recharger();
+  }
+
+  conserverMoteur(x: LigneLot): void {
+    const l = this.lot()!;
+    const c = x.controle!;
+    this.feedback.runWithReason(
+      (commentaire) => this.decider(l, x, { choix: 'MOTEUR', justification: commentaire || null }),
+      {
+        reason: {
+          title: 'Conserver le classement du moteur SCORE',
+          message: `Racine ${x.racine} : fichier ${c.niveau_fichier}, moteur SCORE ${c.niveau_moteur}. Conserver ${c.niveau_moteur} ?`,
+          hint: 'Décision de contrôle uniquement : la classification enregistrée n’est pas modifiée. Auteur, date et commentaire sont conservés.',
+          reasonLabel: 'Commentaire (facultatif)', required: false, maxLength: 2000,
+          confirmLabel: 'Conserver le classement SCORE', tone: 'primary', icon: 'verified',
+        },
+        busy: this.busy, loading: 'Enregistrement de la décision…',
+        success: { title: 'Écart décidé', message: `Classement SCORE ${c.niveau_moteur} conservé. Aucune modification.` },
+        errorTitle: 'Décision refusée', retry: false,
+      },
+    ).subscribe(() => this.recharger(l.page));
+  }
+
+  retenirFichier(x: LigneLot): void {
+    const l = this.lot()!;
+    const c = x.controle!;
+    const forcer = c.niveau_moteur === 'INTERDIT' && !!this.store.cap().classif_forcer;
+    this.feedback.runWithReason(
+      (justification) => this.decider(l, x, { choix: 'FICHIER', justification, forcer, confirmation: forcer }),
+      {
+        reason: {
+          title: forcer ? 'Forçage — retenir le niveau du fichier' : 'Retenir le niveau du fichier',
+          message: `Racine ${x.racine} : moteur SCORE ${c.niveau_moteur}, fichier ${c.niveau_fichier}. Retenir ${c.niveau_fichier} ?`,
+          hint: forcer
+            ? 'Le moteur SCORE classe ce client INTERDIT (blocage). Retenir le fichier lève le blocage : forçage tracé dans l’audit. Le niveau calculé par le moteur reste conservé.'
+            : 'Décision manuelle motivée : le niveau retenu remplace la classification en vigueur, le niveau calculé par le moteur SCORE reste conservé. Historique : auteur, date, justification.',
+          reasonLabel: 'Justification', reasonPlaceholder: 'Ex. revue KYC du 08/10/2026 : activité réelle confirmée', required: true, maxLength: 2000,
+          confirmLabel: forcer ? 'Confirmer le forçage' : 'Retenir le niveau du fichier', tone: forcer ? 'danger' : 'warn', icon: 'gavel',
+        },
+        busy: this.busy, loading: 'Enregistrement de la décision…',
+        success: { title: 'Écart décidé', message: `Niveau du fichier ${c.niveau_fichier} retenu (décision manuelle).` },
+        errorTitle: 'Décision refusée', retry: false,
+      },
+    ).subscribe(() => this.recharger(l.page));
+  }
+
+  private decider(l: Lot, x: LigneLot, corps: Record<string, unknown>) {
+    return this.api.post<LigneLot>(`${CL_BASE}/lots/${l.id}/controle/decision`, { ligne: x.ligne, ...corps });
   }
 
   saisirDate(x: LigneLot, valeur: string): void {

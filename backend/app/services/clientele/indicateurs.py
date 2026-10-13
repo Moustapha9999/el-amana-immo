@@ -25,6 +25,7 @@ from app.data.clientele_indicateurs import (
 from app.models import (
     ClienteleAlerte,
     ClienteleClassifHistorique,
+    ClienteleClassification,
     ClienteleClient,
     ClienteleCompte,
     ClienteleSituation,
@@ -54,9 +55,6 @@ RANG = {"FAIBLE": 1, "MOYEN": 2, "ELEVE": 3, "INTERDIT": 4}
 MAPPINGS = {
     "cli.stock": "Stock = racines avec premiere_extraction ≤ cutoff (à valider comme « actifs + inactifs »).",
     "eer.maj_periode": f"EER date_eer dans le mois, statut ∈ {EER_STATUTS_MAJ}, racine 6 chiffres.",
-    "bcm.t2.extraites": "Toutes les alertes créées YTD (statuts à valider).",
-    "bcm.t2.analysees": f"Alertes YTD statut ∈ {ALERTE_ANALYSEES}.",
-    "bcm.t2.suivi": f"Alertes encore ouvertes à la date, statut ∈ {ALERTE_SUIVI}.",
 }
 
 
@@ -347,15 +345,12 @@ class ClienteleIndicateursService:
         point = appliquer(fenetre, "POINT")
         intervalle = appliquer(fenetre, "INTERVALLE")
         mois = appliquer(fenetre, "MOIS")
-        ytd = appliquer(fenetre, "YTD")
         stock = await self._stock_profil(point.date_fin, filtres)
         comptes = await self._comptes(point.date_fin, filtres)
         nouveaux = await self._nouveaux(intervalle, filtres)
         risque = await self._classif_au(point.date_fin, filtres)
         reclass = await self._reclass(intervalle, filtres)
         alertes_i = await self._alertes_intervalle(intervalle, filtres)
-        alertes_y = await self._alertes_intervalle(ytd, filtres)
-        suivi = await self._alertes_suivi(point.date_fin, filtres)
         eer = await self._eer_mois(mois, filtres)
         return {
             "cli.stock": sum(stock.values()),
@@ -378,9 +373,6 @@ class ClienteleIndicateursService:
             "eer.maj_periode": eer,
             "alerte.stock": sum(alertes_i.values()),
             "alerte.faux_positifs": alertes_i.get("FAUX_POSITIF", 0),
-            "bcm.t2.extraites": sum(alertes_y.values()),
-            "bcm.t2.analysees": sum(alertes_y.get(s, 0) for s in ALERTE_ANALYSEES),
-            "bcm.t2.suivi": suivi,
         }
 
     def _join_sit(self, q: Select, left) -> Select:
@@ -582,38 +574,47 @@ class ClienteleIndicateursService:
         filtres = Filtres()
         m1 = fin_mois_precedent(fenetre.date_debut)
         mois = appliquer(fenetre, "MOIS")
-        ytd = appliquer(fenetre, "YTD")
         stock_m1 = await self._stock_profil(m1, filtres)
         stock_fin = await self._stock_profil(fenetre.date_fin, filtres)
         classif_m1 = await self._classif_au(m1, filtres)
         classif_fin = await self._classif_au(fenetre.date_fin, filtres)
-        alertes_y = await self._alertes_intervalle(ytd, filtres)
-        suivi = await self._alertes_suivi(fenetre.date_fin, filtres)
         eer = await self._eer_repartition(mois, filtres, fenetre.date_fin)
-        t2_extraites = sum(alertes_y.values())
-        t2_analysees = sum(alertes_y.get(s, 0) for s in ALERTE_ANALYSEES)
-        ids_eer = eer["racines"]
-        _tot, _cols, rows_t2e = await self._pop_alertes(
-            "bcm.t2.extraites", ytd, filtres, 0, EXPORT_MAX)
-        _tot2, _c2, rows_t2a = await self._pop_alertes(
-            "bcm.t2.analysees", ytd, filtres, 0, EXPORT_MAX)
-        _tot3, _c3, rows_t2s = await self._pop_alertes(
-            "bcm.t2.suivi", appliquer(fenetre, "POINT"), filtres, 0, EXPORT_MAX)
+        min_pe = await self.db.scalar(select(func.min(ClienteleClient.premiere_extraction)))
+        nb_ref = int(await self.db.scalar(select(func.count()).select_from(ClienteleClient)) or 0)
+        min_h = await self.db.scalar(select(func.min(jour_nktt(ClienteleClassifHistorique.created_at))))
+        nb_k = int(await self.db.scalar(select(func.count()).select_from(ClienteleClassification)) or 0)
+        ouv = int(await self.db.scalar(select(func.count()).select_from(ClienteleSituation).where(
+            ClienteleSituation.date_ouverture >= mois.date_debut,
+            ClienteleSituation.date_ouverture <= mois.date_fin)) or 0)
+
+        def stock_ok(cutoff: date) -> bool:
+            return nb_ref == 0 or (min_pe is not None and min_pe <= cutoff)
+
+        def classif_ok(cutoff: date) -> bool:
+            if nb_ref == 0:
+                return True
+            return min_h is not None and min_h <= cutoff
+
         return {
             "stock_m1": {**stock_m1, "total": sum(stock_m1.values())},
             "stock_fin": {**stock_fin, "total": sum(stock_fin.values())},
             "classif_m1": classif_m1,
             "classif_fin": classif_fin,
             "eer": eer,
-            "t2": {
-                "extraites": t2_extraites,
-                "analysees": t2_analysees,
-                "suivi": suivi,
-                "ids_extraites": [str(r["id"]) for r in rows_t2e],
-                "ids_analysees": [str(r["id"]) for r in rows_t2a],
-                "ids_suivi": [str(r["id"]) for r in rows_t2s],
+            "t2": {"extraites": None, "analysees": None, "suivi": None,
+                   "ids_extraites": [], "ids_analysees": [], "ids_suivi": []},
+            "ids_eer": eer["racines"],
+            "couverture": {
+                "nb_referentiel": nb_ref,
+                "premiere_extraction_min": min_pe.isoformat() if min_pe else None,
+                "nb_classifies": nb_k,
+                "historique_classif_min": min_h.isoformat() if min_h else None,
+                "stock_m1_reconstructible": stock_ok(m1),
+                "stock_fin_reconstructible": stock_ok(fenetre.date_fin),
+                "classif_m1_reconstructible": classif_ok(m1),
+                "classif_fin_reconstructible": classif_ok(fenetre.date_fin),
+                "ouvertures_mois": ouv,
             },
-            "ids_eer": ids_eer,
         }
 
     async def _population(

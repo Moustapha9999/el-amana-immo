@@ -216,7 +216,8 @@ Modèle propre (téléchargeable `GET /lots/modele.xlsx`) :
   automatiquement ; traitement ligne par ligne (`POST /lots/{id}/divergences`,
   choix MOTEUR / FICHIER / AUTRE + motif → décision manuelle).
 - Moteur non admissible (ex. NON CLASSÉ) : comparaison `NON_COMPARABLE` ;
-  l’enregistrement « classe du fichier » reste possible (mode `FICHIER`).
+  l’enregistrement « classe du fichier » reste possible (mode `FICHIER`) pour
+  un lot `SITUATION` uniquement (voir contrôle ci-dessous pour `LISTE`).
 - Ré-import identique : signalé (empreinte SHA-256) ; niveaux identiques →
   `INCHANGE` (pas de nouvelle ligne d’historique) ; réexamen non dupliqué.
 - Export = feuille `CLIENTS` uniquement, 22 colonnes du modèle (CODE AGENCE …
@@ -225,6 +226,64 @@ Modèle propre (téléchargeable `GET /lots/modele.xlsx`) :
   supprimer (motif obligatoire). La suppression retire le lot et ses lignes ;
   les classifications déjà écrites sur les fiches restent. Audit conservé.
 - Fermer un lot = statut `FERME` (fichier brut retiré, lot et lignes conservés).
+
+#### Contrôle fichier / moteur SCORE (liste de clients, règle du 13/10/2026)
+
+Pour un lot `LISTE`, chaque ligne reconnue est comparée **dès l’analyse** au
+niveau **enregistré** par le moteur SCORE (`clientele_classifications.niveau_propose`).
+Le moteur n’est **pas** relancé ; aucun niveau n’est modifié par le contrôle.
+Résultat conservé dans `clientele_classif_lot_lignes.decision_detail.controle`
+(niveaux fichier brut / normalisé, niveau et score SCORE, version des règles,
+classement en vigueur, horodatage). Pas de migration : colonnes existantes.
+
+| Statut | Condition | Action |
+|---|---|---|
+| `CONFORME` | Niveau fichier = niveau SCORE | « Le niveau du fichier correspond au niveau du moteur SCORE. Aucune décision requise. » Aucun bouton. |
+| `ECART` | Niveaux officiels différents | « Écart détecté » : deux options seulement (ci-dessous). |
+| `DONNEE_MANQUANTE` | Niveau absent du fichier **ou** client sans niveau SCORE enregistré | « Comparaison impossible — donnée manquante ». Aucune décision automatique. |
+| `NON_COMPARABLE` | Libellé hors correspondance officielle, ou niveau SCORE inattendu | Anomalie : vérification requise. Aucune décision possible. |
+
+Correspondance officielle : **Faible, Moyen, Élevé, Interdit** uniquement,
+comparés sans tenir compte de la casse, des accents ni du mot « risque »
+(« Risque élevé » = `ELEVE`). Aucune autre équivalence n’est inventée :
+`HAUT`, `FORT`, `BAS`, abréviations, chiffres → `NON_COMPARABLE`.
+
+Décision sur un écart (`POST /lots/{id}/controle/decision`, `ligne`, `choix`,
+`justification`, `forcer`, `confirmation` ; permission `clientele.classif.execute`) :
+
+- **A — `MOTEUR`** « Conserver le classement du moteur SCORE » : décision de
+  contrôle seule, commentaire facultatif. La classification enregistrée n’est
+  pas modifiée (`effet = AUCUNE_MODIFICATION`).
+- **B — `FICHIER`** « Retenir le niveau du fichier » : justification
+  **obligatoire** ; circuit habituel `decider_manuel` (décision `MANUEL`,
+  niveau SCORE calculé conservé dans `niveau_propose`, ligne d’historique).
+  Si le moteur SCORE classe INTERDIT : forçage (`clientele.classif.force`,
+  confirmation, audit `clientele.classif.forcage`).
+- Re-contrôle au moment de la décision contre la classification **actuelle** :
+  plus d’écart → `409 PAS_D_ECART`. Une seule décision par ligne
+  (`409 DEJA_DECIDE`). Lot fermé ou `SITUATION` refusé.
+- Trace : `decision_detail.decision_controle` (choix, niveau retenu, niveaux
+  comparés, justification, effet, forçage, auteur, date) + audit
+  `clientele.lot.controle.moteur|fichier` (avant / après).
+- `decision` de la ligne : `CONSERVE_MOTEUR` / `RETENU_FICHIER`.
+- Pour un lot `LISTE`, « Enregistrer la classe du fichier » en masse est
+  refusé (`409 DECISION_PAR_LIGNE`). Lot `SITUATION` inchangé.
+- Re-mapping refusé dès qu’un écart a été décidé (`409 CONTROLE_DECIDE`) :
+  les décisions ne peuvent pas être effacées par une nouvelle analyse.
+- Filtres de lignes : `CONTROLE_A_DECIDER`, `CONTROLE_DECIDE`,
+  `CONTROLE_CONFORME`, `CONTROLE_ECART`, `CONTROLE_DONNEE_MANQUANTE`,
+  `CONTROLE_NON_COMPARABLE`. Compteurs `controle_*` dans les stats du lot.
+- Les lots analysés avant cette règle n’ont pas de résultat de contrôle
+  (colonne « — ») : ré-analyser le fichier (re-mapping) pour l’obtenir.
+
+Anomalie relevée, non corrigée : `normaliser_niveau` (import) traduit encore
+`HAUT`/`FORT` → `ELEVE` et `BAS` → `FAIBLE` sans base officielle. Le contrôle
+ne s’appuie pas dessus ; à arbitrer par la Conformité.
+
+Tests : `backend/tests/test_clientele_lot_controle.py` (cas identique,
+libellé officiel écrit autrement, différent, manquant fichier / moteur,
+non comparable ; décisions A / B, justification, forçage INTERDIT, permission,
+moteur jamais relancé).
 
 ### Classement de masse (remplace « Appliquer règles ACTIVE »)
 
@@ -240,6 +299,102 @@ par « Classer avec le moteur SCORE » (`POST /classification/moteur-masse`) :
   (réexamen ouvert si écart) ; chaque évaluation photographiée ; un audit
   `clientele.classif.moteur_masse` par paquet ;
 - relance sans doublon (niveau identique = inchangé, réexamen non dupliqué).
+
+#### Bouton « Classer » — tâche serveur suivie (migration `20261013_clientele_10`)
+
+L’écran n’enchaîne plus les paquets côté navigateur. Le bouton « Classer »
+ouvre le choix de population (**Tous les clients**, **PP uniquement**,
+**PM uniquement**, agence optionnelle), avec les effectifs réels, puis lance
+une tâche serveur (`clientele_classif_taches`) :
+
+- `POST /classification/taches` (`population` = TOUS / PP / PM, motif
+  obligatoire) → 202 ; 409 `TACHE_EN_COURS` si une tâche est déjà active ;
+- `GET /classification/taches/{id}` interrogé toutes les 1,5 s : statut,
+  traités / total, pourcentage, bilan (classés = écrits + inchangés,
+  préservés manuel / fichier, non classés = non admissibles, erreurs) ;
+- `GET /classification/taches/courante` : au rechargement de la page, la
+  progression est retrouvée ; `GET /classification/taches/perimetre` :
+  effectifs TOUS / PP / PM / non identifiés ;
+- paquets de 100 racines, chacun validé (commit) ; une racine en erreur est
+  isolée (savepoint) et comptée « en erreur » sans bloquer les autres ;
+- tâche sans nouvelles depuis 2 min (redémarrage) → INTERROMPU ;
+  `POST /classification/taches/{id}/reprendre` repart après la dernière
+  racine traitée (`curseur`) ;
+- même traitement que `moteur-masse` (`traiter_paquet_moteur`) : aucune
+  règle ni aucun score modifié. Audits `clientele.classif.tache.lancer`,
+  `.reprendre`, `.fin` + `clientele.classif.moteur_masse` par paquet.
+
+Débit mesuré sur copie : ≈ 27 clients / s (PM : 5 142 en 3 min 10 s ;
+base complète ≈ 27 min). « Tous les clients » inclut les profils non
+identifiés (1 958 au 13/10/2026).
+
+#### Verrou serveur du classement de masse (13/10/2026)
+
+Tant que la Conformité n’a pas validé les règles (voir
+`arbitrages-classement-masse-2026-10.md`), **tout classement de masse par le
+moteur SCORE est refusé côté serveur** : 409 `CLASSEMENT_MASSE_SUSPENDU`.
+
+| Chemin | Bloqué |
+|---|---|
+| `POST /classification/taches`, `/taches/{id}/reprendre` (bouton « Classer ») | oui |
+| `POST /classification/moteur-masse` | oui |
+| `traiter_paquet_moteur` (appel indirect, y compris tâche déjà en cours : passe INTERROMPU au paquet suivant) | oui |
+| `appliquer_moteur` sans racine | oui |
+| `POST /lots/{id}/classer` origine `MOTEUR` | oui |
+| `POST /lots/{id}/classer` origine `FICHIER`, décisions ligne à ligne | non (classes Conformité / humaines) |
+| Fiche client : `classification/moteur`, décision manuelle, réexamen | non |
+
+Le classement **individuel** reste autorisé : permission
+`clientele.classif.execute`, motif obligatoire, décision manuelle jamais
+écrasée sans forçage (`clientele.classif.force` + confirmation + motif),
+INTERDIT levé seulement par forçage, historique et audit.
+
+`GET /classification/taches/autorisation` (lecture) renvoie l’état du verrou ;
+le front désactive « Classer » et « Classer avec le moteur » (lot) et affiche
+le motif.
+
+**Réactivation** (après validation écrite de la Conformité) :
+
+1. appliquer les règles validées (nouvelle version des règles si besoin), tests
+   sur copie `*_test` ;
+2. relancer la simulation (`scripts/simulation_classification.py simuler`) sur
+   la base réelle : feuille « Contrôles » entièrement OK, impact conforme à la
+   décision ;
+3. renseigner **les deux** variables du backend (`.env.docker`) :
+   `CLIENTELE_CLASSEMENT_MASSE_ACTIF=1` et
+   `CLIENTELE_CLASSEMENT_MASSE_VALIDATION=<référence du PV>` — l’une sans
+   l’autre laisse le verrou fermé ;
+4. `docker compose up -d backend worker` ; vérifier
+   `/classification/taches/autorisation` (`actif: true`) ;
+5. lancer d’abord une population réduite (PM ou une agence) ; la référence
+   du PV est inscrite dans chaque audit (`validation`).
+
+Pour refermer : remettre `CLIENTELE_CLASSEMENT_MASSE_ACTIF=0` et redémarrer ;
+une tâche en cours s’interrompt au paquet suivant (reprise possible après
+réouverture).
+
+#### Simulation et rapports (lecture seule)
+
+`scripts/simulation_classification.py` (`simuler`, `rapport-tache <id>`)
+utilise `app/db/lecture_seule.py`, trois verrous indépendants : connexion
+PostgreSQL `default_transaction_read_only=on` ; seules les requêtes
+SELECT / WITH / SHOW partent (un `SET … read_only = off` est refusé) ;
+flush et commit SQLAlchemy refusés (`EcritureInterdite`), y compris par un
+service appelé indirectement (`evaluer_racine(persister=True)`,
+`ecrire_resultat_moteur`, audit).
+
+Chaque classeur : « Lisez-moi » (avertissement CONFIDENTIEL, paramètres,
+base sans identifiants, versions moteur / règles, empreinte SHA-256 du
+script), feuilles de résultats, feuille « Contrôles » (totaux / matrices /
+populations / agences / causes / détails) ; un écart → sortie code 2.
+`journal.jsonl` trace chaque exécution sans donnée client (paramètres,
+empreinte du classeur, contrôles, résumé, purges).
+
+Protection : `backend/storage/rapports/` hors Git (`.gitignore`), hors image
+Docker (`.dockerignore`), non servi par nginx ni par l’API ; ACL Windows
+limitée à l’utilisateur, SYSTEM et Administrateurs (POSIX : 700 / 600).
+Conservation 90 jours (`--conservation-jours`), purge à chaque exécution.
+Transmission à la Conformité par canal interne protégé uniquement.
 
 ### Permissions
 
@@ -265,6 +420,14 @@ CORE ADMIN). Capacités front : `classif_forcer`, `classif_arbitrer`.
   (sinon ignoré), transaction annulée ; contrôles du lot, cohérence
   individuel / lot, divergences, manuel préservé, ré-import, forçage
   (403 / 422 / OK + audit), INTERDIT, saisie de date.
+- `tests/test_clientele_verrou_masse.py` : verrou fermé par défaut, ACTIF
+  sans référence = fermé, chaque chemin de masse refusé avant tout accès base,
+  lots FICHIER non concernés. Les tests de masse ouvrent le verrou par la
+  fixture `masse_autorisee`.
+- `tests/test_lecture_seule_db.py` (`*_test`) : SQL brut, `SET` de
+  contournement, accès asyncpg direct, rollback, flush / commit, appels
+  indirects du moteur — compteurs de la base inchangés.
+- `tests/test_simulation_scenarios.py` : scénarios S0–S4 et niveau retenu.
 
 ### Décisions du 13/10/2026 (moteur `1.3.0-cdc`)
 

@@ -15,6 +15,8 @@ from app.api.deps import auth_http_error, get_current_user
 from app.db.session import get_db
 from app.models import Agence, User
 from app.schemas.clientele import (
+    AlerteAttribuerIn,
+    AlerteCommentaireIn,
     AlerteDecisionIn,
     ClassifBacktestIn,
     ClassifEvaluerIn,
@@ -24,6 +26,7 @@ from app.schemas.clientele import (
     ClassifMasseIn,
     ClassifMoteurScoringIn,
     ClassifRegleIn,
+    ClassifTacheIn,
     ClassifVersionIn,
     DivergenceArbitrerIn,
     FiltrageEntreeIn,
@@ -35,6 +38,7 @@ from app.schemas.clientele import (
     LotClasserIn,
     LotDateOuvertureIn,
     LotMajIn,
+    LotControleDecisionIn,
     LotDivergencesIn,
     LotMappingIn,
     RapprochementIn,
@@ -42,7 +46,10 @@ from app.schemas.clientele import (
 )
 from app.data.clientele_import_hebdo import construire_modele
 from app.services.clientele.lots import ClienteleLotService
-from app.services.clientele.classification import ClienteleClassificationService
+from app.services.clientele.classification import (
+    ClienteleClassificationService,
+    autorisation_classement_masse,
+)
 from app.services.clientele.declaration import ClienteleDeclarationService
 from app.services.clientele.filtrage import ClienteleFiltrageService
 from app.services.clientele.import_service import ClienteleImportService
@@ -50,6 +57,8 @@ from app.services.clientele.indicateurs import ClienteleIndicateursService
 from app.services.clientele.rapprochement import ClienteleRapprochementService
 from app.services.clientele.service import Ctx
 from app.services.clientele.situation import ClienteleSituationService, SOURCES_COLONNES
+from app.services.clientele.taches import ClienteleTacheService
+from app.services.clientele.vue360 import ClienteleVue360Service, filtres_depuis
 from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
 
 router = APIRouter(prefix="/clientele", tags=["Référentiel clients"])
@@ -103,6 +112,7 @@ async def config(c: Ctx = Depends(ctx("clientele.view")),
         "capacites": {k: c.peut(*v) for k, v in CAPACITES.items()},
         "sources": SOURCES_COLONNES,
         "agences": [{"code": code, "libelle": libelle} for code, libelle in agences],
+        "classement_masse": autorisation_classement_masse(),
     }
 
 
@@ -246,6 +256,13 @@ async def lot_divergences(lid: uuid.UUID, body: LotDivergencesIn,
                           c: Ctx = Depends(ctx("clientele.classif.execute")),
                           db: AsyncSession = Depends(get_db)) -> dict:
     return await ClienteleLotService(db, c).decider_divergences(lid, body.model_dump())
+
+
+@router.post("/lots/{lid}/controle/decision")
+async def lot_controle_decision(lid: uuid.UUID, body: LotControleDecisionIn,
+                                c: Ctx = Depends(ctx("clientele.classif.execute")),
+                                db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleLotService(db, c).decider_controle(lid, body.model_dump())
 
 
 @router.get("/lots/{lid}")
@@ -519,6 +536,42 @@ async def classif_moteur_masse(body: ClassifMasseIn, c: Ctx = Depends(ctx("clien
     return await ClienteleClassificationService(db, c).classer_masse_moteur(body.model_dump())
 
 
+@router.get("/classification/taches/perimetre")
+async def classif_taches_perimetre(c: Ctx = Depends(ctx("clientele.classif.view")),
+                                   db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleTacheService(db, c).perimetre()
+
+
+@router.get("/classification/taches/autorisation")
+async def classif_taches_autorisation(c: Ctx = Depends(ctx("clientele.classif.view")),
+                                      db: AsyncSession = Depends(get_db)) -> dict:
+    return ClienteleTacheService(db, c).autorisation()
+
+
+@router.get("/classification/taches/courante")
+async def classif_tache_courante(c: Ctx = Depends(ctx("clientele.classif.view")),
+                                 db: AsyncSession = Depends(get_db)) -> dict | None:
+    return await ClienteleTacheService(db, c).courante()
+
+
+@router.post("/classification/taches", status_code=status.HTTP_202_ACCEPTED)
+async def classif_tache_lancer(body: ClassifTacheIn, c: Ctx = Depends(ctx("clientele.classif.execute")),
+                               db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleTacheService(db, c).lancer(body.model_dump())
+
+
+@router.get("/classification/taches/{tache_id}")
+async def classif_tache_detail(tache_id: uuid.UUID, c: Ctx = Depends(ctx("clientele.classif.view")),
+                               db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleTacheService(db, c).detail(tache_id)
+
+
+@router.post("/classification/taches/{tache_id}/reprendre", status_code=status.HTTP_202_ACCEPTED)
+async def classif_tache_reprendre(tache_id: uuid.UUID, c: Ctx = Depends(ctx("clientele.classif.execute")),
+                                  db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleTacheService(db, c).reprendre(tache_id)
+
+
 @router.get("/clients/{racine}/classification/historique")
 async def classif_client_historique(racine: str, c: Ctx = Depends(ctx("clientele.classif.view")),
                                     db: AsyncSession = Depends(get_db)) -> list[dict]:
@@ -560,10 +613,10 @@ async def filtrage_listes(c: Ctx = Depends(ctx("clientele.filtrage.view")),
 
 
 @router.get("/filtrage/listes/{lid}/entrees")
-async def filtrage_entrees(lid: uuid.UUID, page: int = 1, taille: int = 50,
+async def filtrage_entrees(lid: uuid.UUID, page: int = 1, taille: int = 50, q: str | None = None,
                            c: Ctx = Depends(ctx("clientele.filtrage.view")),
                            db: AsyncSession = Depends(get_db)) -> dict:
-    return await ClienteleFiltrageService(db, c).entrees(lid, page=page, taille=taille)
+    return await ClienteleFiltrageService(db, c).entrees(lid, page=page, taille=taille, recherche=q)
 
 
 @router.post("/filtrage/listes/{lid}/entrees", status_code=201)
@@ -582,11 +635,90 @@ async def filtrage_scan(c: Ctx = Depends(ctx("clientele.filtrage.execute")),
 @router.get("/filtrage/alertes")
 async def filtrage_alertes(
     statut: str | None = None, racine: str | None = None, motif: str | None = None,
+    groupe: str | None = None, source: str | None = None, profil: str | None = None,
+    agence: str | None = None, assignee: str | None = None, du: date | None = None, au: date | None = None,
+    anciennete_min: int | None = Query(None, ge=0, le=3650), q: str | None = None, tri: str | None = None,
+    niveau: str | None = None, profilage: str | None = None, filtrage: str | None = None,
+    anomalie: str | None = None, coherence: str | None = None, completude: str | None = None,
     page: int = 1, taille: int = 50,
     c: Ctx = Depends(ctx("clientele.filtrage.view")), db: AsyncSession = Depends(get_db),
 ) -> dict:
+    population = ClienteleVue360Service(db, c).population(filtres_depuis(
+        niveau=niveau, profilage=profilage, filtrage=filtrage, anomalie=anomalie, coherence=coherence,
+        completude=completude))
     return await ClienteleFiltrageService(db, c).lister(
-        statut=statut, racine=racine, motif=motif, page=page, taille=taille)
+        statut=statut, racine=racine, motif=motif, groupe=groupe, source=source, profil=profil, agence=agence,
+        assignee=assignee, du=du, au=au, anciennete_min=anciennete_min, q=q, tri=tri, page=page, taille=taille,
+        population=population)
+
+
+@router.get("/filtrage/agents")
+async def filtrage_agents(c: Ctx = Depends(ctx("clientele.filtrage.view")),
+                          db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await ClienteleFiltrageService(db, c).agents()
+
+
+@router.post("/filtrage/alertes/{aid}/attribuer")
+async def filtrage_attribuer(aid: uuid.UUID, body: AlerteAttribuerIn,
+                             c: Ctx = Depends(ctx("clientele.filtrage.decide")),
+                             db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleFiltrageService(db, c).attribuer(aid, body.model_dump())
+
+
+@router.post("/filtrage/alertes/{aid}/commentaires")
+async def filtrage_commenter(aid: uuid.UUID, body: AlerteCommentaireIn,
+                             c: Ctx = Depends(ctx("clientele.filtrage.decide")),
+                             db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleFiltrageService(db, c).commenter(aid, body.model_dump())
+
+
+async def filtres_360(
+    periode: str | None = None, du: date | None = None, au: date | None = None, profil: str | None = None,
+    agence: str | None = None, niveau: str | None = None, profilage: str | None = None,
+    filtrage: str | None = None, anomalie: str | None = None, coherence: str | None = None,
+    completude: str | None = None, q: str | None = Query(None, max_length=80), classe_periode: bool = False,
+) -> dict:
+    return filtres_depuis(periode=periode, du=du, au=au, profil=profil, agence=agence, niveau=niveau,
+                          profilage=profilage, filtrage=filtrage, anomalie=anomalie, coherence=coherence,
+                          completude=completude, q=q, classe_periode=classe_periode or None)
+
+
+@router.get("/vue360/synthese")
+async def vue360_synthese(f: dict = Depends(filtres_360), c: Ctx = Depends(ctx("clientele.filtrage.view")),
+                          db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleVue360Service(db, c).synthese(f)
+
+
+@router.get("/vue360/clients")
+async def vue360_clients(f: dict = Depends(filtres_360), page: int = 1, taille: int = 50, tri: str | None = None,
+                         c: Ctx = Depends(ctx("clientele.filtrage.view")),
+                         db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleVue360Service(db, c).clients(f, page=page, taille=taille, tri=tri)
+
+
+@router.get("/vue360/clients/{racine}")
+async def vue360_fiche(racine: str, c: Ctx = Depends(ctx("clientele.filtrage.view")),
+                       db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleVue360Service(db, c).fiche(racine)
+
+
+@router.get("/vue360/journal")
+async def vue360_journal(action: str | None = None, objet_id: str | None = None, du: date | None = None,
+                         au: date | None = None, page: int = 1, taille: int = 50,
+                         c: Ctx = Depends(ctx("clientele.filtrage.view")),
+                         db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleVue360Service(db, c).journal(
+        action=action, objet_id=objet_id, du=du, au=au, page=page, taille=taille)
+
+
+@router.get("/vue360/export.xlsx")
+async def vue360_export(f: dict = Depends(filtres_360), c: Ctx = Depends(ctx("clientele.export")),
+                        db: AsyncSession = Depends(get_db)) -> Response:
+    contenu, _n = await ClienteleVue360Service(db, c).export_xlsx(f)
+    nom = f"vue360_clientele_{date.today().isoformat()}.xlsx"
+    return Response(content=contenu,
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename=\"{nom}\"", "Cache-Control": "no-store"})
 
 
 @router.get("/filtrage/alertes/{aid}")

@@ -77,6 +77,14 @@ async def _nettoyer(session) -> None:
         f"DELETE FROM clientele_classif_historique WHERE racine_client IN {_IN}"))
     await session.execute(text(
         f"DELETE FROM clientele_classifications WHERE racine_client IN {_IN}"))
+    await session.execute(text(
+        f"DELETE FROM clientele_classif_reexamens WHERE racine_client IN {_IN}"))
+    await session.execute(text(f"""
+        DELETE FROM clientele_classif_evaluation_lignes WHERE evaluation_id IN (
+            SELECT id FROM clientele_classif_evaluations WHERE racine_client IN {_IN})
+    """))
+    await session.execute(text(
+        f"DELETE FROM clientele_classif_evaluations WHERE racine_client IN {_IN}"))
     await session.execute(text("DELETE FROM clientele_classif_regles WHERE motif LIKE 'TEST %'"))
     await session.execute(text("DELETE FROM clientele_rapprochement_ecarts"))
     await session.execute(text("DELETE FROM clientele_rapprochements"))
@@ -161,7 +169,7 @@ async def test_rapprochement_septembre_octobre(db):
 
 
 @pytest.mark.asyncio
-async def test_classification_moteur_configurable_et_manuel(db):
+async def test_classification_moteur_configurable_et_manuel(db, masse_autorisee):
     ctx = await _ctx(db)
     await _importer(db, ctx, "c.xlsx", EXTRACTION_B, brute("000001", "00000100001",
                                                            **{"R/N - Statut résident": "N"}))

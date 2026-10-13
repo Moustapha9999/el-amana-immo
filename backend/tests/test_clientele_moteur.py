@@ -62,6 +62,9 @@ async def _nettoyer(session) -> None:
             SELECT id FROM clientele_alertes WHERE racine_client IN {_IN})
     """))
     await session.execute(text(f"DELETE FROM clientele_alertes WHERE racine_client IN {_IN}"))
+    for table in ("clientele_classif_reexamens", "clientele_classif_evaluations"):
+        if await session.scalar(text(f"SELECT to_regclass('public.{table}') IS NOT NULL")):
+            await session.execute(text(f"DELETE FROM {table} WHERE racine_client IN {_IN}"))
     await session.execute(text(
         f"DELETE FROM clientele_classif_historique WHERE racine_client IN {_IN}"))
     await session.execute(text(
@@ -178,6 +181,7 @@ async def test_a_configurer_sans_valeur_numerique(db):
     svc = ClienteleIndicateursService(db, ctx)
     t = await svc.tableau(periode="personnalisee", date_debut=DEBUT, date_fin=FIN)
     for code in ("cli.actifs", "cli.inactifs", "cli.construction_juridique",
+                 "bcm.t2.extraites", "bcm.t2.analysees", "bcm.t2.suivi",
                  "bcm.t2.enregistrees", "bcm.t2.umef_mois", "bcm.t3.suspectes_personnel"):
         i = _par(t, code)
         assert i["statut"] == "A_CONFIGURER"
@@ -209,5 +213,5 @@ async def test_alertes_intervalle(db):
     t = await svc.tableau(periode="personnalisee", date_debut=DEBUT, date_fin=FIN)
     assert _par(t, "alerte.stock")["valeur"] == 2
     assert _par(t, "alerte.faux_positifs")["valeur"] == 1
-    assert _par(t, "bcm.t2.suivi")["valeur"] == 1
-    assert _par(t, "bcm.t2.extraites")["statut"] == "PRET_SOUS_RESERVE"
+    assert _par(t, "bcm.t2.suivi")["valeur"] is None
+    assert _par(t, "bcm.t2.extraites")["statut"] == "A_CONFIGURER"

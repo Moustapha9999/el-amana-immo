@@ -28,7 +28,7 @@ from app.models import (
     ClienteleClient,
     User,
 )
-from app.services.clientele.classification import ClienteleClassificationService
+from app.services.clientele.classification import ClienteleClassificationService, autorisation_classement_masse
 from app.services.clientele.lots import ClienteleLotService
 from app.services.clientele.service import Ctx
 
@@ -110,9 +110,11 @@ async def _manuel_990004(db, ctx) -> None:
     await ClienteleClassificationService(db, ctx).decider_manuel("990004", "MOYEN", "Revue Conformité")
 
 
-async def _lot_evalue(db, ctx, contenu: bytes | None = None) -> tuple[ClienteleLotService, dict]:
+async def _lot_evalue(db, ctx, contenu: bytes | None = None,
+                      type_lot: str = "LISTE") -> tuple[ClienteleLotService, dict]:
     svc = ClienteleLotService(db, ctx)
-    lot = await svc.analyser(contenu or _fichier(), "hebdo.xlsx", periode_reference=date(2026, 10, 8))
+    lot = await svc.analyser(contenu or _fichier(), "hebdo.xlsx", type_lot=type_lot,
+                             periode_reference=date(2026, 10, 8))
     lot = await svc.evaluer(UUID(lot["id"]))
     return svc, lot
 
@@ -161,7 +163,11 @@ async def test_fichier_divergence_manuel_dates_analyste(db):
     ctx = await _ctx(db, PERMS_GESTION)
     await _manuel_990004(db, ctx)
     contenu = _fichier()
-    svc, lot = await _lot_evalue(db, ctx, contenu)
+    svc_liste, liste = await _lot_evalue(db, ctx, contenu)
+    with pytest.raises(AppError) as refus:
+        await svc_liste.classer(UUID(liste["id"]), {"origine": "FICHIER", "motif": "Revue hebdo"})
+    assert refus.value.code == "DECISION_PAR_LIGNE"
+    svc, lot = await _lot_evalue(db, ctx, contenu, "SITUATION")
     lignes = _par_racine(lot)
     assert lignes["990003"]["divergence"] is True
     assert lignes["990006"]["decision_detail"]["comparaison"] == "NON_COMPARABLE"
@@ -186,8 +192,8 @@ async def test_fichier_divergence_manuel_dates_analyste(db):
         ClienteleClassifHistorique.racine_client == "990001"))).all()
     assert len(h1) == 1 and h1[0].analyste_kyc == "A. SALL" and h1[0].mode_decision == "FICHIER"
 
-    svc2, lot2 = await _lot_evalue(db, ctx, contenu)
-    assert lot2["doublon_de"] == lot["id"]
+    svc2, lot2 = await _lot_evalue(db, ctx, contenu, "SITUATION")
+    assert lot2["doublon_de"] in (liste["id"], lot["id"])
     res2 = await svc2.classer(UUID(lot2["id"]), {"origine": "FICHIER", "motif": "Ré-import"})
     assert {x["racine"]: x["decision"] for x in res2["lignes"] if x["statut"] == "OK"}["990001"] == "INCHANGE"
     assert await db.scalar(select(func.count()).select_from(ClienteleClassifHistorique)
@@ -203,7 +209,7 @@ async def test_fichier_divergence_manuel_dates_analyste(db):
     assert c3.motif_decision_manuelle == "Non-résident confirmé" and c3.niveau_propose == "ELEVE"
 
 
-async def test_moteur_non_admissible_et_manuel_preserve(db):
+async def test_moteur_non_admissible_et_manuel_preserve(db, masse_autorisee):
     ctx = await _ctx(db, PERMS_GESTION)
     await _manuel_990004(db, ctx)
     svc, lot = await _lot_evalue(db, ctx)
@@ -220,7 +226,7 @@ async def test_moteur_non_admissible_et_manuel_preserve(db):
 async def test_forcage_permission_confirmation_audit(db):
     gest = await _ctx(db, PERMS_GESTION)
     await _manuel_990004(db, gest)
-    svc, lot = await _lot_evalue(db, gest)
+    svc, lot = await _lot_evalue(db, gest, type_lot="SITUATION")
     lid = UUID(lot["id"])
     with pytest.raises(HTTPException) as e:
         await svc.classer(lid, {"origine": "FICHIER", "motif": "Forçage", "forcer": True, "confirmation": True})
@@ -257,6 +263,7 @@ async def test_blocage_interdit_non_contournable(db):
 
 
 async def test_fiche_classer_par_moteur(db):
+    assert autorisation_classement_masse()["actif"] is False
     ctx = await _ctx(db, PERMS_GESTION)
     classif = ClienteleClassificationService(db, ctx)
     r6 = await classif.classer_par_moteur("990006", {"motif": "Évaluation fiche"})
@@ -272,7 +279,7 @@ async def test_fiche_classer_par_moteur(db):
         await classif.classer_par_moteur("990002", {"motif": ""})
 
 
-async def test_classement_masse_moteur(db):
+async def test_classement_masse_moteur(db, masse_autorisee):
     ctx = await _ctx(db, PERMS_GESTION)
     classif = ClienteleClassificationService(db, ctx)
     await _manuel_990004(db, ctx)

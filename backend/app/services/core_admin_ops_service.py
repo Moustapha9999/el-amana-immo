@@ -780,6 +780,11 @@ class CoreAdminOpsService:
             "access_token_expire_minutes": settings.access_token_expire_minutes,
             "refresh_token_expire_days": settings.refresh_token_expire_days,
             "module_refresh_token_expire_minutes": settings.module_refresh_token_expire_minutes,
+            "clientele_classement_masse_actif": bool(
+                settings.clientele_classement_masse_actif
+                and (settings.clientele_classement_masse_validation or "").strip()),
+            "clientele_classement_masse_reference": (
+                (settings.clientele_classement_masse_validation or "").strip() or None),
         }
 
     async def security_settings(self) -> dict:

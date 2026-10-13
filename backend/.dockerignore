@@ -11,6 +11,7 @@ tests
 storage/uploads
 storage/ged
 storage/*.sql
+storage/rapports
 **/*.pyc
 .git
 .gitignore

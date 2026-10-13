@@ -44,6 +44,7 @@ def _cellule(
     reserve: str | None = None,
     ratio: float | None = None,
     fiche: dict | None = None,
+    fiabilite: str | None = None,
 ) -> dict[str, Any]:
     a_config = statut == "A_CONFIGURER"
     return {
@@ -55,6 +56,7 @@ def _cellule(
         "cutoff": cutoff,
         "reserve": reserve,
         "fiche": fiche,
+        "fiabilite": fiabilite,
     }
 
 
@@ -179,6 +181,7 @@ class ClienteleDeclarationService:
                 "controles": len(controles),
                 "controles_ok": sum(1 for c in controles if c.get("ok")),
                 "controles_bloquants": sum(1 for c in controles if not c.get("ok") and c.get("bloquant")),
+                "etats": sorted({c.get("etat") for c in controles if c.get("etat")}),
             },
         }
 
@@ -230,6 +233,13 @@ class ClienteleDeclarationService:
             raise AppError(
                 "Une déclaration BCM officielle ne se valide que pour un mois calendaire clos.",
                 422, code="MOIS_NON_CLOS")
+        bloquants = [c for c in (d.controles or []) if not c.get("ok") and c.get("bloquant")]
+        if bloquants:
+            codes = ", ".join(c["code"] for c in bloquants)
+            raise AppError(
+                "Validation refusée : historique ou règle indispensable manquant "
+                f"({codes}). La déclaration ne peut pas être présentée comme historique fiable.",
+                409, code="CONTROLES_BLOQUANTS")
         d.statut = "VALIDEE"
         d.commentaire = (commentaire or "").strip() or d.commentaire
         d.validee_le = maintenant()
@@ -430,16 +440,21 @@ class ClienteleDeclarationService:
                 "colonnes": list(tab["colonnes"]),
                 "lignes": lignes_out,
             })
+        cov = c.get("couverture") or {}
+        self._estampiller(tableaux_out, cov)
         controles = self._controles(tableaux_out, c)
         cellules = {
             "moteur_version": MOTEUR_VERSION,
             "grille_version": BCM_GRILLE_VERSION,
             "fenetre": fenetre.as_dict(),
             "fin_mois_precedent": d.fin_mois_precedent.isoformat(),
+            "couverture": cov,
             "mappings": {
-                "eer.maj_periode": "EER date_eer dans le mois, statut VALIDE/CLOTURE, racine 6 chiffres.",
-                "bcm.t2": "Alertes YTD / mapping provisoire des statuts.",
+                "eer.maj_periode": "EER date_eer dans le mois, statut VALIDE/CLOTURE, racine 6 chiffres. "
+                "Ne pas substituer les ouvertures de compte.",
+                "bcm.t2": "Source absente : clientele_alertes = listes ORION, pas les opérations inhabituelles.",
                 "interdit": "INTERDIT n'entre dans aucune colonne BCM.",
+                "stock": "premiere_extraction ≤ cutoff. Pas une photographie ORION de clôture.",
             },
             "tableaux": tableaux_out,
         }
@@ -571,10 +586,45 @@ class ClienteleDeclarationService:
                        "formule": "catégorie / total × 100, arrondi à 2 décimales"}),
         }
 
+    @staticmethod
+    def _estampiller(tableaux_out: list, cov: dict) -> None:
+        for tab in tableaux_out:
+            for ligne in tab["lignes"]:
+                for cell in ligne["cellules"].values():
+                    cell["fiabilite"] = ClienteleDeclarationService._etat_cellule(
+                        tab["code"], ligne["code"], cell, cov)
+
+    @staticmethod
+    def _etat_cellule(tab_code: str, ligne_code: str, cell: dict, cov: dict) -> str:
+        if cell.get("statut") == "A_CONFIGURER":
+            return "SOURCE_ABSENTE" if tab_code in ("T2", "T3") else "ARBITRAGE_REQUIS"
+        if tab_code in ("T1A", "T1B") and ligne_code == "stock_m1":
+            if not cov.get("stock_m1_reconstructible"):
+                return "HISTORIQUE_INDISPONIBLE"
+            if tab_code == "T1B" and not cov.get("classif_m1_reconstructible"):
+                return "HISTORIQUE_INDISPONIBLE"
+            return "AVEC_RESERVE"
+        if ligne_code == "maj_mois":
+            if tab_code == "T1B" and not cov.get("classif_fin_reconstructible"):
+                return "HISTORIQUE_INDISPONIBLE"
+            return "ARBITRAGE_REQUIS"
+        if tab_code == "T4":
+            if not cov.get("stock_fin_reconstructible"):
+                return "HISTORIQUE_INDISPONIBLE"
+            if ligne_code != "total" and not cov.get("classif_fin_reconstructible"):
+                return "HISTORIQUE_INDISPONIBLE"
+            return "AVEC_RESERVE"
+        return "AVEC_RESERVE"
+
     def _controles(self, tableaux_out: list, c: dict) -> list[dict]:
         t1a = next(t for t in tableaux_out if t["code"] == "T1A")
         t1b = next(t for t in tableaux_out if t["code"] == "T1B")
         t4 = next(t for t in tableaux_out if t["code"] == "T4")
+        cov = c.get("couverture") or {}
+        stock_m1_ok = bool(cov.get("stock_m1_reconstructible"))
+        stock_fin_ok = bool(cov.get("stock_fin_reconstructible"))
+        classif_m1_ok = bool(cov.get("classif_m1_reconstructible"))
+        classif_fin_ok = bool(cov.get("classif_fin_reconstructible"))
 
         def val(tab, ligne, col) -> int | None:
             cell = next(lig for lig in tab["lignes"] if lig["code"] == ligne)["cellules"][col]
@@ -593,58 +643,169 @@ class ClienteleDeclarationService:
         interdit = _int(c["classif_fin"], "INTERDIT")
         non_classes = (t4_t or 0) - somme
         identite_obs = None if stock_m1 is None or t4_t is None else t4_t - stock_m1
+        pe_min = cov.get("premiere_extraction_min")
+        h_min = cov.get("historique_classif_min")
 
         def ctrl(*, code: str, libelle: str, ok: bool, bloquant: bool,
-                 attendu, observe, message: str) -> dict:
+                 attendu, observe, message: str, etat: str) -> dict:
+            if ok:
+                niveau = "CONFORME"
+            elif bloquant:
+                niveau = "ERREUR"
+            else:
+                niveau = "ATTENTION"
             return {
                 "code": code, "libelle": libelle, "ok": ok, "bloquant": bloquant,
                 "attendu": attendu, "observe": observe, "message": message,
-                "niveau": "CONFORME" if ok else ("ERREUR" if bloquant else "ATTENTION"),
+                "niveau": niveau, "etat": etat,
             }
+
+        arith_t4 = somme == (t4_t or 0)
+        t4_somme_couvert = stock_fin_ok and classif_fin_ok
+        t1b_eq = val(t1b, "stock_m1", "total") == stock_m1
+        t1b_couvert = stock_m1_ok
+        non_classes_expliques = non_classes == interdit
 
         return [
             ctrl(
+                code="stock.historique_m1",
+                libelle="Photographie clientèle à la fin du mois précédent",
+                ok=stock_m1_ok,
+                bloquant=not stock_m1_ok,
+                attendu=pe_min,
+                observe=stock_m1,
+                etat="AVEC_RESERVE" if stock_m1_ok else "HISTORIQUE_INDISPONIBLE",
+                message=(
+                    f"premiere_extraction min = {pe_min} : le stock à cette date est un proxy d'import, "
+                    "pas une extraction ORION de clôture."
+                    if stock_m1_ok else
+                    f"Aucune extraction ne couvre la clôture du mois précédent "
+                    f"(premiere_extraction min = {pe_min}). Zéro n'est pas un effectif historique."
+                ),
+            ),
+            ctrl(
+                code="stock.historique_fin",
+                libelle="Photographie clientèle à la clôture du mois",
+                ok=stock_fin_ok,
+                bloquant=not stock_fin_ok,
+                attendu=pe_min,
+                observe=t4_t,
+                etat="AVEC_RESERVE" if stock_fin_ok else "HISTORIQUE_INDISPONIBLE",
+                message=(
+                    f"premiere_extraction min = {pe_min}."
+                    if stock_fin_ok else
+                    f"Stock de clôture non reconstructible (premiere_extraction min = {pe_min})."
+                ),
+            ),
+            ctrl(
+                code="classif.historique_m1",
+                libelle="Historique SCORE à la fin du mois précédent",
+                ok=classif_m1_ok,
+                bloquant=not classif_m1_ok,
+                attendu=h_min,
+                observe=val(t1b, "stock_m1", "eleve"),
+                etat="AVEC_RESERVE" if classif_m1_ok else "HISTORIQUE_INDISPONIBLE",
+                message=(
+                    f"Premier événement d'historique = {h_min}."
+                    if classif_m1_ok else
+                    f"Pas d'historique SCORE à cette date (premier événement = {h_min}). "
+                    "Le SCORE d'une date ultérieure n'est pas utilisable."
+                ),
+            ),
+            ctrl(
+                code="classif.historique_fin",
+                libelle="Historique SCORE à la clôture du mois",
+                ok=classif_fin_ok,
+                bloquant=not classif_fin_ok,
+                attendu=h_min,
+                observe=t4_e,
+                etat="AVEC_RESERVE" if classif_fin_ok else "HISTORIQUE_INDISPONIBLE",
+                message=(
+                    f"Premier événement d'historique = {h_min}."
+                    if classif_fin_ok else
+                    f"Photographie de classification impossible (premier événement = {h_min})."
+                ),
+            ),
+            ctrl(
                 code="t4.somme",
                 libelle="T4 ÉLEVÉ + MOYEN + FAIBLE = T4 total",
-                ok=somme == (t4_t or 0),
-                bloquant=False,
+                ok=t4_somme_couvert and arith_t4,
+                bloquant=not t4_somme_couvert,
                 attendu=t4_t,
                 observe=somme,
+                etat=(
+                    "HISTORIQUE_INDISPONIBLE" if not t4_somme_couvert
+                    else ("AVEC_RESERVE" if arith_t4 else "ECART_INEXPLIQUE")
+                ),
                 message=(
-                    "Écart = non classés et/ou INTERDIT "
-                    f"(INTERDIT={interdit}, hors colonnes BCM)."
-                    if somme != (t4_t or 0) else "Cohérent."
+                    "Deux zéros ne concordent pas : le stock ou l'historique SCORE ne couvre pas la clôture."
+                    if not t4_somme_couvert else
+                    ("Cohérent sur le périmètre calculé." if arith_t4 else
+                     f"Écart = non classés et/ou INTERDIT (INTERDIT={interdit}).")
                 ),
             ),
             ctrl(
                 code="t1b.stock_vs_t1a",
                 libelle="T1B stock_m1 TOTAL = T1A stock_m1 TOTAL",
-                ok=val(t1b, "stock_m1", "total") == stock_m1,
-                bloquant=False,
+                ok=t1b_couvert and t1b_eq,
+                bloquant=not t1b_couvert,
                 attendu=stock_m1,
                 observe=val(t1b, "stock_m1", "total"),
-                message="Même population, autre ventilation.",
+                etat="AVEC_RESERVE" if t1b_couvert else "HISTORIQUE_INDISPONIBLE",
+                message=(
+                    "Même population, autre ventilation."
+                    if t1b_couvert else
+                    "Comparaison sans photographie historique : non concluante."
+                ),
             ),
             ctrl(
                 code="identite_t4_t1",
                 libelle="T4.total − T1.stock_m1 = EER du mois (observé en août 2026, non figé)",
-                ok=identite_obs == maj,
-                bloquant=False,
+                ok=False,
+                bloquant=not (stock_m1_ok and stock_fin_ok),
                 attendu=maj,
                 observe=identite_obs,
+                etat="ARBITRAGE_REQUIS" if (stock_m1_ok and stock_fin_ok) else "HISTORIQUE_INDISPONIBLE",
                 message=(
-                    "Identité documentée sur le fichier août 2026 ; "
-                    "la Conformité ne l'a pas encore validée comme règle."
+                    "Identité lue sur le fichier août 2026 (292 = EER déclarés = ouvertures de premier compte). "
+                    "Ce n'est pas une règle validée. Ne pas l'imposer."
+                    if (stock_m1_ok and stock_fin_ok) else
+                    "Écart T4−T1 non interprétable sans photographies de juillet et août."
                 ),
             ),
             ctrl(
                 code="t4.non_classes",
                 libelle="Clients du stock T4 hors ÉLEVÉ / MOYEN / FAIBLE",
-                ok=non_classes == 0,
+                ok=t4_somme_couvert and non_classes_expliques,
                 bloquant=False,
-                attendu=0,
+                attendu=interdit,
                 observe=non_classes,
-                message="Inclut INTERDIT et les racines sans classification à la date.",
+                etat=(
+                    "HISTORIQUE_INDISPONIBLE" if not t4_somme_couvert
+                    else ("AVEC_RESERVE" if non_classes_expliques else "ECART_INEXPLIQUE")
+                ),
+                message="Inclut INTERDIT (hors colonnes BCM) et les racines sans classification à la date.",
+            ),
+            ctrl(
+                code="t2.source",
+                libelle="Source des opérations inhabituelles (T2)",
+                ok=False,
+                bloquant=False,
+                attendu=None,
+                observe=None,
+                etat="SOURCE_ABSENTE",
+                message="clientele_alertes = correspondances de listes ORION. "
+                "Ce n'est pas le système d'alertes déclarées du fichier BCM. Aucun chiffre T2 n'est produit.",
+            ),
+            ctrl(
+                code="t3.source",
+                libelle="Source des opérations suspectes (T3)",
+                ok=False,
+                bloquant=False,
+                attendu=None,
+                observe=None,
+                etat="SOURCE_ABSENTE",
+                message="Aucun workflow de signalement employé → Conformité ni date d'envoi UMEF n'est identifié.",
             ),
         ]
 
@@ -725,6 +886,7 @@ class ClienteleDeclarationService:
 
     def _detail(self, d: ClienteleDeclarationBcm, *, aujourdhui: date | None = None) -> dict:
         fenetre = self._fenetre(d.annee, d.mois, aujourdhui)
+        bloquants = sum(1 for c in (d.controles or []) if not c.get("ok") and c.get("bloquant"))
         return {
             **self._resume(d),
             "simulation": fenetre.simulation,
@@ -735,7 +897,7 @@ class ClienteleDeclarationService:
             "actions": {
                 "calculer": d.statut in STATUTS_OUVERTS,
                 "controler": d.statut == "CALCULEE",
-                "valider": d.statut == "A_CONTROLER" and fenetre.bcm_officielle,
+                "valider": d.statut == "A_CONTROLER" and fenetre.bcm_officielle and bloquants == 0,
                 "cloturer": d.statut == "VALIDEE",
                 "archiver": d.statut == "CLOTUREE",
                 "exporter": bool(d.cellules),

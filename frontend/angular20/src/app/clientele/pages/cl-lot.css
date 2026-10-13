@@ -1,0 +1,26 @@
+.bea-cl-ctl-titre { margin: 0.2rem 1.1rem 0.5rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
+.bea-cl-ctl-stats button.bea-cl-stat { font: inherit; text-align: left; cursor: pointer; }
+.bea-cl-ctl-stats button.bea-cl-stat:hover { border-color: #93c5fd; }
+
+.bea-cl-ctl-badge { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.6rem 0.2rem 0.4rem; border-radius: 0.45rem; font-size: 0.74rem; font-weight: 700; border: 1px solid transparent; }
+.bea-cl-ctl-badge mat-icon { width: 1rem; height: 1rem; font-size: 1rem; }
+.bea-cl-ctl-badge[data-c='CONFORME'] { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+.bea-cl-ctl-badge[data-c='ECART'] { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+.bea-cl-ctl-badge[data-c='DECIDE'] { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+.bea-cl-ctl-badge[data-c='DONNEE_MANQUANTE'] { background: #f8fafc; border-color: #cbd5e1; border-style: dashed; color: #475569; }
+.bea-cl-ctl-badge[data-c='NON_COMPARABLE'] { background: #fffbeb; border-color: #fcd34d; border-style: dashed; color: #92400e; }
+
+.bea-cl-lot-table.is-liste { min-width: 72rem; table-layout: fixed; }
+.bea-cl-lot-table.is-liste th:nth-child(1) { width: 6.5rem; }
+.bea-cl-lot-table.is-liste th:nth-child(2) { width: 18%; }
+.bea-cl-lot-table.is-liste th:nth-child(3) { width: 7rem; }
+.bea-cl-lot-table.is-liste th:nth-child(4) { width: 7.5rem; }
+.bea-cl-lot-table.is-liste th:nth-child(5) { width: 9rem; }
+.bea-cl-lot-table.is-liste th:nth-child(7) { width: 8.5rem; }
+.bea-cl-lot-table.is-liste .bea-cl-nom { width: auto; max-width: none; }
+.bea-cl-lot-table td.bea-cl-ctl { white-space: normal; vertical-align: top; padding-top: 0.55rem; padding-bottom: 0.55rem; }
+.bea-cl-ctl-l2 { display: block; margin-top: 0.25rem; font-size: 0.8rem; color: #334155; overflow-wrap: anywhere; }
+.bea-cl-ctl-just { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-style: italic; }
+.bea-cl-ctl-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.4rem; }
+.bea-cl-ctl-actions .bea-mg__btn { padding: 0.3rem 0.6rem; font-size: 0.78rem; }
+.bea-cl-brut { font-size: 0.8rem; color: #92400e; overflow: hidden; text-overflow: ellipsis; }

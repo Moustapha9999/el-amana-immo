@@ -9,10 +9,14 @@ import { ClienteleUiComponent } from '../clientele-ui.component';
 import { CL_BASE, dateHeureFr } from '../clientele.models';
 import { ClienteleStore } from '../clientele.store';
 
+const DECISIONS_JUSTIFIEES = ['CONFIRMEE', 'FAUX_POSITIF', 'REJETEE', 'CLOTUREE'];
+
 interface Detail {
   id: string; racine_client: string; statut: string; motif: string; score: number;
   correspondance: Record<string, unknown>; precedent_faux_positif: boolean;
   transitions: string[];
+  source: 'ORION' | 'LISTE';
+  assignee: { id: string; nom: string | null } | null;
   client: { racine_client: string; raison_sociale: string; prenoms: string | null; nni: string | null; nif: string | null } | null;
   evenements: { statut: string; commentaire: string | null; utilisateur: string | null; date: string | null }[];
   justificatifs: { id: string; nom_fichier: string; date: string | null }[];
@@ -27,7 +31,7 @@ interface Detail {
     <div class="bea-mg bea-cl">
       <header class="bea-mg__head bea-cl-head">
         <div>
-          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" routerLink="/clientele/filtrage"><mat-icon>arrow_back</mat-icon> Alertes</button>
+          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" routerLink="/clientele/filtrage" [queryParams]="{ vue: 'alertes' }"><mat-icon>arrow_back</mat-icon> Centre d’alertes</button>
           <h1>Alerte {{ a()?.motif }}</h1>
           <p class="bea-cl-head__sub">Correspondance potentielle — à confirmer, classer faux positif ou rejeter.</p>
         </div>
@@ -45,7 +49,9 @@ interface Detail {
               <dt>Nom</dt><dd>{{ x.client?.raison_sociale || '—' }}</dd>
               <dt>Prénoms</dt><dd>{{ x.client?.prenoms || '—' }}</dd>
               <dt>NNI / NIF</dt><dd>{{ x.client?.nni || x.client?.nif || '—' }}</dd>
-              <dt>Score</dt><dd>{{ x.score }}</dd>
+              <dt>Similarité</dt><dd>{{ x.score }}</dd>
+              <dt>Source</dt><dd>{{ x.source === 'ORION' ? 'Champ ORION « Liste d’interdiction »' : 'Liste interne' }}</dd>
+              <dt>Agent</dt><dd>{{ x.assignee?.nom || 'Non attribuée' }}</dd>
             </dl>
           </section>
           <section class="bea-mg__panel">
@@ -57,12 +63,13 @@ interface Detail {
             </dl>
           </section>
         </div>
-        @if (store.cap().filtrage_decider && x.transitions.length) {
+        @if (store.cap().filtrage_decider) {
           <section class="bea-mg__panel" style="padding:1rem">
-            <label class="bea-cl-filters" style="padding:0">Commentaire
-              <textarea rows="3" [(ngModel)]="commentaire" style="font:inherit;padding:0.5rem;border:1px solid #dbe3ee;border-radius:0.5rem;width:100%"></textarea>
+            <label class="bea-cl-filters" style="padding:0">Commentaire d’analyse
+              <textarea rows="3" [(ngModel)]="commentaire" maxlength="2000" style="font:inherit;padding:0.5rem;border:1px solid #dbe3ee;border-radius:0.5rem;width:100%"></textarea>
             </label>
             <div class="bea-mg__actions" style="margin-top:0.7rem">
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="commenter()" [disabled]="busy() || !commentaire.trim()"><mat-icon>comment</mat-icon> Ajouter le commentaire</button>
               @for (t of x.transitions; track t) {
                 <button type="button" class="bea-mg__btn" (click)="decider(t)" [disabled]="busy()">{{ t.replaceAll('_',' ') }}</button>
               }
@@ -71,6 +78,7 @@ interface Detail {
               <mat-icon>attach_file</mat-icon> Justificatif
               <input type="file" hidden (change)="justif($any($event.target))" />
             </label>
+            <p class="bea-cl-hint" style="margin-top:0.5rem">Confirmer, écarter (faux positif / rejet) ou clôturer exige une justification, conservée dans l’historique et le journal d’audit.</p>
           </section>
         }
         <section class="bea-mg__panel">
@@ -113,12 +121,34 @@ export class ClAlerteComponent implements OnInit {
 
   decider(statut: string): void {
     const a = this.a()!;
-    this.feedback.run(() => this.api.post<Detail>(`${CL_BASE}/filtrage/alertes/${a.id}/decision`, {
-      statut, commentaire: this.commentaire || null,
-    }), {
-      confirm: { action: 'validation', title: statut.replaceAll('_', ' '), message: `Passer l’alerte en ${statut.replaceAll('_', ' ')} ?` },
-      busy: this.busy, success: { title: 'Décision enregistrée' }, errorTitle: 'Décision refusée',
-    }).subscribe((d) => { this.a.set(d); this.commentaire = ''; });
+    const libelle = statut.replaceAll('_', ' ');
+    const poster = (commentaire: string | null) =>
+      this.api.post<Detail>(`${CL_BASE}/filtrage/alertes/${a.id}/decision`, { statut, commentaire });
+    const options = { busy: this.busy, success: { title: 'Décision enregistrée' }, errorTitle: 'Décision refusée' };
+    const fin = (d: Detail) => { this.a.set(d); this.commentaire = ''; };
+    if (DECISIONS_JUSTIFIEES.includes(statut)) {
+      this.feedback.runWithReason((motif) => poster(motif), {
+        ...options,
+        reason: {
+          title: libelle, message: `Passer l’alerte du client ${a.racine_client} en ${libelle} ?`,
+          hint: 'La justification est conservée dans l’historique de l’alerte et le journal d’audit.',
+          reasonLabel: 'Justification', maxLength: 2000,
+        },
+      }).subscribe(fin);
+      return;
+    }
+    this.feedback.run(() => poster(this.commentaire.trim() || null), {
+      ...options,
+      confirm: { action: 'validation', title: libelle, message: `Passer l’alerte en ${libelle} ?` },
+    }).subscribe(fin);
+  }
+
+  commenter(): void {
+    const a = this.a()!;
+    this.feedback.run(() => this.api.post<Detail>(`${CL_BASE}/filtrage/alertes/${a.id}/commentaires`, {
+      commentaire: this.commentaire.trim(),
+    }), { busy: this.busy, success: { title: 'Commentaire ajouté' }, errorTitle: 'Commentaire refusé' })
+      .subscribe((d) => { this.a.set(d); this.commentaire = ''; });
   }
 
   justif(input: HTMLInputElement): void {

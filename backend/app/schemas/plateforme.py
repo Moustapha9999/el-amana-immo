@@ -915,6 +915,8 @@ class CoreAdminGeneralSettings(BaseModel):
     access_token_expire_minutes: int
     refresh_token_expire_days: int
     module_refresh_token_expire_minutes: int
+    clientele_classement_masse_actif: bool = False
+    clientele_classement_masse_reference: str | None = None
 
 
 class CoreAdminSecuritySettings(BaseModel):

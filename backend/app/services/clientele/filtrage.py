@@ -12,7 +12,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import func, select
+from datetime import UTC as _UTC, date, datetime, time, timedelta
+
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -26,8 +28,11 @@ from app.models import (
     ClienteleFiltrageEmpreinte,
     ClienteleFiltrageEntree,
     ClienteleFiltrageListe,
+    ClienteleSituation,
+    Permission,
     User,
 )
+from app.models.associations import role_permissions_table, user_roles_table
 from app.services.clientele.service import Ctx, ClienteleService, maintenant
 
 STATUTS = (
@@ -43,6 +48,17 @@ TRANSITIONS = {
     "CLOTUREE": ("A_ANALYSER",),
 }
 INTERDICTION_VIDE = frozenset({"", "-", "NON", "N", "AUCUN", "NEANT", "NÉANT", "NULL"})
+# Regroupements d'affichage des statuts existants ; aucun statut supplémentaire n'est créé.
+GROUPES = {
+    "OUVERTES": ("NOUVELLE", "A_ANALYSER", "EN_INVESTIGATION"),
+    "A_EXAMINER": ("NOUVELLE", "A_ANALYSER"),
+    "EN_ANALYSE": ("EN_INVESTIGATION",),
+    "CONFIRMEE": ("CONFIRMEE",),
+    "ECARTEE": ("FAUX_POSITIF", "REJETEE"),
+    "CLOTUREE": ("CLOTUREE",),
+}
+MOTIF_ORION = "LISTE_INTERDICTION"
+PERMS_AGENT = ("clientele.filtrage.decide", "clientele.admin")
 
 
 def normaliser(texte: str | None) -> str:
@@ -80,11 +96,18 @@ class ClienteleFiltrageService:
                         "source": liste.source, "actif": liste.actif, "nb_entrees": int(n or 0)})
         return out
 
-    async def entrees(self, liste_id: uuid.UUID, page: int = 1, taille: int = 50) -> dict:
+    async def entrees(self, liste_id: uuid.UUID, page: int = 1, taille: int = 50,
+                      recherche: str | None = None) -> dict:
         self.ctx.exiger("clientele.filtrage.view")
         if not await self.db.get(ClienteleFiltrageListe, liste_id):
             raise AppError("Liste introuvable", 404, code="NOT_FOUND")
+        page, taille = max(1, page), min(max(1, taille), 200)
         q = select(ClienteleFiltrageEntree).where(ClienteleFiltrageEntree.liste_id == liste_id)
+        if recherche and recherche.strip():
+            t = f"%{recherche.strip()}%"
+            q = q.where(or_(ClienteleFiltrageEntree.nom.ilike(t), ClienteleFiltrageEntree.prenom.ilike(t),
+                            ClienteleFiltrageEntree.raison_sociale.ilike(t),
+                            ClienteleFiltrageEntree.identifiant.ilike(t)))
         total = await self.db.scalar(select(func.count()).select_from(q.subquery())) or 0
         rows = list((await self.db.scalars(
             q.order_by(ClienteleFiltrageEntree.created_at.desc())
@@ -110,7 +133,10 @@ class ClienteleFiltrageService:
             e.date_naissance = _date.fromisoformat(str(payload["date_naissance"]))
         self.db.add(e)
         await self.db.flush()
-        return self._entree_dict(e)
+        out = self._entree_dict(e)
+        await self.svc.audit("clientele.filtrage.liste_entree", "clientele_filtrage_entree", str(e.id),
+                             after={"liste": liste.code, **out})
+        return out
 
     async def scanner(self) -> dict:
         self.ctx.exiger("clientele.filtrage.execute")
@@ -217,30 +243,156 @@ class ClienteleFiltrageService:
         await self.db.flush()
         return True
 
-    async def lister(self, *, statut: str | None = None, racine: str | None = None,
-                     motif: str | None = None, page: int = 1, taille: int = 50) -> dict:
-        self.ctx.exiger("clientele.filtrage.view")
-        q = (select(ClienteleAlerte, ClienteleClient.raison_sociale)
-             .join(ClienteleClient, ClienteleClient.racine_client == ClienteleAlerte.racine_client))
-        if statut:
-            q = q.where(ClienteleAlerte.statut == statut)
+    def _filtrer(self, q: Select, *, racine: str | None, motif: str | None, source: str | None,
+                 profil: str | None, agence: str | None, assignee: str | None, du: date | None,
+                 au: date | None, anciennete_min: int | None, recherche: str | None,
+                 population: Any = None) -> Select:
+        if population is not None:
+            q = q.where(ClienteleAlerte.racine_client.in_(population))
         if racine:
             q = q.where(ClienteleAlerte.racine_client == racine.strip())
         if motif:
             q = q.where(ClienteleAlerte.motif == motif)
-        total = await self.db.scalar(select(func.count()).select_from(q.subquery())) or 0
+        if source == "ORION":
+            q = q.where(ClienteleAlerte.motif == MOTIF_ORION)
+        elif source == "LISTE":
+            q = q.where(ClienteleAlerte.motif != MOTIF_ORION)
+        if profil in ("PP", "PM", "NON_IDENTIFIE"):
+            q = q.where(ClienteleSituation.profil_derive == profil)
+        if agence:
+            q = q.where(ClienteleSituation.code_agence == agence.strip())
+        if assignee == "aucun":
+            q = q.where(ClienteleAlerte.assignee_id.is_(None))
+        elif assignee == "moi":
+            q = q.where(ClienteleAlerte.assignee_id == self.ctx.user.id)
+        elif assignee:
+            try:
+                q = q.where(ClienteleAlerte.assignee_id == uuid.UUID(assignee))
+            except ValueError as exc:
+                raise AppError("Agent invalide", 422, code="AGENT_INVALIDE") from exc
+        if du:
+            q = q.where(ClienteleAlerte.created_at >= datetime.combine(du, time.min, tzinfo=_UTC))
+        if au:
+            q = q.where(ClienteleAlerte.created_at < datetime.combine(au + timedelta(days=1), time.min, tzinfo=_UTC))
+        if anciennete_min:
+            q = q.where(ClienteleAlerte.created_at <= maintenant() - timedelta(days=int(anciennete_min)))
+        if recherche and recherche.strip():
+            t = f"%{recherche.strip()}%"
+            q = q.where(or_(ClienteleAlerte.racine_client.like(t), ClienteleSituation.nom_client.ilike(t)))
+        return q
+
+    async def lister(self, *, statut: str | None = None, racine: str | None = None,
+                     motif: str | None = None, groupe: str | None = None, source: str | None = None,
+                     profil: str | None = None, agence: str | None = None, assignee: str | None = None,
+                     du: date | None = None, au: date | None = None, anciennete_min: int | None = None,
+                     q: str | None = None, tri: str | None = None, page: int = 1, taille: int = 50,
+                     population: Any = None) -> dict:
+        """Les compteurs ``par_statut`` suivent les mêmes filtres que la liste (sauf statut / groupe).
+
+        ``population`` : sous-requête de racines (filtres de la Vue 360°) pour rester cohérent avec ses KPI."""
+        self.ctx.exiger("clientele.filtrage.view")
+        page, taille = max(1, page), min(max(1, taille), 200)
+        criteres = dict(racine=racine, motif=motif, source=source, profil=profil, agence=agence,
+                        assignee=assignee, du=du, au=au, anciennete_min=anciennete_min, recherche=q,
+                        population=population)
+        agent = User.__table__.alias("agent")
+        derniere = (select(func.max(ClienteleAlerteEvenement.created_at))
+                    .where(ClienteleAlerteEvenement.alerte_id == ClienteleAlerte.id).scalar_subquery())
+        base = self._filtrer(
+            select(ClienteleAlerte, ClienteleSituation.nom_client, ClienteleSituation.profil_derive,
+                   ClienteleSituation.code_agence, agent.c.full_name, derniere.label("derniere_action"))
+            .join(ClienteleSituation, ClienteleSituation.racine_client == ClienteleAlerte.racine_client)
+            .outerjoin(agent, agent.c.id == ClienteleAlerte.assignee_id), **criteres)
+        liste = base
+        if statut:
+            liste = liste.where(ClienteleAlerte.statut == statut)
+        if groupe in GROUPES:
+            liste = liste.where(ClienteleAlerte.statut.in_(GROUPES[groupe]))
+        total = await self.db.scalar(select(func.count()).select_from(liste.subquery())) or 0
+        ordre = {
+            "anciennete": (ClienteleAlerte.created_at.asc(),),
+            "recent": (ClienteleAlerte.created_at.desc(),),
+            "similarite": (ClienteleAlerte.score.desc(), ClienteleAlerte.created_at.asc()),
+        }.get(tri or "", (ClienteleAlerte.precedent_faux_positif.desc(), ClienteleAlerte.created_at.desc()))
         rows = (await self.db.execute(
-            q.order_by(ClienteleAlerte.precedent_faux_positif.desc(), ClienteleAlerte.created_at.desc())
-            .offset((page - 1) * taille).limit(min(taille, 200))
-        )).all()
-        par_statut = dict((await self.db.execute(
-            select(ClienteleAlerte.statut, func.count()).group_by(ClienteleAlerte.statut)
-        )).all())
+            liste.order_by(*ordre, ClienteleAlerte.id).offset((page - 1) * taille).limit(taille))).all()
+        compte = self._filtrer(
+            select(ClienteleAlerte.statut, func.count())
+            .join(ClienteleSituation, ClienteleSituation.racine_client == ClienteleAlerte.racine_client),
+            **criteres).group_by(ClienteleAlerte.statut)
+        par_statut = {k: int(v) for k, v in (await self.db.execute(compte)).all()}
+        now = maintenant()
         return {
             "total": int(total), "page": page, "taille": taille,
-            "par_statut": {k: int(v) for k, v in par_statut.items()},
-            "items": [{**self._alerte_dict(a), "raison_sociale": nom} for a, nom in rows],
+            "par_statut": par_statut,
+            "par_groupe": {g: sum(par_statut.get(s, 0) for s in sts) for g, sts in GROUPES.items()},
+            "items": [{
+                **self._alerte_dict(a), "raison_sociale": nom, "profil": profil_c, "code_agence": ag,
+                "source": "ORION" if a.motif == MOTIF_ORION else "LISTE",
+                "assignee": nom_agent, "derniere_action": derniere_le.isoformat() if derniere_le else None,
+                "anciennete_jours": (now - a.created_at).days if a.created_at else None,
+            } for a, nom, profil_c, ag, nom_agent, derniere_le in rows],
         }
+
+    async def agents(self) -> list[dict]:
+        """Utilisateurs actifs habilités à décider sur une alerte (cible d'une attribution)."""
+        self.ctx.exiger("clientele.filtrage.view")
+        habilites = (select(user_roles_table.c.user_id)
+                     .join(role_permissions_table, role_permissions_table.c.role_id == user_roles_table.c.role_id)
+                     .join(Permission, Permission.id == role_permissions_table.c.permission_id)
+                     .where(Permission.code.in_(PERMS_AGENT)))
+        rows = (await self.db.execute(
+            select(User.id, User.full_name).where(
+                User.deleted_at.is_(None), or_(User.is_superuser.is_(True), User.id.in_(habilites)))
+            .order_by(User.full_name))).all()
+        return [{"id": str(uid), "nom": nom} for uid, nom in rows]
+
+    async def attribuer(self, aid: uuid.UUID, payload: dict) -> dict:
+        self.ctx.exiger("clientele.filtrage.decide")
+        a = await self.db.get(ClienteleAlerte, aid)
+        if not a:
+            raise AppError("Alerte introuvable", 404, code="NOT_FOUND")
+        if a.statut == "CLOTUREE":
+            raise AppError("Alerte clôturée : rouvrir avant de réattribuer", 409, code="ALERTE_CLOTUREE")
+        cible_id = payload.get("assignee_id")
+        cible = None
+        if cible_id:
+            cible = await self.db.get(User, uuid.UUID(str(cible_id)))
+            if not cible or cible.deleted_at is not None:
+                raise AppError("Agent introuvable", 404, code="AGENT_INTROUVABLE")
+            if not any(ag["id"] == str(cible.id) for ag in await self.agents()):
+                raise AppError("Agent non habilité au traitement des alertes", 422, code="AGENT_NON_HABILITE")
+        avant = str(a.assignee_id) if a.assignee_id else None
+        if avant == (str(cible.id) if cible else None):
+            return await self.detail(aid)
+        a.assignee_id = cible.id if cible else None
+        a.updated_at = maintenant()
+        commentaire = (payload.get("commentaire") or "").strip()
+        libelle = f"Attribuée à {cible.full_name}" if cible else "Attribution retirée"
+        self.db.add(ClienteleAlerteEvenement(
+            alerte_id=a.id, statut=a.statut,
+            commentaire=f"{libelle} — {commentaire}" if commentaire else libelle,
+            created_by_id=self.ctx.user.id))
+        await self.db.flush()
+        await self.svc.audit("clientele.filtrage.attribution", "clientele_alerte", a.id,
+                             before={"assignee_id": avant}, after={"assignee_id": str(cible.id) if cible else None})
+        return await self.detail(aid)
+
+    async def commenter(self, aid: uuid.UUID, payload: dict) -> dict:
+        self.ctx.exiger("clientele.filtrage.decide")
+        a = await self.db.get(ClienteleAlerte, aid)
+        if not a:
+            raise AppError("Alerte introuvable", 404, code="NOT_FOUND")
+        commentaire = (payload.get("commentaire") or "").strip()
+        if not commentaire:
+            raise AppError("Commentaire vide", 422, code="COMMENTAIRE_OBLIGATOIRE")
+        self.db.add(ClienteleAlerteEvenement(
+            alerte_id=a.id, statut=a.statut, commentaire=commentaire[:2000], created_by_id=self.ctx.user.id))
+        a.updated_at = maintenant()
+        await self.db.flush()
+        await self.svc.audit("clientele.filtrage.commentaire", "clientele_alerte", a.id,
+                             after={"statut": a.statut})
+        return await self.detail(aid)
 
     async def detail(self, aid: uuid.UUID) -> dict:
         self.ctx.exiger("clientele.filtrage.view")
@@ -258,8 +410,11 @@ class ClienteleFiltrageService:
         justifs = list((await self.db.scalars(
             select(ClienteleAlerteJustificatif).where(ClienteleAlerteJustificatif.alerte_id == aid)
             .order_by(ClienteleAlerteJustificatif.created_at))).all())
+        agent = await self.db.get(User, a.assignee_id) if a.assignee_id else None
         return {
             **self._alerte_dict(a),
+            "source": "ORION" if a.motif == MOTIF_ORION else "LISTE",
+            "assignee": {"id": str(agent.id), "nom": agent.full_name} if agent else None,
             "client": {
                 "racine_client": client.racine_client if client else a.racine_client,
                 "raison_sociale": client.raison_sociale if client else None,
@@ -328,6 +483,8 @@ class ClienteleFiltrageService:
             alerte_id=aid, statut=a.statut, commentaire=f"Justificatif déposé : {safe}",
             created_by_id=self.ctx.user.id))
         await self.db.flush()
+        await self.svc.audit("clientele.filtrage.justificatif", "clientele_alerte", aid,
+                             after={"justificatif_id": str(j.id), "nom_fichier": safe, "taille": len(contenu)})
         return await self.detail(aid)
 
     async def lire_justificatif(self, aid: uuid.UUID, jid: uuid.UUID) -> tuple[bytes, str]:
@@ -346,6 +503,7 @@ class ClienteleFiltrageService:
             "id": str(a.id), "racine_client": a.racine_client, "statut": a.statut,
             "motif": a.motif, "score": a.score, "correspondance": a.correspondance,
             "precedent_faux_positif": a.precedent_faux_positif,
+            "assignee_id": str(a.assignee_id) if a.assignee_id else None,
             "created_at": a.created_at.isoformat() if a.created_at else None,
             "updated_at": a.updated_at.isoformat() if a.updated_at else None,
             "cloturee_le": a.cloturee_le.isoformat() if a.cloturee_le else None,

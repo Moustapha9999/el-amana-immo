@@ -122,6 +122,8 @@ export interface CoreAdminGeneralSettings {
   access_token_expire_minutes: number;
   refresh_token_expire_days: number;
   module_refresh_token_expire_minutes: number;
+  clientele_classement_masse_actif?: boolean;
+  clientele_classement_masse_reference?: string | null;
 }
 
 export interface CoreAdminSecuritySettings {

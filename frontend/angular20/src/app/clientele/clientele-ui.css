@@ -81,6 +81,7 @@ div.bea-cl-kpi { cursor: default; }
 .bea-cl-bcm th, .bea-cl-bcm td { vertical-align: top; }
 .bea-cl-bcm td button { all: unset; cursor: pointer; display: block; width: 100%; font-variant-numeric: tabular-nums; font-weight: 700; color: #1a5278; }
 .bea-cl-bcm td button.is-lock { color: #9a3412; font-weight: 600; cursor: default; }
+.bea-cl-bcm td button.is-hist { color: #9a3412; }
 .bea-cl-bcm td button.is-on { text-decoration: underline; }
 .bea-cl-dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.45rem 1rem; margin: 0; padding: 0.9rem 1.1rem; font-size: 0.85rem; }
 .bea-cl-dl dt { color: #64748b; font-weight: 600; }

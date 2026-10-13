@@ -27,7 +27,8 @@ def test_champs_sans_definition_sans_formule_numerique():
         assert i["statut"] == "A_CONFIGURER"
         assert i["code"] in {
             "cli.construction_juridique", "cli.actifs", "cli.inactifs", "bcm.map.interdit",
-            "eer.maj_5ans", "bcm.t2.enregistrees", "bcm.t2.umef_mois", "bcm.t3.suspectes_personnel",
+            "eer.maj_5ans", "bcm.t2.extraites", "bcm.t2.analysees", "bcm.t2.suivi",
+            "bcm.t2.enregistrees", "bcm.t2.umef_mois", "bcm.t3.suspectes_personnel",
             "bcm.t3.analysees", "bcm.t3.suivi", "bcm.t3.enregistrees", "bcm.t3.umef",
         }
 

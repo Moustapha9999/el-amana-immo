@@ -2,8 +2,6 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } 
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
-import { EMPTY } from 'rxjs';
-import { expand, last, map, tap } from 'rxjs/operators';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
@@ -13,6 +11,7 @@ import {
   CL_BASE, FICHE_SCORING, MATRICE_LBC, MODES_DECISION, STATUTS_REGLE, TraceClassification, dateHeureFr, libSource, n, telecharger,
 } from '../clientele.models';
 import { ClienteleStore } from '../clientele.store';
+import { ClClasserComponent } from './cl-classer.component';
 
 interface Item {
   racine_client: string; raison_sociale: string; niveau: string; source: string;
@@ -36,11 +35,6 @@ interface Reexamen {
   niveau_actuel: string | null; source_actuelle: string | null; niveau_suggere: string; source_suggestion: string;
   motif: string; statut: string; created_at: string | null;
 }
-interface PaquetMasse {
-  total: number | null; traites: number; prochain: string | null;
-  bilan: { ECRIT: number; INCHANGE: number; MANUEL_PRESERVE: number; FICHIER_PRESERVE: number; NON_ADMISSIBLE: number };
-}
-type Progression = PaquetMasse['bilan'] & { total: number; traites: number };
 type Actuelle = { niveau: string; source: string; classifie_le: string | null } & Partial<TraceClassification>;
 interface LigneEval {
   critere: string; libelle: string; famille?: string; etat: string; valeur: string | null; poids: number | null;
@@ -72,7 +66,7 @@ const TAILLE_VALEURS = 80;
 @Component({
   selector: 'bea-cl-classification',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, MatIconModule, ClienteleUiComponent],
+  imports: [FormsModule, RouterLink, MatIconModule, ClienteleUiComponent, ClClasserComponent],
   template: `
     <bea-cl-styles />
     <div class="bea-mg bea-cl">
@@ -106,34 +100,11 @@ const TAILLE_VALEURS = 80;
                     <input type="file" accept=".xlsx" hidden (change)="excel($any($event.target))" />
                   </label>
                   <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/clientele/imports" [queryParams]="{ source: 'liste' }"><mat-icon>group_add</mat-icon> Classer une liste</a>
-                  <button type="button" class="bea-mg__btn" (click)="masseOuvert.set(!masseOuvert())" [disabled]="busy()"><mat-icon>play_arrow</mat-icon> Classer avec le moteur SCORE</button>
                 </span>
               }
             </div>
-            @if (masseOuvert() && store.cap().classif_executer) {
-              <div class="bea-cl-note bea-cl-note--info" style="margin:0 1.1rem 0.6rem"><mat-icon>info</mat-icon>
-                <span>Moteur SCORE (CDC 1.0) sur tous les clients ou sur un périmètre filtré. Seuls les résultats admissibles sont enregistrés (jamais NON CLASSÉ ni À ARBITRER). Les classements moteur existants sont mis à jour ; les décisions manuelles et les classes reprises d’un fichier ne sont jamais écrasées (un réexamen est ouvert si le moteur propose un autre niveau).</span>
-              </div>
-              <div class="bea-cl-filters">
-                <label>Profil (optionnel)
-                  <select [(ngModel)]="masseProfil" [disabled]="busy()">
-                    <option value="">Tous</option><option value="PP">PP</option><option value="PM">PM</option><option value="NON_IDENTIFIE">Non identifié</option>
-                  </select>
-                </label>
-                <label>Agence (optionnel)
-                  <select [(ngModel)]="masseAgence" [disabled]="busy()">
-                    <option value="">Toutes</option>
-                    @for (a of store.agences(); track a.code) { <option [value]="a.code">{{ a.code }} — {{ a.libelle }}</option> }
-                  </select>
-                </label>
-                <label>&nbsp;<button type="button" class="bea-mg__btn" (click)="moteur()" [disabled]="busy()">Lancer le classement</button></label>
-              </div>
-              @if (progression(); as p) {
-                <p class="bea-cl-hint" style="padding:0 1.1rem 0.6rem">
-                  {{ n(p.traites) }} / {{ n(p.total) }} client(s) traité(s) · {{ n(p.ECRIT) }} écrit(s) · {{ n(p.INCHANGE) }} inchangé(s) ·
-                  {{ n(p.MANUEL_PRESERVE) }} manuel(s) et {{ n(p.FICHIER_PRESERVE) }} fichier(s) préservé(s) · {{ n(p.NON_ADMISSIBLE) }} non admissible(s)
-                </p>
-              }
+            @if (store.cap().classif_executer) {
+              <bea-cl-classer (termine)="classementTermine()" />
             }
             <div class="bea-cl-filters">
               <label>Niveau
@@ -165,7 +136,7 @@ const TAILLE_VALEURS = 80;
                       <td>{{ dh(i.classifie_le) }}</td>
                     </tr>
                   } @empty {
-                    <tr><td colspan="6"><div class="bea-cl-empty">Aucun client classé. Saisie sur la fiche client, Excel contrôlé, liste importée, ou « Classer avec le moteur SCORE ».</div></td></tr>
+                    <tr><td colspan="6"><div class="bea-cl-empty">Aucun client classé. Saisie sur la fiche client, Excel contrôlé, liste importée, ou bouton « Classer ».</div></td></tr>
                   }
                 </tbody>
               </table>
@@ -196,11 +167,13 @@ const TAILLE_VALEURS = 80;
               }
             </div>
             <p class="bea-cl-hint" style="padding:0 1.1rem">Simulation : rien n’est écrit (ni évaluation, ni classification). Comparaison entre la classification retenue et le niveau proposé.</p>
-            <div class="bea-cl-filters">
-              <label>Racine
-                <input [(ngModel)]="racineEval" maxlength="6" placeholder="000001" (keyup.enter)="evaluer()" />
+            <div class="bea-cl-filters" style="align-items:flex-end">
+              <label>Racine client (6 chiffres)
+                <input [(ngModel)]="racineEval" maxlength="6" inputmode="numeric" placeholder="000001" (keyup.enter)="evaluer()" />
               </label>
-              <label>&nbsp;<button type="button" class="bea-mg__btn" (click)="evaluer()" [disabled]="busy()">Calculer le score</button></label>
+              <button type="button" class="bea-mg__btn" style="padding:0.55rem 1.2rem;font-weight:700" (click)="evaluer()" [disabled]="busy() || !racineEval.trim()">
+                <mat-icon>calculate</mat-icon> Calculer le score
+              </button>
             </div>
             @if (evaluation(); as e) {
               @let c = actuelle();
@@ -489,10 +462,6 @@ export class ClClassificationComponent implements OnInit {
   readonly statutsDiv = STATUTS_DIVERGENCE;
   readonly statutsDivListe = Object.entries(STATUTS_DIVERGENCE);
   choixDiv: Record<string, string> = {};
-  readonly masseOuvert = signal(false);
-  readonly progression = signal<Progression | null>(null);
-  masseProfil = '';
-  masseAgence = '';
   readonly valeurs = signal<ValeurMaitre[]>([]);
   readonly synValeurs = signal<SyntheseValeurs>({});
   readonly pageValeurs = signal(1);
@@ -669,49 +638,10 @@ export class ClClassificationComponent implements OnInit {
     if (cible !== this.page()) this.charger(cible);
   }
 
-  moteur(): void {
-    const url = `${CL_BASE}/classification/moteur-masse`;
-    const filtres = { profil: this.masseProfil || null, code_agence: this.masseAgence || null };
-    const perimetre = [
-      this.masseProfil ? `profil ${this.masseProfil}` : null,
-      this.masseAgence ? `agence ${this.masseAgence}` : null,
-    ].filter(Boolean).join(', ') || 'tous les clients';
-    this.feedback.runWithReason(
-      (motif) => {
-        const cumul: Progression = { total: 0, traites: 0, ECRIT: 0, INCHANGE: 0, MANUEL_PRESERVE: 0, FICHIER_PRESERVE: 0, NON_ADMISSIBLE: 0 };
-        this.progression.set({ ...cumul });
-        return this.api.post<PaquetMasse>(url, { motif, ...filtres }).pipe(
-          expand((p) => (p.prochain ? this.api.post<PaquetMasse>(url, { motif, ...filtres, apres: p.prochain }) : EMPTY)),
-          tap((p) => {
-            if (p.total !== null) cumul.total = p.total;
-            cumul.traites += p.traites;
-            for (const k of Object.keys(p.bilan) as (keyof PaquetMasse['bilan'])[]) cumul[k] += p.bilan[k];
-            this.progression.set({ ...cumul });
-          }),
-          last(),
-          map(() => cumul),
-        );
-      },
-      {
-        reason: {
-          title: 'Classer avec le moteur SCORE',
-          message: `Lancer le moteur SCORE sur ${perimetre} ?`,
-          hint: 'Résultats admissibles uniquement. Décisions manuelles et classes de fichier préservées (réexamen si écart). Chaque évaluation est tracée. Traitement par paquets de 300 : gardez la page ouverte.',
-          reasonLabel: 'Motif de classement', reasonPlaceholder: 'Ex. classification initiale moteur CDC 1.0', maxLength: 500,
-          confirmLabel: 'Lancer', tone: 'primary',
-        },
-        busy: this.busy, loading: 'Classement par le moteur en cours…',
-        success: (c) => ({ title: 'Classement moteur terminé', details: [
-          { label: 'Traités', value: n(c.traites) },
-          { label: 'Écrits', value: n(c.ECRIT) },
-          { label: 'Inchangés', value: n(c.INCHANGE) },
-          { label: 'Manuels préservés', value: n(c.MANUEL_PRESERVE) },
-          { label: 'Fichiers préservés', value: n(c.FICHIER_PRESERVE) },
-          { label: 'Non admissibles', value: n(c.NON_ADMISSIBLE) },
-        ] }),
-        errorTitle: 'Classement interrompu', errorHint: 'Les paquets déjà traités sont enregistrés ; relancer reprend sans doublon (niveaux identiques = inchangés).', retry: false,
-      },
-    ).subscribe(() => { this.charger(); this.chargerReexamens(); });
+  classementTermine(): void {
+    this.charger(1);
+    this.chargerReexamens();
+    this.store.charger(true);
   }
 
   modele(): void {

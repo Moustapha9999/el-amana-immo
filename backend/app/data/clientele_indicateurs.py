@@ -29,7 +29,7 @@ class IndicateurDef(TypedDict):
     bcm_tableau: str | None
 
 
-MOTEUR_VERSION = "2026.10.indic.1"
+MOTEUR_VERSION = "2026.10.indic.2"
 
 # --- Périodes d'analyse (reporting interne / simulation). Officiel BCM = MOIS uniquement.
 PERIODES_ANALYSE = (
@@ -369,37 +369,38 @@ _CATALOGUE: tuple[IndicateurDef, ...] = (
     {
         "code": "bcm.t2.extraites",
         "libelle": "Opérations inhabituelles extraites",
-        "definition": "Alertes du début d'année jusqu'à la fin du mois de déclaration (YTD).",
-        "formule": "COUNT alertes created_at BETWEEN 01/01/année AND date_fin — statuts à valider",
-        "source": "clientele_alertes",
+        "definition": "BCM : alertes déclarées du début d'année jusqu'au mois de déclaration. "
+        "clientele_alertes = correspondances de listes ORION, pas cette population.",
+        "formule": "",
+        "source": "ABSENT",
         "cle": "ALERTE",
         "periode": "YTD",
-        "statut": "PRET_SOUS_RESERVE",
-        "reserve": "Quels statuts = « déclarées » ?",
+        "statut": "A_CONFIGURER",
+        "reserve": "Ne pas assimiler les alertes de listes aux opérations inhabituelles.",
         "bcm_tableau": "T2.L1",
     },
     {
         "code": "bcm.t2.analysees",
         "libelle": "Opérations analysées",
-        "definition": "En cours d'analyse, clôturées et déclarées.",
-        "formule": "Mapping statuts alerte → à valider",
-        "source": "clientele_alertes",
+        "definition": "BCM : opérations inhabituelles en cours d'analyse, clôturées et déclarées.",
+        "formule": "",
+        "source": "ABSENT",
         "cle": "ALERTE",
         "periode": "YTD",
-        "statut": "PRET_SOUS_RESERVE",
-        "reserve": None,
+        "statut": "A_CONFIGURER",
+        "reserve": "Pas de module d'opérations inhabituelles.",
         "bcm_tableau": "T2.L2",
     },
     {
         "code": "bcm.t2.suivi",
         "libelle": "Suivi continu",
-        "definition": "En cours d'analyse et en attente de réponse.",
-        "formule": "Mapping statuts → à valider (pas d'état « attente réponse » dédié aujourd'hui)",
-        "source": "clientele_alertes",
+        "definition": "BCM : opérations inhabituelles en cours d'analyse et en attente de réponse.",
+        "formule": "",
+        "source": "ABSENT",
         "cle": "ALERTE",
         "periode": "POINT",
-        "statut": "PRET_SOUS_RESERVE",
-        "reserve": None,
+        "statut": "A_CONFIGURER",
+        "reserve": "Ne pas compter les alertes NOUVELLE de listes.",
         "bcm_tableau": "T2.L3",
     },
     {

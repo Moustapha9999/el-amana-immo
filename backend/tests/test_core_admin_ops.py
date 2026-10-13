@@ -69,6 +69,7 @@ async def test_core_admin_ops_endpoints(client: AsyncClient):
     general = (await client.get("/api/v1/plateforme/admin/settings/general", headers=headers)).json()
     assert "secret_key" not in general
     assert "app_env" in general
+    assert general.get("clientele_classement_masse_actif") is False
 
     maintenance = (await client.get("/api/v1/plateforme/admin/settings/maintenance", headers=headers)).json()
     assert "skip_migrations" in maintenance

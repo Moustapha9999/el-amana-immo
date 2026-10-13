@@ -99,6 +99,7 @@ export interface ClConfig {
   capacites: Capacites;
   sources: SourceColonne[];
   agences: AgenceRef[];
+  classement_masse?: { actif: boolean; reference_validation: string | null; message: string | null };
 }
 
 export interface TableauBord {

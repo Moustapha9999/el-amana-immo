@@ -99,6 +99,14 @@ async def _importer(db, ctx) -> None:
         brute("000002", "00000200001"),
     ), "juil-bcm.xlsx")
     await svc.confirmer(uuid.UUID(a["id"]), {"date_extraction": EXTRACTION.isoformat()})
+    await db.execute(text("""
+        INSERT INTO clientele_classif_historique
+            (id, racine_client, ancienne_classe, nouvelle_classe, source, motif_classement, created_at)
+        VALUES
+            (gen_random_uuid(), '000001', NULL, 'FAIBLE', 'MANUEL', 'test-couverture',
+             '2026-07-01 12:00:00+00')
+    """))
+    await db.commit()
 
 
 def _cell(detail: dict, tableau: str, ligne: str, col: str) -> dict:
@@ -144,8 +152,6 @@ async def test_declaration_aout_stock_et_a_configurer(db):
         INSERT INTO clientele_classif_historique
             (id, racine_client, ancienne_classe, nouvelle_classe, source, motif_classement, created_at)
         VALUES
-            (gen_random_uuid(), '000001', NULL, 'FAIBLE', 'MANUEL', 'test',
-             '2026-07-01 12:00:00+00'),
             (gen_random_uuid(), '000002', NULL, 'ELEVE', 'MANUEL', 'test',
              '2026-08-10 12:00:00+00')
     """))
@@ -172,8 +178,12 @@ async def test_declaration_aout_stock_et_a_configurer(db):
     assert _cell(cal, "T4", "faible", "valeur")["valeur"] == 1
     assert _cell(cal, "T4", "total", "valeur")["valeur"] == 2
     assert _cell(cal, "T4", "total", "ratio")["valeur"] == 100.0
+    assert _cell(cal, "T2", "extraites", "valeur")["statut"] == "A_CONFIGURER"
+    assert _cell(cal, "T2", "extraites", "valeur")["fiabilite"] == "SOURCE_ABSENTE"
     assert _cell(cal, "T2", "enregistrees", "valeur")["statut"] == "A_CONFIGURER"
     assert _cell(cal, "T3", "recues", "valeur")["statut"] == "A_CONFIGURER"
+    assert _cell(cal, "T1A", "stock_m1", "total")["fiabilite"] == "AVEC_RESERVE"
+    assert cal["cellules"]["couverture"]["stock_m1_reconstructible"] is True
     fiche = _cell(cal, "T4", "eleve", "valeur")["fiche"]
     assert fiche["libelle_officiel"]
     assert fiche["source"] == "clientele_classif_historique"
@@ -265,3 +275,49 @@ async def test_desactiver_reactiver_supprimer(db):
     assert err.value.code == "DECLARATION_FIGEE"
     with pytest.raises(AppError):
         await svc.desactiver(fid, motif="interdit")
+
+
+@pytest.mark.asyncio
+async def test_zero_sans_historique_n_est_pas_conforme(db):
+    """Deux zéros ne valent pas une photographie d'août. Validation bloquée."""
+    ctx = await _ctx(db)
+    imp = ClienteleImportService(db, ctx)
+    a = await imp.analyser(classeur(
+        brute("000001", "00000100001"),
+        brute("000002", "00000200001"),
+    ), "oct-bcm.xlsx")
+    await imp.confirmer(uuid.UUID(a["id"]), {"date_extraction": "2026-10-08"})
+    await db.execute(text("""
+        INSERT INTO clientele_classif_historique
+            (id, racine_client, ancienne_classe, nouvelle_classe, source, motif_classement, created_at)
+        VALUES
+            (gen_random_uuid(), '000001', NULL, 'FAIBLE', 'MANUEL', 'test',
+             '2026-10-10 12:00:00+00'),
+            (gen_random_uuid(), '000002', NULL, 'ELEVE', 'MANUEL', 'test',
+             '2026-10-11 12:00:00+00')
+    """))
+    await db.commit()
+    svc = ClienteleDeclarationService(db, ctx)
+    d = await svc.creer(2026, 8, aujourdhui=AUJ)
+    cal = await svc.calculer(uuid.UUID(d["id"]), aujourdhui=AUJ)
+    assert _cell(cal, "T1A", "stock_m1", "total")["valeur"] == 0
+    assert _cell(cal, "T1A", "stock_m1", "total")["fiabilite"] == "HISTORIQUE_INDISPONIBLE"
+    assert _cell(cal, "T4", "total", "valeur")["valeur"] == 0
+    assert _cell(cal, "T4", "eleve", "valeur")["fiabilite"] == "HISTORIQUE_INDISPONIBLE"
+    assert _cell(cal, "T4", "total", "valeur")["fiabilite"] == "HISTORIQUE_INDISPONIBLE"
+    hist = next(c for c in cal["controles"] if c["code"] == "stock.historique_m1")
+    assert hist["ok"] is False
+    assert hist["bloquant"] is True
+    assert hist["etat"] == "HISTORIQUE_INDISPONIBLE"
+    somme = next(c for c in cal["controles"] if c["code"] == "t4.somme")
+    assert somme["ok"] is False
+    assert somme["niveau"] != "CONFORME"
+    assert somme["etat"] == "HISTORIQUE_INDISPONIBLE"
+    classif = next(c for c in cal["controles"] if c["code"] == "classif.historique_fin")
+    assert classif["ok"] is False
+    assert classif["bloquant"] is True
+    cal = await svc.controler(uuid.UUID(cal["id"]))
+    assert cal["actions"]["valider"] is False
+    with pytest.raises(AppError) as err:
+        await svc.valider(uuid.UUID(cal["id"]), aujourdhui=AUJ)
+    assert err.value.code == "CONTROLES_BLOQUANTS"

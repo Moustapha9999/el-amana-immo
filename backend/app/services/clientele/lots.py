@@ -44,7 +44,8 @@ from app.models import (
     ClienteleClient,
 )
 from app.services.clientele.classification import (
-    NIVEAUX, SOURCES_MANUELLES, ClienteleClassificationService, trace_evaluation,
+    NIVEAUX, SOURCES_MANUELLES, ClienteleClassificationService, exiger_classement_masse_autorise,
+    trace_evaluation,
 )
 from app.services.clientele.consolidation import normaliser_entete
 from app.services.clientele.scoring import INVALIDE, lire_oui_non
@@ -128,6 +129,51 @@ def normaliser_niveau(v: Any) -> str | None:
     if s.startswith("FAIBL") or s == "BAS":
         return "FAIBLE"
     return None
+
+
+CONTROLES = ("CONFORME", "ECART", "DONNEE_MANQUANTE", "NON_COMPARABLE")
+# Correspondances officielles libellé → niveau : uniquement les quatre niveaux du CDC SCORE, comparés sans
+# accents, sans casse et sans le mot « RISQUE ». Aucun synonyme (HAUT, FORT, BAS…) n'est officiel.
+CORRESPONDANCES_OFFICIELLES = {n: n for n in ("FAIBLE", "MOYEN", "ELEVE", "INTERDIT")}
+CHOIX_CONTROLE = {"MOTEUR": "CONSERVE_MOTEUR", "FICHIER": "RETENU_FICHIER"}
+
+
+def niveau_officiel(v: Any) -> str | None:
+    s = " ".join(w for w in _norm(v).split() if w != "RISQUE")
+    return CORRESPONDANCES_OFFICIELLES.get(s)
+
+
+def comparer_niveaux(brut_fichier: Any, classification: Any | None) -> dict:
+    """Niveau du fichier vs niveau enregistré par le moteur SCORE (``niveau_propose`` stocké).
+
+    Lecture seule : le moteur n'est jamais relancé et la classification n'est jamais modifiée ici."""
+    brut = str(brut_fichier).strip() if brut_fichier is not None else ""
+    moteur = getattr(classification, "niveau_propose", None) if classification is not None else None
+    out = {
+        "niveau_fichier_brut": brut or None, "niveau_fichier": niveau_officiel(brut) if brut else None,
+        "niveau_moteur": moteur,
+        "score_moteur": getattr(classification, "score_calcule", None) if classification is not None else None,
+        "version_regles": getattr(classification, "version_regles", None) if classification is not None else None,
+        "niveau_retenu": getattr(classification, "niveau", None) if classification is not None else None,
+        "mode_retenu": getattr(classification, "mode_decision", None) if classification is not None else None,
+        "controle_le": maintenant().isoformat(),
+    }
+    if not brut or not moteur:
+        manque = [x for x, ok in (("fichier", brut), ("moteur SCORE", moteur)) if not ok]
+        return {**out, "statut": "DONNEE_MANQUANTE",
+                "message": f"Comparaison impossible — donnée manquante ({' et '.join(manque)})."}
+    if not out["niveau_fichier"]:
+        return {**out, "statut": "NON_COMPARABLE",
+                "message": f"Libellé « {brut} » hors correspondance officielle (Faible, Moyen, Élevé, Interdit) : "
+                           "vérification requise."}
+    if moteur not in NIVEAUX:
+        return {**out, "statut": "NON_COMPARABLE",
+                "message": f"Niveau moteur « {moteur} » inattendu : vérification requise."}
+    if out["niveau_fichier"] == moteur:
+        return {**out, "statut": "CONFORME",
+                "message": "Le niveau du fichier correspond au niveau du moteur SCORE. Aucune décision requise."}
+    return {**out, "statut": "ECART",
+            "message": f"Écart détecté : fichier {out['niveau_fichier']}, moteur SCORE {moteur}."}
 
 
 def lire_date(v: Any) -> date | str | None:
@@ -369,13 +415,17 @@ class ClienteleLotService:
         finally:
             wb.close()
 
-        await self._controler(lignes)
+        await self._controler(lignes, type_lot)
         sha = hashlib.sha256(contenu).hexdigest()
         if lid:
             lot = await self._charger(lid)
             if lot.statut in ("ENREGISTRE", "FERME"):
                 raise AppError("Lot déjà enregistré ou fermé : déposez un nouveau fichier pour changer le "
                                "mapping (l'historique du lot est conservé).", 409, code="LOT_FIGE")
+            if (lot.stats or {}).get("controle_ecarts_decides"):
+                raise AppError("Des écarts fichier / moteur SCORE ont déjà été décidés sur ce lot : déposez un "
+                               "nouveau fichier pour changer le mapping (les décisions sont conservées).", 409,
+                               code="CONTROLE_DECIDE")
             await self.db.execute(delete(ClienteleClassifLotLigne).where(ClienteleClassifLotLigne.lot_id == lid))
         else:
             lot = ClienteleClassifLot(id=uuid.uuid4(), created_by_id=self.ctx.user.id)
@@ -422,10 +472,11 @@ class ClienteleLotService:
             mapping=mapping, lid=lid,
             periode_reference=date.fromisoformat(str(periode)) if periode else None)
 
-    async def _controler(self, lignes: list[dict]) -> None:
+    async def _controler(self, lignes: list[dict], type_lot: str = "LISTE") -> None:
         racines = sorted({x["racine_client"] for x in lignes if x["racine_client"]})
         connus: dict[str, str] = {}
         classes: dict[str, dict] = {}
+        objets: dict[str, ClienteleClassification] = {}
         for i in range(0, len(racines), 5000):
             paquet = racines[i:i + 5000]
             for r, nom in (await self.db.execute(
@@ -435,6 +486,7 @@ class ClienteleLotService:
             for c in (await self.db.scalars(
                     select(ClienteleClassification).where(ClienteleClassification.racine_client.in_(paquet)))).all():
                 classes[c.racine_client] = {"niveau": c.niveau, "source": c.source}
+                objets[c.racine_client] = c
         vues: set[str] = set()
         for x in lignes:
             r = x["racine_client"]
@@ -451,6 +503,9 @@ class ClienteleLotService:
                 x["nom"] = connus[r][:255]
             x["classe_actuelle"] = classes.get(r, {}).get("niveau") if r else None
             x["source_actuelle"] = classes.get(r, {}).get("source") if r else None
+            x["decision_detail"] = (
+                {"controle": comparer_niveaux(x["classe_source_brut"], objets.get(r))}
+                if type_lot == "LISTE" and x["statut"] == "OK" else None)
 
     async def _rafraichir_classes(self, lignes: list[ClienteleClassifLotLigne]) -> None:
         racines = [x.racine_client for x in lignes if x.statut == "OK"]
@@ -472,7 +527,18 @@ class ClienteleLotService:
         def n(pred) -> int:
             return sum(1 for x in lignes if pred(x))
         ok = [x for x in lignes if g(x, "statut") == "OK"]
+
+        def controle(x: Any) -> str | None:
+            return ((g(x, "decision_detail") or {}).get("controle") or {}).get("statut")
+
+        def decide(x: Any) -> bool:
+            return bool((g(x, "decision_detail") or {}).get("decision_controle"))
         return {
+            "controle_conformes": sum(1 for x in ok if controle(x) == "CONFORME"),
+            "controle_ecarts": sum(1 for x in ok if controle(x) == "ECART"),
+            "controle_ecarts_decides": sum(1 for x in ok if controle(x) == "ECART" and decide(x)),
+            "controle_manquants": sum(1 for x in ok if controle(x) == "DONNEE_MANQUANTE"),
+            "controle_non_comparables": sum(1 for x in ok if controle(x) == "NON_COMPARABLE"),
             "lignes": len(lignes),
             "lignes_ignorees": ignorees,
             "racines_ok": len(ok),
@@ -513,6 +579,8 @@ class ClienteleLotService:
             "colonnes": x.donnees or {}, "moteur": moteur,
             "divergence": x.divergence_fichier_moteur, "decision": x.decision,
             "decision_detail": x.decision_detail,
+            "controle": (x.decision_detail or {}).get("controle"),
+            "decision_controle": (x.decision_detail or {}).get("decision_controle"),
         }
 
     async def _public(self, lot: ClienteleClassifLot, *, statut: str | None = None, page: int = 1,
@@ -525,6 +593,15 @@ class ClienteleLotService:
             q = q.where(func.jsonb_array_length(L.anomalies) > 0)
         elif statut == "A_TRAITER":
             q = q.where(L.decision.in_(("DIVERGENCE_A_TRAITER", "NON_ADMISSIBLE")))
+        elif statut and statut.startswith("CONTROLE_"):
+            code = statut.removeprefix("CONTROLE_")
+            if code == "A_DECIDER":
+                q = q.where(L.decision_detail["controle"]["statut"].astext == "ECART",
+                            L.decision_detail["decision_controle"].is_(None))
+            elif code == "DECIDE":
+                q = q.where(L.decision_detail["decision_controle"].is_not(None))
+            elif code in CONTROLES:
+                q = q.where(L.decision_detail["controle"]["statut"].astext == code)
         elif statut:
             q = q.where(L.statut == statut)
         total = await self.db.scalar(select(func.count()).select_from(q.subquery())) or 0
@@ -726,7 +803,7 @@ class ClienteleLotService:
                 contradictions += 1
             x.anomalies = anomalies
             if x.classe_source and not x.admissible:
-                x.decision_detail = {"comparaison": "NON_COMPARABLE",
+                x.decision_detail = {**(x.decision_detail or {}), "comparaison": "NON_COMPARABLE",
                                      "raison": f"Moteur {ev.get('statut')} : pas de niveau proposé admissible."}
         await self._rafraichir_classes(lignes)
         lot.evaluation = {
@@ -775,6 +852,7 @@ class ClienteleLotService:
     # ------------------------------------------------------------------ enregistrement
     async def classer(self, lid: uuid.UUID, payload: dict) -> dict:
         self.ctx.exiger("clientele.classif.execute")
+        validation = exiger_classement_masse_autorise() if payload.get("origine") == "MOTEUR" else None
         lot = await self._charger(lid)
         if lot.statut == "FERME":
             raise AppError("Lot fermé", 409, code="LOT_FIGE")
@@ -784,6 +862,10 @@ class ClienteleLotService:
         confirmation = bool(payload.get("confirmation"))
         if origine not in ("MOTEUR", "FICHIER"):
             raise AppError("Origine attendue : MOTEUR ou FICHIER", 422, code="ORIGINE_INVALIDE")
+        if origine == "FICHIER" and lot.type == "LISTE":
+            raise AppError("Liste de clients : le niveau du fichier n'est jamais enregistré en masse. Traitez "
+                           "chaque écart détecté ligne par ligne (contrôle fichier / moteur SCORE).", 409,
+                           code="DECISION_PAR_LIGNE")
         if not motif:
             raise AppError("Motif de classement obligatoire", 422, code="MOTIF_OBLIGATOIRE")
         classif = ClienteleClassificationService(self.db, self.ctx)
@@ -823,7 +905,7 @@ class ClienteleLotService:
         lot.updated_at = maintenant()
         await self.db.flush()
         await self.svc.audit("clientele.lot.classer", "clientele_classif_lot", lid,
-                             after={**resume, "fichier": lot.fichier_nom, "motif": motif})
+                             after={**resume, "fichier": lot.fichier_nom, "motif": motif, "validation": validation})
         return {**(await self._public(lot)), "bilan": resume}
 
     async def _ecrire_fichier(self, classif: ClienteleClassificationService, lot: ClienteleClassifLot,
@@ -898,6 +980,75 @@ class ClienteleLotService:
         await self.db.flush()
         await self.svc.audit("clientele.lot.divergences", "clientele_classif_lot", lid, after={"decisions": faits})
         return {**(await self._public(lot, statut="DIVERGENCE")), "decisions": faits}
+
+    async def decider_controle(self, lid: uuid.UUID, payload: dict) -> dict:
+        """Décision sur un écart fichier / moteur SCORE. Le moteur n'est pas relancé.
+
+        ``MOTEUR`` : décision de contrôle seule, la classification enregistrée n'est pas modifiée.
+        ``FICHIER`` : décision manuelle motivée (circuit ``decider_manuel`` : forçage si blocage INTERDIT)."""
+        self.ctx.exiger("clientele.classif.execute")
+        lot = await self._charger(lid)
+        if lot.statut == "FERME":
+            raise AppError("Lot fermé", 409, code="LOT_FIGE")
+        if lot.type != "LISTE":
+            raise AppError("Contrôle fichier / moteur réservé aux listes de clients", 409, code="TYPE_LOT")
+        choix = (payload.get("choix") or "").upper()
+        if choix not in CHOIX_CONTROLE:
+            raise AppError("Choix attendu : MOTEUR ou FICHIER", 422, code="CHOIX_INVALIDE")
+        justification = (payload.get("justification") or "").strip()
+        if choix == "FICHIER" and not justification:
+            raise AppError("Justification obligatoire pour retenir le niveau du fichier", 422,
+                           code="JUSTIFICATION_OBLIGATOIRE")
+        x = await self.db.scalar(select(ClienteleClassifLotLigne).where(
+            ClienteleClassifLotLigne.lot_id == lid, ClienteleClassifLotLigne.ligne == int(payload.get("ligne") or 0)))
+        if not x or x.statut != "OK":
+            raise AppError("Ligne introuvable ou racine non reconnue", 404, code="NOT_FOUND")
+        if (x.decision_detail or {}).get("decision_controle"):
+            raise AppError("Écart déjà décidé : la décision est conservée dans l'historique", 409,
+                           code="DEJA_DECIDE")
+        actuelle = await self.db.get(ClienteleClassification, x.racine_client)
+        controle = comparer_niveaux(x.classe_source_brut, actuelle)
+        if controle["statut"] != "ECART":
+            raise AppError(f"Aucun écart à décider : {controle['message']}", 409, code="PAS_D_ECART")
+        avant = {"niveau": actuelle.niveau, "mode": actuelle.mode_decision, "source": actuelle.source}
+        effet = "AUCUNE_MODIFICATION"
+        force = False
+        if choix == "FICHIER":
+            forcer = bool(payload.get("forcer"))
+            trace = {
+                "score_calcule": actuelle.score_calcule, "niveau_propose": actuelle.niveau_propose,
+                "motif_moteur": actuelle.motif_moteur, "evaluation_id": actuelle.evaluation_id,
+                "date_reference": actuelle.date_reference, "version_moteur": actuelle.version_moteur,
+                "version_regles": actuelle.version_regles, **self._trace_ligne(lot, x),
+                "classe_source_fichier": controle["niveau_fichier"],
+                "_statut_moteur": "BLOQUANT" if actuelle.niveau_propose == "INTERDIT" else None,
+            }
+            await ClienteleClassificationService(self.db, self.ctx).decider_manuel(
+                x.racine_client, controle["niveau_fichier"], justification, motif_risque=x.motif_source,
+                forcer=forcer, confirmation=bool(payload.get("confirmation")), trace=trace)
+            effet = "CLASSIFICATION_MODIFIEE" if avant["niveau"] != controle["niveau_fichier"] else "AUCUNE_MODIFICATION"
+            force = forcer and controle["niveau_moteur"] == "INTERDIT"
+        decision = {
+            "choix": choix, "libelle": ("Conserver le classement du moteur SCORE" if choix == "MOTEUR"
+                                        else "Retenir le niveau du fichier"),
+            "niveau_retenu": controle["niveau_moteur"] if choix == "MOTEUR" else controle["niveau_fichier"],
+            "niveau_fichier": controle["niveau_fichier"], "niveau_moteur": controle["niveau_moteur"],
+            "justification": justification or None, "effet": effet, "force": force,
+            "par": str(self.ctx.user.id), "par_nom": self.ctx.user.full_name, "le": maintenant().isoformat(),
+        }
+        x.decision = CHOIX_CONTROLE[choix]
+        x.decision_detail = {**(x.decision_detail or {}), "controle": controle, "decision_controle": decision}
+        await self._rafraichir_classes([x])
+        lot.stats = self._stats(await self._lignes(lid), ignorees=(lot.stats or {}).get("lignes_ignorees", 0))
+        lot.updated_at = maintenant()
+        await self.db.flush()
+        await self.svc.audit(
+            f"clientele.lot.controle.{choix.lower()}", "clientele_classif_lot", lid,
+            before={"ligne": x.ligne, "racine": x.racine_client, **avant},
+            after={"ligne": x.ligne, "racine": x.racine_client, "niveau_fichier": controle["niveau_fichier"],
+                   "niveau_moteur": controle["niveau_moteur"], "niveau_retenu": decision["niveau_retenu"],
+                   "effet": effet, "justification": decision["justification"]})
+        return self._ligne_dict(x)
 
     # ------------------------------------------------------------------ export
     async def exporter(self, lid: uuid.UUID) -> bytes:

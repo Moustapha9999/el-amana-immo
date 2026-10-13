@@ -20,6 +20,7 @@ interface FicheBcm {
 interface Cellule {
   code: string; valeur: number | null; ratio: number | null; statut: string;
   indicateur: string | null; cutoff: string; reserve: string | null; fiche?: FicheBcm | null;
+  fiabilite?: string | null;
 }
 interface Ligne { code: string; libelle: string; definition: string; cellules: Record<string, Cellule>; }
 interface Colonne { code: string; libelle: string; }
@@ -29,8 +30,9 @@ interface Tableau {
 }
 interface Controle {
   code: string; libelle: string; ok: boolean; bloquant: boolean;
-  attendu: number | null; observe: number | null; message: string;
+  attendu: number | string | null; observe: number | string | null; message: string;
   niveau?: 'CONFORME' | 'ATTENTION' | 'ERREUR';
+  etat?: string;
 }
 interface Actions {
   calculer: boolean; controler: boolean; valider: boolean; cloturer: boolean;
@@ -42,7 +44,11 @@ interface Declaration {
   date_debut: string; date_fin: string; fin_mois_precedent: string;
   statut: string; moteur_version: string | null; grille_version: string | null;
   simulation: boolean; bcm_officielle: boolean; commentaire: string | null;
-  cellules: { tableaux: Tableau[]; mappings?: Record<string, string> } | null;
+  cellules: {
+    tableaux: Tableau[];
+    mappings?: Record<string, string>;
+    couverture?: Record<string, string | number | boolean | null>;
+  } | null;
   controles: Controle[]; actions: Actions;
   desactivee_le: string | null; motif_desactivation: string | null;
   journal: { etape: string; le: string; par: string | null }[];
@@ -89,6 +95,10 @@ const ETAPES = ['BROUILLON', 'CALCULEE', 'A_CONTROLER', 'VALIDEE', 'CLOTUREE', '
         @if (x.simulation) {
           <p class="bea-cl-note"><mat-icon>info</mat-icon>Mois non clos — préparation uniquement. La validation officielle est bloquée tant que le mois n’est pas terminé.</p>
         }
+        @if (x.statut === 'A_CONTROLER' && !x.actions.valider && !x.simulation) {
+          <p class="bea-cl-note bea-cl-note--warn"><mat-icon>gpp_maybe</mat-icon>
+            Validation officielle bloquée : historique ou source indispensable manquant. Voir les contrôles bloquants.</p>
+        }
         <div class="bea-cl-bar">
           <span class="bea-cl-badge" [attr.data-s]="x.statut">{{ x.statut.replaceAll('_', ' ') }}</span>
           <div style="display:flex;gap:0.45rem;flex-wrap:wrap">
@@ -128,6 +138,19 @@ const ETAPES = ['BROUILLON', 'CALCULEE', 'A_CONTROLER', 'VALIDEE', 'CLOTUREE', '
             </ol>
           </section>
         }
+        @if (x.cellules?.couverture) {
+          <section class="bea-mg__panel">
+            <div class="bea-mg__panel-top"><h2>Couverture historique</h2></div>
+            <p class="bea-cl-hint" style="padding:0 1.1rem 0.8rem">
+              Référentiel {{ x.cellules.couverture['nb_referentiel'] ?? '—' }} racines ·
+              première extraction {{ x.cellules.couverture['premiere_extraction_min'] ?? '—' }} ·
+              historique SCORE {{ x.cellules.couverture['historique_classif_min'] ?? '—' }} ·
+              stock fin mois précédent {{ x.cellules.couverture['stock_m1_reconstructible'] ? 'reconstituable (proxy import)' : 'indisponible' }} ·
+              classification clôture {{ x.cellules.couverture['classif_fin_reconstructible'] ? 'reconstituable' : 'indisponible' }} ·
+              ouvertures du mois {{ x.cellules.couverture['ouvertures_mois'] ?? '—' }}
+            </p>
+          </section>
+        }
         @if (x.controles.length) {
           <section class="bea-mg__panel">
             <div class="bea-mg__panel-top"><h2>Contrôles</h2></div>
@@ -135,7 +158,7 @@ const ETAPES = ['BROUILLON', 'CALCULEE', 'A_CONTROLER', 'VALIDEE', 'CLOTUREE', '
               @for (c of x.controles; track c.code) {
                 <li [attr.data-n]="c.niveau === 'CONFORME' || c.ok ? 'info' : (c.niveau === 'ERREUR' || c.bloquant ? 'bloquant' : 'alerte')">
                   <mat-icon>{{ c.ok ? 'check_circle' : (c.bloquant ? 'error' : 'warning') }}</mat-icon>
-                  <span><strong>{{ c.niveau ?? (c.ok ? 'CONFORME' : 'ATTENTION') }}</strong> — {{ c.libelle }} : {{ c.message }} (attendu {{ c.attendu ?? '—' }}, observé {{ c.observe ?? '—' }})</span>
+                  <span><strong>{{ c.etat ?? c.niveau ?? (c.ok ? 'CONFORME' : 'ATTENTION') }}</strong> — {{ c.libelle }} : {{ c.message }} (attendu {{ c.attendu ?? '—' }}, observé {{ c.observe ?? '—' }})</span>
                 </li>
               }
             </ul>
@@ -160,7 +183,7 @@ const ETAPES = ['BROUILLON', 'CALCULEE', 'A_CONTROLER', 'VALIDEE', 'CLOTUREE', '
                       @for (col of tab.colonnes; track col.code) {
                         <td>
                           @if (ligne.cellules[col.code]; as cell) {
-                            <button type="button" [class.is-lock]="cell.statut==='A_CONFIGURER'" [class.is-on]="choisi()===cell.code" (click)="ouvrir(cell)">{{ afficher(cell) }}</button>
+                            <button type="button" [class.is-lock]="cell.statut==='A_CONFIGURER'" [class.is-hist]="cell.fiabilite==='HISTORIQUE_INDISPONIBLE'" [class.is-on]="choisi()===cell.code" [title]="cell.fiabilite || cell.statut" (click)="ouvrir(cell)">{{ afficher(cell) }}</button>
                           }
                         </td>
                       }
@@ -187,6 +210,7 @@ const ETAPES = ['BROUILLON', 'CALCULEE', 'A_CONTROLER', 'VALIDEE', 'CLOTUREE', '
                 <dt>EER</dt><dd>{{ f.eer_utilise ? 'oui' : 'non' }}</dd>
                 <dt>Historique</dt><dd>{{ f.historique_utilise ? 'oui' : 'non' }}</dd>
                 <dt>Validation métier</dt><dd><span class="bea-cl-badge" [attr.data-s]="f.validation_metier">{{ f.validation_metier }}</span></dd>
+                @if (det.fiabilite) { <dt>Fiabilité</dt><dd>{{ det.fiabilite }}</dd> }
                 @if (f.reserve) { <dt>Réserve</dt><dd>{{ f.reserve }}</dd> }
               } @else {
                 @if (det.ligne) { <dt>Ligne</dt><dd>{{ det.ligne }}</dd> }

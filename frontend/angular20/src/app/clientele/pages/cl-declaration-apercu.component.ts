@@ -20,6 +20,7 @@ export interface ApercuDeclaration {
   synthese: {
     tableaux: number; cellules: number; a_configurer: number;
     controles: number; controles_ok: number; controles_bloquants: number;
+    etats?: string[];
   };
 }
 
