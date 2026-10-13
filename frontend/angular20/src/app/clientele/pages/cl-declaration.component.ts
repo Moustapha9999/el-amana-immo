@@ -138,16 +138,16 @@ const ETAPES = ['BROUILLON', 'CALCULEE', 'A_CONTROLER', 'VALIDEE', 'CLOTUREE', '
             </ol>
           </section>
         }
-        @if (x.cellules?.couverture) {
+        @if (x.cellules?.couverture; as cov) {
           <section class="bea-mg__panel">
             <div class="bea-mg__panel-top"><h2>Couverture historique</h2></div>
             <p class="bea-cl-hint" style="padding:0 1.1rem 0.8rem">
-              Référentiel {{ x.cellules.couverture['nb_referentiel'] ?? '—' }} racines ·
-              première extraction {{ x.cellules.couverture['premiere_extraction_min'] ?? '—' }} ·
-              historique SCORE {{ x.cellules.couverture['historique_classif_min'] ?? '—' }} ·
-              stock fin mois précédent {{ x.cellules.couverture['stock_m1_reconstructible'] ? 'reconstituable (proxy import)' : 'indisponible' }} ·
-              classification clôture {{ x.cellules.couverture['classif_fin_reconstructible'] ? 'reconstituable' : 'indisponible' }} ·
-              ouvertures du mois {{ x.cellules.couverture['ouvertures_mois'] ?? '—' }}
+              Référentiel {{ cov['nb_referentiel'] ?? '—' }} racines ·
+              première extraction {{ cov['premiere_extraction_min'] ?? '—' }} ·
+              historique SCORE {{ cov['historique_classif_min'] ?? '—' }} ·
+              stock fin mois précédent {{ cov['stock_m1_reconstructible'] ? 'reconstituable (proxy import)' : 'indisponible' }} ·
+              classification clôture {{ cov['classif_fin_reconstructible'] ? 'reconstituable' : 'indisponible' }} ·
+              ouvertures du mois {{ cov['ouvertures_mois'] ?? '—' }}
             </p>
           </section>
         }
