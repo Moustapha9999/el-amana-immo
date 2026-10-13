@@ -11,8 +11,11 @@ from functools import lru_cache
 from typing import Any
 
 from app.data.clientele_classif_matrice import (
+    ENTREPRISE_RECENTE_JOURS,
     FAMILLES,
     POIDS_ECHELLE,
+    POIDS_ENTREPRISE_ANCIENNE,
+    POIDS_ENTREPRISE_RECENTE,
     RANG,
     SEUILS_CDC,
     VERSION_MOTEUR,
@@ -22,8 +25,25 @@ from app.data.clientele_classif_matrice import (
 from app.data.clientele_classif_referentiel import REFERENTIEL
 from app.data.clientele_sources import FICHE, MATRICE, SOURCES_LIBELLES, libelle_sources, nommer
 
-_STATUTS_HORS_SOMME = frozenset({"A_ARBITRER", "A_CONFIGURER", "A_VERIFIER"})
+_STATUTS_HORS_SOMME = frozenset({"A_ARBITRER", "A_CONFIGURER", "A_VERIFIER", "SUSPENDU"})
 _LISTE_NON = frozenset({"NON", "N", "NO", "FALSE", "0", "NEANT", "AUCUN"})
+_OUI = frozenset({"OUI", "O", "YES", "Y", "TRUE", "VRAI", "1", "X"})
+_NON = frozenset({"NON", "N", "NO", "FALSE", "FAUX", "0"})
+INVALIDE = "INVALIDE"
+
+
+def lire_oui_non(valeur: object | None) -> bool | str | None:
+    """Oui/Non saisi par un analyste. None = vide ; ``INVALIDE`` = valeur illisible (jamais devinée)."""
+    if valeur is None or isinstance(valeur, bool):
+        return valeur
+    s = slug_cle(valeur)
+    if not s:
+        return None
+    if s in _OUI:
+        return True
+    if s in _NON:
+        return False
+    return INVALIDE
 
 _ACCENTS = str.maketrans({
     "À": "A", "Á": "A", "Â": "A", "Ã": "A", "Ä": "A", "Å": "A",
@@ -125,6 +145,11 @@ class DonneesClient:
     type_client: str | None = None
     date_naissance: date | None = None
     date_creation_pm: date | None = None
+    source_date_creation: str | None = None
+    entreprise_recente_declaree: bool | str | None = None
+    source_entreprise_recente: str | None = None
+    date_reference: date | None = None
+    source_date_reference: str | None = None
     liste_interdiction: str | None = None
     ppe: bool | None = None
     procuration: bool | None = None
@@ -200,11 +225,21 @@ class Evaluation:
     motif_genere: str = ""
     lignes: list[LigneEvaluation] = field(default_factory=list)
     avertissement: str = ""
+    date_reference: str | None = None
+    source_date_reference: str | None = None
+
+    @property
+    def admissible(self) -> bool:
+        """Seuls EVALUE et BLOQUANT peuvent devenir une classification retenue."""
+        return self.statut in ("EVALUE", "BLOQUANT") and self.niveau_final is not None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "racine_client": self.racine,
             "date_evaluation": self.date_evaluation,
+            "date_reference": self.date_reference,
+            "source_date_reference": self.source_date_reference,
+            "admissible": self.admissible,
             "version_moteur": self.version_moteur,
             "version_regles": self.version_regles,
             "mode": self.mode,
@@ -635,19 +670,37 @@ def _eval_secteur(d: DonneesClient) -> LigneEvaluation:
     nv = (v.get("niveau_v4") if v else None) or poids_vers_niveau(pv)
     blocking = nm == "INTERDIT"
     poids = 100_000 if blocking else POIDS_ECHELLE.get(nm)
+    # Conflit Matrice / Fiche : la Matrice prime pour le secteur (CDC §13), mais le conflit reste signalé.
+    conflit = bool(nm and nv and nm != nv and not blocking)
     return _ligne_base(
         "SECTEUR", etat="EVALUE",
         valeur=m.get("libelle") or brut, source_donnee="ORION",
         poids=poids, niveau_matrice=nm, niveau_v4=nv,
         niveau_retenu=nm,
-        divergence=False, blocking_propose=blocking,
+        divergence=conflit, blocking_propose=blocking,
         type_decision="BLOCKING" if blocking else "SCORE",
         statut_regle="SOURCE_V1",
         motif=(
             f"Sous-secteur V1 {nm} (CDC §13)."
+            + (f" Conflit : {MATRICE} {nm} / {FICHE} {nv} — {MATRICE} retenue, à confirmer par la Conformité."
+               if conflit else "")
             + (" INTERDIT bloquant." if blocking else "")
         ),
     )
+
+
+def codes_liste_interdiction(valeurs: Any) -> list[str]:
+    """Codes ORION de tous les comptes d'un client, dédoublonnés dans l'ordre de lecture.
+
+    Les valeurs ORION concatènent un code par titulaire (« ,  , DI DI ») : les segments vides
+    ne sont pas des codes et une valeur faite uniquement de virgules vaut « vide »."""
+    vus: list[str] = []
+    for v in valeurs:
+        for seg in str(v or "").split(","):
+            code = " ".join(seg.split())
+            if code and code not in vus:
+                vus.append(code)
+    return vus
 
 
 def _eval_liste_interdiction(d: DonneesClient) -> LigneEvaluation:
@@ -657,7 +710,7 @@ def _eval_liste_interdiction(d: DonneesClient) -> LigneEvaluation:
             "Liste d'interdiction ORION non collectée. Donnée absente ≠ Non/Faible (CDC §48).",
             "ORION",
         )
-    val = d.liste_interdiction.strip()
+    val = ", ".join(codes_liste_interdiction([d.liste_interdiction]))
     if not val or slug_cle(val) in _LISTE_NON:
         return _ligne_base(
             "LISTE_INTERDICTION", etat="EVALUE", valeur="Non", source_donnee="ORION",
@@ -665,12 +718,17 @@ def _eval_liste_interdiction(d: DonneesClient) -> LigneEvaluation:
             motif="ORION LISTE_INTERDICTION vide/Non = Non (CDC §19). Score 100.",
             statut_regle="SOURCE_V1",
         )
+    # Codes ORION (DI, OI, …) au sens non confirmé : visibles, hors score jusqu'à arbitrage Conformité.
     return _ligne_base(
         "LISTE_INTERDICTION", etat="EVALUE", valeur=val, source_donnee="ORION",
-        poids=100_000, niveau_matrice="ELEVE", niveau_v4=None, niveau_retenu="ELEVE",
+        poids=None, niveau_matrice="ELEVE", niveau_v4=None, niveau_retenu=None,
         blocking_propose=False, type_decision="SCORE",
-        motif="Matrice filtrage sanctions Oui = ÉLEVÉ (CDC §19). Pas INTERDIT (distinct §5).",
-        statut_regle="SOURCE_V1",
+        motif=(
+            f"ORION LISTE_INTERDICTION « {val} » (tous comptes). Suspendu : hors score tant que la "
+            "Conformité n'a pas confirmé le sens des codes DI / OI "
+            "(CDC §19 : Oui = ÉLEVÉ, distinct de l'INTERDIT §5)."
+        ),
+        statut_regle="SUSPENDU",
     )
 
 
@@ -756,42 +814,149 @@ def _eval_age_pp(d: DonneesClient, au_jour: date) -> LigneEvaluation:
     )
 
 
+def _eval_entreprise_recente(d: DonneesClient, reference: date) -> LigneEvaluation:
+    code = "ENTREPRISE_RECENTE"
+    declare = d.entreprise_recente_declaree
+    if isinstance(declare, str) and declare != INVALIDE:
+        declare = lire_oui_non(declare)
+    profil, _ = _profil_derive(d)
+    est_pp = profil == "Personne_Physique"
+    lib_decl = {True: "Oui", False: "Non"}.get(declare) if isinstance(declare, bool) else declare
+
+    if est_pp:
+        if declare is True or d.date_creation_pm:
+            return _ligne_base(
+                code, etat="A_VERIFIER", valeur=lib_decl or str(d.date_creation_pm),
+                source_donnee=d.source_entreprise_recente or d.source_date_creation,
+                statut_regle="A_VERIFIER",
+                motif="Client identifié personne physique, mais une donnée « entreprise » est fournie. "
+                      "Contradiction à vérifier ; critère exclu de la somme.",
+            )
+        return _ligne_base(code, etat="NON_APPLICABLE", valeur=profil, source_donnee="ORION",
+                           statut_regle="VALIDEE_METIER",
+                           motif="Critère réservé aux personnes morales.")
+
+    if declare == INVALIDE:
+        return _ligne_base(
+            code, etat="A_VERIFIER", valeur=str(d.entreprise_recente_declaree),
+            source_donnee=d.source_entreprise_recente, statut_regle="A_VERIFIER",
+            motif="Valeur « Entreprise ouverture récente » illisible (Oui / Non attendu). "
+                  "Rien n'est déduit ; critère exclu de la somme.",
+        )
+
+    calcule: bool | None = None
+    jours: int | None = None
+    if d.date_creation_pm:
+        jours = (reference - d.date_creation_pm).days
+        if jours < 0:
+            return _ligne_base(
+                code, etat="A_VERIFIER", valeur=d.date_creation_pm.isoformat(),
+                source_donnee=d.source_date_creation, statut_regle="A_VERIFIER",
+                motif=f"Date d'ouverture {d.date_creation_pm.isoformat()} postérieure à la date de "
+                      f"référence {reference.isoformat()}. Critère exclu de la somme.",
+            )
+        calcule = jours <= ENTREPRISE_RECENTE_JOURS
+
+    if calcule is not None and isinstance(declare, bool) and declare != calcule:
+        return _ligne_base(
+            code, etat="A_VERIFIER", valeur=d.date_creation_pm.isoformat(),
+            source_donnee=d.source_date_creation, statut_regle="A_VERIFIER", divergence=True,
+            motif=f"Contradiction : {jours} jour(s) au {reference.isoformat()} donne « "
+                  f"{'Oui' if calcule else 'Non'} », la valeur déclarée est « {lib_decl} ». "
+                  "Critère exclu de la somme jusqu'à correction.",
+        )
+
+    recente = calcule if calcule is not None else declare
+    if recente is None:
+        return _indispo(
+            code,
+            "Ni date d'ouverture de l'entreprise ni valeur « Entreprise ouverture récente ». "
+            "Donnée absente ≠ Faible.",
+            d.source_date_creation or d.source_entreprise_recente,
+        )
+    poids = POIDS_ENTREPRISE_RECENTE if recente else POIDS_ENTREPRISE_ANCIENNE
+    niveau = poids_vers_niveau(poids)
+    if calcule is not None:
+        valeur, source = d.date_creation_pm.isoformat(), d.source_date_creation
+        motif = (f"Ouverture le {valeur}, {jours} jour(s) au {reference.isoformat()} : "
+                 f"{'≤' if recente else '>'} {ENTREPRISE_RECENTE_JOURS} jours → {poids}.")
+        if isinstance(declare, bool):
+            motif += " Concorde avec la valeur déclarée."
+    else:
+        valeur, source = lib_decl, d.source_entreprise_recente or "DECLARATIF_KYC"
+        motif = (f"Déclaratif analyste KYC « {lib_decl} » sans date d'ouverture : {poids}. "
+                 "Aucune date n'est inventée.")
+    if not profil:
+        motif += " Profil ORION non déterminé : donnée entreprise fournie par la source."
+    return _ligne_base(
+        code, etat="EVALUE", valeur=valeur, source_donnee=source, poids=poids,
+        niveau_matrice=None, niveau_v4=niveau, niveau_retenu=niveau,
+        statut_regle="VALIDEE_METIER", motif=motif,
+    )
+
+
+_NIV_LIB = {"FAIBLE": "FAIBLE", "MOYEN": "MOYEN", "ELEVE": "ÉLEVÉ", "INTERDIT": "INTERDIT"}
+ESSENTIELS = ("PPE", "FILTRAGE", "RESIDENCE", "NATIONALITE")
+
+
+def _pts(n: int | None) -> str:
+    return f"{n or 0:,}".replace(",", " ")
+
+
+def _contribution(lg: LigneEvaluation) -> str:
+    txt = f"{lg.libelle} « {lg.valeur} » {_NIV_LIB.get(lg.niveau_retenu or '', lg.niveau_retenu or '—')} (+{_pts(lg.poids)})"
+    if lg.divergence and lg.niveau_matrice and lg.niveau_v4:
+        txt += (f" [{MATRICE} {_NIV_LIB.get(lg.niveau_matrice, lg.niveau_matrice)} / "
+                f"{FICHE} {_NIV_LIB.get(lg.niveau_v4, lg.niveau_v4)} : {MATRICE} retenue]")
+    return txt
+
+
 def _motif_genere(
     niveau: str | None,
     score: int,
     evalues: list[LigneEvaluation],
     blocking: list[LigneEvaluation],
+    lignes: list[LigneEvaluation] | None = None,
 ) -> str:
+    """Tous les critères ÉLEVÉ / MOYEN avec leurs points, les FAIBLE résumés, puis ce qui est hors score
+    (suspendu) et les données essentielles non disponibles. Rien n'est omis du calcul."""
+    lignes = lignes or []
     if blocking:
         p = blocking[0]
-        return (
-            f"Risque INTERDIT — Score {score}. "
-            f"Blocage métier : {p.libelle} « {p.valeur} » classé INTERDIT "
-            f"dans le référentiel BEA (CDC §5). Le score reste calculé."
-        )
-    if not evalues:
-        return "Aucun critère validé n'entre dans le score. Donnée absente ≠ FAIBLE."
-    principal = max(evalues, key=lambda lg: lg.poids or 0)
-    autres_faibles = all(
-        (lg.niveau_retenu or "FAIBLE") == "FAIBLE" for lg in evalues if lg is not principal)
-    niv_lib = {"FAIBLE": "FAIBLE", "MOYEN": "MOYEN", "ELEVE": "ÉLEVÉ"}.get(niveau or "", niveau or "NON CLASSÉ")
-    txt = f"Risque {niv_lib} — Score {score}."
-    if principal.poids and principal.poids >= 10_000:
-        txt += (
-            f" Le score est principalement influencé par {principal.libelle.lower()} "
-            f"« {principal.valeur} », classé {principal.niveau_retenu} dans le référentiel BEA."
-        )
-        if autres_faibles:
-            txt += " Les autres critères applicables sont classés FAIBLE."
+        txt = (f"Risque INTERDIT — Score {_pts(score)}. "
+               f"Blocage métier : {p.libelle} « {p.valeur} » classé INTERDIT "
+               f"dans le référentiel BEA (CDC §5). Le score reste calculé.")
+    elif not evalues:
+        txt = "Aucun critère validé n'entre dans le score. Donnée absente ≠ FAIBLE."
     else:
-        txt += " Tous les critères applicables sont classés FAIBLE."
+        txt = f"Risque {_NIV_LIB.get(niveau or '', niveau or 'NON CLASSÉ')} — Score {_pts(score)}."
+    forts = sorted((lg for lg in evalues if (lg.poids or 0) >= 10_000 and lg not in blocking),
+                   key=lambda lg: -(lg.poids or 0))
+    faibles = [lg for lg in evalues if 0 < (lg.poids or 0) < 10_000]
+    if forts:
+        txt += " Critères déterminants : " + " ; ".join(_contribution(lg) for lg in forts) + "."
+    if faibles:
+        txt += (f" {len(faibles)} critère(s) FAIBLE (+{_pts(sum(lg.poids or 0 for lg in faibles))}) : "
+                + ", ".join(f"{lg.libelle.lower()} « {lg.valeur} »" for lg in faibles) + ".")
+    suspendus = [lg for lg in lignes if lg.statut_regle == "SUSPENDU" and lg.etat == "EVALUE"]
+    if suspendus:
+        txt += " Hors score (suspendu) : " + " ; ".join(f"{lg.libelle} « {lg.valeur} »" for lg in suspendus) + "."
+    par_code = {lg.critere: lg for lg in lignes}
+    manquants = [par_code[c].libelle for c in ESSENTIELS if c in par_code and par_code[c].etat != "EVALUE"]
+    if manquants:
+        txt += " Données non disponibles (non comptées, ≠ FAIBLE) : " + ", ".join(manquants) + "."
     return txt
 
 
 def evaluer(d: DonneesClient, *, au_jour: date | None = None, mode: str = "SCORE") -> Evaluation:
     # CDC §3 : SCORE uniquement — le paramètre mode est ignoré (pas de MAX_NIVEAU concurrent).
     _ = mode
-    jour = au_jour or date.today()
+    if d.date_reference:
+        jour, source_ref = d.date_reference, d.source_date_reference or "FOURNIE"
+    elif au_jour:
+        jour, source_ref = au_jour, "PARAMETRE"
+    else:
+        jour, source_ref = date.today(), "DATE_CALCUL"
     lignes = [
         _eval_profil(d),
         _eval_forme(d),
@@ -810,7 +975,7 @@ def evaluer(d: DonneesClient, *, au_jour: date | None = None, mode: str = "SCORE
         _indispo("BENEFICIAIRE_EFFECTIF", "Mapping V4 des 3 états BE non validé.", "EER"),
         _indispo("REVENUS_PP", "Tranches matrice absentes d'ORION et du V4.", None),
         _indispo("REVENUS_PM", "Tranches matrice absentes d'ORION et du V4.", None),
-        _indispo("ENTREPRISE_RECENTE", "Date de création PM = EER, pas DATOUV ORION.", "EER"),
+        _eval_entreprise_recente(d, jour),
         _indispo("CANAL", "Canal d'ouverture non disponible dans ORION État des comptes.", None),
         _indispo("PRODUIT", "Feuille Produit matrice : pas de source opérations.", None),
         _indispo("TYPE_OPERATION", "Pas de source opérations.", None),
@@ -865,14 +1030,15 @@ def evaluer(d: DonneesClient, *, au_jour: date | None = None, mode: str = "SCORE
     motif = evalues_tri[0].libelle if evalues_tri else (blocking[0].libelle if blocking else None)
     autres = [lg.libelle for lg in evalues_tri[1:6]]
     par_code = {lg.critere: lg for lg in lignes}
-    essentiels = ("PPE", "FILTRAGE", "RESIDENCE", "NATIONALITE")
-    manquants = [c for c in essentiels if par_code.get(c) and par_code[c].etat != "EVALUE"]
+    manquants = [c for c in ESSENTIELS if par_code.get(c) and par_code[c].etat != "EVALUE"]
     completude = "INCOMPLETE" if manquants or nb == 0 else "OK"
-    motif_txt = _motif_genere(niveau_final, score, evalues, blocking)
+    motif_txt = _motif_genere(niveau_final, score, evalues, blocking, lignes)
 
     return Evaluation(
         racine=d.racine,
-        date_evaluation=jour.isoformat(),
+        date_evaluation=date.today().isoformat(),
+        date_reference=jour.isoformat(),
+        source_date_reference=source_ref,
         version_moteur=VERSION_MOTEUR,
         version_regles=VERSION_REGLES,
         mode="SCORE",

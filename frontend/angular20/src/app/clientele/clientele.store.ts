@@ -7,7 +7,7 @@ import { AgenceRef, CL_BASE, Capacites, ClConfig } from './clientele.models';
 const AUCUNE: Capacites = {
   voir: false, imports_voir: false, imports_executer: false,
   rapprochement_voir: false, rapprochement_executer: false,
-  classif_voir: false, classif_executer: false, classif_admin: false,
+  classif_voir: false, classif_executer: false, classif_admin: false, classif_forcer: false, classif_arbitrer: false,
   filtrage_voir: false, filtrage_executer: false, filtrage_decider: false,
   reporting_voir: false, bcm_voir: false, bcm_preparer: false, bcm_valider: false,
   bcm_cloturer: false, exporter: false, admin: false,

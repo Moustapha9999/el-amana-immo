@@ -26,8 +26,14 @@ SEUILS_CDC = {
 }
 SEUILS_PROPOSITION = SEUILS_CDC  # alias rétrocompatible
 
-VERSION_MOTEUR = "1.1.0-cdc"
-VERSION_REGLES = "CLASSIFICATION-2026.01"
+VERSION_MOTEUR = "1.3.0-cdc"
+VERSION_REGLES = "CLASSIFICATION-2026.02"
+
+# Décision métier du 10/10/2026 : ancienneté PM > 366 jours → 100, ≤ 366 jours → 10 000,
+# pour toutes les PM (la règle V4 « PM publique = 100 » n'est pas reprise).
+ENTREPRISE_RECENTE_JOURS = 366
+POIDS_ENTREPRISE_ANCIENNE = 100
+POIDS_ENTREPRISE_RECENTE = 10_000
 
 FAMILLES = ("CLIENT", "GEOGRAPHIE", "PRODUIT_SERVICE_OPERATION", "CANAL")
 
@@ -38,8 +44,8 @@ ETATS_LIGNE = ("EVALUE", "NON_DISPONIBLE", "NON_APPLICABLE", "A_VERIFIER")
 GOUVERNANCES = ("AUTOMATIQUE", "MANUELLE", "MANUELLE_SURCHARGE")
 
 STATUTS_REGLE = (
-    "VALIDEE", "A_ARBITRER", "NON_DISPONIBLE", "A_CONFIGURER", "ALIGNEE",
-    "INVALIDE_SOURCE", "SOURCE_V1", "SOURCE_V4",
+    "VALIDEE", "VALIDEE_METIER", "A_ARBITRER", "NON_DISPONIBLE", "A_CONFIGURER", "ALIGNEE",
+    "INVALIDE_SOURCE", "SOURCE_V1", "SOURCE_V4", "SUSPENDU",
 )
 
 
@@ -97,10 +103,11 @@ CRITERES_MAITRE: list[dict[str, Any]] = [
        note="Matrice 119 sous-secteurs dont 5 INTERDIT bloquants (CDC §5, §13). "
             "V4 71 codes = contrôle, jamais substitués."),
     _c("LISTE_INTERDICTION", "Liste d'interdiction ORION",
-       source="ORION", disponible="OUI", utilisable_auto=True,
-       type_decision="SCORE", champ="liste_interdiction", statut="SOURCE_V1",
-       note="Matrice filtrage sanctions Oui=Élevé, Non=Faible. Champ vide ORION = Non. "
-            "Champ absent = NON_DISPONIBLE, jamais Faible inventé."),
+       source="ORION", disponible="OUI", utilisable_auto=False,
+       type_decision="SCORE", champ="liste_interdiction", statut="SUSPENDU",
+       note="Codes ORION de tous les comptes (DI, OI…) visibles mais exclus du score tant que la "
+            "Conformité n'a pas confirmé leur sens ni tranché ÉLEVÉ vs INTERDIT (CDC §19 / §5). "
+            "Vide / Non / virgules seules = Faible 100. Champ absent = NON_DISPONIBLE."),
     _c("FILTRAGE", "Alerte de filtrage confirmée",
        source="ALERTES", disponible="APRES_LIAISON", utilisable_auto=False,
        type_decision="HYBRIDE", champ=None, statut="A_ARBITRER",
@@ -143,11 +150,14 @@ CRITERES_MAITRE: list[dict[str, Any]] = [
        type_decision="SCORE", champ="date_naissance", statut="A_ARBITRER",
        note="V4 H23 : si PP et (aujourd'hui - naissance) > 6580 jours → 100 sinon 10000. "
             "Absent de la matrice. Mineur = Moyen côté V4 uniquement."),
-    _c("ENTREPRISE_RECENTE", "Ancienneté personne morale (formule V4)",
-       source="EER", disponible="A_CONFIRMER", utilisable_auto=False,
-       type_decision="SCORE", champ=None, statut="A_CONFIGURER",
-       note="V4 H23 : PM publique=100 ; autre PM si >366 jours → 100 sinon 10000. "
-            "Date de création = EER, pas la date d'ouverture de compte ORION."),
+    _c("ENTREPRISE_RECENTE", "Entreprise à ouverture récente",
+       source="FICHIER_KYC+EER", disponible="PARTIEL", utilisable_auto=True,
+       type_decision="SCORE", champ="date_ouverture_entreprise", statut="VALIDEE_METIER",
+       note="Décision métier 10/10/2026 : ancienneté > 366 jours → 100 ; ≤ 366 jours → 10000, "
+            "toutes PM. Date d'ouverture : colonne « Date ouverture » du fichier ou saisie "
+            "analyste, sinon date de création PM de l'EER (jamais DATOUV compte). À défaut, "
+            "valeur déclarée « Entreprise ouverture récente » (déclaratif KYC). Date de référence : "
+            "date d'extraction ORION du client, sinon date du calcul. Contradiction → À vérifier."),
     _c("CANAL", "Canal d'ouverture / distribution",
        source="EER", disponible="A_CONFIRMER", utilisable_auto=False,
        type_decision="SCORE", champ=None, statut="A_ARBITRER",
@@ -217,6 +227,8 @@ QUESTIONS_CONFORMITE: list[dict[str, str]] = [
         "id": "Q5_SANCTIONS",
         "sujet": "Filtrage / liste d'interdiction",
         "question": "Correspondance confirmée → INTERDIT bloquant ou ÉLEVÉ (matrice = Élevé) ?",
+        "decision_cdc": "SUSPENDU",
+        "note": "Codes ORION DI et OI exclus du score jusqu'à arbitrage. Vide/Non reste Faible 100.",
     },
     {
         "id": "Q6_PPE_ABSENT",

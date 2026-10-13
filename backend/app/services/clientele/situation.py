@@ -24,6 +24,7 @@ from app.models import (
     ClienteleRapprochement,
     ClienteleSituation,
 )
+from app.services.clientele.classification import ClienteleClassificationService
 from app.services.clientele.service import Ctx, ClienteleService
 
 VERSION_MAPPING_SITUATION = "2026.10.situation.1"
@@ -423,12 +424,7 @@ class ClienteleSituationService:
                 {"id": str(dernier.id), "fichier_nom": dernier.fichier_nom,
                  "importe_le": dernier.importe_le.isoformat() if dernier.importe_le else None}
                 if dernier else None),
-            "classification": (
-                {"niveau": classif.niveau, "source": classif.source,
-                 "motif_risque": classif.motif_risque, "motif_classement": classif.motif_classement,
-                 "motifs": classif.motifs or [],
-                 "classifie_le": classif.classifie_le.isoformat() if classif.classifie_le else None}
-                if classif else None),
+            "classification": ClienteleClassificationService._classif_dict(classif),
             "alertes_ouvertes": [{"id": str(a.id), "statut": a.statut, "motif": a.motif,
                                   "precedent_faux_positif": a.precedent_faux_positif}
                                  for a in alertes],

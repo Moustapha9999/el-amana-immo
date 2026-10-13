@@ -7,8 +7,31 @@ import { FeedbackService } from '../../core/feedback/feedback.service';
 import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
 import { ApiService } from '../../core/services/api.service';
 import { ClienteleUiComponent } from '../clientele-ui.component';
-import { CL_BASE, FicheClient, dateFr } from '../clientele.models';
+import { CL_BASE, FicheClient, MODES_DECISION, TraceClassification, dateFr, dateHeureFr } from '../clientele.models';
 import { ClienteleStore } from '../clientele.store';
+
+interface EvaluationMoteur {
+  score_total: number; niveau_final: string | null; statut: string; admissible: boolean;
+  motif_principal: string | null; motif_genere?: string; avertissement?: string;
+  date_reference: string | null; source_date_reference: string | null;
+  version_moteur: string; version_regles: string;
+  lignes: {
+    critere: string; libelle: string; etat: string; valeur: string | null; source_donnee: string | null;
+    poids: number | null; motif: string; blocking_propose: boolean; contribue_au_score: boolean;
+  }[];
+}
+
+interface HistoriqueClassif extends Partial<TraceClassification> {
+  id: string; ancienne_classe: string | null; nouvelle_classe: string; source: string;
+  motif_classement: string | null; utilisateur: string | null; date: string | null;
+}
+
+const RESULTATS: Record<string, string> = {
+  ECRIT: 'Classification enregistrée',
+  INCHANGE: 'Classification inchangée (même niveau)',
+  MANUEL_PRESERVE: 'Décision manuelle préservée : réexamen ouvert',
+  NON_ADMISSIBLE: 'Résultat non admissible : rien n’a été enregistré',
+};
 
 @Component({
   selector: 'bea-cl-fiche',
@@ -57,52 +80,124 @@ import { ClienteleStore } from '../clientele.store';
           </section>
         </div>
         <section class="bea-mg__panel">
-          <div class="bea-mg__panel-top"><h2>Classification</h2>
-            @if (x.classification) { <span class="bea-cl-badge" [attr.data-s]="x.classification.source">{{ x.classification.source }}</span> }
+          <div class="bea-mg__panel-top"><h2>Classification retenue</h2>
+            @if (x.classification) {
+              <span class="bea-cl-badge" [attr.data-s]="x.classification.source">{{ modes[x.classification.mode_decision || ''] || x.classification.source }}</span>
+            }
           </div>
-          @if (x.classification) {
+          @if (x.classification; as c) {
             <dl class="bea-cl-dl">
-              <dt>Niveau</dt><dd>{{ x.classification.niveau }}</dd>
-              <dt>Motif risque</dt><dd>{{ x.classification.motif_risque || '—' }}</dd>
-              <dt>Motif classement</dt><dd>{{ x.classification.motif_classement || '—' }}</dd>
+              <dt>Niveau retenu</dt><dd><span class="bea-cl-badge" [attr.data-s]="c.niveau">{{ c.niveau }}</span>
+                @if (c.force) { <small class="bea-cl-hint"> · forcé</small> }
+                @if (c.blocage_leve) { <small class="bea-cl-hint"> · levée de blocage INTERDIT</small> }
+              </dd>
+              <dt>Mode de décision</dt><dd>{{ modes[c.mode_decision || ''] || '—' }} <small class="bea-cl-hint">({{ c.source }})</small></dd>
+              <dt>Score calculé</dt><dd>{{ c.score_calcule ?? '—' }}</dd>
+              <dt>Niveau proposé (moteur)</dt><dd>{{ c.niveau_propose || '—' }}</dd>
+              <dt>Classe du fichier</dt><dd>{{ c.classe_source_fichier || '—' }}</dd>
+              <dt>Motif moteur</dt><dd>{{ c.motif_moteur || '—' }}</dd>
+              <dt>Motif source</dt><dd>{{ c.motif_source || c.motif_risque || '—' }}</dd>
+              <dt>Motif décision manuelle</dt><dd>{{ c.motif_decision_manuelle || '—' }}</dd>
+              <dt>Motif classement</dt><dd>{{ c.motif_classement || '—' }}</dd>
+              <dt>Analyste KYC</dt><dd>{{ c.analyste_kyc || '—' }}</dd>
+              <dt>Mise à jour métier</dt><dd>{{ dateFr(c.date_maj_metier) }}</dd>
+              <dt>Date de référence</dt><dd>{{ dateFr(c.date_reference) }}</dd>
+              <dt>Classé le</dt><dd>{{ dateHeureFr(c.classifie_le) }}</dd>
+              <dt>Versions</dt><dd>{{ c.version_moteur || '—' }} / {{ c.version_regles || '—' }}</dd>
             </dl>
-            <ul class="bea-cl-anoms">
-              @for (m of x.classification.motifs; track $index) {
-                <li><mat-icon>flag</mat-icon>{{ m.libelle || m.critere }} — {{ m.motif }}</li>
-              }
-            </ul>
           } @else {
-            <p class="bea-cl-hint" style="padding:0.9rem 1.1rem">Pas encore classé. Une donnée absente n’est jamais Faible. 0 critère exploitable → NON CLASSÉ.</p>
-          }
-          @if (store.cap().classif_voir) {
-            <div class="bea-cl-filters">
-              <label>&nbsp;<button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="evaluer()">Recalculer (proposition)</button></label>
-            </div>
-          }
-          @if (evaluation(); as e) {
-            <dl class="bea-cl-dl">
-              <dt>Score auto</dt><dd>{{ e.score_total }} — {{ e.niveau_final || 'NON CLASSÉ' }}</dd>
-              <dt>Motif</dt><dd>{{ e.motif_genere || e.motif_principal || '—' }}</dd>
-              <dt>Cohérence</dt><dd>{{ e.coherence }}</dd>
-            </dl>
-            <ul class="bea-cl-anoms">
-              @for (lg of e.lignes; track lg.critere) {
-                @if (lg.etat === 'EVALUE' || lg.blocking_propose || lg.divergence) {
-                  <li><mat-icon>flag</mat-icon>{{ lg.libelle }} : {{ lg.valeur || '—' }} — {{ lg.poids ?? 0 }} — {{ lg.etat }}</li>
-                }
-              }
-            </ul>
-          }
-          @if (store.cap().classif_executer) {
-            <div class="bea-cl-filters">
-              <label>Nouveau niveau
-                <select [(ngModel)]="niveau"><option>FAIBLE</option><option>MOYEN</option><option>ELEVE</option><option>INTERDIT</option></select>
-              </label>
-              <label>Motif classement<input [(ngModel)]="motif" /></label>
-              <label>&nbsp;<button type="button" class="bea-mg__btn" (click)="classer()">Enregistrer</button></label>
-            </div>
+            <p class="bea-cl-hint" style="padding:0.9rem 1.1rem">Pas encore classé. Une donnée absente n’est jamais Faible. 0 critère exploitable → NON CLASSÉ (jamais enregistré).</p>
           }
         </section>
+
+        @if (store.cap().classif_voir) {
+          <section class="bea-mg__panel">
+            <div class="bea-mg__panel-top"><h2>Moteur de scoring (CDC 1.0)</h2>
+              <span style="display:flex;gap:0.4rem">
+                <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="evaluer()" [disabled]="busy()"><mat-icon>calculate</mat-icon> Évaluer avec le moteur</button>
+                @if (store.cap().classif_executer && evaluation()?.admissible) {
+                  <button type="button" class="bea-mg__btn" (click)="enregistrerMoteur()" [disabled]="busy()"><mat-icon>save</mat-icon> Enregistrer le résultat du moteur</button>
+                }
+              </span>
+            </div>
+            @if (evaluation(); as e) {
+              <dl class="bea-cl-dl">
+                <dt>Score</dt><dd><strong>{{ e.score_total }}</strong> — {{ e.niveau_final || 'NON CLASSÉ' }} <small class="bea-cl-hint">({{ e.statut }})</small></dd>
+                <dt>Admissible</dt><dd>{{ e.admissible ? 'Oui' : 'Non — ne peut pas être enregistré comme classification valide' }}</dd>
+                <dt>Motif</dt><dd>{{ e.motif_genere || e.motif_principal || '—' }}</dd>
+                <dt>Date de référence</dt><dd>{{ dateFr(e.date_reference) }} <small class="bea-cl-hint">{{ libRef[e.source_date_reference || ''] || e.source_date_reference }}</small></dd>
+                <dt>Versions</dt><dd>{{ e.version_moteur }} / {{ e.version_regles }}</dd>
+              </dl>
+              @if (e.avertissement) { <div class="bea-cl-note" style="margin:0 1.1rem 0.9rem"><mat-icon>info</mat-icon><span>{{ e.avertissement }}</span></div> }
+              <div class="bea-mg__table-wrap">
+                <table class="bea-mg__table">
+                  <thead><tr><th>Critère</th><th>Valeur</th><th>Source</th><th>État</th><th>Poids</th><th>Compté</th><th>Motif</th></tr></thead>
+                  <tbody>
+                    @for (lg of e.lignes; track lg.critere) {
+                      <tr>
+                        <td>{{ lg.libelle }}</td>
+                        <td>{{ lg.valeur || '—' }}</td>
+                        <td>{{ lg.source_donnee || '—' }}</td>
+                        <td><span class="bea-cl-badge" [attr.data-s]="lg.etat">{{ lg.etat }}</span>@if (lg.blocking_propose) { <small class="bea-cl-hint"> bloquant</small> }</td>
+                        <td>{{ lg.poids ?? '—' }}</td>
+                        <td>{{ lg.contribue_au_score ? 'Oui' : '—' }}</td>
+                        <td style="max-width:30rem">{{ lg.motif }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else {
+              <p class="bea-cl-hint" style="padding:0.9rem 1.1rem">Évaluation explicable : score, critères, motif. Rien n’est enregistré tant que vous ne le confirmez pas.</p>
+            }
+          </section>
+        }
+
+        @if (store.cap().classif_executer) {
+          <section class="bea-mg__panel">
+            <div class="bea-mg__panel-top"><h2>Décision manuelle</h2></div>
+            <div class="bea-cl-filters">
+              <label>Niveau retenu
+                <select [(ngModel)]="niveau"><option>FAIBLE</option><option>MOYEN</option><option>ELEVE</option><option>INTERDIT</option></select>
+              </label>
+              <label style="flex:1">Motif de la décision (obligatoire)<input [(ngModel)]="motif" maxlength="2000" /></label>
+              @if (store.cap().classif_forcer) {
+                <label class="bea-cl-check"><input type="checkbox" [(ngModel)]="forcer" /> Forçage (levée d’un blocage INTERDIT)</label>
+              }
+              <label>&nbsp;<button type="button" class="bea-mg__btn" (click)="classer()" [disabled]="busy()">Enregistrer la décision</button></label>
+            </div>
+            <p class="bea-cl-hint" style="padding:0 1.1rem 0.9rem">Auteur, date, niveau retenu et motif sont historisés. Un INTERDIT proposé par le moteur ne peut être abaissé que par forçage (permission dédiée).</p>
+          </section>
+        }
+
+        @if (historique().length) {
+          <section class="bea-mg__panel">
+            <div class="bea-mg__panel-top"><h2>Historique de classification</h2><span class="bea-mg__count">{{ historique().length }}</span></div>
+            <div class="bea-mg__table-wrap">
+              <table class="bea-mg__table">
+                <thead><tr><th>Date</th><th>Utilisateur</th><th>Ancien → nouveau</th><th>Mode</th><th>Score / proposé</th><th>Fichier</th><th>Motif</th><th>Analyste KYC</th><th>Lot / ligne</th></tr></thead>
+                <tbody>
+                  @for (h of historique(); track h.id) {
+                    <tr>
+                      <td>{{ dateHeureFr(h.date) }}</td>
+                      <td>{{ h.utilisateur || '—' }}</td>
+                      <td>{{ h.ancienne_classe || '—' }} → <strong>{{ h.nouvelle_classe }}</strong>
+                        @if (h.force) { <small class="bea-cl-hint"> forcé</small> }
+                        @if (h.blocage_leve) { <small class="bea-cl-hint"> levée INTERDIT</small> }
+                      </td>
+                      <td>{{ modes[h.mode_decision || ''] || h.source }}</td>
+                      <td>{{ h.score_calcule ?? '—' }} / {{ h.niveau_propose || '—' }}</td>
+                      <td>{{ h.classe_source_fichier || '—' }}</td>
+                      <td style="max-width:24rem">{{ h.motif_decision_manuelle || h.motif_classement || '—' }}</td>
+                      <td>{{ h.analyste_kyc || '—' }}</td>
+                      <td>{{ h.lot_id ? 'Lot · L' + h.ligne_source : '—' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </section>
+        }
         @if (x.alertes_ouvertes.length) {
           <section class="bea-mg__panel">
             <div class="bea-mg__panel-top"><h2>Alertes ouvertes</h2></div>
@@ -146,12 +241,16 @@ export class ClFicheComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   readonly store = inject(ClienteleStore);
   readonly f = signal<FicheClient | null>(null);
-  readonly evaluation = signal<{
-    score_total: number; niveau_final: string | null; niveau_max: string | null;
-    motif_principal: string | null; motif_genere?: string; coherence: string;
-    lignes: { critere: string; libelle: string; etat: string; valeur: string | null; poids: number | null; blocking_propose: boolean; divergence: boolean }[];
-  } | null>(null);
+  readonly evaluation = signal<EvaluationMoteur | null>(null);
+  readonly historique = signal<HistoriqueClassif[]>([]);
+  readonly busy = signal(false);
   readonly dateFr = dateFr;
+  readonly dateHeureFr = dateHeureFr;
+  readonly modes = MODES_DECISION;
+  readonly libRef: Record<string, string> = {
+    EXTRACTION_ORION: 'date d’extraction ORION', DATE_CALCUL: 'date du calcul', PARAMETRE: 'paramètre', FOURNIE: 'fournie',
+  };
+  forcer = false;
 
   agenceLib(code: string | null | undefined, libelle: string | null | undefined): string {
     if (!code) return '—';
@@ -166,41 +265,66 @@ export class ClFicheComponent implements OnInit {
     this.recharger();
   }
 
+  private racine(): string {
+    return this.route.snapshot.paramMap.get('racine') ?? '';
+  }
+
   private recharger(): void {
-    const racine = this.route.snapshot.paramMap.get('racine') ?? '';
+    const racine = this.racine();
     this.api.get<FicheClient>(`${CL_BASE}/clients/${racine}`).subscribe({
       next: (d) => this.f.set(d),
       error: (e) => void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Fiche introuvable')),
     });
+    this.api.get<HistoriqueClassif[]>(`${CL_BASE}/clients/${racine}/classification/historique`).subscribe({
+      next: (h) => this.historique.set(h),
+      error: () => this.historique.set([]),
+    });
   }
 
   classer(): void {
-    const racine = this.f()?.client?.['racine_client'];
-    if (!racine || !this.motif.trim()) {
-      this.feedback.warning({ title: 'Motif obligatoire', message: 'Indiquez le motif de classement.' });
+    const racine = this.racine();
+    const motif = this.motif.trim();
+    if (!motif) {
+      this.feedback.warning({ title: 'Motif obligatoire', message: 'Indiquez le motif de la décision manuelle.' });
       return;
     }
+    const forcer = this.forcer && !!this.store.cap().classif_forcer;
     this.feedback.run(() => this.api.post(`${CL_BASE}/clients/${racine}/classification`, {
-      niveau: this.niveau, motif_classement: this.motif,
+      niveau: this.niveau, motif_classement: motif, forcer, confirmation: forcer,
     }), {
-      confirm: { action: 'validation', title: 'Modifier la classification', message: `Classer ${racine} en ${this.niveau} ?`, hint: 'La racine n’est pas modifiable.' },
-      success: { title: 'Classification enregistrée' }, errorTitle: 'Enregistrement refusé',
-    }).subscribe(() => { this.motif = ''; this.recharger(); });
+      confirm: forcer
+        ? { title: 'Forçage de classification', message: `FORÇAGE — retenir ${this.niveau} pour ${racine} ?`, hint: 'Lève un éventuel blocage INTERDIT du moteur. Action tracée dans l’audit (levée de blocage).', confirmLabel: 'Confirmer le forçage', tone: 'danger' }
+        : { action: 'validation', title: 'Décision manuelle', message: `Retenir ${this.niveau} pour ${racine} ?`, hint: 'Auteur, date, niveau et motif historisés. Les imports ultérieurs ne remplaceront pas cette décision.' },
+      busy: this.busy, success: { title: 'Décision enregistrée', message: `Niveau retenu : ${this.niveau}` }, errorTitle: 'Décision refusée', retry: false,
+    }).subscribe(() => { this.motif = ''; this.forcer = false; this.recharger(); });
   }
 
   evaluer(): void {
-    const racine = this.f()?.client?.['racine_client'];
-    if (!racine) return;
-    this.feedback.run(() => this.api.post<{
-      score_total: number; niveau_final: string | null; niveau_max: string | null;
-      motif_principal: string | null; motif_genere?: string; coherence: string;
-      lignes: { critere: string; libelle: string; etat: string; valeur: string | null; poids: number | null; blocking_propose: boolean; divergence: boolean }[];
-    }>(`${CL_BASE}/classification/evaluer`, {
-      racine, persister: true,
-    }), {
-      loading: 'Évaluation…',
-      success: (e) => ({ title: 'Évaluation proposition', message: `Score ${e.score_total} — ${e.niveau_final || 'NON CLASSÉ'}` }),
+    const racine = this.racine();
+    this.feedback.run(() => this.api.post<EvaluationMoteur>(`${CL_BASE}/classification/evaluer`, { racine, persister: true }), {
+      busy: this.busy, loading: 'Évaluation…',
+      success: (e) => ({ title: 'Évaluation moteur', message: `Score ${e.score_total} — ${e.niveau_final || 'NON CLASSÉ'}${e.admissible ? '' : ' (non admissible)'}` }),
       errorTitle: 'Évaluation refusée',
     }).subscribe((e) => this.evaluation.set(e));
+  }
+
+  enregistrerMoteur(): void {
+    const racine = this.racine();
+    const e = this.evaluation();
+    if (!e) return;
+    this.feedback.runWithReason(
+      (motif) => this.api.post<{ resultat: string }>(`${CL_BASE}/clients/${racine}/classification/moteur`, { motif }),
+      {
+        reason: {
+          title: 'Enregistrer le résultat du moteur',
+          message: `Retenir ${e.niveau_final} (score ${e.score_total}) pour ${racine} ?`,
+          hint: 'Le moteur est réévalué au moment de l’enregistrement. Une décision manuelle existante est préservée (un réexamen est ouvert).',
+          reasonLabel: 'Motif', maxLength: 500, confirmLabel: 'Enregistrer', tone: 'primary',
+        },
+        busy: this.busy, loading: 'Enregistrement…',
+        success: (r) => ({ title: RESULTATS[r.resultat] ?? r.resultat }),
+        errorTitle: 'Enregistrement refusé', retry: false,
+      },
+    ).subscribe(() => this.recharger());
   }
 }

@@ -1,0 +1,492 @@
+{
+  "profils": [
+    "Personne Morale",
+    "Personne Physique"
+  ],
+  "sous_profils": [
+    "GE",
+    "PME",
+    "TPE",
+    "Personne Morale Publique",
+    "Personne Morale Association",
+    "Personne Physique"
+  ],
+  "categories_juridiques": [
+    "Personne Physique",
+    "Salarié",
+    "Retraité",
+    "Etudiant",
+    "Sans emploi",
+    "Entrepreuneur",
+    "Rentier",
+    "Professionnel",
+    "Personnel de la banque",
+    "Non identifié",
+    "GE",
+    "PME",
+    "TPE",
+    "Société Anonyme (SA)",
+    "SARL",
+    "SUARL",
+    "ETABLISSEMENT",
+    "Succursale",
+    "Groupement",
+    "INSTITUTION FINANCIERE PRIVEE",
+    "Professions libérales",
+    "Projet Privé",
+    "SNC",
+    "SCS",
+    "SP",
+    "SAS",
+    "SCA",
+    "Personne Morale Publique",
+    "EPIC",
+    "EPA",
+    "COLLECTIVITE",
+    "ADMINISTRATION CENTRALE",
+    "INSTITUTION NATIONALE",
+    "INSTITUTION INTERNATIONALE",
+    "INSTITUTION FINANCIERE PUBLIQUE",
+    "AMBASSADE",
+    "Projet Public",
+    "Personne Morale Association",
+    "ONG",
+    "ASSOCIATION",
+    "FONDATION",
+    "COOPERATIVE",
+    "PARTI POLITIQUE",
+    "ORGANISATION",
+    "Projet Association"
+  ],
+  "statuts_compte": [
+    "Ouvert",
+    "fermé",
+    "Bloqué"
+  ],
+  "statuts_gel": [
+    "Actif",
+    "Inactif",
+    "Cloturé"
+  ],
+  "classes_risque": [
+    "Faible",
+    "Moyen",
+    "Elevé"
+  ],
+  "motifs": [
+    "Moyen (PP)",
+    "Rentier",
+    "Professionnel",
+    "age inf 18 ans",
+    "Nationalité étrangére",
+    "Elevé (PP)",
+    "Pays de résidence étranger",
+    "client réfugié",
+    "Compte avec procuration",
+    "Client déclaré",
+    "Moyen (PM)",
+    "Date création inf 1 an",
+    "Elevé (PM)",
+    "Personne Morale Association"
+  ],
+  "analystes": [
+    "Fatimata Diallo",
+    "Fatimata Thiam",
+    "Mohamed Lemrabott",
+    "Abass N'gam",
+    "Non identifié"
+  ],
+  "secteurs": [
+    {
+      "code": "101",
+      "libelle": "Cultures céréalières (riz,mil, sorgho, maïs)",
+      "famille": "AGRICULTURE"
+    },
+    {
+      "code": "102",
+      "libelle": "Cultures maraîchères",
+      "famille": "AGRICULTURE"
+    },
+    {
+      "code": "103",
+      "libelle": "Culture de dattiers",
+      "famille": "AGRICULTURE"
+    },
+    {
+      "code": "104",
+      "libelle": "Arboriculture fruitière",
+      "famille": "AGRICULTURE"
+    },
+    {
+      "code": "105",
+      "libelle": "Autres activités agricoles",
+      "famille": "AGRICULTURE"
+    },
+    {
+      "code": "201",
+      "libelle": "Élevage bovin",
+      "famille": "ÉLEVAGE"
+    },
+    {
+      "code": "202",
+      "libelle": "Élevage ovin et caprin",
+      "famille": "ÉLEVAGE"
+    },
+    {
+      "code": "203",
+      "libelle": "Élevage camelin",
+      "famille": "ÉLEVAGE"
+    },
+    {
+      "code": "204",
+      "libelle": "Élevage avicole",
+      "famille": "ÉLEVAGE"
+    },
+    {
+      "code": "205",
+      "libelle": "Autre Élevage ou production animale",
+      "famille": "ÉLEVAGE"
+    },
+    {
+      "code": "301",
+      "libelle": "Pêche industrielle",
+      "famille": "PÊCHE"
+    },
+    {
+      "code": "302",
+      "libelle": "Pêche artisanale et  côtière",
+      "famille": "PÊCHE"
+    },
+    {
+      "code": "401",
+      "libelle": "Extraction minerai de fer",
+      "famille": "MINES"
+    },
+    {
+      "code": "402",
+      "libelle": "Extraction or",
+      "famille": "MINES"
+    },
+    {
+      "code": "403",
+      "libelle": "Extraction cuivre",
+      "famille": "MINES"
+    },
+    {
+      "code": "404",
+      "libelle": "Extraction gypse",
+      "famille": "MINES"
+    },
+    {
+      "code": "405",
+      "libelle": "Extraction sel",
+      "famille": "MINES"
+    },
+    {
+      "code": "406",
+      "libelle": "Services miniers et sous-traitance",
+      "famille": "MINES"
+    },
+    {
+      "code": "407",
+      "libelle": "DIVERS EXTRACTION DE MINERAIS METALLIQUE ET MINERAIS DIVERS",
+      "famille": "MINES"
+    },
+    {
+      "code": "501",
+      "libelle": "Exploration production gaz",
+      "famille": "HYDROCARBURES"
+    },
+    {
+      "code": "502",
+      "libelle": "Raffinage pétrole",
+      "famille": "HYDROCARBURES"
+    },
+    {
+      "code": "503",
+      "libelle": "Stockage hydrocarbures",
+      "famille": "HYDROCARBURES"
+    },
+    {
+      "code": "504",
+      "libelle": "Transport et logistique des hydrocarbures",
+      "famille": "HYDROCARBURES"
+    },
+    {
+      "code": "505",
+      "libelle": "Services pétroliers",
+      "famille": "HYDROCARBURES"
+    },
+    {
+      "code": "506",
+      "libelle": "Autres activités ou services liés à l'hydrocarbure",
+      "famille": "HYDROCARBURES"
+    },
+    {
+      "code": "601",
+      "libelle": "Promotion immobilière",
+      "famille": "BTP"
+    },
+    {
+      "code": "602",
+      "libelle": "Construction bâtiments",
+      "famille": "BTP"
+    },
+    {
+      "code": "603",
+      "libelle": "Travaux publics et infrastructures",
+      "famille": "BTP"
+    },
+    {
+      "code": "604",
+      "libelle": "Génie civil",
+      "famille": "BTP"
+    },
+    {
+      "code": "605",
+      "libelle": "Location matériel BTP",
+      "famille": "BTP"
+    },
+    {
+      "code": "606",
+      "libelle": "Autres activités ou services liés au BTP",
+      "famille": "BTP"
+    },
+    {
+      "code": "701",
+      "libelle": "Commerce de produits alimentaires",
+      "famille": "COMMERCE"
+    },
+    {
+      "code": "702",
+      "libelle": "Commerce d'automobile, de véhicules et pièces détachées",
+      "famille": "COMMERCE"
+    },
+    {
+      "code": "703",
+      "libelle": "Commerce électronique",
+      "famille": "COMMERCE"
+    },
+    {
+      "code": "704",
+      "libelle": "Commercialisation poisson",
+      "famille": "COMMERCE"
+    },
+    {
+      "code": "705",
+      "libelle": "Import-export",
+      "famille": "COMMERCE"
+    },
+    {
+      "code": "706",
+      "libelle": "Petit commerce",
+      "famille": "COMMERCE"
+    },
+    {
+      "code": "707",
+      "libelle": "Commerce matériaux de constructions",
+      "famille": "COMMERCE"
+    },
+    {
+      "code": "708",
+      "libelle": "Divers commerce général",
+      "famille": "COMMERCE"
+    },
+    {
+      "code": "801",
+      "libelle": "Transport routier marchandises",
+      "famille": "TRANSPORT"
+    },
+    {
+      "code": "802",
+      "libelle": "Transport routier voyageurs",
+      "famille": "TRANSPORT"
+    },
+    {
+      "code": "803",
+      "libelle": "Transports Aériens",
+      "famille": "TRANSPORT"
+    },
+    {
+      "code": "804",
+      "libelle": "Transport maritime",
+      "famille": "TRANSPORT"
+    },
+    {
+      "code": "805",
+      "libelle": "Services portuaires",
+      "famille": "TRANSPORT"
+    },
+    {
+      "code": "806",
+      "libelle": "DIVERS TRANSPORTS",
+      "famille": "TRANSPORT"
+    },
+    {
+      "code": "807",
+      "libelle": "Production et distribution d'électrique",
+      "famille": "Énergie et Eau"
+    },
+    {
+      "code": "808",
+      "libelle": "Production et distribution d'eau",
+      "famille": "Énergie et Eau"
+    },
+    {
+      "code": "809",
+      "libelle": "Artisanat (Métiers traditionnels, tissage, bijouterie )",
+      "famille": "Artisanat"
+    },
+    {
+      "code": "810",
+      "libelle": "Télécommunications et IT (Téléphonie, internet, services numériques)",
+      "famille": "Télécommunications"
+    },
+    {
+      "code": "811",
+      "libelle": "Banques et Assurances (Banques, assurances, microfinance)",
+      "famille": "Banques et Assurances"
+    },
+    {
+      "code": "812",
+      "libelle": "Tourisme et Hôtellerie (Hôtels, agences voyage, restauration)",
+      "famille": "Tourisme et Hôtellerie"
+    },
+    {
+      "code": "813",
+      "libelle": "Services aux entreprises (Conseil, comptabilité, services techniques)",
+      "famille": "Services aux entreprises"
+    },
+    {
+      "code": "814",
+      "libelle": "Santé et Social (Hôpitaux, cliniques, pharmacies)",
+      "famille": "Santé et Social"
+    },
+    {
+      "code": "815",
+      "libelle": "Éducation et Formation (Écoles, universités, centres formation)",
+      "famille": "Éducation et Formation"
+    },
+    {
+      "code": "816",
+      "libelle": "Ambassades et représentations diplomatiques",
+      "famille": "Ambassades"
+    },
+    {
+      "code": "817",
+      "libelle": "Associations et ONG",
+      "famille": "ONG"
+    },
+    {
+      "code": "818",
+      "libelle": "Médias et communication",
+      "famille": "Presse"
+    },
+    {
+      "code": "901",
+      "libelle": "Administration publique (Services publics, collectivités territoriales)",
+      "famille": "Administration publique"
+    },
+    {
+      "code": "902",
+      "libelle": "Industrie huile et farine de poisson",
+      "famille": "Industrie"
+    },
+    {
+      "code": "903",
+      "libelle": "Industrie poisson élaboré, frais et congelé",
+      "famille": "Industrie"
+    },
+    {
+      "code": "904",
+      "libelle": "DIVERS INDUSTRIE DE LA PECHE",
+      "famille": "Industrie"
+    },
+    {
+      "code": "905",
+      "libelle": "Congélation  des produits halieutiques",
+      "famille": "Industrie"
+    },
+    {
+      "code": "906",
+      "libelle": "Autres industries alimentaires",
+      "famille": "Industrie"
+    },
+    {
+      "code": "907",
+      "libelle": "Agroalimentaire (Minoteries, conserveries, laiteries)",
+      "famille": "Industrie"
+    },
+    {
+      "code": "908",
+      "libelle": "Industrie du Bois et de l'Ameublement",
+      "famille": "Industrie"
+    },
+    {
+      "code": "909",
+      "libelle": "Industrie des Matériaux de Construction",
+      "famille": "Industrie"
+    },
+    {
+      "code": "910",
+      "libelle": "Industries des Métaux, Construction Mécaniques",
+      "famille": "Industrie"
+    },
+    {
+      "code": "911",
+      "libelle": "Industries des Textiles, du Cuir et de l'Habillement",
+      "famille": "Industrie"
+    },
+    {
+      "code": "912",
+      "libelle": "Autre industries",
+      "famille": "Industrie"
+    },
+    {
+      "code": "913",
+      "libelle": "Autres ou Divers",
+      "famille": "Autres (Non définis)"
+    },
+    {
+      "code": "1101",
+      "libelle": "Personne Physique - Salarié",
+      "famille": "Personnne physique"
+    },
+    {
+      "code": "1102",
+      "libelle": "Personne Physique - Retraité",
+      "famille": "Personnne physique"
+    },
+    {
+      "code": "1103",
+      "libelle": "Personne Physique - Etudiant",
+      "famille": "Personnne physique"
+    },
+    {
+      "code": "1104",
+      "libelle": "Personne Physique - Sans emploi",
+      "famille": "Personnne physique"
+    },
+    {
+      "code": "1105",
+      "libelle": "Personne Physique - Entrepreneur",
+      "famille": "Personnne physique"
+    },
+    {
+      "code": "1106",
+      "libelle": "Personne Physique - Rentier",
+      "famille": "Personnne physique"
+    },
+    {
+      "code": "1107",
+      "libelle": "Personne Physique - Professionnel",
+      "famille": "Personnne physique"
+    },
+    {
+      "code": "1108",
+      "libelle": "Personne Physique - Personnel de la Banque",
+      "famille": "Personnne physique"
+    }
+  ],
+  "source": "File-uploade-par-semaine.xlsx — listes observées, pas le référentiel maître BEA DIGITAL"
+}

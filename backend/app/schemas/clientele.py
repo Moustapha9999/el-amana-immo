@@ -19,12 +19,68 @@ class LotMappingIn(BaseModel):
     colonne_racine: str | None = None
     colonne_niveau: str | None = None
     colonne_motif: str | None = None
+    colonne_entreprise_recente: str | None = None
+    colonne_date_ouverture: str | None = None
+    colonne_date_maj: str | None = None
+    colonne_analyste: str | None = None
+    periode_reference: date | None = None
+
+
+class LotMajIn(BaseModel):
+    fichier_nom: str | None = Field(None, max_length=255)
+    periode_reference: date | None = None
 
 
 class LotClasserIn(BaseModel):
     origine: str
     motif: str
     forcer: bool = False
+    confirmation: bool = False
+
+
+class LotDateOuvertureIn(BaseModel):
+    ligne: int
+    date_ouverture: str | None = None
+
+
+class LotDecisionLigneIn(BaseModel):
+    ligne: int
+    choix: str
+    niveau: str | None = None
+    motif: str
+
+
+class LotDivergencesIn(BaseModel):
+    decisions: list[LotDecisionLigneIn] = Field(default_factory=list)
+    forcer: bool = False
+    confirmation: bool = False
+
+
+class ClassifMoteurScoringIn(BaseModel):
+    motif: str
+    forcer: bool = False
+    confirmation: bool = False
+
+
+class ClassifMasseIn(BaseModel):
+    motif: str
+    profil: str | None = None
+    code_agence: str | None = None
+    apres: str | None = None
+    taille: int | None = None
+
+
+class ReexamenTraiterIn(BaseModel):
+    decision: str
+    niveau: str | None = None
+    forcer: bool = False
+    confirmation: bool = False
+
+
+class DivergenceArbitrerIn(BaseModel):
+    statut: str
+    decision: str | None = None
+    justification: str
 
 
 class RapprochementIn(BaseModel):
@@ -37,6 +93,8 @@ class ClassifManuelIn(BaseModel):
     motif_risque: str | None = None
     motif_classement: str
     racine_client: str | None = None
+    forcer: bool = False
+    confirmation: bool = False
 
 
 class ClassifMoteurIn(BaseModel):
@@ -96,6 +154,10 @@ class AlerteDecisionIn(BaseModel):
 class DeclarationBcmCreerIn(BaseModel):
     annee: int = Field(..., ge=2000, le=2100)
     mois: int = Field(..., ge=1, le=12)
+
+
+class DeclarationBcmMotifIn(BaseModel):
+    motif: str
 
 
 class DeclarationBcmValiderIn(BaseModel):

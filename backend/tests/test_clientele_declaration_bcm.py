@@ -64,6 +64,9 @@ async def _nettoyer(session) -> None:
             SELECT id FROM clientele_alertes WHERE racine_client IN {_IN})
     """))
     await session.execute(text(f"DELETE FROM clientele_alertes WHERE racine_client IN {_IN}"))
+    for table in ("clientele_classif_reexamens", "clientele_classif_evaluations"):
+        if await session.scalar(text(f"SELECT to_regclass('public.{table}') IS NOT NULL")):
+            await session.execute(text(f"DELETE FROM {table} WHERE racine_client IN {_IN}"))
     await session.execute(text(
         f"DELETE FROM clientele_classif_historique WHERE racine_client IN {_IN}"))
     await session.execute(text(
@@ -211,3 +214,54 @@ async def test_mois_non_clos_et_snapshot_fige(db):
     with pytest.raises(AppError) as err:
         await svc.creer(2026, 8, aujourdhui=AUJ)
     assert err.value.code == "DECLARATION_EXISTANTE"
+
+
+@pytest.mark.asyncio
+async def test_desactiver_reactiver_supprimer(db):
+    ctx = await _ctx(db)
+    await _importer(db, ctx)
+    svc = ClienteleDeclarationService(db, ctx)
+    d = await svc.creer(2026, 8, aujourdhui=AUJ)
+    did = uuid.UUID(d["id"])
+    assert d["actions"]["desactiver"] and d["actions"]["supprimer"]
+    assert d["journal"][0]["etape"] == "Créée"
+    cal = await svc.calculer(did, aujourdhui=AUJ)
+    assert cal["synthese"]["cellules"] > 0
+
+    with pytest.raises(AppError):
+        await svc.desactiver(did, motif="  ")
+    off = await svc.desactiver(did, motif="Doublon de préparation")
+    assert off["statut"] == "DESACTIVEE"
+    assert off["motif_desactivation"] == "Doublon de préparation"
+    assert off["actions"]["reactiver"] is True
+    assert off["actions"]["desactiver"] is False
+    assert off["actions"]["calculer"] is False
+    with pytest.raises(AppError) as err:
+        await svc.calculer(did, aujourdhui=AUJ)
+    assert err.value.code == "DECLARATION_DESACTIVEE"
+    with pytest.raises(AppError) as err:
+        await svc.creer(2026, 8, aujourdhui=AUJ)
+    assert err.value.code == "DECLARATION_EXISTANTE"
+
+    on = await svc.reactiver(did)
+    assert on["statut"] == "CALCULEE"
+    assert on["motif_desactivation"] is None
+
+    with pytest.raises(AppError):
+        await svc.supprimer(did)
+    await svc.supprimer(did, motif="Recréation demandée par la Conformité")
+    assert (await db.scalar(text(
+        "SELECT count(*) FROM clientele_declarations_bcm WHERE annee = 2026 AND mois = 8"))) == 0
+
+    fige = await svc.creer(2026, 8, aujourdhui=AUJ)
+    fid = uuid.UUID(fige["id"])
+    await svc.calculer(fid, aujourdhui=AUJ)
+    await svc.controler(fid)
+    fige = await svc.valider(fid, aujourdhui=AUJ)
+    assert fige["actions"]["supprimer"] is False
+    assert fige["actions"]["desactiver"] is False
+    with pytest.raises(AppError) as err:
+        await svc.supprimer(fid, motif="interdit")
+    assert err.value.code == "DECLARATION_FIGEE"
+    with pytest.raises(AppError):
+        await svc.desactiver(fid, motif="interdit")

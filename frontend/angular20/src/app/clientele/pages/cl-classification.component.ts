@@ -1,13 +1,17 @@
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
+import { EMPTY } from 'rxjs';
+import { expand, last, map, tap } from 'rxjs/operators';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
 import { ApiService } from '../../core/services/api.service';
 import { ClienteleUiComponent } from '../clientele-ui.component';
-import { CL_BASE, FICHE_SCORING, MATRICE_LBC, STATUTS_REGLE, dateHeureFr, libSource, n, telecharger } from '../clientele.models';
+import {
+  CL_BASE, FICHE_SCORING, MATRICE_LBC, MODES_DECISION, STATUTS_REGLE, TraceClassification, dateHeureFr, libSource, n, telecharger,
+} from '../clientele.models';
 import { ClienteleStore } from '../clientele.store';
 
 interface Item {
@@ -19,7 +23,25 @@ interface CritereMaitre {
   code: string; libelle: string; source: string; disponible: string;
   utilisable_auto: boolean; type_decision: string; statut: string;
 }
-interface Divergence { domaine: string; cle: string; source_a: string; valeur_a: string; source_b: string; valeur_b: string; statut: string; }
+interface Divergence {
+  id?: string; domaine: string; cle: string; source_a: string; valeur_a: string; source_b: string; valeur_b: string;
+  statut: string; decision?: string | null;
+}
+interface DecisionDivergence {
+  ancien_statut: string | null; nouveau_statut: string; decision: string | null; justification: string;
+  utilisateur: string | null; date: string | null;
+}
+interface Reexamen {
+  id: string; racine_client: string; raison_sociale: string; origine: string; lot_id: string | null; ligne_source: number | null;
+  niveau_actuel: string | null; source_actuelle: string | null; niveau_suggere: string; source_suggestion: string;
+  motif: string; statut: string; created_at: string | null;
+}
+interface PaquetMasse {
+  total: number | null; traites: number; prochain: string | null;
+  bilan: { ECRIT: number; INCHANGE: number; MANUEL_PRESERVE: number; FICHIER_PRESERVE: number; NON_ADMISSIBLE: number };
+}
+type Progression = PaquetMasse['bilan'] & { total: number; traites: number };
+type Actuelle = { niveau: string; source: string; classifie_le: string | null } & Partial<TraceClassification>;
 interface LigneEval {
   critere: string; libelle: string; famille?: string; etat: string; valeur: string | null; poids: number | null;
   niveau_matrice: string | null; niveau_v4: string | null; motif: string; divergence: boolean;
@@ -28,6 +50,7 @@ interface LigneEval {
 interface Evaluation {
   racine_client: string; score_total: number; niveau_final: string | null; niveau_score: string | null;
   niveau_max: string | null; statut: string; coherence: string; motif_principal: string | null;
+  admissible?: boolean; date_reference?: string | null; source_date_reference?: string | null;
   motif_genere?: string; scores_familles?: Record<string, number>;
   version_regles: string; version_moteur: string; avertissement: string; lignes: LigneEval[];
 }
@@ -39,8 +62,11 @@ interface ValeurMaitre {
 }
 interface SyntheseValeurs { total?: number; total_filtre?: number; nb_conflits?: number; nb_blocking?: number; par_dimension?: Record<string, number>; }
 
-type Onglet = 'clients' | 'simulation' | 'referentiel' | 'criteres' | 'divergences' | 'versions';
-const ONGLETS: readonly Onglet[] = ['clients', 'simulation', 'referentiel', 'criteres', 'divergences', 'versions'];
+type Onglet = 'clients' | 'simulation' | 'referentiel' | 'criteres' | 'divergences' | 'reexamens' | 'versions';
+const ONGLETS: readonly Onglet[] = ['clients', 'simulation', 'referentiel', 'criteres', 'divergences', 'reexamens', 'versions'];
+const STATUTS_DIVERGENCE: Record<string, string> = {
+  A_ARBITRER: 'À arbitrer', VALIDEE: 'Validée', INVALIDE_SOURCE: 'Source invalidée', ALIGNEE: 'Alignée',
+};
 const TAILLE_VALEURS = 80;
 
 @Component({
@@ -80,19 +106,49 @@ const TAILLE_VALEURS = 80;
                     <input type="file" accept=".xlsx" hidden (change)="excel($any($event.target))" />
                   </label>
                   <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/clientele/imports" [queryParams]="{ source: 'liste' }"><mat-icon>group_add</mat-icon> Classer une liste</a>
-                  <button type="button" class="bea-mg__btn" (click)="moteur()" [disabled]="busy()"><mat-icon>play_arrow</mat-icon> Appliquer règles ACTIVE</button>
+                  <button type="button" class="bea-mg__btn" (click)="masseOuvert.set(!masseOuvert())" [disabled]="busy()"><mat-icon>play_arrow</mat-icon> Classer avec le moteur SCORE</button>
                 </span>
               }
             </div>
+            @if (masseOuvert() && store.cap().classif_executer) {
+              <div class="bea-cl-note bea-cl-note--info" style="margin:0 1.1rem 0.6rem"><mat-icon>info</mat-icon>
+                <span>Moteur SCORE (CDC 1.0) sur tous les clients ou sur un périmètre filtré. Seuls les résultats admissibles sont enregistrés (jamais NON CLASSÉ ni À ARBITRER). Les classements moteur existants sont mis à jour ; les décisions manuelles et les classes reprises d’un fichier ne sont jamais écrasées (un réexamen est ouvert si le moteur propose un autre niveau).</span>
+              </div>
+              <div class="bea-cl-filters">
+                <label>Profil (optionnel)
+                  <select [(ngModel)]="masseProfil" [disabled]="busy()">
+                    <option value="">Tous</option><option value="PP">PP</option><option value="PM">PM</option><option value="NON_IDENTIFIE">Non identifié</option>
+                  </select>
+                </label>
+                <label>Agence (optionnel)
+                  <select [(ngModel)]="masseAgence" [disabled]="busy()">
+                    <option value="">Toutes</option>
+                    @for (a of store.agences(); track a.code) { <option [value]="a.code">{{ a.code }} — {{ a.libelle }}</option> }
+                  </select>
+                </label>
+                <label>&nbsp;<button type="button" class="bea-mg__btn" (click)="moteur()" [disabled]="busy()">Lancer le classement</button></label>
+              </div>
+              @if (progression(); as p) {
+                <p class="bea-cl-hint" style="padding:0 1.1rem 0.6rem">
+                  {{ n(p.traites) }} / {{ n(p.total) }} client(s) traité(s) · {{ n(p.ECRIT) }} écrit(s) · {{ n(p.INCHANGE) }} inchangé(s) ·
+                  {{ n(p.MANUEL_PRESERVE) }} manuel(s) et {{ n(p.FICHIER_PRESERVE) }} fichier(s) préservé(s) · {{ n(p.NON_ADMISSIBLE) }} non admissible(s)
+                </p>
+              }
+            }
             <div class="bea-cl-filters">
               <label>Niveau
-                <select [(ngModel)]="niveau" (ngModelChange)="charger()">
+                <select [(ngModel)]="niveau" (ngModelChange)="charger(1)">
                   <option value="">Tous</option>
                   <option>FAIBLE</option><option>MOYEN</option><option>ELEVE</option><option>INTERDIT</option>
                 </select>
               </label>
               <label>Recherche
-                <input [(ngModel)]="q" (keyup.enter)="charger()" placeholder="Racine ou nom" />
+                <input [(ngModel)]="q" (keyup.enter)="charger(1)" placeholder="Racine ou nom" />
+              </label>
+              <label>Par page
+                <select [ngModel]="taille()" (ngModelChange)="taille.set($event); charger(1)">
+                  @for (t of tailles; track t) { <option [ngValue]="t">{{ t }}</option> }
+                </select>
               </label>
             </div>
             <div class="bea-mg__table-wrap">
@@ -109,11 +165,25 @@ const TAILLE_VALEURS = 80;
                       <td>{{ dh(i.classifie_le) }}</td>
                     </tr>
                   } @empty {
-                    <tr><td colspan="6"><div class="bea-cl-empty">Aucun client classé. Saisie sur la fiche client, Excel contrôlé, liste importée, ou moteur une fois les règles validées.</div></td></tr>
+                    <tr><td colspan="6"><div class="bea-cl-empty">Aucun client classé. Saisie sur la fiche client, Excel contrôlé, liste importée, ou « Classer avec le moteur SCORE ».</div></td></tr>
                   }
                 </tbody>
               </table>
             </div>
+            @if (total() > 0) {
+              <div class="bea-cl-pager">
+                <span>{{ n(debut()) }}–{{ n(fin()) }} sur {{ n(total()) }} client(s) · page {{ page() }} / {{ n(nbPages()) }}</span>
+                <span class="bea-cl-pager__btns">
+                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="page() <= 1" (click)="charger(1)" title="Première page"><mat-icon>first_page</mat-icon></button>
+                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="page() <= 1" (click)="charger(page() - 1)"><mat-icon>chevron_left</mat-icon> Précédent</button>
+                  <label class="bea-cl-pager__aller">Page
+                    <input type="number" min="1" [max]="nbPages()" [ngModel]="page()" (keyup.enter)="allerPage($any($event.target).value)" (change)="allerPage($any($event.target).value)" />
+                  </label>
+                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="page() >= nbPages()" (click)="charger(page() + 1)">Suivant <mat-icon>chevron_right</mat-icon></button>
+                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="page() >= nbPages()" (click)="charger(nbPages())" title="Dernière page"><mat-icon>last_page</mat-icon></button>
+                </span>
+              </div>
+            }
           </section>
         }
 
@@ -125,7 +195,7 @@ const TAILLE_VALEURS = 80;
                 <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="backtest()" [disabled]="busy()"><mat-icon>compare_arrows</mat-icon> Backtest (échantillon)</button>
               }
             </div>
-            <p class="bea-cl-hint" style="padding:0 1.1rem">Simulation : le score est calculé et tracé, la classification du client n’est pas modifiée.</p>
+            <p class="bea-cl-hint" style="padding:0 1.1rem">Simulation : rien n’est écrit (ni évaluation, ni classification). Comparaison entre la classification retenue et le niveau proposé.</p>
             <div class="bea-cl-filters">
               <label>Racine
                 <input [(ngModel)]="racineEval" maxlength="6" placeholder="000001" (keyup.enter)="evaluer()" />
@@ -133,8 +203,21 @@ const TAILLE_VALEURS = 80;
               <label>&nbsp;<button type="button" class="bea-mg__btn" (click)="evaluer()" [disabled]="busy()">Calculer le score</button></label>
             </div>
             @if (evaluation(); as e) {
+              @let c = actuelle();
+              <div class="bea-cl-stats">
+                <div class="bea-cl-stat"><span>Classification retenue</span><strong>{{ c?.niveau || 'Non classé' }}</strong>
+                  @if (c) { <small class="bea-cl-hint">{{ modes[c.mode_decision || ''] || c.source }} · {{ dh(c.classifie_le) }}</small> }
+                </div>
+                <div class="bea-cl-stat" [attr.data-tone]="e.admissible ? 'ok' : 'warn'"><span>Niveau proposé</span><strong>{{ e.niveau_final || 'NON CLASSÉ' }}</strong>
+                  <small class="bea-cl-hint">{{ e.admissible ? 'admissible' : 'non admissible' }}</small>
+                </div>
+                <div class="bea-cl-stat" [attr.data-tone]="c && e.admissible && c.niveau !== e.niveau_final ? 'danger' : ''"><span>Écart</span>
+                  <strong>{{ !c ? '—' : !e.admissible ? 'Non comparable' : c.niveau === e.niveau_final ? 'Aucun' : c.niveau + ' → ' + e.niveau_final }}</strong>
+                </div>
+              </div>
               <dl class="bea-cl-dl">
                 <dt>Score</dt><dd>{{ n(e.score_total) }}</dd>
+                <dt>Date de référence</dt><dd>{{ e.date_reference || '—' }} <small class="bea-cl-hint">{{ e.source_date_reference }}</small></dd>
                 <dt>Niveau</dt><dd><span class="bea-cl-badge" [attr.data-s]="e.niveau_final || 'NON_CLASSE'">{{ e.niveau_final || 'NON CLASSÉ' }}</span></dd>
                 <dt>Statut</dt><dd><span class="bea-cl-badge" [attr.data-s]="e.statut">{{ e.statut }}</span> {{ e.coherence }}</dd>
                 <dt>Motif</dt><dd>{{ e.motif_genere || e.motif_principal || '—' }}</dd>
@@ -258,7 +341,7 @@ const TAILLE_VALEURS = 80;
             <p class="bea-cl-hint" style="padding:0 1.1rem 0.6rem">Une divergence n’est jamais fusionnée : le critère reste « À arbitrer » et n’entre pas dans la somme du score.</p>
             <div class="bea-mg__table-wrap">
               <table class="bea-mg__table">
-                <thead><tr><th>Domaine</th><th>Clé</th><th>{{ matrice }}</th><th>{{ fiche }}</th><th>Statut</th></tr></thead>
+                <thead><tr><th>Domaine</th><th>Clé</th><th>{{ matrice }}</th><th>{{ fiche }}</th><th>Statut</th><th>Décision</th><th></th></tr></thead>
                 <tbody>
                   @for (d of divergences(); track d.domaine + d.cle) {
                     <tr>
@@ -266,10 +349,70 @@ const TAILLE_VALEURS = 80;
                       <td>{{ d.cle }}</td>
                       <td>{{ d.valeur_a }}</td>
                       <td>{{ d.valeur_b }}</td>
-                      <td><span class="bea-cl-badge" [attr.data-s]="d.statut">{{ statuts[d.statut] || d.statut }}</span></td>
+                      <td><span class="bea-cl-badge" [attr.data-s]="d.statut">{{ statuts[d.statut] || statutsDiv[d.statut] || d.statut }}</span></td>
+                      <td style="max-width:22rem">{{ d.decision || '—' }}</td>
+                      <td>
+                        @if (d.id) {
+                          <span style="display:flex;gap:0.3rem;align-items:center">
+                            @if (store.cap().classif_arbitrer) {
+                              <select [(ngModel)]="choixDiv[d.id]" style="font:inherit">
+                                @for (s of statutsDivListe; track s[0]) { <option [ngValue]="s[0]">{{ s[1] }}</option> }
+                              </select>
+                              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="arbitrer(d)" [disabled]="busy()">Arbitrer</button>
+                            }
+                            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="histoDivergence(d)">Historique</button>
+                          </span>
+                        }
+                      </td>
                     </tr>
                   } @empty {
-                    <tr><td colspan="5"><div class="bea-cl-empty">Aucune divergence chargée.</div></td></tr>
+                    <tr><td colspan="7"><div class="bea-cl-empty">Aucune divergence chargée.</div></td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            @if (histoDiv(); as h) {
+              <div class="bea-mg__panel-top"><h2>Historique — {{ h.libelle }}</h2></div>
+              <ul class="bea-cl-anoms">
+                @for (x of h.decisions; track $index) {
+                  <li><mat-icon>history</mat-icon>{{ dh(x.date) }} · {{ x.utilisateur || '—' }} : {{ statutsDiv[x.ancien_statut || ''] || x.ancien_statut }} → {{ statutsDiv[x.nouveau_statut] || x.nouveau_statut }} — {{ x.justification }}@if (x.decision) { ({{ x.decision }})}</li>
+                } @empty {
+                  <li>Aucune décision enregistrée.</li>
+                }
+              </ul>
+            }
+            <p class="bea-cl-hint" style="padding:0.6rem 1.1rem">L’arbitrage est historisé (auteur, date, justification). Le moteur lit encore le référentiel versionné : une divergence arbitrée n’est appliquée au score qu’après publication d’une nouvelle version des règles.</p>
+          </section>
+        }
+
+        @case ('reexamens') {
+          <section class="bea-mg__panel">
+            <div class="bea-mg__panel-top"><h2>Réexamens ouverts</h2><span class="bea-mg__count">{{ nbReex() }}</span></div>
+            <p class="bea-cl-hint" style="padding:0 1.1rem 0.6rem">Ouverts lorsqu’un import ou le moteur propose un niveau différent d’une décision manuelle : la décision manuelle n’est jamais remplacée silencieusement.</p>
+            <div class="bea-mg__table-wrap">
+              <table class="bea-mg__table">
+                <thead><tr><th>Ouvert le</th><th>Racine</th><th>Nom</th><th>Actuel</th><th>Suggéré</th><th>Origine</th><th>Motif</th><th></th></tr></thead>
+                <tbody>
+                  @for (r of reexamens(); track r.id) {
+                    <tr>
+                      <td>{{ dh(r.created_at) }}</td>
+                      <td><a [routerLink]="['/clientele/clients', r.racine_client]"><code>{{ r.racine_client }}</code></a></td>
+                      <td>{{ r.raison_sociale }}</td>
+                      <td><span class="bea-cl-badge" [attr.data-s]="r.niveau_actuel">{{ r.niveau_actuel || '—' }}</span> <small class="bea-cl-hint">{{ r.source_actuelle }}</small></td>
+                      <td><span class="bea-cl-badge" [attr.data-s]="r.niveau_suggere">{{ r.niveau_suggere }}</span> <small class="bea-cl-hint">{{ r.source_suggestion }}</small></td>
+                      <td>{{ r.origine }}@if (r.ligne_source) { · L{{ r.ligne_source }}}</td>
+                      <td style="max-width:26rem">{{ r.motif }}</td>
+                      <td>
+                        @if (store.cap().classif_arbitrer) {
+                          <span style="display:flex;gap:0.3rem">
+                            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="traiter(r, false)" [disabled]="busy()">Conserver {{ r.niveau_actuel }}</button>
+                            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="traiter(r, true)" [disabled]="busy()">Retenir {{ r.niveau_suggere }}</button>
+                          </span>
+                        }
+                      </td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="8"><div class="bea-cl-empty">Aucun réexamen ouvert.</div></td></tr>
                   }
                 </tbody>
               </table>
@@ -325,6 +468,12 @@ export class ClClassificationComponent implements OnInit {
   ];
   readonly items = signal<Item[]>([]);
   readonly total = signal(0);
+  readonly page = signal(1);
+  readonly tailles = [50, 100, 200];
+  readonly taille = signal(100);
+  readonly nbPages = computed(() => Math.max(1, Math.ceil(this.total() / this.taille())));
+  readonly debut = computed(() => (this.total() ? (this.page() - 1) * this.taille() + 1 : 0));
+  readonly fin = computed(() => Math.min(this.page() * this.taille(), this.total()));
   readonly versions = signal<Version[]>([]);
   readonly avertissement = signal('');
   readonly busy = signal(false);
@@ -332,6 +481,18 @@ export class ClClassificationComponent implements OnInit {
   readonly divergences = signal<Divergence[]>([]);
   readonly nbDiv = signal(0);
   readonly evaluation = signal<Evaluation | null>(null);
+  readonly actuelle = signal<Actuelle | null>(null);
+  readonly histoDiv = signal<{ libelle: string; decisions: DecisionDivergence[] } | null>(null);
+  readonly reexamens = signal<Reexamen[]>([]);
+  readonly nbReex = signal(0);
+  readonly modes = MODES_DECISION;
+  readonly statutsDiv = STATUTS_DIVERGENCE;
+  readonly statutsDivListe = Object.entries(STATUTS_DIVERGENCE);
+  choixDiv: Record<string, string> = {};
+  readonly masseOuvert = signal(false);
+  readonly progression = signal<Progression | null>(null);
+  masseProfil = '';
+  masseAgence = '';
   readonly valeurs = signal<ValeurMaitre[]>([]);
   readonly synValeurs = signal<SyntheseValeurs>({});
   readonly pageValeurs = signal(1);
@@ -343,6 +504,7 @@ export class ClClassificationComponent implements OnInit {
     { code: 'referentiel', libelle: 'Référentiel maître', icon: 'table_view', compte: () => this.synValeurs().total ?? null },
     { code: 'criteres', libelle: 'Critères', icon: 'checklist', compte: () => this.criteres().length || null },
     { code: 'divergences', libelle: 'Divergences', icon: 'call_split', compte: () => this.nbDiv() || null },
+    { code: 'reexamens', libelle: 'Réexamens', icon: 'pending_actions', compte: () => this.nbReex() || null },
     { code: 'versions', libelle: 'Versions', icon: 'history', compte: () => null },
   ];
   niveau = '';
@@ -368,11 +530,74 @@ export class ClClassificationComponent implements OnInit {
       next: (r) => this.criteres.set(r.criteres || []),
       error: () => this.criteres.set([]),
     });
+    this.chargerDivergences();
+    this.chargerReexamens();
+    this.chargerValeurs(1);
+  }
+
+  chargerDivergences(): void {
     this.api.get<{ total: number; items: Divergence[] }>(`${CL_BASE}/classification/divergences`, { taille: 200 }).subscribe({
-      next: (r) => { this.divergences.set(r.items || []); this.nbDiv.set(r.total || 0); },
+      next: (r) => {
+        const items = r.items || [];
+        this.choixDiv = Object.fromEntries(items.filter((d) => d.id).map((d) => [d.id!, d.statut === 'A_ARBITRER' ? 'VALIDEE' : d.statut]));
+        this.divergences.set(items);
+        this.nbDiv.set(r.total || 0);
+      },
       error: () => this.divergences.set([]),
     });
-    this.chargerValeurs(1);
+  }
+
+  chargerReexamens(): void {
+    this.api.get<{ total: number; items: Reexamen[] }>(`${CL_BASE}/classification/reexamens`, { statut: 'OUVERT', taille: 200 }).subscribe({
+      next: (r) => { this.reexamens.set(r.items || []); this.nbReex.set(r.total || 0); },
+      error: () => this.reexamens.set([]),
+    });
+  }
+
+  arbitrer(d: Divergence): void {
+    const statut = this.choixDiv[d.id!] || 'VALIDEE';
+    this.feedback.runWithReason(
+      (justification) => this.api.post<{ decisions: DecisionDivergence[] }>(`${CL_BASE}/classification/divergences/${d.id}/arbitrer`, { statut, justification }),
+      {
+        reason: {
+          title: 'Arbitrer la divergence',
+          message: `${d.domaine} « ${d.cle} » : ${this.matrice} = ${d.valeur_a}, ${this.fiche} = ${d.valeur_b}. Nouveau statut : ${STATUTS_DIVERGENCE[statut]} ?`,
+          hint: 'Décision historisée (auteur, date, justification).',
+          reasonLabel: 'Justification', maxLength: 2000, confirmLabel: 'Arbitrer', tone: 'primary',
+        },
+        busy: this.busy, loading: 'Arbitrage…', success: { title: 'Divergence arbitrée', message: STATUTS_DIVERGENCE[statut] },
+        errorTitle: 'Arbitrage refusé', retry: false,
+      },
+    ).subscribe((r) => {
+      this.histoDiv.set({ libelle: `${d.domaine} « ${d.cle} »`, decisions: r.decisions });
+      this.chargerDivergences();
+    });
+  }
+
+  histoDivergence(d: Divergence): void {
+    this.api.get<{ decisions: DecisionDivergence[] }>(`${CL_BASE}/classification/divergences/${d.id}/historique`).subscribe({
+      next: (r) => this.histoDiv.set({ libelle: `${d.domaine} « ${d.cle} »`, decisions: r.decisions }),
+      error: (e) => void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Historique indisponible')),
+    });
+  }
+
+  traiter(r: Reexamen, appliquer: boolean): void {
+    const niveau = appliquer ? r.niveau_suggere : null;
+    this.feedback.runWithReason(
+      (decision) => this.api.post(`${CL_BASE}/classification/reexamens/${r.id}/traiter`, { decision, niveau }),
+      {
+        reason: {
+          title: 'Traiter le réexamen',
+          message: appliquer
+            ? `Retenir ${r.niveau_suggere} (${r.source_suggestion}) pour ${r.racine_client} à la place de ${r.niveau_actuel} ?`
+            : `Conserver ${r.niveau_actuel} pour ${r.racine_client} ?`,
+          hint: appliquer ? 'Enregistré comme décision manuelle motivée (historique conservé).' : 'Le réexamen est clos, la décision manuelle est conservée.',
+          reasonLabel: 'Motif de la décision', maxLength: 2000, confirmLabel: appliquer ? 'Retenir' : 'Conserver', tone: 'primary',
+        },
+        busy: this.busy, loading: 'Enregistrement…', success: { title: 'Réexamen traité' },
+        errorTitle: 'Décision refusée', retry: false,
+      },
+    ).subscribe(() => { this.chargerReexamens(); this.charger(); });
   }
 
   ouvrir(o: Onglet): void {
@@ -400,11 +625,18 @@ export class ClClassificationComponent implements OnInit {
       this.feedback.warning({ title: 'Racine invalide', message: 'Six chiffres.' });
       return;
     }
-    this.feedback.run(() => this.api.post<Evaluation>(`${CL_BASE}/classification/evaluer`, { racine, persister: true }), {
+    this.feedback.run(() => this.api.post<Evaluation>(`${CL_BASE}/classification/evaluer`, { racine, persister: false }), {
       busy: this.busy, loading: 'Évaluation…',
       success: (e) => ({ title: 'Évaluation (simulation)', message: `Score ${e.score_total} — ${e.niveau_final || 'NON CLASSÉ'} (${e.coherence})` }),
       errorTitle: 'Évaluation refusée',
-    }).subscribe((e) => this.evaluation.set(e));
+    }).subscribe((e) => {
+      this.evaluation.set(e);
+      this.actuelle.set(null);
+      this.api.get<{ classification: Actuelle | null }>(`${CL_BASE}/clients/${racine}/classification`).subscribe({
+        next: (r) => this.actuelle.set(r.classification),
+        error: () => this.actuelle.set(null),
+      });
+    });
   }
 
   backtest(): void {
@@ -415,23 +647,71 @@ export class ClClassificationComponent implements OnInit {
     }).subscribe();
   }
 
-  charger(): void {
-    const params: Record<string, string | number> = { taille: 80 };
+  charger(page = this.page()): void {
+    const params: Record<string, string | number> = { page: Math.max(1, page), taille: this.taille() };
     if (this.niveau) params['niveau'] = this.niveau;
     if (this.q) params['q'] = this.q;
     this.api.get<{ total: number; items: Item[] }>(`${CL_BASE}/classification`, params).subscribe({
-      next: (p) => { this.items.set(p.items); this.total.set(p.total); },
+      next: (p) => {
+        this.items.set(p.items);
+        this.total.set(p.total);
+        this.page.set(Math.max(1, page));
+        document.querySelector('.bea-cl .bea-mg__table-wrap')?.scrollTo({ top: 0 });
+      },
       error: () => this.items.set([]),
     });
   }
 
+  allerPage(valeur: string | number): void {
+    const p = Math.trunc(Number(valeur));
+    if (!Number.isFinite(p)) return;
+    const cible = Math.min(Math.max(1, p), this.nbPages());
+    if (cible !== this.page()) this.charger(cible);
+  }
+
   moteur(): void {
-    this.feedback.run(() => this.api.post<{ modifies: number; manuels_preserves: number }>(`${CL_BASE}/classification/appliquer`, { forcer: false }), {
-      confirm: { action: 'validation', title: 'Appliquer le moteur ACTIVE', message: 'Classer selon les règles de la version ACTIVE uniquement ?', hint: 'Les saisies manuelles sont conservées. La version ACTIVE est vide tant que la Conformité n’a pas validé.' },
-      busy: this.busy, success: (r) => ({ title: 'Moteur exécuté', details: [
-        { label: 'Modifiés', value: String(r.modifies) }, { label: 'Manuels préservés', value: String(r.manuels_preserves) },
-      ] }), errorTitle: 'Moteur refusé',
-    }).subscribe(() => this.charger());
+    const url = `${CL_BASE}/classification/moteur-masse`;
+    const filtres = { profil: this.masseProfil || null, code_agence: this.masseAgence || null };
+    const perimetre = [
+      this.masseProfil ? `profil ${this.masseProfil}` : null,
+      this.masseAgence ? `agence ${this.masseAgence}` : null,
+    ].filter(Boolean).join(', ') || 'tous les clients';
+    this.feedback.runWithReason(
+      (motif) => {
+        const cumul: Progression = { total: 0, traites: 0, ECRIT: 0, INCHANGE: 0, MANUEL_PRESERVE: 0, FICHIER_PRESERVE: 0, NON_ADMISSIBLE: 0 };
+        this.progression.set({ ...cumul });
+        return this.api.post<PaquetMasse>(url, { motif, ...filtres }).pipe(
+          expand((p) => (p.prochain ? this.api.post<PaquetMasse>(url, { motif, ...filtres, apres: p.prochain }) : EMPTY)),
+          tap((p) => {
+            if (p.total !== null) cumul.total = p.total;
+            cumul.traites += p.traites;
+            for (const k of Object.keys(p.bilan) as (keyof PaquetMasse['bilan'])[]) cumul[k] += p.bilan[k];
+            this.progression.set({ ...cumul });
+          }),
+          last(),
+          map(() => cumul),
+        );
+      },
+      {
+        reason: {
+          title: 'Classer avec le moteur SCORE',
+          message: `Lancer le moteur SCORE sur ${perimetre} ?`,
+          hint: 'Résultats admissibles uniquement. Décisions manuelles et classes de fichier préservées (réexamen si écart). Chaque évaluation est tracée. Traitement par paquets de 300 : gardez la page ouverte.',
+          reasonLabel: 'Motif de classement', reasonPlaceholder: 'Ex. classification initiale moteur CDC 1.0', maxLength: 500,
+          confirmLabel: 'Lancer', tone: 'primary',
+        },
+        busy: this.busy, loading: 'Classement par le moteur en cours…',
+        success: (c) => ({ title: 'Classement moteur terminé', details: [
+          { label: 'Traités', value: n(c.traites) },
+          { label: 'Écrits', value: n(c.ECRIT) },
+          { label: 'Inchangés', value: n(c.INCHANGE) },
+          { label: 'Manuels préservés', value: n(c.MANUEL_PRESERVE) },
+          { label: 'Fichiers préservés', value: n(c.FICHIER_PRESERVE) },
+          { label: 'Non admissibles', value: n(c.NON_ADMISSIBLE) },
+        ] }),
+        errorTitle: 'Classement interrompu', errorHint: 'Les paquets déjà traités sont enregistrés ; relancer reprend sans doublon (niveaux identiques = inchangés).', retry: false,
+      },
+    ).subscribe(() => { this.charger(); this.chargerReexamens(); });
   }
 
   modele(): void {

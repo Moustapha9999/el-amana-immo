@@ -8,6 +8,7 @@ from app.data.clientele_classif_referentiel import REFERENTIEL
 from app.data.clientele_classif_valeurs import synthese_valeurs, valeurs_maitres
 from app.services.clientele.scoring import (
     DonneesClient,
+    codes_liste_interdiction,
     evaluer,
     niveau_depuis_score_cdc,
     niveau_depuis_score_v4,
@@ -166,6 +167,71 @@ def test_liste_non_orion_score_100():
     assert lig.etat == "EVALUE" and lig.poids == 100
     assert ev.niveau_final == "FAIBLE"
     assert ev.score_total == 100
+
+
+def test_liste_interdiction_di_oi_suspendue():
+    """Codes ORION DI / OI visibles mais hors score tant que non arbitrés."""
+    for val, attendu in (("DI", "DI"), ("DI DI", "DI DI"), ("OI OI", "OI OI"), (",  , DI DI", "DI DI")):
+        ev = evaluer(DonneesClient(racine="000001", liste_interdiction=val), au_jour=date(2026, 10, 8))
+        lig = next(lg for lg in ev.lignes if lg.critere == "LISTE_INTERDICTION")
+        assert lig.etat == "EVALUE" and lig.valeur == attendu
+        assert lig.poids is None and lig.contribue_au_score is False
+        assert lig.statut_regle == "SUSPENDU"
+        assert ev.score_total == 0
+        assert ev.niveau_final is None
+        assert ev.statut == "NON_CLASSE"
+        assert f"Hors score (suspendu) : Liste d'interdiction ORION « {attendu} »" in ev.motif_genere
+
+
+def test_liste_interdiction_virgules_seules_vaut_vide():
+    ev = evaluer(DonneesClient(racine="000001", liste_interdiction=",  ,  "), au_jour=date(2026, 10, 8))
+    lig = next(lg for lg in ev.lignes if lg.critere == "LISTE_INTERDICTION")
+    assert lig.valeur == "Non" and lig.poids == 100
+
+
+def test_codes_liste_tous_comptes():
+    assert codes_liste_interdiction([",  , DI DI", None, "", "OI OI, DI DI", ", OI OI"]) == ["DI DI", "OI OI"]
+    assert codes_liste_interdiction([",  ,", " "]) == []
+
+
+def test_liste_interdiction_ne_domine_pas_les_autres_criteres():
+    ev = evaluer(DonneesClient(
+        racine="000001", liste_interdiction="DI DI",
+        statut_resident="R", nationalite="Mauritanienne",
+    ), au_jour=date(2026, 10, 8))
+    lig = next(lg for lg in ev.lignes if lg.critere == "LISTE_INTERDICTION")
+    assert lig.contribue_au_score is False
+    assert ev.score_total < 100_000
+    assert ev.niveau_final == "FAIBLE"
+
+
+def test_motif_complet_cas_divers_commerce():
+    """Type 014249 : secteur Matrice ÉLEVÉ / Fiche FAIBLE, liste DI suspendue ; ici SP donne aussi le profil."""
+    ev = evaluer(DonneesClient(
+        racine="014249", secteur_activite="Divers Commerce Général", liste_interdiction=",  , DI DI",
+        statut_resident="R", nationalite="MAURITANIE", categorie_juridique="SP",
+    ), au_jour=date(2026, 10, 8))
+    sect = next(lg for lg in ev.lignes if lg.critere == "SECTEUR")
+    assert sect.poids == 100_000 and sect.niveau_retenu == "ELEVE"
+    assert sect.divergence is True and sect.contribue_au_score is True
+    assert ev.score_total == 100_400 and ev.niveau_final == "ELEVE"
+    m = ev.motif_genere
+    assert m.startswith("Risque ÉLEVÉ — Score 100 400.")
+    assert "Critères déterminants : Secteur / sous-secteur d'activité « Divers Commerce Général » ÉLEVÉ (+100 000)" in m
+    assert "Fiche de scoring FAIBLE" in m
+    assert "4 critère(s) FAIBLE (+400)" in m
+    assert "Hors score (suspendu) : Liste d'interdiction ORION « DI DI »" in m
+    assert "Données non disponibles" in m and "Personne politiquement exposée" in m
+
+
+def test_motif_cite_tous_les_criteres_determinants():
+    ev = evaluer(DonneesClient(
+        racine="000001", statut_resident="N", secteur_activite="Divers Commerce Général",
+        nationalite="Mauritanienne",
+    ), au_jour=date(2026, 10, 8))
+    assert ev.score_total == 200_100
+    assert "Résidence" in ev.motif_genere or "résiden" in ev.motif_genere.lower()
+    assert "Divers Commerce Général" in ev.motif_genere
 
 
 def test_age_pp_non_additionne():

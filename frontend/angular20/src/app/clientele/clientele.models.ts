@@ -18,8 +18,38 @@ export const STATUTS_REGLE: Record<string, string> = {
   A_ARBITRER: 'À arbitrer',
   A_CONFIGURER: 'À configurer',
   A_VERIFIER: 'À vérifier',
+  SUSPENDU: 'Suspendu',
   VALIDEE_CDC: 'Validée CDC',
+  VALIDEE_METIER: 'Validée métier',
 };
+
+export const MODES_DECISION: Record<string, string> = {
+  MOTEUR: 'Moteur',
+  FICHIER: 'Fichier',
+  MANUEL: 'Décision manuelle',
+};
+
+/** Traçabilité d'une classification retenue (champs séparés : calcul, fichier, décision). */
+export interface TraceClassification {
+  score_calcule: number | null;
+  niveau_propose: string | null;
+  classe_source_fichier: string | null;
+  niveau_retenu?: string | null;
+  mode_decision: string | null;
+  motif_moteur: string | null;
+  motif_source: string | null;
+  motif_decision_manuelle: string | null;
+  evaluation_id: string | null;
+  lot_id: string | null;
+  ligne_source: number | null;
+  date_maj_metier: string | null;
+  analyste_kyc: string | null;
+  date_reference: string | null;
+  version_moteur: string | null;
+  version_regles: string | null;
+  force: boolean | null;
+  blocage_leve: boolean | null;
+}
 
 export function libSource(code: string | null | undefined): string {
   if (!code) return '—';
@@ -35,6 +65,8 @@ export interface Capacites {
   classif_voir: boolean;
   classif_executer: boolean;
   classif_admin: boolean;
+  classif_forcer?: boolean;
+  classif_arbitrer?: boolean;
   filtrage_voir: boolean;
   filtrage_executer: boolean;
   filtrage_decider: boolean;
@@ -178,7 +210,7 @@ export interface FicheClient {
   classification: {
     niveau: string; source: string; motif_risque: string | null; motif_classement: string | null;
     motifs: { critere?: string; libelle?: string; motif?: string }[]; classifie_le: string | null;
-  } | null;
+  } & Partial<TraceClassification> | null;
   alertes_ouvertes: { id: string; statut: string; motif: string; precedent_faux_positif: boolean }[];
   sources: SourceColonne[];
 }

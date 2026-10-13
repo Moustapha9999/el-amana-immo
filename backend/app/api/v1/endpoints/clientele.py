@@ -21,17 +21,26 @@ from app.schemas.clientele import (
     ClassifExcelIn,
     ClassifManuelIn,
     ClassifMoteurIn,
+    ClassifMasseIn,
+    ClassifMoteurScoringIn,
     ClassifRegleIn,
     ClassifVersionIn,
+    DivergenceArbitrerIn,
     FiltrageEntreeIn,
     DeclarationBcmCreerIn,
+    DeclarationBcmMotifIn,
     DeclarationBcmValiderIn,
     ImportConfirmIn,
     ImportMappingIn,
     LotClasserIn,
+    LotDateOuvertureIn,
+    LotMajIn,
+    LotDivergencesIn,
     LotMappingIn,
     RapprochementIn,
+    ReexamenTraiterIn,
 )
+from app.data.clientele_import_hebdo import construire_modele
 from app.services.clientele.lots import ClienteleLotService
 from app.services.clientele.classification import ClienteleClassificationService
 from app.services.clientele.declaration import ClienteleDeclarationService
@@ -54,6 +63,8 @@ CAPACITES = {
     "classif_voir": ("clientele.classif.view",),
     "classif_executer": ("clientele.classif.execute",),
     "classif_admin": ("clientele.classif.admin",),
+    "classif_forcer": ("clientele.classif.force",),
+    "classif_arbitrer": ("clientele.classif.arbitrer",),
     "filtrage_voir": ("clientele.filtrage.view",),
     "filtrage_executer": ("clientele.filtrage.execute",),
     "filtrage_decider": ("clientele.filtrage.decide",),
@@ -198,12 +209,43 @@ async def supprimer_import(iid: uuid.UUID, c: Ctx = Depends(ctx("clientele.admin
     return Response(status_code=204)
 
 
+@router.get("/lots")
+async def lots_lister(page: int = 1,
+                      c: Ctx = Depends(ctx("clientele.import.execute", "clientele.classif.execute",
+                                           "clientele.classif.view")),
+                      db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleLotService(db, c).lister(page=page)
+
+
+@router.get("/lots/modele.xlsx")
+async def lot_modele(
+    c: Ctx = Depends(ctx("clientele.import.execute", "clientele.classif.execute", "clientele.classif.view")),
+) -> Response:
+    return _xlsx(construire_modele(), "modele-import-hebdomadaire-classification.xlsx")
+
+
 @router.post("/lots/analyse", status_code=201)
 async def lot_analyser(fichier: UploadFile = File(...), type: str = Query("LISTE"),
+                       periode_reference: date | None = Query(None),
                        c: Ctx = Depends(ctx("clientele.import.execute", "clientele.classif.execute")),
                        db: AsyncSession = Depends(get_db)) -> dict:
     contenu = await fichier.read()
-    return await ClienteleLotService(db, c).analyser(contenu, fichier.filename or "lot.xlsx", type_lot=type)
+    return await ClienteleLotService(db, c).analyser(contenu, fichier.filename or "lot.xlsx", type_lot=type,
+                                                     periode_reference=periode_reference)
+
+
+@router.post("/lots/{lid}/date-ouverture")
+async def lot_date_ouverture(lid: uuid.UUID, body: LotDateOuvertureIn,
+                             c: Ctx = Depends(ctx("clientele.classif.execute")),
+                             db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleLotService(db, c).saisir_date_ouverture(lid, body.model_dump())
+
+
+@router.post("/lots/{lid}/divergences")
+async def lot_divergences(lid: uuid.UUID, body: LotDivergencesIn,
+                          c: Ctx = Depends(ctx("clientele.classif.execute")),
+                          db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleLotService(db, c).decider_divergences(lid, body.model_dump())
 
 
 @router.get("/lots/{lid}")
@@ -238,11 +280,27 @@ async def lot_export(lid: uuid.UUID, c: Ctx = Depends(ctx("clientele.export", "c
     return _xlsx(await ClienteleLotService(db, c).exporter(lid), f"lot-{lid}.xlsx")
 
 
+@router.patch("/lots/{lid}")
+async def lot_modifier(lid: uuid.UUID, body: LotMajIn,
+                       c: Ctx = Depends(ctx("clientele.import.execute", "clientele.classif.execute")),
+                       db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleLotService(db, c).mettre_a_jour(lid, body.model_dump(exclude_unset=True))
+
+
+@router.post("/lots/{lid}/fermer", status_code=204)
+async def lot_fermer(lid: uuid.UUID,
+                     c: Ctx = Depends(ctx("clientele.import.execute", "clientele.classif.execute")),
+                     db: AsyncSession = Depends(get_db)) -> Response:
+    await ClienteleLotService(db, c).fermer(lid)
+    return Response(status_code=204)
+
+
 @router.delete("/lots/{lid}", status_code=204)
 async def lot_supprimer(lid: uuid.UUID,
+                        motif: str | None = Query(None, max_length=2000),
                         c: Ctx = Depends(ctx("clientele.import.execute", "clientele.classif.execute")),
                         db: AsyncSession = Depends(get_db)) -> Response:
-    await ClienteleLotService(db, c).supprimer(lid)
+    await ClienteleLotService(db, c).supprimer(lid, motif=motif)
     return Response(status_code=204)
 
 
@@ -446,6 +504,53 @@ async def classif_client_modifier(racine: str, body: ClassifManuelIn,
                                   c: Ctx = Depends(ctx("clientele.classif.execute")),
                                   db: AsyncSession = Depends(get_db)) -> dict:
     return await ClienteleClassificationService(db, c).modifier_individuel(racine, body.model_dump())
+
+
+@router.post("/clients/{racine}/classification/moteur")
+async def classif_client_moteur(racine: str, body: ClassifMoteurScoringIn,
+                                c: Ctx = Depends(ctx("clientele.classif.execute")),
+                                db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleClassificationService(db, c).classer_par_moteur(racine, body.model_dump())
+
+
+@router.post("/classification/moteur-masse")
+async def classif_moteur_masse(body: ClassifMasseIn, c: Ctx = Depends(ctx("clientele.classif.execute")),
+                               db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleClassificationService(db, c).classer_masse_moteur(body.model_dump())
+
+
+@router.get("/clients/{racine}/classification/historique")
+async def classif_client_historique(racine: str, c: Ctx = Depends(ctx("clientele.classif.view")),
+                                    db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await ClienteleClassificationService(db, c).historique(racine)
+
+
+@router.get("/classification/reexamens")
+async def classif_reexamens(statut: str | None = "OUVERT", racine: str | None = None, page: int = 1,
+                            taille: int = 50, c: Ctx = Depends(ctx("clientele.classif.view")),
+                            db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleClassificationService(db, c).lister_reexamens(
+        statut=statut or None, racine=racine, page=page, taille=taille)
+
+
+@router.post("/classification/reexamens/{rid}/traiter")
+async def classif_reexamen_traiter(rid: uuid.UUID, body: ReexamenTraiterIn,
+                                   c: Ctx = Depends(ctx("clientele.classif.arbitrer")),
+                                   db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleClassificationService(db, c).traiter_reexamen(rid, body.model_dump())
+
+
+@router.post("/classification/divergences/{did}/arbitrer")
+async def classif_divergence_arbitrer(did: uuid.UUID, body: DivergenceArbitrerIn,
+                                      c: Ctx = Depends(ctx("clientele.classif.arbitrer")),
+                                      db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleClassificationService(db, c).arbitrer_divergence(did, body.model_dump())
+
+
+@router.get("/classification/divergences/{did}/historique")
+async def classif_divergence_historique(did: uuid.UUID, c: Ctx = Depends(ctx("clientele.classif.view")),
+                                        db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleClassificationService(db, c).divergence_historique(did)
 
 
 @router.get("/filtrage/listes")
@@ -747,11 +852,31 @@ async def archiver_declaration(
     return await ClienteleDeclarationService(db, c).archiver(did)
 
 
+@router.post("/declarations/{did}/desactiver")
+async def desactiver_declaration(
+    did: uuid.UUID,
+    body: DeclarationBcmMotifIn,
+    c: Ctx = Depends(ctx("clientele.bcm.prepare")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await ClienteleDeclarationService(db, c).desactiver(did, motif=body.motif)
+
+
+@router.post("/declarations/{did}/reactiver")
+async def reactiver_declaration(
+    did: uuid.UUID,
+    c: Ctx = Depends(ctx("clientele.bcm.prepare")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await ClienteleDeclarationService(db, c).reactiver(did)
+
+
 @router.delete("/declarations/{did}", status_code=204)
 async def supprimer_declaration(
     did: uuid.UUID,
+    motif: str | None = Query(None, max_length=2000),
     c: Ctx = Depends(ctx("clientele.admin")),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    await ClienteleDeclarationService(db, c).supprimer(did)
+    await ClienteleDeclarationService(db, c).supprimer(did, motif=motif)
     return Response(status_code=204)

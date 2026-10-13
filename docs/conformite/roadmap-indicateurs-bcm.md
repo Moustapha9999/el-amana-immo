@@ -184,6 +184,19 @@ Contrôle documenté (août 2026) : `t4.total - t1.stock_m1` = 292 = `t1.maj_moi
 Statuts déclaration : `BROUILLON → CALCULEE → A_CONTROLER → VALIDEE → CLOTUREE → ARCHIVEE`.  
 Une `VALIDEE` **ne recalcule plus** : snapshot JSON des cellules + ids de population.
 
+Cycle de vie hors chaîne (migration `20261012_clientele_09`) :
+
+| Action | Statuts admis | Permission | Règle |
+|---|---|---|---|
+| Désactiver | `BROUILLON`, `CALCULEE`, `A_CONTROLER` | `clientele.bcm.prepare` | motif obligatoire → `DESACTIVEE` (plus de calcul ni de contrôle) |
+| Réactiver | `DESACTIVEE` | `clientele.bcm.prepare` | retour `CALCULEE` (si cellules) sinon `BROUILLON` ; contrôle à refaire |
+| Supprimer | tout statut non figé | `clientele.admin` | motif obligatoire sauf `BROUILLON` ; instantané conservé dans l’audit |
+
+`VALIDEE` / `CLOTUREE` / `ARCHIVEE` = pièce réglementaire : **jamais** désactivée ni supprimée.
+Une déclaration désactivée occupe toujours son mois (unicité année/mois) : la réactiver ou la supprimer
+pour en préparer une nouvelle. Écran : colonne Actions de la liste (aperçu en mini-page, ouvrir,
+désactiver, réactiver, supprimer) et mêmes boutons sur la fiche, avec l’historique nommé des étapes.
+
 Export : Excel / PDF de **préparation**. Pas de format d’import plateforme BCM tant qu’il n’est pas fourni.
 
 ---

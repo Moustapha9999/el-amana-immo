@@ -5,6 +5,7 @@ import { PaginationComponent } from '../../shared/pagination.component';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ApiService } from '../../core/services/api.service';
+import { ClDeclarationCycleService } from '../cl-declaration-cycle.service';
 import { ClienteleUiComponent } from '../clientele-ui.component';
 import { CL_BASE, dateFr, telecharger, valeurIndic } from '../clientele.models';
 import { ClienteleStore } from '../clientele.store';
@@ -34,6 +35,7 @@ interface Controle {
 interface Actions {
   calculer: boolean; controler: boolean; valider: boolean; cloturer: boolean;
   archiver: boolean; supprimer: boolean; exporter: boolean;
+  desactiver: boolean; reactiver: boolean;
 }
 interface Declaration {
   id: string; annee: number; mois: number; libelle: string;
@@ -42,6 +44,8 @@ interface Declaration {
   simulation: boolean; bcm_officielle: boolean; commentaire: string | null;
   cellules: { tableaux: Tableau[]; mappings?: Record<string, string> } | null;
   controles: Controle[]; actions: Actions;
+  desactivee_le: string | null; motif_desactivation: string | null;
+  journal: { etape: string; le: string; par: string | null }[];
 }
 interface Detail extends Cellule {
   calcule: boolean; total: number; page: number; taille: number;
@@ -72,11 +76,16 @@ const ETAPES = ['BROUILLON', 'CALCULEE', 'A_CONTROLER', 'VALIDEE', 'CLOTUREE', '
         </div>
       </header>
       @if (d(); as x) {
-        <ol class="bea-cl-steps">
-          @for (s of etapes; track s) {
-            <li [class.is-on]="x.statut===s" [class.is-done]="rang(x.statut) > rang(s)">{{ s.replaceAll('_', ' ') }}</li>
-          }
-        </ol>
+        @if (x.statut === 'DESACTIVEE') {
+          <p class="bea-cl-note bea-cl-note--warn"><mat-icon>pause_circle</mat-icon>
+            <span>Déclaration désactivée le {{ dateFr(x.desactivee_le) }} — <strong>{{ x.motif_desactivation }}</strong>. Réactivez-la pour reprendre le calcul et le contrôle.</span></p>
+        } @else {
+          <ol class="bea-cl-steps">
+            @for (s of etapes; track s) {
+              <li [class.is-on]="x.statut===s" [class.is-done]="rang(x.statut) > rang(s)">{{ s.replaceAll('_', ' ') }}</li>
+            }
+          </ol>
+        }
         @if (x.simulation) {
           <p class="bea-cl-note"><mat-icon>info</mat-icon>Mois non clos — préparation uniquement. La validation officielle est bloquée tant que le mois n’est pas terminé.</p>
         }
@@ -98,11 +107,27 @@ const ETAPES = ['BROUILLON', 'CALCULEE', 'A_CONTROLER', 'VALIDEE', 'CLOTUREE', '
             @if (x.actions.archiver && store.cap().bcm_cloturer) {
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="agir('archiver', 'Archiver', { action: 'validation', title: 'Archiver', message: 'Archiver cette déclaration clôturée ?' })"><mat-icon>inventory_2</mat-icon> Archiver</button>
             }
+            @if (x.actions.desactiver && store.cap().bcm_preparer) {
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="desactiver(x)" [disabled]="busy()"><mat-icon>pause_circle</mat-icon> Désactiver</button>
+            }
+            @if (x.actions.reactiver && store.cap().bcm_preparer) {
+              <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="reactiver(x)" [disabled]="busy()"><mat-icon>play_circle</mat-icon> Réactiver</button>
+            }
             @if (x.actions.supprimer && store.cap().admin) {
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="supprimer()"><mat-icon>delete</mat-icon> Supprimer</button>
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost bea-cl-btn--danger" (click)="supprimer(x)" [disabled]="busy()"><mat-icon>delete</mat-icon> Supprimer</button>
             }
           </div>
         </div>
+        @if (x.journal.length) {
+          <section class="bea-mg__panel">
+            <div class="bea-mg__panel-top"><h2>Historique</h2></div>
+            <ol class="bea-cl-timeline" style="margin:0.4rem 1.1rem 0.9rem 1.6rem">
+              @for (j of x.journal; track $index) {
+                <li><strong>{{ j.etape }}</strong><span>{{ dateFr(j.le) }}{{ j.par ? ' · ' + j.par : '' }}</span></li>
+              }
+            </ol>
+          </section>
+        }
         @if (x.controles.length) {
           <section class="bea-mg__panel">
             <div class="bea-mg__panel-top"><h2>Contrôles</h2></div>
@@ -206,6 +231,7 @@ export class ClDeclarationComponent implements OnInit {
   private readonly feedback = inject(FeedbackService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly cycle = inject(ClDeclarationCycleService);
   readonly store = inject(ClienteleStore);
   readonly d = signal<Declaration | null>(null);
   readonly detail = signal<Detail | null>(null);
@@ -270,11 +296,16 @@ export class ClDeclarationComponent implements OnInit {
     });
   }
 
-  supprimer(): void {
-    this.feedback.run(() => this.api.delete<void>(`${CL_BASE}/declarations/${this.id()}`), {
-      confirm: { action: 'suppression', title: 'Supprimer le brouillon', message: 'Supprimer cette déclaration en brouillon ?' },
-      busy: this.busy, success: { title: 'Déclaration supprimée' }, errorTitle: 'Suppression impossible',
-    }).subscribe(() => void this.router.navigate(['/clientele/declarations']));
+  desactiver(x: Declaration): void {
+    this.cycle.desactiver<Declaration>(x, this.busy).subscribe((d) => this.d.set(d));
+  }
+
+  reactiver(x: Declaration): void {
+    this.cycle.reactiver<Declaration>(x, this.busy).subscribe((d) => this.d.set(d));
+  }
+
+  supprimer(x: Declaration): void {
+    this.cycle.supprimer(x, this.busy).subscribe(() => void this.router.navigate(['/clientele/declarations']));
   }
 
   exporter(format: 'xlsx' | 'pdf'): void {

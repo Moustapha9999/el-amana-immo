@@ -14,9 +14,12 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-from app.data.clientele_classif_matrice import CRITERES_MAITRE, VERSION_REGLES
+from app.data.clientele_classif_matrice import CRITERES_MAITRE
 from app.data.clientele_classif_referentiel import REFERENTIEL
 from app.services.clientele.scoring import slug_cle
+
+# Version figée à la date de la révision : ne pas relire la constante courante du code.
+VERSION_REGLES = "CLASSIFICATION-2026.01"
 
 revision: str = "20261008_clientele_06"
 down_revision: Union[str, None] = "20261008_clientele_05"

@@ -375,7 +375,34 @@ class ClienteleClassifRegle(UUIDPrimaryKeyMixin, Base):
     critere: Mapped[ClienteleClassifCritere] = relationship()
 
 
-class ClienteleClassification(Base):
+class _TraceDecision:
+    """Séparation calcul / source / décision (directive 10/10/2026).
+
+    ``niveau`` (classe ci-dessous) reste le niveau RETENU ; ``source`` est conservé pour l'existant.
+    """
+
+    score_calcule: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    niveau_propose: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    classe_source_fichier: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    mode_decision: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    motif_moteur: Mapped[str | None] = mapped_column(Text, nullable=True)
+    motif_source: Mapped[str | None] = mapped_column(Text, nullable=True)
+    motif_decision_manuelle: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evaluation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clientele_classif_evaluations.id", ondelete="SET NULL"), nullable=True)
+    lot_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clientele_classif_lots.id", ondelete="SET NULL"), nullable=True)
+    ligne_source: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    date_maj_metier: Mapped[date | None] = mapped_column(Date, nullable=True)
+    analyste_kyc: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    date_reference: Mapped[date | None] = mapped_column(Date, nullable=True)
+    version_moteur: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    version_regles: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    force: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    blocage_leve: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+
+class ClienteleClassification(_TraceDecision, Base):
     """Classification courante du CLIENT (racine). Jamais du RIB, sauf règle métier future."""
 
     __tablename__ = "clientele_classifications"
@@ -397,7 +424,7 @@ class ClienteleClassification(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class ClienteleClassifHistorique(UUIDPrimaryKeyMixin, Base):
+class ClienteleClassifHistorique(_TraceDecision, UUIDPrimaryKeyMixin, Base):
     __tablename__ = "clientele_classif_historique"
 
     racine_client: Mapped[str] = mapped_column(
@@ -550,6 +577,11 @@ class ClienteleClassifEvaluation(UUIDPrimaryKeyMixin, Base):
     coherence: Mapped[str] = mapped_column(String(24))
     motif_principal: Mapped[str | None] = mapped_column(Text, nullable=True)
     detail: Mapped[dict] = mapped_column(JSONB, default=dict)
+    date_reference: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source_date_reference: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    lot_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clientele_classif_lots.id", ondelete="SET NULL"), nullable=True)
+    ligne_source: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_by_id: Mapped[uuid.UUID | None] = _user_fk()
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     lignes: Mapped[list[ClienteleClassifEvaluationLigne]] = relationship(
@@ -578,6 +610,117 @@ class ClienteleClassifEvaluationLigne(UUIDPrimaryKeyMixin, Base):
     famille: Mapped[str] = mapped_column(String(40), default="CLIENT")
     contribue_au_score: Mapped[bool] = mapped_column(Boolean, default=False)
     evaluation: Mapped[ClienteleClassifEvaluation] = relationship(back_populates="lignes")
+
+
+class ClienteleClassifLot(UUIDPrimaryKeyMixin, Base):
+    """Fichier de classification déposé (import hebdomadaire). Fermable ou supprimable (audit conservé)."""
+
+    __tablename__ = "clientele_classif_lots"
+    __table_args__ = (Index("ix_clientele_classif_lots_sha", "sha256"),)
+
+    fichier_nom: Mapped[str] = mapped_column(String(255))
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    type: Mapped[str] = mapped_column(String(16), default="LISTE")
+    periode_reference: Mapped[date | None] = mapped_column(Date, nullable=True)
+    feuille: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    ligne_entete: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    entetes: Mapped[list] = mapped_column(JSONB, default=list)
+    mapping: Mapped[dict] = mapped_column(JSONB, default=dict)
+    stats: Mapped[dict] = mapped_column(JSONB, default=dict)
+    evaluation: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    dernier_classement: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    statut: Mapped[str] = mapped_column(String(16), default="ANALYSE")
+    created_by_id: Mapped[uuid.UUID | None] = _user_fk()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ClienteleClassifLotLigne(UUIDPrimaryKeyMixin, Base):
+    """Une ligne source du lot : données du fichier, résultat moteur, décision."""
+
+    __tablename__ = "clientele_classif_lot_lignes"
+    __table_args__ = (
+        UniqueConstraint("lot_id", "ligne", name="uq_clientele_classif_lot_ligne"),
+        Index("ix_clientele_classif_lot_lignes_racine", "racine_client"),
+    )
+
+    lot_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clientele_classif_lots.id", ondelete="CASCADE"))
+    ligne: Mapped[int] = mapped_column(Integer)
+    brut: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    racine_client: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    statut: Mapped[str] = mapped_column(String(12))
+    nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    donnees: Mapped[dict] = mapped_column(JSONB, default=dict)
+    classe_source: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    classe_source_brut: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    motif_source: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entreprise_recente_brut: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    date_ouverture_entreprise: Mapped[date | None] = mapped_column(Date, nullable=True)
+    date_ouverture_brut: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_date_ouverture: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    date_ouverture_saisie_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    date_ouverture_saisie_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    date_maj_metier: Mapped[date | None] = mapped_column(Date, nullable=True)
+    date_maj_brut: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    analyste_kyc: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    anomalies: Mapped[list] = mapped_column(JSONB, default=list)
+    classe_actuelle: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    source_actuelle: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    evaluation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clientele_classif_evaluations.id", ondelete="SET NULL"), nullable=True)
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    niveau_propose: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    statut_moteur: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    motif_moteur: Mapped[str | None] = mapped_column(Text, nullable=True)
+    admissible: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    divergence_fichier_moteur: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    decision: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    decision_detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class ClienteleClassifReexamen(UUIDPrimaryKeyMixin, Base):
+    """Signal : une source suggère de revoir une décision manuelle. Ne la remplace jamais."""
+
+    __tablename__ = "clientele_classif_reexamens"
+    __table_args__ = (
+        Index("ix_clientele_classif_reexamens_statut", "statut", "racine_client"),
+        Index("uq_clientele_classif_reexamen_ouvert", "racine_client", "source_suggestion", "niveau_suggere",
+              unique=True, postgresql_where="statut = 'OUVERT'"),
+    )
+
+    racine_client: Mapped[str] = mapped_column(
+        String(6), ForeignKey("clientele_clients.racine_client", ondelete="RESTRICT", onupdate="RESTRICT"))
+    origine: Mapped[str] = mapped_column(String(16))
+    lot_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clientele_classif_lots.id", ondelete="SET NULL"), nullable=True)
+    ligne_source: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    niveau_actuel: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    source_actuelle: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    niveau_suggere: Mapped[str] = mapped_column(String(12))
+    source_suggestion: Mapped[str] = mapped_column(String(12))
+    motif: Mapped[str] = mapped_column(Text)
+    statut: Mapped[str] = mapped_column(String(12), default="OUVERT")
+    decision: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_id: Mapped[uuid.UUID | None] = _user_fk()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    traite_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    traite_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ClienteleClassifDivergenceDecision(UUIDPrimaryKeyMixin, Base):
+    """Historique des arbitrages Matrice / Fiche de scoring."""
+
+    __tablename__ = "clientele_classif_divergence_decisions"
+
+    divergence_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clientele_classif_divergences.id", ondelete="CASCADE"), index=True)
+    ancien_statut: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    nouveau_statut: Mapped[str] = mapped_column(String(24))
+    decision: Mapped[str | None] = mapped_column(Text, nullable=True)
+    justification: Mapped[str] = mapped_column(Text)
+    created_by_id: Mapped[uuid.UUID | None] = _user_fk()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ClienteleFiltrageListe(UUIDPrimaryKeyMixin, Base):
@@ -657,7 +800,7 @@ class ClienteleDeclarationBcm(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("annee", "mois", name="uq_clientele_declarations_bcm_periode"),
         CheckConstraint("mois BETWEEN 1 AND 12", name="ck_clientele_declarations_bcm_mois"),
         CheckConstraint(
-            "statut IN ('BROUILLON','CALCULEE','A_CONTROLER','VALIDEE','CLOTUREE','ARCHIVEE')",
+            "statut IN ('BROUILLON','CALCULEE','A_CONTROLER','VALIDEE','CLOTUREE','ARCHIVEE','DESACTIVEE')",
             name="ck_clientele_declarations_bcm_statut",
         ),
         Index("ix_clientele_declarations_bcm_statut", "statut"),
@@ -685,6 +828,9 @@ class ClienteleDeclarationBcm(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     cloturee_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cloturee_par_id: Mapped[uuid.UUID | None] = _user_fk()
     archivee_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    desactivee_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    desactivee_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    motif_desactivation: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ClienteleFiltrageEmpreinte(UUIDPrimaryKeyMixin, Base):

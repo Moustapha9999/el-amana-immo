@@ -20,7 +20,7 @@ from app.data.clientele_bcm import (
     tableaux,
 )
 from app.data.clientele_indicateurs import MOTEUR_VERSION
-from app.models import ClienteleDeclarationBcm
+from app.models import ClienteleDeclarationBcm, User
 from app.services.clientele.indicateurs import ClienteleIndicateursService
 from app.services.clientele.periodes import (
     MOIS_FR,
@@ -94,6 +94,9 @@ class ClienteleDeclarationService:
             raise AppError(
                 "Cette déclaration est figée (validée). Elle ne se recalcule plus.",
                 409, code="DECLARATION_FIGEE")
+        if d.statut == "DESACTIVEE":
+            raise AppError("Cette déclaration est désactivée. Réactivez-la avant de la recalculer.",
+                           409, code="DECLARATION_DESACTIVEE")
 
     async def grille(self) -> dict:
         self.ctx.exiger("clientele.bcm.view", "clientele.reporting.view")
@@ -121,8 +124,10 @@ class ClienteleDeclarationService:
                 ClienteleDeclarationBcm.mois == mois,
             ))
         if existant:
+            suite = (" Elle est désactivée : réactivez-la ou supprimez-la."
+                     if existant.statut == "DESACTIVEE" else "")
             raise AppError(
-                f"Une déclaration existe déjà pour {MOIS_FR[mois]} {annee}.",
+                f"Une déclaration existe déjà pour {MOIS_FR[mois]} {annee}.{suite}",
                 409, code="DECLARATION_EXISTANTE")
         d = ClienteleDeclarationBcm(
             annee=annee,
@@ -144,7 +149,38 @@ class ClienteleDeclarationService:
     async def detail(self, did: uuid.UUID, *, aujourdhui: date | None = None) -> dict:
         self.ctx.exiger("clientele.bcm.view", "clientele.reporting.view")
         d = await self._get(did)
-        return self._detail(d, aujourdhui=aujourdhui)
+        return await self._detail_complet(d, aujourdhui=aujourdhui)
+
+    async def _detail_complet(self, d: ClienteleDeclarationBcm, *, aujourdhui: date | None = None) -> dict:
+        """Détail + journal (auteurs nommés) + synthèse, pour la fiche et l'aperçu."""
+        etapes = [
+            ("Créée", d.created_at, d.created_by_id),
+            ("Calculée", d.calculee_le, d.calculee_par_id),
+            ("Soumise au contrôle", d.controlee_le, d.controlee_par_id),
+            ("Validée", d.validee_le, d.validee_par_id),
+            ("Clôturée", d.cloturee_le, d.cloturee_par_id),
+            ("Archivée", d.archivee_le, None),
+            ("Désactivée", d.desactivee_le, d.desactivee_par_id),
+        ]
+        ids = {u for _l, _d, u in etapes if u}
+        noms = dict((await self.db.execute(select(User.id, User.full_name).where(User.id.in_(ids)))).all()) \
+            if ids else {}
+        cellules = [c for tab in (d.cellules or {}).get("tableaux") or []
+                    for ligne in tab.get("lignes") or [] for c in (ligne.get("cellules") or {}).values()]
+        controles = d.controles or []
+        return {
+            **self._detail(d, aujourdhui=aujourdhui),
+            "journal": [{"etape": lib, "le": le.isoformat(), "par": noms.get(u)}
+                        for lib, le, u in etapes if le],
+            "synthese": {
+                "tableaux": len((d.cellules or {}).get("tableaux") or []),
+                "cellules": len(cellules),
+                "a_configurer": sum(1 for c in cellules if c.get("statut") == "A_CONFIGURER"),
+                "controles": len(controles),
+                "controles_ok": sum(1 for c in controles if c.get("ok")),
+                "controles_bloquants": sum(1 for c in controles if not c.get("ok") and c.get("bloquant")),
+            },
+        }
 
     async def calculer(self, did: uuid.UUID, *, aujourdhui: date | None = None) -> dict:
         self.ctx.exiger("clientele.bcm.prepare")
@@ -164,7 +200,7 @@ class ClienteleDeclarationService:
         await self.svc.audit("bcm.calculer", "clientele_declaration_bcm", d.id,
                              after={"moteur_version": MOTEUR_VERSION})
         await self.db.commit()
-        return self._detail(d, aujourdhui=aujourdhui)
+        return await self._detail_complet(d, aujourdhui=aujourdhui)
 
     async def controler(self, did: uuid.UUID) -> dict:
         self.ctx.exiger("clientele.bcm.prepare")
@@ -177,7 +213,7 @@ class ClienteleDeclarationService:
         d.controlee_par_id = self.ctx.user.id
         await self.svc.audit("bcm.controler", "clientele_declaration_bcm", d.id)
         await self.db.commit()
-        return self._detail(d)
+        return await self._detail_complet(d)
 
     async def valider(self, did: uuid.UUID, *, commentaire: str | None = None,
                       aujourdhui: date | None = None) -> dict:
@@ -201,7 +237,7 @@ class ClienteleDeclarationService:
         await self.svc.audit("bcm.valider", "clientele_declaration_bcm", d.id,
                              after={"moteur_version": d.moteur_version})
         await self.db.commit()
-        return self._detail(d, aujourdhui=aujourdhui)
+        return await self._detail_complet(d, aujourdhui=aujourdhui)
 
     async def cloturer(self, did: uuid.UUID) -> dict:
         self.ctx.exiger("clientele.bcm.cloturer")
@@ -213,7 +249,7 @@ class ClienteleDeclarationService:
         d.cloturee_par_id = self.ctx.user.id
         await self.svc.audit("bcm.cloturer", "clientele_declaration_bcm", d.id)
         await self.db.commit()
-        return self._detail(d)
+        return await self._detail_complet(d)
 
     async def archiver(self, did: uuid.UUID) -> dict:
         self.ctx.exiger("clientele.bcm.cloturer")
@@ -224,16 +260,60 @@ class ClienteleDeclarationService:
         d.archivee_le = maintenant()
         await self.svc.audit("bcm.archiver", "clientele_declaration_bcm", d.id)
         await self.db.commit()
-        return self._detail(d)
+        return await self._detail_complet(d)
 
-    async def supprimer(self, did: uuid.UUID) -> None:
+    async def desactiver(self, did: uuid.UUID, *, motif: str | None) -> dict:
+        """Met de côté une déclaration non validée (motif obligatoire). Réactivable."""
+        self.ctx.exiger("clientele.bcm.prepare")
+        d = await self._get(did)
+        if d.statut not in STATUTS_OUVERTS:
+            raise AppError("Seule une déclaration non validée (brouillon, calculée, à contrôler) peut être "
+                           "désactivée. Une déclaration validée suit clôture puis archivage.",
+                           409, code="TRANSITION_REFUSEE")
+        motif = (motif or "").strip()
+        if not motif:
+            raise AppError("Motif de désactivation obligatoire", 422, code="MOTIF_OBLIGATOIRE")
+        avant = d.statut
+        d.statut = "DESACTIVEE"
+        d.desactivee_le = maintenant()
+        d.desactivee_par_id = self.ctx.user.id
+        d.motif_desactivation = motif[:2000]
+        await self.svc.audit("bcm.desactiver", "clientele_declaration_bcm", d.id,
+                             before={"statut": avant}, after={"statut": d.statut, "motif": motif})
+        await self.db.commit()
+        return await self._detail_complet(d)
+
+    async def reactiver(self, did: uuid.UUID) -> dict:
+        """Retour en brouillon (sans calcul) ou en calculée : le contrôle doit être refait."""
+        self.ctx.exiger("clientele.bcm.prepare")
+        d = await self._get(did)
+        if d.statut != "DESACTIVEE":
+            raise AppError("Cette déclaration n'est pas désactivée.", 409, code="TRANSITION_REFUSEE")
+        d.statut = "CALCULEE" if d.cellules else "BROUILLON"
+        d.controlee_le = d.controlee_par_id = None
+        await self.svc.audit("bcm.reactiver", "clientele_declaration_bcm", d.id,
+                             before={"statut": "DESACTIVEE", "motif": d.motif_desactivation},
+                             after={"statut": d.statut})
+        d.desactivee_le = d.desactivee_par_id = d.motif_desactivation = None
+        await self.db.commit()
+        return await self._detail_complet(d)
+
+    async def supprimer(self, did: uuid.UUID, *, motif: str | None = None) -> None:
+        """Suppression définitive d'une déclaration non validée. Une déclaration validée, clôturée ou
+        archivée est une pièce réglementaire : jamais supprimée."""
         self.ctx.exiger("clientele.admin")
         d = await self._get(did)
-        if d.statut != "BROUILLON":
-            raise AppError("Seule une déclaration en brouillon peut être supprimée.",
-                           409, code="TRANSITION_REFUSEE")
+        if d.statut in STATUTS_FIGES:
+            raise AppError("Déclaration validée, clôturée ou archivée : pièce réglementaire, suppression "
+                           "interdite. Utilisez la clôture puis l'archivage.", 409, code="DECLARATION_FIGEE")
+        motif = (motif or "").strip()
+        if d.statut != "BROUILLON" and not motif:
+            raise AppError("Motif de suppression obligatoire", 422, code="MOTIF_OBLIGATOIRE")
         await self.svc.audit("bcm.supprimer", "clientele_declaration_bcm", d.id,
-                             before={"annee": d.annee, "mois": d.mois})
+                             before={"annee": d.annee, "mois": d.mois, "statut": d.statut,
+                                     "moteur_version": d.moteur_version,
+                                     "calculee_le": d.calculee_le.isoformat() if d.calculee_le else None},
+                             after={"motif": motif or None})
         await self.db.delete(d)
         await self.db.commit()
 
@@ -630,6 +710,17 @@ class ClienteleDeclarationService:
             "grille_version": d.grille_version,
             "calculee_le": d.calculee_le.isoformat() if d.calculee_le else None,
             "validee_le": d.validee_le.isoformat() if d.validee_le else None,
+            "desactivee_le": d.desactivee_le.isoformat() if d.desactivee_le else None,
+            "motif_desactivation": d.motif_desactivation,
+            "actions": self._actions_cycle(d),
+        }
+
+    @staticmethod
+    def _actions_cycle(d: ClienteleDeclarationBcm) -> dict:
+        return {
+            "desactiver": d.statut in STATUTS_OUVERTS,
+            "reactiver": d.statut == "DESACTIVEE",
+            "supprimer": d.statut not in STATUTS_FIGES,
         }
 
     def _detail(self, d: ClienteleDeclarationBcm, *, aujourdhui: date | None = None) -> dict:
@@ -647,8 +738,8 @@ class ClienteleDeclarationService:
                 "valider": d.statut == "A_CONTROLER" and fenetre.bcm_officielle,
                 "cloturer": d.statut == "VALIDEE",
                 "archiver": d.statut == "CLOTUREE",
-                "supprimer": d.statut == "BROUILLON",
                 "exporter": bool(d.cellules),
+                **self._actions_cycle(d),
             },
         }
 

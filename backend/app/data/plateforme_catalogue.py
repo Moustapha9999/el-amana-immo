@@ -684,6 +684,8 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("clientele.classif.view", "Consultation des classifications clients", "clientele"),
     ("clientele.classif.execute", "Classification individuelle, de masse et moteur", "clientele"),
     ("clientele.classif.admin", "Référentiels et versions de règles de classification", "clientele"),
+    ("clientele.classif.force", "Forçage d'une classification manuelle ou d'un blocage INTERDIT", "clientele"),
+    ("clientele.classif.arbitrer", "Arbitrage des divergences et des réexamens de classification", "clientele"),
     ("clientele.filtrage.view", "Consultation du filtrage et des alertes", "clientele"),
     ("clientele.filtrage.execute", "Lancement du filtrage et listes internes", "clientele"),
     ("clientele.filtrage.decide", "Décision sur une alerte (analyse, faux positif, clôture)", "clientele"),

@@ -15,7 +15,9 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 from app.data.clientele_classif_valeurs import DIMENSIONS, valeurs_maitres
-from app.data.clientele_classif_matrice import VERSION_REGLES
+
+# Version figée à la date de la révision : ne pas relire la constante courante du code.
+VERSION_REGLES = "CLASSIFICATION-2026.01"
 
 revision: str = "20261008_clientele_07"
 down_revision: Union[str, None] = "20261008_clientele_06"
@@ -118,7 +120,7 @@ def _seed() -> None:
             "niveau_retenu": r["niveau_retenu"],
             "is_blocking": r["is_blocking"],
             "source": r["source"][:80],
-            "vr": r["version"][:40],
+            "vr": vr,
             "conflit": r["conflit"],
             "statut": r["statut"][:24],
             "note": r.get("note"),

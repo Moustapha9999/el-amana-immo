@@ -20,7 +20,7 @@ const SOURCES: readonly Source[] = ['orion', 'situation', 'liste'];
   imports: [FormsModule, MatIconModule, ClienteleUiComponent, ClLotComponent],
   template: `
     <bea-cl-styles />
-    <div class="bea-mg bea-cl">
+    <div class="bea-mg bea-cl" [class.bea-cl--large]="source() !== 'orion'">
       <header class="bea-mg__head bea-cl-head">
         <div>
           <p class="bea-stock-page__kicker">Référentiel clients</p>
