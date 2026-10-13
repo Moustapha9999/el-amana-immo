@@ -45,6 +45,7 @@ ACC_ESPACE_CODE = "audit-controle-conformite"
 EER_MODULE_CODE = "eer"
 FORMATION_MODULE_CODE = "formation"
 CLIENTELE_MODULE_CODE = "clientele"
+RECLAMATIONS_MODULE_CODE = "reclamations"
 
 # Toujours (re)créés s’ils manquent. Le reste du catalogue = seed **bootstrap**
 # seulement (CORE ADMIN peut supprimer sans resurrection au refresh).
@@ -210,9 +211,10 @@ PLATEFORME_DOMAINES: list[DomaineDef] = [
         "espace_code": ACC_ESPACE_CODE,
         "parent_code": None,
         "label": "Management & Qualité",
-        "description": "Démarche qualité, indicateurs et amélioration continue.",
+        "description": "Démarche qualité, réclamations clients, indicateurs et amélioration continue.",
         "icon": "workspace_premium",
-        "statut": "bientot",
+        # Activé par la migration 20261013_reclamations_01 (module Réclamations).
+        "statut": "actif",
         "sort_order": 5,
     },
 ]
@@ -493,6 +495,22 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "icon": "groups",
         "sort_order": 1,
     },
+    # --- Audit, Contrôle & Conformité → Management & Qualité ---
+    {
+        "code": RECLAMATIONS_MODULE_CODE,
+        "espace_code": ACC_ESPACE_CODE,
+        "domaine_code": "management-qualite",
+        "label": "Gestion des réclamations",
+        "description": (
+            "Réclamations clients pilotées par le Service Réclamations : réception multicanal, "
+            "qualification, transfert aux services, réponse au client, clôture, délais et tableau de bord 360°."
+        ),
+        "entry_path": "/reclamations/dashboard",
+        "statut": "developpement",
+        "status_message": "Module en cours de construction — ouverture après validation du circuit de traitement.",
+        "icon": "support_agent",
+        "sort_order": 1,
+    },
 ]
 
 # Permissions CORE (tous les départements). `{module}.admin` couvre `{module}.*`.
@@ -697,6 +715,37 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("clientele.export", "Export du référentiel clients", "clientele"),
     ("clientele.scope.all", "Périmètre clientèle : toutes les agences", "clientele"),
     ("clientele.admin", "Administration du référentiel clients", "clientele"),
+    ("reclamations.view", "Consultation des réclamations (périmètre de ses unités)", "reclamations"),
+    ("reclamations.scope.all", "Périmètre réclamations : tous les dossiers", "reclamations"),
+    ("reclamations.create", "Enregistrement d'une réclamation", "reclamations"),
+    ("reclamations.update", "Modification de la fiche réclamation", "reclamations"),
+    ("reclamations.qualify", "Réception par le Service Réclamations et qualification", "reclamations"),
+    ("reclamations.assign", "Affectation, transfert et renvoi pour complément", "reclamations"),
+    ("reclamations.treat", "Réception, traitement et retour par le service destinataire", "reclamations"),
+    ("reclamations.service.manage", "Désignation du responsable de traitement dans son unité", "reclamations"),
+    ("reclamations.review", "Examen du retour du service (suffisant / insuffisant)", "reclamations"),
+    ("reclamations.response.prepare", "Rédaction de la réponse au client", "reclamations"),
+    ("reclamations.response.validate", "Validation de la réponse au client", "reclamations"),
+    ("reclamations.response.send", "Enregistrement de l'envoi de la réponse et de sa preuve", "reclamations"),
+    ("reclamations.suspend", "Suspension et reprise d'une réclamation", "reclamations"),
+    ("reclamations.reject", "Refus / irrecevabilité motivé", "reclamations"),
+    ("reclamations.cancel", "Annulation et déclaration de doublon", "reclamations"),
+    ("reclamations.close", "Clôture d'une réclamation", "reclamations"),
+    ("reclamations.reopen", "Réouverture d'une réclamation clôturée", "reclamations"),
+    ("reclamations.archive", "Archivage des réclamations clôturées", "reclamations"),
+    ("reclamations.document.view", "Consultation des pièces d'une réclamation", "reclamations"),
+    ("reclamations.document.upload", "Dépôt de pièces sur une réclamation", "reclamations"),
+    ("reclamations.document.download", "Téléchargement des pièces d'une réclamation", "reclamations"),
+    ("reclamations.document.remove", "Retrait motivé d'une pièce", "reclamations"),
+    ("reclamations.reporting.view", "Tableau de bord et rapports réclamations", "reclamations"),
+    ("reclamations.reporting.export", "Exports PDF / Excel réclamations", "reclamations"),
+    ("reclamations.references.view", "Consultation des référentiels réclamations", "reclamations"),
+    ("reclamations.references.manage", "Gestion des types, motifs, sous-motifs et canaux", "reclamations"),
+    ("reclamations.services.manage", "Gestion des unités (services, départements) et de leurs membres", "reclamations"),
+    ("reclamations.delais.manage", "Paramétrage des délais et du calendrier", "reclamations"),
+    ("reclamations.delais.validate", "Validation Conformité des règles de délai", "reclamations"),
+    ("reclamations.audit.view", "Consultation du journal d'audit réclamations", "reclamations"),
+    ("reclamations.admin", "Administration du module Réclamations", "reclamations"),
 ]
 
 # Rôles figés Login 2 / module Immobilisations (codes courts = legacy).
@@ -756,6 +805,19 @@ RBAC_ROLES: list[tuple[str, str, str]] = [
     ("clientele.lecteur", "Clientèle — Lecteur", "Consultation du référentiel, situations, classifications et alertes"),
     ("clientele.gestionnaire", "Clientèle — Gestionnaire", "Imports, rapprochements, classification, filtrage et exports"),
     ("clientele.admin", "Clientèle — Admin", "Administration complète du référentiel clients"),
+    ("reclamations.point_reception", "Réclamations — Point de réception",
+     "Enregistrement des réclamations reçues par son agence ou son service"),
+    ("reclamations.agent_traitement", "Réclamations — Agent de traitement",
+     "Analyse et retour des dossiers affectés à son unité"),
+    ("reclamations.responsable_service", "Réclamations — Responsable de service",
+     "Réception, affectation interne et supervision des dossiers de son unité"),
+    ("reclamations.agent_sr", "Réclamations — Agent Service Réclamations",
+     "Enregistrement, qualification, affectation, suivi et préparation des réponses"),
+    ("reclamations.responsable_sr", "Réclamations — Responsable Service Réclamations",
+     "Pilotage global, validation des réponses, refus, clôtures et réouvertures"),
+    ("reclamations.lecteur", "Réclamations — Consultation / audit",
+     "Consultation de tous les dossiers, rapports et audit, sans action métier"),
+    ("reclamations.admin", "Réclamations — Admin", "Administration complète : paramètres, délais, droits"),
 ]
 
 # Codes courts réservés au module Immobilisations (ne pas créer pour Crédit / RH / …).
@@ -877,6 +939,61 @@ _CLIENTELE_GESTIONNAIRE = _CLIENTELE_LECTEUR + (
     "clientele.filtrage.decide",
     "clientele.bcm.prepare",
     "clientele.export",
+)
+_RECLAMATIONS_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "reclamations"
+)
+# Pas de ged.* : les pièces clients passent uniquement par les endpoints Réclamations.
+_RECLAMATIONS_DOCS = ("reclamations.document.view", "reclamations.document.upload", "reclamations.document.download")
+_RECLAMATIONS_POINT_RECEPTION = (
+    "reclamations.view",
+    "reclamations.create",
+    "reclamations.references.view",
+) + _RECLAMATIONS_DOCS
+_RECLAMATIONS_AGENT_TRAITEMENT = (
+    "reclamations.view",
+    "reclamations.treat",
+    "reclamations.references.view",
+) + _RECLAMATIONS_DOCS
+_RECLAMATIONS_RESPONSABLE_SERVICE = _RECLAMATIONS_AGENT_TRAITEMENT + (
+    "reclamations.service.manage",
+    "reclamations.reporting.view",
+)
+_RECLAMATIONS_AGENT_SR = (
+    "reclamations.view",
+    "reclamations.scope.all",
+    "reclamations.create",
+    "reclamations.update",
+    "reclamations.qualify",
+    "reclamations.assign",
+    "reclamations.review",
+    "reclamations.response.prepare",
+    "reclamations.response.send",
+    "reclamations.suspend",
+    "reclamations.reporting.view",
+    "reclamations.references.view",
+) + _RECLAMATIONS_DOCS
+_RECLAMATIONS_RESPONSABLE_SR = _RECLAMATIONS_AGENT_SR + (
+    "reclamations.response.validate",
+    "reclamations.reject",
+    "reclamations.cancel",
+    "reclamations.close",
+    "reclamations.reopen",
+    "reclamations.archive",
+    "reclamations.document.remove",
+    "reclamations.reporting.export",
+    "reclamations.services.manage",
+    "reclamations.audit.view",
+)
+_RECLAMATIONS_LECTEUR = (
+    "reclamations.view",
+    "reclamations.scope.all",
+    "reclamations.document.view",
+    "reclamations.document.download",
+    "reclamations.reporting.view",
+    "reclamations.reporting.export",
+    "reclamations.references.view",
+    "reclamations.audit.view",
 )
 _CORE_ADMIN = (
     "plateforme.users.read",
@@ -1055,6 +1172,13 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "clientele.lecteur": _CLIENTELE_LECTEUR,
     "clientele.gestionnaire": _CLIENTELE_GESTIONNAIRE,
     "clientele.admin": _CLIENTELE_ALL,
+    "reclamations.point_reception": _RECLAMATIONS_POINT_RECEPTION,
+    "reclamations.agent_traitement": _RECLAMATIONS_AGENT_TRAITEMENT,
+    "reclamations.responsable_service": _RECLAMATIONS_RESPONSABLE_SERVICE,
+    "reclamations.agent_sr": _RECLAMATIONS_AGENT_SR,
+    "reclamations.responsable_sr": _RECLAMATIONS_RESPONSABLE_SR,
+    "reclamations.lecteur": _RECLAMATIONS_LECTEUR,
+    "reclamations.admin": _RECLAMATIONS_ALL,
 }
 
 SYSTEM_ROLE_CODES = frozenset(code for code, _label, _desc in RBAC_ROLES)

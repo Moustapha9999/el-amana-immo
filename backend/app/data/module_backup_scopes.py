@@ -298,6 +298,25 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
         table_prefixes=["clientele_"],
         uploads_subdir="clientele",
     ),
+    "reclamations": make_module_scope(
+        label="Gestion des réclamations",
+        exclusive_tables=[
+            "reclamation_referentiels",
+            "reclamation_unites",
+            "reclamation_unite_membres",
+            "reclamation_regles_delai",
+            "reclamations",
+            "reclamation_affectations",
+            "reclamation_reponses",
+            "reclamation_documents",
+            "reclamation_appels",
+            "reclamation_evenements",
+            "reclamation_jours_feries",
+            "reclamation_parametres",
+            "reclamation_compteurs",
+        ],
+        table_prefixes=["reclamation_"],
+    ),
 }
 
 ESPACE_MODULES: dict[str, list[str]] = {
@@ -316,7 +335,7 @@ ESPACE_MODULES: dict[str, list[str]] = {
         "demandes-mg",
     ],
     "archives": ["archives-generales"],
-    "audit-controle-conformite": ["eer", "formation", "clientele"],
+    "audit-controle-conformite": ["eer", "formation", "clientele", "reclamations"],
 }
 
 

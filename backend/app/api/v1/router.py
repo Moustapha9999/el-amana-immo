@@ -31,6 +31,7 @@ from app.api.v1.endpoints import (
     operations,
     organisation,
     plateforme,
+    reclamations,
     reporting,
     users,
 )
@@ -66,6 +67,7 @@ api_router.include_router(mg_requests.batch_router)
 api_router.include_router(eer.router, dependencies=[Depends(require_module_access("eer"))])
 api_router.include_router(formation.router, dependencies=[Depends(require_module_access("formation"))])
 api_router.include_router(clientele.router, dependencies=[Depends(require_module_access("clientele"))])
+api_router.include_router(reclamations.router, dependencies=[Depends(require_module_access("reclamations"))])
 
 _immo = [Depends(require_module_access("immobilisations"))]
 api_router.include_router(organisation.router, dependencies=_immo)

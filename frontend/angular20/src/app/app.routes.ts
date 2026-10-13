@@ -82,6 +82,8 @@ const clReporting = () => import('./clientele/pages/cl-reporting.component').the
 const clMapping = () => import('./clientele/pages/cl-mapping.component').then((m) => m.ClMappingComponent);
 const clDeclarations = () => import('./clientele/pages/cl-declarations.component').then((m) => m.ClDeclarationsComponent);
 const clDeclaration = () => import('./clientele/pages/cl-declaration.component').then((m) => m.ClDeclarationComponent);
+const rcEnConstruction = () =>
+  import('./shared/module-placeholder.component').then((m) => m.ModulePlaceholderComponent);
 const achatsBons = () => import('./achats-appro/achats-bons.component').then((m) => m.AchatsBonsComponent);
 const achatsReceptions = () =>
   import('./achats-appro/achats-receptions.component').then((m) => m.AchatsReceptionsComponent);
@@ -315,6 +317,26 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'situation-pp', loadComponent: clSituation, data: { profil: 'PP' } },
       { path: 'situation-pm', loadComponent: clSituation, data: { profil: 'PM' } },
       { path: 'clients/:racine', loadComponent: clFiche },
+    ],
+  },
+  {
+    path: 'reclamations',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('reclamations')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      { path: 'dashboard', loadComponent: rcEnConstruction, data: { title: 'Tableau de bord 360°' } },
+      { path: 'dossiers', loadComponent: rcEnConstruction, data: { title: 'Réclamations' } },
+      { path: 'dossiers/nouvelle', loadComponent: rcEnConstruction, data: { title: 'Nouvelle réclamation' } },
+      { path: 'a-traiter', loadComponent: rcEnConstruction, data: { title: 'Mes dossiers à traiter' } },
+      { path: 'circuit', loadComponent: rcEnConstruction, data: { title: 'Circuit de traitement' } },
+      { path: 'services', loadComponent: rcEnConstruction, data: { title: 'Services & affectations' } },
+      { path: 'delais', loadComponent: rcEnConstruction, data: { title: 'Délais & alertes' } },
+      { path: 'reponses', loadComponent: rcEnConstruction, data: { title: 'Réponses aux clients' } },
+      { path: 'archives', loadComponent: rcEnConstruction, data: { title: 'Archives & documents' } },
+      { path: 'rapports', loadComponent: rcEnConstruction, data: { title: 'Rapports & statistiques' } },
+      { path: 'parametres', loadComponent: rcEnConstruction, data: { title: 'Paramètres' } },
+      { path: 'admin', loadComponent: rcEnConstruction, data: { title: 'Admin' } },
     ],
   },
   {

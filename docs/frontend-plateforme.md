@@ -17,6 +17,7 @@ Source de vérité code : `plateforme/module-routing.contract.ts`.
 | `tickets-si` | `prefixed` | `/tickets-si/...` | `/tickets-si` | `/informatique` |
 | `demandes-achat` | `prefixed` | `/demandes-achat/...` | `/demandes-achat` | `/achats` |
 | `eer` | `prefixed` | `/eer/...` | `/eer/dashboard` | `/audit-controle-conformite` |
+| `reclamations` | `prefixed` | `/reclamations/...` | `/reclamations/dashboard` | `/audit-controle-conformite` |
 
 CDC Stock / MG : [moyens-generaux/README.md](moyens-generaux/README.md).
 Chrome métier : **un seul** `ShellComponent` (`layout/shell/`) pour Immobilisations

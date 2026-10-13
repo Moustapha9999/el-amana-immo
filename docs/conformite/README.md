@@ -18,7 +18,8 @@ Audit, Contrôle & Conformité            (plateforme_espaces)
 │       Déclarations BCM, Correspondants bancaires,
 │       Vérification des procurations    sous-domaines — bientôt (CORE ADMIN, 04/10/2026)
 ├── Organisation & Processus             domaine — bientôt
-└── Management & Qualité                 domaine — bientôt
+└── Management & Qualité                 domaine — actif (13/10/2026)
+    └── Gestion des réclamations (module reclamations) — en développement
 ```
 
 Aucun module fictif pour les domaines en attente : leur carte affiche le statut
@@ -149,3 +150,9 @@ suppression passe par une confirmation, et l’audit « avant » garde le détai
 | Ligne d’historique d’import | Import Excel | `DELETE /imports/{id}` | Les données importées restent, le fichier n’est plus signalé « déjà importé » |
 
 Hors périmètre V1 : évaluations, attestations, QR codes.
+
+## Module Gestion des réclamations (13/10/2026, en construction)
+
+Domaine Management & Qualité. Code `reclamations`, URLs `/reclamations/...`,
+API `/api/v1/reclamations/...`. Cadrage, modèle, workflow, droits et avancement par phase :
+[reclamations.md](reclamations.md).
