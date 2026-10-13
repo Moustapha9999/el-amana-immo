@@ -84,6 +84,11 @@ const clDeclarations = () => import('./clientele/pages/cl-declarations.component
 const clDeclaration = () => import('./clientele/pages/cl-declaration.component').then((m) => m.ClDeclarationComponent);
 const rcEnConstruction = () =>
   import('./shared/module-placeholder.component').then((m) => m.ModulePlaceholderComponent);
+const rcDossiers = () => import('./reclamations/pages/rc-dossiers.component').then((m) => m.RcDossiersComponent);
+const rcNouvelle = () => import('./reclamations/pages/rc-nouvelle.component').then((m) => m.RcNouvelleComponent);
+const rcFiche = () => import('./reclamations/pages/rc-fiche.component').then((m) => m.RcFicheComponent);
+const rcParametres = () =>
+  import('./reclamations/pages/rc-parametres.component').then((m) => m.RcParametresComponent);
 const achatsBons = () => import('./achats-appro/achats-bons.component').then((m) => m.AchatsBonsComponent);
 const achatsReceptions = () =>
   import('./achats-appro/achats-receptions.component').then((m) => m.AchatsReceptionsComponent);
@@ -326,8 +331,9 @@ export const routes: Routes = withUnsavedChangesGuard([
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
       { path: 'dashboard', loadComponent: rcEnConstruction, data: { title: 'Tableau de bord 360°' } },
-      { path: 'dossiers', loadComponent: rcEnConstruction, data: { title: 'Réclamations' } },
-      { path: 'dossiers/nouvelle', loadComponent: rcEnConstruction, data: { title: 'Nouvelle réclamation' } },
+      { path: 'dossiers', loadComponent: rcDossiers, data: { title: 'Réclamations' } },
+      { path: 'dossiers/nouvelle', loadComponent: rcNouvelle, data: { title: 'Nouvelle réclamation' } },
+      { path: 'dossiers/:id', loadComponent: rcFiche, data: { title: 'Dossier de réclamation' } },
       { path: 'a-traiter', loadComponent: rcEnConstruction, data: { title: 'Mes dossiers à traiter' } },
       { path: 'circuit', loadComponent: rcEnConstruction, data: { title: 'Circuit de traitement' } },
       { path: 'services', loadComponent: rcEnConstruction, data: { title: 'Services & affectations' } },
@@ -335,7 +341,7 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'reponses', loadComponent: rcEnConstruction, data: { title: 'Réponses aux clients' } },
       { path: 'archives', loadComponent: rcEnConstruction, data: { title: 'Archives & documents' } },
       { path: 'rapports', loadComponent: rcEnConstruction, data: { title: 'Rapports & statistiques' } },
-      { path: 'parametres', loadComponent: rcEnConstruction, data: { title: 'Paramètres' } },
+      { path: 'parametres', loadComponent: rcParametres, data: { title: 'Paramètres' } },
       { path: 'admin', loadComponent: rcEnConstruction, data: { title: 'Admin' } },
     ],
   },

@@ -110,3 +110,20 @@ DOMAINE_LIBELLES: dict[str, str] = {
 # Hiérarchie des référentiels : domaine → domaine parent obligatoire.
 DOMAINE_PARENT: dict[str, str] = {"MOTIF": "TYPE", "SOUS_MOTIF": "MOTIF"}
 CANAL_TELEPHONE = "TELEPHONE"
+
+STATUT_RAPPEL_LIBELLES: dict[str, str] = {
+    "AUCUN": "Aucun rappel",
+    "A_RAPPELER": "À rappeler",
+    "RAPPELE": "Rappelé",
+    "ECHEC": "Rappel sans réponse",
+}
+EVENEMENT_LIBELLES: dict[str, str] = {
+    "CREATION": "Réclamation enregistrée",
+    "RECEPTION_SR": "Réception par le Service Réclamations",
+    "MODIFICATION": "Données modifiées",
+    "APPEL": "Appel enregistré",
+    "DOCUMENT_AJOUT": "Pièce ajoutée",
+    "DOCUMENT_RETRAIT": "Pièce retirée",
+}
+# Paramètre (``reclamation_parametres``) : la banque autorise-t-elle la référence d'enregistrement d'appel ?
+PARAM_ENREGISTREMENT_APPELS = "enregistrement_appels_autorise"

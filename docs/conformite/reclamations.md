@@ -64,12 +64,53 @@ Périmètre (`services/reclamations/acces.py`) : `reclamations.scope.all` → to
 sinon dossiers créés par l’utilisateur, reçus par une de ses unités ou affectés à une de ses
 unités. Un dossier hors périmètre répond `404`.
 
+## Enregistrement, fiche et pièces (phase 2)
+
+Écrans : `/reclamations/dossiers` (liste), `/reclamations/dossiers/nouvelle`,
+`/reclamations/dossiers/:id?onglet=…` (Général, Réception, Traitement, Chronologie, Documents,
+Réponse client, Délais, Audit), `/reclamations/parametres?onglet=unites`.
+
+| API `/api/v1/reclamations` | Usage |
+|---|---|
+| `GET /config` | Accès, capacités, référentiels, unités, agences, libellés, paramètres |
+| `GET/POST /referentiels`, `PATCH/DELETE /referentiels/{id}` | Nomenclature ; suppression seulement si jamais utilisé (dossiers, éléments rattachés, règles), sinon désactivation |
+| `GET/POST /unites`, `PATCH /unites/{id}` | Directions, départements, services, agences, cellules ; hiérarchie sans cycle ; le service central ne se désactive pas |
+| `GET/POST /unites/{id}/membres`, `PATCH …/membres/{mid}` | Rattachement des agents (`RESPONSABLE` / `AGENT`) |
+| `GET /utilisateurs?q=`, `GET /clients/{racine}` | Recherche d’agents ; aperçu client ORION (racine, comptes) |
+| `GET/POST /dossiers`, `GET/PATCH /dossiers/{id}` | Liste paginée côté serveur (filtres, tri), création, fiche, correction |
+| `POST /dossiers/{id}/appels` | Appel téléphonique supplémentaire |
+| `GET /dossiers/{id}/chronologie`, `GET /dossiers/{id}/audit` | Événements ; journal d’audit (`reclamations.audit.view`) |
+| `GET/POST /dossiers/{id}/documents`, `POST …/{did}/retrait`, `GET …/{did}/fichier?apercu=` | Pièces GED |
+
+Règles appliquées :
+
+- Référence `REC-AAAA-NNNNNN` attribuée par le serveur (compteur annuel verrouillé).
+- Dates réelles saisies (première réception, réception SR) distinctes de l’heure de saisie ;
+  pas de date future ; correction d’une date de réception = motif obligatoire, tracé.
+- Statut initial : « Reçue initialement », ou « Reçue par le SR » si un membre du SR saisit
+  la date de réception SR. Le statut n’évolue ensuite que par les actions du circuit (phase 3).
+- Canal téléphone : section appel obligatoire (date-heure, numéro, vérification d’identité,
+  rappel). La référence d’enregistrement d’appel n’est acceptée que si le paramètre
+  `enregistrement_appels_autorise` vaut vrai (absent = refusé).
+- Carte : seul un numéro masqué est accepté (au plus 10 chiffres, ex. `411111******1111`).
+- Un agent hors périmètre global doit être membre d’une unité pour enregistrer ; il ne voit que
+  ses dossiers et ceux de ses unités. Le point de réception corrige son dossier tant qu’il est
+  « Reçu initialement ».
+- Correction concurrente refusée (`revision`, 409 `CONFLIT_REVISION`).
+- Pièces : GED cloisonnée (`MODULES_CLOISONNES`) — invisibles dans la recherche GED générale,
+  niveau `restricted`, pas d’OCR. Chaque dépôt crée une pièce (jamais d’écrasement) ; aperçu et
+  téléchargement audités ; retrait = corbeille GED + motif + événement ; l’original n’est
+  retirable que par l’administration du module.
+
+Tests : `backend/tests/test_reclamations_fondations.py`, `test_reclamations_dossiers.py`
+(transactions annulées). Parcours navigateur réalisé sur une copie jetable de la base.
+
 ## Avancement
 
 | Phase | Contenu | État |
 |-------|---------|------|
 | 1 | Schéma, catalogue CORE, profils, périmètre, `GET /config`, routes et navigation (écrans « en construction ») | fait |
-| 2 | Référentiels, unités et membres, création, liste paginée, fiche à onglets, pièces GED | à faire |
+| 2 | Référentiels, unités et membres, création, liste paginée, fiche à onglets, pièces GED | fait |
 | 3 | Moteur de workflow, espace service « À traiter », réponses client, clôture | à faire |
 | 4 | Délais, alertes, notifications (job de fond) | à faire |
 | 5 | Tableau de bord 360°, rapports PDF / Excel | à faire |

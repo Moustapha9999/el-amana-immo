@@ -18,9 +18,10 @@ from app.models.ged import GedDocument
 
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
-# Pièces servies uniquement par l'API de leur module (KYC : ACL GED par espace trop large).
-MODULES_CLOISONNES: frozenset[str] = frozenset({"eer"})
-ENTITES_CLOISONNEES: frozenset[str] = frozenset({"eer_dossier"})
+# Pièces servies uniquement par l'API de leur module (KYC, réclamations clients : ACL GED par
+# espace trop large, le module applique son propre périmètre par dossier).
+MODULES_CLOISONNES: frozenset[str] = frozenset({"eer", "reclamations"})
+ENTITES_CLOISONNEES: frozenset[str] = frozenset({"eer_dossier", "reclamation"})
 
 
 def est_cloisonne(module_code: str | None, entity: str | None = None) -> bool:

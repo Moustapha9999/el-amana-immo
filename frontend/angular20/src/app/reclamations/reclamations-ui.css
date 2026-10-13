@@ -1,0 +1,54 @@
+/* Module Réclamations — compléments aux classes globales bea-mg / bea-ct (plateforme-ui.css). */
+.bea-rc .bea-rc-sort { border: 0; background: none; padding: 0; font: inherit; font-weight: inherit; color: inherit; cursor: pointer; text-transform: inherit; letter-spacing: inherit; }
+.bea-rc .bea-rc-sort:hover { color: #1a5278; }
+.bea-rc-pager { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; }
+.bea-rc-pager__num { font-size: 0.85rem; color: #475569; font-weight: 600; }
+.bea-rc-toggle { display: inline-flex; align-items: center; gap: 0.45rem; align-self: center; font-size: 0.84rem; color: #334155; cursor: pointer; }
+.bea-rc-late { color: #b91c1c; font-weight: 700; }
+.bea-rc .bea-rc-clic { cursor: pointer; }
+
+.bea-rc-form { display: grid; gap: 0.9rem; padding: 1rem 1.15rem 1.15rem; }
+.bea-rc-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.9rem; }
+.bea-rc-form label, .bea-rc-label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.8rem; font-weight: 600; color: #334155; }
+.bea-rc-form label em, .bea-rc-label em { color: #b91c1c; font-style: normal; }
+.bea-rc-form input:not([type='checkbox']):not([type='radio']), .bea-rc-form select, .bea-rc-form textarea, .bea-rc-input {
+  border: 1px solid #cbd5e1; border-radius: 0.6rem; padding: 0.55rem 0.7rem; font: inherit; font-weight: 400; font-size: 0.88rem; color: #0f172a; background: #fff;
+}
+.bea-rc-form textarea { resize: vertical; min-height: 4.5rem; }
+.bea-rc-form .is-invalid { border-color: #dc2626; box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12); }
+.bea-rc-err { color: #b91c1c; font-size: 0.75rem; font-weight: 600; }
+.bea-rc-hint { color: #64748b; font-size: 0.75rem; font-weight: 400; }
+.bea-rc-check { flex-direction: row !important; align-items: center; gap: 0.5rem !important; font-weight: 500 !important; }
+.bea-rc-inline { display: flex; gap: 0.5rem; align-items: flex-end; }
+.bea-rc-inline > :first-child { flex: 1; }
+.bea-rc-note { display: flex; gap: 0.6rem; align-items: flex-start; padding: 0.7rem 0.9rem; border-radius: 0.75rem; background: #e8f1f8; color: #1a5278; font-size: 0.84rem; }
+.bea-rc-note--warn { background: #fff7ed; color: #9a3412; }
+.bea-rc-note mat-icon { flex-shrink: 0; }
+.bea-rc-savebar { position: sticky; bottom: 0; z-index: 5; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; padding: 0.75rem 1rem; margin-top: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.9rem; background: rgba(255, 255, 255, 0.96); box-shadow: 0 -6px 18px rgba(15, 23, 42, 0.06); font-size: 0.85rem; color: #475569; }
+
+.bea-rc-fiche__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+.bea-rc-fiche__badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+.bea-rc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); gap: 1rem; }
+.bea-rc-grid > .bea-mg__panel { margin: 0; }
+.bea-rc-dl { display: grid; grid-template-columns: minmax(9rem, 38%) 1fr; gap: 0.45rem 0.9rem; margin: 0; padding: 0.9rem 1.15rem 1.1rem; font-size: 0.86rem; }
+.bea-rc-dl dt { color: #64748b; font-weight: 600; }
+.bea-rc-dl dd { margin: 0; color: #0f172a; overflow-wrap: anywhere; }
+.bea-rc-text { white-space: pre-wrap; padding: 0.9rem 1.15rem 1.1rem; margin: 0; font-size: 0.88rem; color: #0f172a; line-height: 1.5; }
+.bea-rc-pad { padding: 0.9rem 1.15rem 1.1rem; }
+.bea-rc-muted { color: #94a3b8; }
+.bea-rc-json { margin: 0.25rem 0 0; padding: 0.45rem 0.6rem; border-radius: 0.5rem; background: #f8fafc; font-size: 0.75rem; color: #334155; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
+
+.bea-rc-split { display: grid; grid-template-columns: minmax(17rem, 24rem) 1fr; gap: 1rem; align-items: start; }
+.bea-rc-split > .bea-mg__panel { margin: 0; }
+.bea-rc-tree { list-style: none; margin: 0; padding: 0.4rem; max-height: 34rem; overflow: auto; }
+.bea-rc-tree li button { width: 100%; display: flex; align-items: center; gap: 0.45rem; border: 0; background: none; padding: 0.42rem 0.55rem; border-radius: 0.55rem; font: inherit; font-size: 0.85rem; color: #0f172a; text-align: left; cursor: pointer; }
+.bea-rc-tree li button:hover { background: #f1f5f9; }
+.bea-rc-tree li button.is-on { background: #e8f1f8; color: #1a5278; font-weight: 700; }
+.bea-rc-tree li button.is-off { color: #94a3b8; text-decoration: line-through; }
+.bea-rc-tree li button small { margin-left: auto; color: #64748b; font-weight: 500; }
+.bea-rc-tree mat-icon { font-size: 1.05rem; width: 1.05rem; height: 1.05rem; color: #64748b; }
+
+@media (max-width: 900px) {
+  .bea-rc-split { grid-template-columns: 1fr; }
+  .bea-rc-dl { grid-template-columns: 1fr; }
+}
