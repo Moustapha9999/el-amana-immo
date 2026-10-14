@@ -245,6 +245,17 @@ app-auth-screen {
   &::placeholder {
     color: rgb(255 255 255 / 0.45);
   }
+
+  // Le fond imposé par l'autofill navigateur ne peut pas être surchargé directement :
+  // on retarde indéfiniment sa transition pour garder le fond translucide du champ.
+  &:-webkit-autofill,
+  &:-webkit-autofill:hover,
+  &:-webkit-autofill:focus,
+  &:-webkit-autofill:active {
+    -webkit-text-fill-color: #fff;
+    caret-color: #fff;
+    transition: background-color 99999s ease-out 0s;
+  }
 }
 
 .login-field--password .login-field__input {
