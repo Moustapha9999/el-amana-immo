@@ -343,43 +343,6 @@ def _filtres_libelle(ctx: Contexte, filtres: dict) -> list[str]:
     return morceaux
 
 
-def _lignes_pilotage(tb: dict) -> list[list]:
-    lignes: list[list] = [
-        ["Volumes", "Réclamations (période, date de réception)", tb["total"], "dossiers", ""],
-        ["Volumes", "En cours", tb["ouvertes"], "dossiers", ""],
-        ["Volumes", "Opérations contestées", tb["nb_operations"], "opérations",
-         f"{tb['dossiers_avec_operations']} dossier(s)"],
-        ["Volumes", f"Montant contesté ({C.DEVISE})", float(tb["montant_total"]), C.DEVISE,
-         "Somme des opérations, chaque montant compté une fois"],
-    ]
-    perf = tb["performance"]
-    lignes.append(["Clôture", "Délai moyen de clôture", _na(perf["delai_cloture_jours"], " j"), "jours",
-                   f"{perf['delai_cloture_n']} dossier(s) clôturé(s)"])
-    for ag in tb["agences"]:
-        lignes.append(["Agences", ag["libelle"], ag["n"], "dossiers",
-                       f"{ag['nb_operations']} opération(s) · {_na(float(ag['montant']))} {C.DEVISE}"])
-    return lignes
-
-
-async def exporter_pilotage(db: AsyncSession, s: ReclamationsScope, filtres: dict, format: str = "xlsx") -> bytes:
-    """Rapport de pilotage (mêmes filtres que l'écran) : volumes, délai moyen de clôture, agences."""
-    s.exiger("reclamations.reporting.export", "reclamations.reporting.view")
-    ctx = await Contexte.charger(db)
-    tb = await tableau_de_bord(db, s, filtres)
-    titre = "Pilotage des réclamations clients"
-    sous_titre = " · ".join([format_period_label(filtres.get("date_debut"), filtres.get("date_fin"))
-                             or "Toute la période", *_filtres_libelle(ctx, filtres), "périmètre de l'utilisateur"])
-    entetes = ["Rubrique", "Indicateur", "Valeur", "Unité", "Détail"]
-    lignes = _lignes_pilotage(tb)
-    if format == "pdf":
-        return build_styled_pdf(report_title=titre, headers=entetes, rows=lignes, subtitle=sous_titre)
-    return build_styled_workbook_multi(report_title=titre, subtitle=sous_titre, sheets=[
-        ("Synthèse", "Synthèse", entetes, lignes),
-        ("Agences", "Répartition par agence", ["Agence", "Dossiers", "Opérations", f"Montant ({C.DEVISE})"],
-         [[a["libelle"], a["n"], a["nb_operations"], float(a["montant"])] for a in tb["agences"]]),
-    ])
-
-
 def _lignes_comparaison(comp: dict) -> list[list]:
     out = []
     for lg in comp["lignes"]:

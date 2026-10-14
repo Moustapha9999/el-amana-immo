@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, model } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
+import { formatMontant } from '../../shared/montant.pipe';
 import { UiDialogService } from '../../shared/ui-dialog/ui-dialog.service';
 import { OperationSaisie, lireMontant, montantFr } from '../reclamations.models';
 
@@ -41,7 +42,7 @@ export function operationsCorps(lignes: OperationSaisie[]): Array<{ reference: s
                          [class.is-invalid]="tente() && !l.reference.trim()" placeholder="N° de transaction, de virement…" />
                 </td>
                 <td class="bea-rc-ops__m">
-                  <input class="bea-rc-input" [value]="l.montant" (input)="maj(i, 'montant', $event)" inputmode="decimal"
+                  <input class="bea-rc-input" [value]="l.montant" (input)="maj(i, 'montant', $event)" (blur)="formater(i)" inputmode="decimal"
                          [attr.aria-label]="'Montant de l’opération ' + (i + 1)"
                          [class.is-invalid]="(tente() || l.montant !== '') && montantInvalide(l)" placeholder="0,00" />
                 </td>
@@ -86,6 +87,15 @@ export class RcOperationsComponent {
   maj(i: number, champ: keyof OperationSaisie, e: Event): void {
     const valeur = (e.target as HTMLInputElement).value;
     this.lignes.update((ls) => ls.map((l, j) => (j === i ? { ...l, [champ]: valeur } : l)));
+  }
+
+  formater(i: number): void {
+    const n = lireMontant(this.lignes()[i].montant);
+    if (n === null) return;
+    const texte = formatMontant(n);
+    if (texte !== this.lignes()[i].montant) {
+      this.lignes.update((ls) => ls.map((l, j) => (j === i ? { ...l, montant: texte } : l)));
+    }
   }
 
   ajouter(): void {

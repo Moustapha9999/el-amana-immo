@@ -81,7 +81,7 @@ const VUES: Record<string, VueListe> = {
           <p class="bea-stock-page__kicker">Management & Qualité · Réclamations</p>
           <h1>{{ corbeille() ? 'Corbeille — réclamations supprimées' : vue()?.titre ?? 'Réclamations' }}</h1>
           <p class="bea-ct-head__sub">
-            {{ corbeille() ? 'Dossiers retirés des listes, indicateurs et exports. Opérations, pièces et historique sont conservés : un dossier se restaure à l’identique.'
+            {{ corbeille() ? 'Dossiers mis à la corbeille avant la suppression définitive : ils se restaurent à l’identique ou se suppriment définitivement.'
               : vue()?.sous ?? 'Filtres, tri et pagination appliqués par le serveur, dans la limite de votre périmètre.' }}
             @if (store.config()?.acces?.perimetre === 'UNITES') { <span class="bea-ct-badge" data-tone="ATTENTION">Périmètre : vos unités</span> }
             @if (store.config()?.acces?.perimetre === 'PERSONNEL') { <span class="bea-ct-badge" data-tone="ATTENTION">Périmètre : vos saisies</span> }
@@ -261,10 +261,10 @@ const VUES: Record<string, VueListe> = {
                       @if (peutAnnuler(d)) {
                         <button type="button" class="bea-mg__icon-btn bea-rc-warn" [disabled]="actionBusy()" (click)="annuler(d)" title="Annuler le dossier (statut « Annulée »)" aria-label="Annuler"><mat-icon>block</mat-icon></button>
                       }
-                      @if (d.suppression; as sup) {
-                        <button type="button" class="bea-mg__icon-btn bea-rc-danger" [disabled]="actionBusy() || !sup.possible" (click)="supprimer(d)"
-                                [title]="sup.possible ? 'Supprimer (corbeille, restaurable)' : 'Suppression impossible : ' + sup.raison" aria-label="Supprimer"><mat-icon>delete</mat-icon></button>
-                      }
+                    }
+                    @if (d.suppression?.possible) {
+                      <button type="button" class="bea-mg__icon-btn bea-rc-danger" [disabled]="actionBusy()" (click)="supprimer(d)"
+                              title="Supprimer définitivement" aria-label="Supprimer définitivement"><mat-icon>delete</mat-icon></button>
                     }
                   </td>
                 </tr>
@@ -468,9 +468,13 @@ export class RcDossiersComponent implements OnInit {
 
   supprimer(d: DossierLigne): void {
     this.feedback
-      .runWithReason((motif) => this.rc.supprimer(d.id, { revision: d.revision, motif, confirmation: d.reference }),
-        optionsSuppression(d.reference, this.actionBusy))
-      .subscribe(() => this.charger());
+      .run(() => this.rc.supprimer(d.id, { revision: d.revision }), optionsSuppression(d.reference, this.actionBusy))
+      .subscribe(() => {
+        this.lignes.update((l) => l.filter((x) => x.id !== d.id));
+        this.total.update((t) => Math.max(0, t - 1));
+        if (!this.lignes().length && this.page() > 1) this.allerPage(this.page() - 1);
+        else this.charger();
+      });
   }
 
   restaurer(d: DossierLigne): void {

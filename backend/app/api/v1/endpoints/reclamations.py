@@ -424,7 +424,10 @@ async def archiver(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depend
 async def supprimer(rid: uuid.UUID, body: SupprimerIn,
                     s: ReclamationsScope = Depends(scope(suppression.PERMISSION)),
                     db: AsyncSession = Depends(get_db)) -> dict:
-    return await suppression.supprimer(db, s, rid, body.model_dump())
+    resultat, fichiers = await suppression.supprimer(db, s, rid, body.model_dump())
+    await db.commit()
+    suppression.effacer_fichiers(fichiers)
+    return resultat
 
 
 @router.post("/dossiers/{rid}/restaurer")
@@ -463,14 +466,6 @@ async def comparaison(a_debut: date, a_fin: date, b_debut: date, b_fin: date,
 
     pa, pb = _periodes(a_debut, a_fin, b_debut, b_fin)
     return await indicateurs.comparaison(db, s, _sans_liste(filtres), pa, pb)
-
-
-@router.get("/export/pilotage")
-async def exporter_pilotage(format: Literal["xlsx", "pdf"] = "xlsx", filtres: dict = Depends(filtres_dossiers),
-                            s: ReclamationsScope = Depends(scope("reclamations.reporting.export")),
-                            db: AsyncSession = Depends(get_db)) -> Response:
-    contenu = await reporting.exporter_pilotage(db, s, _sans_liste(filtres), format=format)
-    return _export(contenu, f"pilotage-reclamations-{date.today().isoformat()}", format)
 
 
 @router.get("/export/comparaison")

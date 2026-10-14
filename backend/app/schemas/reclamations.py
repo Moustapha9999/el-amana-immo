@@ -191,8 +191,9 @@ class RestaurerIn(BaseModel):
     motif: str = Field(min_length=1, max_length=4000)
 
 
-class SupprimerIn(RestaurerIn):
-    confirmation: str = Field(min_length=1, max_length=30)
+class SupprimerIn(BaseModel):
+    revision: int | None = None
+    motif: str | None = Field(default=None, max_length=4000)
 
 
 class CloturerIn(ActionIn):

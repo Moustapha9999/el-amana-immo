@@ -9,7 +9,7 @@ statut CORE `actif`.
 | Sujet | Décision |
 |-------|----------|
 | Pilotage | Service Réclamations central (unité `est_service_reclamations`, une seule active) |
-| Clôture | Service Réclamations central uniquement (403 `CLOTURE_RESERVEE_SR` sinon), après retour jugé suffisant du service concerné (ou traitement interne SR) et enregistrement de la réponse envoyée au client (409 `REPONSE_NON_ENVOYEE` sinon). La preuve d’envoi est facultative (à valider) |
+| Clôture | Service Réclamations central uniquement (403 `CLOTURE_RESERVEE_SR` sinon), après retour jugé suffisant du service concerné (ou traitement interne SR). Résultat choisi à la clôture. Plus d’action « Qualifier » ni « Enregistrer la réponse envoyée » dans l’interface : le type se renseigne à la saisie ou via « Corriger les données » ; la réponse au client et sa preuve se joignent en pièces jointes |
 | Délais | Fonctionnalité « Délais & alertes » retirée (voir plus bas) : aucune échéance ni alerte |
 | Unités | Liste réelle des entités BEA (reprise du module Formation) + création de directions, départements, services, agences, cellules dans le module. La table org `departements` (vide) n’est pas utilisée |
 | Données | Aucune donnée fictive : seuls les canaux, canaux de réponse et une proposition de types et de motifs (marquée « Proposition initiale — nomenclature à valider par la banque ») sont insérés. L’option « Autre » (saisie libre) existe à chaque niveau motif / sous-motif |
@@ -118,7 +118,7 @@ unités. Un dossier hors périmètre répond `404`.
 | `POST /dossiers/{id}/reponse` | Enregistrement de la réponse envoyée (contenu, canal, date d’envoi) |
 | `POST /referentiels/{id}/validation` | Validation Conformité d’un type, motif ou sous-motif |
 | `GET /tableau-de-bord`, `GET /comparaison`, `GET /circuit` | Tableau de bord, comparaison A/B, kanban |
-| `GET /export`, `GET /export/pilotage`, `GET /export/comparaison` | PDF / Excel (liste : 5 000 lignes max) |
+| `GET /export`, `GET /export/comparaison` | PDF / Excel (liste : 5 000 lignes max) |
 
 Règles appliquées :
 
@@ -155,22 +155,25 @@ réponse refusée, réouverture, KPI sans double comptage, reprise des données)
   commentaire, nom du fichier, date d’ajout et auteur conservés. Contrôles d’extension, de
   signature et antivirus ; stockage privé, accès uniquement via l’API authentifiée
   (`reclamations.document.view` / `.download`, périmètre du dossier).
-- **Suppression = corbeille (suppression logique)**. La suppression définitive est impossible :
-  l’historique est en ajout seul (trigger `trg_reclamation_evenements_immuable`) et relève de la
-  conservation documentaire. Un dossier supprimé sort des listes, KPI, exports et alertes, devient
-  non modifiable, et reste consultable et restaurable (avec motif) depuis la corbeille.
-- Permission `reclamations.delete`, accordée au seul rôle `reclamations.admin` ; l’attribuer
-  explicitement via CORE ADMIN pour un autre profil. Contrôle côté serveur, motif obligatoire,
-  confirmation par saisie de la référence, révision vérifiée, événement + audit
-  (`reclamations.suppression` / `reclamations.restauration`).
-- **Non supprimables** : dossiers clôturés, rejetés, archivés, avec réponse envoyée, portant un
-  document officiel (réponse au client, preuve d’envoi) ou référencés par un autre dossier.
-- Opérations concernées : simples références, conservées avec leur association (rien n’est
-  écrit dans ORION ni dans la comptabilité) ; pièces jointes et historique conservés.
+- **Suppression définitive, quel que soit le statut** (migration `20261015_reclamations_08`) :
+  en cours, clôturé, rejeté, archivé ou déjà à la corbeille. `POST /dossiers/{id}/supprimer`
+  exécute `DELETE FROM reclamations` dans une transaction ; fiches de traitement, réponses,
+  opérations, appels, métadonnées des pièces et chronologie suivent par `ON DELETE CASCADE`.
+  Les documents GED du dossier et ses notifications sont supprimés ; les fichiers sont effacés
+  du disque après le commit. Un dossier qui citait le dossier supprimé (doublon, lien) perd
+  seulement ce lien. Rien n’est écrit dans ORION.
+- La chronologie reste en ajout seul pour un dossier existant (trigger
+  `trg_reclamation_evenements_immuable`) ; ses lignes ne disparaissent qu’avec leur dossier.
+- Permission `reclamations.delete` (rôle `reclamations.admin`, ou habilitation explicite via CORE
+  ADMIN), contrôlée côté serveur avec le périmètre du dossier. Confirmation « Supprimer
+  définitivement » côté interface. Trace conservée dans `audit_logs`
+  (`reclamations.suppression_definitive` : référence, statut, client, opérations, pièces).
+- Corbeille : seuls les dossiers mis à la corbeille avant cette règle y figurent ; ils se
+  restaurent (motif obligatoire) ou se suppriment définitivement.
 
 Tests : `test_reclamations_notes_suppression.py` (notes multiples sans écrasement, consultation
-selon permissions, suppression / restauration, refus sans permission, dossier clôturé ou
-officiel, opérations jamais supprimées, cohérence des pièces).
+selon permissions, suppression définitive en base, refus sans permission, tout statut y compris
+archivé, chronologie protégée, corbeille restaurée ou supprimée).
 
 ## Délais & alertes : retirés (migration `20261014_reclamations_07`)
 
@@ -221,8 +224,6 @@ périodes se chevauchent.
 
 - `GET /export` (liste filtrée, PDF / Excel) : rappelle les filtres (agence, indicateur) en
   sous-titre.
-- `GET /export/pilotage` (PDF / Excel : synthèse — volumes, délai moyen de clôture, agences —
-  et répartition par agence).
 - `GET /export/comparaison` (PDF / Excel : comparaison + méthode).
 
 ## Types, motifs et sous-motifs : proposé / validé
@@ -266,7 +267,7 @@ décision de la banque.
 | Délais & alertes (règles, échéances, alertes, section durées / réouverture / services) | retiré (données conservées en base) |
 | Délai moyen de clôture, filtre agence (dont « sans agence ») | implémenté et testé |
 | KPI cliquables = listes exactes ; totaux opérations / montant de la liste | implémenté et testé |
-| Comparaison A/B, exports pilotage et comparaison | implémenté et testé |
+| Comparaison A/B, export de la comparaison | implémenté et testé |
 | Référentiels proposés / validés, compatibilité sous-motif | implémenté et testé |
 | Retrait des 4 permissions | implémenté et testé |
 | Nomenclature types / motifs / sous-motifs | en attente de validation (aucune valeur validée ; aucun sous-motif inséré) |

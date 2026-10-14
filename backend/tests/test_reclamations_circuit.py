@@ -202,10 +202,9 @@ async def test_circuit_complet_jusqua_cloture_sr(db):
     assert d["affectation_courante"]["recu_le"] is not None
 
     d = await circuit.evaluer(db, sr, rid, {"revision": d["revision"], "evaluation": "SUFFISANT"})
-    assert (d["statut"], d["etape"]) == ("A_CLOTURER", "CLOTURE") and not d["actions"]["cloturer"]
+    assert (d["statut"], d["etape"]) == ("A_CLOTURER", "CLOTURE") and d["actions"]["cloturer"]
+    assert "qualifier" not in d["actions"] and "enregistrer_reponse" not in d["actions"]
 
-    await _refus(circuit.cloturer(db, sr, rid, {"revision": d["revision"], "resultat": "FAVORABLE"}),
-                 "REPONSE_NON_ENVOYEE")
     d = await reponses.enregistrer_envoi(db, sr, rid, {
         "revision": d["revision"], "contenu": "Nous procédons au remboursement.", "resultat": "FAVORABLE",
         "canal_envoi_id": await _canal_reponse(db), "destinataire": "Client Test"})

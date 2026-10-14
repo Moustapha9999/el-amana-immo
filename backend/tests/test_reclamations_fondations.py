@@ -210,9 +210,9 @@ async def test_chronologie_en_ajout_seul(db: AsyncSession):
                 await db.execute(text(requete), {"id": ev.id})
     # Seule exception : la mise à NULL d'une référence (clé étrangère ON DELETE SET NULL).
     await db.execute(text("UPDATE reclamation_evenements SET auteur_id = NULL WHERE id = :id"), {"id": ev.id})
-    with pytest.raises(DBAPIError):
-        async with db.begin_nested():
-            await db.execute(text("DELETE FROM reclamations WHERE id = :id"), {"id": r.id})
+    # Suppression définitive du dossier : sa chronologie part avec lui (cascade).
+    await db.execute(text("DELETE FROM reclamations WHERE id = :id"), {"id": r.id})
+    assert await db.scalar(text("SELECT count(*) FROM reclamation_evenements WHERE id = :id"), {"id": ev.id}) == 0
 
 
 async def test_perimetre_par_unite(db: AsyncSession):

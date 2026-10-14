@@ -1,25 +1,27 @@
-"""Suppression d'une réclamation : mise à la corbeille (suppression logique) et restauration.
+"""Suppression définitive d'une réclamation, quel que soit son statut (y compris clôturée ou archivée).
 
-Pas de suppression physique : la chronologie est en ajout seul (trigger
-``trg_reclamation_evenements_immuable``) et relève de la conservation documentaire ; la contourner
-n'est pas permis. Un dossier supprimé sort des listes, KPI, exports et alertes ; il reste
-consultable et restaurable par les profils ``reclamations.delete`` (et l'administrateur du module).
+``DELETE FROM reclamations`` dans la transaction de la requête : les tables du dossier suivent par
+``ON DELETE CASCADE`` (fiches de traitement, réponses, opérations, appels, métadonnées des pièces,
+chronologie). Les pièces GED du dossier (``ged_documents`` du module, rattachées à ce seul dossier)
+et ses notifications sont supprimées avec lui ; les fichiers ne sont effacés du disque qu'après le
+commit (``effacer_fichiers``). Les autres dossiers qui le citaient (doublon, lien) perdent seulement
+ce lien (``SET NULL``). Les opérations ne sont que des références : rien n'est écrit dans ORION.
 
-Rien n'est retiré : opérations concernées (simples références — aucune écriture dans ORION ni en
-comptabilité), pièces GED, fiches de traitement et historique restent rattachés au dossier.
-
-Suppression refusée (règles de conservation) : dossier archivé, clôturé ou rejeté, réponse
-envoyée au client, pièce officielle (réponse, preuve d'envoi), dossier référencé par un autre.
+La trace reste dans ``audit_logs`` (référence, statut, client, opérations, pièces, motif éventuel).
+Les dossiers mis à la corbeille avant cette règle restent restaurables ou supprimables.
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
+from pathlib import Path
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import GedDocument, Reclamation, ReclamationDocument, ReclamationReponse
+from app.models import GedDocument, Notification, Reclamation
+from app.services.ged_service import GedService
 from app.services.reclamations import constantes as C
 from app.services.reclamations import operations as ops
 from app.services.reclamations.acces import PERMISSION_SUPPRESSION as PERMISSION
@@ -27,52 +29,9 @@ from app.services.reclamations.acces import ReclamationsScope
 from app.services.reclamations.dossiers import _evenement, charger
 from app.services.reclamations.outils import auditer, conflit, erreur, iso, maintenant, texte_long
 
-__all__ = ["PERMISSION", "blocages", "restaurer", "supprimer"]
+__all__ = ["PERMISSION", "effacer_fichiers", "restaurer", "supprimer"]
 
-
-def _raison(code: str, message: str) -> dict[str, str]:
-    return {"code": code, "message": message}
-
-
-async def blocages(db: AsyncSession, dossiers: list[Reclamation]) -> dict[uuid.UUID, list[dict[str, str]]]:
-    """Motifs interdisant la suppression, par dossier (vide = suppression possible)."""
-    res: dict[uuid.UUID, list[dict[str, str]]] = {r.id: [] for r in dossiers}
-    ids = [r.id for r in dossiers if not r.supprimee_le]
-    if not ids:
-        return res
-    reponses = set((await db.scalars(select(ReclamationReponse.reclamation_id).where(
-        ReclamationReponse.reclamation_id.in_(ids), ReclamationReponse.statut == "ENVOYEE"))).all())
-    officiels = set((await db.scalars(
-        select(ReclamationDocument.reclamation_id)
-        .join(GedDocument, GedDocument.id == ReclamationDocument.document_id)
-        .where(ReclamationDocument.reclamation_id.in_(ids), GedDocument.deleted_at.is_(None),
-               ReclamationDocument.categorie.in_(C.CATEGORIES_OFFICIELLES)))).all())
-    references: dict[uuid.UUID, list[str]] = {}
-    for ref, doublon, liee in (await db.execute(
-            select(Reclamation.reference, Reclamation.doublon_de_id, Reclamation.reclamation_liee_id).where(
-                Reclamation.supprimee_le.is_(None),
-                or_(Reclamation.doublon_de_id.in_(ids), Reclamation.reclamation_liee_id.in_(ids))))).all():
-        for cible in {doublon, liee} & set(ids):
-            references.setdefault(cible, []).append(ref)
-    for r in dossiers:
-        if r.supprimee_le:
-            continue
-        lst = res[r.id]
-        if r.archivee_le:
-            lst.append(_raison("DOSSIER_ARCHIVE", "Dossier archivé : il relève de la conservation documentaire "
-                                                  "et ne peut pas être supprimé."))
-        if r.statut in C.STATUTS_NON_SUPPRIMABLES:
-            lst.append(_raison("DOSSIER_CLOTURE", f"Dossier {C.STATUT_LIBELLES[r.statut].lower()} : une décision "
-                                                  "a été rendue, il se conserve (réouverture ou archivage)."))
-        if r.id in reponses or r.date_reponse_client:
-            lst.append(_raison("REPONSE_ENVOYEE", "Une réponse a été envoyée au client : le dossier se conserve."))
-        if r.id in officiels:
-            lst.append(_raison("DOCUMENTS_OFFICIELS", "Le dossier contient des documents officiels (réponse au "
-                                                      "client, preuve d'envoi) : il se conserve."))
-        if r.id in references:
-            lst.append(_raison("DOSSIER_REFERENCE", "Dossier référencé par "
-                                                    f"{', '.join(sorted(references[r.id]))} (doublon ou lien)."))
-    return res
+logger = logging.getLogger(__name__)
 
 
 def _revision(r: Reclamation, data: dict) -> None:
@@ -81,56 +40,62 @@ def _revision(r: Reclamation, data: dict) -> None:
                       revision=r.revision)
 
 
-def _motif(data: dict) -> str:
-    motif = texte_long(data.get("motif"))
-    if not motif:
-        raise erreur("Le motif est obligatoire", "MOTIF_OBLIGATOIRE")
-    return motif
-
-
-async def _nb_documents(db: AsyncSession, r: Reclamation) -> int:
-    return await db.scalar(select(func.count()).select_from(GedDocument).where(
-        GedDocument.module_code == C.MODULE_CODE, GedDocument.entity == C.GED_ENTITE,
-        GedDocument.entity_id == str(r.id), GedDocument.deleted_at.is_(None))) or 0
-
-
-async def supprimer(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data: dict) -> dict:
+async def supprimer(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID,
+                    data: dict) -> tuple[dict, list[Path]]:
+    """Supprime le dossier et retourne les fichiers GED à effacer une fois la transaction validée."""
     s.exiger(PERMISSION)
     r = await charger(db, s, rid, verrou=True, corbeille=True)
-    if r.supprimee_le:
-        raise conflit("Ce dossier est déjà supprimé", "DEJA_SUPPRIME")
     _revision(r, data)
-    motif = _motif(data)
-    if (data.get("confirmation") or "").strip().upper() != r.reference:
-        raise erreur("Pour confirmer, saisissez exactement la référence du dossier", "CONFIRMATION_INVALIDE")
-    raisons = (await blocages(db, [r]))[r.id]
-    if raisons:
-        raise conflit(raisons[0]["message"], raisons[0]["code"], blocages=raisons)
+    motif = texte_long(data.get("motif"))
     operations = await ops.lister(db, r.id)
-    nb_documents = await _nb_documents(db, r)
-    r.supprimee_le = maintenant()
-    r.supprimee_par_id = s.user_id
-    r.motif_suppression = motif
-    r.revision += 1
-    r.updated_by_id = s.user_id
-    db.add(_evenement(r, s, "SUPPRESSION", statut_avant=r.statut, etape_avant=r.etape, commentaire=motif,
-                      donnees={"operations": len(operations), "documents": nb_documents}))
+    docs = list((await db.scalars(select(GedDocument).where(
+        GedDocument.module_code == C.MODULE_CODE, GedDocument.entity == C.GED_ENTITE,
+        GedDocument.entity_id == str(r.id)))).all())
+    ged = GedService(db)
+    fichiers = [ged.absolute_path(d.stored_path) for d in docs if d.stored_path]
+    reference = r.reference
+
+    await auditer(db, s, "reclamations.suppression_definitive", C.GED_ENTITE, r.id, before={
+        "reference": reference, "statut": r.statut, "etape": r.etape, "archivee_le": iso(r.archivee_le),
+        "client": r.client_nom, "racine": r.client_racine, "objet": r.objet,
+        "operations": [{"reference": o.reference, "montant": ops.montant_str(o.montant)} for o in operations],
+        "documents": [d.filename for d in docs],
+    }, after={"supprimee_le": iso(maintenant()), "motif": motif})
+
+    ids_docs = [d.id for d in docs]
+    if ids_docs:
+        await db.execute(update(GedDocument).where(GedDocument.parent_document_id.in_(ids_docs),
+                                                   GedDocument.id.not_in(ids_docs))
+                         .values(parent_document_id=None))
+        await db.execute(delete(GedDocument).where(GedDocument.id.in_(ids_docs)))
+    await db.execute(delete(Notification).where(
+        Notification.module_code == C.MODULE_CODE, Notification.entity == C.GED_ENTITE,
+        Notification.entity_id == str(r.id)))
+    await db.execute(delete(Reclamation).where(Reclamation.id == r.id))
+    db.expunge(r)
     await db.flush()
-    await auditer(db, s, "reclamations.suppression", C.GED_ENTITE, r.id,
-                  before={"reference": r.reference, "statut": r.statut, "etape": r.etape,
-                          "operations": [o.reference for o in operations], "documents": nb_documents},
-                  after={"supprimee_le": iso(r.supprimee_le), "motif": motif})
-    return {"id": str(r.id), "reference": r.reference, "supprimee_le": iso(r.supprimee_le),
-            "operations_conservees": len(operations), "documents_conserves": nb_documents}
+    return {"id": str(rid), "reference": reference, "operations_supprimees": len(operations),
+            "documents_supprimes": len(docs)}, fichiers
+
+
+def effacer_fichiers(fichiers: list[Path]) -> None:
+    for f in fichiers:
+        try:
+            f.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Fichier GED non effacé après suppression d'une réclamation : %s", f.name)
 
 
 async def restaurer(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data: dict) -> Reclamation:
+    """Dossier mis à la corbeille avant la suppression définitive : remis dans les listes."""
     s.exiger(PERMISSION)
     r = await charger(db, s, rid, verrou=True, corbeille=True)
     if not r.supprimee_le:
         raise conflit("Ce dossier n'est pas supprimé", "NON_SUPPRIME")
     _revision(r, data)
-    motif = _motif(data)
+    motif = texte_long(data.get("motif"))
+    if not motif:
+        raise erreur("Le motif est obligatoire", "MOTIF_OBLIGATOIRE")
     avant = {"supprimee_le": iso(r.supprimee_le), "motif_suppression": r.motif_suppression}
     r.supprimee_le = None
     r.supprimee_par_id = None

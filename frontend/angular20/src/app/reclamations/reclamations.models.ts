@@ -1,5 +1,7 @@
 /** Module Gestion des réclamations — types d'échange avec `/api/v1/reclamations` et utilitaires d'affichage. */
 
+import { formatMontantOuTiret, parseMontant } from '../shared/montant.pipe';
+
 export const RC_BASE = '/reclamations';
 
 export type Domaine = 'TYPE' | 'MOTIF' | 'SOUS_MOTIF' | 'CANAL' | 'CANAL_REPONSE';
@@ -154,12 +156,7 @@ export interface DossierLigne {
   supprimee_le: string | null;
   motif_suppression: string | null;
   /** Présent seulement pour les profils habilités à supprimer. */
-  suppression?: { possible: boolean; raison: string | null; restaurable: boolean };
-}
-
-export interface BlocageSuppression {
-  code: string;
-  message: string;
+  suppression?: { possible: boolean; restaurable: boolean };
 }
 
 export interface RefCourt {
@@ -245,7 +242,6 @@ export interface Dossier extends Omit<DossierLigne, 'suppression'> {
   cloture_par: string | null;
   actions: Record<string, boolean>;
   suppression: {
-    blocages: BlocageSuppression[];
     supprimee_le: string | null;
     motif: string | null;
     supprimee_par: string | null;
@@ -255,9 +251,8 @@ export interface Dossier extends Omit<DossierLigne, 'suppression'> {
 export interface SuppressionResultat {
   id: string;
   reference: string;
-  supprimee_le: string;
-  operations_conservees: number;
-  documents_conserves: number;
+  operations_supprimees: number;
+  documents_supprimes: number;
 }
 
 export interface Operation {
@@ -446,21 +441,16 @@ export interface ApercuClient {
   comptes: Array<{ compte: string; etat: string; devise: string; agence_id: string; agence: string }>;
 }
 
-const FMT_MONTANT = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-
-/** Montant en MRU, au plus deux décimales. */
 export function montantFr(valeur: string | number | null | undefined, devise = 'MRU'): string {
-  if (valeur === null || valeur === undefined || valeur === '') return '—';
-  const n = typeof valeur === 'number' ? valeur : Number(valeur);
-  return Number.isFinite(n) ? `${FMT_MONTANT.format(n)} ${devise}` : '—';
+  return formatMontantOuTiret(valeur, devise);
 }
 
-/** Montant saisi (virgule ou point décimal) : nombre > 0 à deux décimales au plus, sinon `null`. */
+/** Montant saisi (« 1 234,56 », « 1234.56 »…) : nombre > 0 à deux décimales au plus, sinon `null`. */
 export function lireMontant(saisie: string): number | null {
-  const t = saisie.trim().replace(/\s/g, '').replace(',', '.');
-  if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
-  const n = Number(t);
-  return n > 0 ? n : null;
+  if (!/^[\d\s.,]+$/.test(saisie.trim())) return null;
+  const n = parseMontant(saisie);
+  if (n === null || n <= 0 || Math.abs(n * 100 - Math.round(n * 100)) > 1e-6) return null;
+  return n;
 }
 
 /** Sentinelle des listes Motif / Sous-motif pour la saisie libre « Autre ». */

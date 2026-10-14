@@ -6,18 +6,18 @@ import { Filtres, ReclamationsService, ReclamationsStore } from '../reclamations
 
 type Format = 'pdf' | 'xlsx';
 
-/** Boutons PDF / Excel : liste filtrée ou rapport de pilotage (mêmes filtres que la page, périmètre serveur). */
+/** Boutons PDF / Excel de la liste filtrée (mêmes filtres que la page, périmètre serveur). */
 @Component({
   selector: 'bea-rc-export',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatIconModule],
   template: `
     @if (store.cap('reporting_exporter')) {
-      <button type="button" class="bea-mg__btn bea-mg__btn--ghost bea-rc-dl-btn" [disabled]="busy()" (click)="telecharger('pdf')" [title]="titre() + ' en PDF'">
-        <mat-icon>picture_as_pdf</mat-icon> {{ cible() === 'pilotage' ? 'Pilotage PDF' : 'PDF' }}
+      <button type="button" class="bea-mg__btn bea-mg__btn--ghost bea-rc-dl-btn" [disabled]="busy()" (click)="telecharger('pdf')" title="Télécharger la liste en PDF">
+        <mat-icon>picture_as_pdf</mat-icon> PDF
       </button>
-      <button type="button" class="bea-mg__btn bea-mg__btn--ghost bea-rc-dl-btn" [disabled]="busy()" (click)="telecharger('xlsx')" [title]="titre() + ' en Excel'">
-        <mat-icon>table_view</mat-icon> {{ cible() === 'pilotage' ? 'Pilotage Excel' : 'Excel' }}
+      <button type="button" class="bea-mg__btn bea-mg__btn--ghost bea-rc-dl-btn" [disabled]="busy()" (click)="telecharger('xlsx')" title="Télécharger la liste en Excel">
+        <mat-icon>table_view</mat-icon> Excel
       </button>
     }
   `,
@@ -27,24 +27,18 @@ export class RcExportComponent {
   private readonly feedback = inject(FeedbackService);
   readonly store = inject(ReclamationsStore);
   readonly filtres = input<Filtres>({});
-  readonly cible = input<'liste' | 'pilotage'>('liste');
   readonly busy = signal(false);
-
-  titre(): string {
-    return this.cible() === 'pilotage' ? 'Télécharger le rapport de pilotage' : 'Télécharger la liste';
-  }
 
   telecharger(format: Format): void {
     const libelle = format === 'pdf' ? 'PDF' : 'Excel';
-    const pilotage = this.cible() === 'pilotage';
     this.feedback
-      .run(() => (pilotage ? this.rc.exportPilotage(this.filtres(), format) : this.rc.exporter(this.filtres(), format)), {
+      .run(() => this.rc.exporter(this.filtres(), format), {
         busy: this.busy,
         loading: `Préparation du fichier ${libelle}…`,
         success: () => ({ title: `Export ${libelle} prêt` }),
         errorTitle: 'Export refusé',
         retry: false,
       })
-      .subscribe((b) => telechargerBlob(b, `${pilotage ? 'pilotage-' : ''}reclamations-${new Date().toISOString().slice(0, 10)}.${format}`));
+      .subscribe((b) => telechargerBlob(b, `reclamations-${new Date().toISOString().slice(0, 10)}.${format}`));
   }
 }

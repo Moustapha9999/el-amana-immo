@@ -25,7 +25,6 @@ import { RcExportComponent } from '../shared/rc-export.component';
           <p class="bea-ct-head__sub">Calculés sur les dossiers de votre périmètre. Chaque nombre cliquable ouvre la liste exacte des dossiers comptés.</p>
         </div>
         <div class="bea-mg__actions">
-          <bea-rc-export cible="pilotage" [filtres]="base()" />
           <bea-rc-export [filtres]="base()" />
           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="charger()" title="Actualiser" aria-label="Actualiser"><mat-icon>refresh</mat-icon></button>
         </div>

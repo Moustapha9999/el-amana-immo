@@ -6,6 +6,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
+import { formatMontant } from '../../shared/montant.pipe';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
 import {
   Dossier,
@@ -90,10 +91,9 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
             }
             @if (d.actions['restaurer']) {
               <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()" (click)="restaurer()"><mat-icon>restore_from_trash</mat-icon> Restaurer</button>
-            } @else if (d.actions['supprimer']) {
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost bea-rc-danger" [disabled]="busy() || edition()" (click)="supprimer()"><mat-icon>delete</mat-icon> Supprimer</button>
-            } @else if (store.cap('supprimer') && !d.supprimee_le && d.suppression.blocages.length) {
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" disabled [title]="raisonsSuppression(d)"><mat-icon>delete_forever</mat-icon> Suppression impossible</button>
+            }
+            @if (d.actions['supprimer']) {
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost bea-rc-danger" [disabled]="busy() || edition()" (click)="supprimer()"><mat-icon>delete_forever</mat-icon> Supprimer</button>
             }
           </div>
         </header>
@@ -102,11 +102,9 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
           <div class="bea-rc-note bea-rc-note--warn bea-rc-fiche__alerte"><mat-icon>delete</mat-icon>
             <span>
               <strong>Dossier supprimé</strong> le {{ date(d.suppression.supprimee_le, true) }}{{ d.suppression.supprimee_par ? ' par ' + d.suppression.supprimee_par : '' }}
-              — motif : {{ d.suppression.motif }}. Il n’apparaît plus dans les listes, indicateurs ni exports ; ses opérations, pièces et son historique sont conservés.
+              — motif : {{ d.suppression.motif }}. Il n’apparaît plus dans les listes, indicateurs ni exports : restaurez-le ou supprimez-le définitivement.
             </span>
           </div>
-        } @else if (store.cap('supprimer') && d.suppression.blocages.length) {
-          <p class="bea-rc-hint">Suppression impossible : {{ raisonsSuppression(d) }}</p>
         }
 
         <ol class="bea-rc-pipe" aria-label="Avancement du dossier">
@@ -348,11 +346,11 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
             } @empty {
               <p class="bea-rc-pad bea-rc-muted">Aucune transmission à un service pour l’instant.</p>
             }
-            <section class="bea-mg__panel">
-              <div class="bea-mg__panel-top"><h2>Réponse envoyée au client</h2>
-                @if (d.reponse_courante; as p) { <span class="bea-ct-badge" data-tone="INFO">{{ p.statut_libelle }}</span> }
-              </div>
-              @if (d.reponse_courante; as p) {
+            @if (d.reponse_courante; as p) {
+              <section class="bea-mg__panel">
+                <div class="bea-mg__panel-top"><h2>Réponse envoyée au client</h2>
+                  <span class="bea-ct-badge" data-tone="INFO">{{ p.statut_libelle }}</span>
+                </div>
                 <dl class="bea-rc-dl">
                   <dt>Envoyée le</dt><dd>{{ date(p.envoye_le, true) }}{{ p.envoye_par ? ' par ' + p.envoye_par : '' }}</dd>
                   <dt>Canal</dt><dd>{{ p.canal_envoi ?? '—' }}</dd>
@@ -363,10 +361,8 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
                   <dt>Preuve d’envoi</dt><dd>{{ d.preuve_envoi ? 'Jointe (onglet Notes & pièces jointes)' : 'Non jointe' }}</dd>
                 </dl>
                 <p class="bea-rc-text">{{ p.contenu }}</p>
-              } @else {
-                <p class="bea-rc-pad bea-rc-muted">Aucune réponse enregistrée. Elle s’enregistre une fois le dossier « À clôturer » (retour du service jugé suffisant ou traitement interne).</p>
-              }
-            </section>
+              </section>
+            }
             @if (d.date_cloture || d.motif_refus || d.motif_annulation) {
               <section class="bea-mg__panel">
                 <div class="bea-mg__panel-top"><h2>Issue du dossier</h2></div>
@@ -664,7 +660,7 @@ export class RcFicheComponent implements OnInit {
   ouvrirOperations(): void {
     const d = this.dossier();
     if (!d) return;
-    this.operations.set(d.operations.map((o) => ({ reference: o.reference, montant: o.montant ? o.montant.replace('.', ',') : '' })));
+    this.operations.set(d.operations.map((o) => ({ reference: o.reference, montant: o.montant ? formatMontant(o.montant) : '' })));
     this.initialOps = JSON.stringify(this.operations());
     this.motifOps = '';
     this.tenteOps.set(false);
@@ -783,16 +779,11 @@ export class RcFicheComponent implements OnInit {
       });
   }
 
-  raisonsSuppression(d: Dossier): string {
-    return d.suppression.blocages.map((b) => b.message).join(' ');
-  }
-
   supprimer(): void {
     const d = this.dossier();
     if (!d) return;
     this.feedback
-      .runWithReason((motif) => this.rc.supprimer(d.id, { revision: d.revision, motif, confirmation: d.reference }),
-        optionsSuppression(d.reference, this.busy))
+      .run(() => this.rc.supprimer(d.id, { revision: d.revision }), optionsSuppression(d.reference, this.busy))
       .subscribe(() => void this.router.navigate(['/reclamations/dossiers']));
   }
 

@@ -363,12 +363,8 @@ async def lister(db: AsyncSession, s: ReclamationsScope, f: dict[str, Any], *, p
     resumes = await ops.resumes(db, [r.id for r in rows])
     items = [ligne(r, ctx, docs.get(str(r.id), 0), resumes.get(r.id)) for r in rows]
     if s.peut(suppression.PERMISSION):
-        blocages = await suppression.blocages(db, rows)
         for item, r in zip(items, rows, strict=True):
-            raisons = blocages.get(r.id, [])
-            item["suppression"] = {"possible": not r.supprimee_le and not raisons,
-                                   "raison": raisons[0]["message"] if raisons else None,
-                                   "restaurable": bool(r.supprimee_le)}
+            item["suppression"] = {"possible": True, "restaurable": bool(r.supprimee_le)}
     ids = base.with_only_columns(Reclamation.id).order_by(None).correlate(None)
     nb_ops, somme, avec = (await db.execute(select(
         func.count(ReclamationOperation.id), func.sum(ReclamationOperation.montant),

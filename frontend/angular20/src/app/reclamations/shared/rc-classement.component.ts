@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, model } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { AUTRE, Domaine, Dossier, RefItem } from '../reclamations.models';
+import { AUTRE, Dossier, RefItem } from '../reclamations.models';
 import { ReclamationsStore } from '../reclamations.service';
 
 /** Type → motif → sous-motif. `motif` / `sous_motif` : id du référentiel, `AUTRE` ou vide. */
@@ -89,9 +89,6 @@ export function classementCorps(c: Classement): Record<string, string | null> {
         }
       </div>
     }
-    @if (proposes()) {
-      <p class="bea-rc-hint">« Proposé » : valeur de travail en attente de validation par la Conformité.</p>
-    }
     @if (store.cap('referentiels_gerer')) {
       <p class="bea-rc-hint">Motifs et sous-motifs : <a routerLink="/reclamations/parametres">gérer le référentiel</a> (ajout, modification, activation).</p>
     }
@@ -112,17 +109,9 @@ export class RcClassementComponent {
     return m && m !== AUTRE ? this.store.enfants('SOUS_MOTIF', m) : [];
   });
 
-  /** Valeur non encore validée par la Conformité : signalée, mais utilisable. */
   lib(r: RefItem): string {
-    return r.a_valider && r.statut_validation !== 'VALIDEE' ? `${r.libelle} (proposé)` : r.libelle;
+    return r.libelle;
   }
-
-  readonly proposes = computed(() => {
-    const v = this.valeur();
-    const ids = [v.type_id, v.motif, v.sous_motif].filter(Boolean);
-    return ['TYPE', 'MOTIF', 'SOUS_MOTIF'].flatMap((d) => this.store.refs(d as Domaine, true))
-      .some((r) => ids.includes(r.id) && r.a_valider && r.statut_validation !== 'VALIDEE');
-  });
 
   champ(e: Event): string {
     return (e.target as HTMLInputElement | HTMLSelectElement).value;

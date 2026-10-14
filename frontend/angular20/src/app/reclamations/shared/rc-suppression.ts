@@ -1,32 +1,27 @@
 import { WritableSignal } from '@angular/core';
-import { RunWithReasonOptions } from '../../core/feedback/feedback.service';
-import { Dossier, SuppressionResultat, dateFr } from '../reclamations.models';
+import { RunOptions, RunWithReasonOptions } from '../../core/feedback/feedback.service';
+import { Dossier, SuppressionResultat } from '../reclamations.models';
 
-/** Suppression = mise à la corbeille : motif obligatoire et référence recopiée (confirmation explicite). */
-export function optionsSuppression(reference: string, busy: WritableSignal<boolean>): RunWithReasonOptions<SuppressionResultat> {
+/** Suppression définitive, quel que soit le statut : confirmation explicite, irréversible. */
+export function optionsSuppression(reference: string, busy: WritableSignal<boolean>): RunOptions<SuppressionResultat> {
   return {
-    reason: {
+    confirm: {
       title: `Supprimer la réclamation ${reference}`,
-      message: 'Le dossier disparaîtra des listes, indicateurs et exports. Ses opérations bancaires (simples références, rien n’est modifié dans ORION), ses pièces jointes et son historique sont conservés.',
-      hint: 'Un profil habilité peut le restaurer depuis la corbeille. Les dossiers clôturés, rejetés, archivés ou portant une réponse au client ne se suppriment pas.',
-      confirmLabel: 'Supprimer',
-      cancelLabel: 'Retour',
+      message: 'Êtes-vous sûr de vouloir supprimer définitivement cette réclamation ? Cette action est irréversible.',
+      hint: 'Le dossier, ses opérations, ses pièces jointes, ses fiches de traitement et son historique sont effacés de la base. Seule la trace de la suppression reste dans le journal d’audit.',
+      confirmLabel: 'Supprimer définitivement',
+      cancelLabel: 'Annuler',
       tone: 'danger',
-      icon: 'delete',
-      reasonLabel: 'Motif de la suppression',
-      reasonPlaceholder: 'Saisie en double, dossier de test, erreur de saisie…',
-      maxLength: 4000,
-      confirmPhrase: reference,
+      icon: 'delete_forever',
     },
     busy,
     loading: 'Suppression…',
     success: (r) => ({
-      title: 'Réclamation supprimée',
+      title: 'Réclamation supprimée définitivement',
       details: [
         { label: 'Référence', value: r.reference },
-        { label: 'Supprimée le', value: dateFr(r.supprimee_le, true) },
-        { label: 'Opérations conservées', value: String(r.operations_conservees) },
-        { label: 'Pièces conservées', value: String(r.documents_conserves) },
+        { label: 'Opérations supprimées', value: String(r.operations_supprimees) },
+        { label: 'Pièces supprimées', value: String(r.documents_supprimes) },
       ],
     }),
     errorTitle: 'Suppression refusée',

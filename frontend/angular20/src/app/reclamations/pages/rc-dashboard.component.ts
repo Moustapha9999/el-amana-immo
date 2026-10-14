@@ -36,9 +36,6 @@ const DUREE_ANIMATION = 900;
           <p>Stock ouvert, tendances et volumes dans votre périmètre.</p>
         </div>
         <div class="rcd-hero__actions">
-          @if (store.cap('creer')) {
-            <a class="bea-mg__btn bea-mg__btn--primary" routerLink="/reclamations/dossiers/nouvelle"><mat-icon>add_comment</mat-icon> Nouvelle réclamation</a>
-          }
           <bea-rc-export />
           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [class.is-spin]="chargement()" (click)="charger()" title="Actualiser" aria-label="Actualiser">
             <mat-icon>refresh</mat-icon>

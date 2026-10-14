@@ -1,5 +1,5 @@
 # ruff: noqa: F811  (fixture ``db`` importée puis injectée par pytest)
-"""Réclamations — notes et pièces jointes, suppression (corbeille) et restauration.
+"""Réclamations — notes et pièces jointes, suppression définitive, restauration de la corbeille.
 
 Services appelés directement, dans la transaction annulée de ``test_reclamations_fondations`` ;
 les fichiers GED déposés sont supprimés en fin de test.
@@ -24,7 +24,6 @@ from app.models import (
     ClienteleClient,
     GedDocument,
     Reclamation,
-    ReclamationDocument,
     ReclamationOperation,
 )
 from app.services.ged_service import GedService
@@ -147,51 +146,48 @@ async def test_notes_consultation_et_restrictions(db):
         await _nettoyer(db, rid)
 
 
-# ----------------------------------------------------- 5. suppression autorisée
-async def test_suppression_puis_restauration(db):
+# ----------------------------------------------- 5. suppression définitive
+async def _compte(db, table: str, rid: uuid.UUID) -> int:
+    return await db.scalar(text(f"SELECT count(*) FROM {table} WHERE reclamation_id = :i"), {"i": rid})
+
+
+async def test_suppression_definitive_en_base(db):
     unite = await _unite(db)
     point = await _agent(db, unites={unite.id})
     sup = await _supprimeur(db)
-    d = await dossiers.creer(db, point, await _saisie(db, unite.id))
+    ops = [{"reference": "ORION-1", "montant": Decimal("1500")}]
+    d = await dossiers.creer(db, point, await _saisie(db, unite.id, operations=ops))
     rid = uuid.UUID(d["id"])
+    await documents.deposer(db, point, rid, _fichier("note.pdf"), "NOTE", None, titre="Note")
+    chemins = [GedService(db).absolute_path(p) for p in (await db.scalars(
+        select(GedDocument.stored_path).where(GedDocument.entity_id == str(rid)))).all()]
+    assert chemins and all(c.exists() for c in chemins)
     fiche = await circuit.fiche(db, sup, await dossiers.charger(db, sup, rid))
-    assert fiche["actions"]["supprimer"] and not fiche["actions"]["restaurer"]
-    ligne = (await dossiers.lister(db, sup, {"q": d["reference"]}))["items"][0]
-    assert ligne["suppression"]["possible"]
+    assert fiche["actions"]["supprimer"]
+    assert (await dossiers.lister(db, sup, {"q": d["reference"]}))["items"][0]["suppression"]["possible"]
 
-    base = {"revision": fiche["revision"], "motif": "Saisie en double"}
-    await _refus(suppression.supprimer(db, sup, rid, {**base, "confirmation": "REC-0000-000000"}),
-                 "CONFIRMATION_INVALIDE")
-    await _refus(suppression.supprimer(db, sup, rid, {**base, "motif": " ", "confirmation": d["reference"]}),
-                 "MOTIF_OBLIGATOIRE")
-    await _refus(suppression.supprimer(db, sup, rid, {**base, "revision": 0, "confirmation": d["reference"]}),
-                 "CONFLIT_REVISION")
-    res = await suppression.supprimer(db, sup, rid, {**base, "confirmation": d["reference"].lower()})
-    assert res["reference"] == d["reference"] and res["supprimee_le"]
-
-    # Hors des listes, KPI et exports ordinaires ; visible dans la corbeille des profils habilités.
+    await _refus(suppression.supprimer(db, sup, rid, {"revision": 0}), "CONFLIT_REVISION")
+    res, fichiers = await suppression.supprimer(db, sup, rid, {"revision": fiche["revision"]})
+    assert res == {"id": str(rid), "reference": d["reference"], "operations_supprimees": 1,
+                   "documents_supprimes": 1}
+    assert await db.get(Reclamation, rid) is None
+    for table in ("reclamation_operations", "reclamation_evenements", "reclamation_documents"):
+        assert await _compte(db, table, rid) == 0, table
+    assert await db.scalar(select(func.count()).select_from(GedDocument).where(
+        GedDocument.entity_id == str(rid))) == 0
     assert (await dossiers.lister(db, sup, {"q": d["reference"]}))["total"] == 0
-    corbeille = await dossiers.lister(db, sup, {"q": d["reference"], "corbeille": True})
-    assert corbeille["total"] == 1 and corbeille["items"][0]["suppression"]["restaurable"]
-    assert corbeille["items"][0]["motif_suppression"] == "Saisie en double"
+    assert (await dossiers.lister(db, sup, {"q": d["reference"], "corbeille": True}))["total"] == 0
     assert (await reporting.tableau_de_bord(db, sup, {"q": d["reference"]}))["total"] == 0
     with pytest.raises(HTTPException) as e:
-        await dossiers.charger(db, point, rid)
+        await dossiers.charger(db, sup, rid)
     assert e.value.status_code == 404
-    await _refus(dossiers.modifier(db, sup, rid, {"revision": fiche["revision"] + 1, "objet": "X"}),
-                 "DOSSIER_SUPPRIME")
-    await _refus(suppression.supprimer(db, sup, rid, {**base, "confirmation": d["reference"]}), "DEJA_SUPPRIME")
-    vue = await circuit.fiche(db, sup, await dossiers.charger(db, sup, rid))
-    assert vue["actions"]["restaurer"] and not vue["actions"]["supprimer"] and not vue["actions"]["modifier"]
-    assert vue["suppression"]["motif"] == "Saisie en double" and vue["suppression"]["supprimee_par"]
 
-    r = await suppression.restaurer(db, sup, rid, {"revision": vue["revision"], "motif": "Suppression à tort"})
-    assert r.supprimee_le is None
-    assert (await dossiers.lister(db, point, {"q": d["reference"]}))["total"] == 1
-    types = [c["type"] for c in await dossiers.chronologie(db, sup, rid)]
-    assert types[-2:] == ["SUPPRESSION", "RESTAURATION"]
-    audit = set((await db.scalars(select(AuditLog.action).where(AuditLog.entity_id == str(rid)))).all())
-    assert {"reclamations.suppression", "reclamations.restauration"} <= audit
+    audit = await db.scalar(select(AuditLog).where(AuditLog.entity_id == str(rid),
+                                                   AuditLog.action == "reclamations.suppression_definitive"))
+    assert audit.before_data["reference"] == d["reference"]
+    assert audit.before_data["operations"] == [{"reference": "ORION-1", "montant": "1500.00"}]
+    suppression.effacer_fichiers(fichiers)
+    assert not any(c.exists() for c in chemins)
 
 
 # ------------------------------------------------- 6. refus sans la permission
@@ -200,7 +196,7 @@ async def test_suppression_refusee_sans_permission(db):
     point = await _agent(db, unites={unite.id})
     d = await dossiers.creer(db, point, await _saisie(db, unite.id))
     rid = uuid.UUID(d["id"])
-    corps = {"revision": d["revision"], "motif": "Essai", "confirmation": d["reference"]}
+    corps = {"revision": d["revision"]}
     responsable_sr = ReclamationsScope(user=await _user(db), permissions=frozenset(
         ROLE_PERMISSIONS["reclamations.responsable_sr"]))
     for s in (point, responsable_sr):
@@ -218,38 +214,35 @@ async def test_suppression_refusee_sans_permission(db):
     assert (await db.get(Reclamation, rid)).supprimee_le is None
 
 
-# --------------------------------------------- 7. dossier clôturé / officiel
-async def test_suppression_dossier_cloture_ou_officiel(db):
+# ------------------------------- 7. quel que soit le statut (clôturé, archivé…)
+async def test_suppression_quel_que_soit_le_statut(db):
     sr = await _sr(db)
     unite = await _unite(db)
     d = await dossiers.creer(db, sr, await _saisie(db, unite.id))
     rid = uuid.UUID(d["id"])
     r = await dossiers.charger(db, sr, rid)
-    r.statut, r.etape = "CLOTUREE", "CLOTURE"
+    r.statut, r.etape, r.date_cloture, r.resultat = "CLOTUREE", "CLOTURE", r.updated_at, "FAVORABLE"
     await db.flush()
-    fiche = await circuit.fiche(db, sr, r)
-    assert not fiche["actions"]["supprimer"]
-    assert [b["code"] for b in fiche["suppression"]["blocages"]] == ["DOSSIER_CLOTURE"]
-    with pytest.raises(HTTPException) as e:
-        await suppression.supprimer(db, sr, rid, {"revision": r.revision, "motif": "x", "confirmation": r.reference})
-    assert e.value.status_code == 409 and _code(e.value) == "DOSSIER_CLOTURE"
-    r.archivee_le = r.updated_at
-    await db.flush()
-    assert "DOSSIER_ARCHIVE" in [b["code"] for b in (await suppression.blocages(db, [r]))[rid]]
+    await circuit.archiver(db, sr, rid, {"revision": r.revision})
+    assert (await circuit.fiche(db, sr, await dossiers.charger(db, sr, rid)))["actions"]["supprimer"]
+    await suppression.supprimer(db, sr, rid, {})
+    assert await db.get(Reclamation, rid) is None
 
+    # Réponse au client et pièce officielle : supprimées avec le dossier.
     ouvert = await dossiers.creer(db, sr, await _saisie(db, unite.id))
     oid = uuid.UUID(ouvert["id"])
-    try:
-        await documents.deposer(db, sr, oid, _fichier("reponse.pdf"), "REPONSE_CLIENT", None)
-        await _refus(suppression.supprimer(db, sr, oid, {"revision": ouvert["revision"], "motif": "x",
-                                                         "confirmation": ouvert["reference"]}),
-                     "DOCUMENTS_OFFICIELS")
-    finally:
-        await _nettoyer(db, oid)
+    await documents.deposer(db, sr, oid, _fichier("reponse.pdf"), "REPONSE_CLIENT", None)
+    _res, fichiers = await suppression.supprimer(db, sr, oid, {})
+    suppression.effacer_fichiers(fichiers)
+    assert await db.get(Reclamation, oid) is None
+
+    # Dossier cité par un autre : seul le lien de l'autre dossier tombe.
     cible = await dossiers.creer(db, sr, await _saisie(db, unite.id))
-    await dossiers.creer(db, sr, await _saisie(db, unite.id, reclamation_liee_id=uuid.UUID(cible["id"])))
-    await _refus(suppression.supprimer(db, sr, uuid.UUID(cible["id"]), {
-        "revision": cible["revision"], "motif": "x", "confirmation": cible["reference"]}), "DOSSIER_REFERENCE")
+    lie = await dossiers.creer(db, sr, await _saisie(db, unite.id, reclamation_liee_id=uuid.UUID(cible["id"])))
+    await suppression.supprimer(db, sr, uuid.UUID(cible["id"]), {})
+    autre = await db.get(Reclamation, uuid.UUID(lie["id"]))
+    await db.refresh(autre)
+    assert autre.reclamation_liee_id is None
 
 
 # ------------------------------------- 8. opérations et données externes intactes
@@ -263,61 +256,39 @@ async def test_operations_bancaires_jamais_supprimees(db):
     clients_avant = await db.scalar(select(func.count()).select_from(ClienteleClient))
     ops_avant = await db.scalar(select(func.count()).select_from(ReclamationOperation))
 
-    await suppression.supprimer(db, sr, rid, {"revision": d["revision"], "motif": "Erreur de saisie",
-                                              "confirmation": d["reference"]})
-    assert await db.scalar(select(func.count()).select_from(ClienteleClient)) == clients_avant
-    assert await db.scalar(select(func.count()).select_from(ReclamationOperation)) == ops_avant
-    rattachees = (await db.scalars(select(ReclamationOperation.reference).where(
-        ReclamationOperation.reclamation_id == rid).order_by(ReclamationOperation.ordre))).all()
-    assert rattachees == ["ORION-778899", "ORION-778900"]
-    assert (await dossiers.lister(db, sr, {"q": "ORION-778899"}))["items"][0]["id"] == autre["id"]
-    audit = await db.scalar(select(AuditLog).where(AuditLog.entity_id == str(rid),
-                                                   AuditLog.action == "reclamations.suppression"))
-    assert audit.before_data["operations"] == ["ORION-778899", "ORION-778900"]
-
-    # Aucune suppression physique possible, même en SQL : la chronologie est en ajout seul.
+    # La chronologie d'un dossier existant reste en ajout seul.
     with pytest.raises(DBAPIError):
         async with db.begin_nested():
-            await db.execute(text("DELETE FROM reclamations WHERE id = :i"), {"i": rid})
-    assert await db.get(Reclamation, rid) is not None
+            await db.execute(text("DELETE FROM reclamation_evenements WHERE reclamation_id = :i"), {"i": rid})
+
+    await suppression.supprimer(db, sr, rid, {"revision": d["revision"], "motif": "Erreur de saisie"})
+    # Seules les références du dossier supprimé disparaissent : clients et autre dossier intacts.
+    assert await db.scalar(select(func.count()).select_from(ClienteleClient)) == clients_avant
+    assert await db.scalar(select(func.count()).select_from(ReclamationOperation)) == ops_avant - 2
+    assert (await dossiers.lister(db, sr, {"q": "ORION-778899"}))["items"][0]["id"] == autre["id"]
+    audit = await db.scalar(select(AuditLog).where(AuditLog.entity_id == str(rid),
+                                                   AuditLog.action == "reclamations.suppression_definitive"))
+    assert [o["reference"] for o in audit.before_data["operations"]] == ["ORION-778899", "ORION-778900"]
+    assert audit.after_data["motif"] == "Erreur de saisie"
 
 
-# --------------------------------------- 9. cohérence des pièces après suppression
-async def test_pieces_coherentes_apres_suppression(db):
+# ------------------------- 9. dossier déjà à la corbeille (ancienne suppression logique)
+async def test_corbeille_restauree_ou_supprimee(db):
     unite = await _unite(db)
     point = await _agent(db, unites={unite.id})
     sup = await _supprimeur(db)
-    d = await dossiers.creer(db, point, await _saisie(db, unite.id))
-    rid = uuid.UUID(d["id"])
-    try:
-        await documents.deposer(db, point, rid, _fichier("note.pdf"), "NOTE", None, titre="Note de traitement")
-        await documents.deposer(db, point, rid, _fichier("piece.png", PNG), "PIECE_CLIENT", None)
-        avant = await documents.lister(db, sup, rid)
-        fiche = await circuit.fiche(db, sup, await dossiers.charger(db, sup, rid))
-        await suppression.supprimer(db, sup, rid, {"revision": fiche["revision"], "motif": "Doublon",
-                                                   "confirmation": d["reference"]})
-        # Pièces conservées en GED (ni corbeille GED ni fichier effacé), consultables par le profil habilité.
-        docs = (await db.scalars(select(GedDocument).where(GedDocument.entity_id == str(rid)))).all()
-        assert len(docs) == 2 and all(x.deleted_at is None for x in docs)
-        assert all(GedService(db).absolute_path(x.stored_path).exists() for x in docs)
-        assert await db.scalar(select(func.count()).select_from(ReclamationDocument).where(
-            ReclamationDocument.reclamation_id == rid)) == 2
-        pendant = await documents.lister(db, sup, rid)
-        assert [x["id"] for x in pendant["items"]] == [x["id"] for x in avant["items"]]
-        assert not pendant["actions"]["deposer"] and not pendant["actions"]["retirer"]
-        _doc, chemin = await documents.fichier(db, sup, rid, uuid.UUID(avant["items"][0]["id"]))
-        assert chemin.read_bytes() == PDF
-        await _refus(documents.deposer(db, sup, rid, _fichier("x.pdf"), "NOTE", None, titre="Note"),
-                     "DOSSIER_SUPPRIME")
-        await _refus(documents.retirer(db, await _sr(db), rid, uuid.UUID(avant["items"][1]["id"]), "x"),
-                     "DOSSIER_SUPPRIME")
-        with pytest.raises(HTTPException) as e:
-            await documents.lister(db, point, rid)
-        assert e.value.status_code == 404
-
-        r = await suppression.restaurer(db, sup, rid, {"revision": fiche["revision"] + 1, "motif": "Pas un doublon"})
-        apres = await documents.lister(db, point, rid)
-        assert [x["id"] for x in apres["items"]] == [x["id"] for x in avant["items"]] and apres["actions"]["deposer"]
-        assert r.revision == fiche["revision"] + 2
-    finally:
-        await _nettoyer(db, rid)
+    for restaure in (True, False):
+        d = await dossiers.creer(db, point, await _saisie(db, unite.id))
+        rid = uuid.UUID(d["id"])
+        r = await db.get(Reclamation, rid)
+        r.supprimee_le, r.supprimee_par_id, r.motif_suppression = r.updated_at, sup.user_id, "Doublon"
+        await db.flush()
+        ligne = (await dossiers.lister(db, sup, {"q": d["reference"], "corbeille": True}))["items"][0]
+        assert ligne["suppression"] == {"possible": True, "restaurable": True}
+        if restaure:
+            r = await suppression.restaurer(db, sup, rid, {"revision": r.revision, "motif": "Pas un doublon"})
+            assert r.supprimee_le is None
+            assert (await dossiers.lister(db, point, {"q": d["reference"]}))["total"] == 1
+        else:
+            await suppression.supprimer(db, sup, rid, {"revision": r.revision})
+            assert await db.get(Reclamation, rid) is None

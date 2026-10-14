@@ -732,7 +732,7 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("reclamations.close", "Clôture d'une réclamation", "reclamations"),
     ("reclamations.reopen", "Réouverture d'une réclamation clôturée", "reclamations"),
     ("reclamations.archive", "Archivage des réclamations clôturées", "reclamations"),
-    ("reclamations.delete", "Suppression (corbeille) et restauration d'une réclamation", "reclamations"),
+    ("reclamations.delete", "Suppression définitive d'une réclamation (tout statut)", "reclamations"),
     ("reclamations.document.view", "Consultation des pièces d'une réclamation", "reclamations"),
     ("reclamations.document.upload", "Dépôt de pièces sur une réclamation", "reclamations"),
     ("reclamations.document.download", "Téléchargement des pièces d'une réclamation", "reclamations"),

@@ -94,15 +94,12 @@ def actions(s: ReclamationsScope, r: Reclamation, *,
     service = s.membre_de(r.unite_traitement_id) or s.peut("reclamations.scope.all")
     avant = ouvert and r.statut in AVANT_AFFECTATION
     base.update({
-        "qualifier": avant and s.peut("reclamations.qualify"),
         "affecter": avant and s.peut("reclamations.assign"),
         "traiter_interne": avant and s.peut("reclamations.qualify"),
         "retourner": ouvert and r.statut == "EN_TRAITEMENT" and a is not None
                      and s.peut("reclamations.treat") and service,
         "evaluer": ouvert and r.statut == "RETOUR_RECU" and s.peut("reclamations.review"),
-        "enregistrer_reponse": ouvert and r.statut == "A_CLOTURER" and s.peut("reclamations.response.send"),
-        "cloturer": ouvert and r.statut == "A_CLOTURER" and bool(rep and rep.statut == "ENVOYEE")
-                    and s.peut("reclamations.close") and service_central(s),
+        "cloturer": ouvert and r.statut == "A_CLOTURER" and s.peut("reclamations.close") and service_central(s),
         "refuser": avant and s.peut("reclamations.reject"),
         "annuler": avant and s.peut("reclamations.cancel"),
         "rouvrir": r.statut in {"CLOTUREE", "REJETEE"} and not r.archivee_le and s.peut("reclamations.reopen"),
@@ -183,11 +180,10 @@ async def fiche(db: AsyncSession, s: ReclamationsScope, r: Reclamation, ctx: Con
     d["cloture_par"] = noms.get(r.cloture_par_id) if r.cloture_par_id else None
     d["actions"] = actions(s, r, a=courante, rep=courante_r)
     habilite = s.peut(suppression.PERMISSION)
-    raisons = (await suppression.blocages(db, [r]))[r.id] if habilite else []
-    d["actions"]["supprimer"] = habilite and not r.supprimee_le and not raisons
+    d["actions"]["supprimer"] = habilite
     d["actions"]["restaurer"] = habilite and bool(r.supprimee_le)
     d["suppression"] = {
-        "blocages": raisons, "supprimee_le": iso(r.supprimee_le), "motif": r.motif_suppression,
+        "supprimee_le": iso(r.supprimee_le), "motif": r.motif_suppression,
         "supprimee_par": noms.get(r.supprimee_par_id) if r.supprimee_par_id else None,
     }
     return d
@@ -280,7 +276,8 @@ async def affecter(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data:
     if r.statut not in AVANT_AFFECTATION:
         raise conflit("Ce dossier ne peut pas être affecté dans cet état", "ACTION_INVALIDE")
     if not r.type_id:
-        raise erreur("Qualifiez le dossier (type) avant de l'affecter", "TYPE_OBLIGATOIRE")
+        raise erreur("Renseignez le type de réclamation (Corriger les données) avant de transmettre",
+                     "TYPE_OBLIGATOIRE")
     ctx = await Contexte.charger(db)
     _prise_en_compte_sr(r, ctx)
     if r.date_qualification is None:
@@ -302,7 +299,8 @@ async def traiter_interne(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID
     if r.statut not in AVANT_AFFECTATION:
         raise conflit("Le traitement interne n'est possible qu'avant affectation", "ACTION_INVALIDE")
     if not r.type_id:
-        raise erreur("Qualifiez le dossier (type) avant de le traiter", "TYPE_OBLIGATOIRE")
+        raise erreur("Renseignez le type de réclamation (Corriger les données) avant de traiter",
+                     "TYPE_OBLIGATOIRE")
     ctx = await Contexte.charger(db)
     _prise_en_compte_sr(r, ctx)
     analyse = _motif(data)
@@ -397,9 +395,8 @@ async def cloturer(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data:
         raise conflit("La clôture exige le retour du service examiné (ou un traitement interne)",
                       "ACTION_INVALIDE")
     _, _, _, courante_r, _ = await _pieces_circuit(db, r)
-    if not (courante_r and courante_r.statut == "ENVOYEE"):
-        raise conflit("Enregistrez la réponse envoyée au client avant de clôturer", "REPONSE_NON_ENVOYEE")
-    resultat = data.get("resultat") or courante_r.resultat
+    envoyee = courante_r if courante_r and courante_r.statut == "ENVOYEE" else None
+    resultat = data.get("resultat") or (envoyee.resultat if envoyee else None)
     if resultat not in C.RESULTAT_LIBELLES:
         raise erreur("Le résultat de la décision est obligatoire", "RESULTAT_OBLIGATOIRE")
     r.resultat = resultat

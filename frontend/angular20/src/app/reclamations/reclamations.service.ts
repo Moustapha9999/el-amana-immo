@@ -88,7 +88,7 @@ export class ReclamationsService {
     });
   }
 
-  supprimer(id: string, corps: { revision: number; motif: string; confirmation: string }): Observable<SuppressionResultat> {
+  supprimer(id: string, corps: { revision: number }): Observable<SuppressionResultat> {
     return this.api.post(`${RC_BASE}/dossiers/${id}/supprimer`, corps);
   }
 
@@ -166,10 +166,6 @@ export class ReclamationsService {
 
   comparaison(periodes: Periodes, filtres: Filtres = {}): Observable<Comparaison> {
     return this.api.get(`${RC_BASE}/comparaison`, { ...parametres(filtres), ...periodes });
-  }
-
-  exportPilotage(filtres: Filtres = {}, format: 'xlsx' | 'pdf' = 'xlsx'): Observable<Blob> {
-    return this.api.download(`${RC_BASE}/export/pilotage`, { ...parametres(filtres), format });
   }
 
   exportComparaison(periodes: Periodes, filtres: Filtres = {}, format: 'xlsx' | 'pdf' = 'xlsx'): Observable<Blob> {
