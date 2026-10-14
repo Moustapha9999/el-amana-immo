@@ -380,7 +380,7 @@ class ClienteleClassificationService:
 
     async def modifier_individuel(self, racine: str, payload: dict) -> dict:
         self.ctx.exiger("clientele.classif.execute")
-        if "racine_client" in payload and str(payload["racine_client"]).strip() not in ("", racine):
+        if (payload.get("racine_client") or "").strip() not in ("", racine.strip()):
             raise AppError("La racine client n'est pas modifiable depuis la classification", 422,
                            code="RACINE_IMMUTABLE")
         racine = self._racine(racine)
