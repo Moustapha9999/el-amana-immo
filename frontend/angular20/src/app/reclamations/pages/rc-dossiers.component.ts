@@ -6,13 +6,13 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
-import { DossierLigne, dateFr, telechargerBlob, toneStatut, tonePriorite } from '../reclamations.models';
+import { DossierLigne, dateFr, montantFr, telechargerBlob, toneStatut, tonePriorite } from '../reclamations.models';
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
 
 const TAILLE = 25;
-const TRIS = new Set(['reference', 'date_premiere_reception', 'date_reception_sr', 'echeance', 'statut', 'priorite', 'client_nom', 'updated_at']);
+const TRIS = new Set(['reference', 'date_reclamation', 'date_premiere_reception', 'date_reception_sr', 'echeance', 'statut', 'priorite', 'client_nom', 'updated_at']);
 const CHAMPS = ['q', 'groupe', 'statut', 'etape', 'type_id', 'motif_id', 'canal_id', 'priorite', 'client_categorie',
-  'unite_reception_id', 'unite_traitement_id', 'date_debut', 'date_fin'] as const;
+  'client_agence_id', 'unite_reception_id', 'unite_concernee_id', 'unite_traitement_id', 'date_debut', 'date_fin'] as const;
 const BOOLEENS = ['ouvertes', 'en_retard', 'sans_echeance', 'archivees'] as const;
 
 interface VueListe {
@@ -28,11 +28,6 @@ const VUES: Record<string, VueListe> = {
     titre: 'Mes dossiers à traiter',
     sous: 'Dossiers transmis à un service, dans votre périmètre.',
     etape: 'TRAITEMENT', ouvertes: true,
-  },
-  reponses: {
-    titre: 'Réponses aux clients',
-    sous: 'Dossiers en préparation, validation ou envoi de la réponse.',
-    etape: 'REPONSE', ouvertes: true,
   },
   archives: {
     titre: 'Archives & documents',
@@ -107,6 +102,7 @@ const VUES: Record<string, VueListe> = {
           <select formControlName="motif_id" (change)="appliquer()">
             <option value="">Tous</option>
             @for (m of motifs(); track m.id) { <option [value]="m.id">{{ m.libelle }}</option> }
+            <option value="AUTRE">Autre (saisie libre)</option>
           </select>
         </label>
         <label class="bea-mg__field">Canal
@@ -125,6 +121,20 @@ const VUES: Record<string, VueListe> = {
           <select formControlName="client_categorie" (change)="appliquer()">
             <option value="">Toutes</option>
             @for (c of store.libelles('categories_client'); track c.code) { <option [value]="c.code">{{ c.libelle }}</option> }
+          </select>
+        </label>
+        <label class="bea-mg__field">Agence
+          <select formControlName="client_agence_id" (change)="appliquer()">
+            <option value="">Toutes</option>
+            @for (a of store.config()?.agences ?? []; track a.id) { <option [value]="a.id">{{ a.code }} — {{ a.libelle }}</option> }
+          </select>
+        </label>
+        <label class="bea-mg__field">Service concerné
+          <select formControlName="unite_concernee_id" (change)="appliquer()">
+            <option value="">Tous</option>
+            @for (u of store.unites(); track u.id) {
+              @if (!u.est_service_reclamations) { <option [value]="u.id">{{ u.libelle }}</option> }
+            }
           </select>
         </label>
         <label class="bea-mg__field">Unité de réception
@@ -160,12 +170,14 @@ const VUES: Record<string, VueListe> = {
             <thead>
               <tr>
                 <th><button type="button" class="bea-rc-sort" (click)="trier('reference')">Référence {{ fleche('reference') }}</button></th>
-                <th><button type="button" class="bea-rc-sort" (click)="trier('date_premiere_reception')">Reçue le {{ fleche('date_premiere_reception') }}</button></th>
+                <th><button type="button" class="bea-rc-sort" (click)="trier('date_reclamation')">Date {{ fleche('date_reclamation') }}</button></th>
                 <th><button type="button" class="bea-rc-sort" (click)="trier('client_nom')">Client {{ fleche('client_nom') }}</button></th>
-                <th>Objet / classement</th>
-                <th>Canal</th>
-                <th>Réception</th>
-                <th><button type="button" class="bea-rc-sort" (click)="trier('priorite')">Priorité {{ fleche('priorite') }}</button></th>
+                <th>Objet</th>
+                <th>Motif / sous-motif</th>
+                <th class="is-num">Opérations</th>
+                <th class="is-num">Montant total</th>
+                <th>Service</th>
+                <th>Étape</th>
                 <th><button type="button" class="bea-rc-sort" (click)="trier('statut')">Statut {{ fleche('statut') }}</button></th>
                 <th><button type="button" class="bea-rc-sort" (click)="trier('echeance')">Échéance {{ fleche('echeance') }}</button></th>
                 <th class="is-actions">Actions</th>
@@ -178,18 +190,20 @@ const VUES: Record<string, VueListe> = {
                     <a class="bea-ct-link" [routerLink]="['/reclamations/dossiers', d.id]"><code class="bea-mg__code">{{ d.reference }}</code></a>
                     @if (d.nb_documents) { <small class="bea-ct-sub">{{ d.nb_documents }} pièce{{ d.nb_documents > 1 ? 's' : '' }}</small> }
                   </td>
-                  <td class="is-nowrap">{{ date(d.date_premiere_reception, true) }}</td>
+                  <td class="is-nowrap">{{ date(d.date_reclamation ?? d.date_premiere_reception) }}<small class="bea-ct-sub">{{ d.canal }}</small></td>
                   <td class="is-wide">
                     <strong class="bea-ct-strong">{{ d.client_nom || '—' }}</strong>
                     @if (d.client_racine) { <small class="bea-ct-sub">Racine {{ d.client_racine }}</small> }
                   </td>
-                  <td class="is-wide">{{ d.objet }}<small class="bea-ct-sub">{{ d.type || 'Non qualifiée' }}{{ d.motif ? ' · ' + d.motif : '' }}</small></td>
-                  <td class="is-nowrap">{{ d.canal }}</td>
-                  <td class="is-wide">{{ d.unite_reception || '—' }}</td>
-                  <td class="is-nowrap"><span class="bea-ct-badge" [attr.data-tone]="tonePriorite(d.priorite)">{{ d.priorite_libelle }}</span></td>
+                  <td class="is-wide">{{ d.objet }}<small class="bea-ct-sub">{{ d.type || 'Non qualifiée' }}</small></td>
+                  <td class="is-wide">{{ d.motif || '—' }}@if (d.sous_motif) { <small class="bea-ct-sub">{{ d.sous_motif }}</small> }</td>
+                  <td class="is-num">{{ d.nb_operations || '—' }}</td>
+                  <td class="is-num is-nowrap">{{ d.nb_operations ? montant(d.montant_total, d.devise) : '—' }}</td>
+                  <td class="is-wide">{{ d.unite_traitement || d.unite_concernee || '—' }}</td>
+                  <td class="is-nowrap">{{ d.etape_libelle }}</td>
                   <td class="is-nowrap">
-                    <span class="bea-ct-badge" [attr.data-tone]="toneStatut(d.statut)" [title]="d.etape_libelle">{{ d.statut_libelle }}</span>
-                    <small class="bea-ct-sub">{{ d.etape_libelle }}</small>
+                    <span class="bea-ct-badge" [attr.data-tone]="toneStatut(d.statut)">{{ d.statut_libelle }}</span>
+                    @if (d.priorite !== 'NORMALE') { <span class="bea-ct-badge" [attr.data-tone]="tonePriorite(d.priorite)">{{ d.priorite_libelle }}</span> }
                   </td>
                   <td class="is-nowrap">
                     @if (d.echeance) { <span [class.bea-rc-late]="d.en_retard">{{ date(d.echeance) }}</span>@if (d.en_retard) { <small class="bea-ct-sub bea-rc-late">En retard</small> } }
@@ -200,7 +214,7 @@ const VUES: Record<string, VueListe> = {
                   </td>
                 </tr>
               } @empty {
-                <tr><td colspan="10"><div class="bea-ct-empty"><mat-icon>forum</mat-icon>
+                <tr><td colspan="12"><div class="bea-ct-empty"><mat-icon>forum</mat-icon>
                   <p>{{ chargement() ? 'Chargement…' : filtresActifs() ? 'Aucune réclamation ne correspond aux filtres.' : 'Aucune réclamation dans votre périmètre.' }}</p>
                 </div></td></tr>
               }
@@ -235,7 +249,7 @@ export class RcDossiersComponent implements OnInit {
   readonly tonePriorite = tonePriorite;
   readonly filtres = this.fb.nonNullable.group({
     q: '', groupe: '', statut: '', etape: '', type_id: '', motif_id: '', canal_id: '', priorite: '', client_categorie: '',
-    unite_reception_id: '', unite_traitement_id: '', date_debut: '', date_fin: '',
+    client_agence_id: '', unite_reception_id: '', unite_concernee_id: '', unite_traitement_id: '', date_debut: '', date_fin: '',
     ouvertes: false, en_retard: false, sans_echeance: false, archivees: false,
   });
   readonly vue = signal<VueListe | null>(null);
@@ -350,6 +364,10 @@ export class RcDossiersComponent implements OnInit {
 
   date(iso: string | null, heure = false): string {
     return dateFr(iso, heure);
+  }
+
+  montant(v: string | null, devise: string): string {
+    return montantFr(v, devise);
   }
 
   private naviguer(params: Record<string, string | null>): void {

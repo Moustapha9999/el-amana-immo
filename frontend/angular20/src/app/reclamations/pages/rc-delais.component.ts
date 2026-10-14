@@ -206,9 +206,7 @@ interface BrouillonRegle {
           </div>
           <div class="bea-rc-row">
             <label>Seuil d’alerte (jours)<input type="number" min="0" [(ngModel)]="b.seuil_alerte" name="seuil_alerte" /></label>
-            <label>Délai service (jours)<input type="number" min="1" [(ngModel)]="b.delai_service" name="delai_service" /></label>
-            <label class="bea-rc-check"><input type="checkbox" [(ngModel)]="b.neutraliser_suspension" name="neutraliser" /> Neutraliser la suspension (décale l’échéance)</label>
-          </div>
+            <label>Délai service (jours)<input type="number" min="1" [(ngModel)]="b.delai_service" name="delai_service" /></label>          </div>
           <div class="bea-rc-row">
             <label>Date d’effet <em>*</em><input type="date" [(ngModel)]="b.date_effet" name="date_effet" required /></label>
             <label>Date de fin <input type="date" [(ngModel)]="b.date_fin" name="date_fin" /></label>

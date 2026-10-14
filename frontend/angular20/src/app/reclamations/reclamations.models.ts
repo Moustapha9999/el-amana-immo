@@ -67,11 +67,11 @@ export interface Agence {
 
 export type Capacite =
   | 'voir' | 'tout_voir' | 'creer' | 'modifier' | 'qualifier' | 'affecter' | 'traiter' | 'gerer_service'
-  | 'examiner_retour' | 'rediger_reponse' | 'valider_reponse' | 'envoyer_reponse' | 'suspendre' | 'refuser'
+  | 'examiner_retour' | 'envoyer_reponse' | 'refuser'
   | 'annuler' | 'cloturer' | 'rouvrir' | 'archiver' | 'documents_voir' | 'documents_deposer'
   | 'documents_telecharger' | 'documents_retirer' | 'reporting_voir' | 'reporting_exporter'
   | 'referentiels_voir' | 'referentiels_gerer' | 'unites_gerer' | 'delais_gerer' | 'delais_valider'
-  | 'audit_voir' | 'admin';
+  | 'admin';
 
 export interface Acces {
   user_id: string;
@@ -92,6 +92,7 @@ export interface RcConfig {
     etapes: CodeLibelle[];
     groupes: CodeLibelle[];
     statut_groupes: Record<string, string>;
+    etape_du_statut: Record<string, string>;
     priorites: CodeLibelle[];
     resultats: CodeLibelle[];
     categories_client: CodeLibelle[];
@@ -121,6 +122,7 @@ export interface DossierLigne {
   canal: string | null;
   type: string | null;
   motif: string | null;
+  sous_motif: string | null;
   priorite: string;
   priorite_libelle: string;
   statut: string;
@@ -131,12 +133,18 @@ export interface DossierLigne {
   etape_libelle: string;
   termine: boolean;
   unite_reception: string | null;
+  unite_concernee: string | null;
   unite_traitement: string | null;
+  agence: string | null;
+  date_reclamation: string | null;
   date_premiere_reception: string;
   date_reception_sr: string | null;
   date_cloture: string | null;
   echeance: string | null;
   en_retard: boolean;
+  nb_operations: number;
+  montant_total: string | null;
+  devise: string;
   nb_documents: number;
   revision: number;
   updated_at: string | null;
@@ -179,10 +187,14 @@ export interface Dossier extends DossierLigne {
   type_ref: RefCourt | null;
   motif_ref: RefCourt | null;
   sous_motif_ref: RefCourt | null;
+  motif_autre: string | null;
+  sous_motif_autre: string | null;
+  operations: Operation[];
   canal_ref: RefCourt | null;
   canal_telephone: boolean;
   unite_reception_ref: UniteCourte | null;
   unite_suivi_ref: UniteCourte | null;
+  unite_concernee_ref: UniteCourte | null;
   unite_traitement_ref: UniteCourte | null;
   client: {
     racine: string | null;
@@ -194,14 +206,8 @@ export interface Dossier extends DossierLigne {
     adresse: string | null;
     agence: Agence | null;
   };
-  operation: {
-    compte_reference: string | null;
-    carte_masquee: string | null;
-    reference: string | null;
-    date: string | null;
-    montant_conteste: string | null;
-    devise: string | null;
-  };
+  compte_reference: string | null;
+  carte_masquee: string | null;
   reclamation_liee: { id: string; reference: string | null } | null;
   doublon_de: { id: string; reference: string | null } | null;
   dates: Record<string, string | null>;
@@ -209,8 +215,6 @@ export interface Dossier extends DossierLigne {
   regle_delai_id: string | null;
   gestionnaire: string | null;
   responsable_traitement: string | null;
-  motif_suspension: string | null;
-  conditions_reprise: string | null;
   motif_refus: string | null;
   motif_annulation: string | null;
   resultat: string | null;
@@ -228,7 +232,22 @@ export interface Dossier extends DossierLigne {
   reponses: ReponseClient[];
   reponse_courante: ReponseClient | null;
   preuve_envoi: boolean;
+  cloture_par: string | null;
   actions: Record<string, boolean>;
+}
+
+export interface Operation {
+  id: string;
+  ordre: number;
+  reference: string;
+  montant: string | null;
+  devise: string;
+}
+
+/** Ligne en saisie : montant gardé en texte tant qu'il n'est pas validé. */
+export interface OperationSaisie {
+  reference: string;
+  montant: string;
 }
 
 export interface Affectation {
@@ -257,6 +276,8 @@ export interface Affectation {
   evaluation: string | null;
   evaluation_libelle: string | null;
   evaluation_commentaire: string | null;
+  evalue_le: string | null;
+  evalue_par: string | null;
   revision: number;
 }
 
@@ -273,10 +294,6 @@ export interface ReponseClient {
   canal_envoi_id: string | null;
   destinataire: string | null;
   redige_par: string | null;
-  soumis_le: string | null;
-  valide_par: string | null;
-  valide_le: string | null;
-  commentaire_validation: string | null;
   envoye_le: string | null;
   envoye_par: string | null;
   reference_envoi: string | null;
@@ -288,6 +305,8 @@ export interface Compteur {
   id?: string;
   libelle: string;
   n: number;
+  nb_operations?: number;
+  montant?: string;
 }
 
 export interface TableauBord {
@@ -297,13 +316,19 @@ export interface TableauBord {
   sans_echeance: number;
   volume_30j: number;
   cloturees_30j: number;
-  groupes: Compteur[];
+  nb_operations: number;
+  dossiers_avec_operations: number;
+  montant_total: string;
+  devise: string;
+  statuts: Compteur[];
   etapes: Compteur[];
   priorites: Compteur[];
   types: Compteur[];
+  motifs: Compteur[];
   canaux: Compteur[];
+  agences: Compteur[];
+  services: Compteur[];
   unites_reception: Compteur[];
-  unites_traitement: Compteur[];
   recents: DossierLigne[];
   dossiers_retard: DossierLigne[];
 }
@@ -353,6 +378,8 @@ export interface Evenement {
   libelle: string;
   statut_avant: string | null;
   statut_apres: string | null;
+  code_statut_avant: string | null;
+  code_statut_apres: string | null;
   etape_avant: string | null;
   etape_apres: string | null;
   date_effet: string;
@@ -361,18 +388,6 @@ export interface Evenement {
   unite: string | null;
   commentaire: string | null;
   donnees: Record<string, unknown>;
-}
-
-export interface LigneAudit {
-  id: string;
-  action: string;
-  entity: string;
-  utilisateur: string | null;
-  date: string;
-  avant: Record<string, unknown> | null;
-  apres: Record<string, unknown> | null;
-  ip: string | null;
-  request_id: string | null;
 }
 
 export interface Piece {
@@ -399,6 +414,26 @@ export interface ApercuClient {
   categorie: 'PP' | 'PM';
   comptes: Array<{ compte: string; etat: string; devise: string; agence_id: string; agence: string }>;
 }
+
+const FMT_MONTANT = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
+/** Montant en MRU, au plus deux décimales. */
+export function montantFr(valeur: string | number | null | undefined, devise = 'MRU'): string {
+  if (valeur === null || valeur === undefined || valeur === '') return '—';
+  const n = typeof valeur === 'number' ? valeur : Number(valeur);
+  return Number.isFinite(n) ? `${FMT_MONTANT.format(n)} ${devise}` : '—';
+}
+
+/** Montant saisi (virgule ou point décimal) : nombre > 0 à deux décimales au plus, sinon `null`. */
+export function lireMontant(saisie: string): number | null {
+  const t = saisie.trim().replace(/\s/g, '').replace(',', '.');
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
+  const n = Number(t);
+  return n > 0 ? n : null;
+}
+
+/** Sentinelle des listes Motif / Sous-motif pour la saisie libre « Autre ». */
+export const AUTRE = '__autre__';
 
 const FMT_DATE = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 const FMT_DATE_HEURE = new Intl.DateTimeFormat('fr-FR', {
@@ -441,22 +476,16 @@ export function taille(octets: number | null | undefined): string {
 /** Teinte des badges globaux `bea-ct-badge[data-tone]`. */
 export function toneStatut(statut: string): string {
   switch (statut) {
-    case 'RECUE':
-    case 'RECUE_SR':
-      return 'INFO';
     case 'A_QUALIFIER':
+    case 'A_AFFECTER':
+      return 'INFO';
     case 'REOUVERTE':
     case 'RETOUR_RECU':
+    case 'A_CLOTURER':
       return 'ATTENTION';
-    case 'AFFECTEE':
     case 'EN_TRAITEMENT':
-    case 'REPONSE_A_PREPARER':
-    case 'REPONSE_ENVOYEE':
       return 'EN_PREPARATION';
-    case 'ATTENTE_INFO':
-    case 'SUSPENDUE':
-      return 'SUSPENDU';
-    case 'REFUSEE':
+    case 'REJETEE':
       return 'REJETE';
     case 'CLOTUREE':
       return 'ACTIF';

@@ -137,14 +137,15 @@ async def test_creation_reference_statut_chronologie(db):
         date_reception_sr=premiere + timedelta(hours=3)))
     annee = datetime.now(UTC).year
     assert re.fullmatch(rf"REC-{annee}-\d{{6}}", d1["reference"])
-    assert (d1["statut"], d1["etape"]) == ("RECUE_SR", "RECEPTION")
+    assert (d1["statut"], d1["etape"]) == ("A_QUALIFIER", "RECEPTION")
     # Type et motif déduits du sous-motif.
     assert (d1["type_ref"]["id"], d1["motif_ref"]["id"]) == (t["id"], m["id"])
     assert d1["unite_suivi_ref"] is not None and d1["echeance"] is None
 
     d2 = await dossiers.creer(db, s, await _saisie(db, unite.id))
     assert int(d2["reference"][-6:]) == int(d1["reference"][-6:]) + 1
-    assert d2["statut"] == "RECUE" and d2["dates"]["date_reception_sr"] is None
+    # Saisie par le Service Réclamations : la réception SR est la saisie elle-même.
+    assert d2["statut"] == "A_QUALIFIER" and d2["dates"]["date_reception_sr"] is not None
 
     chrono = await dossiers.chronologie(db, s, uuid.UUID(d1["id"]))
     assert [c["type"] for c in chrono] == ["CREATION", "RECEPTION_SR"]
@@ -191,7 +192,8 @@ async def test_creation_validations(db):
     assert d["appels"][0]["enregistrement_autorise"] is True
     # Point de réception mono-unité : unité déduite.
     d = await dossiers.creer(db, point, await _saisie(db, None))
-    assert d["unite_reception_ref"]["id"] == str(unite.id) and d["statut"] == "RECUE"
+    assert d["unite_reception_ref"]["id"] == str(unite.id) and d["statut"] == "A_QUALIFIER"
+    assert d["dates"]["date_reception_sr"] is None
 
 
 async def test_perimetre_liste_detail(db):
@@ -210,8 +212,8 @@ async def test_perimetre_liste_detail(db):
     with pytest.raises(HTTPException):
         await dossiers.chronologie(db, agent_b, rid)
 
-    global_ = (await dossiers.lister(db, sr, {"q": marqueur, "groupe": ["RECUE"], "ouvertes": True}))
-    assert global_["total"] == 1 and global_["items"][0]["statut_libelle"] == "Reçue initialement"
+    global_ = (await dossiers.lister(db, sr, {"q": marqueur, "groupe": ["EN_COURS"], "ouvertes": True}))
+    assert global_["total"] == 1 and global_["items"][0]["statut_libelle"] == "À qualifier"
     assert (await dossiers.lister(db, sr, {"q": marqueur, "statut": ["CLOTUREE"]}))["total"] == 0
     page = await dossiers.lister(db, sr, {}, page=1, taille=1000, tri="inconnu")
     assert page["taille"] == 100
@@ -230,12 +232,14 @@ async def test_modification_revision_motif(db):
     assert _code(e.value) == "CONFLIT_REVISION"
     with pytest.raises(AppError) as e:
         await dossiers.modifier(db, point, rid, {
-            "revision": d["revision"], "date_premiere_reception": datetime.now(UTC) - timedelta(days=3)})
+            "revision": d["revision"], "date_premiere_reception": datetime.now(UTC) - timedelta(days=3),
+            "date_reclamation": (datetime.now(UTC) - timedelta(days=3)).date()})
     assert _code(e.value) == "MOTIF_OBLIGATOIRE"
     d = await dossiers.modifier(db, point, rid, {
         "revision": d["revision"], "objet": "Objet corrigé", "effacer": ["compte_reference"],
-        "date_premiere_reception": datetime.now(UTC) - timedelta(days=3), "motif": "Date du cachet postal"})
-    assert d["objet"] == "Objet corrigé" and d["operation"]["compte_reference"] is None and d["revision"] == 2
+        "date_premiere_reception": datetime.now(UTC) - timedelta(days=3), "motif": "Date du cachet postal",
+        "date_reclamation": (datetime.now(UTC) - timedelta(days=3)).date()})
+    assert d["objet"] == "Objet corrigé" and d["compte_reference"] is None and d["revision"] == 2
     modif = (await dossiers.chronologie(db, sr, rid))[-1]
     assert modif["type"] == "MODIFICATION" and modif["commentaire"] == "Date du cachet postal"
     assert "Objet" in modif["donnees"]["champs"]
@@ -245,9 +249,9 @@ async def test_modification_revision_motif(db):
     with pytest.raises(AppError) as e:
         await dossiers.modifier(db, point, rid, {"revision": 2, "effacer": ["objet"]})
     assert _code(e.value) == "CHAMP_INVALIDE"
-    # Dossier reçu par le SR : le point de réception ne le modifie plus.
+    # Dossier qualifié par le SR : le point de réception ne le modifie plus.
     r = await dossiers.charger(db, sr, rid)
-    r.statut = "A_QUALIFIER"
+    r.statut = "A_AFFECTER"
     await db.flush()
     with pytest.raises(HTTPException) as e:
         await dossiers.modifier(db, point, rid, {"revision": r.revision, "objet": "Encore"})
@@ -313,7 +317,7 @@ async def test_pieces_ged_cloisonnees(db):
         actions = set((await db.scalars(select(AuditLog.action).where(AuditLog.entity_id == d["id"]))).all())
         assert {"reclamations.document.upload", "reclamations.document.preview",
                 "reclamations.document.remove"} <= actions
-        assert len(await dossiers.journal_audit(db, sr, rid)) >= 4
+        assert len(actions) >= 3
         assert (await dossiers.lister(db, sr, {"q": d["reference"]}))["items"][0]["nb_documents"] == 1
     finally:
         for rel in chemins:

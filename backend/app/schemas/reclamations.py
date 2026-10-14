@@ -79,14 +79,23 @@ class AppelIn(BaseModel):
     commentaire: str | None = Field(default=None, max_length=4000)
 
 
+class OperationIn(BaseModel):
+    reference: str = Field(min_length=1, max_length=120)
+    montant: Decimal = Field(gt=0, max_digits=18, decimal_places=2)
+
+
 class _DossierChamps(BaseModel):
     objet: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, max_length=20000)
     type_id: uuid.UUID | None = None
     motif_id: uuid.UUID | None = None
     sous_motif_id: uuid.UUID | None = None
+    motif_autre: str | None = Field(default=None, max_length=200)
+    sous_motif_autre: str | None = Field(default=None, max_length=200)
     priorite: Priorite | None = None
     unite_reception_id: uuid.UUID | None = None
+    unite_concernee_id: uuid.UUID | None = None
+    date_reclamation: date | None = None
     client_racine: str | None = Field(default=None, max_length=6)
     client_categorie: CategorieClient | None = None
     client_nom: str | None = Field(default=None, max_length=255)
@@ -107,9 +116,17 @@ class DossierCreate(_DossierChamps):
     objet: str = Field(min_length=1, max_length=255)
     description: str = Field(min_length=1, max_length=20000)
     canal_id: uuid.UUID
-    date_premiere_reception: datetime
+    date_reclamation: date
+    date_premiere_reception: datetime | None = None
     date_reception_sr: datetime | None = None
     appel: AppelIn | None = None
+    operations: list[OperationIn] = Field(default_factory=list, max_length=200)
+
+
+class OperationsIn(BaseModel):
+    revision: int
+    operations: list[OperationIn] = Field(default_factory=list, max_length=200)
+    motif: str | None = Field(default=None, max_length=4000)
 
 
 class DossierPatch(_DossierChamps):
@@ -135,6 +152,8 @@ class QualifierIn(ActionIn):
     type_id: uuid.UUID | None = None
     motif_id: uuid.UUID | None = None
     sous_motif_id: uuid.UUID | None = None
+    motif_autre: str | None = Field(default=None, max_length=200)
+    sous_motif_autre: str | None = Field(default=None, max_length=200)
     priorite: Priorite | None = None
     gestionnaire_id: uuid.UUID | None = None
 
@@ -165,17 +184,16 @@ class AnnulerIn(ActionIn):
 
 
 class CloturerIn(ActionIn):
-    resultat: Literal["FAVORABLE", "PARTIELLEMENT_FAVORABLE", "DEFAVORABLE", "SANS_SUITE", "AUTRE"]
+    resultat: Literal["FAVORABLE", "PARTIELLEMENT_FAVORABLE", "DEFAVORABLE", "SANS_SUITE", "AUTRE"] | None = None
     motif_resolution: str | None = Field(default=None, max_length=4000)
 
 
-class ReponseIn(ActionIn):
+class ReponseEnvoyeeIn(ActionIn):
+    """Réponse effectivement envoyée au client, enregistrée par le Service Réclamations avant clôture."""
+
     objet: str | None = Field(default=None, max_length=255)
     contenu: str = Field(min_length=1, max_length=50000)
     resultat: Literal["FAVORABLE", "PARTIELLEMENT_FAVORABLE", "DEFAVORABLE", "SANS_SUITE", "AUTRE"] | None = None
-
-
-class ReponseEnvoiIn(ActionIn):
     canal_envoi_id: uuid.UUID
     destinataire: str | None = Field(default=None, max_length=255)
     envoye_le: datetime | None = None

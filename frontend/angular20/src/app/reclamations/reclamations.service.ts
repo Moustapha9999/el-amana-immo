@@ -11,7 +11,6 @@ import {
   Dossier,
   DossierLigne,
   Evenement,
-  LigneAudit,
   Membre,
   Page,
   Pieces,
@@ -68,8 +67,8 @@ export class ReclamationsService {
     return this.api.get(`${RC_BASE}/dossiers/${id}/chronologie`);
   }
 
-  audit(id: string): Observable<LigneAudit[]> {
-    return this.api.get(`${RC_BASE}/dossiers/${id}/audit`);
+  remplacerOperations(id: string, corps: unknown): Observable<Dossier> {
+    return this.api.put(`${RC_BASE}/dossiers/${id}/operations`, corps);
   }
 
   apercuClient(racine: string): Observable<ApercuClient> {
@@ -144,12 +143,8 @@ export class ReclamationsService {
     return this.api.post(`${RC_BASE}/dossiers/${id}/reponse`, corps);
   }
 
-  actionReponse(id: string, verbe: string, corps: unknown): Observable<Dossier> {
-    return this.api.post(`${RC_BASE}/dossiers/${id}/reponse/${verbe}`, corps);
-  }
-
-  tableauDeBord(): Observable<TableauBord> {
-    return this.api.get(`${RC_BASE}/tableau-de-bord`);
+  tableauDeBord(filtres: Filtres = {}): Observable<TableauBord> {
+    return this.api.get(`${RC_BASE}/tableau-de-bord`, parametres(filtres));
   }
 
   circuit(): Observable<{ colonnes: ColonneCircuit[]; total: number }> {

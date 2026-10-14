@@ -4,7 +4,9 @@ Règles :
 - référence ``REC-AAAA-NNNNNN`` attribuée par compteur annuel verrouillé, jamais saisie ;
 - dates déclarées (première réception, réception SR) ≤ maintenant, cohérentes entre elles ; chaque
   événement garde sa date métier **et** l'horodatage serveur de la saisie ;
-- type → motif → sous-motif cohérents ; seules les valeurs actives sont proposables ;
+- type → motif → sous-motif cohérents ; seules les valeurs actives sont proposables ; « Autre »
+  = saisie libre (``motif_autre`` / ``sous_motif_autre``) à la place d'une valeur du référentiel ;
+- opérations concernées : relation 1-N (``reclamation_operations``), jamais un champ multiple ;
 - canal Téléphone : un appel (date, numéro) est obligatoire ; la référence d'enregistrement n'est
   acceptée que si la banque l'a autorisé (paramètre du module) ;
 - correction d'une date clé = motif obligatoire ; dossier terminé = lecture seule ;
@@ -14,7 +16,7 @@ Règles :
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 from sqlalchemy import case, func, or_, select, text
@@ -22,18 +24,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     Agence,
-    AuditLog,
     ClienteleClient,
     ClienteleCompte,
     GedDocument,
     Reclamation,
     ReclamationAppel,
     ReclamationEvenement,
+    ReclamationOperation,
     ReclamationParametre,
     ReclamationReferentiel,
     ReclamationUnite,
 )
 from app.services.reclamations import constantes as C
+from app.services.reclamations import operations as ops
 from app.services.reclamations.acces import ReclamationsScope
 from app.services.reclamations.outils import (
     auditer,
@@ -51,6 +54,7 @@ TOLERANCE_HORLOGE = timedelta(minutes=5)
 TAILLE_MAX_PAGE = 100
 TRI_COLONNES = {
     "reference": (Reclamation.annee, Reclamation.numero),
+    "date_reclamation": (Reclamation.date_reclamation,),
     "date_premiere_reception": (Reclamation.date_premiere_reception,),
     "date_reception_sr": (Reclamation.date_reception_sr,),
     "echeance": (Reclamation.echeance,),
@@ -62,7 +66,7 @@ TRI_COLONNES = {
 }
 # Champs remis à vide via ``effacer`` (PATCH : ``None`` = inchangé).
 EFFACABLES = frozenset({
-    "type_id", "motif_id", "sous_motif_id", "client_racine", "client_categorie", "client_telephone",
+    "type_id", "motif_id", "sous_motif_id", "motif_autre", "sous_motif_autre", "unite_concernee_id", "client_racine", "client_categorie", "client_telephone",
     "client_email", "client_adresse", "client_agence_id", "compte_reference", "carte_masquee",
     "operation_reference", "operation_date", "montant_conteste", "devise", "reclamation_liee_id",
 })
@@ -70,7 +74,9 @@ CHAMPS_TEXTE = ("client_nom", "client_telephone", "client_email", "compte_refere
                 "operation_reference")
 CHAMPS_LIBELLES = {
     "objet": "Objet", "description": "Description", "type_id": "Type", "motif_id": "Motif",
-    "sous_motif_id": "Sous-motif", "priorite": "Priorité", "unite_reception_id": "Unité de réception",
+    "sous_motif_id": "Sous-motif", "motif_autre": "Motif (autre)", "sous_motif_autre": "Sous-motif (autre)",
+    "priorite": "Priorité", "unite_reception_id": "Unité de réception", "unite_concernee_id": "Service concerné",
+    "date_reclamation": "Date de la réclamation",
     "client_racine": "Racine client", "client_categorie": "Catégorie de client", "client_nom": "Nom du client",
     "client_telephone": "Téléphone du client", "client_email": "E-mail du client",
     "client_adresse": "Adresse du client", "client_agence_id": "Agence du client",
@@ -121,11 +127,23 @@ class Contexte:
 
 
 # ------------------------------------------------------------------ sérialisation
+def libelle_statut(code: str | None) -> str | None:
+    if not code:
+        return None
+    return C.STATUT_LIBELLES.get(code) or C.STATUT_LIBELLES_HISTORIQUES.get(code, code)
+
+
+def libelle_etape(code: str | None) -> str | None:
+    if not code:
+        return None
+    return C.ETAPE_LIBELLES.get(code) or C.ETAPE_LIBELLES_HISTORIQUES.get(code, code)
+
+
 def _statut(r: Reclamation) -> dict:
     return {
-        "statut": r.statut, "statut_libelle": C.STATUT_LIBELLES.get(r.statut, r.statut),
+        "statut": r.statut, "statut_libelle": libelle_statut(r.statut),
         "groupe": C.STATUT_GROUPES.get(r.statut), "groupe_libelle": C.GROUPE_LIBELLES.get(C.STATUT_GROUPES.get(r.statut, "")),
-        "etape": r.etape, "etape_libelle": C.ETAPE_LIBELLES.get(r.etape, r.etape),
+        "etape": r.etape, "etape_libelle": libelle_etape(r.etape),
         "termine": r.statut in C.STATUTS_TERMINAUX,
     }
 
@@ -134,39 +152,55 @@ def en_retard(r: Reclamation, now: datetime | None = None) -> bool:
     return bool(r.echeance and r.statut not in C.STATUTS_TERMINAUX and r.echeance < (now or maintenant()))
 
 
-def ligne(r: Reclamation, ctx: Contexte, nb_documents: int = 0) -> dict:
+def libelle_motif(ctx: Contexte, r: Reclamation) -> str | None:
+    return f"{C.AUTRE} : {r.motif_autre}" if r.motif_autre else ctx.lib(r.motif_id)
+
+
+def libelle_sous_motif(ctx: Contexte, r: Reclamation) -> str | None:
+    return f"{C.AUTRE} : {r.sous_motif_autre}" if r.sous_motif_autre else ctx.lib(r.sous_motif_id)
+
+
+def ligne(r: Reclamation, ctx: Contexte, nb_documents: int = 0,
+          resume: tuple[int, Any] | None = None) -> dict:
+    nb_operations, montant_total = resume or (0, None)
     return {
         "id": str(r.id), "reference": r.reference, "objet": r.objet,
         "client_nom": r.client_nom, "client_racine": r.client_racine, "client_categorie": r.client_categorie,
-        "canal": ctx.lib(r.canal_id), "type": ctx.lib(r.type_id), "motif": ctx.lib(r.motif_id),
+        "canal": ctx.lib(r.canal_id), "type": ctx.lib(r.type_id), "motif": libelle_motif(ctx, r),
+        "sous_motif": libelle_sous_motif(ctx, r),
         "priorite": r.priorite, "priorite_libelle": C.PRIORITE_LIBELLES.get(r.priorite),
         **_statut(r),
         "unite_reception": (ctx.unite(r.unite_reception_id) or {}).get("libelle"),
+        "unite_concernee": (ctx.unite(r.unite_concernee_id) or {}).get("libelle"),
         "unite_traitement": (ctx.unite(r.unite_traitement_id) or {}).get("libelle"),
+        "agence": (ctx.agence(r.client_agence_id) or {}).get("libelle"),
+        "date_reclamation": iso(r.date_reclamation),
         "date_premiere_reception": iso(r.date_premiere_reception), "date_reception_sr": iso(r.date_reception_sr),
         "date_cloture": iso(r.date_cloture), "echeance": iso(r.echeance), "en_retard": en_retard(r),
+        "nb_operations": nb_operations, "montant_total": ops.montant_str(montant_total), "devise": C.DEVISE,
         "nb_documents": nb_documents, "revision": r.revision, "updated_at": iso(r.updated_at),
     }
 
 
 def peut_modifier(s: ReclamationsScope, r: Reclamation) -> bool:
+    """Correction des données saisies : droit de modification, ou auteur tant que le dossier est à qualifier."""
     if r.statut in C.STATUTS_TERMINAUX or r.archivee_le:
         return False
     if s.peut("reclamations.update"):
         return True
-    return s.peut("reclamations.create") and r.created_by_id == s.user_id and r.statut == "RECUE"
+    return s.peut("reclamations.create") and r.created_by_id == s.user_id and r.statut == "A_QUALIFIER"
 
 
 def actions(s: ReclamationsScope, r: Reclamation) -> dict[str, bool]:
     ouvert = r.statut not in C.STATUTS_TERMINAUX and not r.archivee_le
     return {
         "modifier": peut_modifier(s, r),
+        "modifier_operations": peut_modifier(s, r),
         "ajouter_appel": ouvert and (s.peut("reclamations.update") or peut_modifier(s, r)),
         "documents_voir": s.peut("reclamations.document.view"),
         "documents_deposer": s.peut("reclamations.document.upload") and not r.archivee_le,
         "documents_telecharger": s.peut("reclamations.document.download"),
         "documents_retirer": s.peut("reclamations.document.remove") and not r.archivee_le,
-        "audit_voir": s.peut("reclamations.audit.view"),
     }
 
 
@@ -194,13 +228,18 @@ async def detail(db: AsyncSession, s: ReclamationsScope, r: Reclamation, ctx: Co
         GedDocument.entity_id == str(r.id), GedDocument.deleted_at.is_(None))) or 0
     liees = {i: ref for i, ref in (await db.execute(select(Reclamation.id, Reclamation.reference).where(
         Reclamation.id.in_([i for i in (r.reclamation_liee_id, r.doublon_de_id) if i])))).all()}
+    operations = await ops.lister(db, r.id)
+    montant_total = ops.total([o.montant for o in operations])
     return {
-        **ligne(r, ctx, nb_documents),
+        **ligne(r, ctx, nb_documents, (len(operations), montant_total)),
         "description": r.description, "source": r.source,
         "type_ref": ctx.ref(r.type_id), "motif_ref": ctx.ref(r.motif_id), "sous_motif_ref": ctx.ref(r.sous_motif_id),
+        "motif_autre": r.motif_autre, "sous_motif_autre": r.sous_motif_autre,
+        "operations": [ops.en_dict(o) for o in operations],
         "canal_ref": ctx.ref(r.canal_id),
         "canal_telephone": bool(r.canal_id in ctx.refs and ctx.refs[r.canal_id].code == C.CANAL_TELEPHONE),
         "unite_reception_ref": ctx.unite(r.unite_reception_id), "unite_suivi_ref": ctx.unite(r.unite_suivi_id),
+        "unite_concernee_ref": ctx.unite(r.unite_concernee_id),
         "unite_traitement_ref": ctx.unite(r.unite_traitement_id),
         "client": {
             "racine": r.client_racine, "categorie": r.client_categorie,
@@ -208,12 +247,7 @@ async def detail(db: AsyncSession, s: ReclamationsScope, r: Reclamation, ctx: Co
             "nom": r.client_nom, "telephone": r.client_telephone, "email": r.client_email,
             "adresse": r.client_adresse, "agence": ctx.agence(r.client_agence_id),
         },
-        "operation": {
-            "compte_reference": r.compte_reference, "carte_masquee": r.carte_masquee,
-            "reference": r.operation_reference, "date": iso(r.operation_date),
-            "montant_conteste": str(r.montant_conteste) if r.montant_conteste is not None else None,
-            "devise": r.devise,
-        },
+        "compte_reference": r.compte_reference, "carte_masquee": r.carte_masquee,
         "reclamation_liee": ({"id": str(r.reclamation_liee_id), "reference": liees.get(r.reclamation_liee_id)}
                              if r.reclamation_liee_id else None),
         "doublon_de": ({"id": str(r.doublon_de_id), "reference": liees.get(r.doublon_de_id)}
@@ -221,11 +255,10 @@ async def detail(db: AsyncSession, s: ReclamationsScope, r: Reclamation, ctx: Co
         "dates": {k: iso(getattr(r, k)) for k in (
             "date_premiere_reception", "date_reception_sr", "date_qualification", "date_transmission",
             "date_reception_service", "date_retour_service", "date_reponse_client", "date_cloture",
-            "date_suspension", "date_reouverture")},
+            "date_reouverture")},
         "echeance_initiale": iso(r.echeance_initiale), "regle_delai_id": str(r.regle_delai_id) if r.regle_delai_id else None,
         "gestionnaire": noms.get(r.gestionnaire_id) if r.gestionnaire_id else None,
         "responsable_traitement": noms.get(r.responsable_traitement_id) if r.responsable_traitement_id else None,
-        "motif_suspension": r.motif_suspension, "conditions_reprise": r.conditions_reprise,
         "motif_refus": r.motif_refus, "motif_annulation": r.motif_annulation,
         "resultat": r.resultat, "resultat_libelle": C.RESULTAT_LIBELLES.get(r.resultat or ""),
         "motif_resolution": r.motif_resolution, "nb_reouvertures": r.nb_reouvertures, "nb_renvois": r.nb_renvois,
@@ -250,17 +283,23 @@ def _filtres(q, f: dict[str, Any]):
         motif = f"%{propre(f['q'])}%"
         q = q.where(or_(Reclamation.reference.ilike(motif), Reclamation.objet.ilike(motif),
                         Reclamation.client_nom.ilike(motif), Reclamation.client_racine.ilike(motif),
-                        Reclamation.compte_reference.ilike(motif), Reclamation.operation_reference.ilike(motif)))
+                        Reclamation.compte_reference.ilike(motif), Reclamation.motif_autre.ilike(motif),
+                        Reclamation.id.in_(select(ReclamationOperation.reclamation_id).where(
+                            ReclamationOperation.reference.ilike(motif)))))
     if f.get("statut"):
         q = q.where(Reclamation.statut.in_(f["statut"]))
     if f.get("groupe"):
         q = q.where(Reclamation.statut.in_([k for k, g in C.STATUT_GROUPES.items() if g in f["groupe"]]))
     if f.get("etape"):
         q = q.where(Reclamation.etape == f["etape"])
-    for champ in ("type_id", "motif_id", "sous_motif_id", "canal_id", "unite_reception_id",
+    for champ in ("type_id", "sous_motif_id", "canal_id", "unite_reception_id", "unite_concernee_id",
                   "unite_traitement_id", "gestionnaire_id", "client_agence_id"):
         if f.get(champ):
             q = q.where(getattr(Reclamation, champ) == f[champ])
+    if f.get("motif_id") == "AUTRE":
+        q = q.where(Reclamation.motif_autre.is_not(None))
+    elif f.get("motif_id"):
+        q = q.where(Reclamation.motif_id == f["motif_id"])
     for champ in ("priorite", "client_categorie", "client_racine"):
         if f.get(champ):
             q = q.where(getattr(Reclamation, champ) == f[champ])
@@ -300,7 +339,8 @@ async def lister(db: AsyncSession, s: ReclamationsScope, f: dict[str, Any], *, p
                 GedDocument.entity_id.in_([str(r.id) for r in rows]), GedDocument.deleted_at.is_(None))
             .group_by(GedDocument.entity_id))).all())
     ctx = await Contexte.charger(db)
-    return {"items": [ligne(r, ctx, docs.get(str(r.id), 0)) for r in rows], "total": total,
+    resumes = await ops.resumes(db, [r.id for r in rows])
+    return {"items": [ligne(r, ctx, docs.get(str(r.id), 0), resumes.get(r.id)) for r in rows], "total": total,
             "page": max(page, 1), "taille": taille}
 
 
@@ -314,26 +354,13 @@ async def chronologie(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID) ->
     return [{
         "id": str(e.id), "type": e.type_evenement,
         "libelle": C.EVENEMENT_LIBELLES.get(e.type_evenement, e.type_evenement),
-        "statut_avant": C.STATUT_LIBELLES.get(e.statut_avant or ""), "statut_apres": C.STATUT_LIBELLES.get(e.statut_apres or ""),
-        "etape_avant": C.ETAPE_LIBELLES.get(e.etape_avant or ""), "etape_apres": C.ETAPE_LIBELLES.get(e.etape_apres or ""),
+        "statut_avant": libelle_statut(e.statut_avant), "statut_apres": libelle_statut(e.statut_apres),
+        "code_statut_avant": e.statut_avant, "code_statut_apres": e.statut_apres,
+        "etape_avant": libelle_etape(e.etape_avant), "etape_apres": libelle_etape(e.etape_apres),
         "date_effet": iso(e.date_effet), "enregistre_le": iso(e.enregistre_le),
         "auteur": noms.get(e.auteur_id) if e.auteur_id else None,
         "unite": (ctx.unite(e.unite_id) or {}).get("libelle"), "commentaire": e.commentaire, "donnees": e.donnees,
     } for e in evts]
-
-
-async def journal_audit(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID) -> list[dict]:
-    s.exiger("reclamations.audit.view")
-    r = await charger(db, s, rid)
-    logs = list((await db.scalars(select(AuditLog).where(
-        AuditLog.module_code == C.MODULE_CODE, AuditLog.entity_id == str(r.id))
-        .order_by(AuditLog.created_at.desc()).limit(500))).all())
-    noms = await noms_utilisateurs(db, {lg.user_id for lg in logs})
-    return [{
-        "id": str(lg.id), "action": lg.action, "entity": lg.entity, "utilisateur": noms.get(lg.user_id) if lg.user_id else None,
-        "date": iso(lg.created_at), "avant": lg.before_data, "apres": lg.after_data, "ip": lg.ip_address,
-        "request_id": lg.request_id,
-    } for lg in logs]
 
 
 # ------------------------------------------------------------------ validations
@@ -364,6 +391,43 @@ def _classement(ctx: Contexte, type_id, motif_id, sous_motif_id, actuel: Reclama
         type_id = m.parent_id
     _ref_valide(ctx, type_id, "TYPE", conserver=actuel.type_id if actuel else None)
     return type_id, motif_id, sous_motif_id
+
+
+def classer(ctx: Contexte, type_id, motif_id, sous_motif_id, motif_autre: str | None,
+            sous_motif_autre: str | None, actuel: Reclamation | None = None) -> dict[str, Any]:
+    """Référentiel ou « Autre » (texte libre), jamais les deux pour un même niveau."""
+    motif_autre = propre(motif_autre) or None
+    sous_motif_autre = propre(sous_motif_autre) or None
+    if motif_autre and motif_id:
+        raise erreur("Choisissez un motif du référentiel ou « Autre », pas les deux", "CLASSEMENT_INCOHERENT")
+    if sous_motif_autre and sous_motif_id:
+        raise erreur("Choisissez un sous-motif du référentiel ou « Autre », pas les deux", "CLASSEMENT_INCOHERENT")
+    if motif_autre and sous_motif_id:
+        raise erreur("Un sous-motif du référentiel exige un motif du référentiel", "CLASSEMENT_INCOHERENT")
+    t, m, sm = _classement(ctx, type_id, motif_id, sous_motif_id, actuel=actuel)
+    if sous_motif_autre and not (m or motif_autre):
+        raise erreur("Précisez le motif avant le sous-motif", "CLASSEMENT_INCOHERENT")
+    return {"type_id": t, "motif_id": m, "sous_motif_id": sm, "motif_autre": motif_autre,
+            "sous_motif_autre": sous_motif_autre}
+
+
+def _unite_concernee(ctx: Contexte, uid: uuid.UUID | None, actuelle: uuid.UUID | None = None) -> uuid.UUID | None:
+    if uid is None:
+        return None
+    u = ctx.unites.get(uid)
+    if u is None:
+        raise erreur("Service concerné introuvable", "UNITE_INCONNUE")
+    if not u.actif and uid != actuelle:
+        raise erreur(f"Le service « {u.libelle} » est désactivé", "UNITE_INACTIVE")
+    return uid
+
+
+def _date_reclamation(valeur: date, premiere: datetime) -> date:
+    if valeur > maintenant().date():
+        raise erreur("La date de la réclamation ne peut pas être dans le futur", "DATE_FUTURE")
+    if valeur > premiere.astimezone(UTC).date():
+        raise erreur("La date de la réclamation ne peut pas suivre sa réception par la banque", "DATE_INCOHERENTE")
+    return valeur
 
 
 def _carte(valeur: str | None) -> str | None:
@@ -509,7 +573,16 @@ async def creer(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
     telephone = canal.code == C.CANAL_TELEPHONE
     if telephone and not data.get("appel"):
         raise erreur("Canal Téléphone : renseignez l'appel (date, numéro de l'appelant)", "APPEL_OBLIGATOIRE")
-    premiere = _date_passee(data["date_premiere_reception"], "Date de première réception")
+    date_reclamation: date | None = data.get("date_reclamation")
+    if data.get("date_premiere_reception") is not None:
+        premiere = _date_passee(data["date_premiere_reception"], "Date de réception par la banque")
+    elif date_reclamation is None:
+        raise erreur("La date de la réclamation est obligatoire", "DATE_OBLIGATOIRE")
+    elif date_reclamation >= maintenant().date():
+        premiere = maintenant()
+    else:
+        premiere = datetime.combine(date_reclamation, time.min, tzinfo=UTC)
+    date_reclamation = _date_reclamation(date_reclamation or premiere.astimezone(UTC).date(), premiere)
     reception_sr = data.get("date_reception_sr")
     central = ctx.service_central()
     if reception_sr is not None:
@@ -518,8 +591,12 @@ async def creer(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
         _date_passee(reception_sr, "Date de réception SR")
         if reception_sr < premiere:
             raise erreur("La réception SR ne peut pas précéder la première réception", "DATE_INCOHERENTE")
-    type_id, motif_id, sous_motif_id = _classement(ctx, data.get("type_id"), data.get("motif_id"),
-                                                   data.get("sous_motif_id"))
+    elif s.membre_service_central:
+        reception_sr = max(premiere, maintenant())
+    classement = classer(ctx, data.get("type_id"), data.get("motif_id"), data.get("sous_motif_id"),
+                         data.get("motif_autre"), data.get("sous_motif_autre"))
+    lignes = ops.normaliser(data.get("operations"))
+    unite_concernee_id = _unite_concernee(ctx, data.get("unite_concernee_id"))
     unite_reception_id = _unite_reception(s, ctx, data.get("unite_reception_id"))
     client = await _client(db, propre(data.get("client_racine")) or None)
     nom = propre(data.get("client_nom")) or (_nom_client(client) if client else "")
@@ -536,10 +613,11 @@ async def creer(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
     numero = await _numero(db, now.year)
     r = Reclamation(
         reference=f"{C.PREFIXE_REFERENCE}-{now.year}-{numero:06d}", annee=now.year, numero=numero,
-        objet=objet, description=description, type_id=type_id, motif_id=motif_id, sous_motif_id=sous_motif_id,
+        objet=objet, description=description, **classement,
         priorite=data.get("priorite") or "NORMALE",
-        statut="RECUE_SR" if reception_sr else "RECUE", etape="RECEPTION",
+        statut="A_QUALIFIER", etape="RECEPTION",
         source="CENTRE_APPEL" if telephone else "MANUEL", canal_id=canal.id, unite_reception_id=unite_reception_id,
+        unite_concernee_id=unite_concernee_id, date_reclamation=date_reclamation,
         client_racine=client.racine_client if client else None,
         client_categorie=data.get("client_categorie") or (_categorie(client) if client else None),
         client_nom=nom, client_telephone=propre(data.get("client_telephone")) or None,
@@ -555,10 +633,13 @@ async def creer(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
         revision=1, created_by_id=s.user_id, updated_by_id=s.user_id)
     db.add(r)
     await db.flush()
+    ops.inserer(db, r.id, lignes, s.user_id)
+    montant_total = ops.total([m for _, m in lignes])
     db.add(_evenement(r, s, "CREATION", date_effet=premiere, unite_id=unite_reception_id,
-                      donnees={"canal": canal.libelle, "enregistre_par_service_central": bool(reception_sr)}))
+                      donnees={"canal": canal.libelle, "enregistre_par_service_central": bool(reception_sr),
+                               "nb_operations": len(lignes), "montant_total": ops.montant_str(montant_total)}))
     if reception_sr:
-        db.add(_evenement(r, s, "RECEPTION_SR", date_effet=reception_sr, statut_avant="RECUE",
+        db.add(_evenement(r, s, "RECEPTION_SR", date_effet=reception_sr, statut_avant="A_QUALIFIER",
                           etape_avant="RECEPTION", unite_id=central.id if central else None))
     if data.get("appel"):
         a = await _appel(db, s, r, data["appel"])
@@ -569,8 +650,9 @@ async def creer(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
     await appliquer(db, r)
     await auditer(db, s, "reclamations.dossier.create", C.GED_ENTITE, r.id, after={
         "reference": r.reference, "statut": r.statut, "canal": canal.libelle, "objet": r.objet,
-        "unite_reception": ctx.unite(unite_reception_id)["libelle"],
-        "date_premiere_reception": iso(premiere), "date_reception_sr": iso(reception_sr)})
+        "unite_reception": ctx.unite(unite_reception_id)["libelle"], "date_reclamation": iso(date_reclamation),
+        "date_premiere_reception": iso(premiere), "date_reception_sr": iso(reception_sr),
+        "operations": [{"reference": ref, "montant": str(m)} for ref, m in lignes]})
     return await detail(db, s, r, ctx)
 
 
@@ -613,12 +695,22 @@ async def modifier(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data:
     if cible.get("carte_masquee"):
         cible["carte_masquee"] = _carte(cible["carte_masquee"])
 
-    if any(k in data and data[k] is not None for k in ("type_id", "motif_id", "sous_motif_id")) or \
-            effacer & {"type_id", "motif_id", "sous_motif_id"}:
+    niveaux = ("type_id", "motif_id", "sous_motif_id", "motif_autre", "sous_motif_autre")
+    if any(data.get(k) is not None for k in niveaux) or effacer & set(niveaux):
         def valeur(k: str):
             return None if k in effacer else (data.get(k) if data.get(k) is not None else getattr(r, k))
-        t, m, sm = _classement(ctx, valeur("type_id"), valeur("motif_id"), valeur("sous_motif_id"), actuel=r)
-        cible.update(type_id=t, motif_id=m, sous_motif_id=sm)
+        motif_choisi = data.get("motif_id") is not None or data.get("motif_autre") is not None
+        sous_choisi = data.get("sous_motif_id") is not None or data.get("sous_motif_autre") is not None
+        # Choisir une valeur à un niveau remplace l'autre forme (référentiel ↔ « Autre ») de ce niveau.
+        m_id = valeur("motif_id") if not (motif_choisi and data.get("motif_autre") is not None) else None
+        m_autre = valeur("motif_autre") if not (motif_choisi and data.get("motif_id") is not None) else None
+        sm_id = valeur("sous_motif_id") if not (sous_choisi and data.get("sous_motif_autre") is not None) else None
+        sm_autre = valeur("sous_motif_autre") if not (sous_choisi and data.get("sous_motif_id") is not None) else None
+        cible.update(classer(ctx, valeur("type_id"), m_id, sm_id, m_autre, sm_autre, actuel=r))
+    if data.get("unite_concernee_id") is not None:
+        cible["unite_concernee_id"] = _unite_concernee(ctx, data["unite_concernee_id"], r.unite_concernee_id)
+    if data.get("date_reclamation") is not None:
+        cible["date_reclamation"] = data["date_reclamation"]
     if "unite_reception_id" in cible:
         cible["unite_reception_id"] = _unite_reception(s, ctx, cible["unite_reception_id"], r.unite_reception_id)
     if cible.get("client_agence_id") and cible["client_agence_id"] not in ctx.agences:
@@ -640,6 +732,8 @@ async def modifier(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data:
     reception_sr = cible.get("date_reception_sr", r.date_reception_sr)
     if reception_sr and reception_sr < premiere:
         raise erreur("La réception SR ne peut pas précéder la première réception", "DATE_INCOHERENTE")
+    if cible.get("date_reclamation") or "date_premiere_reception" in cible:
+        _date_reclamation(cible.get("date_reclamation") or r.date_reclamation or premiere.date(), premiere)
 
     changes = {k: v for k, v in cible.items() if getattr(r, k) != v}
     if not changes:
@@ -660,6 +754,40 @@ async def modifier(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data:
                   after={**apres, **({"motif": motif} if motif else {})})
     await db.refresh(r)
     return await detail(db, s, r, ctx)
+
+
+async def remplacer_operations(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data: dict) -> dict:
+    """Remplace la liste des opérations concernées ; l'ancienne liste reste dans l'historique et l'audit."""
+    r = await charger(db, s, rid, verrou=True)
+    if not peut_modifier(s, r):
+        if r.statut in C.STATUTS_TERMINAUX or r.archivee_le:
+            raise conflit("Dossier terminé : il n'est plus modifiable", "DOSSIER_TERMINE")
+        s.exiger("reclamations.update")
+    if data["revision"] != r.revision:
+        raise conflit("Le dossier a été modifié entre-temps : rechargez-le", "CONFLIT_REVISION",
+                      revision=r.revision)
+    lignes = ops.normaliser(data.get("operations"))
+    actuelles = await ops.lister(db, r.id)
+    avant = [(o.reference, o.montant) for o in actuelles]
+    if avant == lignes:
+        return await detail(db, s, r)
+    for o in actuelles:
+        await db.delete(o)
+    await db.flush()
+    ops.inserer(db, r.id, lignes, s.user_id)
+    r.revision += 1
+    r.updated_by_id = s.user_id
+    total_avant, total_apres = ops.total([m for _, m in avant]), ops.total([m for _, m in lignes])
+    db.add(_evenement(r, s, "OPERATIONS", statut_avant=r.statut, etape_avant=r.etape,
+                      commentaire=texte_long(data.get("motif")),
+                      donnees={"avant": {"nb": len(avant), "total": ops.montant_str(total_avant)},
+                               "apres": {"nb": len(lignes), "total": ops.montant_str(total_apres)}}))
+    await db.flush()
+    await auditer(db, s, "reclamations.operations.update", C.GED_ENTITE, r.id,
+                  before={"operations": [{"reference": ref, "montant": ops.montant_str(m)} for ref, m in avant]},
+                  after={"operations": [{"reference": ref, "montant": str(m)} for ref, m in lignes]})
+    await db.refresh(r)
+    return await detail(db, s, r)
 
 
 async def ajouter_appel(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data: dict) -> dict:

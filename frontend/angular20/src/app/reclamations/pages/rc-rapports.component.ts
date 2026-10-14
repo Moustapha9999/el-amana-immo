@@ -4,7 +4,7 @@ import { RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
-import { TableauBord, telechargerBlob } from '../reclamations.models';
+import { TableauBord, montantFr, telechargerBlob } from '../reclamations.models';
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
 
 /** Rapports : répartitions du périmètre et export Excel (plafond serveur 5 000 lignes). */
@@ -40,6 +40,8 @@ import { ReclamationsService, ReclamationsStore } from '../reclamations.service'
           <div class="bea-rc-kpi"><mat-icon>pending_actions</mat-icon><p>Ouvertes</p><strong>{{ d.ouvertes }}</strong></div>
           <div class="bea-rc-kpi" data-tone="danger"><mat-icon>timer_off</mat-icon><p>Retards</p><strong>{{ d.retards }}</strong></div>
           <div class="bea-rc-kpi"><mat-icon>task_alt</mat-icon><p>Clôturées 30 j</p><strong>{{ d.cloturees_30j }}</strong></div>
+          <div class="bea-rc-kpi"><mat-icon>receipt_long</mat-icon><p>Opérations</p><strong>{{ d.nb_operations }}</strong><small>dans {{ d.dossiers_avec_operations }} dossier(s)</small></div>
+          <div class="bea-rc-kpi"><mat-icon>payments</mat-icon><p>Montant total</p><strong>{{ montant(d.montant_total, d.devise) }}</strong></div>
         </div>
         <div class="bea-rc-grid">
           <section class="bea-mg__panel">
@@ -48,6 +50,30 @@ import { ReclamationsService, ReclamationsStore } from '../reclamations.service'
               @for (t of d.types; track t.id) {
                 <li><a [routerLink]="['/reclamations/dossiers']" [queryParams]="{ type_id: t.id }">{{ t.libelle }}</a><span class="bea-rc-bars__n">{{ t.n }}</span></li>
               } @empty { <li class="bea-rc-muted">Aucun type renseigné.</li> }
+            </ul>
+          </section>
+          <section class="bea-mg__panel">
+            <div class="bea-mg__panel-top"><h2>Motifs</h2></div>
+            <ul class="bea-rc-bars">
+              @for (m of d.motifs; track m.id) {
+                <li>
+                  @if (m.id !== 'None') { <a [routerLink]="['/reclamations/dossiers']" [queryParams]="{ motif_id: m.id }">{{ m.libelle }}</a> }
+                  @else { <span>Non qualifié</span> }
+                  <span><span class="bea-rc-bars__n">{{ m.n }}</span>@if (m.nb_operations) { <small class="bea-rc-hint"> · {{ montant(m.montant ?? null, d.devise) }}</small> }</span>
+                </li>
+              } @empty { <li class="bea-rc-muted">Aucun motif renseigné.</li> }
+            </ul>
+          </section>
+          <section class="bea-mg__panel">
+            <div class="bea-mg__panel-top"><h2>Agences</h2></div>
+            <ul class="bea-rc-bars">
+              @for (a of d.agences; track a.id) {
+                <li>
+                  @if (a.id !== 'None') { <a [routerLink]="['/reclamations/dossiers']" [queryParams]="{ client_agence_id: a.id }">{{ a.libelle }}</a> }
+                  @else { <span>Non renseignée</span> }
+                  <span><span class="bea-rc-bars__n">{{ a.n }}</span>@if (a.nb_operations) { <small class="bea-rc-hint"> · {{ montant(a.montant ?? null, d.devise) }}</small> }</span>
+                </li>
+              } @empty { <li class="bea-rc-muted">Aucune agence renseignée.</li> }
             </ul>
           </section>
           <section class="bea-mg__panel">
@@ -67,11 +93,11 @@ import { ReclamationsService, ReclamationsStore } from '../reclamations.service'
             </ul>
           </section>
           <section class="bea-mg__panel">
-            <div class="bea-mg__panel-top"><h2>Unités de traitement</h2></div>
+            <div class="bea-mg__panel-top"><h2>Services</h2></div>
             <ul class="bea-rc-bars">
-              @for (u of d.unites_traitement; track u.id) {
-                <li><span>{{ u.libelle }}</span><span class="bea-rc-bars__n">{{ u.n }}</span></li>
-              } @empty { <li class="bea-rc-muted">Aucune affectation.</li> }
+              @for (u of d.services; track u.id) {
+                <li><span>{{ u.id === 'None' ? 'Non déterminé' : u.libelle }}</span><span class="bea-rc-bars__n">{{ u.n }}</span></li>
+              } @empty { <li class="bea-rc-muted">Aucun service.</li> }
             </ul>
           </section>
         </div>
@@ -104,6 +130,10 @@ export class RcRapportsComponent implements OnInit {
         void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Rapports indisponibles'));
       },
     });
+  }
+
+  montant(v: string | null, devise: string): string {
+    return montantFr(v, devise);
   }
 
   exporter(): void {

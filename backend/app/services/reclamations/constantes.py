@@ -8,61 +8,75 @@ GED_ENTITE = "reclamation"
 PREFIXE_REFERENCE = "REC"
 
 STATUT_LIBELLES: dict[str, str] = {
+    "A_QUALIFIER": "À qualifier",
+    "A_AFFECTER": "À affecter",
+    "EN_TRAITEMENT": "En traitement",
+    "RETOUR_RECU": "Retour reçu",
+    "A_CLOTURER": "À clôturer",
+    "CLOTUREE": "Clôturée",
+    "REJETEE": "Rejetée",
+    "ANNULEE": "Annulée",
+    "REOUVERTE": "Réouverte",
+}
+# Statuts du circuit précédent (avant 20261014_reclamations_02) : lus uniquement dans l'historique.
+STATUT_LIBELLES_HISTORIQUES: dict[str, str] = {
     "RECUE": "Reçue initialement",
     "RECUE_SR": "Reçue par le Service Réclamations",
-    "A_QUALIFIER": "Ouverte — à qualifier",
     "AFFECTEE": "Affectée — transmise",
-    "EN_TRAITEMENT": "En cours de traitement",
     "ATTENTE_INFO": "En attente d'information",
-    "RETOUR_RECU": "Retour reçu — à vérifier",
     "REPONSE_A_PREPARER": "Réponse à préparer",
     "REPONSE_ENVOYEE": "Réponse envoyée — à clôturer",
     "SUSPENDUE": "Suspendue",
     "REFUSEE": "Refusée / irrecevable",
-    "CLOTUREE": "Clôturée",
-    "REOUVERTE": "Réouverte",
-    "ANNULEE": "Annulée / doublon",
 }
 
+# Circuit : Réception → Affectation → Traitement → Clôture. Le détail vit dans l'historique.
 ETAPE_LIBELLES: dict[str, str] = {
     "RECEPTION": "Réception",
-    "QUALIFICATION": "Qualification",
-    "AFFECTATION": "Affectation au service",
-    "TRAITEMENT": "Traitement par le service",
-    "RETOUR": "Retour au Service Réclamations",
-    "REPONSE": "Réponse au client",
+    "AFFECTATION": "Affectation",
+    "TRAITEMENT": "Traitement",
     "CLOTURE": "Clôture",
 }
+ETAPE_LIBELLES_HISTORIQUES: dict[str, str] = {
+    "QUALIFICATION": "Qualification",
+    "RETOUR": "Retour au Service Réclamations",
+    "REPONSE": "Réponse au client",
+}
+ETAPE_DU_STATUT: dict[str, str] = {
+    "A_QUALIFIER": "RECEPTION",
+    "A_AFFECTER": "AFFECTATION",
+    "REOUVERTE": "AFFECTATION",
+    "EN_TRAITEMENT": "TRAITEMENT",
+    "RETOUR_RECU": "CLOTURE",
+    "A_CLOTURER": "CLOTURE",
+    "CLOTUREE": "CLOTURE",
+    "REJETEE": "CLOTURE",
+    "ANNULEE": "CLOTURE",
+}
 
-# Statut simplifié affiché et utilisé par les KPI ; la chronologie garde le détail.
 STATUT_GROUPES: dict[str, str] = {
-    "RECUE": "RECUE",
-    "RECUE_SR": "RECUE",
-    "A_QUALIFIER": "A_QUALIFIER",
-    "REOUVERTE": "A_QUALIFIER",
-    "AFFECTEE": "EN_COURS",
+    "A_QUALIFIER": "EN_COURS",
+    "A_AFFECTER": "EN_COURS",
     "EN_TRAITEMENT": "EN_COURS",
     "RETOUR_RECU": "EN_COURS",
-    "REPONSE_A_PREPARER": "EN_COURS",
-    "REPONSE_ENVOYEE": "EN_COURS",
-    "ATTENTE_INFO": "EN_ATTENTE",
-    "SUSPENDUE": "SUSPENDUE",
-    "REFUSEE": "REFUSEE",
+    "A_CLOTURER": "EN_COURS",
+    "REOUVERTE": "EN_COURS",
     "CLOTUREE": "CLOTUREE",
+    "REJETEE": "REJETEE",
     "ANNULEE": "ANNULEE",
 }
 GROUPE_LIBELLES: dict[str, str] = {
-    "RECUE": "Reçues",
-    "A_QUALIFIER": "À qualifier",
     "EN_COURS": "En cours",
-    "EN_ATTENTE": "En attente",
-    "SUSPENDUE": "Suspendues",
-    "REFUSEE": "Refusées",
     "CLOTUREE": "Clôturées",
-    "ANNULEE": "Annulées / doublons",
+    "REJETEE": "Rejetées",
+    "ANNULEE": "Annulées",
 }
 # Dossiers qui ne sont plus dans le stock ouvert.
-STATUTS_TERMINAUX = frozenset({"CLOTUREE", "REFUSEE", "ANNULEE"})
+STATUTS_TERMINAUX = frozenset({"CLOTUREE", "REJETEE", "ANNULEE"})
+# Saisie libre « Autre » à la place d'un motif / sous-motif du référentiel.
+AUTRE = "Autre"
+DEVISE = "MRU"
+MAX_OPERATIONS = 200
 
 PRIORITE_LIBELLES: dict[str, str] = {
     "BASSE": "Basse",
@@ -121,6 +135,8 @@ EVENEMENT_LIBELLES: dict[str, str] = {
     "CREATION": "Réclamation enregistrée",
     "RECEPTION_SR": "Réception par le Service Réclamations",
     "MODIFICATION": "Données modifiées",
+    "OPERATIONS": "Opérations concernées modifiées",
+    "MIGRATION_CIRCUIT": "Reprise dans le circuit en 4 étapes",
     "APPEL": "Appel enregistré",
     "DOCUMENT_AJOUT": "Pièce ajoutée",
     "DOCUMENT_RETRAIT": "Pièce retirée",
@@ -134,7 +150,7 @@ EVENEMENT_LIBELLES: dict[str, str] = {
     "DEMANDE_INFO": "Information demandée",
     "REPRISE": "Reprise du traitement",
     "SUSPENSION": "Dossier suspendu",
-    "REFUS": "Dossier refusé",
+    "REFUS": "Dossier rejeté",
     "ANNULATION": "Dossier annulé",
     "REPONSE_BROUILLON": "Brouillon de réponse enregistré",
     "REPONSE_SOUMISE": "Réponse soumise à validation",

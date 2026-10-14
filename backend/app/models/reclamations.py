@@ -40,22 +40,17 @@ DOMAINES_REFERENTIEL = ("TYPE", "MOTIF", "SOUS_MOTIF", "CANAL", "CANAL_REPONSE")
 TYPES_UNITE = ("DIRECTION", "DEPARTEMENT", "SERVICE", "AGENCE", "CELLULE")
 ROLES_MEMBRE = ("RESPONSABLE", "AGENT")
 STATUTS = (
-    "RECUE",
-    "RECUE_SR",
     "A_QUALIFIER",
-    "AFFECTEE",
+    "A_AFFECTER",
     "EN_TRAITEMENT",
-    "ATTENTE_INFO",
     "RETOUR_RECU",
-    "REPONSE_A_PREPARER",
-    "REPONSE_ENVOYEE",
-    "SUSPENDUE",
-    "REFUSEE",
+    "A_CLOTURER",
     "CLOTUREE",
-    "REOUVERTE",
+    "REJETEE",
     "ANNULEE",
+    "REOUVERTE",
 )
-ETAPES = ("RECEPTION", "QUALIFICATION", "AFFECTATION", "TRAITEMENT", "RETOUR", "REPONSE", "CLOTURE")
+ETAPES = ("RECEPTION", "AFFECTATION", "TRAITEMENT", "CLOTURE")
 PRIORITES = ("BASSE", "NORMALE", "HAUTE", "URGENTE")
 CATEGORIES_CLIENT = ("PP", "PM", "NON_CLIENT")
 RESULTATS = ("FAVORABLE", "PARTIELLEMENT_FAVORABLE", "DEFAVORABLE", "SANS_SUITE", "AUTRE")
@@ -223,8 +218,6 @@ class Reclamation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint(_in("statut", STATUTS), name="ck_reclamations_statut"),
         CheckConstraint(_in("etape", ETAPES), name="ck_reclamations_etape"),
         CheckConstraint(_in("priorite", PRIORITES), name="ck_reclamations_priorite"),
-        CheckConstraint(_in("statut_avant_suspension", STATUTS, nullable=True),
-                        name="ck_reclamations_statut_avant_suspension"),
         CheckConstraint(_in("client_categorie", CATEGORIES_CLIENT, nullable=True), name="ck_reclamations_client"),
         CheckConstraint(_in("resultat", RESULTATS, nullable=True), name="ck_reclamations_resultat"),
         CheckConstraint(_in("source", SOURCES), name="ck_reclamations_source"),
@@ -249,6 +242,8 @@ class Reclamation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     type_id: Mapped[uuid.UUID | None] = _ref_fk()
     motif_id: Mapped[uuid.UUID | None] = _ref_fk()
     sous_motif_id: Mapped[uuid.UUID | None] = _ref_fk()
+    motif_autre: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    sous_motif_autre: Mapped[str | None] = mapped_column(String(200), nullable=True)
     priorite: Mapped[str] = mapped_column(String(10), default="NORMALE", index=True)
     statut: Mapped[str] = mapped_column(String(30), index=True)
     etape: Mapped[str] = mapped_column(String(20), index=True)
@@ -256,6 +251,7 @@ class Reclamation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     canal_id: Mapped[uuid.UUID] = _ref_fk(nullable=False)
     unite_reception_id: Mapped[uuid.UUID | None] = _unite_fk()
+    unite_concernee_id: Mapped[uuid.UUID | None] = _unite_fk()
 
     client_racine: Mapped[str | None] = mapped_column(String(6), nullable=True, index=True)
     client_categorie: Mapped[str | None] = mapped_column(String(12), nullable=True)
@@ -277,6 +273,7 @@ class Reclamation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     doublon_de_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), _fk("reclamations.id", "SET NULL"), nullable=True, index=True)
 
+    date_reclamation: Mapped[date | None] = mapped_column(Date, nullable=True)
     date_premiere_reception: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     date_reception_sr: Mapped[datetime | None] = _ts()
     date_qualification: Mapped[datetime | None] = _ts()
@@ -455,6 +452,25 @@ class ReclamationAppel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     rappel_prevu_le: Mapped[datetime | None] = _ts()
     rappel_effectue_le: Mapped[datetime | None] = _ts()
     commentaire: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_id: Mapped[uuid.UUID | None] = _user_fk()
+
+
+class ReclamationOperation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Opération contestée (référence + montant) : une réclamation en porte 0..N."""
+
+    __tablename__ = "reclamation_operations"
+    __table_args__ = (
+        CheckConstraint("montant IS NULL OR montant > 0", name="ck_reclamation_operations_montant"),
+        CheckConstraint("length(btrim(reference)) > 0", name="ck_reclamation_operations_reference"),
+        UniqueConstraint("reclamation_id", "reference", name="uq_reclamation_operations_reference"),
+    )
+
+    reclamation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), _fk("reclamations.id", "CASCADE"), index=True)
+    ordre: Mapped[int] = mapped_column(Integer, default=1)
+    reference: Mapped[str] = mapped_column(String(120))
+    montant: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    devise: Mapped[str] = mapped_column(String(3), default="MRU")
     created_by_id: Mapped[uuid.UUID | None] = _user_fk()
 
 

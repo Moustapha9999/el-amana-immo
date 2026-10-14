@@ -38,10 +38,7 @@ CAPACITES: dict[str, str] = {
     "traiter": "reclamations.treat",
     "gerer_service": "reclamations.service.manage",
     "examiner_retour": "reclamations.review",
-    "rediger_reponse": "reclamations.response.prepare",
-    "valider_reponse": "reclamations.response.validate",
     "envoyer_reponse": "reclamations.response.send",
-    "suspendre": "reclamations.suspend",
     "refuser": "reclamations.reject",
     "annuler": "reclamations.cancel",
     "cloturer": "reclamations.close",
@@ -58,7 +55,6 @@ CAPACITES: dict[str, str] = {
     "unites_gerer": "reclamations.services.manage",
     "delais_gerer": "reclamations.delais.manage",
     "delais_valider": "reclamations.delais.validate",
-    "audit_voir": "reclamations.audit.view",
     "admin": "reclamations.admin",
 }
 

@@ -449,14 +449,13 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
     { section: 'Réclamations', label: 'Réclamations', path: '/reclamations/dossiers', icon: 'forum', exact: true, permissions: ['reclamations.view'] },
     { section: 'Réclamations', label: 'Nouvelle réclamation', path: '/reclamations/dossiers/nouvelle', icon: 'add_comment', permissions: ['reclamations.create'] },
     { section: 'Réclamations', label: 'Mes dossiers à traiter', path: '/reclamations/a-traiter', icon: 'assignment_ind', permissions: ['reclamations.treat'] },
-    { section: 'Réclamations', label: 'Circuit de traitement', path: '/reclamations/circuit', icon: 'account_tree', permissions: ['reclamations.view'] },
+    { section: 'Réclamations', label: 'Pipeline', path: '/reclamations/circuit', icon: 'account_tree', permissions: ['reclamations.view'] },
     { section: 'Suivi', label: 'Services & affectations', path: '/reclamations/services', icon: 'lan', permissions: ['reclamations.view'] },
     { section: 'Suivi', label: 'Délais & alertes', path: '/reclamations/delais', icon: 'timer', permissions: ['reclamations.view'] },
-    { section: 'Suivi', label: 'Réponses aux clients', path: '/reclamations/reponses', icon: 'outgoing_mail', permissions: ['reclamations.response.prepare', 'reclamations.response.validate', 'reclamations.response.send', 'reclamations.scope.all'] },
     { section: 'Documents & analyses', label: 'Archives & documents', path: '/reclamations/archives', icon: 'folder_open', permissions: ['reclamations.document.view'] },
     { section: 'Documents & analyses', label: 'Rapports & statistiques', path: '/reclamations/rapports', icon: 'assessment', permissions: ['reclamations.reporting.view'] },
     { section: 'Administration', label: 'Paramètres', path: '/reclamations/parametres', icon: 'tune', permissions: ['reclamations.references.view', 'reclamations.references.manage', 'reclamations.delais.manage', 'reclamations.services.manage'] },
-    { section: 'Administration', label: 'Admin', path: '/reclamations/admin', icon: 'admin_panel_settings', permissions: ['reclamations.audit.view', 'reclamations.admin'] },
+    { section: 'Administration', label: 'Admin', path: '/reclamations/admin', icon: 'admin_panel_settings', permissions: ['reclamations.admin'] },
   ],
   'archives-mg': [
     {

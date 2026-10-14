@@ -10,10 +10,11 @@ import { ReclamationsUiComponent } from '../reclamations-ui.component';
 import {
   Dossier,
   Evenement,
-  LigneAudit,
+  OperationSaisie,
   dateFr,
   depuisSaisieLocale,
   maintenantLocal,
+  montantFr,
   toneStatut,
   tonePriorite,
   versSaisieLocale,
@@ -21,45 +22,47 @@ import {
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
 import { RcPiecesComponent } from '../shared/rc-pieces.component';
 import { RcActionsComponent } from '../shared/rc-actions.component';
+import { CLASSEMENT_VIDE, Classement, RcClassementComponent, classementCorps, classementDe, classementErreur } from '../shared/rc-classement.component';
+import { RcOperationsComponent, operationsCorps, operationsErreur } from '../shared/rc-operations.component';
 
-type Onglet = 'general' | 'reception' | 'traitement' | 'chronologie' | 'documents' | 'reponse' | 'delais' | 'audit';
+type Onglet = 'general' | 'traitement' | 'documents' | 'chronologie';
 
 const ONGLETS: ReadonlyArray<{ code: Onglet; libelle: string; icone: string }> = [
   { code: 'general', libelle: 'Général', icone: 'info' },
-  { code: 'reception', libelle: 'Réception', icone: 'move_to_inbox' },
-  { code: 'traitement', libelle: 'Traitement', icone: 'engineering' },
-  { code: 'chronologie', libelle: 'Chronologie', icone: 'timeline' },
+  { code: 'traitement', libelle: 'Traitement & clôture', icone: 'engineering' },
   { code: 'documents', libelle: 'Documents', icone: 'folder' },
-  { code: 'reponse', libelle: 'Réponse client', icone: 'outgoing_mail' },
-  { code: 'delais', libelle: 'Délais', icone: 'schedule' },
-  { code: 'audit', libelle: 'Audit', icone: 'policy' },
+  { code: 'chronologie', libelle: 'Historique', icone: 'timeline' },
+];
+
+const ETAPES: ReadonlyArray<{ code: string; libelle: string; icone: string }> = [
+  { code: 'RECEPTION', libelle: 'Réception', icone: 'move_to_inbox' },
+  { code: 'AFFECTATION', libelle: 'Affectation', icone: 'send' },
+  { code: 'TRAITEMENT', libelle: 'Traitement', icone: 'engineering' },
+  { code: 'CLOTURE', libelle: 'Clôture', icone: 'task_alt' },
 ];
 
 const ICONES_EVENEMENT: Record<string, string> = {
-  CREATION: 'add_circle', RECEPTION_SR: 'move_to_inbox', MODIFICATION: 'edit', APPEL: 'call',
+  CREATION: 'add_circle', RECEPTION_SR: 'move_to_inbox', MODIFICATION: 'edit', APPEL: 'call', OPERATIONS: 'receipt_long',
   DOCUMENT_AJOUT: 'attach_file', DOCUMENT_RETRAIT: 'delete', QUALIFICATION: 'rule',
   AFFECTATION: 'send', PRISE_EN_CHARGE: 'play_arrow', RETOUR_SERVICE: 'assignment_return',
   EVALUATION: 'fact_check', RENVOI: 'replay', TRAITEMENT_INTERNE: 'home_repair_service',
   DEMANDE_INFO: 'help', REPRISE: 'replay', SUSPENSION: 'pause', REFUS: 'block',
   ANNULATION: 'content_copy', REPONSE_BROUILLON: 'edit_note', REPONSE_SOUMISE: 'forward_to_inbox',
   REPONSE_VALIDEE: 'verified', REPONSE_RENVOYEE: 'undo', REPONSE_ENVOYEE: 'outgoing_mail',
-  CLOTURE: 'task_alt', REOUVERTURE: 'lock_open', ARCHIVAGE: 'inventory_2',
+  CLOTURE: 'task_alt', REOUVERTURE: 'lock_open', ARCHIVAGE: 'inventory_2', MIGRATION_CIRCUIT: 'sync_alt',
 };
-
-const CARTE_MASQUEE = /^[0-9]{0,6}[\s*Xx•-]+[0-9]{0,4}$/;
 
 /** Champs facultatifs vidés à la correction : envoyés dans `effacer` (le PATCH ignore les valeurs nulles). */
 const EFFACABLES = [
-  'type_id', 'motif_id', 'sous_motif_id', 'client_racine', 'client_categorie', 'client_telephone', 'client_email',
-  'client_adresse', 'client_agence_id', 'compte_reference', 'carte_masquee', 'operation_reference', 'operation_date',
-  'montant_conteste', 'devise',
+  'client_racine', 'client_categorie', 'client_telephone', 'client_email', 'client_adresse', 'client_agence_id', 'unite_concernee_id',
 ] as const;
+const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id', 'sous_motif_autre'] as const;
 
 /** Fiche dossier. Le statut n'évolue que par les actions du circuit ; la correction de données est motivée et tracée. */
 @Component({
   selector: 'bea-rc-fiche',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MatIconModule, ReclamationsUiComponent, RcPiecesComponent, RcActionsComponent, FormsModule],
+  imports: [ReactiveFormsModule, FormsModule, RouterLink, MatIconModule, ReclamationsUiComponent, RcPiecesComponent, RcActionsComponent, RcClassementComponent, RcOperationsComponent],
   template: `
     <bea-rc-styles />
     <section class="bea-mg bea-ct bea-rc">
@@ -71,8 +74,8 @@ const EFFACABLES = [
             <p class="bea-ct-head__sub">{{ d.objet }}{{ d.client_nom ? ' — ' + d.client_nom : '' }}</p>
             <div class="bea-rc-fiche__badges">
               <span class="bea-ct-badge" [attr.data-tone]="toneStatut(d.statut)">{{ d.statut_libelle }}</span>
-              <span class="bea-ct-badge" data-tone="INFO">Étape : {{ d.etape_libelle }}</span>
               <span class="bea-ct-badge" [attr.data-tone]="tonePriorite(d.priorite)">{{ d.priorite_libelle }}</span>
+              @if (d.nb_operations) { <span class="bea-ct-badge" data-tone="INFO">{{ d.nb_operations }} opération{{ d.nb_operations > 1 ? 's' : '' }} · {{ montant(d.montant_total) }}</span> }
               @if (d.en_retard) { <span class="bea-ct-badge" data-tone="URGENT">En retard</span> }
               @if (d.archivee_le) { <span class="bea-ct-badge" data-tone="ANNULEE">Archivée</span> }
             </div>
@@ -85,14 +88,25 @@ const EFFACABLES = [
             }
           </div>
         </header>
+
+        <ol class="bea-rc-pipe" aria-label="Avancement du dossier">
+          @for (e of etapes; track e.code; let i = $index) {
+            <li [class.is-done]="i < etapeIndex() || (i === etapeIndex() && d.statut === 'CLOTUREE')"
+                [class.is-on]="i === etapeIndex() && d.statut !== 'CLOTUREE'"
+                [class.is-stop]="interrompu() && i > etapeIndex()"
+                [attr.aria-current]="i === etapeIndex() ? 'step' : null">
+              <mat-icon>{{ i < etapeIndex() || d.statut === 'CLOTUREE' ? 'check_circle' : e.icone }}</mat-icon> {{ e.libelle }}
+            </li>
+          }
+        </ol>
+
         @if (!edition()) { <bea-rc-actions [dossier]="d" (modifie)="applique($event)" /> }
 
         <nav class="bea-ct-tabs" aria-label="Sections du dossier">
-          @for (o of onglets(); track o.code) {
+          @for (o of onglets; track o.code) {
             <button type="button" [class.is-on]="onglet() === o.code" (click)="choisir(o.code)">
               <mat-icon>{{ o.icone }}</mat-icon> {{ o.libelle }}
               @if (o.code === 'documents') { <small>{{ nbDocuments() }}</small> }
-              @if (o.code === 'reception' && d.appels.length) { <small>{{ d.appels.length }}</small> }
             </button>
           }
         </nav>
@@ -108,34 +122,34 @@ const EFFACABLES = [
                       <span>Chaque correction est tracée (valeurs avant / après, auteur, date). La correction d’une date de réception exige un motif.</span>
                     </div>
                     <div class="bea-rc-row">
-                      <label>Objet <em>*</em><input formControlName="objet" maxlength="255" [class.is-invalid]="invalide('objet')" /></label>
+                      <label>Date de la réclamation <em>*</em><input type="date" formControlName="date_reclamation" [max]="aujourdhui" [class.is-invalid]="invalide('date_reclamation')" /></label>
+                      <label>Réception par la banque <em>*</em><input type="datetime-local" formControlName="date_premiere_reception" [max]="maintenant" /></label>
+                      @if (d.date_reception_sr) {
+                        <label>Réception par le Service Réclamations<input type="datetime-local" formControlName="date_reception_sr" [max]="maintenant" /></label>
+                      }
+                    </div>
+                    <div class="bea-rc-row">
+                      <label>Agence concernée
+                        <select formControlName="client_agence_id">
+                          <option value="">—</option>
+                          @for (a of store.config()?.agences ?? []; track a.id) { <option [value]="a.id">{{ a.code }} — {{ a.libelle }}</option> }
+                        </select>
+                      </label>
+                      <label>Service concerné
+                        <select formControlName="unite_concernee_id">
+                          <option value="">— À déterminer —</option>
+                          @for (u of servicesConcernes(); track u.id) { <option [value]="u.id">{{ u.libelle }}</option> }
+                        </select>
+                      </label>
                       <label>Priorité
                         <select formControlName="priorite">
                           @for (p of store.libelles('priorites'); track p.code) { <option [value]="p.code">{{ p.libelle }}</option> }
                         </select>
                       </label>
                     </div>
+                    <bea-rc-classement [(valeur)]="classement" [tente]="tente()" />
+                    <label>Objet <em>*</em><input formControlName="objet" maxlength="255" [class.is-invalid]="invalide('objet')" /></label>
                     <label>Description <em>*</em><textarea formControlName="description" rows="5" maxlength="20000" [class.is-invalid]="invalide('description')"></textarea></label>
-                    <div class="bea-rc-row">
-                      <label>Type
-                        <select formControlName="type_id">
-                          <option value="">— À qualifier —</option>
-                          @for (t of store.refs('TYPE'); track t.id) { <option [value]="t.id">{{ t.libelle }}</option> }
-                        </select>
-                      </label>
-                      <label>Motif
-                        <select formControlName="motif_id">
-                          <option value="">—</option>
-                          @for (m of motifs(); track m.id) { <option [value]="m.id">{{ m.libelle }}</option> }
-                        </select>
-                      </label>
-                      <label>Sous-motif
-                        <select formControlName="sous_motif_id">
-                          <option value="">—</option>
-                          @for (m of sousMotifs(); track m.id) { <option [value]="m.id">{{ m.libelle }}</option> }
-                        </select>
-                      </label>
-                    </div>
                     <div class="bea-rc-row">
                       <label>Racine client <input formControlName="client_racine" maxlength="6" inputmode="numeric" [class.is-invalid]="invalide('client_racine')" /></label>
                       <label>Catégorie
@@ -149,33 +163,8 @@ const EFFACABLES = [
                     <div class="bea-rc-row">
                       <label>Téléphone <input formControlName="client_telephone" maxlength="40" /></label>
                       <label>E-mail <input type="email" formControlName="client_email" maxlength="255" /></label>
-                      <label>Agence du client
-                        <select formControlName="client_agence_id">
-                          <option value="">—</option>
-                          @for (a of store.config()?.agences ?? []; track a.id) { <option [value]="a.id">{{ a.code }} — {{ a.libelle }}</option> }
-                        </select>
-                      </label>
                     </div>
                     <label>Adresse <textarea formControlName="client_adresse" rows="2" maxlength="2000"></textarea></label>
-                    <div class="bea-rc-row">
-                      <label>Compte concerné <input formControlName="compte_reference" maxlength="60" /></label>
-                      <label>Carte (masquée)
-                        <input formControlName="carte_masquee" maxlength="25" [class.is-invalid]="invalide('carte_masquee')" />
-                        @if (invalide('carte_masquee')) { <span class="bea-rc-err">Au plus les 6 premiers et 4 derniers chiffres</span> }
-                      </label>
-                      <label>Référence de l’opération <input formControlName="operation_reference" maxlength="120" /></label>
-                    </div>
-                    <div class="bea-rc-row">
-                      <label>Date de l’opération <input type="date" formControlName="operation_date" /></label>
-                      <label>Montant contesté <input type="number" min="0" step="0.01" formControlName="montant_conteste" /></label>
-                      <label>Devise <input formControlName="devise" maxlength="3" /></label>
-                    </div>
-                    <div class="bea-rc-row">
-                      <label>Première réception <em>*</em><input type="datetime-local" formControlName="date_premiere_reception" [max]="maintenant" /></label>
-                      @if (d.date_reception_sr) {
-                        <label>Réception par le Service Réclamations<input type="datetime-local" formControlName="date_reception_sr" [max]="maintenant" /></label>
-                      }
-                    </div>
                     <label>Motif de la correction @if (dateModifiee()) { <em>*</em> }
                       <textarea formControlName="motif" rows="2" maxlength="4000" [class.is-invalid]="dateModifiee() && tente() && !form.controls.motif.value.trim()"
                                 placeholder="Obligatoire si une date de réception est corrigée"></textarea>
@@ -197,10 +186,10 @@ const EFFACABLES = [
                   <dl class="bea-rc-dl">
                     <dt>Objet</dt><dd>{{ d.objet }}</dd>
                     <dt>Type</dt><dd>{{ d.type_ref?.libelle ?? 'À qualifier' }}</dd>
-                    <dt>Motif</dt><dd>{{ d.motif_ref?.libelle ?? '—' }}</dd>
-                    <dt>Sous-motif</dt><dd>{{ d.sous_motif_ref?.libelle ?? '—' }}</dd>
-                    <dt>Canal</dt><dd>{{ d.canal_ref?.libelle ?? '—' }}</dd>
-                    <dt>Source</dt><dd>{{ d.source }}</dd>
+                    <dt>Motif</dt><dd>{{ d.motif ?? '—' }}</dd>
+                    <dt>Sous-motif</dt><dd>{{ d.sous_motif ?? '—' }}</dd>
+                    <dt>Service concerné</dt><dd>{{ d.unite_concernee_ref?.libelle ?? 'À déterminer' }}</dd>
+                    <dt>Agence concernée</dt><dd>{{ d.client.agence ? d.client.agence.code + ' — ' + d.client.agence.libelle : '—' }}</dd>
                     @if (d.reclamation_liee) {
                       <dt>Réclamation liée</dt><dd><a [routerLink]="['/reclamations/dossiers', d.reclamation_liee.id]">{{ d.reclamation_liee.reference }}</a></dd>
                     }
@@ -210,25 +199,28 @@ const EFFACABLES = [
                   </dl>
                 </section>
                 <section class="bea-mg__panel">
-                  <div class="bea-mg__panel-top"><h2>Réclamant</h2></div>
+                  <div class="bea-mg__panel-top"><h2>Réception</h2></div>
+                  <dl class="bea-rc-dl">
+                    <dt>Date de la réclamation</dt><dd>{{ date(d.date_reclamation) }}</dd>
+                    <dt>Reçue par la banque</dt><dd>{{ date(d.date_premiere_reception, true) }}</dd>
+                    <dt>Reçue par le SR</dt><dd>{{ d.date_reception_sr ? date(d.date_reception_sr, true) : '—' }}</dd>
+                    <dt>Canal</dt><dd>{{ d.canal_ref?.libelle ?? '—' }}</dd>
+                    <dt>Point de réception</dt><dd>{{ d.unite_reception_ref?.libelle ?? '—' }}</dd>
+                    <dt>Échéance</dt>
+                    <dd [class.bea-rc-late]="d.en_retard">{{ d.echeance ? date(d.echeance) + (d.en_retard ? ' — dépassée' : '') : 'Aucune règle de délai applicable' }}</dd>
+                  </dl>
+                </section>
+                <section class="bea-mg__panel">
+                  <div class="bea-mg__panel-top"><h2>Client</h2></div>
                   <dl class="bea-rc-dl">
                     <dt>Nom</dt><dd>{{ d.client.nom ?? '—' }}</dd>
                     <dt>Racine ORION</dt><dd>{{ d.client.racine ?? 'Non-client / non renseignée' }}</dd>
                     <dt>Catégorie</dt><dd>{{ d.client.categorie_libelle ?? '—' }}</dd>
                     <dt>Téléphone</dt><dd>{{ d.client.telephone ?? '—' }}</dd>
                     <dt>E-mail</dt><dd>{{ d.client.email ?? '—' }}</dd>
-                    <dt>Agence</dt><dd>{{ d.client.agence ? d.client.agence.code + ' — ' + d.client.agence.libelle : '—' }}</dd>
                     <dt>Adresse</dt><dd>{{ d.client.adresse ?? '—' }}</dd>
-                  </dl>
-                </section>
-                <section class="bea-mg__panel">
-                  <div class="bea-mg__panel-top"><h2>Compte et opération</h2></div>
-                  <dl class="bea-rc-dl">
-                    <dt>Compte</dt><dd>{{ d.operation.compte_reference ?? '—' }}</dd>
-                    <dt>Carte</dt><dd>{{ d.operation.carte_masquee ?? '—' }}</dd>
-                    <dt>Référence</dt><dd>{{ d.operation.reference ?? '—' }}</dd>
-                    <dt>Date</dt><dd>{{ date(d.operation.date) }}</dd>
-                    <dt>Montant contesté</dt><dd>{{ d.operation.montant_conteste ? d.operation.montant_conteste + ' ' + (d.operation.devise ?? '') : '—' }}</dd>
+                    @if (d.compte_reference) { <dt>Compte</dt><dd>{{ d.compte_reference }}</dd> }
+                    @if (d.carte_masquee) { <dt>Carte</dt><dd>{{ d.carte_masquee }}</dd> }
                   </dl>
                 </section>
               </div>
@@ -236,70 +228,87 @@ const EFFACABLES = [
                 <div class="bea-mg__panel-top"><h2>Description</h2></div>
                 <p class="bea-rc-text">{{ d.description }}</p>
               </section>
+
+              <section class="bea-mg__panel">
+                <div class="bea-mg__panel-top">
+                  <h2>Opérations concernées</h2>
+                  @if (d.actions['modifier_operations'] && !editionOps()) {
+                    <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="ouvrirOperations()"><mat-icon>edit</mat-icon> Modifier les opérations</button>
+                  }
+                </div>
+                @if (editionOps()) {
+                  <div class="bea-rc-form">
+                    <bea-rc-operations [(lignes)]="operations" [tente]="tenteOps()" />
+                    <label>Motif de la modification
+                      <textarea [(ngModel)]="motifOps" name="motif_ops" rows="2" maxlength="4000" placeholder="Facultatif — conservé dans l’historique"></textarea>
+                    </label>
+                    <span class="bea-mg__actions">
+                      <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="editionOps.set(false)">Annuler</button>
+                      <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()" (click)="enregistrerOperations()"><mat-icon>save</mat-icon> Enregistrer les opérations</button>
+                    </span>
+                  </div>
+                } @else if (d.operations.length) {
+                  <div class="bea-mg__table-wrap">
+                    <table class="bea-mg__table bea-rc-ops">
+                      <thead><tr><th class="bea-rc-ops__n">N°</th><th>Référence</th><th class="bea-rc-ops__m">Montant</th></tr></thead>
+                      <tbody>
+                        @for (o of d.operations; track o.id; let i = $index) {
+                          <tr><td class="bea-rc-ops__n">{{ i + 1 }}</td><td>{{ o.reference }}</td><td class="bea-rc-ops__m">{{ montant(o.montant, o.devise) }}</td></tr>
+                        }
+                      </tbody>
+                      <tfoot>
+                        <tr><td colspan="2"><strong>{{ d.nb_operations }} opération{{ d.nb_operations > 1 ? 's' : '' }}</strong></td><td class="bea-rc-ops__m"><strong>{{ montant(d.montant_total, d.devise) }}</strong></td></tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                } @else {
+                  <p class="bea-rc-pad bea-rc-muted">Aucune opération rattachée.</p>
+                }
+              </section>
+
+              <section class="bea-mg__panel">
+                <div class="bea-mg__panel-top">
+                  <h2>Appels téléphoniques</h2>
+                  @if (d.actions['ajouter_appel']) {
+                    <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="ouvrirAppel()"><mat-icon>add_call</mat-icon> Ajouter un appel</button>
+                  }
+                </div>
+                @if (d.appels.length) {
+                  <div class="bea-mg__table-wrap">
+                    <table class="bea-mg__table">
+                      <thead><tr><th>Date</th><th>Numéro</th><th>Agent</th><th>Identité</th><th>Référence</th><th>Rappel</th><th>Notes</th></tr></thead>
+                      <tbody>
+                        @for (a of d.appels; track a.id) {
+                          <tr>
+                            <td>{{ date(a.appel_le, true) }}</td>
+                            <td>{{ a.numero_appelant ?? '—' }}</td>
+                            <td>{{ a.agent ?? '—' }}</td>
+                            <td>{{ a.identite_verifiee ? 'Vérifiée' + (a.mode_verification ? ' (' + a.mode_verification + ')' : '') : 'Non vérifiée' }}</td>
+                            <td>{{ a.reference_appel ?? '—' }}{{ a.reference_enregistrement ? ' · enr. ' + a.reference_enregistrement : '' }}</td>
+                            <td>{{ a.rappel_statut_libelle }}{{ a.rappel_prevu_le ? ' — ' + date(a.rappel_prevu_le, true) : '' }}</td>
+                            <td>{{ a.commentaire ?? '' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                } @else {
+                  <p class="bea-rc-pad bea-rc-muted">Aucun appel enregistré.</p>
+                }
+              </section>
               <p class="bea-rc-hint">Créée le {{ date(d.created_at, true) }}{{ d.cree_par ? ' par ' + d.cree_par : '' }}{{ d.modifie_par ? ' · dernière modification par ' + d.modifie_par : '' }} · révision {{ d.revision }}</p>
             }
-          }
-
-          @case ('reception') {
-            <div class="bea-rc-grid">
-              <section class="bea-mg__panel">
-                <div class="bea-mg__panel-top"><h2>Dates de réception</h2></div>
-                <dl class="bea-rc-dl">
-                  <dt>Première réception</dt><dd>{{ date(d.date_premiere_reception, true) }}</dd>
-                  <dt>Réception par le SR</dt><dd>{{ d.date_reception_sr ? date(d.date_reception_sr, true) : 'Pas encore reçue par le Service Réclamations' }}</dd>
-                  <dt>Saisie dans BEA DIGITAL</dt><dd>{{ date(d.created_at, true) }}</dd>
-                </dl>
-              </section>
-              <section class="bea-mg__panel">
-                <div class="bea-mg__panel-top"><h2>Point de réception</h2></div>
-                <dl class="bea-rc-dl">
-                  <dt>Unité</dt><dd>{{ d.unite_reception_ref?.libelle ?? '—' }}</dd>
-                  <dt>Canal</dt><dd>{{ d.canal_ref?.libelle ?? '—' }}</dd>
-                  <dt>Enregistrée par</dt><dd>{{ d.cree_par ?? '—' }}</dd>
-                </dl>
-              </section>
-            </div>
-            <section class="bea-mg__panel">
-              <div class="bea-mg__panel-top">
-                <h2>Appels téléphoniques</h2>
-                @if (d.actions['ajouter_appel']) {
-                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="ouvrirAppel()"><mat-icon>add_call</mat-icon> Ajouter un appel</button>
-                }
-              </div>
-              @if (d.appels.length) {
-                <div class="bea-mg__table-wrap">
-                  <table class="bea-mg__table">
-                    <thead><tr><th>Date</th><th>Numéro</th><th>Agent</th><th>Identité</th><th>Référence</th><th>Rappel</th><th>Notes</th></tr></thead>
-                    <tbody>
-                      @for (a of d.appels; track a.id) {
-                        <tr>
-                          <td>{{ date(a.appel_le, true) }}</td>
-                          <td>{{ a.numero_appelant ?? '—' }}</td>
-                          <td>{{ a.agent ?? '—' }}</td>
-                          <td>{{ a.identite_verifiee ? 'Vérifiée' + (a.mode_verification ? ' (' + a.mode_verification + ')' : '') : 'Non vérifiée' }}</td>
-                          <td>{{ a.reference_appel ?? '—' }}{{ a.reference_enregistrement ? ' · enr. ' + a.reference_enregistrement : '' }}</td>
-                          <td>{{ a.rappel_statut_libelle }}{{ a.rappel_prevu_le ? ' — ' + date(a.rappel_prevu_le, true) : '' }}</td>
-                          <td>{{ a.commentaire ?? '' }}</td>
-                        </tr>
-                      }
-                    </tbody>
-                  </table>
-                </div>
-              } @else {
-                <p class="bea-rc-pad bea-rc-muted">Aucun appel enregistré.</p>
-              }
-            </section>
           }
 
           @case ('traitement') {
             <section class="bea-mg__panel">
               <div class="bea-mg__panel-top"><h2>Pilotage</h2></div>
               <dl class="bea-rc-dl">
-                <dt>Unité de suivi</dt><dd>{{ d.unite_suivi_ref?.libelle ?? '—' }}</dd>
                 <dt>Gestionnaire SR</dt><dd>{{ d.gestionnaire ?? 'Non désigné' }}</dd>
                 <dt>Service de traitement</dt><dd>{{ d.unite_traitement_ref?.libelle ?? 'Non affectée' }}</dd>
                 <dt>Responsable du traitement</dt><dd>{{ d.responsable_traitement ?? '—' }}</dd>
                 <dt>Renvois au service</dt><dd>{{ d.nb_renvois }}</dd>
+                @if (d.nb_reouvertures) { <dt>Réouvertures</dt><dd>{{ d.nb_reouvertures }}</dd> }
               </dl>
             </section>
             @for (a of d.affectations; track a.id) {
@@ -311,15 +320,49 @@ const EFFACABLES = [
                   <dt>Transmise</dt><dd>{{ date(a.transmis_le, true) }}{{ a.transmis_par ? ' par ' + a.transmis_par : '' }}</dd>
                   <dt>Instructions</dt><dd>{{ a.instructions ?? '—' }}</dd>
                   <dt>Échéance service</dt><dd>{{ date(a.echeance_service, true) }}</dd>
-                  <dt>Prise en charge</dt><dd>{{ date(a.recu_le, true) }}{{ a.recu_par ? ' par ' + a.recu_par : '' }}</dd>
                   <dt>Analyse</dt><dd>{{ a.analyse ?? '—' }}</dd>
+                  <dt>Actions menées</dt><dd>{{ a.actions_menees ?? '—' }}</dd>
                   <dt>Conclusion</dt><dd>{{ a.conclusion ?? '—' }}</dd>
                   <dt>Décision proposée</dt><dd>{{ a.decision_proposee_libelle ?? '—' }}</dd>
+                  <dt>Retour</dt><dd>{{ date(a.retour_le, true) }}{{ a.retour_par ? ' par ' + a.retour_par : '' }}</dd>
                   <dt>Évaluation SR</dt><dd>{{ a.evaluation_libelle ?? '—' }} {{ a.evaluation_commentaire ?? '' }}</dd>
                 </dl>
               </section>
             } @empty {
               <p class="bea-rc-pad bea-rc-muted">Aucune transmission à un service pour l’instant.</p>
+            }
+            <section class="bea-mg__panel">
+              <div class="bea-mg__panel-top"><h2>Réponse envoyée au client</h2>
+                @if (d.reponse_courante; as p) { <span class="bea-ct-badge" data-tone="INFO">{{ p.statut_libelle }}</span> }
+              </div>
+              @if (d.reponse_courante; as p) {
+                <dl class="bea-rc-dl">
+                  <dt>Envoyée le</dt><dd>{{ date(p.envoye_le, true) }}{{ p.envoye_par ? ' par ' + p.envoye_par : '' }}</dd>
+                  <dt>Canal</dt><dd>{{ p.canal_envoi ?? '—' }}</dd>
+                  <dt>Destinataire</dt><dd>{{ p.destinataire ?? '—' }}</dd>
+                  <dt>Référence d’envoi</dt><dd>{{ p.reference_envoi ?? '—' }}</dd>
+                  <dt>Objet</dt><dd>{{ p.objet ?? '—' }}</dd>
+                  <dt>Résultat</dt><dd>{{ p.resultat_libelle ?? '—' }}</dd>
+                  <dt>Preuve d’envoi</dt><dd>{{ d.preuve_envoi ? 'Jointe (onglet Documents)' : 'Non jointe' }}</dd>
+                </dl>
+                <p class="bea-rc-text">{{ p.contenu }}</p>
+              } @else {
+                <p class="bea-rc-pad bea-rc-muted">Aucune réponse enregistrée. Elle s’enregistre une fois le dossier « À clôturer » (retour du service jugé suffisant ou traitement interne).</p>
+              }
+            </section>
+            @if (d.date_cloture || d.motif_refus || d.motif_annulation) {
+              <section class="bea-mg__panel">
+                <div class="bea-mg__panel-top"><h2>Issue du dossier</h2></div>
+                <dl class="bea-rc-dl">
+                  @if (d.date_cloture) {
+                    <dt>Clôturée le</dt><dd>{{ date(d.date_cloture, true) }}{{ d.cloture_par ? ' par ' + d.cloture_par : '' }}</dd>
+                    <dt>Résultat</dt><dd>{{ d.resultat_libelle ?? '—' }}</dd>
+                    <dt>Motif de résolution</dt><dd>{{ d.motif_resolution ?? '—' }}</dd>
+                  }
+                  @if (d.motif_refus) { <dt>Motif du rejet</dt><dd>{{ d.motif_refus }}</dd> }
+                  @if (d.motif_annulation) { <dt>Motif d’annulation</dt><dd>{{ d.motif_annulation }}</dd> }
+                </dl>
+              </section>
             }
           }
 
@@ -332,7 +375,7 @@ const EFFACABLES = [
                       <span class="bea-ct-timeline__dot" [class.bea-ct-timeline__dot--sm]="e.type !== 'CREATION'"><mat-icon>{{ icone(e.type) }}</mat-icon></span>
                       <div class="bea-ct-timeline__body">
                         <p><strong>{{ e.libelle }}</strong>
-                          @if (e.statut_apres && e.statut_apres !== e.statut_avant) { <span class="bea-ct-badge" [attr.data-tone]="toneStatut(e.statut_apres)">{{ libelleStatut(e.statut_apres) }}</span> }
+                          @if (e.statut_apres && e.statut_apres !== e.statut_avant) { <span class="bea-ct-badge" [attr.data-tone]="toneStatut(e.code_statut_apres ?? '')">{{ e.statut_apres }}</span> }
                         </p>
                         <p class="bea-ct-timeline__meta">
                           {{ date(e.date_effet, true) }}{{ e.auteur ? ' · ' + e.auteur : '' }}{{ e.unite ? ' · ' + e.unite : '' }}
@@ -347,7 +390,7 @@ const EFFACABLES = [
                   }
                 </ol>
               } @else {
-                <p class="bea-rc-muted">Chargement de la chronologie…</p>
+                <p class="bea-rc-muted">Chargement de l’historique…</p>
               }
             </section>
           }
@@ -358,94 +401,6 @@ const EFFACABLES = [
                 <bea-rc-pieces [dossierId]="d.id" [reference]="d.reference" (modifie)="piecesModifiees($event)" />
               } @else {
                 <p class="bea-rc-muted">Vous n’avez pas accès aux pièces de ce dossier.</p>
-              }
-            </section>
-          }
-
-          @case ('reponse') {
-            @if (d.actions['rediger_reponse']) {
-              <section class="bea-mg__panel">
-                <div class="bea-mg__panel-top"><h2>{{ d.reponse_courante ? 'Modifier le brouillon' : 'Rédiger la réponse' }}</h2></div>
-                <form class="bea-rc-form" (ngSubmit)="sauverReponse()">
-                  <label>Objet <input [(ngModel)]="brouillon.objet" name="objet_reponse" maxlength="255" /></label>
-                  <label>Texte <em>*</em><textarea [(ngModel)]="brouillon.contenu" name="contenu_reponse" rows="6"></textarea></label>
-                  <label>Résultat proposé
-                    <select [(ngModel)]="brouillon.resultat" name="resultat_reponse">
-                      <option value="">—</option>
-                      @for (r of store.libelles('resultats'); track r.code) { <option [value]="r.code">{{ r.libelle }}</option> }
-                    </select>
-                  </label>
-                  <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()"><mat-icon>save</mat-icon> Enregistrer le brouillon</button>
-                </form>
-              </section>
-            }
-            @if (d.reponse_courante; as p) {
-              <section class="bea-mg__panel">
-                <div class="bea-mg__panel-top"><h2>Réponse {{ p.numero }}</h2>
-                  <span class="bea-ct-badge" data-tone="INFO">{{ p.statut_libelle }}</span>
-                </div>
-                <dl class="bea-rc-dl">
-                  <dt>Objet</dt><dd>{{ p.objet ?? '—' }}</dd>
-                  <dt>Résultat</dt><dd>{{ p.resultat_libelle ?? '—' }}</dd>
-                  <dt>Rédigée par</dt><dd>{{ p.redige_par ?? '—' }}</dd>
-                  <dt>Validée par</dt><dd>{{ p.valide_par ?? '—' }} {{ date(p.valide_le, true) }}</dd>
-                  <dt>Envoyée le</dt><dd>{{ date(p.envoye_le, true) }} {{ p.canal_envoi ?? '' }}</dd>
-                  <dt>Destinataire</dt><dd>{{ p.destinataire ?? '—' }}</dd>
-                </dl>
-                <p class="bea-rc-text">{{ p.contenu }}</p>
-              </section>
-            } @else if (!d.actions['rediger_reponse']) {
-              <p class="bea-rc-pad bea-rc-muted">Aucune réponse rédigée. Elle se prépare après un retour de service suffisant, ou un traitement interne au SR.</p>
-            }
-            @if (d.statut === 'REPONSE_ENVOYEE' && !d.preuve_envoi) {
-              <div class="bea-rc-note bea-rc-note--warn"><mat-icon>warning</mat-icon>
-                <span>Joignez la preuve d’envoi dans l’onglet Documents (catégorie « Preuve d’envoi ») avant de clôturer.</span>
-              </div>
-            }
-          }
-
-          @case ('delais') {
-            <section class="bea-mg__panel">
-              <div class="bea-mg__panel-top"><h2>Délais</h2></div>
-              @if (d.echeance) {
-                <dl class="bea-rc-dl">
-                  <dt>Échéance</dt><dd [class.bea-rc-late]="d.en_retard">{{ date(d.echeance) }}{{ d.en_retard ? ' — dépassée' : '' }}</dd>
-                  <dt>Échéance initiale</dt><dd>{{ date(d.echeance_initiale) }}</dd>
-                </dl>
-              } @else {
-                <p class="bea-rc-pad bea-rc-muted">Aucune règle de délai n’est configurée pour ce dossier : aucune échéance n’est calculée.</p>
-              }
-            </section>
-            <div class="bea-rc-note"><mat-icon>gavel</mat-icon>
-              <span>Les délais sont des paramètres internes de la banque. Aucun délai réglementaire n’est appliqué tant que la Conformité ne l’a pas validé.</span>
-            </div>
-          }
-
-          @case ('audit') {
-            <section class="bea-mg__panel">
-              <div class="bea-mg__panel-top"><h2>Journal d’audit</h2></div>
-              @if (audit(); as lignes) {
-                <div class="bea-mg__table-wrap">
-                  <table class="bea-mg__table">
-                    <thead><tr><th>Date</th><th>Action</th><th>Utilisateur</th><th>Avant</th><th>Après</th><th>Requête</th></tr></thead>
-                    <tbody>
-                      @for (l of lignes; track l.id) {
-                        <tr>
-                          <td>{{ date(l.date, true) }}</td>
-                          <td><code>{{ l.action }}</code></td>
-                          <td>{{ l.utilisateur ?? '—' }}</td>
-                          <td>@if (l.avant) { <pre class="bea-rc-json">{{ json(l.avant) }}</pre> }</td>
-                          <td>@if (l.apres) { <pre class="bea-rc-json">{{ json(l.apres) }}</pre> }</td>
-                          <td><small>{{ l.request_id ?? '' }}</small></td>
-                        </tr>
-                      } @empty {
-                        <tr><td colspan="6" class="bea-rc-muted">Aucune entrée.</td></tr>
-                      }
-                    </tbody>
-                  </table>
-                </div>
-              } @else {
-                <p class="bea-rc-pad bea-rc-muted">Chargement du journal…</p>
               }
             </section>
           }
@@ -513,31 +468,35 @@ export class RcFicheComponent implements OnInit {
 
   readonly toneStatut = toneStatut;
   readonly tonePriorite = tonePriorite;
+  readonly onglets = ONGLETS;
+  readonly etapes = ETAPES;
   readonly maintenant = maintenantLocal();
+  readonly aujourdhui = maintenantLocal().slice(0, 10);
 
   readonly dossier = signal<Dossier | null>(null);
   readonly introuvable = signal(false);
   readonly chargement = signal(false);
   readonly onglet = signal<Onglet>('general');
   readonly evenements = signal<Evenement[] | null>(null);
-  readonly audit = signal<LigneAudit[] | null>(null);
   readonly nbDocuments = signal(0);
   readonly edition = signal(false);
+  readonly editionOps = signal(false);
   readonly appelOuvert = signal(false);
   readonly busy = signal(false);
   readonly tente = signal(false);
-  private readonly typeId = signal('');
-  private readonly motifId = signal('');
+  readonly tenteOps = signal(false);
+  readonly classement = signal<Classement>({ ...CLASSEMENT_VIDE });
+  readonly operations = signal<OperationSaisie[]>([]);
+  motifOps = '';
   private readonly premiere = signal('');
   private readonly receptionSr = signal('');
   private id = '';
   private initial = '';
+  private initialOps = '';
 
-  brouillon = { objet: '', contenu: '', resultat: '' };
-
-  readonly onglets = computed(() => ONGLETS.filter((o) => o.code !== 'audit' || !!this.dossier()?.actions['audit_voir']));
-  readonly motifs = computed(() => this.store.enfants('MOTIF', this.typeId()));
-  readonly sousMotifs = computed(() => this.store.enfants('SOUS_MOTIF', this.motifId()));
+  readonly etapeIndex = computed(() => ETAPES.findIndex((e) => e.code === this.dossier()?.etape));
+  readonly interrompu = computed(() => ['REJETEE', 'ANNULEE'].includes(this.dossier()?.statut ?? ''));
+  readonly servicesConcernes = computed(() => this.store.unitesActives().filter((u) => !u.est_service_reclamations));
   readonly dateModifiee = computed(() => {
     const d = this.dossier();
     if (!d) return false;
@@ -549,9 +508,8 @@ export class RcFicheComponent implements OnInit {
     objet: ['', Validators.required],
     description: ['', Validators.required],
     priorite: ['NORMALE'],
-    type_id: [''],
-    motif_id: [''],
-    sous_motif_id: [''],
+    date_reclamation: ['', Validators.required],
+    unite_concernee_id: [''],
     client_racine: ['', Validators.pattern(/^[0-9]{6}$/)],
     client_categorie: [''],
     client_nom: ['', Validators.required],
@@ -559,12 +517,6 @@ export class RcFicheComponent implements OnInit {
     client_email: [''],
     client_agence_id: [''],
     client_adresse: [''],
-    compte_reference: [''],
-    carte_masquee: ['', Validators.pattern(CARTE_MASQUEE)],
-    operation_reference: [''],
-    operation_date: [''],
-    montant_conteste: [null as number | null],
-    devise: [''],
     date_premiere_reception: ['', Validators.required],
     date_reception_sr: [''],
     motif: [''],
@@ -582,26 +534,24 @@ export class RcFicheComponent implements OnInit {
     commentaire: [''],
   });
 
-  readonly hasUnsavedChanges = unsavedChanges(() =>
-    !this.busy() && ((this.edition() && JSON.stringify(this.form.getRawValue()) !== this.initial) || (this.appelOuvert() && this.appel.dirty)));
+  readonly hasUnsavedChanges = unsavedChanges(() => !this.busy() && (
+    (this.edition() && this.instantane() !== this.initial)
+    || (this.editionOps() && JSON.stringify(this.operations()) !== this.initialOps)
+    || (this.appelOuvert() && this.appel.dirty)));
+
+  private instantane(): string {
+    return JSON.stringify([this.form.getRawValue(), this.classement()]);
+  }
 
   ngOnInit(): void {
     this.store.charger();
     const c = this.form.controls;
-    c.type_id.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => {
-      this.typeId.set(v);
-      if (!this.store.enfants('MOTIF', v).some((m) => m.id === c.motif_id.value)) c.motif_id.setValue('');
-    });
-    c.motif_id.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => {
-      this.motifId.set(v);
-      if (!this.store.enfants('SOUS_MOTIF', v).some((m) => m.id === c.sous_motif_id.value)) c.sous_motif_id.setValue('');
-    });
     c.date_premiere_reception.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.premiere.set(v));
     c.date_reception_sr.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.receptionSr.set(v));
 
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((q) => {
-      const o = q.get('onglet') as Onglet | null;
-      this.onglet.set(o && ONGLETS.some((x) => x.code === o) ? o : 'general');
+      const o = q.get('onglet');
+      this.onglet.set(ONGLETS.find((x) => x.code === o)?.code ?? 'general');
       this.chargerOnglet();
     });
     this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((p) => {
@@ -609,8 +559,8 @@ export class RcFicheComponent implements OnInit {
       this.dossier.set(null);
       this.introuvable.set(false);
       this.edition.set(false);
+      this.editionOps.set(false);
       this.evenements.set(null);
-      this.audit.set(null);
       this.recharger();
     });
   }
@@ -619,21 +569,23 @@ export class RcFicheComponent implements OnInit {
     return dateFr(iso, heure);
   }
 
-  json(v: unknown): string {
-    return JSON.stringify(v, null, 1);
+  montant(v: string | null | undefined, devise = 'MRU'): string {
+    return montantFr(v, devise);
   }
 
   icone(type: string): string {
     return ICONES_EVENEMENT[type] ?? 'radio_button_checked';
   }
 
-  libelleStatut(code: string): string {
-    return this.store.libelles('statuts').find((s) => s.code === code)?.libelle ?? code;
-  }
-
   detailEvenement(e: Evenement): string | null {
     const d = e.donnees ?? {};
+    if (e.type === 'OPERATIONS') {
+      const av = d['avant'] as { nb: number; total: string } | undefined;
+      const ap = d['apres'] as { nb: number; total: string } | undefined;
+      if (av && ap) return `Opérations : ${av.nb} (${montantFr(av.total)}) → ${ap.nb} (${montantFr(ap.total)})`;
+    }
     if (Array.isArray(d['champs'])) return `Champs : ${(d['champs'] as string[]).join(', ')}`;
+    if (Array.isArray(d['operations'])) return `${(d['operations'] as unknown[]).length} opération(s) saisie(s)`;
     if (typeof d['fichier'] === 'string') return `${d['fichier']}${d['categorie'] ? ' (' + d['categorie'] + ')' : ''}`;
     if (typeof d['numero'] === 'string') return `Numéro : ${d['numero']}`;
     if (typeof d['canal'] === 'string') return `Canal : ${d['canal']}`;
@@ -646,14 +598,7 @@ export class RcFicheComponent implements OnInit {
     this.rc.lire(this.id).subscribe({
       next: (d) => {
         this.chargement.set(false);
-        this.dossier.set(d);
-        this.nbDocuments.set(d.nb_documents);
-        if (this.onglet() === 'audit' && !d.actions['audit_voir']) this.choisir('general');
-        const p = d.reponse_courante;
-        this.brouillon = { objet: p?.objet ?? d.objet, contenu: p?.contenu ?? '', resultat: p?.resultat ?? '' };
-        this.evenements.set(null);
-        this.audit.set(null);
-        this.chargerOnglet();
+        this.applique(d);
       },
       error: (e) => {
         this.chargement.set(false);
@@ -671,58 +616,68 @@ export class RcFicheComponent implements OnInit {
 
   private chargerOnglet(): void {
     const d = this.dossier();
-    if (!d) return;
-    if (this.onglet() === 'chronologie' && !this.evenements()) {
-      this.rc.chronologie(d.id).subscribe({
-        next: (ev) => this.evenements.set(ev),
-        error: (e) => void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Chronologie indisponible')),
-      });
-    }
-    if (this.onglet() === 'audit' && !this.audit() && d.actions['audit_voir']) {
-      this.rc.audit(d.id).subscribe({
-        next: (l) => this.audit.set(l),
-        error: (e) => void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Journal indisponible')),
-      });
-    }
+    if (!d || this.onglet() !== 'chronologie' || this.evenements()) return;
+    this.rc.chronologie(d.id).subscribe({
+      next: (ev) => this.evenements.set(ev),
+      error: (e) => void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Historique indisponible')),
+    });
   }
 
   applique(d: Dossier): void {
     this.dossier.set(d);
     this.nbDocuments.set(d.nb_documents);
     this.evenements.set(null);
-    this.audit.set(null);
-    const p = d.reponse_courante;
-    this.brouillon = { objet: p?.objet ?? d.objet, contenu: p?.contenu ?? '', resultat: p?.resultat ?? '' };
     this.chargerOnglet();
-  }
-
-  sauverReponse(): void {
-    const d = this.dossier();
-    if (!d || !this.brouillon.contenu.trim()) {
-      this.feedback.warning({ title: 'Texte obligatoire', message: 'Rédigez le texte de la réponse.' });
-      return;
-    }
-    this.feedback
-      .run(() => this.rc.enregistrerReponse(d.id, {
-        revision: d.revision, objet: this.brouillon.objet.trim() || d.objet,
-        contenu: this.brouillon.contenu.trim(), resultat: this.brouillon.resultat || null,
-      }), {
-        busy: this.busy, loading: 'Enregistrement du brouillon…',
-        success: () => ({ title: 'Brouillon enregistré', details: [{ label: 'Référence', value: d.reference }] }),
-        errorTitle: 'Enregistrement refusé', retry: false,
-      })
-      .subscribe((r) => this.applique(r));
   }
 
   piecesModifiees(n: number): void {
     this.nbDocuments.set(n);
     this.evenements.set(null);
-    this.audit.set(null);
   }
 
-  invalide(nom: 'objet' | 'description' | 'client_nom' | 'client_racine' | 'carte_masquee'): boolean {
+  invalide(nom: 'objet' | 'description' | 'client_nom' | 'client_racine' | 'date_reclamation'): boolean {
     const ctl = this.form.controls[nom];
     return ctl.invalid && (ctl.touched || this.tente());
+  }
+
+  ouvrirOperations(): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.operations.set(d.operations.map((o) => ({ reference: o.reference, montant: o.montant ? o.montant.replace('.', ',') : '' })));
+    this.initialOps = JSON.stringify(this.operations());
+    this.motifOps = '';
+    this.tenteOps.set(false);
+    this.editionOps.set(true);
+  }
+
+  enregistrerOperations(): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.tenteOps.set(true);
+    const erreur = operationsErreur(this.operations());
+    if (erreur) {
+      this.feedback.warning({ title: 'Opérations à corriger', message: erreur });
+      return;
+    }
+    const corps = { revision: d.revision, operations: operationsCorps(this.operations()), motif: this.motifOps.trim() || null };
+    this.feedback
+      .run(() => this.rc.remplacerOperations(d.id, corps), {
+        busy: this.busy,
+        loading: 'Enregistrement des opérations…',
+        success: (r) => r.revision === d.revision
+          ? { title: 'Aucune modification', message: 'La liste des opérations était déjà à jour.' }
+          : { title: 'Opérations enregistrées', details: [
+            { label: 'Opérations', value: String(r.nb_operations) },
+            { label: 'Montant total', value: montantFr(r.montant_total, r.devise) },
+          ] },
+        errorTitle: 'Enregistrement refusé',
+        errorHint: 'Vos saisies ont été conservées.',
+        retry: false,
+      })
+      .subscribe((r) => {
+        this.editionOps.set(false);
+        this.applique(r);
+      });
   }
 
   ouvrirEdition(): void {
@@ -731,22 +686,19 @@ export class RcFicheComponent implements OnInit {
     this.tente.set(false);
     this.form.reset({
       objet: d.objet, description: d.description, priorite: d.priorite,
-      type_id: d.type_ref?.id ?? '', motif_id: d.motif_ref?.id ?? '', sous_motif_id: d.sous_motif_ref?.id ?? '',
+      date_reclamation: d.date_reclamation ?? d.date_premiere_reception.slice(0, 10),
+      unite_concernee_id: d.unite_concernee_ref?.id ?? '',
       client_racine: d.client.racine ?? '', client_categorie: d.client.categorie ?? '', client_nom: d.client.nom ?? '',
       client_telephone: d.client.telephone ?? '', client_email: d.client.email ?? '',
       client_agence_id: d.client.agence?.id ?? '', client_adresse: d.client.adresse ?? '',
-      compte_reference: d.operation.compte_reference ?? '', carte_masquee: d.operation.carte_masquee ?? '',
-      operation_reference: d.operation.reference ?? '', operation_date: d.operation.date ?? '',
-      montant_conteste: d.operation.montant_conteste != null ? Number(d.operation.montant_conteste) : null,
-      devise: d.operation.devise ?? '',
       date_premiere_reception: versSaisieLocale(d.date_premiere_reception),
       date_reception_sr: versSaisieLocale(d.date_reception_sr), motif: '',
     });
-    this.typeId.set(this.form.controls.type_id.value);
-    this.motifId.set(this.form.controls.motif_id.value);
+    this.classement.set(classementDe(d));
     this.premiere.set(this.form.controls.date_premiere_reception.value);
     this.receptionSr.set(this.form.controls.date_reception_sr.value);
-    this.initial = JSON.stringify(this.form.getRawValue());
+    this.initial = this.instantane();
+    this.editionOps.set(false);
     this.edition.set(true);
     this.choisir('general');
   }
@@ -761,8 +713,9 @@ export class RcFicheComponent implements OnInit {
     this.tente.set(true);
     this.form.markAllAsTouched();
     const v = this.form.getRawValue();
-    if (this.form.invalid) {
-      this.feedback.warning({ title: 'Champs à corriger', message: 'Vérifiez les champs signalés en rouge.' });
+    const erreur = this.form.invalid ? 'Vérifiez les champs signalés en rouge.' : classementErreur(this.classement());
+    if (erreur) {
+      this.feedback.warning({ title: 'Champs à corriger', message: erreur });
       return;
     }
     if (this.dateModifiee() && !v.motif.trim()) {
@@ -771,20 +724,25 @@ export class RcFicheComponent implements OnInit {
     }
     const premiere = depuisSaisieLocale(v.date_premiere_reception);
     if (!premiere) {
-      this.feedback.warning({ title: 'Date invalide', message: 'Renseignez la date de première réception.' });
+      this.feedback.warning({ title: 'Date invalide', message: 'Renseignez la date de réception par la banque.' });
       return;
     }
     const corps: Record<string, unknown> = {
       revision: d.revision, objet: v.objet.trim(), description: v.description.trim(), priorite: v.priorite,
-      client_nom: v.client_nom.trim(), date_premiere_reception: premiere, motif: v.motif.trim() || null,
+      client_nom: v.client_nom.trim(), date_reclamation: v.date_reclamation, date_premiere_reception: premiere,
+      motif: v.motif.trim() || null,
     };
     if (d.date_reception_sr && v.date_reception_sr) corps['date_reception_sr'] = depuisSaisieLocale(v.date_reception_sr);
     const effacer: string[] = [];
     for (const champ of EFFACABLES) {
-      const brut = v[champ];
-      const valeur = typeof brut === 'string' ? brut.trim() : brut;
-      if (valeur === '' || valeur === null) effacer.push(champ);
-      else corps[champ] = champ === 'devise' ? String(valeur).toUpperCase() : valeur;
+      const valeur = v[champ].trim();
+      if (valeur) corps[champ] = valeur;
+      else effacer.push(champ);
+    }
+    const cl = classementCorps(this.classement());
+    for (const champ of NIVEAUX_CLASSEMENT) {
+      if (cl[champ]) corps[champ] = cl[champ];
+      else effacer.push(champ);
     }
     corps['effacer'] = effacer;
     this.feedback
@@ -799,10 +757,8 @@ export class RcFicheComponent implements OnInit {
         retry: false,
       })
       .subscribe((r) => {
-        this.dossier.set(r);
         this.edition.set(false);
-        this.evenements.set(null);
-        this.audit.set(null);
+        this.applique(r);
       });
   }
 
@@ -841,10 +797,8 @@ export class RcFicheComponent implements OnInit {
         retry: false,
       })
       .subscribe((r) => {
-        this.dossier.set(r);
         this.appelOuvert.set(false);
-        this.evenements.set(null);
-        this.audit.set(null);
+        this.applique(r);
       });
   }
 }

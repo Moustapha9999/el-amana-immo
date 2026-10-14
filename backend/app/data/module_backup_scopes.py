@@ -306,6 +306,7 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
             "reclamation_unite_membres",
             "reclamation_regles_delai",
             "reclamations",
+            "reclamation_operations",
             "reclamation_affectations",
             "reclamation_reponses",
             "reclamation_documents",

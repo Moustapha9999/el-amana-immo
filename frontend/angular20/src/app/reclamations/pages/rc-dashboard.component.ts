@@ -1,10 +1,10 @@
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
-import { TableauBord, dateFr, telechargerBlob, tonePriorite, toneStatut } from '../reclamations.models';
+import { Compteur, TableauBord, dateFr, montantFr, telechargerBlob, tonePriorite, toneStatut } from '../reclamations.models';
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
 
 /** Tableau de bord 360° : volumes, retards et files du périmètre, sans donnée inventée. */
@@ -45,7 +45,7 @@ import { ReclamationsService, ReclamationsStore } from '../reclamations.service'
           </a>
           <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="{ ouvertes: 'true' }">
             <mat-icon>pending_actions</mat-icon><p>Ouvertes</p><strong>{{ d.ouvertes }}</strong>
-            <small>hors clôturées / refusées / annulées</small>
+            <small>hors clôturées / rejetées / annulées</small>
           </a>
           <a class="bea-rc-kpi" data-tone="danger" routerLink="/reclamations/dossiers" [queryParams]="{ en_retard: 'true' }">
             <mat-icon>timer_off</mat-icon><p>En retard</p><strong>{{ d.retards }}</strong>
@@ -59,15 +59,23 @@ import { ReclamationsService, ReclamationsStore } from '../reclamations.service'
             <mat-icon>calendar_month</mat-icon><p>Reçues 30 j</p><strong>{{ d.volume_30j }}</strong>
             <small>{{ d.cloturees_30j }} clôturée(s) sur la période</small>
           </div>
+          <div class="bea-rc-kpi">
+            <mat-icon>receipt_long</mat-icon><p>Opérations concernées</p><strong>{{ d.nb_operations }}</strong>
+            <small>dans {{ d.dossiers_avec_operations }} dossier(s)</small>
+          </div>
+          <div class="bea-rc-kpi">
+            <mat-icon>payments</mat-icon><p>Montant total</p><strong>{{ montant(d.montant_total, d.devise) }}</strong>
+            <small>somme des opérations, chacune comptée une fois</small>
+          </div>
         </div>
 
         <div class="bea-rc-grid">
           <section class="bea-mg__panel">
-            <div class="bea-mg__panel-top"><h2>Par statut simplifié</h2></div>
+            <div class="bea-mg__panel-top"><h2>Par statut</h2></div>
             <ul class="bea-rc-bars">
-              @for (g of d.groupes; track g.code) {
+              @for (g of d.statuts; track g.code) {
                 <li>
-                  <a [routerLink]="['/reclamations/dossiers']" [queryParams]="{ groupe: g.code }">{{ g.libelle }}</a>
+                  <a [routerLink]="['/reclamations/dossiers']" [queryParams]="{ statut: g.code }">{{ g.libelle }}</a>
                   <span class="bea-rc-bars__n">{{ g.n }}</span>
                 </li>
               }
@@ -95,6 +103,32 @@ import { ReclamationsService, ReclamationsStore } from '../reclamations.service'
               }
             </ul>
           </section>
+        </div>
+
+        <div class="bea-rc-grid">
+          @for (r of repartitions(); track r.titre) {
+            <section class="bea-mg__panel">
+              <div class="bea-mg__panel-top"><h2>{{ r.titre }}</h2><small class="bea-rc-hint">dossiers · opérations · montant</small></div>
+              @if (r.items.length) {
+                <ul class="bea-rc-bars">
+                  @for (c of r.items; track c.id) {
+                    <li>
+                      @if (r.param && c.id !== 'None') {
+                        <a [routerLink]="['/reclamations/dossiers']" [queryParams]="filtre(r.param, c)">{{ c.libelle }}</a>
+                      } @else {
+                        <span>{{ c.libelle === '—' ? 'Non renseigné' : c.libelle }}</span>
+                      }
+                      <span><span class="bea-rc-bars__n">{{ c.n }}</span>
+                        @if (c.nb_operations) { <small class="bea-rc-hint"> · {{ c.nb_operations }} op. · {{ montant(c.montant ?? null, d.devise) }}</small> }
+                      </span>
+                    </li>
+                  }
+                </ul>
+              } @else {
+                <p class="bea-rc-pad bea-rc-muted">Aucune donnée.</p>
+              }
+            </section>
+          }
         </div>
 
         <div class="bea-rc-grid">
@@ -183,6 +217,25 @@ export class RcDashboardComponent implements OnInit {
         errorTitle: 'Export refusé', retry: false,
       })
       .subscribe((b) => telechargerBlob(b, `reclamations-${new Date().toISOString().slice(0, 10)}.xlsx`));
+  }
+
+  readonly repartitions = computed(() => {
+    const d = this.data();
+    if (!d) return [];
+    return [
+      { titre: 'Par motif', items: d.motifs, param: 'motif_id' },
+      { titre: 'Par canal', items: d.canaux, param: 'canal_id' },
+      { titre: 'Par agence', items: d.agences, param: 'client_agence_id' },
+      { titre: 'Par service', items: d.services, param: '' },
+    ];
+  });
+
+  filtre(param: string, c: Compteur): Record<string, string> {
+    return { [param]: c.id ?? '' };
+  }
+
+  montant(v: string | null, devise: string): string {
+    return montantFr(v, devise);
   }
 
   date(iso: string | null): string {

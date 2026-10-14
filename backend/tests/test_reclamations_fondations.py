@@ -155,7 +155,7 @@ async def _reclamation(db: AsyncSession, auteur: User, **champs) -> Reclamation:
         ReclamationReferentiel.domaine == "CANAL", ReclamationReferentiel.code == "EMAIL"))
     numero = int(uuid.uuid4().int % 900_000) + 100_000
     r = Reclamation(reference=f"REC-1999-{numero}", annee=1999, numero=numero, objet="Test",
-                    description="Dossier de test", statut="RECUE", etape="RECEPTION", canal_id=canal,
+                    description="Dossier de test", statut="A_QUALIFIER", etape="RECEPTION", canal_id=canal,
                     date_premiere_reception=datetime.now(UTC) - timedelta(days=2), created_by_id=auteur.id,
                     **champs)
     db.add(r)
@@ -192,7 +192,7 @@ async def test_dates_incoherentes_refusees(db: AsyncSession):
 async def test_chronologie_en_ajout_seul(db: AsyncSession):
     auteur = await _user(db)
     r = await _reclamation(db, auteur)
-    ev = ReclamationEvenement(reclamation_id=r.id, type_evenement="CREATION", statut_apres="RECUE",
+    ev = ReclamationEvenement(reclamation_id=r.id, type_evenement="CREATION", statut_apres="A_QUALIFIER",
                               etape_apres="RECEPTION", date_effet=r.date_premiere_reception, auteur_id=auteur.id)
     db.add(ev)
     await db.flush()

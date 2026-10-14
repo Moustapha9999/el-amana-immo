@@ -227,15 +227,6 @@ async def appliquer(db: AsyncSession, r: Reclamation, *, forcer: bool = False) -
         r.echeance_initiale = echeance
 
 
-async def decaler_apres_suspension(db: AsyncSession, r: Reclamation) -> None:
-    if not r.echeance or not r.date_suspension:
-        return
-    regle = await db.get(ReclamationRegleDelai, r.regle_delai_id) if r.regle_delai_id else None
-    if regle and not regle.neutraliser_suspension:
-        return
-    r.echeance = r.echeance + (maintenant() - r.date_suspension)
-
-
 async def echeance_service(db: AsyncSession, r: Reclamation, transmis_le: datetime) -> datetime | None:
     if not r.regle_delai_id:
         return None

@@ -342,7 +342,7 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'circuit', loadComponent: rcCircuit, data: { title: 'Circuit de traitement' } },
       { path: 'services', loadComponent: rcDossiers, data: { title: 'Services & affectations', vue: 'services' } },
       { path: 'delais', loadComponent: rcDelais, data: { title: 'Délais & alertes' } },
-      { path: 'reponses', loadComponent: rcDossiers, data: { title: 'Réponses aux clients', vue: 'reponses' } },
+      { path: 'reponses', redirectTo: 'dossiers', pathMatch: 'full' },
       { path: 'archives', loadComponent: rcDossiers, data: { title: 'Archives & documents', vue: 'archives' } },
       { path: 'rapports', loadComponent: rcRapports, data: { title: 'Rapports & statistiques' } },
       { path: 'parametres', loadComponent: rcParametres, data: { title: 'Paramètres' } },

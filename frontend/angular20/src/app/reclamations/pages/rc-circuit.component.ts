@@ -4,10 +4,10 @@ import { RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
-import { ColonneCircuit, dateFr, tonePriorite, toneStatut } from '../reclamations.models';
+import { ColonneCircuit, dateFr, montantFr, tonePriorite, toneStatut } from '../reclamations.models';
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
 
-/** Vue kanban du circuit : dossiers ouverts hors archives, une colonne par étape. */
+/** Pipeline : dossiers ouverts hors archives, une colonne par étape (Réception → Affectation → Traitement → Clôture). */
 @Component({
   selector: 'bea-rc-circuit',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -18,7 +18,7 @@ import { ReclamationsService, ReclamationsStore } from '../reclamations.service'
       <header class="bea-mg__head">
         <div>
           <p class="bea-stock-page__kicker">Management & Qualité · Réclamations</p>
-          <h1>Circuit de traitement</h1>
+          <h1>Pipeline des réclamations</h1>
           <p class="bea-ct-head__sub">{{ total() }} dossier{{ total() > 1 ? 's' : '' }} ouvert{{ total() > 1 ? 's' : '' }} dans votre périmètre, hors archives.</p>
         </div>
         <div class="bea-mg__actions">
@@ -45,10 +45,11 @@ import { ReclamationsService, ReclamationsStore } from '../reclamations.service'
                     <a [routerLink]="['/reclamations/dossiers', d.id]">
                       <strong>{{ d.reference }}</strong>
                       <span>{{ d.objet }}</span>
-                      <small>{{ d.client_nom || '—' }} · {{ date(d.date_premiere_reception) }}</small>
+                      <small>{{ d.client_nom || '—' }} · {{ date(d.date_reclamation ?? d.date_premiere_reception) }}</small>
+                      @if (d.nb_operations) { <small>{{ d.nb_operations }} opération{{ d.nb_operations > 1 ? 's' : '' }} · {{ montant(d.montant_total, d.devise) }}</small> }
                       <span class="bea-rc-kanban__badges">
                         <span class="bea-ct-badge" [attr.data-tone]="toneStatut(d.statut)">{{ d.statut_libelle }}</span>
-                        <span class="bea-ct-badge" [attr.data-tone]="tonePriorite(d.priorite)">{{ d.priorite_libelle }}</span>
+                        @if (d.priorite !== 'NORMALE') { <span class="bea-ct-badge" [attr.data-tone]="tonePriorite(d.priorite)">{{ d.priorite_libelle }}</span> }
                         @if (d.en_retard) { <span class="bea-ct-badge" data-tone="URGENT">Retard</span> }
                       </span>
                     </a>
@@ -98,5 +99,9 @@ export class RcCircuitComponent implements OnInit {
 
   date(iso: string | null): string {
     return dateFr(iso);
+  }
+
+  montant(v: string | null, devise: string): string {
+    return montantFr(v, devise);
   }
 }
