@@ -21,7 +21,6 @@ from app.models import Reclamation, ReclamationAffectation, ReclamationDocument,
 from app.services.reclamations import constantes as C
 from app.services.reclamations import suppression
 from app.services.reclamations.acces import ReclamationsScope
-from app.services.reclamations.delais import actualiser, appliquer, echeance_service
 from app.services.reclamations.dossiers import (
     Contexte,
     _evenement,
@@ -73,7 +72,6 @@ async def _appliquer(db: AsyncSession, s: ReclamationsScope, r: Reclamation, *,
     r.statut, r.etape = statut, C.ETAPE_DU_STATUT[statut]
     r.revision += 1
     r.updated_by_id = s.user_id
-    await actualiser(db, r)
     ev = _evenement(r, s, type_evenement, statut_avant=avant_s, etape_avant=avant_e,
                     unite_id=unite_id, commentaire=commentaire, donnees=donnees or {})
     ev.affectation_id = affectation_id
@@ -125,7 +123,6 @@ def _aff_dict(a: ReclamationAffectation, ctx: Contexte, noms: dict) -> dict:
         "emetteur": (ctx.unite(a.unite_emettrice_id) or {}).get("libelle"),
         "transmis_le": iso(a.transmis_le), "transmis_par": noms.get(a.transmis_par_id),
         "motif_transfert": a.motif_transfert, "instructions": a.instructions,
-        "echeance_service": iso(a.echeance_service),
         "recu_le": iso(a.recu_le), "recu_par": noms.get(a.recu_par_id),
         "responsable": noms.get(a.responsable_id),
         "analyse": a.analyse, "actions_menees": a.actions_menees, "conclusion": a.conclusion,
@@ -239,7 +236,6 @@ async def qualifier(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data
     _prise_en_compte_sr(r, ctx)
     r.gestionnaire_id = r.gestionnaire_id or s.user_id
     r.date_qualification = maintenant()
-    await appliquer(db, r, forcer=True)
     await _appliquer(db, s, r, statut="A_AFFECTER", type_evenement="QUALIFICATION",
                      commentaire=texte_long(data.get("motif")),
                      donnees={"type": ctx.lib(classement["type_id"]),
@@ -267,7 +263,6 @@ async def _nouvelle_affectation(db: AsyncSession, s: ReclamationsScope, r: Recla
         motif_transfert=texte_long(data.get("motif_transfert") or data.get("motif")),
         instructions=texte_long(data.get("instructions")),
         responsable_id=data.get("responsable_id"),
-        echeance_service=await echeance_service(db, r, now),
     )
     db.add(a)
     await db.flush()

@@ -33,11 +33,9 @@ from app.models import (
     ReclamationOperation,
     ReclamationParametre,
     ReclamationReferentiel,
-    ReclamationRegleDelai,
     ReclamationUnite,
 )
 from app.services.reclamations import constantes as C
-from app.services.reclamations import echeances as E
 from app.services.reclamations import operations as ops
 from app.services.reclamations.acces import ReclamationsScope
 from app.services.reclamations.outils import (
@@ -61,7 +59,6 @@ TRI_COLONNES = {
     "date_reclamation": (Reclamation.date_reclamation,),
     "date_premiere_reception": (Reclamation.date_premiere_reception,),
     "date_reception_sr": (Reclamation.date_reception_sr,),
-    "echeance": (Reclamation.echeance,),
     "statut": (Reclamation.statut,),
     "client_nom": (Reclamation.client_nom,),
     "updated_at": (Reclamation.updated_at,),
@@ -152,20 +149,6 @@ def _statut(r: Reclamation) -> dict:
     }
 
 
-def en_retard(r: Reclamation, now: datetime | None = None) -> bool:
-    return E.situation(r, now or maintenant()) == "EN_RETARD"
-
-
-def _delai(r: Reclamation, now: datetime | None = None) -> dict:
-    etat = E.etat_dossier(r)
-    sit = E.situation(r, now or maintenant())
-    return {
-        "etat_delai": etat, "etat_delai_libelle": C.ETAT_DELAI_LIBELLES.get(etat),
-        "situation_delai": sit, "situation_delai_libelle": C.SITUATION_DELAI_LIBELLES.get(sit),
-        "date_fin_delai": iso(r.date_fin_delai),
-    }
-
-
 def libelle_motif(ctx: Contexte, r: Reclamation) -> str | None:
     return f"{C.AUTRE} : {r.motif_autre}" if r.motif_autre else ctx.lib(r.motif_id)
 
@@ -190,8 +173,7 @@ def ligne(r: Reclamation, ctx: Contexte, nb_documents: int = 0,
         "agence": (ctx.agence(r.client_agence_id) or {}).get("libelle"),
         "date_reclamation": iso(r.date_reclamation),
         "date_premiere_reception": iso(r.date_premiere_reception), "date_reception_sr": iso(r.date_reception_sr),
-        "date_cloture": iso(r.date_cloture), "echeance": iso(r.echeance), "en_retard": en_retard(r),
-        **_delai(r),
+        "date_cloture": iso(r.date_cloture),
         "nb_operations": nb_operations, "montant_total": ops.montant_str(montant_total), "devise": C.DEVISE,
         "nb_documents": nb_documents, "revision": r.revision, "updated_at": iso(r.updated_at),
         "supprimee_le": iso(r.supprimee_le), "motif_suppression": r.motif_suppression,
@@ -231,19 +213,6 @@ def _appel_dict(a: ReclamationAppel, noms: dict[uuid.UUID, str]) -> dict:
         "rappel_prevu_le": iso(a.rappel_prevu_le), "rappel_effectue_le": iso(a.rappel_effectue_le),
         "commentaire": a.commentaire,
     }
-
-
-async def _regle_resume(db: AsyncSession, r: Reclamation) -> dict | None:
-    if not r.regle_delai_id:
-        return None
-    g = await db.get(ReclamationRegleDelai, r.regle_delai_id)
-    if g is None:
-        return None
-    return {"id": str(g.id), "libelle": g.libelle, "duree": g.duree, "unite_duree": g.unite_duree,
-            "unite_duree_libelle": C.UNITE_DUREE_LIBELLES.get(g.unite_duree),
-            "point_depart_libelle": C.POINT_DEPART_LIBELLES.get(g.point_depart),
-            "point_arrivee_libelle": C.POINT_ARRIVEE_LIBELLES.get(g.point_arrivee),
-            "validee": g.statut_validation == "VALIDEE"}
 
 
 async def detail(db: AsyncSession, s: ReclamationsScope, r: Reclamation, ctx: Contexte | None = None) -> dict:
@@ -286,8 +255,6 @@ async def detail(db: AsyncSession, s: ReclamationsScope, r: Reclamation, ctx: Co
             "date_premiere_reception", "date_reception_sr", "date_qualification", "date_transmission",
             "date_reception_service", "date_retour_service", "date_reponse_client", "date_cloture",
             "date_reouverture")},
-        "echeance_initiale": iso(r.echeance_initiale), "regle_delai_id": str(r.regle_delai_id) if r.regle_delai_id else None,
-        "date_alerte": iso(r.date_alerte), "regle_delai": await _regle_resume(db, r),
         "gestionnaire": noms.get(r.gestionnaire_id) if r.gestionnaire_id else None,
         "responsable_traitement": noms.get(r.responsable_traitement_id) if r.responsable_traitement_id else None,
         "motif_refus": r.motif_refus, "motif_annulation": r.motif_annulation,
@@ -351,16 +318,6 @@ def _filtres(q, f: dict[str, Any]):
             f["date_fin"] + timedelta(days=1), datetime.min.time()).astimezone())
     if f.get("ouvertes"):
         q = q.where(Reclamation.statut.not_in(C.STATUTS_TERMINAUX))
-    now = maintenant()
-    if f.get("en_retard"):
-        q = q.where(E.sql_situation("EN_RETARD", now))
-    if f.get("situation_delai") in E.SITUATIONS:
-        q = q.where(E.sql_situation(f["situation_delai"], now))
-    if f.get("etat_delai") in C.ETAT_DELAI_LIBELLES:
-        etat = f["etat_delai"]
-        q = q.where(E.sql_calcule() if etat == "CALCULE" else Reclamation.etat_delai == etat)
-    if f.get("sans_echeance"):
-        q = q.where(Reclamation.echeance.is_(None), Reclamation.statut.not_in(C.STATUTS_TERMINAUX))
     if f.get("archivees") is True:
         q = q.where(Reclamation.archivee_le.is_not(None))
     elif f.get("archivees") is False:
@@ -717,8 +674,6 @@ async def creer(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
         db.add(_evenement(r, s, "APPEL", date_effet=a.appel_le, donnees={"numero": a.numero_appelant,
                                                                          "rappel": a.rappel_statut}))
     await db.flush()
-    from app.services.reclamations.delais import appliquer
-    await appliquer(db, r)
     await auditer(db, s, "reclamations.dossier.create", C.GED_ENTITE, r.id, after={
         "reference": r.reference, "statut": r.statut, "canal": canal.libelle, "objet": r.objet,
         "unite_reception": ctx.unite(unite_reception_id)["libelle"], "date_reclamation": iso(date_reclamation),

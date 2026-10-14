@@ -1,12 +1,10 @@
 # ruff: noqa: F811
-"""Réclamations — finalisation : délais centralisés, indicateurs, comparaison, référentiels, permissions.
+"""Réclamations — finalisation : indicateurs, comparaison, référentiels, permissions.
 
-Recette 1–13 du prompt de finalisation (transaction annulée, aucune donnée laissée en base) :
-1. cycle de vie d'une règle ; 2. règle en attente jamais réglementaire, conflits, sélection ;
-3. quatre délais (événements présents / absents / incohérents) ; 4. échéance proche, retard, alertes
-sans doublon ; 5. réouverture (simple et multiple) ; 6. performance des services ; 7. filtre agence ;
-8. KPI cliquables = listes ; 9. comparaison A/B ; 10. KPI = exports ; 11. opérations multiples sans
-double comptage ; 12. permissions retirées ; 13. vérification « Marketing et communication ».
+Recette (transaction annulée, aucune donnée laissée en base) : quatre délais mesurés (événements
+présents / absents / incohérents) ; réouverture (simple et multiple) ; performance des services ;
+filtre agence ; KPI cliquables = listes ; comparaison A/B ; KPI = exports ; opérations multiples sans
+double comptage ; permissions retirées (dont « Délais & alertes ») ; « Marketing et communication ».
 """
 
 from __future__ import annotations
@@ -20,13 +18,12 @@ from io import BytesIO
 import pytest
 from fastapi import HTTPException
 from openpyxl import load_workbook
-from sqlalchemy import func, select, text
+from sqlalchemy import select, text
 
 from app.core.exceptions import AppError
 from app.data.plateforme_catalogue import FUNCTIONAL_PERMISSIONS
-from app.models import Agence, Notification, Reclamation, ReclamationEvenement, ReclamationRegleDelai, ReclamationUnite
-from app.services.reclamations import circuit, delais, dossiers, indicateurs, organisation, reporting
-from app.services.reclamations import echeances as E
+from app.models import Agence, Reclamation, ReclamationEvenement, ReclamationUnite
+from app.services.reclamations import circuit, dossiers, indicateurs, organisation, reporting
 from app.services.reclamations.acces import ReclamationsScope, permissions_effectives
 from tests.test_reclamations_circuit import _agent_service, _ops, _refus
 from tests.test_reclamations_dossiers import _agent, _classement, _saisie, _sr
@@ -36,7 +33,7 @@ NOW = datetime.now(UTC)
 AUJOURDHUI = NOW.date()
 PERIODE = {"kpi_debut": AUJOURDHUI - timedelta(days=30), "kpi_fin": AUJOURDHUI}
 RETIREES = {"reclamations.suspend", "reclamations.response.prepare", "reclamations.response.validate",
-            "reclamations.audit.view"}
+            "reclamations.audit.view", "reclamations.delais.manage", "reclamations.delais.validate"}
 
 
 def _marqueur() -> str:
@@ -48,152 +45,8 @@ async def _dossier(db, sr, unite, marqueur: str, **extra) -> Reclamation:
     return await dossiers.charger(db, sr, uuid.UUID(d["id"]))
 
 
-async def _regle(db, sr, type_id, *, valider: bool = True, **extra) -> dict:
-    data = {"libelle": f"Règle {uuid.uuid4().hex[:5]}", "type_id": type_id, "duree": 10,
-            "date_effet": date(2020, 1, 1), **extra}
-    g = await delais.creer_regle(db, sr, data)
-    if valider:
-        g = await delais.valider_regle(db, sr, uuid.UUID(g["id"]), {"statut_validation": "VALIDEE"})
-    return g
-
-
 async def _total(db, s, **f) -> int:
     return (await dossiers.lister(db, s, f, taille=100))["total"]
-
-
-# ---------------------------------------------------------------- 1. cycle de vie
-async def test_regle_creer_modifier_activer_valider_versionner(db):
-    sr = await _sr(db)
-    unite = await _unite(db)
-    t, _m, _ = await _classement(db, sr)
-    tid = uuid.UUID(t["id"])
-    g = await _regle(db, sr, tid, valider=False, seuil_alerte=2, destinataires=["SR", "GESTIONNAIRE"])
-    rid = uuid.UUID(g["id"])
-    assert (g["statut_validation"], g["etat_effectif"], g["reglementaire"]) == (
-        "A_VALIDER", "EN_ATTENTE_VALIDATION", False)
-    assert g["destinataires"] == ["GESTIONNAIRE", "SR"] and g["point_arrivee"] == "CLOTURE"
-
-    g = await delais.modifier_regle(db, sr, rid, {"duree": 7})
-    assert g["duree"] == 7 and g["statut_validation"] == "A_VALIDER"
-    assert (await delais.modifier_regle(db, sr, rid, {"actif": False}))["etat_effectif"] == "INACTIVE"
-    assert (await delais.modifier_regle(db, sr, rid, {"actif": True}))["etat_effectif"] == "EN_ATTENTE_VALIDATION"
-    await _refus(delais.modifier_regle(db, sr, rid, {"seuil_alerte": 7}), "SEUIL_INVALIDE")
-
-    g = await delais.valider_regle(db, sr, rid, {"statut_validation": "VALIDEE"})
-    assert (g["etat_effectif"], g["reglementaire"]) == ("APPLIQUEE", True)
-    # Paramètre de calcul modifié sur une règle validée non utilisée : retour en validation.
-    g = await delais.modifier_regle(db, sr, rid, {"duree": 10})
-    assert g["statut_validation"] == "A_VALIDER"
-    g = await delais.valider_regle(db, sr, rid, {"statut_validation": "VALIDEE"})
-
-    r = await _dossier(db, sr, unite, _marqueur(), type_id=tid, date_premiere_reception=NOW - timedelta(days=3))
-    echeance_initiale = r.echeance
-    assert r.etat_delai == "CALCULE" and r.regle_delai_id == rid
-    # Règle appliquée : paramètres de calcul figés, libellé modifiable.
-    await _refus(delais.modifier_regle(db, sr, rid, {"duree": 20}), "REGLE_UTILISEE")
-    assert (await delais.modifier_regle(db, sr, rid, {"libelle": "Délai type test"}))["libelle"] == "Délai type test"
-
-    # Nouvelle version à date d'effet : l'ancienne est bornée à la validation, sans recalcul du passé.
-    v = await delais.versionner_regle(db, sr, rid, {"date_effet": AUJOURDHUI, "duree": 5})
-    assert (v["remplace_id"], v["statut_validation"], v["duree"], v["type_id"]) == (str(rid), "A_VALIDER", 5, str(tid))
-    assert v["seuil_alerte"] == 2
-    await _refus(delais.versionner_regle(db, sr, rid, {"date_effet": AUJOURDHUI, "duree": 4}), "VERSION_EXISTANTE")
-    await _refus(delais.versionner_regle(db, sr, uuid.UUID(v["id"]), {"date_effet": date(2019, 1, 1)}),
-                 "DATE_EFFET_INVALIDE")
-    await delais.valider_regle(db, sr, uuid.UUID(v["id"]), {"statut_validation": "VALIDEE"})
-    ancienne = await db.get(ReclamationRegleDelai, rid)
-    assert ancienne.date_fin == AUJOURDHUI - timedelta(days=1)
-    await db.refresh(r)
-    assert r.echeance == echeance_initiale and r.regle_delai_id == rid
-
-    nouveau = await _dossier(db, sr, unite, _marqueur(), type_id=tid, date_premiere_reception=NOW - timedelta(minutes=1))
-    assert nouveau.regle_delai_id == uuid.UUID(v["id"])
-
-    # Version suivante : seuil d'alerte vidé ; la fin n'est pas reprise de la version remplacée.
-    v2 = await delais.versionner_regle(db, sr, uuid.UUID(v["id"]), {
-        "date_effet": AUJOURDHUI + timedelta(days=30), "detacher_seuil": True})
-    assert (v2["seuil_alerte"], v2["date_fin"], v2["duree"]) == (None, None, 5)
-
-    histo = await delais.historique_regle(db, rid)
-    actions = {e["action"] for e in histo["evenements"]}
-    assert {"reclamations.delai.create", "reclamations.delai.update", "reclamations.delai.validate",
-            "reclamations.delai.version"} <= actions
-    assert [x["id"] for x in histo["versions"]] == [v2["id"], v["id"], str(rid)]
-    regles = {x["id"]: x for x in await delais.lister_regles(db)}
-    assert regles[str(rid)]["remplacee_par"] == v["id"] and regles[str(rid)]["nb_dossiers"] == 1
-
-
-# ------------------------------------------- 2. règle en attente, conflits, sélection
-def _regle_memoire(**champs) -> ReclamationRegleDelai:
-    base = {"id": uuid.uuid4(), "libelle": "R", "type_id": None, "motif_id": None, "sous_motif_id": None,
-            "priorite": None, "duree": 10, "unite_duree": "JOURS_CALENDAIRES", "point_depart": "PREMIERE_RECEPTION",
-            "point_arrivee": "CLOTURE", "seuil_alerte": None, "date_effet": date(2020, 1, 1), "date_fin": None,
-            "statut_validation": "VALIDEE", "actif": True}
-    return ReclamationRegleDelai(**{**base, **champs})
-
-
-def test_selection_specificite_attente_conflit_depart():
-    t, m, sm = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-    r = Reclamation(type_id=t, motif_id=m, sous_motif_id=sm, priorite="NORMALE",
-                    date_premiere_reception=datetime(2026, 10, 1, 9, tzinfo=UTC), statut="A_QUALIFIER")
-    generale = _regle_memoire(duree=30)
-    par_motif = _regle_memoire(type_id=t, motif_id=m, duree=15)
-    par_sous_motif = _regle_memoire(type_id=t, motif_id=m, sous_motif_id=sm, duree=5)
-    autre_motif = _regle_memoire(motif_id=uuid.uuid4(), duree=1)
-    assert E.selectionner([generale, par_motif, autre_motif], r).regle is par_motif
-    assert E.selectionner([generale, par_motif, par_sous_motif], r).regle is par_sous_motif
-    # Une règle plus spécifique mais non validée n'est jamais appliquée ni présentée comme telle.
-    attente = _regle_memoire(type_id=t, motif_id=m, sous_motif_id=sm, duree=2, statut_validation="A_VALIDER")
-    sel = E.selectionner([generale, attente], r)
-    assert sel.regle is generale and sel.en_attente == [attente]
-    assert E.selectionner([attente], r).etat == "EN_ATTENTE_VALIDATION"
-    assert E.selectionner([], r).etat == "NON_CONFIGURE"
-    hors_periode = _regle_memoire(date_effet=date(2026, 11, 1))
-    assert E.selectionner([hors_periode], r).etat == "NON_CONFIGURE"
-    # Deux règles validées de même spécificité, paramètres différents : conflit, aucune échéance.
-    conflit = E.selectionner([par_motif, _regle_memoire(type_id=t, motif_id=m, duree=20)], r)
-    assert conflit.etat == "CONFLIT" and conflit.regle is None and len(conflit.conflit) == 2
-    E.poser(r, conflit, set())
-    assert r.echeance is None and r.etat_delai == "CONFLIT"
-    assert E.situation(r, NOW) == "NON_CALCULABLE"
-    # Départ « réception SR » non survenu : pas d'échéance inventée.
-    sr = _regle_memoire(point_depart="RECEPTION_SR")
-    E.poser(r, E.selectionner([sr], r), set())
-    assert r.etat_delai == "SANS_DEPART" and r.echeance is None
-
-
-def test_calendrier_jours_ouvres_heures_et_seuil():
-    vendredi = datetime(2026, 10, 9, 10, tzinfo=UTC)
-    ferie = {date(2026, 10, 13)}
-    assert E.ajouter_jours(vendredi, 2, "JOURS_OUVRES", ferie).date() == date(2026, 10, 14)
-    assert E.ajouter_jours(vendredi, 2, "JOURS_CALENDAIRES", ferie) == vendredi + timedelta(days=2)
-    assert E.ajouter_jours(vendredi, 36, "HEURES", ferie) == vendredi + timedelta(hours=36)
-    echeance = datetime(2026, 10, 14, 23, 59, 59, tzinfo=UTC)
-    assert E.retrancher(echeance, 2, "JOURS_OUVRES", ferie).date() == date(2026, 10, 9)
-    assert E.retrancher(echeance, 5, "HEURES", ferie) == echeance - timedelta(hours=5)
-
-
-async def test_regle_en_attente_et_conflit_en_base(db):
-    sr = await _sr(db)
-    unite = await _unite(db)
-    t, _m, _ = await _classement(db, sr)
-    tid = uuid.UUID(t["id"])
-    attente = await _regle(db, sr, tid, valider=False)
-    r = await _dossier(db, sr, unite, _marqueur(), type_id=tid)
-    ligne = dossiers.ligne(r, await dossiers.Contexte.charger(db))
-    assert ligne["echeance"] is None and ligne["etat_delai"] == "EN_ATTENTE_VALIDATION"
-    assert ligne["etat_delai_libelle"] == "Délai en attente de validation"
-    assert ligne["situation_delai"] == "NON_CALCULABLE"
-    await delais.valider_regle(db, sr, uuid.UUID(attente["id"]), {"statut_validation": "VALIDEE"})
-    concurrente = await _regle(db, sr, tid, valider=False, duree=20)
-    await _refus(delais.valider_regle(db, sr, uuid.UUID(concurrente["id"]), {"statut_validation": "VALIDEE"}),
-                 "REGLE_CONFLIT")
-    # Application explicite aux dossiers sans délai : tracée dans l'historique, rien d'autre n'est recalculé.
-    res = await delais.appliquer_sans_delai(db, sr)
-    assert res["calcules"] >= 1
-    await db.refresh(r)
-    assert r.etat_delai == "CALCULE" and r.echeance is not None
-    assert "DELAI_CALCULE" in [e["type"] for e in await dossiers.chronologie(db, sr, r.id)]
 
 
 # ------------------------------------------------------------------ 3. quatre délais
@@ -235,40 +88,6 @@ async def test_quatre_delais_evenements_presents_absents_incoherents(db):
                                       lambda _i: None)
     assert all(d["termines"]["moyenne_heures"] is None for d in vide["delais"])
     assert vide["reouverture"]["taux"] is None
-
-
-# -------------------------------------------- 4. échéance proche, retard, alertes
-async def test_echeance_proche_retard_et_alertes_sans_doublon(db):
-    sr = await _sr(db)
-    unite = await _unite(db)
-    t, _m, _ = await _classement(db, sr)
-    tid = uuid.UUID(t["id"])
-    await _regle(db, sr, tid, seuil_alerte=3, destinataires=["GESTIONNAIRE"])
-    m = _marqueur()
-    proche = await _dossier(db, sr, unite, m, type_id=tid, date_premiere_reception=NOW - timedelta(days=8))
-    retard = await _dossier(db, sr, unite, m, type_id=tid, date_premiere_reception=NOW - timedelta(days=12))
-    ok = await _dossier(db, sr, unite, m, type_id=tid, date_premiere_reception=NOW - timedelta(days=1))
-    for r in (proche, retard, ok):
-        r.gestionnaire_id = sr.user_id
-    await db.flush()
-    assert [E.situation(r, NOW) for r in (proche, retard, ok)] == ["ECHEANCE_PROCHE", "EN_RETARD", "DANS_DELAI"]
-    assert await _total(db, sr, q=m, situation_delai="ECHEANCE_PROCHE") == 1
-    assert await _total(db, sr, q=m, en_retard=True) == 1
-    al = await delais.alertes(db, sr)
-    assert retard.reference in {x["reference"] for x in al["retards"]}
-    assert proche.reference in {x["reference"] for x in al["alertes"]}
-
-    async def notifs() -> int:
-        return await db.scalar(select(func.count()).select_from(Notification).where(
-            Notification.entity_id.in_([str(proche.id), str(retard.id), str(ok.id)]))) or 0
-
-    await delais.envoyer_alertes(db)
-    assert await notifs() == 2
-    await delais.envoyer_alertes(db)
-    assert await notifs() == 2
-    niveaux = dict((await db.execute(select(Reclamation.id, Reclamation.niveau_alerte).where(
-        Reclamation.id.in_([proche.id, retard.id, ok.id])))).all())
-    assert niveaux == {proche.id: "PROCHE", retard.id: "RETARD", ok.id: None}
 
 
 # ------------------------------------------------------------------- 5. réouverture
@@ -316,7 +135,7 @@ async def test_performance_services_et_operations_multiples(db):
     p = indicateurs.Periode.de(PERIODE["kpi_debut"], PERIODE["kpi_fin"])
     res = await indicateurs.pilotage(db, sr, {"q": m}, p, lambda _i: "Service test")
     (ligne,) = [s for s in res["services"] if s["unite_id"] == str(service.id)]
-    assert (ligne["affectes"], ligne["en_cours"], ligne["retournes"], ligne["en_retard"]) == (2, 1, 1, 0)
+    assert (ligne["affectes"], ligne["en_cours"], ligne["retournes"]) == (2, 1, 1) and "en_retard" not in ligne
     assert ligne["delai_moyen_heures"] is not None and ligne["age_moyen_heures"] is not None
     ts = next(d for d in res["delais"] if d["code"] == "traitement_service")
     assert ts["termines"]["n"] == 1 and ts["en_cours"]["n"] == 1 and ts["unite"] == "fiche de traitement"
@@ -345,8 +164,7 @@ async def test_filtre_agence_sur_tous_les_indicateurs(db):
         tb = await reporting.tableau_de_bord(db, sr, f)
         assert tb["total"] == attendu and await _total(db, sr, **f) == attendu, agence
         assert sum(x["n"] for x in tb["agences"]) == attendu
-        en_cours = next(d for d in tb["pilotage"]["delais"] if d["code"] == "cloture")["en_cours"]["n"]
-        assert en_cours == attendu
+        assert "pilotage" not in tb
     tb = await reporting.tableau_de_bord(db, sr, {"q": m, "client_agence_id": a1})
     assert tb["nb_operations"] == 1 and tb["filtres"]["client_agence_id"] == str(a1)
     assert {x["libelle"] for x in (await reporting.tableau_de_bord(db, sr, {"q": m}))["agences"]} >= {"Sans agence"}
@@ -382,7 +200,8 @@ async def test_kpi_cliquables_correspondent_aux_listes(db):
     assert tb["performance"]["delai_cloture_n"] == await _total(db, sr, q=m, **params("delai_moyen")) == 1
     assert tb["performance"]["delai_cloture_jours"] == 8.0
     assert tb["ouvertes"] == await _total(db, sr, q=m, **params("ouvertes")) == 2
-    assert tb["retards"] == await _total(db, sr, q=m, **params("retards"))
+    assert not {"retards", "echeances_proches", "sans_echeance", "a_risque", "dossiers_retard"} & tb.keys()
+    assert not {"retards", "echeances_proches", "sans_delai"} & liens.keys()
     assert tb["total"] == await _total(db, sr, q=m, **params("total")) == 3
 
 
@@ -397,7 +216,7 @@ def test_comparer_variation_et_sens():
     assert lignes["taux_reouverture"]["favorable"] is True
     assert (lignes["delai_cloture"]["ecart"], lignes["delai_cloture"]["favorable"]) == (12.0, False)
     assert lignes["montant"]["variation"] == 50.0 and lignes["montant"]["favorable"] is None
-    assert lignes["taux_respect"]["ecart"] is None and lignes["taux_respect"]["variation"] is None
+    assert "taux_respect" not in lignes
 
 
 async def test_comparaison_deux_periodes_et_exports(db):
@@ -437,7 +256,7 @@ async def test_exports_coherents_avec_les_indicateurs(db):
     await _dossier(db, sr, unite, m)
     tb = await reporting.tableau_de_bord(db, sr, {"q": m})
     classeur = load_workbook(BytesIO(await reporting.exporter_pilotage(db, sr, {"q": m})), read_only=True)
-    assert classeur.sheetnames == ["Synthèse", "Délais", "Services", "Réouverture", "Agences"]
+    assert classeur.sheetnames == ["Synthèse", "Agences"]
     synthese = {r[1]: r[2] for r in classeur["Synthèse"].iter_rows(values_only=True) if r and r[1]}
     assert synthese["Réclamations (période, date de réception)"] == tb["total"] == 2
     assert synthese["Opérations contestées"] == tb["nb_operations"] == 2
@@ -512,4 +331,5 @@ async def test_indicateurs_restent_dans_le_perimetre(db):
         {"reclamations.view", "reclamations.reporting.view"}), unites=frozenset({unite.id}))
     tb = await reporting.tableau_de_bord(db, agent, {"q": m})
     assert tb["total"] == 1 == await _total(db, agent, q=m)
-    assert next(d for d in tb["pilotage"]["delais"] if d["code"] == "cloture")["en_cours"]["n"] == 1
+    p = indicateurs.Periode.de(None, None)
+    assert (await indicateurs.delai_cloture(db, agent, {"q": m}, p))["en_cours"]["n"] == 1

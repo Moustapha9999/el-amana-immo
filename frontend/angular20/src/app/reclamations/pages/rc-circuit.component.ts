@@ -50,7 +50,6 @@ import { ReclamationsService, ReclamationsStore } from '../reclamations.service'
                       <span class="bea-rc-kanban__badges">
                         <span class="bea-ct-badge" [attr.data-tone]="toneStatut(d.statut)">{{ d.statut_libelle }}</span>
                         @if (d.priorite !== 'NORMALE') { <span class="bea-ct-badge" [attr.data-tone]="tonePriorite(d.priorite)">{{ d.priorite_libelle }}</span> }
-                        @if (d.en_retard) { <span class="bea-ct-badge" data-tone="URGENT">Retard</span> }
                       </span>
                     </a>
                   </li>

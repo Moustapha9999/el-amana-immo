@@ -140,7 +140,7 @@ async def test_creation_reference_statut_chronologie(db):
     assert (d1["statut"], d1["etape"]) == ("A_QUALIFIER", "RECEPTION")
     # Type et motif déduits du sous-motif.
     assert (d1["type_ref"]["id"], d1["motif_ref"]["id"]) == (t["id"], m["id"])
-    assert d1["unite_suivi_ref"] is not None and d1["echeance"] is None
+    assert d1["unite_suivi_ref"] is not None and "echeance" not in d1
 
     d2 = await dossiers.creer(db, s, await _saisie(db, unite.id))
     assert int(d2["reference"][-6:]) == int(d1["reference"][-6:]) + 1

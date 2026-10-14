@@ -10,7 +10,7 @@ statut CORE `actif`.
 |-------|----------|
 | Pilotage | Service Réclamations central (unité `est_service_reclamations`, une seule active) |
 | Clôture | Service Réclamations central uniquement (403 `CLOTURE_RESERVEE_SR` sinon), après retour jugé suffisant du service concerné (ou traitement interne SR) et enregistrement de la réponse envoyée au client (409 `REPONSE_NON_ENVOYEE` sinon). La preuve d’envoi est facultative (à valider) |
-| Délais | Règles configurables (voir « Délais & alertes »), **aucune règle initiale**. Seule une règle validée par la Conformité calcule une échéance ; sinon le dossier affiche « Délai non configuré » ou « En attente de validation » |
+| Délais | Fonctionnalité « Délais & alertes » retirée (voir plus bas) : aucune échéance ni alerte |
 | Unités | Liste réelle des entités BEA (reprise du module Formation) + création de directions, départements, services, agences, cellules dans le module. La table org `departements` (vide) n’est pas utilisée |
 | Données | Aucune donnée fictive : seuls les canaux, canaux de réponse et une proposition de types et de motifs (marquée « Proposition initiale — nomenclature à valider par la banque ») sont insérés. L’option « Autre » (saisie libre) existe à chaque niveau motif / sous-motif |
 | Documents | GED (`ged_documents`, entité `reclamation`), plusieurs pièces par dossier, original jamais écrasé, retrait logique avec motif et audit. Aucun rôle du module ne reçoit `ged.*` |
@@ -27,7 +27,7 @@ statut CORE `actif`.
 | `reclamation_documents` | Lien GED ↔ dossier, catégorie (original, pièce client, transmission, fiche, justificatif, retour, réponse, preuve d’envoi, autre) |
 | `reclamation_appels` | Canal téléphone / centre d’appel : date-heure, numéro, agent, vérification d’identité, rappel ; référence d’enregistrement seulement si la banque l’autorise |
 | `reclamation_evenements` | Chronologie **append-only** (trigger `trg_reclamation_evenements_immuable`) : rien n’est effacé |
-| `reclamation_regles_delai` | Règles de délai (type / motif / priorité, jours calendaires ou ouvrés, point de départ, seuil d’alerte, délai service, neutralisation des suspensions, validation Conformité) |
+| `reclamation_regles_delai` | Règles de délai (type / motif / priorité, jours calendaires ou ouvrés, point de départ, seuil d’alerte, délai service, neutralisation des suspensions, validation Conformité) — conservée en base, plus utilisée depuis la migration 07 |
 | `reclamation_jours_feries`, `reclamation_parametres`, `reclamation_compteurs` | Calendrier, paramètres, numérotation annuelle verrouillée |
 
 Contraintes base : cohérence chronologique des dates, unicité du service central actif,
@@ -116,9 +116,8 @@ unités. Un dossier hors périmètre répond `404`.
 | `GET/POST /dossiers/{id}/documents`, `POST …/{did}/retrait`, `GET …/{did}/fichier?apercu=` | Pièces GED |
 | `POST /dossiers/{id}/qualifier`, `affecter`, `traiter-interne`, `retourner`, `evaluer`, `cloturer`, `refuser`, `annuler`, `rouvrir`, `archiver` | Actions du circuit (statut uniquement par ces routes) |
 | `POST /dossiers/{id}/reponse` | Enregistrement de la réponse envoyée (contenu, canal, date d’envoi) |
-| `GET/POST/PATCH /regles-delai`, `POST …/validation`, `POST …/versions`, `GET …/historique`, `POST /delais/appliquer`, `GET/POST/DELETE /jours-feries` | Délais et calendrier |
 | `POST /referentiels/{id}/validation` | Validation Conformité d’un type, motif ou sous-motif |
-| `GET /alertes`, `GET /tableau-de-bord`, `GET /comparaison`, `GET /circuit` | Pilotage, comparaison A/B, kanban |
+| `GET /tableau-de-bord`, `GET /comparaison`, `GET /circuit` | Tableau de bord, comparaison A/B, kanban |
 | `GET /export`, `GET /export/pilotage`, `GET /export/comparaison` | PDF / Excel (liste : 5 000 lignes max) |
 
 Règles appliquées :
@@ -173,109 +172,57 @@ Tests : `test_reclamations_notes_suppression.py` (notes multiples sans écraseme
 selon permissions, suppression / restauration, refus sans permission, dossier clôturé ou
 officiel, opérations jamais supprimées, cohérence des pièces).
 
-## Délais & alertes (migration `20261014_reclamations_05`)
+## Délais & alertes : retirés (migration `20261014_reclamations_07`)
 
-Aucune nouvelle table : `reclamation_regles_delai` et `reclamations` sont complétées.
+La fonctionnalité « Délais & alertes » a été retirée du module à la demande du métier :
 
-**Règle de délai** : libellé, type, motif, **sous-motif**, priorité, durée, unité (jours
-calendaires, jours ouvrés, **heures**), point de départ (première réception banque / réception
-SR), **point d’arrivée** (clôture / réponse au client), seuil d’alerte et délai du service (dans
-l’unité de la règle), **destinataires des alertes** (SR, service de traitement, gestionnaire ;
-défaut SR + service), date d’effet, date de fin, statut de validation, commentaire / source,
-actif. Une **nouvelle version** (`remplace_id`) porte une date d’effet postérieure ; à sa
-validation, l’ancienne version est bornée à la veille. Une règle déjà appliquée à des dossiers
-ne voit plus ses paramètres de calcul modifiés (409 `REGLE_UTILISEE`) : on crée une version.
-Une version reprend les paramètres non renseignés de la précédente, sauf la date de fin (jamais
-reprise) ; le seuil d’alerte et le délai service peuvent être vidés (`detacher_seuil`,
-`detacher_delai_service`).
-Toute création ou modification d’un paramètre de calcul remet la règle « À valider ».
+- plus de menu, de route `/reclamations/delais`, de page ni de lien Admin ;
+- plus de règles de délai, d’échéance, de situation (« en retard », « échéance proche »), de
+  calendrier de jours fériés ni d’alerte : routes `/regles-delai`, `/delais/appliquer`,
+  `/jours-feries` et `/alertes` supprimées, tâche Celery quotidienne supprimée, aucune échéance
+  calculée à l’enregistrement ni à la qualification ;
+- liste : plus de colonne « Échéance », ni de filtres « Situation du délai », « Calcul du délai »,
+  « En retard » ; fiche : plus d’échéance, de règle ni d’échéance service ;
+- tableau de bord et rapports : plus de KPI « En retard », « Échéance proche », « Sans délai », ni
+  d’anneau « Respect des délais », ni de listes « Échéance proche » / « Dossiers en retard », ni de
+  section « Durées de traitement, réouverture et services » ; la comparaison A/B n’a plus de ligne
+  « Respect de l’échéance » ;
+- permissions `reclamations.delais.manage` et `reclamations.delais.validate` supprimées du
+  catalogue et de la base (attributions supprimées en cascade).
 
-**Sélection** (`services/reclamations/echeances.py`, service unique) :
+**Données conservées** : les tables `reclamation_regles_delai`, `reclamation_jours_feries` et les
+colonnes d’échéance de `reclamations` / `reclamation_affectations` restent en base, inchangées,
+mais ne sont plus lues ni alimentées. Les événements historiques `DELAI_CALCULE` restent lisibles
+dans la chronologie.
 
-1. seules les règles **validées**, actives et en vigueur à la date de départ s’appliquent ;
-2. spécificité : sous-motif 8 + motif 4 + type 2 + priorité 1 (règle générale = 0) ;
-3. au meilleur score, des paramètres différents = **conflit** : aucune échéance (`CONFLIT`),
-   jamais d’arbitrage silencieux ; la validation d’une règle en conflit est refusée
-   (409 `REGLE_CONFLIT`) ;
-4. sinon la date d’effet la plus récente l’emporte.
-
-**État du calcul** (`reclamations.etat_delai`) : `CALCULE`, `NON_CONFIGURE` (« Délai non
-configuré »), `EN_ATTENTE_VALIDATION` (une règle correspond mais n’est pas validée : aucune
-échéance n’est inventée), `CONFLIT`, `SANS_DEPART` (départ « réception SR » pas encore connu ;
-recalcul automatique quand la date arrive).
-
-**Situation** : dans le délai, échéance proche (seuil d’alerte atteint), en retard, délai
-respecté, délai dépassé (dossiers terminés : fin du délai comparée à l’échéance), non calculable.
-**Suspendu : non implémenté** — le circuit actuel n’a pas de statut de suspension (retiré en
-phase 3) ; `neutraliser_suspension` est conservé mais sans effet.
-
-**Calendrier** : jours ouvrés = lundi → vendredi hors jours fériés saisis ; échéance en jours =
-fin de journée (23:59:59) ; heures = heures calendaires (heures ouvrées : non implémenté).
-
-**Pas de recalcul silencieux** : l’échéance est figée (`echeance_initiale`) ; une nouvelle règle
-validée ne touche aux dossiers ouverts sans délai que par l’action explicite
-« Appliquer aux dossiers sans délai » (`POST /delais/appliquer`, événement `DELAI_CALCULE` + audit).
-
-**Alertes** : le job quotidien notifie au changement de niveau seulement (`niveau_alerte` :
-`PROCHE` puis `RETARD`, `alerte_notifiee_le`) — jamais deux fois le même niveau ; une
-réouverture remet le niveau à zéro.
-
-Écran `/reclamations/delais` : compteurs (retard, échéance proche, ouverts sans délai par état),
-listes, règles (portée, spécificité, mesure, alerte, période, validation, état effectif —
-appliquée, programmée, en attente, rejetée, inactive, expirée —, nombre de dossiers, conflits),
-historique (versions + journal d’audit), nouvelle version, validation / rejet, jours fériés.
-
-## Indicateurs de pilotage (`services/reclamations/indicateurs.py`)
+## Indicateurs conservés (`services/reclamations/indicateurs.py`)
 
 Calcul serveur, dans le périmètre de l’utilisateur, avec les filtres de la page (agence, y compris
-« sans agence » = `client_agence_id=AUCUNE`). La période s’applique à la date de l’**événement
-mesuré** (fin du délai, clôture, réouverture, transmission, retour). Comptes en dossiers
-distincts ; durées en heures calendaires (affichées en jours = heures ÷ 24).
+« sans agence » = `client_agence_id=AUCUNE`). Seul le **délai moyen de clôture** (première
+réception → clôture, dossiers clôturés de la période, durée négative exclue) est affiché comme KPI.
+Les durées mesurées (prise en charge, traitement du service, réponse au client, clôture) et le
+taux de réouverture restent utilisés par la comparaison A/B et par les filtres de liste
+(`indicateur` + `kpi_debut` / `kpi_fin` / `kpi_unite_id`, même condition SQL que le calcul).
 
-| Délai | Mesure | Unité de compte |
-|---|---|---|
-| Prise en charge | première réception banque → réception SR | dossier |
-| Traitement du service | transmission au service → retour au SR (`transmis_le` → `retour_le` ; la réception par le service n’est pas toujours saisie) | fiche de traitement (un renvoi = une fiche de plus) |
-| Réponse au client | retour du service reçu par le SR → envoi de la réponse | dossier |
-| Clôture | première réception → clôture | dossier clôturé |
-
-Pour chaque délai : moyenne des **terminés** (fin dans la période, n affiché), **en cours**
-(départ dans la période, fin absente, dossier ouvert ; âge moyen), **anomalies** (durée négative :
-exclue de la moyenne, comptée et listée). Sans donnée : « N/A », jamais 0.
-
-**Taux de réouverture** = dossiers clôturés pendant la période puis réouverts pendant la période
-÷ dossiers clôturés pendant la période × 100 (N/A si aucun dossier clôturé). Compté depuis la
-chronologie (un dossier réouvert n’a plus de date de clôture). Sont aussi affichés le nombre de
-réouvertures et les dossiers réouverts plusieurs fois.
-
-**Services** : affectés (flux, transmissions de la période), retournés (flux, retours de la
-période, délai moyen transmission → retour), en cours (stock actuel, âge moyen), en retard
-(stock dont l’échéance du service est dépassée).
-
-**KPI cliquables** : chaque compte ouvre `/reclamations/dossiers` avec le filtre
-`indicateur` (+ `kpi_debut`, `kpi_fin`, `kpi_unite_id`) construit avec **la même condition
-SQL** que le calcul ; le total de la liste = le nombre affiché. Liens du tableau de bord
-fournis par le serveur (`liens`) : total, ouvertes, retards, échéance proche, sans délai,
-reçues 30 j, délai moyen de clôture, opérations et montant (la liste affiche alors le total des
-opérations et du montant). L’agence choisie est conservée dans tous les liens.
+**KPI cliquables** du tableau de bord (`liens` fournis par le serveur) : total, ouvertes,
+reçues 30 j, délai moyen de clôture, opérations et montant. L’agence choisie est conservée.
 
 ## Comparaison de deux périodes
 
 `GET /comparaison?a_debut&a_fin&b_debut&b_fin` (+ filtres), A = référence, B = période
-comparée. Indicateurs : reçues, clôturées, opérations, montant, respect de l’échéance, taux de
-réouverture, quatre délais moyens. Écart = B − A ; variation = écart ÷ A × 100, **N/A si A = 0** ;
-appréciation favorable / défavorable seulement si le sens est défini (clôturées et respect :
-hausse favorable ; réouverture et délais : baisse favorable ; volumes et montant : sens non
-défini). Dates obligatoires et cohérentes (`PERIODE_INCOMPLETE`, `PERIODE_INVALIDE`),
-avertissement si les durées diffèrent ou si les périodes se chevauchent. Disponible dans le
-tableau de bord et les rapports ; valeurs cliquables vers la liste de chaque période.
+comparée. Indicateurs : reçues, clôturées, opérations, montant, taux de réouverture, quatre durées
+moyennes. Écart = B − A ; variation = écart ÷ A × 100, **N/A si A = 0** ; appréciation favorable /
+défavorable seulement si le sens est défini (clôturées : hausse favorable ; réouverture et durées :
+baisse favorable ; volumes et montant : sens non défini). Dates obligatoires et cohérentes
+(`PERIODE_INCOMPLETE`, `PERIODE_INVALIDE`), avertissement si les durées diffèrent ou si les
+périodes se chevauchent.
 
 ## Exports
 
-- `GET /export` (liste filtrée, PDF / Excel) : ajoute la colonne « Situation du délai » et
-  rappelle les filtres (agence, indicateur) en sous-titre.
-- `GET /export/pilotage` (PDF / Excel : synthèse, délais, services, réouverture, agences) —
-  mêmes fonctions que l’écran.
+- `GET /export` (liste filtrée, PDF / Excel) : rappelle les filtres (agence, indicateur) en
+  sous-titre.
+- `GET /export/pilotage` (PDF / Excel : synthèse — volumes, délai moyen de clôture, agences —
+  et répartition par agence).
 - `GET /export/comparaison` (PDF / Excel : comparaison + méthode).
 
 ## Types, motifs et sous-motifs : proposé / validé
@@ -288,7 +235,7 @@ valide pas avant son parent (`PARENT_NON_VALIDE`) ; un parent ne repasse pas en 
 enfants sont validés (`ENFANTS_VALIDES`) ; modifier le libellé d’une valeur validée la remet en
 proposé. Les valeurs proposées restent utilisables (signalées « proposé » à la saisie). Désactiver
 n’efface rien : l’historique des dossiers conserve la valeur. Un sous-motif d’un autre motif est
-refusé (`CLASSEMENT_INCOHERENT`), y compris dans les règles de délai.
+refusé (`CLASSEMENT_INCOHERENT`).
 
 ## Permissions retirées
 
@@ -296,7 +243,8 @@ refusé (`CLASSEMENT_INCOHERENT`), y compris dans les règles de délai.
 `reclamations.audit.view` : retirées du catalogue et supprimées de `permissions` par la migration
 05 (cascade sur les attributions ; la descente les réinsère). Traçabilité conservée : la
 chronologie (`reclamation_evenements`, append-only) et `audit_logs` ne sont pas touchés ; le
-journal reste lisible dans l’onglet Historique de chaque fiche. Le module compte 29 permissions.
+journal reste lisible dans l’onglet Historique de chaque fiche. `reclamations.delais.manage` et
+`reclamations.delais.validate` ont suivi (migration 07). Le module compte 27 permissions.
 
 ## Enregistrement des appels
 
@@ -315,39 +263,32 @@ décision de la banque.
 | Élément | Statut |
 |---|---|
 | Circuit, fiche, pièces, opérations, corbeille | implémenté et testé |
-| Règles de délai (CRUD, sous-motif, heures, arrivée, destinataires, versions, historique, conflits) | implémenté et testé |
-| Service central de calcul, états et situations, jours ouvrés / fériés, alertes sans doublon | implémenté et testé |
-| Quatre délais, réouverture, performance des services, filtre agence (dont « sans agence ») | implémenté et testé |
+| Délais & alertes (règles, échéances, alertes, section durées / réouverture / services) | retiré (données conservées en base) |
+| Délai moyen de clôture, filtre agence (dont « sans agence ») | implémenté et testé |
 | KPI cliquables = listes exactes ; totaux opérations / montant de la liste | implémenté et testé |
 | Comparaison A/B, exports pilotage et comparaison | implémenté et testé |
 | Référentiels proposés / validés, compatibilité sous-motif | implémenté et testé |
 | Retrait des 4 permissions | implémenté et testé |
-| Durées des délais et leur caractère réglementaire | en attente de validation (Conformité) |
 | Nomenclature types / motifs / sous-motifs | en attente de validation (aucune valeur validée ; aucun sous-motif inséré) |
 | Référence d’enregistrement d’appel | en attente de décision (désactivée) |
 | Unités Marketing | en attente de décision (non déplacées) |
 | État « suspendu » | non implémenté (pas de suspension dans le circuit) |
-| Heures ouvrées | non implémenté (heures calendaires) |
 | Écrans front | vérifiés par build ; pas de tests automatisés front |
 
-Tests : `test_reclamations_finalisation.py` (cycle de vie des règles et versions ; sélection,
-spécificité, attente, conflit ; calendrier ; quatre délais avec dates présentes, absentes et
-incohérentes ; alertes sans doublon ; réouvertures simple et multiple ; services et opérations
-multiples ; filtre agence ; KPI = listes ; comparaison et exports ; permissions retirées ;
-référentiels ; Marketing ; appels ; périmètre) en plus des fichiers précédents — transactions
-annulées.
+Tests : `test_reclamations_finalisation.py` (quatre durées avec dates présentes, absentes et
+incohérentes ; réouvertures simple et multiple ; services et opérations multiples ; filtre agence ;
+KPI = listes et absence des KPI d’échéance ; comparaison et exports ; permissions retirées, dont
+`delais.*` ; référentiels ; Marketing ; appels ; périmètre) et `test_reclamations_circuit.py`
+(aucune échéance calculée à la création) — transactions annulées.
 
 ## En attente de la Conformité / du métier
 
-- Durées de délai par type / motif / sous-motif et leur caractère réglementaire : aucune règle
-  n’est créée par le module.
 - Validation de la nomenclature (types, motifs, sous-motifs).
 - Preuve d’envoi de la réponse : facultative pour clôturer.
 - Canal « Papier » renommé « Dépôt physique (agence / siège) ».
 - Date de réclamation connue sans heure : enregistrée comme date seule ; la réception par la
-  banque, horodatée, reste le point de départ des délais.
+  banque, horodatée, reste le point de départ des durées mesurées.
 - Autorisation d’enregistrer une référence d’enregistrement d’appel.
 - Unités « MARKETING & COMMUNICATION » / « MARKETING ET COMMUNICATION » (voir ci-dessus).
-- Besoin éventuel d’une suspension des délais et d’heures ouvrées.
 
 Le module n’est **pas** déclaré validé par la Conformité tant que ces décisions ne sont pas prises.

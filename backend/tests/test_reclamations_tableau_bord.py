@@ -8,22 +8,18 @@ from app.services.reclamations.reporting import _anciennete, _performance, _recu
 NOW = datetime(2026, 10, 14, 12, tzinfo=UTC)
 
 
-def _r(jours: int, statut: str = "EN_COURS", cloture_j: int | None = None, echeance_j: int | None = None,
+def _r(jours: int, statut: str = "EN_COURS", cloture_j: int | None = None,
        racine: str | None = None) -> SimpleNamespace:
     recu = NOW - timedelta(days=jours)
     return SimpleNamespace(
         statut=statut, date_premiere_reception=recu, client_racine=racine, client_nom=f"Client {racine}",
         date_cloture=recu + timedelta(days=cloture_j) if cloture_j is not None else None,
-        echeance=recu + timedelta(days=echeance_j) if echeance_j is not None else None,
-        etat_delai=None, date_fin_delai=None, date_alerte=None,
     )
 
 
-def test_performance_delai_moyen_et_respect_echeance():
-    rows = [_r(40, "CLOTUREE", cloture_j=4, echeance_j=10), _r(40, "CLOTUREE", cloture_j=12, echeance_j=10),
-            _r(20, "CLOTUREE", cloture_j=2), _r(5)]
-    p = _performance(rows)
-    assert p == {"cloturees": 3, "delai_moyen_jours": 6.0, "dans_delai": 1, "hors_delai": 1, "taux_dans_delai": 50.0}
+def test_performance_delai_moyen_de_cloture():
+    rows = [_r(40, "CLOTUREE", cloture_j=4), _r(40, "CLOTUREE", cloture_j=12), _r(20, "CLOTUREE", cloture_j=2), _r(5)]
+    assert _performance(rows) == {"cloturees": 3, "delai_moyen_jours": 6.0}
     assert _performance([_r(3)])["delai_moyen_jours"] is None
 
 

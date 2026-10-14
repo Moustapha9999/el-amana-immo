@@ -5,7 +5,8 @@ import { RouterLink } from '@angular/router';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { Comparaison, LigneComparaison, dateFr, montantFr, telechargerBlob } from '../reclamations.models';
 import { Periodes, ReclamationsService, ReclamationsStore } from '../reclamations.service';
-import { ParamsListe } from './rc-pilotage.component';
+
+type ParamsListe = Record<string, string | null>;
 
 function jourIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -22,7 +23,7 @@ function decale(jours: number): Date {
   selector: 'bea-rc-comparaison',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, MatIconModule, RouterLink],
-  styleUrl: './rc-pilotage.component.css',
+  styleUrl: './rc-comparaison.component.css',
   styles: `
     .rcc-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.6rem 1rem; margin-bottom: 0.8rem; }
     .rcc-form fieldset { display: flex; gap: 0.5rem; margin: 0; padding: 0.5rem 0.7rem 0.6rem; border: 1px solid #e2e8f0; border-radius: 0.7rem; }
@@ -90,7 +91,7 @@ function decale(jours: number): Date {
           </tbody>
         </table>
       </div>
-      <p class="rcp-formule">Variation = (B − A) ÷ A × 100, « N/A » quand A vaut 0. Une appréciation n’est donnée que si le sens favorable de l’indicateur est défini (volumes : non défini). Délais en heures.</p>
+      <p class="rcp-formule">Variation = (B − A) ÷ A × 100, « N/A » quand A vaut 0. Une appréciation n’est donnée que si le sens favorable de l’indicateur est défini (volumes : non défini). Durées en heures.</p>
     }
   `,
 })

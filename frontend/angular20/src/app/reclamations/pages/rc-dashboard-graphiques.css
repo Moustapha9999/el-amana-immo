@@ -1,6 +1,6 @@
-/* Tableau de bord : graphiques (tendance, anneau, barres, ancienneté, clients). */
+/* Tableau de bord : graphiques (tendance, barres, ancienneté, clients). */
 .rcd-legende { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.76rem; color: #64748b; }
-:where(.rcd-legende, .rcd-ring__legend, .rcd-stack__legend) i { display: inline-block; width: 0.65rem; height: 0.65rem; border-radius: 0.2rem; background: #cbd5e1; }
+:where(.rcd-legende, .rcd-stack__legend) i { display: inline-block; width: 0.65rem; height: 0.65rem; border-radius: 0.2rem; background: #cbd5e1; }
 [data-k='recues'] { background: var(--rc); }
 [data-k='cloturees'] { background: #7dd3c0; }
 .rcd-chart { display: grid; grid-template-columns: repeat(12, 1fr); gap: 0.35rem; align-items: end; height: 13rem; padding: 1.2rem 1rem 0.8rem; }
@@ -11,22 +11,9 @@
 .rcd-chart__col:hover .rcd-chart__bars span { filter: brightness(1.15); }
 .rcd-chart__col small { font-size: 0.64rem; color: #94a3b8; white-space: nowrap; }
 
-.rcd-ring { position: relative; width: 10rem; margin: 1rem auto 0.4rem; }
-.rcd-ring svg { display: block; width: 100%; transform: rotate(-90deg); }
-.rcd-ring circle { fill: none; stroke-width: 9; }
-.rcd-ring__bg { stroke: #eef2f6; }
-.rcd-ring__fg { stroke: var(--rc); stroke-linecap: round; }
-.rcd-ring__fg[data-niveau='ok'] { stroke: var(--ok); }
-.rcd-ring__fg[data-niveau='moyen'] { stroke: #d97706; }
-.rcd-ring__fg[data-niveau='faible'] { stroke: var(--ko); }
-.rcd-ring__val { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
-.rcd-ring__val strong { font-size: 1.6rem; color: #0f172a; font-variant-numeric: tabular-nums; }
-.rcd-ring__val small { max-width: 6.5rem; font-size: 0.68rem; color: #64748b; }
-.rcd-ring__legend, .rcd-stack__legend { list-style: none; margin: 0; padding: 0.4rem 1.1rem 1rem; display: grid; gap: 0.35rem; font-size: 0.82rem; color: #334155; }
-.rcd-ring__legend li, .rcd-stack__legend li { display: flex; align-items: center; gap: 0.5rem; }
-.rcd-ring__legend b, .rcd-stack__legend b { margin-left: auto; color: #0f172a; }
-.rcd-ring__legend [data-k='ok'] { background: var(--ok); }
-.rcd-ring__legend [data-k='ko'] { background: var(--ko); }
+.rcd-stack__legend { list-style: none; margin: 0; padding: 0.4rem 1.1rem 1rem; display: grid; gap: 0.35rem; font-size: 0.82rem; color: #334155; }
+.rcd-stack__legend li { display: flex; align-items: center; gap: 0.5rem; }
+.rcd-stack__legend b { margin-left: auto; color: #0f172a; }
 
 .rcd-bars { list-style: none; margin: 0; padding: 0.45rem 1rem 0.9rem; --barre: var(--rc); }
 .rcd-bars[data-ton='etape'] { --barre: #0e7490; }

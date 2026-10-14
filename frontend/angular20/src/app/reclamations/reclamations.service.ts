@@ -4,7 +4,6 @@ import { describeApiErrorAsync } from '../core/feedback/api-error';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { ApiService } from '../core/services/api.service';
 import {
-  AlertesDelais,
   ApercuClient,
   Capacite,
   ColonneCircuit,
@@ -13,14 +12,12 @@ import {
   Dossier,
   DossierLigne,
   Evenement,
-  HistoriqueRegle,
   Membre,
   Page,
   Pieces,
   RC_BASE,
   RcConfig,
   RefItem,
-  RegleDelai,
   SuppressionResultat,
   TableauBord,
   Unite,
@@ -167,10 +164,6 @@ export class ReclamationsService {
     return this.api.get(`${RC_BASE}/circuit`);
   }
 
-  alertes(): Observable<AlertesDelais> {
-    return this.api.get(`${RC_BASE}/alertes`);
-  }
-
   comparaison(periodes: Periodes, filtres: Filtres = {}): Observable<Comparaison> {
     return this.api.get(`${RC_BASE}/comparaison`, { ...parametres(filtres), ...periodes });
   }
@@ -192,48 +185,8 @@ export class ReclamationsService {
     return this.api.download(`${RC_BASE}/export`, { ...parametres(filtres), format });
   }
 
-  regles(): Observable<RegleDelai[]> {
-    return this.api.get(`${RC_BASE}/regles-delai`);
-  }
-
-  creerRegle(corps: unknown): Observable<RegleDelai> {
-    return this.api.post(`${RC_BASE}/regles-delai`, corps);
-  }
-
-  modifierRegle(id: string, corps: unknown): Observable<RegleDelai> {
-    return this.api.patch(`${RC_BASE}/regles-delai/${id}`, corps);
-  }
-
-  validerRegle(id: string, corps: unknown): Observable<RegleDelai> {
-    return this.api.post(`${RC_BASE}/regles-delai/${id}/validation`, corps);
-  }
-
-  versionnerRegle(id: string, corps: unknown): Observable<RegleDelai> {
-    return this.api.post(`${RC_BASE}/regles-delai/${id}/versions`, corps);
-  }
-
-  historiqueRegle(id: string): Observable<HistoriqueRegle> {
-    return this.api.get(`${RC_BASE}/regles-delai/${id}/historique`);
-  }
-
-  appliquerDelais(): Observable<{ examines: number; calcules: number; restants: number }> {
-    return this.api.post(`${RC_BASE}/delais/appliquer`, {});
-  }
-
   validerReferentiel(id: string, statut: 'VALIDEE' | 'PROPOSEE', commentaire = ''): Observable<RefItem> {
     return this.api.post(`${RC_BASE}/referentiels/${id}/validation`, { statut_validation: statut, commentaire });
-  }
-
-  feries(): Observable<Array<{ jour: string; libelle: string }>> {
-    return this.api.get(`${RC_BASE}/jours-feries`);
-  }
-
-  ajouterFerie(jour: string, libelle: string): Observable<Array<{ jour: string; libelle: string }>> {
-    return this.api.post(`${RC_BASE}/jours-feries`, { jour, libelle });
-  }
-
-  retirerFerie(jour: string): Observable<void> {
-    return this.api.delete(`${RC_BASE}/jours-feries/${jour}`);
   }
 }
 

@@ -741,8 +741,6 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("reclamations.references.manage", "Gestion des types, motifs, sous-motifs et canaux", "reclamations"),
     ("reclamations.references.validate", "Validation des types, motifs et sous-motifs proposés", "reclamations"),
     ("reclamations.services.manage", "Gestion des unités (services, départements) et de leurs membres", "reclamations"),
-    ("reclamations.delais.manage", "Paramétrage des délais et du calendrier", "reclamations"),
-    ("reclamations.delais.validate", "Validation Conformité des règles de délai", "reclamations"),
     ("reclamations.admin", "Administration du module Réclamations", "reclamations"),
 ]
 

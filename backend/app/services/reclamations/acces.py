@@ -56,8 +56,6 @@ CAPACITES: dict[str, str] = {
     "referentiels_gerer": "reclamations.references.manage",
     "referentiels_valider": "reclamations.references.validate",
     "unites_gerer": "reclamations.services.manage",
-    "delais_gerer": "reclamations.delais.manage",
-    "delais_valider": "reclamations.delais.validate",
     "admin": "reclamations.admin",
 }
 

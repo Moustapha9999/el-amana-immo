@@ -14,10 +14,10 @@ import { optionsRestauration, optionsSuppression } from '../shared/rc-suppressio
 const ANNULABLES = new Set(['A_QUALIFIER', 'A_AFFECTER', 'REOUVERTE']);
 
 const TAILLE = 25;
-const TRIS = new Set(['reference', 'date_reclamation', 'date_premiere_reception', 'date_reception_sr', 'echeance', 'statut', 'priorite', 'client_nom', 'updated_at']);
+const TRIS = new Set(['reference', 'date_reclamation', 'date_premiere_reception', 'date_reception_sr', 'statut', 'priorite', 'client_nom', 'updated_at']);
 const CHAMPS = ['q', 'groupe', 'statut', 'etape', 'type_id', 'motif_id', 'canal_id', 'priorite', 'client_categorie',
   'client_agence_id', 'unite_reception_id', 'unite_concernee_id', 'unite_traitement_id', 'date_debut', 'date_fin',
-  'situation_delai', 'etat_delai', 'indicateur', 'kpi_debut', 'kpi_fin', 'kpi_unite_id'] as const;
+  'indicateur', 'kpi_debut', 'kpi_fin', 'kpi_unite_id'] as const;
 const KPI = ['indicateur', 'kpi_debut', 'kpi_fin', 'kpi_unite_id'] as const;
 
 const DELAIS: Record<string, string> = {
@@ -30,8 +30,7 @@ const MODES: Record<string, string> = {
 const INDICATEURS: Record<string, string> = {
   clotures: 'Clôturés sur la période', reouvertes: 'Clôturés puis réouverts sur la période',
   service_affectes: 'Affectés au service sur la période', service_en_cours: 'En cours chez le service',
-  service_retournes: 'Retournés par le service sur la période', service_retard: 'En retard chez le service',
-  respect_delai: 'Terminés dans le délai', hors_delai: 'Terminés hors délai',
+  service_retournes: 'Retournés par le service sur la période',
   avec_operations: 'Dossiers avec opérations contestées',
 };
 
@@ -40,7 +39,7 @@ function libelleIndicateur(code: string): string {
   if (m && DELAIS[m[1]]) return `Dossiers du ${DELAIS[m[1]]} — ${MODES[m[2]]}`;
   return INDICATEURS[code] ?? code;
 }
-const BOOLEENS = ['ouvertes', 'en_retard', 'sans_echeance', 'archivees', 'corbeille'] as const;
+const BOOLEENS = ['ouvertes', 'archivees', 'corbeille'] as const;
 
 interface VueListe {
   titre: string;
@@ -161,18 +160,6 @@ const VUES: Record<string, VueListe> = {
             @for (a of store.config()?.agences ?? []; track a.id) { <option [value]="a.id">{{ a.code }} — {{ a.libelle }}</option> }
           </select>
         </label>
-        <label class="bea-mg__field">Situation du délai
-          <select formControlName="situation_delai" (change)="appliquer()">
-            <option value="">Toutes</option>
-            @for (s of store.libelles('situations_delai'); track s.code) { <option [value]="s.code">{{ s.libelle }}</option> }
-          </select>
-        </label>
-        <label class="bea-mg__field">Calcul du délai
-          <select formControlName="etat_delai" (change)="appliquer()">
-            <option value="">Tous</option>
-            @for (s of store.libelles('etats_delai'); track s.code) { <option [value]="s.code">{{ s.libelle }}</option> }
-          </select>
-        </label>
         <label class="bea-mg__field">Service concerné
           <select formControlName="unite_concernee_id" (change)="appliquer()">
             <option value="">Tous</option>
@@ -194,7 +181,6 @@ const VUES: Record<string, VueListe> = {
           <input type="date" formControlName="date_fin" (change)="appliquer()" />
         </label>
         <label class="bea-rc-toggle"><input type="checkbox" formControlName="ouvertes" (change)="appliquer()" /> En cours uniquement</label>
-        <label class="bea-rc-toggle"><input type="checkbox" formControlName="en_retard" (change)="appliquer()" /> En retard</label>
         <div class="bea-ct-filters__btns">
           <button type="submit" class="bea-mg__btn bea-mg__btn--ghost"><mat-icon>search</mat-icon> Filtrer</button>
           @if (filtresActifs()) {
@@ -230,7 +216,6 @@ const VUES: Record<string, VueListe> = {
                 <th>Service</th>
                 <th>Étape</th>
                 <th><button type="button" class="bea-rc-sort" (click)="trier('statut')">Statut {{ fleche('statut') }}</button></th>
-                <th><button type="button" class="bea-rc-sort" (click)="trier('echeance')">Échéance {{ fleche('echeance') }}</button></th>
                 <th class="is-actions">Actions</th>
               </tr>
             </thead>
@@ -259,16 +244,6 @@ const VUES: Record<string, VueListe> = {
                     <span class="bea-ct-badge" [attr.data-tone]="toneStatut(d.statut)">{{ d.statut_libelle }}</span>
                     @if (d.priorite !== 'NORMALE') { <span class="bea-ct-badge" [attr.data-tone]="tonePriorite(d.priorite)">{{ d.priorite_libelle }}</span> }
                   </td>
-                  <td class="is-nowrap">
-                    @if (d.echeance) {
-                      <span [class.bea-rc-late]="d.en_retard">{{ date(d.echeance) }}</span>
-                      @if (d.situation_delai_libelle) { <small class="bea-ct-sub" [class.bea-rc-late]="d.en_retard || d.situation_delai === 'DEPASSE'">{{ d.situation_delai_libelle }}</small> }
-                    } @else if (d.termine) {
-                      <span class="bea-rc-muted">—</span>
-                    } @else {
-                      <span class="bea-rc-muted">—</span><small class="bea-ct-sub">{{ d.etat_delai_libelle || 'Délai non configuré' }}</small>
-                    }
-                  </td>
                   <td class="bea-mg__actions-cell is-nowrap">
                     <a class="bea-mg__icon-btn" [routerLink]="['/reclamations/dossiers', d.id]" title="Consulter la fiche" aria-label="Consulter la fiche"><mat-icon>visibility</mat-icon></a>
                     @if (d.supprimee_le) {
@@ -290,7 +265,7 @@ const VUES: Record<string, VueListe> = {
                   </td>
                 </tr>
               } @empty {
-                <tr><td colspan="12"><div class="bea-ct-empty"><mat-icon>forum</mat-icon>
+                <tr><td colspan="11"><div class="bea-ct-empty"><mat-icon>forum</mat-icon>
                   <p>{{ chargement() ? 'Chargement…' : corbeille() ? 'La corbeille est vide.' : filtresActifs() ? 'Aucune réclamation ne correspond aux filtres.' : 'Aucune réclamation dans votre périmètre.' }}</p>
                 </div></td></tr>
               }
@@ -328,8 +303,8 @@ export class RcDossiersComponent implements OnInit {
   readonly filtres = this.fb.nonNullable.group({
     q: '', groupe: '', statut: '', etape: '', type_id: '', motif_id: '', canal_id: '', priorite: '', client_categorie: '',
     client_agence_id: '', unite_reception_id: '', unite_concernee_id: '', unite_traitement_id: '', date_debut: '', date_fin: '',
-    situation_delai: '', etat_delai: '', indicateur: '', kpi_debut: '', kpi_fin: '', kpi_unite_id: '',
-    ouvertes: false, en_retard: false, sans_echeance: false, archivees: false, corbeille: false,
+    indicateur: '', kpi_debut: '', kpi_fin: '', kpi_unite_id: '',
+    ouvertes: false, archivees: false, corbeille: false,
   });
   readonly vue = signal<VueListe | null>(null);
   readonly corbeille = signal(false);

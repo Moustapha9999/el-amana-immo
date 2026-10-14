@@ -90,7 +90,6 @@ const rcParametres = () =>
 const rcDashboard = () =>
   import('./reclamations/pages/rc-dashboard.component').then((m) => m.RcDashboardComponent);
 const rcCircuit = () => import('./reclamations/pages/rc-circuit.component').then((m) => m.RcCircuitComponent);
-const rcDelais = () => import('./reclamations/pages/rc-delais.component').then((m) => m.RcDelaisComponent);
 const rcRapports = () => import('./reclamations/pages/rc-rapports.component').then((m) => m.RcRapportsComponent);
 const rcAdmin = () => import('./reclamations/pages/rc-admin.component').then((m) => m.RcAdminComponent);
 const achatsBons = () => import('./achats-appro/achats-bons.component').then((m) => m.AchatsBonsComponent);
@@ -341,7 +340,6 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'a-traiter', loadComponent: rcDossiers, data: { title: 'Mes dossiers à traiter', vue: 'a-traiter' } },
       { path: 'circuit', loadComponent: rcCircuit, data: { title: 'Circuit de traitement' } },
       { path: 'services', loadComponent: rcDossiers, data: { title: 'Services & affectations', vue: 'services' } },
-      { path: 'delais', loadComponent: rcDelais, data: { title: 'Délais & alertes' } },
       { path: 'reponses', redirectTo: 'dossiers', pathMatch: 'full' },
       { path: 'archives', loadComponent: rcDossiers, data: { title: 'Archives & documents', vue: 'archives' } },
       { path: 'rapports', loadComponent: rcRapports, data: { title: 'Rapports & statistiques' } },

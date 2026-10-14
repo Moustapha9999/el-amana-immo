@@ -1,0 +1,12 @@
+:host { display: block; --rc: #1a5278; --rc-l: #e8f1f8; --ok: #15803d; --warn: #c2410c; --ko: #b91c1c; }
+a { color: inherit; text-decoration: none; }
+.rcp-formule { margin: 0; font-size: 0.74rem; color: #64748b; }
+.rcp-table { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+th { padding: 0.45rem 0.5rem; text-align: right; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: #64748b; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+td { padding: 0.45rem 0.5rem; text-align: right; border-bottom: 1px solid #f1f5f9; font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+tbody tr { transition: background 0.15s; }
+tbody tr:hover { background: #f8fafc; }
+td a { display: inline-block; min-width: 1.8rem; padding: 0.1rem 0.4rem; border-radius: 0.4rem; font-weight: 700; color: var(--rc); }
+td a:hover { background: var(--rc-l); text-decoration: underline; }

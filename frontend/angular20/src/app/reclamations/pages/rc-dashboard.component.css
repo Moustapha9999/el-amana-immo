@@ -1,7 +1,6 @@
-:host { display: block; --rc: #1a5278; --rc-l: #e8f1f8; --ok: #15803d; --warn: #c2410c; --ko: #b91c1c; }
+:host { display: block; --rc: #1a5278; --rc-l: #e8f1f8; --ok: #15803d; --ko: #b91c1c; }
 
 @keyframes rcd-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
-@keyframes rcd-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(185, 28, 28, 0.35); } 50% { box-shadow: 0 0 0 7px rgba(185, 28, 28, 0); } }
 @keyframes rcd-spin { to { transform: rotate(360deg); } }
 @keyframes rcd-shimmer { from { background-position: -30rem 0; } to { background-position: 30rem 0; } }
 @keyframes rcd-float { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(-12px, 8px); } }
@@ -44,11 +43,8 @@
 .rcd-kpi::after { content: ''; position: absolute; inset: auto 0 0; height: 3px; background: var(--ton); transform: scaleX(0); transform-origin: left; transition: transform 0.3s ease; }
 a.rcd-kpi:hover, .rcd-kpi:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08); border-color: #cbd5e1; }
 .rcd-kpi:hover::after { transform: scaleX(1); }
-.rcd-kpi[data-tone='danger'] { --ton: var(--ko); --fond: #fee2e2; }
-.rcd-kpi[data-tone='warn'] { --ton: var(--warn); --fond: #ffedd5; }
 .rcd-kpi[data-tone='ok'] { --ton: var(--ok); --fond: #dcfce7; }
 .rcd-kpi__ico { display: grid; place-items: center; width: 2.2rem; height: 2.2rem; margin-bottom: 0.35rem; border-radius: 0.7rem; background: var(--fond); color: var(--ton); }
-.rcd-kpi__ico.is-pulse { animation: rcd-pulse 2s ease-in-out infinite; }
 .rcd-kpi p { margin: 0; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #64748b; }
 .rcd-kpi strong { font-size: 1.7rem; line-height: 1.15; color: #0f172a; font-variant-numeric: tabular-nums; }
 .rcd-kpi[data-tone] strong { color: var(--ton); }
@@ -65,8 +61,6 @@ a.rcd-kpi:hover, .rcd-kpi:hover { transform: translateY(-3px); box-shadow: 0 10p
 .rcd-card:hover { box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06); }
 .rcd-card h2 { display: inline-flex; align-items: center; gap: 0.4rem; }
 .rcd-card h2 mat-icon { width: 1.2rem; height: 1.2rem; font-size: 1.2rem; color: var(--rc); }
-.rcd-card[data-ton='danger'] h2 mat-icon { color: var(--ko); }
-.rcd-card[data-ton='warn'] h2 mat-icon { color: var(--warn); }
 
 .rcd-vide { display: flex; align-items: center; gap: 0.5rem; margin: 0; padding: 1.2rem 1.1rem; color: #64748b; font-size: 0.85rem; }
 .rcd-vide mat-icon { color: #94a3b8; }

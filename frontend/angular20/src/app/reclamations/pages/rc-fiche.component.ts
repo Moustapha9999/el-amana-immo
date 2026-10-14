@@ -78,7 +78,6 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
               <span class="bea-ct-badge" [attr.data-tone]="toneStatut(d.statut)">{{ d.statut_libelle }}</span>
               <span class="bea-ct-badge" [attr.data-tone]="tonePriorite(d.priorite)">{{ d.priorite_libelle }}</span>
               @if (d.nb_operations) { <span class="bea-ct-badge" data-tone="INFO">{{ d.nb_operations }} opération{{ d.nb_operations > 1 ? 's' : '' }} · {{ montant(d.montant_total) }}</span> }
-              @if (d.en_retard) { <span class="bea-ct-badge" data-tone="URGENT">En retard</span> }
               @if (d.archivee_le) { <span class="bea-ct-badge" data-tone="ANNULEE">Archivée</span> }
               @if (d.supprimee_le) { <span class="bea-ct-badge" data-tone="URGENT">Supprimée</span> }
             </div>
@@ -227,13 +226,6 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
                     <dt>Reçue par le SR</dt><dd>{{ d.date_reception_sr ? date(d.date_reception_sr, true) : '—' }}</dd>
                     <dt>Canal</dt><dd>{{ d.canal_ref?.libelle ?? '—' }}</dd>
                     <dt>Point de réception</dt><dd>{{ d.unite_reception_ref?.libelle ?? '—' }}</dd>
-                    <dt>Échéance</dt>
-                    <dd [class.bea-rc-late]="d.en_retard">
-                      {{ d.echeance ? date(d.echeance, true) : (d.etat_delai_libelle || 'Délai non configuré') }}
-                      @if (d.echeance && d.situation_delai_libelle) { <small class="bea-ct-sub">{{ d.situation_delai_libelle }}</small> }
-                      @if (d.regle_delai; as g) { <small class="bea-ct-sub">Règle « {{ g.libelle }} » : {{ g.duree }} {{ g.unite_duree_libelle }}, {{ g.point_depart_libelle }} → {{ g.point_arrivee_libelle }}</small> }
-                      @if (d.date_alerte && !d.termine) { <small class="bea-ct-sub">Alerte à partir du {{ date(d.date_alerte, true) }}</small> }
-                    </dd>
                   </dl>
                 </section>
                 <section class="bea-mg__panel">
@@ -345,7 +337,6 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
                 <dl class="bea-rc-dl">
                   <dt>Transmise</dt><dd>{{ date(a.transmis_le, true) }}{{ a.transmis_par ? ' par ' + a.transmis_par : '' }}</dd>
                   <dt>Instructions</dt><dd>{{ a.instructions ?? '—' }}</dd>
-                  <dt>Échéance service</dt><dd>{{ date(a.echeance_service, true) }}</dd>
                   <dt>Analyse</dt><dd>{{ a.analyse ?? '—' }}</dd>
                   <dt>Actions menées</dt><dd>{{ a.actions_menees ?? '—' }}</dd>
                   <dt>Conclusion</dt><dd>{{ a.conclusion ?? '—' }}</dd>

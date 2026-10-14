@@ -28,16 +28,12 @@ from app.schemas.reclamations import (
     DossierCreate,
     DossierPatch,
     EvaluerIn,
-    JourFerieIn,
     MembreIn,
     MembrePatch,
     OperationsIn,
     QualifierIn,
     ReferentielCreate,
     ReferentielPatch,
-    RegleDelaiCreate,
-    RegleDelaiPatch,
-    RegleDelaiVersion,
     ReponseEnvoyeeIn,
     RestaurerIn,
     RetournerIn,
@@ -46,12 +42,10 @@ from app.schemas.reclamations import (
     UniteCreate,
     UnitePatch,
     ValidationReferentielIn,
-    ValidationRegleIn,
 )
 from app.services.reclamations import constantes as C
 from app.services.reclamations import (
     circuit,
-    delais,
     documents,
     dossiers,
     organisation,
@@ -123,13 +117,6 @@ async def config(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = 
             "statuts_affectation": _libelles(C.STATUT_AFFECTATION_LIBELLES),
             "statuts_reponse": _libelles(C.STATUT_REPONSE_LIBELLES),
             "evaluations": _libelles(C.EVALUATION_LIBELLES),
-            "validations_regle": _libelles(C.VALIDATION_REGLE_LIBELLES),
-            "unites_duree": _libelles(C.UNITE_DUREE_LIBELLES),
-            "points_depart": _libelles(C.POINT_DEPART_LIBELLES),
-            "points_arrivee": _libelles(C.POINT_ARRIVEE_LIBELLES),
-            "etats_delai": _libelles(C.ETAT_DELAI_LIBELLES),
-            "situations_delai": _libelles(C.SITUATION_DELAI_LIBELLES),
-            "destinataires_alerte": _libelles(C.DESTINATAIRES_ALERTE),
             "validations_referentiel": _libelles(C.VALIDATION_REFERENTIEL_LIBELLES),
         },
         "parametres": {"enregistrement_appels_autorise": await dossiers.enregistrement_autorise(db)},
@@ -246,13 +233,8 @@ def filtres_dossiers(
     date_debut: date | None = None,
     date_fin: date | None = None,
     ouvertes: bool = False,
-    en_retard: bool = False,
-    sans_echeance: bool = False,
     archivees: bool | None = None,
     corbeille: bool = False,
-    situation_delai: Literal["DANS_DELAI", "ECHEANCE_PROCHE", "EN_RETARD", "RESPECTE", "DEPASSE",
-                             "NON_CALCULABLE"] | None = None,
-    etat_delai: Literal["CALCULE", "NON_CONFIGURE", "EN_ATTENTE_VALIDATION", "CONFLIT", "SANS_DEPART"] | None = None,
     indicateur: str | None = Query(None, max_length=60, pattern=r"^[a-z_]+$"),
     kpi_debut: date | None = None,
     kpi_fin: date | None = None,
@@ -271,8 +253,7 @@ def filtres_dossiers(
         "unite_reception_id": unite_reception_id, "unite_concernee_id": unite_concernee_id,
         "unite_traitement_id": unite_traitement_id,
         "gestionnaire_id": gestionnaire_id, "date_debut": date_debut, "date_fin": date_fin, "ouvertes": ouvertes,
-        "en_retard": en_retard, "sans_echeance": sans_echeance, "archivees": archivees,
-        "situation_delai": situation_delai, "etat_delai": etat_delai,
+        "archivees": archivees,
         "indicateur": indicateur, "kpi_debut": kpi_debut, "kpi_fin": kpi_fin, "kpi_unite_id": kpi_unite_id,
     }
 
@@ -446,75 +427,6 @@ async def restaurer(rid: uuid.UUID, body: RestaurerIn,
                     db: AsyncSession = Depends(get_db)) -> dict:
     r = await suppression.restaurer(db, s, rid, body.model_dump())
     return await circuit.fiche(db, s, r)
-
-
-# ------------------------------------------------------------------ délais
-@router.get("/regles-delai")
-async def lister_regles(s: ReclamationsScope = Depends(scope(VUE, "reclamations.delais.manage")),
-                        db: AsyncSession = Depends(get_db)) -> list[dict]:
-    return await delais.lister_regles(db)
-
-
-@router.post("/regles-delai", status_code=201)
-async def creer_regle(body: RegleDelaiCreate, s: ReclamationsScope = Depends(scope("reclamations.delais.manage")),
-                      db: AsyncSession = Depends(get_db)) -> dict:
-    return await delais.creer_regle(db, s, body.model_dump())
-
-
-@router.patch("/regles-delai/{rid}")
-async def modifier_regle(rid: uuid.UUID, body: RegleDelaiPatch,
-                         s: ReclamationsScope = Depends(scope("reclamations.delais.manage")),
-                         db: AsyncSession = Depends(get_db)) -> dict:
-    return await delais.modifier_regle(db, s, rid, body.model_dump(exclude_unset=True))
-
-
-@router.post("/regles-delai/{rid}/validation")
-async def valider_regle(rid: uuid.UUID, body: ValidationRegleIn,
-                        s: ReclamationsScope = Depends(scope("reclamations.delais.validate")),
-                        db: AsyncSession = Depends(get_db)) -> dict:
-    return await delais.valider_regle(db, s, rid, body.model_dump())
-
-
-@router.post("/regles-delai/{rid}/versions", status_code=201)
-async def versionner_regle(rid: uuid.UUID, body: RegleDelaiVersion,
-                           s: ReclamationsScope = Depends(scope("reclamations.delais.manage")),
-                           db: AsyncSession = Depends(get_db)) -> dict:
-    return await delais.versionner_regle(db, s, rid, body.model_dump(exclude_unset=True))
-
-
-@router.get("/regles-delai/{rid}/historique")
-async def historique_regle(rid: uuid.UUID, s: ReclamationsScope = Depends(scope(
-        "reclamations.delais.manage", "reclamations.delais.validate")), db: AsyncSession = Depends(get_db)) -> dict:
-    return await delais.historique_regle(db, rid)
-
-
-@router.post("/delais/appliquer")
-async def appliquer_delais(s: ReclamationsScope = Depends(scope("reclamations.delais.manage")),
-                           db: AsyncSession = Depends(get_db)) -> dict:
-    return await delais.appliquer_sans_delai(db, s)
-
-
-@router.get("/jours-feries")
-async def lister_feries(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = Depends(get_db)) -> list[dict]:
-    return await delais.lister_feries(db)
-
-
-@router.post("/jours-feries", status_code=201)
-async def ajouter_ferie(body: JourFerieIn, s: ReclamationsScope = Depends(scope("reclamations.delais.manage")),
-                        db: AsyncSession = Depends(get_db)) -> list[dict]:
-    return await delais.ajouter_ferie(db, s, body.model_dump())
-
-
-@router.delete("/jours-feries/{jour}", status_code=204)
-async def retirer_ferie(jour: date, s: ReclamationsScope = Depends(scope("reclamations.delais.manage")),
-                        db: AsyncSession = Depends(get_db)) -> Response:
-    await delais.retirer_ferie(db, s, jour)
-    return Response(status_code=204)
-
-
-@router.get("/alertes")
-async def alertes(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = Depends(get_db)) -> dict:
-    return await delais.alertes(db, s)
 
 
 # ------------------------------------------------------------------ pilotage

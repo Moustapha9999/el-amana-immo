@@ -192,47 +192,6 @@ EVALUATION_LIBELLES: dict[str, str] = {
     "SUFFISANT": "Retour suffisant",
     "INSUFFISANT": "Retour insuffisant — à renvoyer",
 }
-VALIDATION_REGLE_LIBELLES: dict[str, str] = {
-    "A_VALIDER": "À valider par la Conformité",
-    "VALIDEE": "Validée (présentable comme délai interne validé)",
-    "REJETEE": "Rejetée",
-}
-UNITE_DUREE_LIBELLES: dict[str, str] = {
-    "JOURS_CALENDAIRES": "Jours calendaires",
-    "JOURS_OUVRES": "Jours ouvrés",
-    "HEURES": "Heures (calendaires)",
-}
-POINT_DEPART_LIBELLES: dict[str, str] = {
-    "PREMIERE_RECEPTION": "Première réception par la banque",
-    "RECEPTION_SR": "Réception par le Service Réclamations",
-}
-POINT_ARRIVEE_LIBELLES: dict[str, str] = {
-    "CLOTURE": "Clôture du dossier",
-    "REPONSE_CLIENT": "Envoi de la réponse au client",
-}
-# Pourquoi un dossier a (ou n'a pas) d'échéance : jamais d'échéance fabriquée sans règle validée.
-ETAT_DELAI_LIBELLES: dict[str, str] = {
-    "CALCULE": "Échéance calculée (règle validée)",
-    "NON_CONFIGURE": "Délai non configuré",
-    "EN_ATTENTE_VALIDATION": "Délai en attente de validation",
-    "CONFLIT": "Règles contradictoires — arbitrage requis",
-    "SANS_DEPART": "Événement de départ non survenu",
-}
-# Situation calculée à l'instant T (même définition pour fiche, listes, KPI et exports).
-SITUATION_DELAI_LIBELLES: dict[str, str] = {
-    "DANS_DELAI": "Dans les délais",
-    "ECHEANCE_PROCHE": "Échéance proche",
-    "EN_RETARD": "En retard",
-    "RESPECTE": "Délai respecté",
-    "DEPASSE": "Délai dépassé",
-    "NON_CALCULABLE": "Non calculable",
-}
-# Destinataires possibles d'une alerte de délai (vide = Service Réclamations + service de traitement).
-DESTINATAIRES_ALERTE: dict[str, str] = {
-    "SR": "Service Réclamations",
-    "SERVICE_TRAITEMENT": "Service de traitement",
-    "GESTIONNAIRE": "Gestionnaire du dossier",
-}
 VALIDATION_REFERENTIEL_LIBELLES: dict[str, str] = {
     "PROPOSEE": "Proposée — en attente de validation",
     "VALIDEE": "Validée par la banque",

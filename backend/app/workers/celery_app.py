@@ -11,7 +11,6 @@ celery_app.conf.task_routes = {
     "app.workers.tasks_ocr.*": {"queue": "default"},
     "app.workers.tasks_supervision.*": {"queue": "default"},
     "app.workers.tasks_contrats.*": {"queue": "default"},
-    "app.workers.tasks_reclamations.*": {"queue": "default"},
 }
 celery_app.conf.timezone = "Africa/Nouakchott"
 # Planification (beat embarqué dans le worker : `celery worker -B`).
@@ -28,10 +27,6 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks_contrats.rappels_contrats",
         "schedule": crontab(hour=7, minute=30),
     },
-    "reclamations-alertes-delais": {
-        "task": "app.workers.tasks_reclamations.alertes_delais",
-        "schedule": crontab(hour=7, minute=45),
-    },
 }
 celery_app.autodiscover_tasks(["app.workers"], related_name="tasks_ocr")
 
@@ -39,7 +34,6 @@ celery_app.autodiscover_tasks(["app.workers"], related_name="tasks_ocr")
 import app.workers.tasks_ocr  # noqa: E402,F401
 import app.workers.tasks_supervision  # noqa: E402,F401
 import app.workers.tasks_contrats  # noqa: E402,F401
-import app.workers.tasks_reclamations  # noqa: E402,F401
 
 
 @celery_app.task(name="app.workers.tasks.ping")

@@ -25,7 +25,6 @@ from sqlalchemy.orm import aliased
 
 from app.models import Reclamation, ReclamationAffectation, ReclamationEvenement, ReclamationOperation
 from app.services.reclamations import constantes as C
-from app.services.reclamations import echeances as E
 from app.services.reclamations.acces import ReclamationsScope
 from app.services.reclamations.outils import erreur, maintenant
 
@@ -166,6 +165,10 @@ async def delais(db: AsyncSession, ids, p: Periode, now: datetime) -> list[dict]
     return [await _un_delai(db, d, ids, p, now) for d in DELAIS]
 
 
+async def delai_cloture(db: AsyncSession, s: ReclamationsScope, f: dict, p: Periode) -> dict:
+    return await _un_delai(db, DELAIS_PAR_CODE["cloture"], population(s, f), p, maintenant())
+
+
 # ------------------------------------------------------------------------- réouverture
 def _dans(col, ids) -> list:
     return [] if ids is None else [col.in_(ids)]
@@ -216,8 +219,6 @@ def cond_service(mode: str, p: Periode, now: datetime):
         return p.contient(A.retour_le)
     courant = and_(A.statut.in_(EN_COURS_AFFECTATION), A.id == Reclamation.affectation_courante_id,
                    Reclamation.statut == "EN_TRAITEMENT")
-    if mode == "retard":
-        return and_(courant, A.echeance_service.is_not(None), A.echeance_service < now)
     return courant
 
 
@@ -228,7 +229,7 @@ async def services(db: AsyncSession, ids, p: Periode, now: datetime, libelle) ->
 
     def ligne(uid) -> dict:
         return out.setdefault(uid, {"unite_id": str(uid), "libelle": libelle(uid) or "—", "affectes": 0,
-                                    "en_cours": 0, "retournes": 0, "en_retard": 0, "delai_moyen_heures": None,
+                                    "en_cours": 0, "retournes": 0, "delai_moyen_heures": None,
                                     "age_moyen_heures": None})
 
     for uid, n in (await db.execute(base.add_columns(func.count(distinct(A.reclamation_id)))
@@ -243,9 +244,6 @@ async def services(db: AsyncSession, ids, p: Periode, now: datetime, libelle) ->
             func.avg(_heures(_instant(now), A.transmis_le)))
             .where(cond_service("en_cours", p, now)))).all():
         ligne(uid).update(en_cours=n, age_moyen_heures=_arrondi(age))
-    for uid, n in (await db.execute(base.add_columns(func.count(distinct(A.reclamation_id)))
-                                    .where(cond_service("retard", p, now)))).all():
-        ligne(uid)["en_retard"] = n
     for v in out.values():
         for k in ("delai_moyen", "age_moyen"):
             h = v[f"{k}_heures"]
@@ -257,8 +255,7 @@ async def services(db: AsyncSession, ids, p: Periode, now: datetime, libelle) ->
 INDICATEURS = {
     **{f"delai_{d.code}_{m}": (d.code, m) for d in DELAIS for m in ("termines", "anomalies", "en_cours")},
     "clotures": None, "reouvertes": None,
-    "service_affectes": None, "service_en_cours": None, "service_retournes": None, "service_retard": None,
-    "respect_delai": None, "hors_delai": None,
+    "service_affectes": None, "service_en_cours": None, "service_retournes": None,
 }
 
 
@@ -277,15 +274,10 @@ def ids_indicateur(code: str, p: Periode, now: datetime, unite_id: uuid.UUID | N
         return ids_clotures(ids, p)
     if code == "reouvertes":
         return ids_reouvertes(ids, p)
-    if code.startswith("service_"):
-        q = select(A.reclamation_id).join(Reclamation, Reclamation.id == A.reclamation_id).where(
-            cond_service(code.removeprefix("service_"), p, now), *_dans(A.reclamation_id, ids))
-        q = q.where(A.unite_destinataire_id == unite_id) if unite_id else q
-        return q.correlate(None)
-    fin = E.sql_fin()
-    base = and_(E.sql_calcule(), p.contient(fin))
-    cond = and_(base, fin <= Reclamation.echeance) if code == "respect_delai" else and_(base, fin > Reclamation.echeance)
-    return select(Reclamation.id).where(cond, *_dans(Reclamation.id, ids)).correlate(None)
+    q = select(A.reclamation_id).join(Reclamation, Reclamation.id == A.reclamation_id).where(
+        cond_service(code.removeprefix("service_"), p, now), *_dans(A.reclamation_id, ids))
+    q = q.where(A.unite_destinataire_id == unite_id) if unite_id else q
+    return q.correlate(None)
 
 
 def filtrer(q, f: dict):
@@ -325,8 +317,6 @@ async def synthese(db: AsyncSession, s: ReclamationsScope, f: dict, p: Periode, 
         func.count(ReclamationOperation.id), func.sum(ReclamationOperation.montant),
         func.count(distinct(ReclamationOperation.reclamation_id)),
     ).where(ReclamationOperation.reclamation_id.in_(recues)))).one()
-    respect = await _compte(db, ids_indicateur("respect_delai", p, now, None, ids))
-    hors = await _compte(db, ids_indicateur("hors_delai", p, now, None, ids))
     d = {x["code"]: x for x in await delais(db, ids, p, now)}
     ro = await reouverture(db, ids, p)
     return {
@@ -335,8 +325,6 @@ async def synthese(db: AsyncSession, s: ReclamationsScope, f: dict, p: Periode, 
         "nb_operations": n_ops or 0,
         "dossiers_avec_operations": avec_ops or 0,
         "montant": str(montant or 0),
-        "respect_delai": respect, "hors_delai": hors,
-        "taux_respect": round(100 * respect / (respect + hors), 1) if (respect + hors) else None,
         "taux_reouverture": ro["taux"], "reouvertes": ro["reouvertes"],
         **{f"delai_{k}": v["termines"]["moyenne_heures"] for k, v in d.items()},
         **{f"delai_{k}_n": v["termines"]["n"] for k, v in d.items()},
@@ -350,7 +338,6 @@ METRIQUES = (
     ("clotures", "Réclamations clôturées", "dossiers", 1, "clotures"),
     ("nb_operations", "Opérations contestées (dossiers reçus)", "opérations", 0, None),
     ("montant", f"Montant contesté ({C.DEVISE})", C.DEVISE, 0, None),
-    ("taux_respect", "Respect de l'échéance", "%", 1, "respect_delai"),
     ("taux_reouverture", "Taux de réouverture", "%", -1, "reouvertes"),
     *((f"delai_{d.code}", d.libelle, "heures", -1, f"delai_{d.code}_termines") for d in DELAIS),
 )

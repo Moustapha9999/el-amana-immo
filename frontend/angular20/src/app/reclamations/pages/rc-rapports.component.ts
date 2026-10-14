@@ -9,13 +9,12 @@ import { TableauBord, montantFr } from '../reclamations.models';
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
 import { RcComparaisonComponent } from '../shared/rc-comparaison.component';
 import { RcExportComponent } from '../shared/rc-export.component';
-import { RcPilotageComponent } from '../shared/rc-pilotage.component';
 
-/** Rapports : pilotage (délais, réouverture, services), comparaison de périodes, répartitions et exports. */
+/** Rapports : volumes, comparaison de périodes, répartitions et exports. */
 @Component({
   selector: 'bea-rc-rapports',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, MatIconModule, RouterLink, ReclamationsUiComponent, RcExportComponent, RcPilotageComponent, RcComparaisonComponent],
+  imports: [FormsModule, MatIconModule, RouterLink, ReclamationsUiComponent, RcExportComponent, RcComparaisonComponent],
   template: `
     <bea-rc-styles />
     <section class="bea-mg bea-ct bea-rc">
@@ -56,16 +55,9 @@ import { RcPilotageComponent } from '../shared/rc-pilotage.component';
         <div class="bea-rc-kpis">
           <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="kpi('total')"><mat-icon>forum</mat-icon><p>Reçues</p><strong>{{ d.total }}</strong></a>
           <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="kpi('ouvertes')"><mat-icon>pending_actions</mat-icon><p>Ouvertes</p><strong>{{ d.ouvertes }}</strong></a>
-          <a class="bea-rc-kpi" data-tone="danger" routerLink="/reclamations/dossiers" [queryParams]="kpi('retards')"><mat-icon>timer_off</mat-icon><p>Retards</p><strong>{{ d.retards }}</strong></a>
-          <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="kpi('sans_delai')"><mat-icon>schedule</mat-icon><p>Sans délai</p><strong>{{ d.sans_echeance }}</strong></a>
           <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="kpi('operations')"><mat-icon>receipt_long</mat-icon><p>Opérations</p><strong>{{ d.nb_operations }}</strong><small>dans {{ d.dossiers_avec_operations }} dossier(s)</small></a>
           <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="kpi('operations')"><mat-icon>payments</mat-icon><p>Montant total</p><strong>{{ montant(d.montant_total, d.devise) }}</strong></a>
         </div>
-
-        <section class="bea-mg__panel">
-          <div class="bea-mg__panel-top"><h2>Délais, réouverture et services</h2></div>
-          <div class="bea-rc-pad"><bea-rc-pilotage [pilotage]="d.pilotage" [filtres]="base()" /></div>
-        </section>
 
         <section class="bea-mg__panel">
           <div class="bea-mg__panel-top"><h2>Comparaison de deux périodes</h2><small class="bea-rc-hint">Agence : {{ agenceLibelle() }}</small></div>

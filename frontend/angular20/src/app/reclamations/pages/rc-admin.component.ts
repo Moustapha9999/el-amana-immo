@@ -22,8 +22,6 @@ const CAPS: ReadonlyArray<{ code: Capacite; libelle: string }> = [
   { code: 'archiver', libelle: 'Archiver' },
   { code: 'referentiels_gerer', libelle: 'Gérer les référentiels' },
   { code: 'unites_gerer', libelle: 'Gérer les unités' },
-  { code: 'delais_gerer', libelle: 'Paramétrer les délais' },
-  { code: 'delais_valider', libelle: 'Valider une règle (Conformité)' },
   { code: 'reporting_exporter', libelle: 'Exporter Excel' },
   { code: 'admin', libelle: 'Administration du module' },
 ];
@@ -44,7 +42,6 @@ const CAPS: ReadonlyArray<{ code: Capacite; libelle: string }> = [
         </div>
         <div class="bea-mg__actions">
           <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reclamations/parametres"><mat-icon>tune</mat-icon> Paramètres</a>
-          <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reclamations/delais"><mat-icon>timer</mat-icon> Délais</a>
         </div>
       </header>
 

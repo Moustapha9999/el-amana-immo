@@ -13,7 +13,7 @@ from __future__ import annotations
 import importlib.util
 import pathlib
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
 
@@ -24,7 +24,7 @@ from sqlalchemy import select, text
 
 from app.core.exceptions import AppError
 from app.models import ReclamationReferentiel, ReclamationUnite
-from app.services.reclamations import circuit, delais, dossiers, reponses, reporting
+from app.services.reclamations import circuit, dossiers, reponses, reporting
 from app.services.reclamations import constantes as C
 from app.services.reclamations.acces import ReclamationsScope, permissions_effectives
 from tests.test_reclamations_dossiers import _agent, _classement, _code, _saisie, _sr
@@ -284,7 +284,7 @@ async def test_indicateurs_sans_double_comptage(db):
     assert sum(x["n"] for x in k["statuts"]) == 3 and sum(x["n"] for x in k["etapes"]) == 3
     assert len(k["tendance"]) == 12 and sum(m["recues"] for m in k["tendance"]) == 3
     assert sum(t["n"] for t in k["anciennete"]) == k["ouvertes"] == 3
-    assert k["performance"]["cloturees"] == 0 and k["performance"]["taux_dans_delai"] is None
+    assert k["performance"]["cloturees"] == 0 and k["performance"]["delai_moyen_jours"] is None
     assert {x["etape"] for x in (await reporting.circuit(db, sr))["colonnes"]} == set(C.ETAPE_LIBELLES)
 
     classeur = load_workbook(BytesIO(await reporting.exporter(db, sr, {"q": marqueur})), read_only=True)
@@ -323,23 +323,14 @@ async def test_donnees_existantes_conservees_apres_migration(db):
     assert dossiers.libelle_statut("REPONSE_A_PREPARER") == "Réponse à préparer"
 
 
-async def test_regle_delai_calcule_echeance(db):
+async def test_aucune_echeance_calculee_a_la_creation(db):
+    """« Délais & alertes » retiré : la création et la qualification ne posent plus d'échéance."""
     sr = await _sr(db)
     unite_sr = await _sr_unite(db)
     t, _m, _ = await _classement(db, sr)
-    regle = await delais.creer_regle(db, sr, {
-        "libelle": "Délai test 10 j", "type_id": uuid.UUID(t["id"]), "duree": 10,
-        "unite_duree": "JOURS_CALENDAIRES", "point_depart": "PREMIERE_RECEPTION",
-        "date_effet": date(2020, 1, 1),
-    })
-    assert regle["statut_validation"] == "A_VALIDER"
-    # Règle non validée : jamais appliquée, l'état du délai le dit explicitement.
     d = await dossiers.creer(db, sr, await _saisie(
         db, unite_sr.id, type_id=uuid.UUID(t["id"]),
         date_premiere_reception=datetime.now(UTC) - timedelta(days=1)))
-    assert d["echeance"] is None and d["etat_delai"] == "EN_ATTENTE_VALIDATION"
-    await delais.valider_regle(db, sr, uuid.UUID(regle["id"]), {"statut_validation": "VALIDEE"})
-    d = await dossiers.creer(db, sr, await _saisie(
-        db, unite_sr.id, type_id=uuid.UUID(t["id"]),
-        date_premiere_reception=datetime.now(UTC) - timedelta(days=1)))
-    assert d["echeance"] is not None and d["etat_delai"] == "CALCULE"
+    assert not {"echeance", "etat_delai", "situation_delai", "en_retard", "regle_delai"} & d.keys()
+    r = await dossiers.charger(db, sr, uuid.UUID(d["id"]))
+    assert (r.echeance, r.etat_delai, r.regle_delai_id) == (None, None, None)
