@@ -23,12 +23,14 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -235,6 +237,11 @@ class Reclamation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("doublon_de_id IS NULL OR doublon_de_id <> id", name="ck_reclamations_doublon"),
         CheckConstraint("reclamation_liee_id IS NULL OR reclamation_liee_id <> id", name="ck_reclamations_liee"),
         UniqueConstraint("annee", "numero", name="uq_reclamations_annee_numero"),
+        Index("ix_reclamations_actives_echeance", "echeance",
+              postgresql_where=text("supprimee_le IS NULL AND archivee_le IS NULL "
+                                    "AND statut NOT IN ('CLOTUREE', 'REJETEE', 'ANNULEE')")),
+        Index("ix_reclamations_racine_reception", "client_racine", "date_premiere_reception",
+              postgresql_where=text("client_racine IS NOT NULL")),
     )
 
     reference: Mapped[str] = mapped_column(String(30), unique=True)

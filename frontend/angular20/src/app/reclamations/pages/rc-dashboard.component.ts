@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
@@ -8,26 +8,46 @@ import { Compteur, TableauBord, dateFr, montantFr, tonePriorite, toneStatut } fr
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
 import { RcExportComponent } from '../shared/rc-export.component';
 
-/** Tableau de bord 360° : volumes, retards et files du périmètre, sans donnée inventée. */
+type Periode = 'tout' | '30' | '90' | '365' | 'annee';
+
+const PERIODES: { code: Periode; libelle: string }[] = [
+  { code: 'tout', libelle: 'Tout' },
+  { code: '30', libelle: '30 jours' },
+  { code: '90', libelle: '90 jours' },
+  { code: '365', libelle: '12 mois' },
+  { code: 'annee', libelle: 'Année en cours' },
+];
+const ANNEAU = 2 * Math.PI * 42;
+const DUREE_ANIMATION = 900;
+
+/** Tableau de bord 360° : volumes, délais, tendances et files du périmètre, sans donnée inventée. */
 @Component({
   selector: 'bea-rc-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatIconModule, RouterLink, ReclamationsUiComponent, RcExportComponent],
+  styleUrl: './rc-dashboard.component.css',
   template: `
     <bea-rc-styles />
-    <section class="bea-mg bea-ct bea-rc">
-      <header class="bea-mg__head">
-        <div>
-          <p class="bea-stock-page__kicker">Management & Qualité · Réclamations</p>
+    <section class="bea-mg bea-ct bea-rc rcd">
+      <header class="rcd-hero">
+        <div class="rcd-hero__text">
+          <p class="rcd-hero__kicker">Management & Qualité · Réclamations</p>
           <h1>Tableau de bord 360°</h1>
-          <p class="bea-ct-head__sub">Stock ouvert, retards et volumes des 30 derniers jours, dans votre périmètre.</p>
+          <p>Stock ouvert, délais, tendances et volumes dans votre périmètre.</p>
         </div>
-        <div class="bea-mg__actions">
+        <div class="rcd-hero__actions">
           @if (store.cap('creer')) {
             <a class="bea-mg__btn bea-mg__btn--primary" routerLink="/reclamations/dossiers/nouvelle"><mat-icon>add_comment</mat-icon> Nouvelle réclamation</a>
           }
           <bea-rc-export />
-          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="charger()"><mat-icon>refresh</mat-icon></button>
+          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [class.is-spin]="chargement()" (click)="charger()" title="Actualiser" aria-label="Actualiser">
+            <mat-icon>refresh</mat-icon>
+          </button>
+        </div>
+        <div class="rcd-periodes" role="tablist" aria-label="Période de réception">
+          @for (p of periodes; track p.code) {
+            <button type="button" role="tab" [attr.aria-selected]="periode() === p.code" [class.is-on]="periode() === p.code" (click)="choisirPeriode(p.code)">{{ p.libelle }}</button>
+          }
         </div>
       </header>
 
@@ -37,146 +57,210 @@ import { RcExportComponent } from '../shared/rc-export.component';
           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="charger()"><mat-icon>refresh</mat-icon> Réessayer</button>
         </div>
       } @else if (data(); as d) {
-        <div class="bea-rc-kpis">
-          <a class="bea-rc-kpi" routerLink="/reclamations/dossiers">
-            <mat-icon>forum</mat-icon><p>Total</p><strong>{{ d.total }}</strong>
-            <small>dans le périmètre</small>
+        <div class="rcd-kpis" [class.is-loading]="chargement()">
+          <a class="rcd-kpi" style="--i: 0" routerLink="/reclamations/dossiers">
+            <span class="rcd-kpi__ico"><mat-icon>forum</mat-icon></span>
+            <p>Total</p><strong>{{ n(d.total) }}</strong><small>dans le périmètre</small>
           </a>
-          <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="{ ouvertes: 'true' }">
-            <mat-icon>pending_actions</mat-icon><p>Ouvertes</p><strong>{{ d.ouvertes }}</strong>
-            <small>hors clôturées / rejetées / annulées</small>
+          <a class="rcd-kpi" style="--i: 1" routerLink="/reclamations/dossiers" [queryParams]="{ ouvertes: 'true' }">
+            <span class="rcd-kpi__ico"><mat-icon>pending_actions</mat-icon></span>
+            <p>Ouvertes</p><strong>{{ n(d.ouvertes) }}</strong><small>{{ pct(d.ouvertes, d.total) }} % du total</small>
           </a>
-          <a class="bea-rc-kpi" data-tone="danger" routerLink="/reclamations/dossiers" [queryParams]="{ en_retard: 'true' }">
-            <mat-icon>timer_off</mat-icon><p>En retard</p><strong>{{ d.retards }}</strong>
-            <small>échéance dépassée</small>
+          <a class="rcd-kpi" style="--i: 2" data-tone="danger" routerLink="/reclamations/dossiers" [queryParams]="{ en_retard: 'true' }">
+            <span class="rcd-kpi__ico" [class.is-pulse]="d.retards > 0"><mat-icon>timer_off</mat-icon></span>
+            <p>En retard</p><strong>{{ n(d.retards) }}</strong><small>échéance dépassée</small>
           </a>
-          <a class="bea-rc-kpi" data-tone="warn" routerLink="/reclamations/dossiers" [queryParams]="{ sans_echeance: 'true', ouvertes: 'true' }">
-            <mat-icon>event_busy</mat-icon><p>Sans échéance</p><strong>{{ d.sans_echeance }}</strong>
-            <small>aucune règle applicable</small>
+          <a class="rcd-kpi" style="--i: 3" data-tone="warn" routerLink="/reclamations/delais">
+            <span class="rcd-kpi__ico"><mat-icon>hourglass_bottom</mat-icon></span>
+            <p>Échéance ≤ 7 j</p><strong>{{ n(d.echeances_7j) }}</strong><small>{{ d.sans_echeance }} sans échéance</small>
           </a>
-          <div class="bea-rc-kpi">
-            <mat-icon>calendar_month</mat-icon><p>Reçues 30 j</p><strong>{{ d.volume_30j }}</strong>
-            <small>{{ d.cloturees_30j }} clôturée(s) sur la période</small>
+          <div class="rcd-kpi" style="--i: 4">
+            <span class="rcd-kpi__ico"><mat-icon>calendar_month</mat-icon></span>
+            <p>Reçues 30 j</p><strong>{{ n(d.volume_30j) }}</strong>
+            <small class="rcd-delta" [attr.data-sens]="delta(d).sens"><mat-icon>{{ delta(d).icone }}</mat-icon>{{ delta(d).texte }}</small>
           </div>
-          <div class="bea-rc-kpi">
-            <mat-icon>receipt_long</mat-icon><p>Opérations concernées</p><strong>{{ d.nb_operations }}</strong>
-            <small>dans {{ d.dossiers_avec_operations }} dossier(s)</small>
+          <div class="rcd-kpi" style="--i: 5" data-tone="ok">
+            <span class="rcd-kpi__ico"><mat-icon>task_alt</mat-icon></span>
+            <p>Délai moyen</p>
+            <strong>{{ d.performance.delai_moyen_jours === null ? '—' : d.performance.delai_moyen_jours + ' j' }}</strong>
+            <small>{{ d.cloturees_30j }} clôturée(s) sur 30 j</small>
           </div>
-          <div class="bea-rc-kpi">
-            <mat-icon>payments</mat-icon><p>Montant total</p><strong>{{ montant(d.montant_total, d.devise) }}</strong>
-            <small>somme des opérations, chacune comptée une fois</small>
+          <div class="rcd-kpi" style="--i: 6">
+            <span class="rcd-kpi__ico"><mat-icon>receipt_long</mat-icon></span>
+            <p>Opérations</p><strong>{{ n(d.nb_operations) }}</strong><small>dans {{ d.dossiers_avec_operations }} dossier(s)</small>
+          </div>
+          <div class="rcd-kpi" style="--i: 7">
+            <span class="rcd-kpi__ico"><mat-icon>payments</mat-icon></span>
+            <p>Montant total</p><strong class="rcd-kpi__montant">{{ montant(d.montant_total, d.devise) }}</strong>
+            <small>chaque opération comptée une fois</small>
           </div>
         </div>
 
-        <div class="bea-rc-grid">
-          <section class="bea-mg__panel">
-            <div class="bea-mg__panel-top"><h2>Par statut</h2></div>
-            <ul class="bea-rc-bars">
-              @for (g of d.statuts; track g.code) {
-                <li>
-                  <a [routerLink]="['/reclamations/dossiers']" [queryParams]="{ statut: g.code }">{{ g.libelle }}</a>
-                  <span class="bea-rc-bars__n">{{ g.n }}</span>
-                </li>
+        <div class="rcd-row rcd-row--chart">
+          <section class="bea-mg__panel rcd-card" style="--i: 8">
+            <div class="bea-mg__panel-top"><h2>Évolution sur 12 mois</h2>
+              <span class="rcd-legende"><i data-k="recues"></i> Reçues <i data-k="cloturees"></i> Clôturées</span>
+            </div>
+            <div class="rcd-chart" role="img" [attr.aria-label]="'Réclamations reçues et clôturées par mois, total reçu ' + totalTendance()">
+              @for (m of d.tendance; track m.mois) {
+                <div class="rcd-chart__col" [title]="m.libelle + ' : ' + m.recues + ' reçue(s), ' + m.cloturees + ' clôturée(s)'">
+                  <div class="rcd-chart__bars">
+                    <span data-k="recues" [style.height.%]="hauteur(m.recues)" [style.transition-delay.ms]="$index * 40">
+                      @if (m.recues) { <b>{{ m.recues }}</b> }
+                    </span>
+                    <span data-k="cloturees" [style.height.%]="hauteur(m.cloturees)" [style.transition-delay.ms]="$index * 40 + 20"></span>
+                  </div>
+                  <small>{{ m.libelle }}</small>
+                </div>
               }
-            </ul>
+            </div>
           </section>
-          <section class="bea-mg__panel">
-            <div class="bea-mg__panel-top"><h2>Par étape du circuit</h2></div>
-            <ul class="bea-rc-bars">
-              @for (e of d.etapes; track e.code) {
-                <li>
-                  <a [routerLink]="['/reclamations/dossiers']" [queryParams]="{ etape: e.code }">{{ e.libelle }}</a>
-                  <span class="bea-rc-bars__n">{{ e.n }}</span>
-                </li>
-              }
-            </ul>
-          </section>
-          <section class="bea-mg__panel">
-            <div class="bea-mg__panel-top"><h2>Par priorité</h2></div>
-            <ul class="bea-rc-bars">
-              @for (p of d.priorites; track p.code) {
-                <li>
-                  <a [routerLink]="['/reclamations/dossiers']" [queryParams]="{ priorite: p.code }">{{ p.libelle }}</a>
-                  <span class="bea-rc-bars__n">{{ p.n }}</span>
-                </li>
-              }
+          <section class="bea-mg__panel rcd-card" style="--i: 9">
+            <div class="bea-mg__panel-top"><h2>Respect des délais</h2></div>
+            <div class="rcd-ring">
+              <svg viewBox="0 0 100 100" aria-hidden="true">
+                <circle cx="50" cy="50" r="42" class="rcd-ring__bg" />
+                <circle cx="50" cy="50" r="42" class="rcd-ring__fg" [attr.data-niveau]="niveau(d.performance.taux_dans_delai)"
+                        [style.stroke-dasharray]="anneau" [style.stroke-dashoffset]="decalage(d.performance.taux_dans_delai)" />
+              </svg>
+              <div class="rcd-ring__val">
+                <strong>{{ d.performance.taux_dans_delai === null ? '—' : n(d.performance.taux_dans_delai) + ' %' }}</strong>
+                <small>clôturées dans le délai</small>
+              </div>
+            </div>
+            <ul class="rcd-ring__legend">
+              <li><i data-k="ok"></i> Dans le délai <b>{{ d.performance.dans_delai }}</b></li>
+              <li><i data-k="ko"></i> Hors délai <b>{{ d.performance.hors_delai }}</b></li>
+              <li><i></i> Clôturées <b>{{ d.performance.cloturees }}</b></li>
             </ul>
           </section>
         </div>
 
-        <div class="bea-rc-grid">
-          @for (r of repartitions(); track r.titre) {
-            <section class="bea-mg__panel">
+        <div class="rcd-row">
+          @for (bloc of blocsStatut(); track bloc.titre; let bi = $index) {
+            <section class="bea-mg__panel rcd-card" [style.--i]="10 + bi">
+              <div class="bea-mg__panel-top"><h2>{{ bloc.titre }}</h2></div>
+              <ul class="rcd-bars" [attr.data-ton]="bloc.ton">
+                @for (g of bloc.items; track g.code) {
+                  <li>
+                    <a [routerLink]="['/reclamations/dossiers']" [queryParams]="bloc.filtre(g)">
+                      <span class="rcd-bars__lib">{{ g.libelle }}</span><span class="rcd-bars__n">{{ g.n }}</span>
+                    </a>
+                    <span class="rcd-bars__track"><span class="rcd-bars__fill" [style.width.%]="largeur(g.n, bloc.max)" [style.transition-delay.ms]="$index * 50"></span></span>
+                  </li>
+                }
+              </ul>
+            </section>
+          }
+        </div>
+
+        <div class="rcd-row">
+          <section class="bea-mg__panel rcd-card" style="--i: 13">
+            <div class="bea-mg__panel-top"><h2>Ancienneté du stock ouvert</h2><small class="bea-rc-hint">{{ d.ouvertes }} dossier(s)</small></div>
+            <div class="rcd-stack" role="img" aria-label="Répartition des dossiers ouverts par ancienneté">
+              @for (t of d.anciennete; track t.code) {
+                @if (t.n) { <span [attr.data-k]="t.code" [style.flex-grow]="pret() ? t.n : 0" [title]="t.libelle + ' : ' + t.n"></span> }
+              }
+            </div>
+            <ul class="rcd-stack__legend">
+              @for (t of d.anciennete; track t.code) {
+                <li><i [attr.data-k]="t.code"></i>{{ t.libelle }}<b>{{ t.n }}</b></li>
+              }
+            </ul>
+          </section>
+          <section class="bea-mg__panel rcd-card" style="--i: 14">
+            <div class="bea-mg__panel-top"><h2>Résultat des dossiers clôturés</h2></div>
+            @if (d.resultats.length) {
+              <ul class="rcd-bars" data-ton="ok">
+                @for (r of d.resultats; track r.code) {
+                  <li>
+                    <span class="rcd-bars__row"><span class="rcd-bars__lib">{{ r.libelle }}</span><span class="rcd-bars__n">{{ r.n }}</span></span>
+                    <span class="rcd-bars__track"><span class="rcd-bars__fill" [style.width.%]="largeur(r.n, maxDe(d.resultats))"></span></span>
+                  </li>
+                }
+              </ul>
+            } @else {
+              <p class="rcd-vide"><mat-icon>inventory</mat-icon> Aucun dossier clôturé avec résultat.</p>
+            }
+          </section>
+          <section class="bea-mg__panel rcd-card" style="--i: 15">
+            <div class="bea-mg__panel-top"><h2>Clients récurrents</h2><small class="bea-rc-hint">2 réclamations ou plus</small></div>
+            @if (d.clients_recurrents.length) {
+              <ul class="rcd-clients">
+                @for (c of d.clients_recurrents; track c.racine) {
+                  <li>
+                    <a [routerLink]="['/reclamations/dossiers']" [queryParams]="{ q: c.racine }">
+                      <span class="rcd-clients__av">{{ initiales(c.nom) }}</span>
+                      <span class="rcd-clients__nom"><strong>{{ c.nom || 'Client' }}</strong><small>Racine {{ c.racine }}</small></span>
+                      <span class="rcd-clients__n">{{ c.n }}@if (c.ouvertes) { <small>{{ c.ouvertes }} ouverte(s)</small> }</span>
+                    </a>
+                  </li>
+                }
+              </ul>
+            } @else {
+              <p class="rcd-vide"><mat-icon>person_search</mat-icon> Aucun client récurrent.</p>
+            }
+          </section>
+        </div>
+
+        <div class="rcd-row">
+          @for (r of repartitions(); track r.titre; let ri = $index) {
+            <section class="bea-mg__panel rcd-card" [style.--i]="16 + ri">
               <div class="bea-mg__panel-top"><h2>{{ r.titre }}</h2><small class="bea-rc-hint">dossiers · opérations · montant</small></div>
               @if (r.items.length) {
-                <ul class="bea-rc-bars">
+                <ul class="rcd-bars">
                   @for (c of r.items; track c.id) {
                     <li>
                       @if (r.param && c.id !== 'None') {
-                        <a [routerLink]="['/reclamations/dossiers']" [queryParams]="filtre(r.param, c)">{{ c.libelle }}</a>
+                        <a [routerLink]="['/reclamations/dossiers']" [queryParams]="filtre(r.param, c)">
+                          <span class="rcd-bars__lib">{{ c.libelle }}</span><span class="rcd-bars__n">{{ c.n }}</span>
+                        </a>
                       } @else {
-                        <span>{{ c.libelle === '—' ? 'Non renseigné' : c.libelle }}</span>
+                        <span class="rcd-bars__row"><span class="rcd-bars__lib">{{ c.libelle === '—' ? 'Non renseigné' : c.libelle }}</span><span class="rcd-bars__n">{{ c.n }}</span></span>
                       }
-                      <span><span class="bea-rc-bars__n">{{ c.n }}</span>
-                        @if (c.nb_operations) { <small class="bea-rc-hint"> · {{ c.nb_operations }} op. · {{ montant(c.montant ?? null, d.devise) }}</small> }
-                      </span>
+                      <span class="rcd-bars__track"><span class="rcd-bars__fill" [style.width.%]="largeur(c.n, r.max)" [style.transition-delay.ms]="$index * 50"></span></span>
+                      @if (c.nb_operations) { <small class="rcd-bars__sub">{{ c.nb_operations }} op. · {{ montant(c.montant ?? null, d.devise) }}</small> }
                     </li>
                   }
                 </ul>
               } @else {
-                <p class="bea-rc-pad bea-rc-muted">Aucune donnée.</p>
+                <p class="rcd-vide"><mat-icon>bar_chart</mat-icon> Aucune donnée.</p>
               }
             </section>
           }
         </div>
 
-        <div class="bea-rc-grid">
-          <section class="bea-mg__panel">
-            <div class="bea-mg__panel-top"><h2>Dossiers en retard</h2>
-              <a class="bea-ct-link" routerLink="/reclamations/delais">Voir les alertes</a>
-            </div>
-            @if (d.dossiers_retard.length) {
-              <ul class="bea-rc-mini">
-                @for (r of d.dossiers_retard; track r.id) {
-                  <li>
-                    <a class="bea-rc-mini__row" [routerLink]="['/reclamations/dossiers', r.id]">
-                      <code>{{ r.reference }}</code>
-                      <span class="bea-rc-mini__obj">{{ r.objet }}</span>
-                      <span class="bea-ct-badge" [attr.data-tone]="toneStatut(r.statut)">{{ r.statut_libelle }}</span>
-                      <small>{{ date(r.echeance) }}</small>
-                    </a>
-                  </li>
-                }
-              </ul>
-            } @else {
-              <p class="bea-rc-pad bea-rc-muted">Aucun dossier ouvert en retard dans votre périmètre.</p>
-            }
-          </section>
-          <section class="bea-mg__panel">
-            <div class="bea-mg__panel-top"><h2>Derniers dossiers</h2>
-              <a class="bea-ct-link" routerLink="/reclamations/dossiers">Toutes les réclamations</a>
-            </div>
-            @if (d.recents.length) {
-              <ul class="bea-rc-mini">
-                @for (r of d.recents; track r.id) {
-                  <li>
-                    <a class="bea-rc-mini__row" [routerLink]="['/reclamations/dossiers', r.id]">
-                      <code>{{ r.reference }}</code>
-                      <span class="bea-rc-mini__obj">{{ r.objet }}</span>
-                      <span class="bea-ct-badge" [attr.data-tone]="toneStatut(r.statut)">{{ r.statut_libelle }}</span>
-                      <span class="bea-ct-badge" [attr.data-tone]="tonePriorite(r.priorite)">{{ r.priorite_libelle }}</span>
-                      <small>{{ date(r.date_premiere_reception) }}</small>
-                    </a>
-                  </li>
-                }
-              </ul>
-            } @else {
-              <p class="bea-rc-pad bea-rc-muted">Aucune réclamation dans votre périmètre.</p>
-            }
-          </section>
+        <div class="rcd-row">
+          @for (liste of listes(); track liste.titre; let li = $index) {
+            <section class="bea-mg__panel rcd-card" [attr.data-ton]="liste.ton" [style.--i]="20 + li">
+              <div class="bea-mg__panel-top"><h2><mat-icon>{{ liste.icone }}</mat-icon> {{ liste.titre }}</h2>
+                <a class="bea-ct-link" [routerLink]="liste.lien" [queryParams]="liste.params">{{ liste.lienLibelle }}</a>
+              </div>
+              @if (liste.items.length) {
+                <ul class="bea-rc-mini">
+                  @for (r of liste.items; track r.id) {
+                    <li>
+                      <a class="bea-rc-mini__row" [routerLink]="['/reclamations/dossiers', r.id]">
+                        <code>{{ r.reference }}</code>
+                        <span class="bea-rc-mini__obj">{{ r.objet }}</span>
+                        <span class="bea-ct-badge" [attr.data-tone]="toneStatut(r.statut)">{{ r.statut_libelle }}</span>
+                        @if (liste.priorite) { <span class="bea-ct-badge" [attr.data-tone]="tonePriorite(r.priorite)">{{ r.priorite_libelle }}</span> }
+                        <small>{{ date(liste.priorite ? r.date_premiere_reception : r.echeance) }}</small>
+                      </a>
+                    </li>
+                  }
+                </ul>
+              } @else {
+                <p class="rcd-vide"><mat-icon>{{ liste.videIcone }}</mat-icon> {{ liste.vide }}</p>
+              }
+            </section>
+          }
         </div>
       } @else {
-        <p class="bea-rc-pad bea-rc-muted">Chargement du tableau de bord…</p>
+        <div class="rcd-kpis">
+          @for (i of squelette; track i) { <div class="rcd-kpi rcd-skel"></div> }
+        </div>
+        <div class="rcd-row rcd-row--chart"><div class="rcd-skel rcd-skel--lg"></div><div class="rcd-skel rcd-skel--lg"></div></div>
       }
     </section>
   `,
@@ -188,8 +272,21 @@ export class RcDashboardComponent implements OnInit {
 
   readonly toneStatut = toneStatut;
   readonly tonePriorite = tonePriorite;
+  readonly periodes = PERIODES;
+  readonly anneau = ANNEAU;
+  readonly squelette = [0, 1, 2, 3, 4, 5, 6, 7];
   readonly data = signal<TableauBord | null>(null);
   readonly erreur = signal(false);
+  readonly chargement = signal(false);
+  readonly periode = signal<Periode>('tout');
+  /** Avancement 0 → 1 de l'animation d'entrée (compteurs, barres, anneau). */
+  private readonly progres = signal(1);
+  readonly pret = computed(() => this.progres() > 0);
+  private frame = 0;
+
+  constructor() {
+    inject(DestroyRef).onDestroy(() => cancelAnimationFrame(this.frame));
+  }
 
   ngOnInit(): void {
     this.store.charger();
@@ -198,15 +295,115 @@ export class RcDashboardComponent implements OnInit {
 
   charger(): void {
     this.erreur.set(false);
-    this.rc.tableauDeBord().subscribe({
-      next: (d) => this.data.set(d),
+    this.chargement.set(true);
+    const debut = this.dateDebut(this.periode());
+    this.rc.tableauDeBord(debut ? { date_debut: debut } : {}).subscribe({
+      next: (d) => {
+        this.data.set(d);
+        this.chargement.set(false);
+        this.animer();
+      },
       error: (e) => {
+        this.chargement.set(false);
         this.erreur.set(true);
         void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Tableau de bord indisponible'));
       },
     });
   }
 
+  choisirPeriode(p: Periode): void {
+    if (p === this.periode()) return;
+    this.periode.set(p);
+    this.charger();
+  }
+
+  private dateDebut(p: Periode): string | null {
+    if (p === 'tout') return null;
+    const d = new Date();
+    if (p === 'annee') d.setMonth(0, 1);
+    else d.setDate(d.getDate() - Number(p));
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  private animer(): void {
+    cancelAnimationFrame(this.frame);
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.progres.set(1);
+      return;
+    }
+    this.progres.set(0);
+    const t0 = performance.now();
+    const pas = (t: number) => {
+      const x = Math.min(1, (t - t0) / DUREE_ANIMATION);
+      this.progres.set(Math.max(0.001, 1 - Math.pow(1 - x, 3)));
+      if (x < 1) this.frame = requestAnimationFrame(pas);
+    };
+    this.frame = requestAnimationFrame(pas);
+  }
+
+  n(v: number): number {
+    return Math.round(v * this.progres());
+  }
+
+  pct(part: number, total: number): number {
+    return total ? Math.round((100 * part) / total) : 0;
+  }
+
+  largeur(v: number, max: number): number {
+    return this.pret() && max ? Math.max(2, (100 * v) / max) : 0;
+  }
+
+  maxDe(items: { n: number }[]): number {
+    return Math.max(0, ...items.map((i) => i.n));
+  }
+
+  readonly maxTendance = computed(() => {
+    const t = this.data()?.tendance ?? [];
+    return Math.max(1, ...t.map((m) => Math.max(m.recues, m.cloturees)));
+  });
+
+  readonly totalTendance = computed(() => (this.data()?.tendance ?? []).reduce((s, m) => s + m.recues, 0));
+
+  hauteur(v: number): number {
+    return this.pret() && v ? Math.max(3, (100 * v) / this.maxTendance()) : 0;
+  }
+
+  decalage(taux: number | null): number {
+    return ANNEAU * (1 - ((taux ?? 0) / 100) * this.progres());
+  }
+
+  niveau(taux: number | null): string {
+    return taux === null ? 'na' : taux >= 90 ? 'ok' : taux >= 70 ? 'moyen' : 'faible';
+  }
+
+  delta(d: TableauBord): { sens: string; icone: string; texte: string } {
+    const avant = d.volume_30j_precedent;
+    const ecart = d.volume_30j - avant;
+    if (!avant) return { sens: 'neutre', icone: 'remove', texte: `${avant} sur les 30 j précédents` };
+    const p = Math.round((100 * ecart) / avant);
+    if (ecart === 0) return { sens: 'neutre', icone: 'trending_flat', texte: 'stable vs 30 j précédents' };
+    return ecart > 0
+      ? { sens: 'hausse', icone: 'trending_up', texte: `+${p} % vs 30 j précédents` }
+      : { sens: 'baisse', icone: 'trending_down', texte: `${p} % vs 30 j précédents` };
+  }
+
+  initiales(nom: string | null): string {
+    const mots = (nom ?? '').trim().split(/\s+/).filter(Boolean);
+    return (mots.slice(0, 2).map((m) => m[0]).join('') || '?').toUpperCase();
+  }
+
+  readonly blocsStatut = computed(() => {
+    const d = this.data();
+    if (!d) return [];
+    return [
+      { titre: 'Par statut', ton: 'statut', items: d.statuts, max: this.maxDe(d.statuts),
+        filtre: (g: Compteur) => ({ statut: g.code }) },
+      { titre: 'Par étape du circuit', ton: 'etape', items: d.etapes, max: this.maxDe(d.etapes),
+        filtre: (g: Compteur) => ({ etape: g.code }) },
+      { titre: 'Par priorité', ton: 'priorite', items: d.priorites, max: this.maxDe(d.priorites),
+        filtre: (g: Compteur) => ({ priorite: g.code }) },
+    ];
+  });
 
   readonly repartitions = computed(() => {
     const d = this.data();
@@ -216,6 +413,22 @@ export class RcDashboardComponent implements OnInit {
       { titre: 'Par canal', items: d.canaux, param: 'canal_id' },
       { titre: 'Par agence', items: d.agences, param: 'client_agence_id' },
       { titre: 'Par service', items: d.services, param: '' },
+    ].map((r) => ({ ...r, max: this.maxDe(r.items) }));
+  });
+
+  readonly listes = computed(() => {
+    const d = this.data();
+    if (!d) return [];
+    return [
+      { titre: 'Échéance dans 7 jours', icone: 'hourglass_bottom', ton: 'warn', items: d.a_risque, priorite: false,
+        lien: '/reclamations/delais', params: {}, lienLibelle: 'Délais et alertes',
+        vide: 'Aucune échéance proche.', videIcone: 'event_available' },
+      { titre: 'Dossiers en retard', icone: 'timer_off', ton: 'danger', items: d.dossiers_retard, priorite: false,
+        lien: '/reclamations/dossiers', params: { en_retard: 'true' }, lienLibelle: 'Tous les retards',
+        vide: 'Aucun dossier ouvert en retard.', videIcone: 'verified' },
+      { titre: 'Derniers dossiers', icone: 'history', ton: '', items: d.recents, priorite: true,
+        lien: '/reclamations/dossiers', params: {}, lienLibelle: 'Toutes les réclamations',
+        vide: 'Aucune réclamation dans votre périmètre.', videIcone: 'inbox' },
     ];
   });
 

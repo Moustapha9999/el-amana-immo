@@ -52,6 +52,79 @@ def _repartition(rows: list[Reclamation], resumes: dict, cle: Callable[[Reclamat
     return sorted(out, key=lambda x: (-x["n"], x["libelle"]))
 
 
+def _compter(valeurs) -> list[tuple[str, int]]:
+    acc: dict[str, int] = {}
+    for v in valeurs:
+        acc[v] = acc.get(v, 0) + 1
+    return sorted(acc.items(), key=lambda kv: -kv[1])
+
+
+def _performance(rows: list[Reclamation]) -> dict:
+    """Délai moyen de clôture et respect de l'échéance, sur les seuls dossiers clôturés."""
+    cloturees = [r for r in rows if r.statut == "CLOTUREE" and r.date_cloture]
+    avec_echeance = [r for r in cloturees if r.echeance]
+    dans_delai = sum(1 for r in avec_echeance if r.date_cloture <= r.echeance)
+    jours = [(r.date_cloture - r.date_premiere_reception).total_seconds() / 86400 for r in cloturees]
+    return {
+        "cloturees": len(cloturees),
+        "delai_moyen_jours": round(sum(jours) / len(jours), 1) if jours else None,
+        "dans_delai": dans_delai,
+        "hors_delai": len(avec_echeance) - dans_delai,
+        "taux_dans_delai": round(100 * dans_delai / len(avec_echeance), 1) if avec_echeance else None,
+    }
+
+
+TRANCHES_ANCIENNETE = (("0-7", "0 à 7 jours", 7), ("8-15", "8 à 15 jours", 15),
+                       ("16-30", "16 à 30 jours", 30), ("30+", "Plus de 30 jours", None))
+
+
+def _anciennete(ouvertes: list[Reclamation], now) -> list[dict]:
+    n = dict.fromkeys((code for code, _, _ in TRANCHES_ANCIENNETE), 0)
+    for r in ouvertes:
+        age = (now - r.date_premiere_reception).days
+        code = next(c for c, _, borne in TRANCHES_ANCIENNETE if borne is None or age <= borne)
+        n[code] += 1
+    return [{"code": c, "libelle": lib, "n": n[c]} for c, lib, _ in TRANCHES_ANCIENNETE]
+
+
+MOIS = ("janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc.")
+
+
+def _tendance(rows: list[Reclamation], now, nb_mois: int = 12) -> list[dict]:
+    """Reçues et clôturées par mois calendaire, sur les ``nb_mois`` derniers mois (mois courant inclus)."""
+    cles: list[tuple[int, int]] = []
+    annee, mois = now.year, now.month
+    for _ in range(nb_mois):
+        cles.append((annee, mois))
+        annee, mois = (annee - 1, 12) if mois == 1 else (annee, mois - 1)
+    cles.reverse()
+    recues = dict.fromkeys(cles, 0)
+    cloturees = dict.fromkeys(cles, 0)
+    for r in rows:
+        k = (r.date_premiere_reception.year, r.date_premiere_reception.month)
+        if k in recues:
+            recues[k] += 1
+        if r.date_cloture:
+            k = (r.date_cloture.year, r.date_cloture.month)
+            if k in cloturees:
+                cloturees[k] += 1
+    return [{"mois": f"{a}-{m:02d}", "libelle": f"{MOIS[m - 1]} {a % 100:02d}", "recues": recues[(a, m)],
+             "cloturees": cloturees[(a, m)]} for a, m in cles]
+
+
+def _recurrents(rows: list[Reclamation], limite: int = 5) -> list[dict]:
+    """Clients (racine) ayant déposé au moins deux réclamations dans le périmètre filtré."""
+    acc: dict[str, dict] = {}
+    for r in rows:
+        if not r.client_racine:
+            continue
+        a = acc.setdefault(r.client_racine, {"racine": r.client_racine, "nom": r.client_nom, "n": 0, "ouvertes": 0})
+        a["n"] += 1
+        if r.statut not in C.STATUTS_TERMINAUX:
+            a["ouvertes"] += 1
+    return sorted((a for a in acc.values() if a["n"] >= 2), key=lambda a: (-a["n"], a["nom"] or ""))[:limite]
+
+
 async def tableau_de_bord(db: AsyncSession, s: ReclamationsScope, filtres: dict | None = None) -> dict:
     ctx = await Contexte.charger(db)
     q = _filtres(select(Reclamation).where(s.filtre_dossiers()), filtres or {})
@@ -80,13 +153,24 @@ async def tableau_de_bord(db: AsyncSession, s: ReclamationsScope, filtres: dict 
         return (ctx.unite(i) or {}).get("libelle")
 
     montant_total = sum((m or ZERO for _, m in resumes.values()), ZERO)
+    a_risque = sorted((r for r in ouvertes if r.echeance and now <= r.echeance <= now + timedelta(days=7)),
+                      key=lambda r: r.echeance)
     return {
         "total": len(rows),
         "ouvertes": len(ouvertes),
         "retards": len(retards),
         "sans_echeance": len(sans_echeance),
         "volume_30j": sum(1 for r in rows if r.date_premiere_reception >= depuis),
+        "volume_30j_precedent": sum(1 for r in rows if depuis - timedelta(days=30) <= r.date_premiere_reception < depuis),
         "cloturees_30j": sum(1 for r in rows if r.date_cloture and r.date_cloture >= depuis),
+        "echeances_7j": len(a_risque),
+        "a_risque": [ligne(r, ctx, resume=resumes.get(r.id)) for r in a_risque[:8]],
+        "performance": _performance(rows),
+        "anciennete": _anciennete(ouvertes, now),
+        "tendance": _tendance(rows, now),
+        "resultats": [{"code": k, "libelle": C.RESULTAT_LIBELLES.get(k, k), "n": n}
+                      for k, n in _compter(r.resultat for r in rows if r.statut == "CLOTUREE" and r.resultat)],
+        "clients_recurrents": _recurrents(rows),
         "nb_operations": sum(n for n, _ in resumes.values()),
         "dossiers_avec_operations": sum(1 for n, _ in resumes.values() if n),
         "montant_total": str(montant_total),

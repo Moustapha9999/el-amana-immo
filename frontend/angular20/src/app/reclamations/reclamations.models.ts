@@ -338,7 +338,21 @@ export interface TableauBord {
   retards: number;
   sans_echeance: number;
   volume_30j: number;
+  volume_30j_precedent: number;
   cloturees_30j: number;
+  echeances_7j: number;
+  a_risque: DossierLigne[];
+  performance: {
+    cloturees: number;
+    delai_moyen_jours: number | null;
+    dans_delai: number;
+    hors_delai: number;
+    taux_dans_delai: number | null;
+  };
+  anciennete: Compteur[];
+  tendance: { mois: string; libelle: string; recues: number; cloturees: number }[];
+  resultats: Compteur[];
+  clients_recurrents: { racine: string; nom: string | null; n: number; ouvertes: number }[];
   nb_operations: number;
   dossiers_avec_operations: number;
   montant_total: string;

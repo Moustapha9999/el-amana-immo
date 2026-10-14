@@ -282,6 +282,9 @@ async def test_indicateurs_sans_double_comptage(db):
     assert motifs["Autre (saisie libre)"]["n"] == 1
     assert sum(x["n"] for x in k["canaux"]) == 3
     assert sum(x["n"] for x in k["statuts"]) == 3 and sum(x["n"] for x in k["etapes"]) == 3
+    assert len(k["tendance"]) == 12 and sum(m["recues"] for m in k["tendance"]) == 3
+    assert sum(t["n"] for t in k["anciennete"]) == k["ouvertes"] == 3
+    assert k["performance"]["cloturees"] == 0 and k["performance"]["taux_dans_delai"] is None
     assert {x["etape"] for x in (await reporting.circuit(db, sr))["colonnes"]} == set(C.ETAPE_LIBELLES)
 
     classeur = load_workbook(BytesIO(await reporting.exporter(db, sr, {"q": marqueur})), read_only=True)
