@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import UploadFile
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import GedDocument, ReclamationDocument
@@ -46,7 +46,10 @@ async def lister(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID) -> dict
         .outerjoin(ReclamationDocument, ReclamationDocument.document_id == GedDocument.id)
         .where(GedDocument.module_code == C.MODULE_CODE, GedDocument.entity == C.GED_ENTITE,
                GedDocument.entity_id == str(r.id), GedDocument.deleted_at.is_(None))
-        .order_by(GedDocument.created_at))).all()
+        .order_by(GedDocument.created_at,
+                  case({c: i for i, c in enumerate(C.CATEGORIE_DOCUMENT_LIBELLES)}, value=ReclamationDocument.categorie,
+                       else_=len(C.CATEGORIE_DOCUMENT_LIBELLES)),
+                  GedDocument.filename))).all()
     noms = await noms_utilisateurs(db, {d.uploaded_by_id for d, _m in rows})
     items = []
     for d, m in rows:

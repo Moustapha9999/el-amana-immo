@@ -15,9 +15,11 @@ import pathlib
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from io import BytesIO
 
 import pytest
 from fastapi import HTTPException
+from openpyxl import load_workbook
 from sqlalchemy import select, text
 
 from app.core.exceptions import AppError
@@ -281,6 +283,14 @@ async def test_indicateurs_sans_double_comptage(db):
     assert sum(x["n"] for x in k["canaux"]) == 3
     assert sum(x["n"] for x in k["statuts"]) == 3 and sum(x["n"] for x in k["etapes"]) == 3
     assert {x["etape"] for x in (await reporting.circuit(db, sr))["colonnes"]} == set(C.ETAPE_LIBELLES)
+
+    classeur = load_workbook(BytesIO(await reporting.exporter(db, sr, {"q": marqueur})), read_only=True)
+    assert classeur.sheetnames == ["Réclamations", "Opérations"]
+    valeurs = [row for row in classeur["Réclamations"].iter_rows(values_only=True)]
+    total = next(row for row in valeurs if row[0] == "Total")
+    assert total[16] == 4 and Decimal(str(total[17])) == Decimal("650.50")
+    pdf = await reporting.exporter(db, sr, {"q": marqueur}, format="pdf")
+    assert pdf.startswith(b"%PDF")
 
 
 # ------------------------------------------------------- 10. reprise des données

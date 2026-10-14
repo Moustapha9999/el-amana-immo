@@ -201,8 +201,7 @@ async def apercu_client(racine: str, s: ReclamationsScope = Depends(scope("recla
 
 
 # ------------------------------------------------------------------ dossiers
-@router.get("/dossiers")
-async def lister_dossiers(
+def filtres_dossiers(
     q: str | None = Query(None, max_length=100),
     statut: list[str] | None = Query(None),
     groupe: list[str] | None = Query(None),
@@ -225,14 +224,9 @@ async def lister_dossiers(
     en_retard: bool = False,
     sans_echeance: bool = False,
     archivees: bool | None = None,
-    page: int = Query(1, ge=1),
-    taille: int = Query(25, ge=1, le=100),
-    tri: str = "date_premiere_reception",
-    ordre: Literal["asc", "desc"] = "desc",
-    s: ReclamationsScope = Depends(scope(VUE)),
-    db: AsyncSession = Depends(get_db),
 ) -> dict:
-    filtres = {
+    """Filtres communs à la liste et aux exports."""
+    return {
         "q": q, "statut": statut, "groupe": groupe, "etape": etape, "type_id": type_id, "motif_id": motif_id,
         "sous_motif_id": sous_motif_id, "canal_id": canal_id, "priorite": priorite,
         "client_categorie": client_categorie, "client_racine": client_racine, "client_agence_id": client_agence_id,
@@ -241,6 +235,18 @@ async def lister_dossiers(
         "gestionnaire_id": gestionnaire_id, "date_debut": date_debut, "date_fin": date_fin, "ouvertes": ouvertes,
         "en_retard": en_retard, "sans_echeance": sans_echeance, "archivees": archivees,
     }
+
+
+@router.get("/dossiers")
+async def lister_dossiers(
+    filtres: dict = Depends(filtres_dossiers),
+    page: int = Query(1, ge=1),
+    taille: int = Query(25, ge=1, le=100),
+    tri: str = "date_premiere_reception",
+    ordre: Literal["asc", "desc"] = "desc",
+    s: ReclamationsScope = Depends(scope(VUE)),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     return await dossiers.lister(db, s, filtres, page=page, taille=taille, tri=tri, ordre=ordre)
 
 
@@ -447,16 +453,11 @@ async def vue_circuit(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSessi
 
 
 @router.get("/export")
-async def exporter(q: str | None = Query(None, max_length=100), groupe: list[str] | None = Query(None),
-                   statut: list[str] | None = Query(None), etape: str | None = None,
-                   ouvertes: bool = False, en_retard: bool = False, archivees: bool | None = None,
-                   date_debut: date | None = None, date_fin: date | None = None,
+async def exporter(format: Literal["xlsx", "pdf"] = "xlsx", filtres: dict = Depends(filtres_dossiers),
                    s: ReclamationsScope = Depends(scope("reclamations.reporting.view")),
                    db: AsyncSession = Depends(get_db)) -> Response:
-    contenu = await reporting.exporter(db, s, {
-        "q": q, "groupe": groupe, "statut": statut, "etape": etape,
-        "ouvertes": ouvertes, "en_retard": en_retard, "archivees": archivees,
-        "date_debut": date_debut, "date_fin": date_fin,
-    })
-    return _fichier(contenu, f"reclamations-{date.today().isoformat()}.xlsx",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    contenu = await reporting.exporter(db, s, filtres, format=format)
+    nom = f"reclamations-{date.today().isoformat()}.{format}"
+    if format == "pdf":
+        return _fichier(contenu, nom, "application/pdf")
+    return _fichier(contenu, nom, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

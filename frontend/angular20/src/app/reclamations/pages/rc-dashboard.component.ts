@@ -4,14 +4,15 @@ import { RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
-import { Compteur, TableauBord, dateFr, montantFr, telechargerBlob, tonePriorite, toneStatut } from '../reclamations.models';
+import { Compteur, TableauBord, dateFr, montantFr, tonePriorite, toneStatut } from '../reclamations.models';
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
+import { RcExportComponent } from '../shared/rc-export.component';
 
 /** Tableau de bord 360° : volumes, retards et files du périmètre, sans donnée inventée. */
 @Component({
   selector: 'bea-rc-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule, RouterLink, ReclamationsUiComponent],
+  imports: [MatIconModule, RouterLink, ReclamationsUiComponent, RcExportComponent],
   template: `
     <bea-rc-styles />
     <section class="bea-mg bea-ct bea-rc">
@@ -25,9 +26,7 @@ import { ReclamationsService, ReclamationsStore } from '../reclamations.service'
           @if (store.cap('creer')) {
             <a class="bea-mg__btn bea-mg__btn--primary" routerLink="/reclamations/dossiers/nouvelle"><mat-icon>add_comment</mat-icon> Nouvelle réclamation</a>
           }
-          @if (store.cap('reporting_exporter')) {
-            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="exporter()"><mat-icon>download</mat-icon> Exporter Excel</button>
-          }
+          <bea-rc-export />
           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="charger()"><mat-icon>refresh</mat-icon></button>
         </div>
       </header>
@@ -191,7 +190,6 @@ export class RcDashboardComponent implements OnInit {
   readonly tonePriorite = tonePriorite;
   readonly data = signal<TableauBord | null>(null);
   readonly erreur = signal(false);
-  readonly busy = signal(false);
 
   ngOnInit(): void {
     this.store.charger();
@@ -209,15 +207,6 @@ export class RcDashboardComponent implements OnInit {
     });
   }
 
-  exporter(): void {
-    this.feedback
-      .run(() => this.rc.exporter(), {
-        busy: this.busy, loading: 'Préparation de l’export…',
-        success: () => ({ title: 'Export prêt' }),
-        errorTitle: 'Export refusé', retry: false,
-      })
-      .subscribe((b) => telechargerBlob(b, `reclamations-${new Date().toISOString().slice(0, 10)}.xlsx`));
-  }
 
   readonly repartitions = computed(() => {
     const d = this.data();

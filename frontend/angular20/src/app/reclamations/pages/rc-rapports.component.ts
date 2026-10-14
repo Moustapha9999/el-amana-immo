@@ -4,14 +4,15 @@ import { RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
-import { TableauBord, montantFr, telechargerBlob } from '../reclamations.models';
+import { TableauBord, montantFr } from '../reclamations.models';
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
+import { RcExportComponent } from '../shared/rc-export.component';
 
 /** Rapports : répartitions du périmètre et export Excel (plafond serveur 5 000 lignes). */
 @Component({
   selector: 'bea-rc-rapports',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule, RouterLink, ReclamationsUiComponent],
+  imports: [MatIconModule, RouterLink, ReclamationsUiComponent, RcExportComponent],
   template: `
     <bea-rc-styles />
     <section class="bea-mg bea-ct bea-rc">
@@ -22,9 +23,7 @@ import { ReclamationsService, ReclamationsStore } from '../reclamations.service'
           <p class="bea-ct-head__sub">Répartitions calculées sur les dossiers de votre périmètre. L’export Excel est plafonné à 5 000 lignes.</p>
         </div>
         <div class="bea-mg__actions">
-          @if (store.cap('reporting_exporter')) {
-            <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()" (click)="exporter()"><mat-icon>download</mat-icon> Exporter Excel</button>
-          }
+          <bea-rc-export />
           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="charger()"><mat-icon>refresh</mat-icon></button>
         </div>
       </header>
@@ -114,7 +113,6 @@ export class RcRapportsComponent implements OnInit {
 
   readonly data = signal<TableauBord | null>(null);
   readonly erreur = signal(false);
-  readonly busy = signal(false);
 
   ngOnInit(): void {
     this.store.charger();
@@ -136,13 +134,4 @@ export class RcRapportsComponent implements OnInit {
     return montantFr(v, devise);
   }
 
-  exporter(): void {
-    this.feedback
-      .run(() => this.rc.exporter(), {
-        busy: this.busy, loading: 'Préparation de l’export…',
-        success: () => ({ title: 'Export prêt' }),
-        errorTitle: 'Export refusé', retry: false,
-      })
-      .subscribe((b) => telechargerBlob(b, `reclamations-${new Date().toISOString().slice(0, 10)}.xlsx`));
-  }
 }

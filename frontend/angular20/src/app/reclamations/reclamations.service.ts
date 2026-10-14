@@ -160,8 +160,8 @@ export class ReclamationsService {
     return `/api/v1${RC_BASE}/export${q ? '?' + q : ''}`;
   }
 
-  exporter(filtres: Filtres = {}): Observable<Blob> {
-    return this.api.download(`${RC_BASE}/export`, parametres(filtres));
+  exporter(filtres: Filtres = {}, format: 'xlsx' | 'pdf' = 'xlsx'): Observable<Blob> {
+    return this.api.download(`${RC_BASE}/export`, { ...parametres(filtres), format });
   }
 
   regles(): Observable<RegleDelai[]> {

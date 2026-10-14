@@ -222,7 +222,7 @@ def _remplir_feuille(
     meta_parts = [f"Exporté le {format_export_datetime(when)}"]
     if subtitle:
         meta_parts.append(subtitle)
-    meta_parts.append(f"{len(rows)} ligne(s)")
+    meta_parts.append(f"{sum(1 for r in rows if not _est_ligne_total(r))} ligne(s)")
     ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=n_cols)
     c3 = ws["A3"]
     c3.value = "  ·  ".join(meta_parts)
@@ -508,7 +508,7 @@ def build_styled_pdf(
     meta_parts = [exported_label]
     if subtitle:
         meta_parts.append(subtitle)
-    meta_parts.append(f"{len(rows)} ligne(s)")
+    meta_parts.append(f"{sum(1 for r in rows if not _est_ligne_total(r))} ligne(s)")
 
     story: list = []
     logo_path = resolve_bea_logo_path()

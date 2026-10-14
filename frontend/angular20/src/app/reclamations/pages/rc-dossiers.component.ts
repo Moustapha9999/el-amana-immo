@@ -6,8 +6,11 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
-import { DossierLigne, dateFr, montantFr, telechargerBlob, toneStatut, tonePriorite } from '../reclamations.models';
-import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
+import { DossierLigne, dateFr, montantFr, toneStatut, tonePriorite } from '../reclamations.models';
+import { Filtres, ReclamationsService, ReclamationsStore } from '../reclamations.service';
+import { RcExportComponent } from '../shared/rc-export.component';
+
+const ANNULABLES = new Set(['A_QUALIFIER', 'A_AFFECTER', 'REOUVERTE']);
 
 const TAILLE = 25;
 const TRIS = new Set(['reference', 'date_reclamation', 'date_premiere_reception', 'date_reception_sr', 'echeance', 'statut', 'priorite', 'client_nom', 'updated_at']);
@@ -45,7 +48,7 @@ const VUES: Record<string, VueListe> = {
 @Component({
   selector: 'bea-rc-dossiers',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MatIconModule, ReclamationsUiComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatIconModule, ReclamationsUiComponent, RcExportComponent],
   template: `
     <bea-rc-styles />
     <section class="bea-mg bea-ct bea-rc">
@@ -63,14 +66,12 @@ const VUES: Record<string, VueListe> = {
           @if (store.cap('creer') && !vue()) {
             <a class="bea-mg__btn bea-mg__btn--primary" routerLink="/reclamations/dossiers/nouvelle"><mat-icon>add_comment</mat-icon> Nouvelle réclamation</a>
           }
-          @if (store.cap('reporting_exporter')) {
-            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="exportBusy()" (click)="exporter()"><mat-icon>download</mat-icon> Excel</button>
-          }
+          <bea-rc-export [filtres]="courant()" />
           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Actualiser" (click)="charger()"><mat-icon>refresh</mat-icon></button>
         </div>
       </header>
 
-      <form class="bea-mg__search bea-ct-filters" [formGroup]="filtres" (ngSubmit)="appliquer()">
+      <form class="bea-mg__search bea-ct-filters bea-rc-filters" [formGroup]="filtres" (ngSubmit)="appliquer()">
         <label class="bea-mg__field bea-ct-filters__q">Recherche
           <input formControlName="q" placeholder="Référence, objet, client, racine, compte, opération" maxlength="100" />
         </label>
@@ -166,7 +167,7 @@ const VUES: Record<string, VueListe> = {
         </div>
       } @else {
         <div class="bea-mg__table-scroll bea-ct-table-wrap">
-          <table class="bea-mg__table bea-ct-table">
+          <table class="bea-mg__table bea-ct-table bea-rc-liste">
             <thead>
               <tr>
                 <th><button type="button" class="bea-rc-sort" (click)="trier('reference')">Référence {{ fleche('reference') }}</button></th>
@@ -190,7 +191,7 @@ const VUES: Record<string, VueListe> = {
                     <a class="bea-ct-link" [routerLink]="['/reclamations/dossiers', d.id]"><code class="bea-mg__code">{{ d.reference }}</code></a>
                     @if (d.nb_documents) { <small class="bea-ct-sub">{{ d.nb_documents }} pièce{{ d.nb_documents > 1 ? 's' : '' }}</small> }
                   </td>
-                  <td class="is-nowrap">{{ date(d.date_reclamation ?? d.date_premiere_reception) }}<small class="bea-ct-sub">{{ d.canal }}</small></td>
+                  <td class="is-nowrap" [title]="d.canal ?? ''">{{ date(d.date_reclamation ?? d.date_premiere_reception) }}</td>
                   <td class="is-wide">
                     <strong class="bea-ct-strong">{{ d.client_nom || '—' }}</strong>
                     @if (d.client_racine) { <small class="bea-ct-sub">Racine {{ d.client_racine }}</small> }
@@ -210,7 +211,13 @@ const VUES: Record<string, VueListe> = {
                     @else { <span class="bea-rc-muted" title="Aucune règle de délai applicable">—</span> }
                   </td>
                   <td class="bea-mg__actions-cell is-nowrap">
-                    <a class="bea-mg__icon-btn" [routerLink]="['/reclamations/dossiers', d.id]" title="Ouvrir la fiche"><mat-icon>visibility</mat-icon></a>
+                    <a class="bea-mg__icon-btn" [routerLink]="['/reclamations/dossiers', d.id]" title="Consulter la fiche" aria-label="Consulter la fiche"><mat-icon>visibility</mat-icon></a>
+                    @if (peutModifier(d)) {
+                      <a class="bea-mg__icon-btn" [routerLink]="['/reclamations/dossiers', d.id]" [queryParams]="{ edition: 1 }" title="Modifier" aria-label="Modifier"><mat-icon>edit</mat-icon></a>
+                    }
+                    @if (peutAnnuler(d)) {
+                      <button type="button" class="bea-mg__icon-btn bea-rc-danger" [disabled]="actionBusy()" (click)="annuler(d)" title="Annuler (suppression logique)" aria-label="Annuler"><mat-icon>delete</mat-icon></button>
+                    }
                   </td>
                 </tr>
               } @empty {
@@ -260,7 +267,8 @@ export class RcDossiersComponent implements OnInit {
   readonly ordre = signal<'asc' | 'desc'>('desc');
   readonly chargement = signal(false);
   readonly erreur = signal(false);
-  readonly exportBusy = signal(false);
+  readonly actionBusy = signal(false);
+  readonly courant = signal<Filtres>({});
   readonly filtresActifs = signal(false);
   private readonly typeChoisi = signal('');
 
@@ -299,6 +307,7 @@ export class RcDossiersComponent implements OnInit {
   }
 
   charger(): void {
+    this.courant.set(this.filtres.getRawValue());
     this.chargement.set(true);
     this.erreur.set(false);
     this.rc.lister({ ...this.filtres.getRawValue(), page: this.page(), taille: TAILLE, tri: this.tri(), ordre: this.ordre() }).subscribe({
@@ -338,14 +347,38 @@ export class RcDossiersComponent implements OnInit {
     this.naviguer(params);
   }
 
-  exporter(): void {
+  peutModifier(d: DossierLigne): boolean {
+    if (d.termine) return false;
+    return this.store.cap('modifier') || (this.store.cap('creer') && d.statut === 'A_QUALIFIER');
+  }
+
+  peutAnnuler(d: DossierLigne): boolean {
+    return this.store.cap('annuler') && ANNULABLES.has(d.statut);
+  }
+
+  /** Pas de suppression physique : le dossier passe « Annulée », motif et historique conservés. */
+  annuler(d: DossierLigne): void {
     this.feedback
-      .run(() => this.rc.exporter(this.filtres.getRawValue()), {
-        busy: this.exportBusy, loading: 'Préparation de l’export…',
-        success: () => ({ title: 'Export prêt' }),
-        errorTitle: 'Export refusé', retry: false,
+      .runWithReason((motif) => this.rc.action(d.id, 'annuler', { revision: d.revision, motif }), {
+        reason: {
+          title: `Annuler la réclamation ${d.reference}`,
+          message: 'Le dossier passera au statut « Annulée ». Il reste consultable avec tout son historique.',
+          hint: 'Utilisez cette action pour une saisie en double ou erronée.',
+          confirmLabel: 'Annuler le dossier',
+          cancelLabel: 'Retour',
+          tone: 'danger',
+          icon: 'delete',
+          reasonLabel: 'Motif de l’annulation',
+          reasonPlaceholder: 'Doublon de REC-…, erreur de saisie…',
+          maxLength: 4000,
+        },
+        busy: this.actionBusy,
+        loading: 'Annulation…',
+        success: (r) => ({ title: 'Réclamation annulée', details: [{ label: 'Référence', value: r.reference }, { label: 'Statut', value: r.statut_libelle }] }),
+        errorTitle: 'Annulation refusée',
+        retry: false,
       })
-      .subscribe((b) => telechargerBlob(b, `reclamations-${new Date().toISOString().slice(0, 10)}.xlsx`));
+      .subscribe(() => this.charger());
   }
 
   trier(colonne: string): void {

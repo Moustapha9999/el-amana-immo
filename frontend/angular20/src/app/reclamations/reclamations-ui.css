@@ -7,6 +7,38 @@
 .bea-rc-late { color: #b91c1c; font-weight: 700; }
 .bea-rc .bea-rc-clic { cursor: pointer; }
 
+/* Filtres : une seule case par champ, sans bordure interne sur les listes et saisies. */
+.bea-rc .bea-mg__field select, .bea-rc .bea-mg__field input:not([type='checkbox']) {
+  border: 0 !important; box-shadow: none !important; outline: none; background-color: transparent; border-radius: 0;
+}
+.bea-rc .bea-mg__field select {
+  appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 1.3rem;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2364748b' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 0.15rem center;
+}
+.bea-rc-filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(14.5rem, 1fr)); gap: 0.55rem; align-items: center; }
+.bea-rc-filters .bea-mg__field { min-width: 0; font-size: 0.78rem; font-weight: 600; color: #475569; white-space: nowrap; }
+.bea-rc-filters .bea-mg__field select, .bea-rc-filters .bea-mg__field input { font-weight: 500; text-overflow: ellipsis; }
+.bea-rc-filters .bea-ct-filters__q { grid-column: span 2; }
+.bea-rc-filters .bea-ct-filters__btns { grid-column: -2 / -1; justify-content: flex-end; margin: 0; }
+.bea-rc-filters .bea-rc-toggle { padding: 0 0.3rem; }
+@media (max-width: 700px) { .bea-rc-filters .bea-ct-filters__q { grid-column: auto; } }
+
+/* Liste : colonnes dimensionnées, pas de coupure de mot. */
+.bea-rc .bea-rc-liste { min-width: 74rem; }
+.bea-rc .bea-rc-liste th { white-space: nowrap; }
+.bea-rc .bea-rc-liste td { overflow-wrap: normal; word-break: normal; hyphens: none; }
+.bea-rc .bea-rc-liste td.is-wide { max-width: none; }
+.bea-rc .bea-rc-liste td:nth-child(3) { min-width: 9rem; }
+.bea-rc .bea-rc-liste td:nth-child(4) { min-width: 13rem; max-width: 20rem; }
+.bea-rc .bea-rc-liste td:nth-child(5) { min-width: 10rem; max-width: 16rem; }
+.bea-rc .bea-rc-liste td:nth-child(8) { min-width: 9rem; }
+.bea-rc .bea-rc-liste td:nth-child(10) .bea-ct-badge { margin: 0.1rem 0.15rem 0.1rem 0; }
+.bea-rc .bea-rc-liste .bea-mg__actions-cell { display: table-cell; }
+.bea-rc .bea-rc-liste .bea-mg__actions-cell > * { display: inline-flex; vertical-align: middle; margin: 0 0.1rem; }
+.bea-rc .bea-rc-danger { color: #b91c1c; }
+.bea-rc .bea-rc-danger:hover { background: #fef2f2; }
+.bea-rc-dl-btn mat-icon { color: #1a5278; }
+
 .bea-rc-form { display: grid; gap: 0.9rem; padding: 1rem 1.15rem 1.15rem; }
 .bea-rc-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.9rem; }
 .bea-rc-form label, .bea-rc-label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.8rem; font-weight: 600; color: #334155; }

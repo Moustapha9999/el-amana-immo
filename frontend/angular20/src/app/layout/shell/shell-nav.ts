@@ -447,7 +447,6 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
   reclamations: [
     { section: 'Pilotage', label: 'Tableau de bord 360°', path: '/reclamations/dashboard', icon: 'insights', exact: true, permissions: ['reclamations.reporting.view', 'reclamations.view'] },
     { section: 'Réclamations', label: 'Réclamations', path: '/reclamations/dossiers', icon: 'forum', exact: true, permissions: ['reclamations.view'] },
-    { section: 'Réclamations', label: 'Nouvelle réclamation', path: '/reclamations/dossiers/nouvelle', icon: 'add_comment', permissions: ['reclamations.create'] },
     { section: 'Réclamations', label: 'Mes dossiers à traiter', path: '/reclamations/a-traiter', icon: 'assignment_ind', permissions: ['reclamations.treat'] },
     { section: 'Réclamations', label: 'Pipeline', path: '/reclamations/circuit', icon: 'account_tree', permissions: ['reclamations.view'] },
     { section: 'Suivi', label: 'Services & affectations', path: '/reclamations/services', icon: 'lan', permissions: ['reclamations.view'] },

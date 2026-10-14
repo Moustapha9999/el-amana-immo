@@ -599,6 +599,7 @@ export class RcFicheComponent implements OnInit {
       next: (d) => {
         this.chargement.set(false);
         this.applique(d);
+        if (this.route.snapshot.queryParamMap.get('edition') && d.actions['modifier'] && !this.edition()) this.ouvrirEdition();
       },
       error: (e) => {
         this.chargement.set(false);
@@ -611,7 +612,7 @@ export class RcFicheComponent implements OnInit {
   }
 
   choisir(o: Onglet): void {
-    void this.router.navigate([], { relativeTo: this.route, queryParams: { onglet: o === 'general' ? null : o }, queryParamsHandling: 'merge', replaceUrl: true });
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { onglet: o === 'general' ? null : o, edition: null }, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
   private chargerOnglet(): void {
