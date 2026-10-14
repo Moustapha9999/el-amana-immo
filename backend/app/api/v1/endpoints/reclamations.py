@@ -19,19 +19,32 @@ from app.api.deps import auth_http_error, get_current_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas.reclamations import (
+    ActionIn,
+    AffecterIn,
+    AnnulerIn,
     AppelIn,
+    CloturerIn,
     DossierCreate,
     DossierPatch,
+    EvaluerIn,
+    JourFerieIn,
     MembreIn,
     MembrePatch,
+    QualifierIn,
     ReferentielCreate,
     ReferentielPatch,
+    RegleDelaiCreate,
+    RegleDelaiPatch,
+    ReponseEnvoiIn,
+    ReponseIn,
+    RetournerIn,
     RetraitIn,
     UniteCreate,
     UnitePatch,
+    ValidationRegleIn,
 )
 from app.services.reclamations import constantes as C
-from app.services.reclamations import documents, dossiers, organisation
+from app.services.reclamations import circuit, delais, documents, dossiers, organisation, reporting, reponses
 from app.services.reclamations.acces import ReclamationsScope, charger_scope
 
 router = APIRouter(prefix="/reclamations", tags=["Gestion des réclamations"])
@@ -92,6 +105,12 @@ async def config(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = 
             "types_unite": _libelles(C.TYPE_UNITE_LIBELLES),
             "domaines": _libelles(C.DOMAINE_LIBELLES),
             "statuts_rappel": _libelles(C.STATUT_RAPPEL_LIBELLES),
+            "statuts_affectation": _libelles(C.STATUT_AFFECTATION_LIBELLES),
+            "statuts_reponse": _libelles(C.STATUT_REPONSE_LIBELLES),
+            "evaluations": _libelles(C.EVALUATION_LIBELLES),
+            "validations_regle": _libelles(C.VALIDATION_REGLE_LIBELLES),
+            "unites_duree": _libelles(C.UNITE_DUREE_LIBELLES),
+            "points_depart": _libelles(C.POINT_DEPART_LIBELLES),
         },
         "parametres": {"enregistrement_appels_autorise": await dossiers.enregistrement_autorise(db)},
         "aujourdhui": date.today().isoformat(),
@@ -231,7 +250,7 @@ async def creer_dossier(body: DossierCreate, s: ReclamationsScope = Depends(scop
 @router.get("/dossiers/{rid}")
 async def lire_dossier(rid: uuid.UUID, s: ReclamationsScope = Depends(scope(VUE)),
                        db: AsyncSession = Depends(get_db)) -> dict:
-    return await dossiers.detail(db, s, await dossiers.charger(db, s, rid))
+    return await circuit.fiche(db, s, await dossiers.charger(db, s, rid))
 
 
 @router.patch("/dossiers/{rid}")
@@ -288,3 +307,207 @@ async def telecharger_document(rid: uuid.UUID, did: uuid.UUID, apercu: bool = Fa
                                db: AsyncSession = Depends(get_db)) -> Response:
     doc, chemin = await documents.fichier(db, s, rid, did, apercu=apercu)
     return _fichier(chemin.read_bytes(), doc.filename, doc.mime_type or "application/octet-stream", inline=apercu)
+
+
+# ------------------------------------------------------------------ circuit
+@router.post("/dossiers/{rid}/recevoir-sr")
+async def recevoir_sr(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends(scope(VUE)),
+                      db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.recevoir_sr(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/qualifier")
+async def qualifier(rid: uuid.UUID, body: QualifierIn, s: ReclamationsScope = Depends(scope("reclamations.qualify")),
+                    db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.qualifier(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/affecter")
+async def affecter(rid: uuid.UUID, body: AffecterIn, s: ReclamationsScope = Depends(scope("reclamations.assign")),
+                   db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.affecter(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/traiter-interne")
+async def traiter_interne(rid: uuid.UUID, body: ActionIn,
+                         s: ReclamationsScope = Depends(scope("reclamations.qualify",
+                                                              "reclamations.response.prepare")),
+                         db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.traiter_interne(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/prendre")
+async def prendre(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends(scope("reclamations.treat")),
+                  db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.prendre(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/retourner")
+async def retourner(rid: uuid.UUID, body: RetournerIn, s: ReclamationsScope = Depends(scope("reclamations.treat")),
+                    db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.retourner(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/evaluer")
+async def evaluer(rid: uuid.UUID, body: EvaluerIn, s: ReclamationsScope = Depends(scope("reclamations.review")),
+                  db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.evaluer(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/demander-info")
+async def demander_info(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends(scope(VUE)),
+                        db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.demander_info(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/reprendre")
+async def reprendre(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends(scope(VUE)),
+                    db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.reprendre(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/suspendre")
+async def suspendre(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends(scope("reclamations.suspend")),
+                    db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.suspendre(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/refuser")
+async def refuser(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends(scope("reclamations.reject")),
+                  db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.refuser(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/annuler")
+async def annuler(rid: uuid.UUID, body: AnnulerIn, s: ReclamationsScope = Depends(scope("reclamations.cancel")),
+                  db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.annuler(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/cloturer")
+async def cloturer(rid: uuid.UUID, body: CloturerIn, s: ReclamationsScope = Depends(scope("reclamations.close")),
+                   db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.cloturer(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/rouvrir")
+async def rouvrir(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends(scope("reclamations.reopen")),
+                  db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.rouvrir(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/archiver")
+async def archiver(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends(scope("reclamations.archive")),
+                   db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.archiver(db, s, rid, body.model_dump())
+
+
+# ------------------------------------------------------------------ réponses
+@router.post("/dossiers/{rid}/reponse")
+async def enregistrer_reponse(rid: uuid.UUID, body: ReponseIn,
+                              s: ReclamationsScope = Depends(scope("reclamations.response.prepare")),
+                              db: AsyncSession = Depends(get_db)) -> dict:
+    return await reponses.enregistrer(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/reponse/soumettre")
+async def soumettre_reponse(rid: uuid.UUID, body: ActionIn,
+                            s: ReclamationsScope = Depends(scope("reclamations.response.prepare")),
+                            db: AsyncSession = Depends(get_db)) -> dict:
+    return await reponses.soumettre(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/reponse/valider")
+async def valider_reponse(rid: uuid.UUID, body: ActionIn,
+                          s: ReclamationsScope = Depends(scope("reclamations.response.validate")),
+                          db: AsyncSession = Depends(get_db)) -> dict:
+    return await reponses.valider(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/reponse/renvoyer")
+async def renvoyer_reponse(rid: uuid.UUID, body: ActionIn,
+                           s: ReclamationsScope = Depends(scope("reclamations.response.validate")),
+                           db: AsyncSession = Depends(get_db)) -> dict:
+    return await reponses.renvoyer(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/reponse/envoyer")
+async def envoyer_reponse(rid: uuid.UUID, body: ReponseEnvoiIn,
+                          s: ReclamationsScope = Depends(scope("reclamations.response.send")),
+                          db: AsyncSession = Depends(get_db)) -> dict:
+    return await reponses.envoyer(db, s, rid, body.model_dump())
+
+
+# ------------------------------------------------------------------ délais
+@router.get("/regles-delai")
+async def lister_regles(s: ReclamationsScope = Depends(scope(VUE, "reclamations.delais.manage")),
+                        db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await delais.lister_regles(db)
+
+
+@router.post("/regles-delai", status_code=201)
+async def creer_regle(body: RegleDelaiCreate, s: ReclamationsScope = Depends(scope("reclamations.delais.manage")),
+                      db: AsyncSession = Depends(get_db)) -> dict:
+    return await delais.creer_regle(db, s, body.model_dump())
+
+
+@router.patch("/regles-delai/{rid}")
+async def modifier_regle(rid: uuid.UUID, body: RegleDelaiPatch,
+                         s: ReclamationsScope = Depends(scope("reclamations.delais.manage")),
+                         db: AsyncSession = Depends(get_db)) -> dict:
+    return await delais.modifier_regle(db, s, rid, body.model_dump(exclude_unset=True))
+
+
+@router.post("/regles-delai/{rid}/validation")
+async def valider_regle(rid: uuid.UUID, body: ValidationRegleIn,
+                        s: ReclamationsScope = Depends(scope("reclamations.delais.validate")),
+                        db: AsyncSession = Depends(get_db)) -> dict:
+    return await delais.valider_regle(db, s, rid, body.model_dump())
+
+
+@router.get("/jours-feries")
+async def lister_feries(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await delais.lister_feries(db)
+
+
+@router.post("/jours-feries", status_code=201)
+async def ajouter_ferie(body: JourFerieIn, s: ReclamationsScope = Depends(scope("reclamations.delais.manage")),
+                        db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await delais.ajouter_ferie(db, s, body.model_dump())
+
+
+@router.delete("/jours-feries/{jour}", status_code=204)
+async def retirer_ferie(jour: date, s: ReclamationsScope = Depends(scope("reclamations.delais.manage")),
+                        db: AsyncSession = Depends(get_db)) -> Response:
+    await delais.retirer_ferie(db, s, jour)
+    return Response(status_code=204)
+
+
+@router.get("/alertes")
+async def alertes(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = Depends(get_db)) -> dict:
+    return await delais.alertes(db, s)
+
+
+# ------------------------------------------------------------------ pilotage
+@router.get("/tableau-de-bord")
+async def tableau_de_bord(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = Depends(get_db)) -> dict:
+    return await reporting.tableau_de_bord(db, s)
+
+
+@router.get("/circuit")
+async def vue_circuit(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = Depends(get_db)) -> dict:
+    return await reporting.circuit(db, s)
+
+
+@router.get("/export")
+async def exporter(q: str | None = Query(None, max_length=100), groupe: list[str] | None = Query(None),
+                   statut: list[str] | None = Query(None), etape: str | None = None,
+                   ouvertes: bool = False, en_retard: bool = False, archivees: bool | None = None,
+                   s: ReclamationsScope = Depends(scope("reclamations.reporting.view")),
+                   db: AsyncSession = Depends(get_db)) -> Response:
+    contenu = await reporting.exporter(db, s, {
+        "q": q, "groupe": groupe, "statut": statut, "etape": etape,
+        "ouvertes": ouvertes, "en_retard": en_retard, "archivees": archivees,
+    })
+    return _fichier(contenu, f"reclamations-{date.today().isoformat()}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

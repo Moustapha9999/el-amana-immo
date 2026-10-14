@@ -57,7 +57,7 @@ def test_catalogue_module_et_domaine():
     module = next(m for m in PLATEFORME_MODULES if m["code"] == "reclamations")
     assert module["domaine_code"] == "management-qualite"
     assert module["entry_path"] == "/reclamations/dashboard"
-    assert module["statut"] != "actif"
+    assert module["statut"] == "actif"
     domaine = next(d for d in PLATEFORME_DOMAINES if d["code"] == "management-qualite")
     assert domaine["statut"] == "actif"
     assert "reclamations" in ESPACE_MODULES["audit-controle-conformite"]

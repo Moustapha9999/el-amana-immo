@@ -2,7 +2,7 @@
 
 Espace **Audit, Contrôle & Conformité** → domaine **Management & Qualité**.
 Code `reclamations`, URLs front `/reclamations/...`, API `/api/v1/reclamations/...`,
-statut CORE `developpement` (l’ouverture reste une décision CORE ADMIN).
+statut CORE `actif`.
 
 ## Décisions métier validées
 
@@ -81,6 +81,10 @@ Réponse client, Délais, Audit), `/reclamations/parametres?onglet=unites`.
 | `POST /dossiers/{id}/appels` | Appel téléphonique supplémentaire |
 | `GET /dossiers/{id}/chronologie`, `GET /dossiers/{id}/audit` | Événements ; journal d’audit (`reclamations.audit.view`) |
 | `GET/POST /dossiers/{id}/documents`, `POST …/{did}/retrait`, `GET …/{did}/fichier?apercu=` | Pièces GED |
+| `POST /dossiers/{id}/recevoir-sr` … `/archiver` | Actions du circuit (statut uniquement par ces routes) |
+| `POST /dossiers/{id}/reponse`, `…/soumettre`, `…/valider`, `…/renvoyer`, `…/envoyer` | Cycle de la réponse client |
+| `GET/POST/PATCH /regles-delai`, `POST …/validation`, `GET/POST/DELETE /jours-feries` | Délais internes et calendrier |
+| `GET /alertes`, `GET /tableau-de-bord`, `GET /circuit`, `GET /export` | Pilotage, kanban, Excel (5 000 lignes max) |
 
 Règles appliquées :
 
@@ -109,12 +113,12 @@ Tests : `backend/tests/test_reclamations_fondations.py`, `test_reclamations_doss
 
 | Phase | Contenu | État |
 |-------|---------|------|
-| 1 | Schéma, catalogue CORE, profils, périmètre, `GET /config`, routes et navigation (écrans « en construction ») | fait |
+| 1 | Schéma, catalogue CORE, profils, périmètre, `GET /config`, routes et navigation | fait |
 | 2 | Référentiels, unités et membres, création, liste paginée, fiche à onglets, pièces GED | fait |
-| 3 | Moteur de workflow, espace service « À traiter », réponses client, clôture | à faire |
-| 4 | Délais, alertes, notifications (job de fond) | à faire |
-| 5 | Tableau de bord 360°, rapports PDF / Excel | à faire |
-| 6 | Tests de bout en bout, finition | à faire |
+| 3 | Circuit (qualification → affectation → retour → réponse → clôture), actions sur la fiche | fait |
+| 4 | Délais paramétrables, jours fériés, alertes, notifications in-app, job Celery quotidien | fait |
+| 5 | Tableau de bord 360°, circuit kanban, rapports, export Excel | fait |
+| 6 | Tests (`fondations`, `dossiers`, `circuit`), activation locale, images Docker | fait |
 
 ## En attente de la Conformité / du métier
 

@@ -506,8 +506,8 @@ PLATEFORME_MODULES: list[ModuleDef] = [
             "qualification, transfert aux services, réponse au client, clôture, délais et tableau de bord 360°."
         ),
         "entry_path": "/reclamations/dashboard",
-        "statut": "developpement",
-        "status_message": "Module en cours de construction — ouverture après validation du circuit de traitement.",
+        "statut": "actif",
+        "status_message": "",
         "icon": "support_agent",
         "sort_order": 1,
     },

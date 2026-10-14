@@ -6,14 +6,45 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
-import { DossierLigne, dateFr, toneStatut, tonePriorite } from '../reclamations.models';
+import { DossierLigne, dateFr, telechargerBlob, toneStatut, tonePriorite } from '../reclamations.models';
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
 
 const TAILLE = 25;
 const TRIS = new Set(['reference', 'date_premiere_reception', 'date_reception_sr', 'echeance', 'statut', 'priorite', 'client_nom', 'updated_at']);
 const CHAMPS = ['q', 'groupe', 'statut', 'etape', 'type_id', 'motif_id', 'canal_id', 'priorite', 'client_categorie',
   'unite_reception_id', 'unite_traitement_id', 'date_debut', 'date_fin'] as const;
-const BOOLEENS = ['ouvertes', 'en_retard', 'sans_echeance'] as const;
+const BOOLEENS = ['ouvertes', 'en_retard', 'sans_echeance', 'archivees'] as const;
+
+interface VueListe {
+  titre: string;
+  sous: string;
+  etape?: string;
+  ouvertes?: boolean;
+  archivees?: boolean;
+}
+
+const VUES: Record<string, VueListe> = {
+  'a-traiter': {
+    titre: 'Mes dossiers à traiter',
+    sous: 'Dossiers transmis à un service, dans votre périmètre.',
+    etape: 'TRAITEMENT', ouvertes: true,
+  },
+  reponses: {
+    titre: 'Réponses aux clients',
+    sous: 'Dossiers en préparation, validation ou envoi de la réponse.',
+    etape: 'REPONSE', ouvertes: true,
+  },
+  archives: {
+    titre: 'Archives & documents',
+    sous: 'Dossiers archivés de votre périmètre.',
+    archivees: true,
+  },
+  services: {
+    titre: 'Services & affectations',
+    sous: 'Dossiers actuellement chez un service destinataire.',
+    etape: 'TRAITEMENT',
+  },
+};
 
 /** Liste des réclamations : filtres, tri, pagination et comptage appliqués par le serveur, dans le périmètre de l'agent. */
 @Component({
@@ -26,16 +57,19 @@ const BOOLEENS = ['ouvertes', 'en_retard', 'sans_echeance'] as const;
       <header class="bea-mg__head">
         <div>
           <p class="bea-stock-page__kicker">Management & Qualité · Réclamations</p>
-          <h1>Réclamations</h1>
+          <h1>{{ vue()?.titre ?? 'Réclamations' }}</h1>
           <p class="bea-ct-head__sub">
-            Filtres, tri et pagination appliqués par le serveur, dans la limite de votre périmètre.
+            {{ vue()?.sous ?? 'Filtres, tri et pagination appliqués par le serveur, dans la limite de votre périmètre.' }}
             @if (store.config()?.acces?.perimetre === 'UNITES') { <span class="bea-ct-badge" data-tone="ATTENTION">Périmètre : vos unités</span> }
             @if (store.config()?.acces?.perimetre === 'PERSONNEL') { <span class="bea-ct-badge" data-tone="ATTENTION">Périmètre : vos saisies</span> }
           </p>
         </div>
         <div class="bea-mg__actions">
-          @if (store.cap('creer')) {
+          @if (store.cap('creer') && !vue()) {
             <a class="bea-mg__btn bea-mg__btn--primary" routerLink="/reclamations/dossiers/nouvelle"><mat-icon>add_comment</mat-icon> Nouvelle réclamation</a>
+          }
+          @if (store.cap('reporting_exporter')) {
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="exportBusy()" (click)="exporter()"><mat-icon>download</mat-icon> Excel</button>
           }
           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Actualiser" (click)="charger()"><mat-icon>refresh</mat-icon></button>
         </div>
@@ -202,8 +236,9 @@ export class RcDossiersComponent implements OnInit {
   readonly filtres = this.fb.nonNullable.group({
     q: '', groupe: '', statut: '', etape: '', type_id: '', motif_id: '', canal_id: '', priorite: '', client_categorie: '',
     unite_reception_id: '', unite_traitement_id: '', date_debut: '', date_fin: '',
-    ouvertes: false, en_retard: false, sans_echeance: false,
+    ouvertes: false, en_retard: false, sans_echeance: false, archivees: false,
   });
+  readonly vue = signal<VueListe | null>(null);
   readonly lignes = signal<DossierLigne[]>([]);
   readonly total = signal(0);
   readonly page = signal(1);
@@ -211,6 +246,7 @@ export class RcDossiersComponent implements OnInit {
   readonly ordre = signal<'asc' | 'desc'>('desc');
   readonly chargement = signal(false);
   readonly erreur = signal(false);
+  readonly exportBusy = signal(false);
   readonly filtresActifs = signal(false);
   private readonly typeChoisi = signal('');
 
@@ -227,9 +263,16 @@ export class RcDossiersComponent implements OnInit {
     this.store.charger();
     this.filtres.controls.type_id.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((t) => this.typeChoisi.set(t));
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((q) => {
+      const preset = VUES[this.route.snapshot.data['vue'] as string] ?? null;
+      this.vue.set(preset);
       const valeurs = this.filtres.getRawValue();
       for (const c of CHAMPS) valeurs[c] = q.get(c) ?? '';
       for (const b of BOOLEENS) valeurs[b] = q.get(b) === 'true';
+      if (preset) {
+        if (!q.get('etape') && preset.etape) valeurs.etape = preset.etape;
+        if (q.get('ouvertes') === null && preset.ouvertes) valeurs.ouvertes = true;
+        if (q.get('archivees') === null && preset.archivees) valeurs.archivees = true;
+      }
       this.filtres.setValue(valeurs, { emitEvent: false });
       this.typeChoisi.set(q.get('type_id') ?? '');
       this.page.set(Math.max(1, Number(q.get('page')) || 1));
@@ -272,9 +315,23 @@ export class RcDossiersComponent implements OnInit {
   }
 
   reinitialiser(): void {
-    const params: Record<string, null> = { page: null };
+    const preset = this.vue();
+    const params: Record<string, string | null> = { page: null };
     for (const c of [...CHAMPS, ...BOOLEENS]) params[c] = null;
+    if (preset?.etape) params['etape'] = preset.etape;
+    if (preset?.ouvertes) params['ouvertes'] = 'true';
+    if (preset?.archivees) params['archivees'] = 'true';
     this.naviguer(params);
+  }
+
+  exporter(): void {
+    this.feedback
+      .run(() => this.rc.exporter(this.filtres.getRawValue()), {
+        busy: this.exportBusy, loading: 'Préparation de l’export…',
+        success: () => ({ title: 'Export prêt' }),
+        errorTitle: 'Export refusé', retry: false,
+      })
+      .subscribe((b) => telechargerBlob(b, `reclamations-${new Date().toISOString().slice(0, 10)}.xlsx`));
   }
 
   trier(colonne: string): void {

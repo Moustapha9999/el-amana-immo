@@ -19,7 +19,7 @@ Audit, Contrôle & Conformité            (plateforme_espaces)
 │       Vérification des procurations    sous-domaines — bientôt (CORE ADMIN, 04/10/2026)
 ├── Organisation & Processus             domaine — bientôt
 └── Management & Qualité                 domaine — actif (13/10/2026)
-    └── Gestion des réclamations (module reclamations) — en développement
+    └── Gestion des réclamations (module reclamations) — actif
 ```
 
 Aucun module fictif pour les domaines en attente : leur carte affiche le statut

@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
@@ -20,6 +20,7 @@ import {
 } from '../reclamations.models';
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
 import { RcPiecesComponent } from '../shared/rc-pieces.component';
+import { RcActionsComponent } from '../shared/rc-actions.component';
 
 type Onglet = 'general' | 'reception' | 'traitement' | 'chronologie' | 'documents' | 'reponse' | 'delais' | 'audit';
 
@@ -36,7 +37,13 @@ const ONGLETS: ReadonlyArray<{ code: Onglet; libelle: string; icone: string }> =
 
 const ICONES_EVENEMENT: Record<string, string> = {
   CREATION: 'add_circle', RECEPTION_SR: 'move_to_inbox', MODIFICATION: 'edit', APPEL: 'call',
-  DOCUMENT_AJOUT: 'attach_file', DOCUMENT_RETRAIT: 'delete',
+  DOCUMENT_AJOUT: 'attach_file', DOCUMENT_RETRAIT: 'delete', QUALIFICATION: 'rule',
+  AFFECTATION: 'send', PRISE_EN_CHARGE: 'play_arrow', RETOUR_SERVICE: 'assignment_return',
+  EVALUATION: 'fact_check', RENVOI: 'replay', TRAITEMENT_INTERNE: 'home_repair_service',
+  DEMANDE_INFO: 'help', REPRISE: 'replay', SUSPENSION: 'pause', REFUS: 'block',
+  ANNULATION: 'content_copy', REPONSE_BROUILLON: 'edit_note', REPONSE_SOUMISE: 'forward_to_inbox',
+  REPONSE_VALIDEE: 'verified', REPONSE_RENVOYEE: 'undo', REPONSE_ENVOYEE: 'outgoing_mail',
+  CLOTURE: 'task_alt', REOUVERTURE: 'lock_open', ARCHIVAGE: 'inventory_2',
 };
 
 const CARTE_MASQUEE = /^[0-9]{0,6}[\s*Xx•-]+[0-9]{0,4}$/;
@@ -52,7 +59,7 @@ const EFFACABLES = [
 @Component({
   selector: 'bea-rc-fiche',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MatIconModule, ReclamationsUiComponent, RcPiecesComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatIconModule, ReclamationsUiComponent, RcPiecesComponent, RcActionsComponent, FormsModule],
   template: `
     <bea-rc-styles />
     <section class="bea-mg bea-ct bea-rc">
@@ -73,11 +80,12 @@ const EFFACABLES = [
           <div class="bea-mg__actions">
             <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reclamations/dossiers"><mat-icon>arrow_back</mat-icon> Réclamations</a>
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="chargement()" (click)="recharger()"><mat-icon>refresh</mat-icon> Actualiser</button>
-            @if (d.actions.modifier && !edition()) {
+            @if (d.actions['modifier'] && !edition()) {
               <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="ouvrirEdition()"><mat-icon>edit</mat-icon> Corriger les données</button>
             }
           </div>
         </header>
+        @if (!edition()) { <bea-rc-actions [dossier]="d" (modifie)="applique($event)" /> }
 
         <nav class="bea-ct-tabs" aria-label="Sections du dossier">
           @for (o of onglets(); track o.code) {
@@ -254,7 +262,7 @@ const EFFACABLES = [
             <section class="bea-mg__panel">
               <div class="bea-mg__panel-top">
                 <h2>Appels téléphoniques</h2>
-                @if (d.actions.ajouter_appel) {
+                @if (d.actions['ajouter_appel']) {
                   <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="ouvrirAppel()"><mat-icon>add_call</mat-icon> Ajouter un appel</button>
                 }
               </div>
@@ -285,20 +293,34 @@ const EFFACABLES = [
 
           @case ('traitement') {
             <section class="bea-mg__panel">
-              <div class="bea-mg__panel-top"><h2>Pilotage et traitement</h2></div>
+              <div class="bea-mg__panel-top"><h2>Pilotage</h2></div>
               <dl class="bea-rc-dl">
                 <dt>Unité de suivi</dt><dd>{{ d.unite_suivi_ref?.libelle ?? '—' }}</dd>
                 <dt>Gestionnaire SR</dt><dd>{{ d.gestionnaire ?? 'Non désigné' }}</dd>
                 <dt>Service de traitement</dt><dd>{{ d.unite_traitement_ref?.libelle ?? 'Non affectée' }}</dd>
                 <dt>Responsable du traitement</dt><dd>{{ d.responsable_traitement ?? '—' }}</dd>
-                <dt>Transmission au service</dt><dd>{{ date(d.dates['date_transmission'], true) }}</dd>
-                <dt>Retour du service</dt><dd>{{ date(d.dates['date_retour_service'], true) }}</dd>
                 <dt>Renvois au service</dt><dd>{{ d.nb_renvois }}</dd>
               </dl>
             </section>
-            <div class="bea-rc-note"><mat-icon>construction</mat-icon>
-              <span>Les actions du circuit (qualification, affectation, retour du service, suspension, refus…) ne sont pas encore disponibles dans cette version.</span>
-            </div>
+            @for (a of d.affectations; track a.id) {
+              <section class="bea-mg__panel">
+                <div class="bea-mg__panel-top"><h2>Fiche {{ a.numero }} — {{ a.unite }}</h2>
+                  <span class="bea-ct-badge" data-tone="INFO">{{ a.statut_libelle }}</span>
+                </div>
+                <dl class="bea-rc-dl">
+                  <dt>Transmise</dt><dd>{{ date(a.transmis_le, true) }}{{ a.transmis_par ? ' par ' + a.transmis_par : '' }}</dd>
+                  <dt>Instructions</dt><dd>{{ a.instructions ?? '—' }}</dd>
+                  <dt>Échéance service</dt><dd>{{ date(a.echeance_service, true) }}</dd>
+                  <dt>Prise en charge</dt><dd>{{ date(a.recu_le, true) }}{{ a.recu_par ? ' par ' + a.recu_par : '' }}</dd>
+                  <dt>Analyse</dt><dd>{{ a.analyse ?? '—' }}</dd>
+                  <dt>Conclusion</dt><dd>{{ a.conclusion ?? '—' }}</dd>
+                  <dt>Décision proposée</dt><dd>{{ a.decision_proposee_libelle ?? '—' }}</dd>
+                  <dt>Évaluation SR</dt><dd>{{ a.evaluation_libelle ?? '—' }} {{ a.evaluation_commentaire ?? '' }}</dd>
+                </dl>
+              </section>
+            } @empty {
+              <p class="bea-rc-pad bea-rc-muted">Aucune transmission à un service pour l’instant.</p>
+            }
           }
 
           @case ('chronologie') {
@@ -332,7 +354,7 @@ const EFFACABLES = [
 
           @case ('documents') {
             <section class="bea-mg__panel bea-rc-pad">
-              @if (d.actions.documents_voir) {
+              @if (d.actions['documents_voir']) {
                 <bea-rc-pieces [dossierId]="d.id" [reference]="d.reference" (modifie)="piecesModifiees($event)" />
               } @else {
                 <p class="bea-rc-muted">Vous n’avez pas accès aux pièces de ce dossier.</p>
@@ -341,18 +363,45 @@ const EFFACABLES = [
           }
 
           @case ('reponse') {
-            <section class="bea-mg__panel">
-              <div class="bea-mg__panel-top"><h2>Réponse au client</h2></div>
-              <dl class="bea-rc-dl">
-                <dt>Réponse envoyée le</dt><dd>{{ d.dates['date_reponse_client'] ? date(d.dates['date_reponse_client'], true) : 'Aucune réponse envoyée' }}</dd>
-                <dt>Résultat</dt><dd>{{ d.resultat_libelle ?? '—' }}</dd>
-                <dt>Motif de la décision</dt><dd>{{ d.motif_resolution ?? '—' }}</dd>
-                <dt>Clôture</dt><dd>{{ date(d.date_cloture, true) }}</dd>
-              </dl>
-            </section>
-            <div class="bea-rc-note"><mat-icon>construction</mat-icon>
-              <span>La rédaction, la validation et l’envoi de la réponse ne sont pas encore disponibles dans cette version.</span>
-            </div>
+            @if (d.actions['rediger_reponse']) {
+              <section class="bea-mg__panel">
+                <div class="bea-mg__panel-top"><h2>{{ d.reponse_courante ? 'Modifier le brouillon' : 'Rédiger la réponse' }}</h2></div>
+                <form class="bea-rc-form" (ngSubmit)="sauverReponse()">
+                  <label>Objet <input [(ngModel)]="brouillon.objet" name="objet_reponse" maxlength="255" /></label>
+                  <label>Texte <em>*</em><textarea [(ngModel)]="brouillon.contenu" name="contenu_reponse" rows="6"></textarea></label>
+                  <label>Résultat proposé
+                    <select [(ngModel)]="brouillon.resultat" name="resultat_reponse">
+                      <option value="">—</option>
+                      @for (r of store.libelles('resultats'); track r.code) { <option [value]="r.code">{{ r.libelle }}</option> }
+                    </select>
+                  </label>
+                  <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()"><mat-icon>save</mat-icon> Enregistrer le brouillon</button>
+                </form>
+              </section>
+            }
+            @if (d.reponse_courante; as p) {
+              <section class="bea-mg__panel">
+                <div class="bea-mg__panel-top"><h2>Réponse {{ p.numero }}</h2>
+                  <span class="bea-ct-badge" data-tone="INFO">{{ p.statut_libelle }}</span>
+                </div>
+                <dl class="bea-rc-dl">
+                  <dt>Objet</dt><dd>{{ p.objet ?? '—' }}</dd>
+                  <dt>Résultat</dt><dd>{{ p.resultat_libelle ?? '—' }}</dd>
+                  <dt>Rédigée par</dt><dd>{{ p.redige_par ?? '—' }}</dd>
+                  <dt>Validée par</dt><dd>{{ p.valide_par ?? '—' }} {{ date(p.valide_le, true) }}</dd>
+                  <dt>Envoyée le</dt><dd>{{ date(p.envoye_le, true) }} {{ p.canal_envoi ?? '' }}</dd>
+                  <dt>Destinataire</dt><dd>{{ p.destinataire ?? '—' }}</dd>
+                </dl>
+                <p class="bea-rc-text">{{ p.contenu }}</p>
+              </section>
+            } @else if (!d.actions['rediger_reponse']) {
+              <p class="bea-rc-pad bea-rc-muted">Aucune réponse rédigée. Elle se prépare après un retour de service suffisant, ou un traitement interne au SR.</p>
+            }
+            @if (d.statut === 'REPONSE_ENVOYEE' && !d.preuve_envoi) {
+              <div class="bea-rc-note bea-rc-note--warn"><mat-icon>warning</mat-icon>
+                <span>Joignez la preuve d’envoi dans l’onglet Documents (catégorie « Preuve d’envoi ») avant de clôturer.</span>
+              </div>
+            }
           }
 
           @case ('delais') {
@@ -484,7 +533,9 @@ export class RcFicheComponent implements OnInit {
   private id = '';
   private initial = '';
 
-  readonly onglets = computed(() => ONGLETS.filter((o) => o.code !== 'audit' || !!this.dossier()?.actions.audit_voir));
+  brouillon = { objet: '', contenu: '', resultat: '' };
+
+  readonly onglets = computed(() => ONGLETS.filter((o) => o.code !== 'audit' || !!this.dossier()?.actions['audit_voir']));
   readonly motifs = computed(() => this.store.enfants('MOTIF', this.typeId()));
   readonly sousMotifs = computed(() => this.store.enfants('SOUS_MOTIF', this.motifId()));
   readonly dateModifiee = computed(() => {
@@ -597,7 +648,9 @@ export class RcFicheComponent implements OnInit {
         this.chargement.set(false);
         this.dossier.set(d);
         this.nbDocuments.set(d.nb_documents);
-        if (this.onglet() === 'audit' && !d.actions.audit_voir) this.choisir('general');
+        if (this.onglet() === 'audit' && !d.actions['audit_voir']) this.choisir('general');
+        const p = d.reponse_courante;
+        this.brouillon = { objet: p?.objet ?? d.objet, contenu: p?.contenu ?? '', resultat: p?.resultat ?? '' };
         this.evenements.set(null);
         this.audit.set(null);
         this.chargerOnglet();
@@ -625,12 +678,40 @@ export class RcFicheComponent implements OnInit {
         error: (e) => void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Chronologie indisponible')),
       });
     }
-    if (this.onglet() === 'audit' && !this.audit() && d.actions.audit_voir) {
+    if (this.onglet() === 'audit' && !this.audit() && d.actions['audit_voir']) {
       this.rc.audit(d.id).subscribe({
         next: (l) => this.audit.set(l),
         error: (e) => void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Journal indisponible')),
       });
     }
+  }
+
+  applique(d: Dossier): void {
+    this.dossier.set(d);
+    this.nbDocuments.set(d.nb_documents);
+    this.evenements.set(null);
+    this.audit.set(null);
+    const p = d.reponse_courante;
+    this.brouillon = { objet: p?.objet ?? d.objet, contenu: p?.contenu ?? '', resultat: p?.resultat ?? '' };
+    this.chargerOnglet();
+  }
+
+  sauverReponse(): void {
+    const d = this.dossier();
+    if (!d || !this.brouillon.contenu.trim()) {
+      this.feedback.warning({ title: 'Texte obligatoire', message: 'Rédigez le texte de la réponse.' });
+      return;
+    }
+    this.feedback
+      .run(() => this.rc.enregistrerReponse(d.id, {
+        revision: d.revision, objet: this.brouillon.objet.trim() || d.objet,
+        contenu: this.brouillon.contenu.trim(), resultat: this.brouillon.resultat || null,
+      }), {
+        busy: this.busy, loading: 'Enregistrement du brouillon…',
+        success: () => ({ title: 'Brouillon enregistré', details: [{ label: 'Référence', value: d.reference }] }),
+        errorTitle: 'Enregistrement refusé', retry: false,
+      })
+      .subscribe((r) => this.applique(r));
   }
 
   piecesModifiees(n: number): void {

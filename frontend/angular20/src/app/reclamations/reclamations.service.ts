@@ -6,6 +6,7 @@ import { ApiService } from '../core/services/api.service';
 import {
   ApercuClient,
   Capacite,
+  ColonneCircuit,
   Domaine,
   Dossier,
   DossierLigne,
@@ -17,6 +18,8 @@ import {
   RC_BASE,
   RcConfig,
   RefItem,
+  RegleDelai,
+  TableauBord,
   Unite,
   UtilisateurTrouve,
 } from './reclamations.models';
@@ -131,6 +134,67 @@ export class ReclamationsService {
 
   utilisateurs(q: string): Observable<UtilisateurTrouve[]> {
     return this.api.get(`${RC_BASE}/utilisateurs`, { q });
+  }
+
+  action(id: string, verbe: string, corps: unknown): Observable<Dossier> {
+    return this.api.post(`${RC_BASE}/dossiers/${id}/${verbe}`, corps);
+  }
+
+  enregistrerReponse(id: string, corps: unknown): Observable<Dossier> {
+    return this.api.post(`${RC_BASE}/dossiers/${id}/reponse`, corps);
+  }
+
+  actionReponse(id: string, verbe: string, corps: unknown): Observable<Dossier> {
+    return this.api.post(`${RC_BASE}/dossiers/${id}/reponse/${verbe}`, corps);
+  }
+
+  tableauDeBord(): Observable<TableauBord> {
+    return this.api.get(`${RC_BASE}/tableau-de-bord`);
+  }
+
+  circuit(): Observable<{ colonnes: ColonneCircuit[]; total: number }> {
+    return this.api.get(`${RC_BASE}/circuit`);
+  }
+
+  alertes(): Observable<{ retards: DossierLigne[]; alertes: DossierLigne[]; nb_retards: number; nb_alertes: number }> {
+    return this.api.get(`${RC_BASE}/alertes`);
+  }
+
+  exportUrl(filtres: Filtres = {}): string {
+    const q = new URLSearchParams(parametres(filtres)).toString();
+    return `/api/v1${RC_BASE}/export${q ? '?' + q : ''}`;
+  }
+
+  exporter(filtres: Filtres = {}): Observable<Blob> {
+    return this.api.download(`${RC_BASE}/export`, parametres(filtres));
+  }
+
+  regles(): Observable<RegleDelai[]> {
+    return this.api.get(`${RC_BASE}/regles-delai`);
+  }
+
+  creerRegle(corps: unknown): Observable<RegleDelai> {
+    return this.api.post(`${RC_BASE}/regles-delai`, corps);
+  }
+
+  modifierRegle(id: string, corps: unknown): Observable<RegleDelai> {
+    return this.api.patch(`${RC_BASE}/regles-delai/${id}`, corps);
+  }
+
+  validerRegle(id: string, corps: unknown): Observable<RegleDelai> {
+    return this.api.post(`${RC_BASE}/regles-delai/${id}/validation`, corps);
+  }
+
+  feries(): Observable<Array<{ jour: string; libelle: string }>> {
+    return this.api.get(`${RC_BASE}/jours-feries`);
+  }
+
+  ajouterFerie(jour: string, libelle: string): Observable<Array<{ jour: string; libelle: string }>> {
+    return this.api.post(`${RC_BASE}/jours-feries`, { jour, libelle });
+  }
+
+  retirerFerie(jour: string): Observable<void> {
+    return this.api.delete(`${RC_BASE}/jours-feries/${jour}`);
   }
 }
 

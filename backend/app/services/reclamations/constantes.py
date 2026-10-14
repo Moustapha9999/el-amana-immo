@@ -124,6 +124,57 @@ EVENEMENT_LIBELLES: dict[str, str] = {
     "APPEL": "Appel enregistré",
     "DOCUMENT_AJOUT": "Pièce ajoutée",
     "DOCUMENT_RETRAIT": "Pièce retirée",
+    "QUALIFICATION": "Dossier qualifié",
+    "AFFECTATION": "Transmis au service",
+    "PRISE_EN_CHARGE": "Pris en charge par le service",
+    "RETOUR_SERVICE": "Retour du service",
+    "EVALUATION": "Retour examiné",
+    "RENVOI": "Renvoyé au service",
+    "TRAITEMENT_INTERNE": "Traité par le Service Réclamations",
+    "DEMANDE_INFO": "Information demandée",
+    "REPRISE": "Reprise du traitement",
+    "SUSPENSION": "Dossier suspendu",
+    "REFUS": "Dossier refusé",
+    "ANNULATION": "Dossier annulé",
+    "REPONSE_BROUILLON": "Brouillon de réponse enregistré",
+    "REPONSE_SOUMISE": "Réponse soumise à validation",
+    "REPONSE_VALIDEE": "Réponse validée",
+    "REPONSE_RENVOYEE": "Réponse renvoyée pour retravail",
+    "REPONSE_ENVOYEE": "Réponse envoyée au client",
+    "CLOTURE": "Dossier clôturé",
+    "REOUVERTURE": "Dossier réouvert",
+    "ARCHIVAGE": "Dossier archivé",
+}
+STATUT_AFFECTATION_LIBELLES: dict[str, str] = {
+    "TRANSMISE": "Transmise",
+    "RECUE": "Reçue par le service",
+    "EN_TRAITEMENT": "En traitement",
+    "RETOURNEE": "Retournée",
+    "ANNULEE": "Annulée",
+}
+STATUT_REPONSE_LIBELLES: dict[str, str] = {
+    "BROUILLON": "Brouillon",
+    "A_VALIDER": "À valider",
+    "VALIDEE": "Validée",
+    "ENVOYEE": "Envoyée",
+    "ANNULEE": "Annulée",
+}
+EVALUATION_LIBELLES: dict[str, str] = {
+    "SUFFISANT": "Retour suffisant",
+    "INSUFFISANT": "Retour insuffisant — à renvoyer",
+}
+VALIDATION_REGLE_LIBELLES: dict[str, str] = {
+    "A_VALIDER": "À valider par la Conformité",
+    "VALIDEE": "Validée (présentable comme délai interne validé)",
+    "REJETEE": "Rejetée",
+}
+UNITE_DUREE_LIBELLES: dict[str, str] = {
+    "JOURS_CALENDAIRES": "Jours calendaires",
+    "JOURS_OUVRES": "Jours ouvrés",
+}
+POINT_DEPART_LIBELLES: dict[str, str] = {
+    "PREMIERE_RECEPTION": "Première réception par la banque",
+    "RECEPTION_SR": "Réception par le Service Réclamations",
 }
 # Paramètre (``reclamation_parametres``) : la banque autorise-t-elle la référence d'enregistrement d'appel ?
 PARAM_ENREGISTREMENT_APPELS = "enregistrement_appels_autorise"

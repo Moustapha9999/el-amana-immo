@@ -565,6 +565,8 @@ async def creer(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
         db.add(_evenement(r, s, "APPEL", date_effet=a.appel_le, donnees={"numero": a.numero_appelant,
                                                                          "rappel": a.rappel_statut}))
     await db.flush()
+    from app.services.reclamations.delais import appliquer
+    await appliquer(db, r)
     await auditer(db, s, "reclamations.dossier.create", C.GED_ENTITE, r.id, after={
         "reference": r.reference, "statut": r.statut, "canal": canal.libelle, "objet": r.objet,
         "unite_reception": ctx.unite(unite_reception_id)["libelle"],

@@ -122,3 +122,108 @@ class DossierPatch(_DossierChamps):
 
 class RetraitIn(BaseModel):
     motif: str = Field(min_length=1, max_length=1000)
+
+
+class ActionIn(BaseModel):
+    revision: int
+    motif: str | None = Field(default=None, max_length=4000)
+    date_reception_sr: datetime | None = None
+    conditions_reprise: str | None = Field(default=None, max_length=4000)
+
+
+class QualifierIn(ActionIn):
+    type_id: uuid.UUID | None = None
+    motif_id: uuid.UUID | None = None
+    sous_motif_id: uuid.UUID | None = None
+    priorite: Priorite | None = None
+    gestionnaire_id: uuid.UUID | None = None
+
+
+class AffecterIn(ActionIn):
+    unite_id: uuid.UUID
+    responsable_id: uuid.UUID | None = None
+    instructions: str | None = Field(default=None, max_length=8000)
+    motif_transfert: str | None = Field(default=None, max_length=4000)
+
+
+class RetournerIn(ActionIn):
+    analyse: str = Field(min_length=1, max_length=20000)
+    actions_menees: str | None = Field(default=None, max_length=20000)
+    conclusion: str = Field(min_length=1, max_length=8000)
+    decision_proposee: Literal["FAVORABLE", "PARTIELLEMENT_FAVORABLE", "DEFAVORABLE", "SANS_SUITE", "AUTRE"] | None = None
+
+
+class EvaluerIn(ActionIn):
+    evaluation: Literal["SUFFISANT", "INSUFFISANT"]
+    commentaire: str | None = Field(default=None, max_length=4000)
+    instructions: str | None = Field(default=None, max_length=8000)
+
+
+class AnnulerIn(ActionIn):
+    motif: str = Field(min_length=1, max_length=4000)
+    doublon_de_id: uuid.UUID | None = None
+
+
+class CloturerIn(ActionIn):
+    resultat: Literal["FAVORABLE", "PARTIELLEMENT_FAVORABLE", "DEFAVORABLE", "SANS_SUITE", "AUTRE"]
+    motif_resolution: str | None = Field(default=None, max_length=4000)
+
+
+class ReponseIn(ActionIn):
+    objet: str | None = Field(default=None, max_length=255)
+    contenu: str = Field(min_length=1, max_length=50000)
+    resultat: Literal["FAVORABLE", "PARTIELLEMENT_FAVORABLE", "DEFAVORABLE", "SANS_SUITE", "AUTRE"] | None = None
+
+
+class ReponseEnvoiIn(ActionIn):
+    canal_envoi_id: uuid.UUID
+    destinataire: str | None = Field(default=None, max_length=255)
+    envoye_le: datetime | None = None
+    reference_envoi: str | None = Field(default=None, max_length=120)
+
+
+class RegleDelaiCreate(BaseModel):
+    libelle: str = Field(min_length=1, max_length=200)
+    type_id: uuid.UUID | None = None
+    motif_id: uuid.UUID | None = None
+    priorite: Priorite | None = None
+    duree: int = Field(ge=1, le=3650)
+    unite_duree: Literal["JOURS_CALENDAIRES", "JOURS_OUVRES"] = "JOURS_CALENDAIRES"
+    point_depart: Literal["PREMIERE_RECEPTION", "RECEPTION_SR"] = "PREMIERE_RECEPTION"
+    seuil_alerte: int | None = Field(default=None, ge=0, le=3650)
+    delai_service: int | None = Field(default=None, ge=1, le=3650)
+    neutraliser_suspension: bool = True
+    date_effet: date
+    date_fin: date | None = None
+    commentaire: str | None = Field(default=None, max_length=2000)
+
+
+class RegleDelaiPatch(BaseModel):
+    libelle: str | None = Field(default=None, max_length=200)
+    type_id: uuid.UUID | None = None
+    motif_id: uuid.UUID | None = None
+    priorite: Priorite | None = None
+    duree: int | None = Field(default=None, ge=1, le=3650)
+    unite_duree: Literal["JOURS_CALENDAIRES", "JOURS_OUVRES"] | None = None
+    point_depart: Literal["PREMIERE_RECEPTION", "RECEPTION_SR"] | None = None
+    seuil_alerte: int | None = Field(default=None, ge=0, le=3650)
+    delai_service: int | None = Field(default=None, ge=1, le=3650)
+    neutraliser_suspension: bool | None = None
+    date_effet: date | None = None
+    date_fin: date | None = None
+    commentaire: str | None = Field(default=None, max_length=2000)
+    actif: bool | None = None
+    detacher_type: bool = False
+    detacher_motif: bool = False
+    detacher_priorite: bool = False
+    detacher_fin: bool = False
+
+
+class ValidationRegleIn(BaseModel):
+    statut_validation: Literal["VALIDEE", "REJETEE"]
+    commentaire: str | None = Field(default=None, max_length=2000)
+
+
+class JourFerieIn(BaseModel):
+    jour: date
+    libelle: str = Field(min_length=1, max_length=200)

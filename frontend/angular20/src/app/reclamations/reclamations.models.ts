@@ -99,6 +99,12 @@ export interface RcConfig {
     types_unite: CodeLibelle[];
     domaines: CodeLibelle[];
     statuts_rappel: CodeLibelle[];
+    statuts_affectation: CodeLibelle[];
+    statuts_reponse: CodeLibelle[];
+    evaluations: CodeLibelle[];
+    validations_regle: CodeLibelle[];
+    unites_duree: CodeLibelle[];
+    points_depart: CodeLibelle[];
   };
   parametres: { enregistrement_appels_autorise: boolean };
   aujourdhui: string;
@@ -217,15 +223,121 @@ export interface Dossier extends DossierLigne {
   cree_par: string | null;
   created_at: string | null;
   modifie_par: string | null;
-  actions: {
-    modifier: boolean;
-    ajouter_appel: boolean;
-    documents_voir: boolean;
-    documents_deposer: boolean;
-    documents_telecharger: boolean;
-    documents_retirer: boolean;
-    audit_voir: boolean;
-  };
+  affectations: Affectation[];
+  affectation_courante: Affectation | null;
+  reponses: ReponseClient[];
+  reponse_courante: ReponseClient | null;
+  preuve_envoi: boolean;
+  actions: Record<string, boolean>;
+}
+
+export interface Affectation {
+  id: string;
+  numero: number;
+  statut: string;
+  statut_libelle: string;
+  unite: string | null;
+  unite_id: string;
+  emetteur: string | null;
+  transmis_le: string | null;
+  transmis_par: string | null;
+  motif_transfert: string | null;
+  instructions: string | null;
+  echeance_service: string | null;
+  recu_le: string | null;
+  recu_par: string | null;
+  responsable: string | null;
+  analyse: string | null;
+  actions_menees: string | null;
+  conclusion: string | null;
+  decision_proposee: string | null;
+  decision_proposee_libelle: string | null;
+  retour_le: string | null;
+  retour_par: string | null;
+  evaluation: string | null;
+  evaluation_libelle: string | null;
+  evaluation_commentaire: string | null;
+  revision: number;
+}
+
+export interface ReponseClient {
+  id: string;
+  numero: number;
+  statut: string;
+  statut_libelle: string;
+  objet: string | null;
+  contenu: string;
+  resultat: string | null;
+  resultat_libelle: string | null;
+  canal_envoi: string | null;
+  canal_envoi_id: string | null;
+  destinataire: string | null;
+  redige_par: string | null;
+  soumis_le: string | null;
+  valide_par: string | null;
+  valide_le: string | null;
+  commentaire_validation: string | null;
+  envoye_le: string | null;
+  envoye_par: string | null;
+  reference_envoi: string | null;
+  revision: number;
+}
+
+export interface Compteur {
+  code?: string;
+  id?: string;
+  libelle: string;
+  n: number;
+}
+
+export interface TableauBord {
+  total: number;
+  ouvertes: number;
+  retards: number;
+  sans_echeance: number;
+  volume_30j: number;
+  cloturees_30j: number;
+  groupes: Compteur[];
+  etapes: Compteur[];
+  priorites: Compteur[];
+  types: Compteur[];
+  canaux: Compteur[];
+  unites_reception: Compteur[];
+  unites_traitement: Compteur[];
+  recents: DossierLigne[];
+  dossiers_retard: DossierLigne[];
+}
+
+export interface ColonneCircuit {
+  etape: string;
+  libelle: string;
+  items: DossierLigne[];
+}
+
+export interface RegleDelai {
+  id: string;
+  libelle: string;
+  type_id: string | null;
+  type: string | null;
+  motif_id: string | null;
+  motif: string | null;
+  priorite: string | null;
+  priorite_libelle: string | null;
+  duree: number;
+  unite_duree: string;
+  unite_duree_libelle: string;
+  point_depart: string;
+  point_depart_libelle: string;
+  seuil_alerte: number | null;
+  delai_service: number | null;
+  neutraliser_suspension: boolean;
+  date_effet: string | null;
+  date_fin: string | null;
+  statut_validation: string;
+  statut_validation_libelle: string;
+  reglementaire: boolean;
+  commentaire: string | null;
+  actif: boolean;
 }
 
 export interface Page<T> {
