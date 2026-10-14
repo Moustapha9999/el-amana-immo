@@ -135,8 +135,8 @@ async def test_sql_identique_a_la_regle_python_et_divergence(db: AsyncSession):
         lignes, total = await lecture.lister(_scope(), _filtres(conformite_excel=classement), page=1, size=100,
                                              tri="created_at", ordre="asc")
         assert total == sum(r.classement == classement for r in attendu)
-        assert all(l["conformite_excel"] == classement for l in lignes)
-        assert all(l["code_conforme"] + l["code_non_conforme"] <= 1 for l in lignes)
+        assert all(ln["conformite_excel"] == classement for ln in lignes)
+        assert all(ln["code_conforme"] + ln["code_non_conforme"] <= 1 for ln in lignes)
 
 
 @pytest.mark.asyncio
@@ -150,7 +150,7 @@ async def test_reporting_par_agence_sumifs(db: AsyncSession):
     await f.dossier(a2, physique=NC, systeme=NC, decision=NC)
     await f.dossier(a2, physique=None, systeme=C)
     r = await EerReportingService(db).par_agence(_scope(), _filtres())
-    lignes = {l["agence_id"]: l for l in r["lignes"]}
+    lignes = {ln["agence_id"]: ln for ln in r["lignes"]}
     assert r["nature"] == "HISTORIQUE_EXCEL"
     assert lignes[a1.id]["excel"] == {"total": 5, "conformes": 3, "non_conformes": 1, "non_evalues": 1,
                                       "taux": Decimal("75.00")}
@@ -171,8 +171,8 @@ async def test_reporting_par_profil_libelles_excel(db: AsyncSession):
     await f.dossier(a, physique=C, systeme=C, decision=C, type_client="PM_PRIVEE", profil="SARL")
     await f.dossier(a, physique=None, systeme=None, type_client="ASSOCIATION", profil="ONG")
     r = await EerReportingService(db).par_profil(_scope(), _filtres())
-    lignes = {l["code"]: l for l in r["lignes"]}
-    assert [l["libelle"] for l in r["lignes"]] == ["Personne_Physique", "Personne_Morale_Privée",
+    lignes = {ln["code"]: ln for ln in r["lignes"]}
+    assert [ln["libelle"] for ln in r["lignes"]] == ["Personne_Physique", "Personne_Morale_Privée",
                                                    "Personne_Morale_Publique", "Personne_Morale_Association"]
     assert lignes["PP"]["excel"]["taux"] == Decimal("50.00") and lignes["PP"]["profil_technique"] == "PP"
     assert lignes["PM_PRIVEE"]["excel"]["conformes"] == 2 and lignes["PM_PRIVEE"]["profil_technique"] == "PM"
@@ -191,8 +191,8 @@ async def test_etat_compte_independant_de_s_et_t(db: AsyncSession):
     await f.dossier(a, physique=C, systeme=C, decision=C)
     await f.dossier(a, etat_compte="ACTIF", statut="ABANDONNE")
     r = await EerReportingService(db).etats_compte(_scope(), _filtres())
-    lignes = {l["code"]: l for l in r["lignes"]}
-    assert [l["libelle"] for l in r["lignes"]] == ["Actif", "Inactif", "Bloqué", "Fermé"]
+    lignes = {ln["code"]: ln for ln in r["lignes"]}
+    assert [ln["libelle"] for ln in r["lignes"]] == ["Actif", "Inactif", "Bloqué", "Fermé"]
     assert lignes["ACTIF"]["nombre"] == 2 and lignes["BLOQUE"]["nombre"] == 1 and lignes["FERME"]["nombre"] == 0
     assert r["total"] == 3 and r["non_renseignes"] == 1
     assert lignes["ACTIF"]["pourcentage"] == Decimal("66.67") and lignes["INACTIF"]["pourcentage"] == Decimal("0.00")
@@ -207,7 +207,7 @@ async def test_extensions_periode_et_dimensions(db: AsyncSession):
     svc = EerReportingService(db)
     serie = await svc.serie(_scope(), _filtres(), "mois")
     assert serie["nature"] == "EXTENSION_BEA_DIGITAL"
-    assert [(l["periode"], l["excel"]["taux"]) for l in serie["lignes"]] == [
+    assert [(ln["periode"], ln["excel"]["taux"]) for ln in serie["lignes"]] == [
         (date(1901, 3, 1), Decimal("50.00")), (date(1901, 5, 1), Decimal("100.00"))]
-    ppe = {l["code"]: l for l in (await svc.par_dimension(_scope(), _filtres(), "ppe"))["lignes"]}
+    ppe = {ln["code"]: ln for ln in (await svc.par_dimension(_scope(), _filtres(), "ppe"))["lignes"]}
     assert ppe["OUI"]["excel"]["conformes"] == 1 and ppe["NON"]["total"] == 2

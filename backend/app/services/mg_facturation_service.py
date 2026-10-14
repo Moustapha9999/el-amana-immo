@@ -762,8 +762,8 @@ class MgFacturationService:
             "statuts": [{"code": c, "libelle": STATUT_LABELS[c]} for c in STATUTS],
             "statuts_paiement": [{"code": c, "libelle": STATUT_PAIEMENT_LABELS[c]} for c in STATUTS_PAIEMENT],
             "types_point": [{"code": c, "libelle": TYPE_POINT_LABELS[c]} for c in TYPES_POINT],
-            "types_facture": [{"code": c, "libelle": l} for c, l in TYPES_FACTURE],
-            "types_document": [{"code": c, "libelle": l} for c, l in TYPES_DOCUMENT],
+            "types_facture": [{"code": c, "libelle": ln} for c, ln in TYPES_FACTURE],
+            "types_document": [{"code": c, "libelle": ln} for c, ln in TYPES_DOCUMENT],
             "periodicites": list(PERIODICITES_POINT.keys()),
             "modes_paiement": MODES_PAIEMENT,
             "moyens_paiement": {
@@ -1353,15 +1353,15 @@ class MgFacturationService:
                 "piece_obligatoire": await self._piece_obligatoire(),
                 "lignes": [
                     {
-                        "id": str(l.id),
-                        "description": l.designation,
-                        "quantite": to_float(l.quantite),
-                        "unite": l.unite,
-                        "prix_unitaire": to_float(l.prix_unitaire),
-                        "montant": to_float(l.total_ht),
-                        "type_ligne": l.type_ligne,
+                        "id": str(ln.id),
+                        "description": ln.designation,
+                        "quantite": to_float(ln.quantite),
+                        "unite": ln.unite,
+                        "prix_unitaire": to_float(ln.prix_unitaire),
+                        "montant": to_float(ln.total_ht),
+                        "type_ligne": ln.type_ligne,
                     }
-                    for l in sorted(f.lignes, key=lambda x: x.sort_order)
+                    for ln in sorted(f.lignes, key=lambda x: x.sort_order)
                 ],
                 "paiements": paiements,
                 "documents": documents,

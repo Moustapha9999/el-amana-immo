@@ -177,7 +177,7 @@ def _classeur_somelec() -> bytes:
 
 def test_analyse_classeur_somelec():
     analyse = analyser_classeur(_classeur_somelec())
-    par_ref = {l.normalisee: l for l in analyse.lignes if l.statut == "NOUVEAU"}
+    par_ref = {ln.normalisee: ln for ln in analyse.lignes if ln.statut == "NOUVEAU"}
     assert set(par_ref) == {
         "414141799184", "791201176127", "412703906213", "363215238221", "414844008443", "486901836238", "722500527194",
     }
@@ -186,8 +186,8 @@ def test_analyse_classeur_somelec():
     assert par_ref["791201176127"].nom == "Agence Rosso"
     assert par_ref["722500527194"].type_point == "PDV"
     assert par_ref["722500527194"].nom == "PDV Amanty Tiguint"
-    doublons = [l for l in analyse.lignes if l.statut == "DOUBLON_FICHIER"]
-    assert [l.normalisee for l in doublons] == ["414844008443"]
+    doublons = [ln for ln in analyse.lignes if ln.statut == "DOUBLON_FICHIER"]
+    assert [ln.normalisee for ln in doublons] == ["414844008443"]
     assert analyse.montants_detectes == 0
 
 # ——— Profils fournisseurs, contrôles, détail des paiements ———

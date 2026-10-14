@@ -275,8 +275,8 @@ def libelle_filtres(data: dict, noms: dict[str, str]) -> str:
 
 
 def _rows_dim(lignes: list[dict]) -> list[list]:
-    return [[l["libelle"], l["formations"], l["participants"], l["presents"], l["absents"], fr_taux(l["taux"])]
-            for l in lignes]
+    return [[ln["libelle"], ln["formations"], ln["participants"], ln["presents"], ln["absents"], fr_taux(ln["taux"])]
+            for ln in lignes]
 
 
 _H_DIM = ["Libellé", "Formations", "Participations", "Présents", "Absents", "Taux de présence"]
@@ -368,7 +368,7 @@ def _graph_annees(data: dict, largeur: float) -> Drawing | None:
 
 
 def _graph_hbar(lignes: list[dict], titre: str, largeur: float, couleur, top: int = 10) -> Drawing | None:
-    lignes = [l for l in lignes if l["participants"] or l["formations"]][:top]
+    lignes = [ln for ln in lignes if ln["participants"] or ln["formations"]][:top]
     if not lignes:
         return None
     h = max(40 * mm, (len(lignes) * 7 + 22) * mm / 1.6)
@@ -377,8 +377,8 @@ def _graph_hbar(lignes: list[dict], titre: str, largeur: float, couleur, top: in
     ch = HorizontalBarChart()
     ch.x, ch.y, ch.width, ch.height = 150, 8, largeur - 190, h - 34
     lignes = list(reversed(lignes))
-    ch.data = [[l["participants"] for l in lignes]]
-    ch.categoryAxis.categoryNames = [l["libelle"][:34] for l in lignes]
+    ch.data = [[ln["participants"] for ln in lignes]]
+    ch.categoryAxis.categoryNames = [ln["libelle"][:34] for ln in lignes]
     ch.categoryAxis.labels.fontSize = 7.5
     ch.categoryAxis.labels.boxAnchor = "e"
     ch.valueAxis.labels.fontSize = 7
@@ -482,7 +482,7 @@ def rapport_pdf(data: dict, filtres: str) -> bytes:
     cartes = [("Employés formés", k["employes_formes"]), ("Formations", k["formations"]),
               ("Participations", k["participations"]), ("Présents", k["presents"]),
               ("Absents", k["absents"]), ("Taux de présence", fr_taux(k["taux_presence"]))]
-    kt = Table([[Paragraph(str(v), big) for _l, v in cartes], [Paragraph(l, small) for l, _v in cartes]],
+    kt = Table([[Paragraph(str(v), big) for _l, v in cartes], [Paragraph(ln, small) for ln, _v in cartes]],
                colWidths=[w / len(cartes)] * len(cartes))
     kt.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.6, BORDER),

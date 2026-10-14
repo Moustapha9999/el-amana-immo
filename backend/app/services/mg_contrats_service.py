@@ -360,7 +360,7 @@ class MgContratsService:
             "alerte_jours": [30, 60, 90],
             "echeance_due_jours": await self._fenetre_due(),
             "ged_taille_max_mo": await self._param_int("contrats.ged_taille_max_mo", 15),
-            "types_document": [{"code": c, "libelle": l} for c, l in TYPES_DOCUMENT],
+            "types_document": [{"code": c, "libelle": ln} for c, ln in TYPES_DOCUMENT],
             "capacites": await capacites(self.db, user),
             "agence_scope": scope,
         }

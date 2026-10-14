@@ -229,11 +229,11 @@ async def test_conformite_reference_excel_et_kpi(env):
     assert k["nature"] == "HISTORIQUE_EXCEL" and k["total"] >= 1 and "taux_abandon" in k["flux"]
     assert k["excel"]["non_evalues"] == k["total"] - k["excel"]["conformes"] - k["excel"]["non_conformes"]
     agences_kpi = (await c.get("/api/v1/eer/kpis/agencies", headers=charge)).json()
-    assert {str(a) for a in agences} <= {l["agence_id"] for l in agences_kpi["lignes"]}
+    assert {str(a) for a in agences} <= {ln["agence_id"] for ln in agences_kpi["lignes"]}
     profils = (await c.get("/api/v1/eer/kpis/profiles", headers=charge)).json()
-    assert [l["libelle"] for l in profils["lignes"]][0] == "Personne_Physique"
+    assert [ln["libelle"] for ln in profils["lignes"]][0] == "Personne_Physique"
     etats = (await c.get("/api/v1/eer/kpis/account-statuses", headers=charge)).json()
-    assert [l["code"] for l in etats["lignes"]] == ["ACTIF", "INACTIF", "BLOQUE", "FERME"]
+    assert [ln["code"] for ln in etats["lignes"]] == ["ACTIF", "INACTIF", "BLOQUE", "FERME"]
     serie = (await c.get("/api/v1/eer/kpis/timeseries?granularite=semaine", headers=charge)).json()
     assert serie["nature"] == "EXTENSION_BEA_DIGITAL"
     assert (await c.get("/api/v1/eer/kpis/dimensions/risque", headers=charge)).status_code == 200

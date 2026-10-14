@@ -250,7 +250,7 @@ def _moyen_paiement_detail(bon) -> str:
 
 
 def _taux_tva_label(bon) -> str:
-    taux = {Decimal(str(l.taux_tva or 0)) for l in (bon.lignes or [])}
+    taux = {Decimal(str(ln.taux_tva or 0)) for ln in (bon.lignes or [])}
     if len(taux) != 1:
         return ""
     return f" ({money(taux.pop())} %)"

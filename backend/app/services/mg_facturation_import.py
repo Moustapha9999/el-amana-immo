@@ -284,7 +284,7 @@ class MgFacturationImport:
         ag_stmt = select(Agence.id, Agence.libelle).where(Agence.deleted_at.is_(None), Agence.is_active.is_(True))
         if self.svc.scope_agence:
             ag_stmt = ag_stmt.where(Agence.id == self.svc.scope_agence)
-        agences = [(str(a), l) for a, l in (await self.db.execute(ag_stmt)).all()]
+        agences = [(str(a), ln) for a, ln in (await self.db.execute(ag_stmt)).all()]
         existants = {
             p.reference_normalisee: p
             for p in (
@@ -306,18 +306,18 @@ class MgFacturationImport:
         return analyse, fournisseur.raison_sociale
 
     def _resume(self, analyse: Analyse) -> dict:
-        uniques = [l for l in analyse.lignes if l.statut != "DOUBLON_FICHIER"]
+        uniques = [ln for ln in analyse.lignes if ln.statut != "DOUBLON_FICHIER"]
         return {
             "total_detectees": len(analyse.lignes),
             "references_uniques": len(uniques),
-            "agences": sum(1 for l in uniques if l.type_point == "AGENCE"),
-            "sieges": sum(1 for l in uniques if l.type_point == "SIEGE"),
-            "pdv": sum(1 for l in uniques if l.type_point == "PDV"),
-            "autres": sum(1 for l in uniques if l.type_point == "AUTRE"),
-            "nouveaux": sum(1 for l in uniques if l.statut == "NOUVEAU"),
-            "existants": sum(1 for l in uniques if l.statut == "EXISTANT"),
-            "doublons_fichier": sum(1 for l in analyse.lignes if l.statut == "DOUBLON_FICHIER"),
-            "agences_rapprochees": sum(1 for l in uniques if l.agence_id),
+            "agences": sum(1 for ln in uniques if ln.type_point == "AGENCE"),
+            "sieges": sum(1 for ln in uniques if ln.type_point == "SIEGE"),
+            "pdv": sum(1 for ln in uniques if ln.type_point == "PDV"),
+            "autres": sum(1 for ln in uniques if ln.type_point == "AUTRE"),
+            "nouveaux": sum(1 for ln in uniques if ln.statut == "NOUVEAU"),
+            "existants": sum(1 for ln in uniques if ln.statut == "EXISTANT"),
+            "doublons_fichier": sum(1 for ln in analyse.lignes if ln.statut == "DOUBLON_FICHIER"),
+            "agences_rapprochees": sum(1 for ln in uniques if ln.agence_id),
             "montants_detectes": analyse.montants_detectes,
             "montants_importes": 0,
         }
@@ -337,7 +337,7 @@ class MgFacturationImport:
             "fournisseur_id": str(fournisseur_id),
             "fournisseur": fournisseur,
             "feuilles": analyse.feuilles,
-            "lignes": [l.as_dict() for l in analyse.lignes],
+            "lignes": [ln.as_dict() for ln in analyse.lignes],
             "resume": self._resume(analyse),
             "avertissements": avertissements,
         }

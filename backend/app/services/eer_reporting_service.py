@@ -176,10 +176,10 @@ class EerReportingService:
     @staticmethod
     def _total(lignes: list[dict[str, Any]]) -> dict[str, Any]:
         def somme(cle: str, champ: str) -> int:
-            return sum(l[cle][champ] for l in lignes)
+            return sum(ln[cle][champ] for ln in lignes)
 
-        total = sum(l["total"] for l in lignes)
-        bloc = {"total": total, "divergences": sum(l["divergences"] for l in lignes)}
+        total = sum(ln["total"] for ln in lignes)
+        bloc = {"total": total, "divergences": sum(ln["divergences"] for ln in lignes)}
         for cle in ("excel", "bea"):
             bloc[cle] = Compteurs(total, somme(cle, "conformes"), somme(cle, "non_conformes")).to_dict()
         return bloc
@@ -209,6 +209,6 @@ class EerReportingService:
             code = None if cle is None else ("OUI" if cle is True else "NON" if cle is False else str(cle))
             lignes.append({"code": code, "libelle": libelles.get(cle, code) if cle is not None else "Non renseigné",
                            **_bloc(r)})
-        lignes.sort(key=lambda l: (-l["total"], l["code"] or ""))
+        lignes.sort(key=lambda ln: (-ln["total"], ln["code"] or ""))
         return {"nature": EXTENSION_BEA_DIGITAL, "dimension": dimension, "lignes": lignes,
                 "total": self._total(lignes)}

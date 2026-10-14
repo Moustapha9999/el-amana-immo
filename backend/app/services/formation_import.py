@@ -285,21 +285,21 @@ class FormationImportService:
                                   "message": f"Présence non reconnue « {_texte(val(row, 'presence'))} » : laissée non saisie"})
             parsed.append(ligne)
 
-        valides = [l for l in parsed if not l["bloquante"]]
+        valides = [ln for ln in parsed if not ln["bloquante"]]
         # Valeurs distinctes à rapprocher.
         occur: dict[str, Counter] = {d: Counter() for d in DOMAINES_IMPORT}
         brut: dict[str, dict[str, str]] = {d: {} for d in DOMAINES_IMPORT}
         per_entite: dict[str, Counter] = defaultdict(Counter)
-        for l in valides:
-            for dom, valeurs in (("THEME", l["themes"]), ("LIEU", [l["lieu"]]), ("FORMATEUR", l["formateurs"]),
-                                 ("FONCTION", [l["fonction"]] if l["fonction"] else []),
-                                 ("ENTITE", [l["entite"]] if l["entite"] else [])):
+        for ln in valides:
+            for dom, valeurs in (("THEME", ln["themes"]), ("LIEU", [ln["lieu"]]), ("FORMATEUR", ln["formateurs"]),
+                                 ("FONCTION", [ln["fonction"]] if ln["fonction"] else []),
+                                 ("ENTITE", [ln["entite"]] if ln["entite"] else [])):
                 for v in valeurs:
                     c = cle(v)
                     occur[dom][c] += 1
                     brut[dom].setdefault(c, propre(v))
-            if l["entite"] and l["perimetre"]:
-                per_entite[cle(l["entite"])][cle(l["perimetre"])] += 1
+            if ln["entite"] and ln["perimetre"]:
+                per_entite[cle(ln["entite"])][cle(ln["perimetre"])] += 1
         valeurs: dict[str, list[dict]] = {}
         for dom in DOMAINES_IMPORT:
             cands = entites if dom == "ENTITE" else par_domaine[dom]
@@ -330,8 +330,8 @@ class FormationImportService:
 
         # Personnes.
         groupes: dict[str, list[dict]] = defaultdict(list)
-        for l in valides:
-            groupes[cle_identite(l["participant"])].append(l)
+        for ln in valides:
+            groupes[cle_identite(ln["participant"])].append(ln)
         existants = {}
         if groupes:
             for e in (await self.db.scalars(select(FormationEmploye).where(
@@ -339,9 +339,9 @@ class FormationImportService:
                 existants.setdefault(e.cle_identite, e)
         personnes = []
         for ci, ls in groupes.items():
-            variantes = Counter(l["participant"] for l in ls)
+            variantes = Counter(ln["participant"] for ln in ls)
             principal = variantes.most_common(1)[0][0]
-            recent = max(ls, key=lambda l: l["date"] or "")
+            recent = max(ls, key=lambda ln: ln["date"] or "")
             e = existants.get(ci)
             p = {
                 "cle": ci, "brut": principal, "variantes": sorted(variantes), "occurrences": len(ls),
@@ -367,17 +367,17 @@ class FormationImportService:
 
         # Sessions.
         sessions: dict[str, dict] = {}
-        for l in valides:
-            k = self._cle_session(l)
-            s = sessions.setdefault(k, {"cle": k, "date": l["date"], "themes": l["themes"], "lieu": l["lieu"],
-                                        "formateurs": l["formateurs"], "participants": [], "lignes": []})
-            ci = cle_identite(l["participant"])
+        for ln in valides:
+            k = self._cle_session(ln)
+            s = sessions.setdefault(k, {"cle": k, "date": ln["date"], "themes": ln["themes"], "lieu": ln["lieu"],
+                                        "formateurs": ln["formateurs"], "participants": [], "lignes": []})
+            ci = cle_identite(ln["participant"])
             if ci in s["participants"]:
-                anomalies.append({"ligne": l["ligne"], "niveau": "info",
-                                  "message": f"Doublon : « {l['participant']} » déjà présent dans cette session"})
+                anomalies.append({"ligne": ln["ligne"], "niveau": "info",
+                                  "message": f"Doublon : « {ln['participant']} » déjà présent dans cette session"})
                 continue
             s["participants"].append(ci)
-            s["lignes"].append(l["ligne"])
+            s["lignes"].append(ln["ligne"])
         liste_sessions = sorted(sessions.values(), key=lambda s: s["date"] or "")
         for s in liste_sessions:
             s["nb_participants"] = len(s["participants"])
@@ -415,10 +415,10 @@ class FormationImportService:
         return self._import_dict(imp, avec_analyse=True)
 
     @staticmethod
-    def _cle_session(l: dict) -> str:
+    def _cle_session(ln: dict) -> str:
         return "|".join([
-            l["date"] or "", ",".join(sorted(cle(t) for t in l["themes"])), cle(l["lieu"]),
-            ",".join(sorted(cle(f) for f in l["formateurs"])),
+            ln["date"] or "", ",".join(sorted(cle(t) for t in ln["themes"])), cle(ln["lieu"]),
+            ",".join(sorted(cle(f) for f in ln["formateurs"])),
         ])
 
     def _import_dict(self, imp: FormationImport, *, avec_analyse: bool = False, auteur: str | None = None) -> dict:
@@ -540,7 +540,7 @@ class FormationImportService:
             stats["employes_crees"] += 1
 
         # 3. Sessions + participations.
-        lignes = {l["ligne"]: l for l in a.get("lignes", [])}
+        lignes = {ln["ligne"]: ln for ln in a.get("lignes", [])}
         today = date.today()
         now = maintenant()
         for s in a.get("sessions", []):
@@ -571,18 +571,18 @@ class FormationImportService:
             deja = {p.employe_id for p in session.participants}
             ordre = max((p.ordre for p in session.participants), default=0)
             for ligne_no in s["lignes"]:
-                l = lignes[ligne_no]
-                eid = employes.get(cle_identite(l["participant"]))
+                ln = lignes[ligne_no]
+                eid = employes.get(cle_identite(ln["participant"]))
                 if not eid or eid in deja:
                     stats["participations_existantes"] += 1 if eid else 0
                     continue
                 e = await self.db.get(FormationEmploye, eid)
-                ent_id = mapping["ENTITE"].get(cle(l["entite"])) if l["entite"] else e.entite_id
+                ent_id = mapping["ENTITE"].get(cle(ln["entite"])) if ln["entite"] else e.entite_id
                 ent = entites.get(ent_id) if ent_id else None
                 if ent is None and ent_id:
                     ent = await self.db.get(FormationEntite, ent_id)
-                fonction_id = mapping["FONCTION"].get(cle(l["fonction"])) if l["fonction"] else e.fonction_id
-                presence = l.get("presence") if d <= today else None
+                fonction_id = mapping["FONCTION"].get(cle(ln["fonction"])) if ln["fonction"] else e.fonction_id
+                presence = ln.get("presence") if d <= today else None
                 ordre += 1
                 session.participants.append(FormationParticipant(
                     session_id=session.id, employe_id=eid, presence=presence, fonction_id=fonction_id,

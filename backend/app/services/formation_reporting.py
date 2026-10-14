@@ -121,7 +121,7 @@ class FormationReporting:
                 .order_by(FormationEmploye.nom, FormationEmploye.prenom)
             )).all())
         if f.niveau_participant:
-            gardes = {l[0] for l in lignes}
+            gardes = {ln[0] for ln in lignes}
             sessions = [s for s in sessions if s.id in gardes]
         return sessions, lignes, await Refs.charger(self.db)
 
