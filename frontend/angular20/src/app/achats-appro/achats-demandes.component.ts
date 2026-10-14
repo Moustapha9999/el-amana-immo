@@ -1,3 +1,4 @@
+import { MontantInputDirective } from '../shared/montant-input.directive';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -54,7 +55,7 @@ type Mode = 'list' | 'form';
 @Component({
   selector: 'bea-achats-demandes',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MgGedPanelComponent, MatIconModule],
+  imports: [MontantInputDirective, ReactiveFormsModule, RouterLink, MgGedPanelComponent, MatIconModule],
   templateUrl: './achats-demandes.component.html',
   styleUrl: './achats-ui.css',
 })

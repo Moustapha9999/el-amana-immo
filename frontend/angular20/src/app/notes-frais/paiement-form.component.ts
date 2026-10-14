@@ -1,3 +1,4 @@
+import { MontantInputDirective } from '../shared/montant-input.directive';
 import { DatePipe } from '@angular/common';
 import {
   ChangeDetectionStrategy,
@@ -32,7 +33,7 @@ const TODAY = () => new Date().toISOString().slice(0, 10);
 @Component({
   selector: 'bea-paiement-form',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MatIconModule, MontantPipe, DatePipe],
+  imports: [MontantInputDirective, ReactiveFormsModule, MatIconModule, MontantPipe, DatePipe],
   template: `
     <div class="bea-mg__backdrop" (click)="close()"></div>
     <div class="bea-mg__modal bea-ct-view bea-pay-form" role="dialog" aria-modal="true" aria-labelledby="bea-pay-form-title">
@@ -132,7 +133,7 @@ const TODAY = () => new Date().toISOString().slice(0, 10);
                 </label>
                 <label>Montant payé ({{ r.devise }}) *
                   <span class="bea-pay-amount">
-                    <input type="number" formControlName="montant" min="0.01" step="0.01" [max]="disponible()" />
+                    <input appMontantInput type="number" formControlName="montant" min="0.01" step="0.01" [max]="disponible()" />
                     <button type="button" class="bea-pay-amount__all" (click)="payerSolde()" title="Régler tout le solde">Solde</button>
                   </span>
                 </label>

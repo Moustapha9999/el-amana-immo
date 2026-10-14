@@ -1,16 +1,20 @@
 import { Pipe, PipeTransform } from '@angular/core';
 
 /**
- * Règles BEA DIGITAL :
- * - Montant : 2 décimales, virgule, espace milliers (1 250,00)
+ * Règles BEA DIGITAL (utilitaire unique de la plateforme, locale fr-FR) :
+ * - Montant : 2 décimales, virgule décimale, espace insécable (U+00A0) pour les milliers
+ *   (1 250,00 ; -12 500,50) — affichage uniquement, la valeur transmise à l'API reste un nombre
  * - Quantité, stock, entrée, sortie : 3 décimales max., sans séparateur de milliers
  *   (1000, 50000, 41,19) ; une quantité entière s'affiche sans décimales
  * - Taux : 2 décimales + « % » (18,00 %)
- * - Null / vide : 0,00 (montant) ou 0 (quantité)
+ * - Null / vide : 0,00 (montant) ou 0 (quantité) ; « — » via ``formatMontantOuTiret``
+ * - Saisie : ``parseMontant`` (accepte 1 234,56 / 1 234,56 / 1234.56) avant envoi à l'API
  */
 
+export const SEPARATEUR_MILLIERS = '\u00a0';
+
 function groupInt(absInt: string): string {
-  return absInt.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return absInt.replace(/\B(?=(\d{3})+(?!\d))/g, SEPARATEUR_MILLIERS);
 }
 
 function asNumber(value: number | string | null | undefined): number | null {
@@ -68,13 +72,18 @@ export function formatMontant(
   const n = asNumber(value);
   const raw = n === null ? 0 : n;
   const fixed = raw.toFixed(Math.max(0, digits));
-  const neg = fixed.startsWith('-');
-  const abs = neg ? fixed.slice(1) : fixed;
+  const neg = fixed.startsWith('-') && Number(fixed) !== 0;
+  const abs = fixed.replace(/^-/, '');
   const [intPart, decPart] = abs.split('.');
   const grouped = groupInt(intPart);
   const body = decPart !== undefined ? `${grouped},${decPart}` : grouped;
   const formatted = neg ? `-${body}` : body;
   return devise ? `${formatted} ${devise}` : formatted;
+}
+
+/** Comme ``formatMontant``, mais « — » quand la valeur est absente ou non numérique. */
+export function formatMontantOuTiret(value: number | string | null | undefined, devise?: string): string {
+  return asNumber(value) === null ? '—' : formatMontant(value, 2, devise);
 }
 
 /** Entier tel quel (« 1000 ») ; décimale éventuelle sans zéros inutiles (« 41,19 »). */

@@ -80,6 +80,10 @@ remplacement d’ORION.
  `UiDialogService` pour les confirmations, `unsavedChangesGuard` sur les
  formulaires. Jamais `alert()` / `confirm()` / messages en haut de page.
 - Succès affiché **seulement** après confirmation backend.
+- Montants : format fr-FR unique (`1 250 000,00`, espace insécable) via pipe
+ `montant` / `formatMontant` / `appMontantInput` (front) et `format_montant` /
+ `valeur_csv` / `EXCEL_MONTANT_FORMAT` (back). Valeur stockée jamais formatée.
+ Détail : `docs/frontend-plateforme.md` § Montants.
 - Erreurs API au format standard (`backend/app/core/api_errors.py`) avec
  `request_id` ; ne jamais loguer mot de passe, token, secret.
 

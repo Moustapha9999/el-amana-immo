@@ -1,3 +1,4 @@
+import { MontantInputDirective } from '../shared/montant-input.directive';
 import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -9,7 +10,7 @@ import { describeApiErrorAsync } from '../core/feedback/api-error';
 import { FeedbackMessage, FeedbackService } from '../core/feedback/feedback.service';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 import { ApiService } from '../core/services/api.service';
-import { MontantPipe, TauxPipe } from '../shared/montant.pipe';
+import { MontantPipe, TauxPipe, formatMontant } from '../shared/montant.pipe';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 import { UiDialogAction } from '../shared/ui-dialog/ui-dialog.types';
 import { ContratsDocumentsComponent } from './contrats-documents.component';
@@ -116,7 +117,7 @@ interface Simulation {
 @Component({
   selector: 'bea-contrats-fiche',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MontantPipe, TauxPipe, MatIconModule, ContratsDocumentsComponent],
+  imports: [MontantInputDirective, ReactiveFormsModule, RouterLink, MontantPipe, TauxPipe, MatIconModule, ContratsDocumentsComponent],
   template: `
     <section class="bea-mg bea-nf bea-ct">
       <header class="bea-mg__head">
@@ -276,7 +277,7 @@ interface Simulation {
                 @if (erreurChamp('date_fin'); as m) { <small class="bea-ct-field-error" role="alert">{{ m }}</small> }
               </label>
               <label>Montant HT (durée du contrat)
-                <input type="number" min="0" step="0.01" formControlName="montant_ht" [attr.aria-invalid]="!!erreurChamp('montant_ht')" />
+                <input appMontantInput type="number" min="0" step="0.01" formControlName="montant_ht" [attr.aria-invalid]="!!erreurChamp('montant_ht')" />
                 @if (erreurChamp('montant_ht'); as m) { <small class="bea-ct-field-error" role="alert">{{ m }}</small> }
               </label>
               <label>TVA (%) <input type="number" min="0" max="100" step="0.01" formControlName="taux_tva" /></label>
@@ -388,7 +389,7 @@ interface Simulation {
                     </select>
                   </label>
                   <label>Date prévue <input type="date" formControlName="date_prevue" /></label>
-                  <label>Montant <input type="number" min="0" step="0.01" formControlName="montant" /></label>
+                  <label>Montant <input appMontantInput type="number" min="0" step="0.01" formControlName="montant" /></label>
                   <label>Statut
                     <select formControlName="statut">
                       <option value="">Automatique</option>
@@ -472,8 +473,8 @@ interface Simulation {
                   <label>N° de pièce <input formControlName="reference" maxlength="40" placeholder="Facture, OV, chèque…" /></label>
                   <label>Date prévue <input type="date" formControlName="date_prevue" /></label>
                   <label>Date de paiement <input type="date" formControlName="date_reelle" /></label>
-                  <label>Montant prévu <input type="number" min="0" step="0.01" formControlName="montant_prevu" /></label>
-                  <label>Montant versé <input type="number" min="0" step="0.01" formControlName="montant_paye" /></label>
+                  <label>Montant prévu <input appMontantInput type="number" min="0" step="0.01" formControlName="montant_prevu" /></label>
+                  <label>Montant versé <input appMontantInput type="number" min="0" step="0.01" formControlName="montant_paye" /></label>
                   <label>Mode
                     <select formControlName="mode">
                       <option value="">—</option>
@@ -529,7 +530,7 @@ interface Simulation {
                   <div class="bea-ct-grid">
                     <label class="bea-ct-span2">Objet de l’avenant * <input formControlName="objet" maxlength="255" placeholder="Ex. : révision tarifaire 2027" /></label>
                     <label>Date d’effet * <input type="date" formControlName="date_effet" /></label>
-                    <label>Nouveau montant HT <input type="number" min="0" step="0.01" formControlName="nouveau_montant_ht" [placeholder]="'Actuel : ' + (c.montant_ht ?? '—')" /></label>
+                    <label>Nouveau montant HT <input appMontantInput type="number" min="0" step="0.01" formControlName="nouveau_montant_ht" [placeholder]="'Actuel : ' + (c.montant_ht === null ? '—' : (c.montant_ht | montant))" /></label>
                     <label>Nouvelle TVA (%) <input type="number" min="0" max="100" step="0.01" formControlName="nouveau_taux_tva" [placeholder]="'Actuelle : ' + (c.taux_tva ?? '—')" /></label>
                     <label>Nouvelle date de fin <input type="date" formControlName="nouvelle_date_fin" /></label>
                     <label class="bea-ct-span2">Clauses modifiées <textarea formControlName="clauses" rows="3" placeholder="Texte des clauses ajoutées ou modifiées"></textarea></label>
@@ -921,7 +922,7 @@ export class ContratsFicheComponent implements OnInit {
           title: c ? 'Contrat mis à jour' : 'Contrat créé en brouillon',
           details: [
             { label: 'Référence', value: r.reference },
-            { label: 'Montant TTC', value: `${num(r.montant).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} ${r.devise}` },
+            { label: 'Montant TTC', value: `${formatMontant(r.montant)} ${r.devise}` },
             { label: 'Statut', value: statutLabel(r.statut) },
           ],
         }),
@@ -1050,7 +1051,7 @@ export class ContratsFicheComponent implements OnInit {
           title: remplacer ? 'Régénérer l’échéancier' : 'Générer l’échéancier',
           message: remplacer
             ? 'Remplacer les échéances de paiement non réglées par un nouveau calcul ?'
-            : `Calculer les échéances ${this.periodicite(c.periodicite).toLowerCase()}s sur ${num(c.montant).toLocaleString('fr-FR')} ${c.devise} TTC ?`,
+            : `Calculer les échéances ${this.periodicite(c.periodicite).toLowerCase()}s sur ${formatMontant(c.montant)} ${c.devise} TTC ?`,
           hint: remplacer ? 'Les échéances déjà réglées (même partiellement) sont conservées ; le reste à payer est réparti.' : 'Calcul effectué par le serveur.',
         },
         loading: 'Calcul de l’échéancier…',
@@ -1180,7 +1181,7 @@ export class ContratsFicheComponent implements OnInit {
             title: editId ? 'Paiement mis à jour' : 'Paiement enregistré',
             details: [
               { label: 'N° pièce', value: body.reference ?? '—' },
-              { label: 'Montant versé', value: `${num(body.montant_paye).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} ${r.devise}` },
+              { label: 'Montant versé', value: `${formatMontant(body.montant_paye)} ${r.devise}` },
             ],
           }),
         },
@@ -1273,7 +1274,7 @@ export class ContratsFicheComponent implements OnInit {
           title: 'Avenant enregistré',
           details: [
             { label: 'Version', value: String(r.version) },
-            { label: 'Montant TTC', value: `${num(r.montant).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} ${r.devise}` },
+            { label: 'Montant TTC', value: `${formatMontant(r.montant)} ${r.devise}` },
             { label: 'Fin', value: dateFr(r.date_fin) },
           ],
         }),

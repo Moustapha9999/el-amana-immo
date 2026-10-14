@@ -29,6 +29,7 @@ from app.models import (
 from app.models.enums import StatutExercice
 from app.services.archive_service import KIND_CLOTURE, nature_label
 from app.services.periode_amortissement_service import PeriodeAmortissementService
+from app.services.reporting_export import formater_montants_feuille
 from app.services.recap_amortissement import (
     _dotations_par_immo,
     _historique_banque_par_immo,
@@ -163,6 +164,7 @@ def build_cloture_xlsx(
                 row.get("agence_label") or "",
             ]
         )
+    formater_montants_feuille(ws, colonnes=(4, 6, 7, 8, 9))
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()

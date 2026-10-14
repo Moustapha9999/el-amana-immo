@@ -38,7 +38,7 @@ from app.services.audit_helpers import record_audit
 from app.services.mailer import send_mail
 from app.services.notification_service import NotificationService
 from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
-from app.services.reporting_export import build_styled_pdf, build_styled_workbook, export_now
+from app.services.reporting_export import build_styled_pdf, build_styled_workbook, export_now, format_montant
 
 LOCKED = {"ARCHIVE", "ANNULE"}
 EDITION_LIBRE = {"BROUILLON", "EN_PREPARATION", "REJETE"}
@@ -1589,7 +1589,7 @@ class MgContratsService:
             if r["statut"] not in {"DUE", "EN_RETARD"}:
                 continue
             paiement = r["type_echeance"] == "PAIEMENT"
-            reste = f" — reste {r['reste']:,.2f} {r['devise'] or 'MRU'}".replace(",", " ") if paiement and r["reste"] else ""
+            reste = f" — reste {format_montant(r['reste'])} {r['devise'] or 'MRU'}" if paiement and r["reste"] else ""
             push(
                 "paiement" if paiement else "echeance",
                 None,
@@ -1910,7 +1910,7 @@ class MgContratsService:
                 "rows": [
                     [
                         r["reference"], r["titre"], r["fournisseur"] or "", r["agence"] or "", r["type_echeance"],
-                        jj(r["date_prevue"]), r["jours"], r["montant"] or 0, r["montant_paye"], r["reste"], r["statut"],
+                        jj(r["date_prevue"]), r["jours"], float(r["montant"] or 0), r["montant_paye"], r["reste"], r["statut"],
                     ]
                     for r in src
                 ],

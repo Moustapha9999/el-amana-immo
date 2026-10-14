@@ -182,7 +182,7 @@ def test_association_par_id_puis_designation():
 def test_message_plafond_paiement():
     with pytest.raises(HTTPException) as exc:
         R.verifier_montant_paiement(D("40000"), D("100000"), D("70000"))
-    assert exc.value.detail == "Le montant du paiement (40 000) dépasse le reste à payer (30 000)."
+    assert exc.value.detail == "Le montant du paiement (40\u00a0000) dépasse le reste à payer (30\u00a0000)."
 
 
 def test_statut_paiement_facture():
@@ -226,7 +226,7 @@ async def test_paiements_successifs_puis_depassement():
     svc._montant_engage = AsyncMock(return_value=D("70000"))
     with pytest.raises(HTTPException) as exc:
         await svc.create_paiement(PaiementCreate(facture_id=facture.id, montant=D("40000")), _user())
-    assert "dépasse le reste à payer (30 000)" in exc.value.detail
+    assert "dépasse le reste à payer (30\u00a0000)" in exc.value.detail
 
     paye["v"] = D("100000")
     await svc.create_paiement(

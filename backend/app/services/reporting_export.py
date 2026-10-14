@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Sequence
@@ -24,7 +24,10 @@ from app.data.el_amana_referentiel import BANQUE_EL_AMANA
 from app.models import EcritureComptable, Immobilisation
 
 _TZ = ZoneInfo("Africa/Nouakchott")
-_EXCEL_MONTANT_FORMAT = "#,##0.00"
+# Format d'affichage seulement : la cellule reste numérique, Excel applique les séparateurs
+# de la configuration régionale du poste (fr-FR : espace milliers, virgule décimale).
+EXCEL_MONTANT_FORMAT = _EXCEL_MONTANT_FORMAT = "#,##0.00"
+SEPARATEUR_MILLIERS = "\u00a0"
 
 # Palette alignée UI (navy / brand)
 _COLOR_NAVY = "1E3A5F"
@@ -70,16 +73,59 @@ def format_export_datetime(when: datetime | None = None) -> str:
     return dt.strftime("%d/%m/%Y à %H:%M")
 
 
+def _decimal_centimes(value: Any) -> Decimal | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        d = value if isinstance(value, Decimal) else Decimal(str(value).strip())
+    except (InvalidOperation, ValueError):
+        return None
+    if not d.is_finite():
+        return None
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 def format_montant(value: Any) -> str:
-    """Montant avec exactement 2 décimales (séparateur français)."""
+    """Montant fr-FR pour PDF, libellés et notifications : ``-1 234 567,89``.
+
+    Deux décimales, virgule décimale, espace insécable (U+00A0) entre les milliers.
+    Affichage seulement : ne jamais réinjecter ce texte en base ni dans une cellule Excel.
+    """
     if value is None:
         return "—"
-    try:
-        n = float(value)
-    except (TypeError, ValueError):
+    d = _decimal_centimes(value)
+    if d is None:
         return str(value)
-    formatted = f"{n:,.2f}"
-    return formatted.replace(",", "X").replace(".", ",").replace("X", " ")
+    if d == 0:
+        d = abs(d)
+    return f"{d:,.2f}".replace(",", SEPARATEUR_MILLIERS).replace(".", ",")
+
+
+def valeur_csv(value: Any, *, decimales: int | None = 2) -> Any:
+    """Cellule CSV (séparateur « ; », Excel fr-FR) : virgule décimale, sans séparateur de milliers
+    pour que la cellule reste numérique à l'ouverture. ``decimales=None`` garde la précision (quantités)."""
+    if value is None:
+        return ""
+    if not _is_montant_number(value):
+        return value
+    if decimales is None:
+        return str(value).replace(".", ",")
+    d = _decimal_centimes(value) if decimales == 2 else Decimal(str(value))
+    if d is None:
+        return value
+    if d == 0:
+        d = abs(d)
+    return f"{d:.{decimales}f}".replace(".", ",")
+
+
+def formater_montants_feuille(ws, *, colonnes: Sequence[int] | None = None, min_row: int = 1) -> None:
+    """Feuilles construites à la main : format montant sur les cellules décimales (les entiers = compteurs)."""
+    for row in ws.iter_rows(min_row=min_row):
+        for cell in row:
+            if colonnes is not None and cell.column not in colonnes:
+                continue
+            if isinstance(cell.value, float):
+                cell.number_format = _EXCEL_MONTANT_FORMAT
 
 
 def _is_montant_number(value: Any) -> bool:

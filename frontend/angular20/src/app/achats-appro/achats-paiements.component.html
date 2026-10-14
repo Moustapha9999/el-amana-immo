@@ -132,7 +132,7 @@
             }
           </select>
         </label>
-        <label>Montant *<input type="number" formControlName="montant" step="0.01" [attr.max]="factureChoisie()?.reste_a_payer ?? null" />
+        <label>Montant *<input appMontantInput type="number" formControlName="montant" step="0.01" [attr.max]="factureChoisie()?.reste_a_payer ?? null" />
           @if (factureChoisie(); as f) {
             @if (!id()) {
               <small class="bea-ach__muted">Reste à payer : {{ f.reste_a_payer | montant }} MRU sur {{ f.montant_ttc | montant }} MRU</small>

@@ -39,6 +39,7 @@ from app.services.reporting_export import (
     build_styled_workbook,
     build_styled_workbook_multi,
     export_now,
+    valeur_csv,
 )
 
 LIEN_FACTURE = "/facturation-fournisseurs/factures?facture={id}"
@@ -637,7 +638,7 @@ class MgFacturationAnalytics:
             writer = csv.writer(buf, delimiter=";", lineterminator="\r\n")
             writer.writerow(headers)
             for row in rows:
-                writer.writerow([_csv(v) for v in row])
+                writer.writerow([valeur_csv(v) for v in row])
             return Response(
                 content=("\ufeff" + buf.getvalue()).encode("utf-8"),
                 media_type="text/csv; charset=utf-8",
@@ -676,12 +677,6 @@ class MgFacturationAnalytics:
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f'attachment; filename="{filename}.xlsx"'},
         )
-
-
-def _csv(value):
-    if isinstance(value, float):
-        return f"{value:.2f}".replace(".", ",")
-    return "" if value is None else value
 
 
 def _fr(iso: str | None) -> str:

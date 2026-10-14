@@ -5,7 +5,12 @@ import { RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../core/feedback/api-error';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { ApiService } from '../core/services/api.service';
+import { formatMontant } from '../shared/montant.pipe';
 import { ContratsConfig, telechargerBlob } from './contrats.models';
+
+/** Les montants arrivent en JSON sans décimale quand ils sont ronds : la colonne décide du format. */
+const COLONNE_MONTANT = /montant|engagement|prévu|payé|reste|écart|échéances prévues|paiements réalisés/i;
+
 interface ReportJson {
   key: string;
   title: string;
@@ -101,7 +106,7 @@ const RAPPORTS: RapportDef[] = [
                 <tbody>
                   @for (row of r.rows; track $index; let i = $index) {
                     <tr class="bea-ct-row" [class.bea-ct-row--total]="row[0] === 'TOTAL'" [style.animation-delay.ms]="i < 20 ? i * 25 : 0">
-                      @for (cell of row; track $index) { <td [class.is-num]="isNum(cell)">{{ format(cell) }}</td> }
+                      @for (cell of row; track $index; let j = $index) { <td [class.is-num]="isNum(cell)">{{ format(cell, colonnesMontant()[j]) }}</td> }
                     </tr>
                   }
                 </tbody>
@@ -129,6 +134,7 @@ export class ContratsRapportsComponent implements OnInit {
   readonly cle = signal('liste');
   readonly courant = computed(() => RAPPORTS.find((r) => r.key === this.cle()) ?? RAPPORTS[0]);
   readonly peutExporter = computed(() => !!this.config()?.capacites.export);
+  readonly colonnesMontant = computed(() => (this.report()?.headers ?? []).map((h) => COLONNE_MONTANT.test(h)));
 
   ngOnInit(): void {
     this.api.get<ContratsConfig>('/mg/contrats/config').subscribe({ next: (c) => this.config.set(c), error: () => undefined });
@@ -182,8 +188,8 @@ export class ContratsRapportsComponent implements OnInit {
     return typeof cell === 'number';
   }
 
-  format(cell: string | number): string {
-    if (typeof cell === 'number') return cell.toLocaleString('fr-FR', { minimumFractionDigits: Number.isInteger(cell) ? 0 : 2, maximumFractionDigits: 2 });
+  format(cell: string | number, montant = false): string {
+    if (typeof cell === 'number') return montant || !Number.isInteger(cell) ? formatMontant(cell) : String(cell);
     return cell ?? '';
   }
 }

@@ -64,6 +64,7 @@ from app.services.mg_achats_regles import BC_ACTIONS_APPROBATION
 from app.services.mg_achats_service import MgAchatsService
 from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
 from app.services.mg_pdf_service import _bc_pdf_filename, pdf_bon_commande
+from app.services.reporting_export import valeur_csv
 
 router = APIRouter(prefix="/mg/achats", tags=["mg-achats"])
 _module = [Depends(require_module_access("achats-appro"))]
@@ -77,7 +78,7 @@ async def config_achats() -> dict[str, bool]:
 def _csv(rows: list[dict], headers: list[str]) -> Response:
     lines = [";".join(headers)]
     for r in rows:
-        lines.append(";".join(str(r.get(h, "") or "") for h in headers))
+        lines.append(";".join(str(valeur_csv(r.get(h)) or "") for h in headers))
     data = "\n".join(lines).encode("utf-8-sig")
     return Response(
         content=data,

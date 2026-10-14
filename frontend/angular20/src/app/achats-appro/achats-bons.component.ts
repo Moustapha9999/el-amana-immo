@@ -1,3 +1,4 @@
+import { MontantInputDirective } from '../shared/montant-input.directive';
 import { MontantPipe, TauxPipe } from '../shared/montant.pipe';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import {
@@ -60,7 +61,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
 @Component({
   selector: 'bea-achats-bons',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
+  imports: [MontantInputDirective, 
     ReactiveFormsModule,
     RouterLink,
     MontantPipe,
@@ -187,7 +188,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
                   <span class="bea-ach__pay-icon"><mat-icon>payments</mat-icon></span>
                   <label>Montant remis en espèces <em>Optionnel</em>
                     <span class="bea-ach__suffix">
-                      <input type="number" formControlName="montant_paiement" min="0" step="0.01" placeholder="Ex. 125 000" />
+                      <input appMontantInput type="number" formControlName="montant_paiement" min="0" step="0.01" placeholder="Ex. 125 000" />
                       <b>MRU</b>
                     </span>
                   </label>
@@ -227,7 +228,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
                 <label><span class="bea-ach__line-label">Description</span><input formControlName="description" placeholder="Article, service…" /></label>
                 <label><span class="bea-ach__line-label">Qté</span><input type="number" formControlName="quantite" min="0.001" step="0.001" /></label>
                 <label><span class="bea-ach__line-label">UOM</span><input formControlName="uom" /></label>
-                <label><span class="bea-ach__line-label">PU (MRU)</span><input type="number" formControlName="prix_unitaire" min="0" step="0.01" /></label>
+                <label><span class="bea-ach__line-label">PU (MRU)</span><input appMontantInput type="number" formControlName="prix_unitaire" min="0" step="0.01" /></label>
                 <span class="bea-ach__line-total"><span class="bea-ach__line-label">Total HT</span>{{ ligneHt(i) | montant }}</span>
                 <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Retirer la ligne" [disabled]="lignes.length <= 1 || !lignesEditables()" (click)="removeLigne(i)"><mat-icon>delete</mat-icon></button>
               </div>

@@ -33,11 +33,13 @@ from app.models.mg_achats import (
 from app.models.mg_ops import MgBonCommande
 from app.models.organisation import Fournisseur
 from app.services.reporting_export import (
+    EXCEL_MONTANT_FORMAT,
     build_styled_pdf,
     build_styled_workbook,
     export_now,
     format_export_datetime,
     format_period_label,
+    valeur_csv,
 )
 
 _TZ = ZoneInfo("Africa/Nouakchott")
@@ -563,8 +565,9 @@ class MgAchatsReportingService:
             buf = io.StringIO()
             writer = csv.writer(buf, delimiter=";")
             writer.writerow(headers)
+            decimales = [2 if kinds.get(k) == "money" else None for k in col_keys]
             for line in data_rows:
-                writer.writerow(line)
+                writer.writerow([valeur_csv(v, decimales=d) for v, d in zip(line, decimales)])
             content = buf.getvalue().encode("utf-8-sig")
             return content, "text/csv; charset=utf-8", f"{base_name}.csv", len(data_rows)
 
@@ -620,7 +623,7 @@ class MgAchatsReportingService:
             buf = io.StringIO()
             w = csv.writer(buf, delimiter=";")
             w.writerow(headers)
-            w.writerows(rows)
+            w.writerows([[valeur_csv(v) for v in r] for r in rows])
             return buf.getvalue().encode("utf-8-sig"), "text/csv; charset=utf-8", f"achats-analyses-{stamp}.csv", len(rows)
         if fmt == "pdf":
             content = build_styled_pdf(
@@ -685,7 +688,9 @@ class MgAchatsReportingService:
         row_i = 7
         for k, v in (totals or {}).items():
             ws.cell(row=row_i, column=1, value=str(k))
-            ws.cell(row=row_i, column=2, value=float(v) if isinstance(v, (int, float, Decimal)) else v)
+            cell = ws.cell(row=row_i, column=2, value=float(v) if isinstance(v, (int, float, Decimal)) else v)
+            if isinstance(v, (float, Decimal)):
+                cell.number_format = EXCEL_MONTANT_FORMAT
             row_i += 1
         ws["A" + str(row_i + 1)] = DEPT_LABEL
         ws.column_dimensions["A"].width = 36

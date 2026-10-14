@@ -1,3 +1,4 @@
+import { MontantInputDirective } from '../shared/montant-input.directive';
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -46,7 +47,7 @@ interface Paginated {
 @Component({
   selector: 'bea-notes-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
+  imports: [MontantInputDirective, 
     ReactiveFormsModule,
     RouterLink,
     MatIconModule,
@@ -280,7 +281,7 @@ interface Paginated {
                       <td><input type="date" formControlName="date_depense" /></td>
                       <td><input formControlName="description" placeholder="Description" /></td>
                       <td><input formControlName="motif" /></td>
-                      <td><input type="number" formControlName="montant" min="0.01" step="0.01" /></td>
+                      <td><input appMontantInput type="number" formControlName="montant" min="0.01" step="0.01" /></td>
                       <td class="bea-nf-fiche__mode">
                         <select formControlName="mode_type" (change)="onModeTypeChange(i)">
                           <option value="">—</option>

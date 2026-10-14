@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.auth import User
 from app.services.mg_notes_service import MgNotesService
-from app.services.reporting_export import build_styled_pdf, export_now
+from app.services.reporting_export import build_styled_pdf, export_now, formater_montants_feuille, valeur_csv
 
 
 REPORTS = {
@@ -218,7 +218,7 @@ class MgNotesReporting:
             buf = io.StringIO()
             w = csv.writer(buf, delimiter=";")
             w.writerow(headers)
-            w.writerows(rows)
+            w.writerows([[valeur_csv(v) for v in r] for r in rows])
             return Response(
                 content=buf.getvalue().encode("utf-8-sig"),
                 media_type="text/csv; charset=utf-8",
@@ -285,6 +285,8 @@ class MgNotesReporting:
                 ws3.cell(r, 7, lig.mode_reglement or "")
                 r += 1
 
+        for feuille in wb.worksheets:
+            formater_montants_feuille(feuille)
         buf = io.BytesIO()
         wb.save(buf)
         return Response(

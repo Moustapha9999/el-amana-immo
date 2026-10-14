@@ -1,3 +1,4 @@
+import { MontantInputDirective } from '../shared/montant-input.directive';
 import {
   MontantPipe,
   QuantitePipe,
@@ -154,7 +155,7 @@ type Mode = 'list' | 'form';
 @Component({
   selector: 'bea-achats-factures',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
+  imports: [MontantInputDirective, 
     ReactiveFormsModule,
     RouterLink,
     MontantPipe,

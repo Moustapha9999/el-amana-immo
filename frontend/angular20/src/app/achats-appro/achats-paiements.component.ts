@@ -1,3 +1,4 @@
+import { MontantInputDirective } from '../shared/montant-input.directive';
 import { MontantPipe } from '../shared/montant.pipe';
 import {
   ChangeDetectionStrategy,
@@ -63,7 +64,7 @@ type Mode = 'list' | 'form';
 @Component({
   selector: 'bea-achats-paiements',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MontantPipe, MatIconModule, AchatsPaiementApercuComponent],
+  imports: [MontantInputDirective, ReactiveFormsModule, RouterLink, MontantPipe, MatIconModule, AchatsPaiementApercuComponent],
   templateUrl: './achats-paiements.component.html',
   styleUrl: './achats-ui.css',
 })

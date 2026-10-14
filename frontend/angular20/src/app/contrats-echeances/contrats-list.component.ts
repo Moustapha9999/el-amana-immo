@@ -1,3 +1,4 @@
+import { MontantInputDirective } from '../shared/montant-input.directive';
 import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -7,7 +8,7 @@ import { describeApiErrorAsync } from '../core/feedback/api-error';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 import { ApiService } from '../core/services/api.service';
-import { MontantPipe } from '../shared/montant.pipe';
+import { MontantPipe, formatMontant } from '../shared/montant.pipe';
 import { ContratDrawerComponent } from './contrat-drawer.component';
 import { ContratsActionsService } from './contrats-actions.service';
 import { EcheanceDrawerComponent, PaiementDrawerComponent } from './contrats-mini-pages.component';
@@ -74,7 +75,7 @@ interface RenouvRow {
 @Component({
   selector: 'bea-contrats-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MontantPipe, MatIconModule, PagerComponent, ContratDrawerComponent, EcheanceDrawerComponent, PaiementDrawerComponent],
+  imports: [MontantInputDirective, ReactiveFormsModule, RouterLink, MontantPipe, MatIconModule, PagerComponent, ContratDrawerComponent, EcheanceDrawerComponent, PaiementDrawerComponent],
   template: `
     <section class="bea-mg bea-nf bea-ct">
       <header class="bea-mg__head">
@@ -427,8 +428,8 @@ interface RenouvRow {
             </label>
             <label class="bea-mg__field">Payé du <input type="date" formControlName="date_du" /></label>
             <label class="bea-mg__field">au <input type="date" formControlName="date_au" /></label>
-            <label class="bea-mg__field">Montant min. <input type="number" min="0" step="0.01" formControlName="montant_min" /></label>
-            <label class="bea-mg__field">Montant max. <input type="number" min="0" step="0.01" formControlName="montant_max" /></label>
+            <label class="bea-mg__field">Montant min. <input appMontantInput type="number" min="0" step="0.01" formControlName="montant_min" /></label>
+            <label class="bea-mg__field">Montant max. <input appMontantInput type="number" min="0" step="0.01" formControlName="montant_max" /></label>
             <div class="bea-adv-filters__btns">
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="reinitPaiements()"><mat-icon>restart_alt</mat-icon> Réinitialiser</button>
               <button type="submit" class="bea-mg__btn bea-mg__btn--primary"><mat-icon>filter_alt</mat-icon> Appliquer</button>
@@ -644,8 +645,8 @@ interface RenouvRow {
             </label>
             <label>Date prévue <input type="date" formControlName="date_prevue" /></label>
             <label>Date de paiement <input type="date" formControlName="date_reelle" /></label>
-            <label>Montant prévu <input type="number" min="0" step="0.01" formControlName="montant_prevu" /></label>
-            <label>Montant versé * <input type="number" min="0" step="0.01" formControlName="montant_paye" /></label>
+            <label>Montant prévu <input appMontantInput type="number" min="0" step="0.01" formControlName="montant_prevu" /></label>
+            <label>Montant versé * <input appMontantInput type="number" min="0" step="0.01" formControlName="montant_paye" /></label>
             <label class="bea-ct-span2">Commentaire <input formControlName="commentaire" /></label>
           </div>
           @if (resteApres() < 0) { <p class="bea-ct-help bea-ct-modal__help bea-ct-neg"><mat-icon>error</mat-icon> Le montant versé dépasse le reste dû sur l’échéance : le serveur refusera ce paiement.</p> }
@@ -1263,7 +1264,7 @@ export class ContratsListComponent implements OnInit {
             title: editId ? 'Paiement mis à jour' : 'Paiement enregistré',
             details: [
               { label: 'Contrat', value: c.reference },
-              { label: 'Montant versé', value: `${num(body.montant_paye).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} ${c.devise}` },
+              { label: 'Montant versé', value: `${formatMontant(body.montant_paye)} ${c.devise}` },
             ],
           }),
         },

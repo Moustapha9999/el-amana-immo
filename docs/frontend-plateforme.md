@@ -125,3 +125,21 @@ Re-préfixer casserait des flux métier et des liens déjà en base. La hiérarc
 = navigation + fil d’Ariane, pas le chemin d’URL.
 
 Les URLs API `/api/v1/...` restent inchangées.
+
+## Montants (règle globale, tous modules)
+
+Format fr-FR : `1 250 000,00` — espace insécable (U+00A0) entre les milliers,
+virgule décimale, deux décimales, signe `-` conservé. Affichage uniquement :
+l’API et la base reçoivent / stockent toujours un nombre.
+
+| Où | Utilitaire unique |
+|---|---|
+| Templates | pipe `montant` (`{{ x \| montant }}`, `{{ x \| montant:'MRU' }}`) |
+| Code TS (KPI, notifications, graphiques) | `formatMontant` / `formatMontantOuTiret` (`shared/montant.pipe.ts`) |
+| Saisie | directive `appMontantInput` (affiche `1 234,56`, valeur du contrôle = `number`) ou `parseMontant` avant envoi |
+| PDF, libellés et messages backend | `format_montant` (`backend/app/services/reporting_export.py`) |
+| Excel | cellule numérique + `EXCEL_MONTANT_FORMAT` (`#,##0.00`, rendu selon la locale du poste) — jamais une chaîne formatée |
+| CSV (`;`) | `valeur_csv` : virgule décimale sans séparateur de milliers (reste numérique dans Excel fr-FR) |
+
+Ne pas réintroduire de `toLocaleString`, `Intl.NumberFormat` ou `| number`
+pour un montant ; le pipe `number` reste réservé aux compteurs.

@@ -43,6 +43,7 @@ from app.services.reporting_snapshot import (
 )
 from app.models.enums import StatutImmobilisation
 from app.services.reporting_export import (
+    format_montant,
     audit_logs_to_excel,
     cessions_to_excel,
     cessions_to_pdf,
@@ -1170,7 +1171,7 @@ def _ventilation_export_payload(result) -> dict:
         "annee": result.annee,
         "subtitle": (
             f"{result.periode_label} — Compte 68 ventilé par agence "
-            f"(total {float(result.total_compte_68):,.2f} MRU)".replace(",", " ")
+            f"(total {format_montant(result.total_compte_68)} MRU)"
         ),
         "total_compte_68": float(result.total_compte_68),
         "nb_immobilisations": result.nb_immobilisations,

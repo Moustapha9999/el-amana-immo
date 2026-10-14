@@ -159,7 +159,7 @@
         </label>
         <label>Projet <input formControlName="projet" /></label>
         <label>Date souhaitée <input type="date" formControlName="date_souhaitee" /></label>
-        <label>Budget estimé <input type="number" formControlName="budget_estime" /></label>
+        <label>Budget estimé <input appMontantInput type="number" formControlName="budget_estime" /></label>
         <label style="grid-column:1/-1">Motif <input formControlName="motif" /></label>
         <label style="grid-column:1/-1">Observation <textarea formControlName="observation" rows="2"></textarea></label>
       </div>
@@ -171,7 +171,7 @@
             <label style="grid-column:1/-1">Désignation * <input formControlName="designation" /></label>
             <label>Qté * <input type="number" formControlName="quantite" min="0.001" step="0.001" /></label>
             <label>UOM <input formControlName="uom" /></label>
-            <label>Prix estimé <input type="number" formControlName="prix_estime" /></label>
+            <label>Prix estimé <input appMontantInput type="number" formControlName="prix_estime" /></label>
             @if (canEditForm() && lignes.length > 1) {
               <button type="button" class="bea-ach__icon-btn bea-ach__icon-btn--danger" title="Retirer" (click)="removeLigne(i)">
                 <mat-icon>delete</mat-icon>

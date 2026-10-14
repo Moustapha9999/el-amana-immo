@@ -32,6 +32,7 @@ from app.data.el_amana_referentiel import BANQUE_EL_AMANA
 from app.schemas.nombres import format_qty
 from app.services.reporting_export import (
     format_export_datetime,
+    format_montant,
     resolve_bea_logo_path,
 )
 import io
@@ -158,9 +159,7 @@ def _doc_buffer(build_fn, *, with_logo: bool = True) -> bytes:
 
 
 def money(value: Decimal | None) -> str:
-    if value is None:
-        return "0,00"
-    return f"{value:,.2f}".replace(",", " ").replace(".", ",")
+    return format_montant(0 if value is None else value)
 
 
 def _box(label: str, value: str, styles, *, min_h: float = 8 * mm, width: float = 85 * mm) -> Table:
