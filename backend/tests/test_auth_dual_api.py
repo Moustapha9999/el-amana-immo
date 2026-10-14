@@ -236,6 +236,7 @@ async def test_core_admin_dashboard_platform_only(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("base_jetable")
 async def test_core_admin_dashboard_forbidden_without_permission(client: AsyncClient):
     email = f"core-admin-deny-{uuid4().hex[:8]}@el-amana.mr"
     password = "TestDeny@2026"

@@ -84,6 +84,7 @@ async def test_core_admin_users_platform_only(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("base_jetable")
 async def test_core_admin_users_forbidden_without_permission(client: AsyncClient):
     email = f"core-users-deny-{uuid4().hex[:8]}@el-amana.mr"
     password = "TestDeny@2026"
@@ -109,6 +110,7 @@ async def test_core_admin_users_forbidden_without_permission(client: AsyncClient
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("base_jetable")
 async def test_core_admin_users_crud_activate_and_reset(client: AsyncClient):
     login = await _login_platform(client)
     if login.status_code != 200:

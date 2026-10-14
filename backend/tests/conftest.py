@@ -14,6 +14,22 @@ get_settings.cache_clear()
 
 
 @pytest.fixture
+async def base_jetable():
+    """Tests qui créent des comptes : copie de base uniquement, jamais la base réelle bea_digital."""
+    from sqlalchemy import text
+
+    from app.db.session import engine
+
+    try:
+        async with engine.connect() as conn:
+            base = await conn.scalar(text("SELECT current_database()"))
+    except Exception:
+        pytest.skip("Base PostgreSQL indisponible")
+    if base == "bea_digital":
+        pytest.skip("Crée des comptes utilisateurs : copie de base requise (jamais bea_digital)")
+
+
+@pytest.fixture
 def masse_autorisee(monkeypatch):
     """Ouvre le verrou du classement de masse pour un test (copie de base *_test uniquement)."""
     s = get_settings()
