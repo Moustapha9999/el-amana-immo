@@ -183,6 +183,15 @@ class AnnulerIn(ActionIn):
     doublon_de_id: uuid.UUID | None = None
 
 
+class RestaurerIn(BaseModel):
+    revision: int
+    motif: str = Field(min_length=1, max_length=4000)
+
+
+class SupprimerIn(RestaurerIn):
+    confirmation: str = Field(min_length=1, max_length=30)
+
+
 class CloturerIn(ActionIn):
     resultat: Literal["FAVORABLE", "PARTIELLEMENT_FAVORABLE", "DEFAVORABLE", "SANS_SUITE", "AUTRE"] | None = None
     motif_resolution: str | None = Field(default=None, max_length=4000)

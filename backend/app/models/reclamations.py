@@ -59,6 +59,9 @@ STATUTS_AFFECTATION = ("TRANSMISE", "RECUE", "EN_TRAITEMENT", "RETOURNEE", "ANNU
 EVALUATIONS_RETOUR = ("SUFFISANT", "INSUFFISANT")
 STATUTS_REPONSE = ("BROUILLON", "A_VALIDER", "VALIDEE", "ENVOYEE", "ANNULEE")
 CATEGORIES_DOCUMENT = (
+    "NOTE",
+    "COURRIER",
+    "JUSTIFICATIF",
     "ORIGINAL",
     "PIECE_CLIENT",
     "TRANSMISSION",
@@ -313,6 +316,10 @@ class Reclamation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     nb_renvois: Mapped[int] = mapped_column(Integer, default=0)
     archivee_le: Mapped[datetime | None] = _ts()
     archivee_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    # Suppression logique (corbeille) : hors des listes, KPI et exports ; restaurable.
+    supprimee_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    supprimee_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    motif_suppression: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_by_id: Mapped[uuid.UUID | None] = _user_fk()

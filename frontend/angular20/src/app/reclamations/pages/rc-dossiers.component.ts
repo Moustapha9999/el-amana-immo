@@ -9,6 +9,7 @@ import { ReclamationsUiComponent } from '../reclamations-ui.component';
 import { DossierLigne, dateFr, montantFr, toneStatut, tonePriorite } from '../reclamations.models';
 import { Filtres, ReclamationsService, ReclamationsStore } from '../reclamations.service';
 import { RcExportComponent } from '../shared/rc-export.component';
+import { optionsRestauration, optionsSuppression } from '../shared/rc-suppression';
 
 const ANNULABLES = new Set(['A_QUALIFIER', 'A_AFFECTER', 'REOUVERTE']);
 
@@ -16,7 +17,7 @@ const TAILLE = 25;
 const TRIS = new Set(['reference', 'date_reclamation', 'date_premiere_reception', 'date_reception_sr', 'echeance', 'statut', 'priorite', 'client_nom', 'updated_at']);
 const CHAMPS = ['q', 'groupe', 'statut', 'etape', 'type_id', 'motif_id', 'canal_id', 'priorite', 'client_categorie',
   'client_agence_id', 'unite_reception_id', 'unite_concernee_id', 'unite_traitement_id', 'date_debut', 'date_fin'] as const;
-const BOOLEENS = ['ouvertes', 'en_retard', 'sans_echeance', 'archivees'] as const;
+const BOOLEENS = ['ouvertes', 'en_retard', 'sans_echeance', 'archivees', 'corbeille'] as const;
 
 interface VueListe {
   titre: string;
@@ -55,18 +56,24 @@ const VUES: Record<string, VueListe> = {
       <header class="bea-mg__head">
         <div>
           <p class="bea-stock-page__kicker">Management & Qualité · Réclamations</p>
-          <h1>{{ vue()?.titre ?? 'Réclamations' }}</h1>
+          <h1>{{ corbeille() ? 'Corbeille — réclamations supprimées' : vue()?.titre ?? 'Réclamations' }}</h1>
           <p class="bea-ct-head__sub">
-            {{ vue()?.sous ?? 'Filtres, tri et pagination appliqués par le serveur, dans la limite de votre périmètre.' }}
+            {{ corbeille() ? 'Dossiers retirés des listes, indicateurs et exports. Opérations, pièces et historique sont conservés : un dossier se restaure à l’identique.'
+              : vue()?.sous ?? 'Filtres, tri et pagination appliqués par le serveur, dans la limite de votre périmètre.' }}
             @if (store.config()?.acces?.perimetre === 'UNITES') { <span class="bea-ct-badge" data-tone="ATTENTION">Périmètre : vos unités</span> }
             @if (store.config()?.acces?.perimetre === 'PERSONNEL') { <span class="bea-ct-badge" data-tone="ATTENTION">Périmètre : vos saisies</span> }
           </p>
         </div>
         <div class="bea-mg__actions">
-          @if (store.cap('creer') && !vue()) {
+          @if (store.cap('creer') && !vue() && !corbeille()) {
             <a class="bea-mg__btn bea-mg__btn--primary" routerLink="/reclamations/dossiers/nouvelle"><mat-icon>add_comment</mat-icon> Nouvelle réclamation</a>
           }
-          <bea-rc-export [filtres]="courant()" />
+          @if (store.cap('supprimer') && !vue()) {
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [class.is-on]="corbeille()" (click)="basculerCorbeille()">
+              <mat-icon>{{ corbeille() ? 'list' : 'delete_sweep' }}</mat-icon> {{ corbeille() ? 'Réclamations actives' : 'Corbeille' }}
+            </button>
+          }
+          @if (!corbeille()) { <bea-rc-export [filtres]="courant()" /> }
           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" title="Actualiser" (click)="charger()"><mat-icon>refresh</mat-icon></button>
         </div>
       </header>
@@ -190,6 +197,9 @@ const VUES: Record<string, VueListe> = {
                   <td class="is-nowrap">
                     <a class="bea-ct-link" [routerLink]="['/reclamations/dossiers', d.id]"><code class="bea-mg__code">{{ d.reference }}</code></a>
                     @if (d.nb_documents) { <small class="bea-ct-sub">{{ d.nb_documents }} pièce{{ d.nb_documents > 1 ? 's' : '' }}</small> }
+                    @if (d.supprimee_le) {
+                      <small class="bea-ct-sub bea-rc-late" [title]="d.motif_suppression ?? ''">Supprimée le {{ date(d.supprimee_le) }}</small>
+                    }
                   </td>
                   <td class="is-nowrap" [title]="d.canal ?? ''">{{ date(d.date_reclamation ?? d.date_premiere_reception) }}</td>
                   <td class="is-wide">
@@ -212,17 +222,27 @@ const VUES: Record<string, VueListe> = {
                   </td>
                   <td class="bea-mg__actions-cell is-nowrap">
                     <a class="bea-mg__icon-btn" [routerLink]="['/reclamations/dossiers', d.id]" title="Consulter la fiche" aria-label="Consulter la fiche"><mat-icon>visibility</mat-icon></a>
-                    @if (peutModifier(d)) {
-                      <a class="bea-mg__icon-btn" [routerLink]="['/reclamations/dossiers', d.id]" [queryParams]="{ edition: 1 }" title="Modifier" aria-label="Modifier"><mat-icon>edit</mat-icon></a>
-                    }
-                    @if (peutAnnuler(d)) {
-                      <button type="button" class="bea-mg__icon-btn bea-rc-danger" [disabled]="actionBusy()" (click)="annuler(d)" title="Annuler (suppression logique)" aria-label="Annuler"><mat-icon>delete</mat-icon></button>
+                    @if (d.supprimee_le) {
+                      @if (d.suppression?.restaurable) {
+                        <button type="button" class="bea-mg__icon-btn" [disabled]="actionBusy()" (click)="restaurer(d)" title="Restaurer le dossier" aria-label="Restaurer"><mat-icon>restore_from_trash</mat-icon></button>
+                      }
+                    } @else {
+                      @if (peutModifier(d)) {
+                        <a class="bea-mg__icon-btn" [routerLink]="['/reclamations/dossiers', d.id]" [queryParams]="{ edition: 1 }" title="Modifier" aria-label="Modifier"><mat-icon>edit</mat-icon></a>
+                      }
+                      @if (peutAnnuler(d)) {
+                        <button type="button" class="bea-mg__icon-btn bea-rc-warn" [disabled]="actionBusy()" (click)="annuler(d)" title="Annuler le dossier (statut « Annulée »)" aria-label="Annuler"><mat-icon>block</mat-icon></button>
+                      }
+                      @if (d.suppression; as sup) {
+                        <button type="button" class="bea-mg__icon-btn bea-rc-danger" [disabled]="actionBusy() || !sup.possible" (click)="supprimer(d)"
+                                [title]="sup.possible ? 'Supprimer (corbeille, restaurable)' : 'Suppression impossible : ' + sup.raison" aria-label="Supprimer"><mat-icon>delete</mat-icon></button>
+                      }
                     }
                   </td>
                 </tr>
               } @empty {
                 <tr><td colspan="12"><div class="bea-ct-empty"><mat-icon>forum</mat-icon>
-                  <p>{{ chargement() ? 'Chargement…' : filtresActifs() ? 'Aucune réclamation ne correspond aux filtres.' : 'Aucune réclamation dans votre périmètre.' }}</p>
+                  <p>{{ chargement() ? 'Chargement…' : corbeille() ? 'La corbeille est vide.' : filtresActifs() ? 'Aucune réclamation ne correspond aux filtres.' : 'Aucune réclamation dans votre périmètre.' }}</p>
                 </div></td></tr>
               }
             </tbody>
@@ -257,9 +277,10 @@ export class RcDossiersComponent implements OnInit {
   readonly filtres = this.fb.nonNullable.group({
     q: '', groupe: '', statut: '', etape: '', type_id: '', motif_id: '', canal_id: '', priorite: '', client_categorie: '',
     client_agence_id: '', unite_reception_id: '', unite_concernee_id: '', unite_traitement_id: '', date_debut: '', date_fin: '',
-    ouvertes: false, en_retard: false, sans_echeance: false, archivees: false,
+    ouvertes: false, en_retard: false, sans_echeance: false, archivees: false, corbeille: false,
   });
   readonly vue = signal<VueListe | null>(null);
+  readonly corbeille = signal(false);
   readonly lignes = signal<DossierLigne[]>([]);
   readonly total = signal(0);
   readonly page = signal(1);
@@ -295,13 +316,16 @@ export class RcDossiersComponent implements OnInit {
         if (q.get('ouvertes') === null && preset.ouvertes) valeurs.ouvertes = true;
         if (q.get('archivees') === null && preset.archivees) valeurs.archivees = true;
       }
+      valeurs.corbeille = valeurs.corbeille && !preset;
       this.filtres.setValue(valeurs, { emitEvent: false });
+      this.corbeille.set(valeurs.corbeille);
       this.typeChoisi.set(q.get('type_id') ?? '');
       this.page.set(Math.max(1, Number(q.get('page')) || 1));
       const tri = q.get('tri') ?? 'date_premiere_reception';
       this.tri.set(TRIS.has(tri) ? tri : 'date_premiere_reception');
       this.ordre.set(q.get('ordre') === 'asc' ? 'asc' : 'desc');
-      this.filtresActifs.set(Object.values(this.filtres.getRawValue()).some(Boolean));
+      const { corbeille: _c, ...autres } = this.filtres.getRawValue();
+      this.filtresActifs.set(Object.values(autres).some(Boolean));
       this.charger();
     });
   }
@@ -344,7 +368,12 @@ export class RcDossiersComponent implements OnInit {
     if (preset?.etape) params['etape'] = preset.etape;
     if (preset?.ouvertes) params['ouvertes'] = 'true';
     if (preset?.archivees) params['archivees'] = 'true';
+    if (this.corbeille()) params['corbeille'] = 'true';
     this.naviguer(params);
+  }
+
+  basculerCorbeille(): void {
+    this.naviguer({ corbeille: this.corbeille() ? null : 'true', page: null });
   }
 
   peutModifier(d: DossierLigne): boolean {
@@ -367,7 +396,7 @@ export class RcDossiersComponent implements OnInit {
           confirmLabel: 'Annuler le dossier',
           cancelLabel: 'Retour',
           tone: 'danger',
-          icon: 'delete',
+          icon: 'block',
           reasonLabel: 'Motif de l’annulation',
           reasonPlaceholder: 'Doublon de REC-…, erreur de saisie…',
           maxLength: 4000,
@@ -378,6 +407,19 @@ export class RcDossiersComponent implements OnInit {
         errorTitle: 'Annulation refusée',
         retry: false,
       })
+      .subscribe(() => this.charger());
+  }
+
+  supprimer(d: DossierLigne): void {
+    this.feedback
+      .runWithReason((motif) => this.rc.supprimer(d.id, { revision: d.revision, motif, confirmation: d.reference }),
+        optionsSuppression(d.reference, this.actionBusy))
+      .subscribe(() => this.charger());
+  }
+
+  restaurer(d: DossierLigne): void {
+    this.feedback
+      .runWithReason((motif) => this.rc.restaurer(d.id, { revision: d.revision, motif }), optionsRestauration(d.reference, this.actionBusy))
       .subscribe(() => this.charger());
   }
 

@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Reclamation, ReclamationAffectation, ReclamationDocument, ReclamationReponse
 from app.services.reclamations import constantes as C
+from app.services.reclamations import suppression
 from app.services.reclamations.acces import ReclamationsScope
 from app.services.reclamations.delais import appliquer, echeance_service
 from app.services.reclamations.dossiers import (
@@ -34,6 +35,8 @@ from app.services.reclamations.notifier import destinataires_sr, membres_unite, 
 from app.services.reclamations.outils import auditer, conflit, erreur, iso, maintenant, texte_long
 
 AVANT_AFFECTATION = frozenset({"A_QUALIFIER", "A_AFFECTER", "REOUVERTE"})
+# Seules actions conservées sur un dossier supprimé (corbeille).
+LECTURE_SEULE = frozenset({"documents_voir", "documents_telecharger"})
 
 
 def _ouvert(r: Reclamation) -> None:
@@ -107,6 +110,8 @@ def actions(s: ReclamationsScope, r: Reclamation, *,
         "archiver": r.statut in C.STATUTS_TERMINAUX and not r.archivee_le and s.peut("reclamations.archive"),
         "gerer_service": s.responsable_de(r.unite_traitement_id) or s.peut("reclamations.service.manage"),
     })
+    if r.supprimee_le:
+        base = {k: v and k in LECTURE_SEULE for k, v in base.items()}
     return base
 
 
@@ -166,6 +171,7 @@ async def fiche(db: AsyncSession, s: ReclamationsScope, r: Reclamation, ctx: Con
     from app.services.reclamations.outils import noms_utilisateurs
     noms = await noms_utilisateurs(db, {
         r.created_by_id, r.updated_by_id, r.gestionnaire_id, r.responsable_traitement_id, r.cloture_par_id,
+        r.supprimee_par_id,
         *(x for a in affs for x in (a.transmis_par_id, a.recu_par_id, a.responsable_id, a.retour_par_id,
                                     a.evalue_par_id)),
         *(x for p in reps for x in (p.redige_par_id, p.envoye_par_id)),
@@ -178,6 +184,14 @@ async def fiche(db: AsyncSession, s: ReclamationsScope, r: Reclamation, ctx: Con
     d["preuve_envoi"] = preuve
     d["cloture_par"] = noms.get(r.cloture_par_id) if r.cloture_par_id else None
     d["actions"] = actions(s, r, a=courante, rep=courante_r)
+    habilite = s.peut(suppression.PERMISSION)
+    raisons = (await suppression.blocages(db, [r]))[r.id] if habilite else []
+    d["actions"]["supprimer"] = habilite and not r.supprimee_le and not raisons
+    d["actions"]["restaurer"] = habilite and bool(r.supprimee_le)
+    d["suppression"] = {
+        "blocages": raisons, "supprimee_le": iso(r.supprimee_le), "motif": r.motif_suppression,
+        "supprimee_par": noms.get(r.supprimee_par_id) if r.supprimee_par_id else None,
+    }
     return d
 
 

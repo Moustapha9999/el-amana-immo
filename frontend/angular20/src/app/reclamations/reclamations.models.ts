@@ -68,7 +68,7 @@ export interface Agence {
 export type Capacite =
   | 'voir' | 'tout_voir' | 'creer' | 'modifier' | 'qualifier' | 'affecter' | 'traiter' | 'gerer_service'
   | 'examiner_retour' | 'envoyer_reponse' | 'refuser'
-  | 'annuler' | 'cloturer' | 'rouvrir' | 'archiver' | 'documents_voir' | 'documents_deposer'
+  | 'annuler' | 'cloturer' | 'rouvrir' | 'archiver' | 'supprimer' | 'documents_voir' | 'documents_deposer'
   | 'documents_telecharger' | 'documents_retirer' | 'reporting_voir' | 'reporting_exporter'
   | 'referentiels_voir' | 'referentiels_gerer' | 'unites_gerer' | 'delais_gerer' | 'delais_valider'
   | 'admin';
@@ -148,6 +148,15 @@ export interface DossierLigne {
   nb_documents: number;
   revision: number;
   updated_at: string | null;
+  supprimee_le: string | null;
+  motif_suppression: string | null;
+  /** Présent seulement pour les profils habilités à supprimer. */
+  suppression?: { possible: boolean; raison: string | null; restaurable: boolean };
+}
+
+export interface BlocageSuppression {
+  code: string;
+  message: string;
 }
 
 export interface RefCourt {
@@ -181,7 +190,7 @@ export interface Appel {
   commentaire: string | null;
 }
 
-export interface Dossier extends DossierLigne {
+export interface Dossier extends Omit<DossierLigne, 'suppression'> {
   description: string;
   source: string;
   type_ref: RefCourt | null;
@@ -234,6 +243,20 @@ export interface Dossier extends DossierLigne {
   preuve_envoi: boolean;
   cloture_par: string | null;
   actions: Record<string, boolean>;
+  suppression: {
+    blocages: BlocageSuppression[];
+    supprimee_le: string | null;
+    motif: string | null;
+    supprimee_par: string | null;
+  };
+}
+
+export interface SuppressionResultat {
+  id: string;
+  reference: string;
+  supprimee_le: string;
+  operations_conservees: number;
+  documents_conserves: number;
 }
 
 export interface Operation {
@@ -392,6 +415,8 @@ export interface Evenement {
 
 export interface Piece {
   id: string;
+  titre: string | null;
+  date_document: string | null;
   filename: string;
   mime_type: string | null;
   size_bytes: number | null;

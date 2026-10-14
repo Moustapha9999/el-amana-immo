@@ -18,6 +18,7 @@ import {
   RcConfig,
   RefItem,
   RegleDelai,
+  SuppressionResultat,
   TableauBord,
   Unite,
   UtilisateurTrouve,
@@ -79,8 +80,19 @@ export class ReclamationsService {
     return this.api.get(`${RC_BASE}/dossiers/${id}/documents`);
   }
 
-  deposer(id: string, fichier: File, categorie: string, commentaire: string): Observable<Pieces> {
-    return this.api.upload(`${RC_BASE}/dossiers/${id}/documents`, fichier, { categorie, commentaire });
+  deposer(id: string, fichier: File, categorie: string, commentaire: string,
+          meta: { titre?: string; date_document?: string } = {}): Observable<Pieces> {
+    return this.api.upload(`${RC_BASE}/dossiers/${id}/documents`, fichier, {
+      categorie, commentaire, titre: meta.titre ?? '', date_document: meta.date_document ?? '',
+    });
+  }
+
+  supprimer(id: string, corps: { revision: number; motif: string; confirmation: string }): Observable<SuppressionResultat> {
+    return this.api.post(`${RC_BASE}/dossiers/${id}/supprimer`, corps);
+  }
+
+  restaurer(id: string, corps: { revision: number; motif: string }): Observable<Dossier> {
+    return this.api.post(`${RC_BASE}/dossiers/${id}/restaurer`, corps);
   }
 
   retirer(id: string, pieceId: string, motif: string): Observable<Pieces> {

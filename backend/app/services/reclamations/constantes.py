@@ -97,16 +97,26 @@ CATEGORIE_CLIENT_LIBELLES: dict[str, str] = {
     "NON_CLIENT": "Non-client / prospect",
 }
 CATEGORIE_DOCUMENT_LIBELLES: dict[str, str] = {
+    "NOTE": "Note administrative / interne",
+    "COURRIER": "Courrier",
+    "JUSTIFICATIF": "Justificatif",
+    "FICHE_TRAITEMENT": "Document de traitement",
+    "RETOUR_SERVICE": "Retour du service",
     "ORIGINAL": "Scan original de la réclamation",
     "PIECE_CLIENT": "Pièce fournie par le client",
     "TRANSMISSION": "Document de transmission",
-    "FICHE_TRAITEMENT": "Fiche de traitement",
     "JUSTIFICATIF_SERVICE": "Justificatif du service",
-    "RETOUR_SERVICE": "Retour du service",
     "REPONSE_CLIENT": "Réponse envoyée au client",
     "PREUVE_ENVOI": "Preuve d'envoi",
     "AUTRE": "Autre document",
 }
+# Note signée puis scannée : PDF ou image uniquement.
+CATEGORIE_NOTE = "NOTE"
+FORMATS_SCAN = frozenset({".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"})
+# Pièces à valeur probante vis-à-vis du client : elles interdisent la suppression du dossier.
+CATEGORIES_OFFICIELLES = frozenset({"REPONSE_CLIENT", "PREUVE_ENVOI"})
+# Décision officielle rendue : le dossier se conserve (réouverture ou archivage, jamais suppression).
+STATUTS_NON_SUPPRIMABLES = frozenset({"CLOTUREE", "REJETEE"})
 TYPE_UNITE_LIBELLES: dict[str, str] = {
     "DIRECTION": "Direction",
     "DEPARTEMENT": "Département",
@@ -160,6 +170,8 @@ EVENEMENT_LIBELLES: dict[str, str] = {
     "CLOTURE": "Dossier clôturé",
     "REOUVERTURE": "Dossier réouvert",
     "ARCHIVAGE": "Dossier archivé",
+    "SUPPRESSION": "Dossier supprimé (corbeille)",
+    "RESTAURATION": "Dossier restauré",
 }
 STATUT_AFFECTATION_LIBELLES: dict[str, str] = {
     "TRANSMISE": "Transmise",

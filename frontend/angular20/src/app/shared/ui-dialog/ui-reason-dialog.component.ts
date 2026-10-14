@@ -32,10 +32,26 @@ import { UiReasonData } from './ui-dialog.types';
             <small>{{ reason().length }} / {{ max }}</small>
           }
         </label>
+        @if (data.confirmPhrase) {
+          <label class="ui-dlg__reason">
+            Pour confirmer, saisissez « {{ data.confirmPhrase }} » *
+            <input
+              class="ui-dlg__phrase"
+              [value]="phrase()"
+              (input)="phrase.set($any($event.target).value)"
+              autocomplete="off"
+              spellcheck="false"
+              [attr.aria-invalid]="touched() && !phraseOk()"
+            />
+            @if (touched() && !phraseOk()) {
+              <small class="ui-dlg__reason-error" role="alert">Le texte saisi ne correspond pas.</small>
+            }
+          </label>
+        }
       </div>
       <div mat-dialog-actions class="ui-dlg__actions">
         <button mat-stroked-button type="button" (click)="cancel()">{{ data.cancelLabel || 'Annuler' }}</button>
-        <button mat-flat-button type="submit" [color]="tone === 'danger' ? 'warn' : 'primary'">
+        <button mat-flat-button type="submit" [color]="tone === 'danger' ? 'warn' : 'primary'" [disabled]="!phraseOk()">
           {{ data.confirmLabel || 'Confirmer' }}
         </button>
       </div>
@@ -48,8 +64,14 @@ export class UiReasonDialogComponent {
   private readonly ref = inject(MatDialogRef<UiReasonDialogComponent, string | null>);
   readonly reason = signal('');
   readonly touched = signal(false);
+  readonly phrase = signal('');
   readonly required = this.data.required !== false;
   readonly max = this.data.maxLength ?? 500;
+
+  phraseOk(): boolean {
+    const attendu = this.data.confirmPhrase;
+    return !attendu || this.phrase().trim().toUpperCase() === attendu.trim().toUpperCase();
+  }
 
   get tone(): string {
     return this.data.tone ?? 'primary';
@@ -69,7 +91,7 @@ export class UiReasonDialogComponent {
 
   confirm(): void {
     this.touched.set(true);
-    if (this.invalid()) return;
+    if (this.invalid() || !this.phraseOk()) return;
     this.ref.close(this.reason().trim());
   }
 }

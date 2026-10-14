@@ -24,13 +24,14 @@ import { RcPiecesComponent } from '../shared/rc-pieces.component';
 import { RcActionsComponent } from '../shared/rc-actions.component';
 import { CLASSEMENT_VIDE, Classement, RcClassementComponent, classementCorps, classementDe, classementErreur } from '../shared/rc-classement.component';
 import { RcOperationsComponent, operationsCorps, operationsErreur } from '../shared/rc-operations.component';
+import { optionsRestauration, optionsSuppression } from '../shared/rc-suppression';
 
 type Onglet = 'general' | 'traitement' | 'documents' | 'chronologie';
 
 const ONGLETS: ReadonlyArray<{ code: Onglet; libelle: string; icone: string }> = [
   { code: 'general', libelle: 'Général', icone: 'info' },
   { code: 'traitement', libelle: 'Traitement & clôture', icone: 'engineering' },
-  { code: 'documents', libelle: 'Documents', icone: 'folder' },
+  { code: 'documents', libelle: 'Notes & pièces jointes', icone: 'attach_file' },
   { code: 'chronologie', libelle: 'Historique', icone: 'timeline' },
 ];
 
@@ -50,6 +51,7 @@ const ICONES_EVENEMENT: Record<string, string> = {
   ANNULATION: 'content_copy', REPONSE_BROUILLON: 'edit_note', REPONSE_SOUMISE: 'forward_to_inbox',
   REPONSE_VALIDEE: 'verified', REPONSE_RENVOYEE: 'undo', REPONSE_ENVOYEE: 'outgoing_mail',
   CLOTURE: 'task_alt', REOUVERTURE: 'lock_open', ARCHIVAGE: 'inventory_2', MIGRATION_CIRCUIT: 'sync_alt',
+  SUPPRESSION: 'delete', RESTAURATION: 'restore_from_trash',
 };
 
 /** Champs facultatifs vidés à la correction : envoyés dans `effacer` (le PATCH ignore les valeurs nulles). */
@@ -78,16 +80,35 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
               @if (d.nb_operations) { <span class="bea-ct-badge" data-tone="INFO">{{ d.nb_operations }} opération{{ d.nb_operations > 1 ? 's' : '' }} · {{ montant(d.montant_total) }}</span> }
               @if (d.en_retard) { <span class="bea-ct-badge" data-tone="URGENT">En retard</span> }
               @if (d.archivee_le) { <span class="bea-ct-badge" data-tone="ANNULEE">Archivée</span> }
+              @if (d.supprimee_le) { <span class="bea-ct-badge" data-tone="URGENT">Supprimée</span> }
             </div>
           </div>
           <div class="bea-mg__actions">
-            <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reclamations/dossiers"><mat-icon>arrow_back</mat-icon> Réclamations</a>
+            <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="'/reclamations/dossiers'" [queryParams]="d.supprimee_le ? { corbeille: 'true' } : {}"><mat-icon>arrow_back</mat-icon> Réclamations</a>
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="chargement()" (click)="recharger()"><mat-icon>refresh</mat-icon> Actualiser</button>
             @if (d.actions['modifier'] && !edition()) {
               <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="ouvrirEdition()"><mat-icon>edit</mat-icon> Corriger les données</button>
             }
+            @if (d.actions['restaurer']) {
+              <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()" (click)="restaurer()"><mat-icon>restore_from_trash</mat-icon> Restaurer</button>
+            } @else if (d.actions['supprimer']) {
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost bea-rc-danger" [disabled]="busy() || edition()" (click)="supprimer()"><mat-icon>delete</mat-icon> Supprimer</button>
+            } @else if (store.cap('supprimer') && !d.supprimee_le && d.suppression.blocages.length) {
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" disabled [title]="raisonsSuppression(d)"><mat-icon>delete_forever</mat-icon> Suppression impossible</button>
+            }
           </div>
         </header>
+
+        @if (d.supprimee_le) {
+          <div class="bea-rc-note bea-rc-note--warn bea-rc-fiche__alerte"><mat-icon>delete</mat-icon>
+            <span>
+              <strong>Dossier supprimé</strong> le {{ date(d.suppression.supprimee_le, true) }}{{ d.suppression.supprimee_par ? ' par ' + d.suppression.supprimee_par : '' }}
+              — motif : {{ d.suppression.motif }}. Il n’apparaît plus dans les listes, indicateurs ni exports ; ses opérations, pièces et son historique sont conservés.
+            </span>
+          </div>
+        } @else if (store.cap('supprimer') && d.suppression.blocages.length) {
+          <p class="bea-rc-hint">Suppression impossible : {{ raisonsSuppression(d) }}</p>
+        }
 
         <ol class="bea-rc-pipe" aria-label="Avancement du dossier">
           @for (e of etapes; track e.code; let i = $index) {
@@ -343,7 +364,7 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
                   <dt>Référence d’envoi</dt><dd>{{ p.reference_envoi ?? '—' }}</dd>
                   <dt>Objet</dt><dd>{{ p.objet ?? '—' }}</dd>
                   <dt>Résultat</dt><dd>{{ p.resultat_libelle ?? '—' }}</dd>
-                  <dt>Preuve d’envoi</dt><dd>{{ d.preuve_envoi ? 'Jointe (onglet Documents)' : 'Non jointe' }}</dd>
+                  <dt>Preuve d’envoi</dt><dd>{{ d.preuve_envoi ? 'Jointe (onglet Notes & pièces jointes)' : 'Non jointe' }}</dd>
                 </dl>
                 <p class="bea-rc-text">{{ p.contenu }}</p>
               } @else {
@@ -396,11 +417,11 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
           }
 
           @case ('documents') {
-            <section class="bea-mg__panel bea-rc-pad">
+            <section class="bea-mg__panel bea-rc-pad bea-rc-pj">
               @if (d.actions['documents_voir']) {
                 <bea-rc-pieces [dossierId]="d.id" [reference]="d.reference" (modifie)="piecesModifiees($event)" />
               } @else {
-                <p class="bea-rc-muted">Vous n’avez pas accès aux pièces de ce dossier.</p>
+                <p class="bea-rc-muted">Vous n’avez pas accès aux notes et pièces jointes de ce dossier.</p>
               }
             </section>
           }
@@ -586,7 +607,10 @@ export class RcFicheComponent implements OnInit {
     }
     if (Array.isArray(d['champs'])) return `Champs : ${(d['champs'] as string[]).join(', ')}`;
     if (Array.isArray(d['operations'])) return `${(d['operations'] as unknown[]).length} opération(s) saisie(s)`;
-    if (typeof d['fichier'] === 'string') return `${d['fichier']}${d['categorie'] ? ' (' + d['categorie'] + ')' : ''}`;
+    if (typeof d['fichier'] === 'string') {
+      return `${d['titre'] ? d['titre'] + ' — ' : ''}${d['fichier']}${d['categorie'] ? ' (' + d['categorie'] + ')' : ''}`;
+    }
+    if (e.type === 'SUPPRESSION') return `Conservés : ${d['operations'] ?? 0} opération(s), ${d['documents'] ?? 0} pièce(s)`;
     if (typeof d['numero'] === 'string') return `Numéro : ${d['numero']}`;
     if (typeof d['canal'] === 'string') return `Canal : ${d['canal']}`;
     return null;
@@ -761,6 +785,27 @@ export class RcFicheComponent implements OnInit {
         this.edition.set(false);
         this.applique(r);
       });
+  }
+
+  raisonsSuppression(d: Dossier): string {
+    return d.suppression.blocages.map((b) => b.message).join(' ');
+  }
+
+  supprimer(): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.feedback
+      .runWithReason((motif) => this.rc.supprimer(d.id, { revision: d.revision, motif, confirmation: d.reference }),
+        optionsSuppression(d.reference, this.busy))
+      .subscribe(() => void this.router.navigate(['/reclamations/dossiers']));
+  }
+
+  restaurer(): void {
+    const d = this.dossier();
+    if (!d) return;
+    this.feedback
+      .runWithReason((motif) => this.rc.restaurer(d.id, { revision: d.revision, motif }), optionsRestauration(d.reference, this.busy))
+      .subscribe((r) => this.applique(r));
   }
 
   ouvrirAppel(): void {

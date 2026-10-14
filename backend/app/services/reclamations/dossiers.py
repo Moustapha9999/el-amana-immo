@@ -179,12 +179,13 @@ def ligne(r: Reclamation, ctx: Contexte, nb_documents: int = 0,
         "date_cloture": iso(r.date_cloture), "echeance": iso(r.echeance), "en_retard": en_retard(r),
         "nb_operations": nb_operations, "montant_total": ops.montant_str(montant_total), "devise": C.DEVISE,
         "nb_documents": nb_documents, "revision": r.revision, "updated_at": iso(r.updated_at),
+        "supprimee_le": iso(r.supprimee_le), "motif_suppression": r.motif_suppression,
     }
 
 
 def peut_modifier(s: ReclamationsScope, r: Reclamation) -> bool:
     """Correction des données saisies : droit de modification, ou auteur tant que le dossier est à qualifier."""
-    if r.statut in C.STATUTS_TERMINAUX or r.archivee_le:
+    if r.statut in C.STATUTS_TERMINAUX or r.archivee_le or r.supprimee_le:
         return False
     if s.peut("reclamations.update"):
         return True
@@ -192,15 +193,16 @@ def peut_modifier(s: ReclamationsScope, r: Reclamation) -> bool:
 
 
 def actions(s: ReclamationsScope, r: Reclamation) -> dict[str, bool]:
-    ouvert = r.statut not in C.STATUTS_TERMINAUX and not r.archivee_le
+    ouvert = r.statut not in C.STATUTS_TERMINAUX and not r.archivee_le and not r.supprimee_le
+    modifiable = not r.archivee_le and not r.supprimee_le
     return {
         "modifier": peut_modifier(s, r),
         "modifier_operations": peut_modifier(s, r),
         "ajouter_appel": ouvert and (s.peut("reclamations.update") or peut_modifier(s, r)),
         "documents_voir": s.peut("reclamations.document.view"),
-        "documents_deposer": s.peut("reclamations.document.upload") and not r.archivee_le,
+        "documents_deposer": s.peut("reclamations.document.upload") and modifiable,
         "documents_telecharger": s.peut("reclamations.document.download"),
-        "documents_retirer": s.peut("reclamations.document.remove") and not r.archivee_le,
+        "documents_retirer": s.peut("reclamations.document.remove") and modifiable,
     }
 
 
@@ -271,11 +273,16 @@ async def detail(db: AsyncSession, s: ReclamationsScope, r: Reclamation, ctx: Co
 
 
 # --------------------------------------------------------------------- lecture
-async def charger(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, *, verrou: bool = False) -> Reclamation:
+async def charger(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, *, verrou: bool = False,
+                  corbeille: bool = False) -> Reclamation:
+    """``verrou`` = chargement avant écriture : refusé sur un dossier supprimé (sauf ``corbeille``)."""
     q = select(Reclamation).where(Reclamation.id == rid)
     if verrou:
         q = q.with_for_update()
-    return await s.exiger_dossier(db, await db.scalar(q))
+    r = await s.exiger_dossier(db, await db.scalar(q))
+    if verrou and r.supprimee_le and not corbeille:
+        raise conflit("Dossier supprimé : restaurez-le avant toute action", "DOSSIER_SUPPRIME")
+    return r
 
 
 def _filtres(q, f: dict[str, Any]):
@@ -324,8 +331,13 @@ def _filtres(q, f: dict[str, Any]):
 
 async def lister(db: AsyncSession, s: ReclamationsScope, f: dict[str, Any], *, page: int = 1, taille: int = 25,
                  tri: str = "date_premiere_reception", ordre: str = "desc") -> dict:
+    from app.services.reclamations import suppression
+
     taille = max(1, min(taille, TAILLE_MAX_PAGE))
-    base = _filtres(select(Reclamation).where(s.filtre_dossiers()), f)
+    if f.get("corbeille"):
+        s.exiger(suppression.PERMISSION)
+    perimetre = s.filtre_corbeille() if f.get("corbeille") else s.filtre_dossiers()
+    base = _filtres(select(Reclamation).where(perimetre), f)
     total = await db.scalar(select(func.count()).select_from(base.order_by(None).subquery())) or 0
     colonnes = TRI_COLONNES.get(tri, TRI_COLONNES["date_premiere_reception"])
     ordres = [c.asc().nulls_last() if ordre == "asc" else c.desc().nulls_last() for c in colonnes]
@@ -340,8 +352,15 @@ async def lister(db: AsyncSession, s: ReclamationsScope, f: dict[str, Any], *, p
             .group_by(GedDocument.entity_id))).all())
     ctx = await Contexte.charger(db)
     resumes = await ops.resumes(db, [r.id for r in rows])
-    return {"items": [ligne(r, ctx, docs.get(str(r.id), 0), resumes.get(r.id)) for r in rows], "total": total,
-            "page": max(page, 1), "taille": taille}
+    items = [ligne(r, ctx, docs.get(str(r.id), 0), resumes.get(r.id)) for r in rows]
+    if s.peut(suppression.PERMISSION):
+        blocages = await suppression.blocages(db, rows)
+        for item, r in zip(items, rows, strict=True):
+            raisons = blocages.get(r.id, [])
+            item["suppression"] = {"possible": not r.supprimee_le and not raisons,
+                                   "raison": raisons[0]["message"] if raisons else None,
+                                   "restaurable": bool(r.supprimee_le)}
+    return {"items": items, "total": total, "page": max(page, 1), "taille": taille}
 
 
 async def chronologie(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID) -> list[dict]:
@@ -561,7 +580,9 @@ async def _liee(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID | None, p
         return None
     if rid == propre_id:
         raise erreur("Une réclamation ne peut pas être liée à elle-même", "LIEN_INVALIDE")
-    await s.exiger_dossier(db, await db.get(Reclamation, rid))
+    cible = await s.exiger_dossier(db, await db.get(Reclamation, rid))
+    if cible.supprimee_le:
+        raise erreur("La réclamation liée est supprimée", "LIEN_INVALIDE")
     return rid
 
 

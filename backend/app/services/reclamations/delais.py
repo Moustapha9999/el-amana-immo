@@ -262,8 +262,8 @@ async def envoyer_alertes(db: AsyncSession) -> dict:
     ctx = await Contexte.charger(db)
     now = maintenant()
     rows = list((await db.scalars(select(Reclamation).where(
-        Reclamation.archivee_le.is_(None), Reclamation.statut.not_in(C.STATUTS_TERMINAUX),
-        Reclamation.echeance.is_not(None),
+        Reclamation.archivee_le.is_(None), Reclamation.supprimee_le.is_(None),
+        Reclamation.statut.not_in(C.STATUTS_TERMINAUX), Reclamation.echeance.is_not(None),
     ))).all())
     sr = await destinataires_sr(db, ctx)
     systeme = type("S", (), {"user_id": None})()

@@ -37,6 +37,8 @@ export interface UiReasonData extends UiConfirmData {
   /** Défaut : true. */
   required?: boolean;
   maxLength?: number;
+  /** Confirmation explicite : l'utilisateur doit recopier ce texte (ex. référence du dossier). */
+  confirmPhrase?: string;
 }
 
 export interface UiFeedbackData {

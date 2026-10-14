@@ -145,6 +145,32 @@ Tests : `backend/tests/test_reclamations_fondations.py`, `test_reclamations_doss
 opérations multiples, rejets de validation, pipeline, clôture réservée au SR, clôture sans
 réponse refusée, réouverture, KPI sans double comptage, reprise des données) — transactions annulées.
 
+## Notes, pièces jointes et suppression (migration `20261014_reclamations_03`)
+
+- **Notes et pièces jointes** (onglet de la fiche) : « Ajouter une note » propose *note scannée*
+  (type `NOTE`, PDF ou image uniquement, titre obligatoire) ou *autre document* (courrier,
+  justificatif, document de traitement, retour du service, autre…). Chaque ajout crée un nouveau
+  document GED (jamais d’écrasement) : titre, date du document (pas dans le futur), type,
+  commentaire, nom du fichier, date d’ajout et auteur conservés. Contrôles d’extension, de
+  signature et antivirus ; stockage privé, accès uniquement via l’API authentifiée
+  (`reclamations.document.view` / `.download`, périmètre du dossier).
+- **Suppression = corbeille (suppression logique)**. La suppression définitive est impossible :
+  l’historique est en ajout seul (trigger `trg_reclamation_evenements_immuable`) et relève de la
+  conservation documentaire. Un dossier supprimé sort des listes, KPI, exports et alertes, devient
+  non modifiable, et reste consultable et restaurable (avec motif) depuis la corbeille.
+- Permission `reclamations.delete`, accordée au seul rôle `reclamations.admin` ; l’attribuer
+  explicitement via CORE ADMIN pour un autre profil. Contrôle côté serveur, motif obligatoire,
+  confirmation par saisie de la référence, révision vérifiée, événement + audit
+  (`reclamations.suppression` / `reclamations.restauration`).
+- **Non supprimables** : dossiers clôturés, rejetés, archivés, avec réponse envoyée, portant un
+  document officiel (réponse au client, preuve d’envoi) ou référencés par un autre dossier.
+- Opérations concernées : simples références, conservées avec leur association (rien n’est
+  écrit dans ORION ni dans la comptabilité) ; pièces jointes et historique conservés.
+
+Tests : `test_reclamations_notes_suppression.py` (notes multiples sans écrasement, consultation
+selon permissions, suppression / restauration, refus sans permission, dossier clôturé ou
+officiel, opérations jamais supprimées, cohérence des pièces).
+
 ## Avancement
 
 | Phase | Contenu | État |

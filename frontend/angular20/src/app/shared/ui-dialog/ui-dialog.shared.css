@@ -101,6 +101,18 @@
   color: #0f172a;
 }
 
+.ui-dlg__reason .ui-dlg__phrase {
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+  padding: 0.5rem 0.7rem;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 0.55rem;
+  color: #0f172a;
+}
+
+.ui-dlg__reason .ui-dlg__phrase:focus,
 .ui-dlg__reason textarea:focus {
   outline: none;
   border-color: #1a5278;

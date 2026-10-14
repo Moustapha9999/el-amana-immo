@@ -37,14 +37,25 @@ from app.schemas.reclamations import (
     RegleDelaiCreate,
     RegleDelaiPatch,
     ReponseEnvoyeeIn,
+    RestaurerIn,
     RetournerIn,
     RetraitIn,
+    SupprimerIn,
     UniteCreate,
     UnitePatch,
     ValidationRegleIn,
 )
 from app.services.reclamations import constantes as C
-from app.services.reclamations import circuit, delais, documents, dossiers, organisation, reporting, reponses
+from app.services.reclamations import (
+    circuit,
+    delais,
+    documents,
+    dossiers,
+    organisation,
+    reporting,
+    reponses,
+    suppression,
+)
 from app.services.reclamations.acces import ReclamationsScope, charger_scope
 
 router = APIRouter(prefix="/reclamations", tags=["Gestion des réclamations"])
@@ -224,9 +235,11 @@ def filtres_dossiers(
     en_retard: bool = False,
     sans_echeance: bool = False,
     archivees: bool | None = None,
+    corbeille: bool = False,
 ) -> dict:
-    """Filtres communs à la liste et aux exports."""
+    """Filtres communs à la liste et aux exports (``corbeille`` : liste seulement, dossiers supprimés)."""
     return {
+        "corbeille": corbeille,
         "q": q, "statut": statut, "groupe": groupe, "etape": etape, "type_id": type_id, "motif_id": motif_id,
         "sous_motif_id": sous_motif_id, "canal_id": canal_id, "priorite": priorite,
         "client_categorie": client_categorie, "client_racine": client_racine, "client_agence_id": client_agence_id,
@@ -301,9 +314,12 @@ async def lister_documents(rid: uuid.UUID, s: ReclamationsScope = Depends(scope(
 @router.post("/dossiers/{rid}/documents", status_code=201)
 async def deposer_document(rid: uuid.UUID, file: UploadFile = File(...), categorie: str = Form(...),
                            commentaire: str | None = Form(None, max_length=2000),
+                           titre: str | None = Form(None, max_length=255),
+                           date_document: date | None = Form(None),
                            s: ReclamationsScope = Depends(scope("reclamations.document.upload")),
                            db: AsyncSession = Depends(get_db)) -> dict:
-    return await documents.deposer(db, s, rid, file, categorie, commentaire)
+    return await documents.deposer(db, s, rid, file, categorie, commentaire, titre=titre,
+                                   date_document=date_document)
 
 
 @router.post("/dossiers/{rid}/documents/{did}/retrait")
@@ -388,6 +404,21 @@ async def rouvrir(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends
 async def archiver(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends(scope("reclamations.archive")),
                    db: AsyncSession = Depends(get_db)) -> dict:
     return await circuit.archiver(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/supprimer")
+async def supprimer(rid: uuid.UUID, body: SupprimerIn,
+                    s: ReclamationsScope = Depends(scope(suppression.PERMISSION)),
+                    db: AsyncSession = Depends(get_db)) -> dict:
+    return await suppression.supprimer(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/restaurer")
+async def restaurer(rid: uuid.UUID, body: RestaurerIn,
+                    s: ReclamationsScope = Depends(scope(suppression.PERMISSION)),
+                    db: AsyncSession = Depends(get_db)) -> dict:
+    r = await suppression.restaurer(db, s, rid, body.model_dump())
+    return await circuit.fiche(db, s, r)
 
 
 # ------------------------------------------------------------------ délais

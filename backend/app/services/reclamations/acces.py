@@ -16,7 +16,7 @@ from collections.abc import Collection
 from dataclasses import dataclass, field
 
 from fastapi import HTTPException, status
-from sqlalchemy import ColumnElement, exists, false, or_, select
+from sqlalchemy import ColumnElement, and_, exists, false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.data.plateforme_catalogue import FUNCTIONAL_PERMISSIONS
@@ -25,6 +25,7 @@ from app.services.permission_service import load_user_permission_codes, user_has
 from app.services.reclamations.constantes import MODULE_CODE
 
 PERIMETRE_GLOBAL = "reclamations.scope.all"
+PERMISSION_SUPPRESSION = "reclamations.delete"
 PERMISSIONS: tuple[str, ...] = tuple(code for code, _l, module in FUNCTIONAL_PERMISSIONS if module == MODULE_CODE)
 
 # Capacité exposée au frontend → permission (le backend revérifie toujours).
@@ -44,6 +45,7 @@ CAPACITES: dict[str, str] = {
     "cloturer": "reclamations.close",
     "rouvrir": "reclamations.reopen",
     "archiver": "reclamations.archive",
+    "supprimer": "reclamations.delete",
     "documents_voir": "reclamations.document.view",
     "documents_deposer": "reclamations.document.upload",
     "documents_telecharger": "reclamations.document.download",
@@ -94,7 +96,16 @@ class ReclamationsScope:
         return unite_id is not None and unite_id in self.unites_responsable
 
     def filtre_dossiers(self) -> ColumnElement[bool]:
-        """Condition SQL des dossiers visibles (à appliquer à toute liste, KPI ou export)."""
+        """Condition SQL des dossiers visibles (à appliquer à toute liste, KPI ou export) : hors corbeille."""
+        return and_(Reclamation.supprimee_le.is_(None), self._perimetre())
+
+    def filtre_corbeille(self) -> ColumnElement[bool]:
+        """Dossiers supprimés (logiquement) du périmètre, visibles des seuls profils habilités à supprimer."""
+        if not self.peut(PERMISSION_SUPPRESSION):
+            return false()
+        return and_(Reclamation.supprimee_le.is_not(None), self._perimetre())
+
+    def _perimetre(self) -> ColumnElement[bool]:
         if not self.peut("reclamations.view"):
             return false()
         if self.toutes:
@@ -111,6 +122,8 @@ class ReclamationsScope:
 
     async def couvre(self, db: AsyncSession, r: Reclamation) -> bool:
         if not self.peut("reclamations.view"):
+            return False
+        if r.supprimee_le is not None and not self.peut(PERMISSION_SUPPRESSION):
             return False
         if self.toutes or r.created_by_id == self.user_id or self.membre_de(r.unite_reception_id):
             return True
