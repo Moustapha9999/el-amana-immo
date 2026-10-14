@@ -11,7 +11,8 @@ import uuid
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Agence, ReclamationReferentiel, ReclamationUnite, ReclamationUniteMembre, User
+from app.models import Agence, OrgEntite, ReclamationReferentiel, ReclamationUnite, ReclamationUniteMembre, User
+from app.services import org_referentiel as org
 from app.services.permission_service import load_user_permission_codes
 from app.services.reclamations import constantes as C
 from app.services.reclamations.acces import ReclamationsScope, permissions_effectives
@@ -213,12 +214,14 @@ async def supprimer_referentiel(db: AsyncSession, s: ReclamationsScope, rid: uui
 
 # ---------------------------------------------------------------------- unités
 def unite_dict(u: ReclamationUnite, *, agences: dict[uuid.UUID, str] | None = None,
-               membres: int = 0, dossiers: int = 0) -> dict:
+               membres: int = 0, dossiers: int = 0, arbre: org.Arbre | None = None) -> dict:
     return {
         "id": str(u.id), "type_unite": u.type_unite, "type_libelle": C.TYPE_UNITE_LIBELLES.get(u.type_unite),
         "code": u.code, "libelle": u.libelle, "parent_id": str(u.parent_id) if u.parent_id else None,
         "agence_id": str(u.agence_id) if u.agence_id else None,
         "agence": (agences or {}).get(u.agence_id) if u.agence_id else None,
+        "org_entite_id": str(u.org_entite_id) if u.org_entite_id else None,
+        "org_entite": arbre.libelle_chemin(u.org_entite_id) if arbre and u.org_entite_id else None,
         "est_service_reclamations": u.est_service_reclamations, "email": u.email,
         "description": u.description, "ordre": u.ordre, "actif": u.actif,
         "nb_membres": membres, "nb_dossiers": dossiers,
@@ -244,8 +247,28 @@ async def lister_unites(db: AsyncSession) -> list[dict]:
         ) x GROUP BY u
         """))).all()}
     agences = await _agences(db)
-    return [unite_dict(u, agences=agences, membres=membres.get(u.id, 0), dossiers=dossiers.get(u.id, 0))
-            for u in unites]
+    arbre = await org.charger_arbre(db)
+    return [unite_dict(u, agences=agences, membres=membres.get(u.id, 0), dossiers=dossiers.get(u.id, 0),
+                       arbre=arbre) for u in unites]
+
+
+async def unites_de_entite(db: AsyncSession, entite_id: uuid.UUID) -> tuple[list[uuid.UUID], str | None]:
+    """Unités Réclamations rattachées à une entité de l'organigramme ou à l'une de ses sous-entités."""
+    arbre = await org.charger_arbre(db)
+    if entite_id not in arbre.entites:
+        raise erreur("Entité de l'organigramme introuvable", "ENTITE_INCONNUE", 404)
+    ids = arbre.descendants(entite_id)
+    unites = list((await db.scalars(select(ReclamationUnite.id).where(
+        ReclamationUnite.org_entite_id.in_(ids)))).all())
+    return unites, arbre.libelle_chemin(entite_id)
+
+
+async def _verifier_entite_org(db: AsyncSession, entite_id: uuid.UUID) -> None:
+    e = await db.get(OrgEntite, entite_id)
+    if e is None or e.deleted_at is not None:
+        raise erreur("Entité de l'organigramme introuvable", "ENTITE_INCONNUE")
+    if not e.is_active:
+        raise erreur(f"L'entité « {e.libelle} » est désactivée dans l'organigramme", "ENTITE_INACTIVE")
 
 
 async def _unite(db: AsyncSession, uid: uuid.UUID) -> ReclamationUnite:
@@ -297,15 +320,18 @@ async def creer_unite(db: AsyncSession, s: ReclamationsScope, data: dict) -> dic
         await _verifier_parent(db, data["parent_id"])
     if data.get("agence_id"):
         await _verifier_agence(db, data["agence_id"])
+    if data.get("org_entite_id"):
+        await _verifier_entite_org(db, data["org_entite_id"])
     ordre = await db.scalar(select(func.coalesce(func.max(ReclamationUnite.ordre), 0)))
     u = ReclamationUnite(
         type_unite=data["type_unite"], code=code_propre(data.get("code")), libelle=libelle, cle=cle(libelle),
-        parent_id=data.get("parent_id"), agence_id=data.get("agence_id"), est_service_reclamations=False,
+        parent_id=data.get("parent_id"), agence_id=data.get("agence_id"),
+        org_entite_id=data.get("org_entite_id"), est_service_reclamations=False,
         email=propre(data.get("email")) or None, description=texte_long(data.get("description")),
         ordre=(ordre or 0) + 1, actif=True, created_by_id=s.user_id, updated_by_id=s.user_id)
     db.add(u)
     await db.flush()
-    apres = unite_dict(u, agences=await _agences(db))
+    apres = unite_dict(u, agences=await _agences(db), arbre=await org.charger_arbre(db))
     await auditer(db, s, "reclamations.unite.create", "reclamation_unite", u.id, after=apres)
     return apres
 
@@ -314,7 +340,13 @@ async def modifier_unite(db: AsyncSession, s: ReclamationsScope, uid: uuid.UUID,
     s.exiger("reclamations.services.manage")
     u = await _unite(db, uid)
     agences = await _agences(db)
-    avant = unite_dict(u, agences=agences)
+    arbre = await org.charger_arbre(db)
+    avant = unite_dict(u, agences=agences, arbre=arbre)
+    if data.get("detacher_org_entite"):
+        u.org_entite_id = None
+    elif data.get("org_entite_id"):
+        await _verifier_entite_org(db, data["org_entite_id"])
+        u.org_entite_id = data["org_entite_id"]
     if data.get("libelle") is not None:
         libelle = propre(data["libelle"])
         if not cle(libelle):
@@ -351,7 +383,7 @@ async def modifier_unite(db: AsyncSession, s: ReclamationsScope, uid: uuid.UUID,
         u.actif = data["actif"]
     u.updated_by_id = s.user_id
     await db.flush()
-    apres = unite_dict(u, agences=agences)
+    apres = unite_dict(u, agences=agences, arbre=arbre)
     await auditer(db, s, "reclamations.unite.update", "reclamation_unite", u.id, before=avant, after=apres)
     return apres
 

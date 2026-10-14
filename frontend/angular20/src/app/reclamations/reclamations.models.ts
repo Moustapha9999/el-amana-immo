@@ -36,6 +36,9 @@ export interface Unite {
   parent_id: string | null;
   agence_id: string | null;
   agence: string | null;
+  /** Entité de l'organigramme BEA (référentiel CORE) correspondant à l'unité. */
+  org_entite_id: string | null;
+  org_entite: string | null;
   est_service_reclamations: boolean;
   email: string | null;
   description: string | null;

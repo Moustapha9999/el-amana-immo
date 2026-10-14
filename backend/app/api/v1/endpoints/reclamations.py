@@ -213,7 +213,7 @@ async def apercu_client(racine: str, s: ReclamationsScope = Depends(scope("recla
 
 
 # ------------------------------------------------------------------ dossiers
-def filtres_dossiers(
+async def filtres_dossiers(
     q: str | None = Query(None, max_length=100),
     statut: list[str] | None = Query(None),
     groupe: list[str] | None = Query(None),
@@ -239,13 +239,19 @@ def filtres_dossiers(
     kpi_debut: date | None = None,
     kpi_fin: date | None = None,
     kpi_unite_id: uuid.UUID | None = None,
+    org_entite_id: uuid.UUID | None = None,
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Filtres communs à la liste, au tableau de bord et aux exports.
 
-    ``corbeille`` : liste seulement ; ``indicateur`` + ``kpi_*`` : dossiers d'un KPI cliqué."""
+    ``corbeille`` : liste seulement ; ``indicateur`` + ``kpi_*`` : dossiers d'un KPI cliqué ;
+    ``org_entite_id`` : direction / département / service de l'organigramme central, sous-entités incluses."""
     if date_debut and date_fin and date_fin < date_debut:
         raise AppError("La date de fin précède la date de début", 422, code="PERIODE_INVALIDE")
+    org_unites, org_libelle = (await organisation.unites_de_entite(db, org_entite_id)) if org_entite_id \
+        else (None, None)
     return {
+        "org_entite_id": org_entite_id, "org_unites": org_unites, "org_entite_libelle": org_libelle,
         "corbeille": corbeille,
         "q": q, "statut": statut, "groupe": groupe, "etape": etape, "type_id": type_id, "motif_id": motif_id,
         "sous_motif_id": sous_motif_id, "canal_id": canal_id, "priorite": priorite,

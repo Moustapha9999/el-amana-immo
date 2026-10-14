@@ -54,6 +54,10 @@ class Agence(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     banque_sigle: Mapped[str | None] = mapped_column(String(20), nullable=True)
     banque_raison_sociale: Mapped[str | None] = mapped_column(String(255), nullable=True)
     code_swift: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Rattachement hiérarchique de l'agence dans l'organigramme (ex. département commercial).
+    org_entite_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departements.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
 
 class User(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):

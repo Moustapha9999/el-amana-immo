@@ -157,6 +157,9 @@ class ReclamationUnite(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UUID(as_uuid=True), _fk("reclamation_unites.id"), nullable=True, index=True)
     agence_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), _fk("agences.id", "SET NULL"), nullable=True, index=True)
+    # Entité correspondante de l'organigramme central (filtres et périmètre organisationnel).
+    org_entite_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), _fk("departements.id"), nullable=True, index=True)
     est_service_reclamations: Mapped[bool] = mapped_column(Boolean, default=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)

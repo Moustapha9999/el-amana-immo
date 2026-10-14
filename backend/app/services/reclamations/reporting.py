@@ -338,6 +338,8 @@ def _filtres_libelle(ctx: Contexte, filtres: dict) -> list[str]:
         if filtres.get(champ):
             lib = ctx.lib(filtres[champ]) if champ != "unite_concernee_id" else (ctx.unite(filtres[champ]) or {}).get("libelle")
             morceaux.append(f"{nom} : {lib or '—'}")
+    if filtres.get("org_entite_libelle"):
+        morceaux.append(f"Organigramme : {filtres['org_entite_libelle']}")
     return morceaux
 
 

@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     core_admin_catalogue,
     core_admin_control,
     core_admin_ops,
+    core_admin_org,
     core_admin_query,
     core_admin_rbac,
     core_admin_sessions,
@@ -29,6 +30,7 @@ from app.api.v1.endpoints import (
     mg_stock,
     notifications,
     operations,
+    org_referentiel,
     organisation,
     plateforme,
     reclamations,
@@ -49,6 +51,8 @@ api_router.include_router(core_admin_audit.router)
 api_router.include_router(core_admin_ops.router)
 api_router.include_router(core_admin_control.router)
 api_router.include_router(core_admin_query.router)
+api_router.include_router(core_admin_org.router)
+api_router.include_router(org_referentiel.router)
 api_router.include_router(users.router)
 api_router.include_router(notifications.router)
 api_router.include_router(ged.router)

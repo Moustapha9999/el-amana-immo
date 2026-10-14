@@ -14,6 +14,7 @@ def test_core_permissions_are_in_catalogue():
         "ged.write",
         "ged.download",
         "ged.export",
+        "org.scope.all",
     }
     functional = {row[0] for row in FUNCTIONAL_PERMISSIONS}
     assert codes.issubset(functional)

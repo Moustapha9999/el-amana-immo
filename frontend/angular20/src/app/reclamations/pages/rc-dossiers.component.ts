@@ -5,6 +5,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
+import { OrgEntiteSelectComponent } from '../../core/org/org-entite-select.component';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
 import { DossierLigne, Page, dateFr, montantFr, toneStatut, tonePriorite } from '../reclamations.models';
 import { Filtres, ReclamationsService, ReclamationsStore } from '../reclamations.service';
@@ -16,8 +17,8 @@ const ANNULABLES = new Set(['A_QUALIFIER', 'A_AFFECTER', 'REOUVERTE']);
 const TAILLE = 25;
 const TRIS = new Set(['reference', 'date_reclamation', 'date_premiere_reception', 'date_reception_sr', 'statut', 'priorite', 'client_nom', 'updated_at']);
 const CHAMPS = ['q', 'groupe', 'statut', 'etape', 'type_id', 'motif_id', 'canal_id', 'priorite', 'client_categorie',
-  'client_agence_id', 'unite_reception_id', 'unite_concernee_id', 'unite_traitement_id', 'date_debut', 'date_fin',
-  'indicateur', 'kpi_debut', 'kpi_fin', 'kpi_unite_id'] as const;
+  'client_agence_id', 'unite_reception_id', 'unite_concernee_id', 'unite_traitement_id', 'org_entite_id', 'date_debut',
+  'date_fin', 'indicateur', 'kpi_debut', 'kpi_fin', 'kpi_unite_id'] as const;
 const KPI = ['indicateur', 'kpi_debut', 'kpi_fin', 'kpi_unite_id'] as const;
 
 const DELAIS: Record<string, string> = {
@@ -71,7 +72,7 @@ const VUES: Record<string, VueListe> = {
 @Component({
   selector: 'bea-rc-dossiers',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MatIconModule, ReclamationsUiComponent, RcExportComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatIconModule, ReclamationsUiComponent, RcExportComponent, OrgEntiteSelectComponent],
   template: `
     <bea-rc-styles />
     <section class="bea-mg bea-ct bea-rc">
@@ -167,6 +168,9 @@ const VUES: Record<string, VueListe> = {
               @if (!u.est_service_reclamations) { <option [value]="u.id">{{ u.libelle }}</option> }
             }
           </select>
+        </label>
+        <label class="bea-mg__field">Organigramme (direction, département, service)
+          <bea-org-entite-select formControlName="org_entite_id" placeholder="Toutes" ariaLabel="Filtrer par entité de l’organigramme" />
         </label>
         <label class="bea-mg__field">Unité de réception
           <select formControlName="unite_reception_id" (change)="appliquer()">
@@ -302,7 +306,8 @@ export class RcDossiersComponent implements OnInit {
   readonly tonePriorite = tonePriorite;
   readonly filtres = this.fb.nonNullable.group({
     q: '', groupe: '', statut: '', etape: '', type_id: '', motif_id: '', canal_id: '', priorite: '', client_categorie: '',
-    client_agence_id: '', unite_reception_id: '', unite_concernee_id: '', unite_traitement_id: '', date_debut: '', date_fin: '',
+    client_agence_id: '', unite_reception_id: '', unite_concernee_id: '', unite_traitement_id: '', org_entite_id: '',
+    date_debut: '', date_fin: '',
     indicateur: '', kpi_debut: '', kpi_fin: '', kpi_unite_id: '',
     ouvertes: false, archivees: false, corbeille: false,
   });
@@ -334,6 +339,7 @@ export class RcDossiersComponent implements OnInit {
   ngOnInit(): void {
     this.store.charger();
     this.filtres.controls.type_id.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((t) => this.typeChoisi.set(t));
+    this.filtres.controls.org_entite_id.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.appliquer());
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((q) => {
       const preset = VUES[this.route.snapshot.data['vue'] as string] ?? null;
       this.vue.set(preset);

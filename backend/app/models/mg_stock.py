@@ -64,6 +64,10 @@ class MgStockMouvement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("agences.id"), nullable=True, index=True
     )
     departement: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Entité de l'organigramme ; renseignée depuis `departement` par trigger (alias exact) ou CORE ADMIN.
+    org_entite_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departements.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     initiateur_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
@@ -90,6 +94,10 @@ class MgDemandeFourniture(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, 
     agence_libelle_snapshot: Mapped[str | None] = mapped_column(String(255), nullable=True)
     agence_adresse_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
     departement: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Entité de l'organigramme ; renseignée depuis `departement` par trigger (alias exact) ou CORE ADMIN.
+    org_entite_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departements.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     demandeur_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )

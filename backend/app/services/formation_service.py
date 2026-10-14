@@ -35,6 +35,7 @@ from app.models import (
     FormationSession,
     FormationSessionFormateur,
     FormationSessionTheme,
+    OrgEntite,
     User,
 )
 from app.models.formation import DOMAINES_REFERENTIEL, PRESENCES
@@ -138,6 +139,7 @@ class Refs:
             "perimetre": self.lib(e.perimetre_id),
             "lieu_id": str(e.lieu_id) if e.lieu_id else None,
             "lieu": self.lib(e.lieu_id),
+            "org_entite_id": str(e.org_entite_id) if e.org_entite_id else None,
             "actif": e.actif,
         }
 
@@ -399,12 +401,22 @@ class FormationService:
             lieu_id = (await self._ref(uuid.UUID(str(data["lieu_id"])), "LIEU")).id
         return libelle, perimetre.id, lieu_id
 
+    async def _org_entite(self, valeur: Any) -> uuid.UUID | None:
+        if not valeur:
+            return None
+        org = await self.db.get(OrgEntite, uuid.UUID(str(valeur)))
+        if not org or org.deleted_at or not org.is_active:
+            raise AppError("Entité de l'organigramme introuvable ou inactive", 422, code="ORG_ENTITE_INVALIDE")
+        return org.id
+
     async def creer_entite(self, data: dict) -> dict:
         self.ctx.exiger("formation.references.manage")
         libelle, perimetre_id, lieu_id = await self._valider_entite(data)
+        org_entite_id = await self._org_entite(data.get("org_entite_id"))
         ordre = await self.db.scalar(select(func.coalesce(func.max(FormationEntite.ordre), 0)))
         e = FormationEntite(libelle=libelle, cle=cle(libelle), perimetre_id=perimetre_id, lieu_id=lieu_id,
-                            agence_id=data.get("agence_id"), ordre=(ordre or 0) + 1, actif=True,
+                            agence_id=data.get("agence_id"), org_entite_id=org_entite_id,
+                            ordre=(ordre or 0) + 1, actif=True,
                             created_by_id=self.ctx.user.id, updated_by_id=self.ctx.user.id)
         self.db.add(e)
         await self.db.flush()
@@ -426,6 +438,8 @@ class FormationService:
             merged = {"libelle": e.libelle, "perimetre_id": e.perimetre_id, "lieu_id": e.lieu_id, **data}
             libelle, perimetre_id, lieu_id = await self._valider_entite(merged, exclure=e.id)
             e.libelle, e.cle, e.perimetre_id, e.lieu_id = libelle, cle(libelle), perimetre_id, lieu_id
+            if "org_entite_id" in data:
+                e.org_entite_id = await self._org_entite(data["org_entite_id"])
             if data.get("actif") is not None:
                 e.actif = bool(data["actif"])
             # Participations encore ouvertes : le périmètre suit l'entité (historique clôturé figé).

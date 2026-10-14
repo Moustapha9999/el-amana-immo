@@ -14,6 +14,7 @@ change pas. Voir [core-bea-digital.md](core-bea-digital.md) et
 | Utilisateurs | `users` | Compteurs dashboard |
 | Rôles / permissions | `roles`, `permissions`, `user_roles`, `role_permissions` | Permission `core.admin.access` |
 | Départements | `plateforme_espaces` | Compteur (≠ org `departements`) |
+| Organigramme BEA | `departements`, `org_postes`, `org_affectations` | `/admin/organigramme` + panneau affectations de la fiche utilisateur ([referentiel-organisationnel.md](referentiel-organisationnel.md)) |
 | Modules | `plateforme_modules` | Compteur + état « modules » |
 | Accès | `user_espace_acces`, `user_module_acces` | Fiche utilisateur (Phase 2) |
 | Sessions | `auth_sessions` | Sessions actives (non révoquées, non expirées) |

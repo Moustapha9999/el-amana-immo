@@ -108,6 +108,11 @@ export const PLATEFORME_ROUTES: Routes = [
       { path: 'departments/nouveau', component: CoreAdminDepartmentFicheComponent },
       { path: 'departments/:id/modifier', component: CoreAdminDepartmentFicheComponent },
       { path: 'departments/:id', component: CoreAdminDepartmentFicheComponent },
+      {
+        path: 'organigramme',
+        loadComponent: () =>
+          import('./core-admin/core-admin-organigramme.component').then((m) => m.CoreAdminOrganigrammeComponent),
+      },
       { path: 'demandes', component: CoreAdminDemandesComponent },
       { path: 'modules', component: CoreAdminModulesComponent },
       { path: 'modules/nouveau', component: CoreAdminModuleFicheComponent },

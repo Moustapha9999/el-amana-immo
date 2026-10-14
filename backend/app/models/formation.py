@@ -79,6 +79,9 @@ class FormationEntite(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UUID(as_uuid=True), _fk("formation_referentiels.id", "SET NULL"), nullable=True)
     agence_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), _fk("agences.id", "SET NULL"), nullable=True)
+    # Service du siège → entité de l'organigramme central (les agences gardent `agence_id`).
+    org_entite_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), _fk("departements.id"), nullable=True, index=True)
     ordre: Mapped[int] = mapped_column(Integer, default=0)
     actif: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by_id: Mapped[uuid.UUID | None] = _user_fk()

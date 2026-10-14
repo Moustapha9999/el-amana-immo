@@ -191,7 +191,15 @@ from app.models.exercice import (
 )
 from app.models.immobilisation import CategorieImmobilisation, Immobilisation, InventaireScan, PieceJointe
 from app.models.operations import Ajustement, Cession, Rebut, Reevaluation
-from app.models.organisation import CentreCout, Departement, Direction, Fournisseur
+from app.models.organisation import (
+    CentreCout,
+    Departement,
+    Direction,
+    Fournisseur,
+    OrgAffectation,
+    OrgEntite,
+    OrgPoste,
+)
 
 __all__ = [
     "user_roles_table",
@@ -358,6 +366,9 @@ __all__ = [
     "MgAchatEvenement",
     "Direction",
     "Departement",
+    "OrgAffectation",
+    "OrgEntite",
+    "OrgPoste",
     "CentreCout",
     "Fournisseur",
     "CategorieImmobilisation",

@@ -308,7 +308,8 @@ async def test_donnees_existantes_conservees_apres_migration(db):
     assert all(C.ETAPE_DU_STATUT[s] in C.ETAPE_LIBELLES for s in C.STATUT_LIBELLES)
 
     version = await db.scalar(text("SELECT version_num FROM alembic_version"))
-    assert version.startswith("20261014_reclamations_") and version >= mig.revision
+    # Révisions préfixées par la date : toute révision ultérieure (autre module compris) inclut la 02.
+    assert version >= mig.revision
     perdues = await db.scalar(text(
         "SELECT count(*) FROM reclamations r WHERE (NULLIF(btrim(r.operation_reference), '') IS NOT NULL "
         "OR r.montant_conteste > 0) AND NOT EXISTS (SELECT 1 FROM reclamation_operations o "

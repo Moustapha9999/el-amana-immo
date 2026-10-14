@@ -19,7 +19,7 @@ import uuid
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
-from sqlalchemy import case, func, or_, select, text
+from sqlalchemy import case, false, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -28,6 +28,7 @@ from app.models import (
     ClienteleCompte,
     GedDocument,
     Reclamation,
+    ReclamationAffectation,
     ReclamationAppel,
     ReclamationEvenement,
     ReclamationOperation,
@@ -299,6 +300,14 @@ def _filtres(q, f: dict[str, Any]):
                   "unite_traitement_id", "gestionnaire_id"):
         if f.get(champ):
             q = q.where(getattr(Reclamation, champ) == f[champ])
+    if f.get("org_unites") is not None:
+        unites = list(f["org_unites"])
+        q = q.where(or_(
+            Reclamation.unite_reception_id.in_(unites), Reclamation.unite_concernee_id.in_(unites),
+            Reclamation.unite_traitement_id.in_(unites),
+            Reclamation.id.in_(select(ReclamationAffectation.reclamation_id).where(
+                ReclamationAffectation.unite_destinataire_id.in_(unites))),
+        ) if unites else false())
     if f.get("client_agence_id") == AUCUNE:
         q = q.where(Reclamation.client_agence_id.is_(None))
     elif f.get("client_agence_id"):

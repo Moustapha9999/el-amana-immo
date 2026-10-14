@@ -1,6 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal, viewChild } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
@@ -16,11 +16,12 @@ import {
 } from './core-admin-users.models';
 import { feedbackSignal } from '../../core/feedback/feedback-signal';
 import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
+import { CoreAdminUserOrgComponent } from './core-admin-user-org.component';
 
 @Component({
   selector: 'bea-core-admin-user-fiche',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, ReactiveFormsModule, RouterLink],
+  imports: [DatePipe, ReactiveFormsModule, RouterLink, CoreAdminUserOrgComponent],
   styles: `
     .bea-role-board {
       align-items: start;
@@ -318,6 +319,10 @@ import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
           }
         </div>
 
+        @if (userId(); as uid) {
+          <bea-core-admin-user-org [userId]="uid" [nomUtilisateur]="form.controls.full_name.value || 'cet utilisateur'" />
+        }
+
         <section class="bea-admin-panel">
           <h2>Permissions (lecture)</h2>
           @if (permissions().length === 0) {
@@ -413,7 +418,11 @@ import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
   `,
 })
 export class CoreAdminUserFicheComponent implements OnInit {
-  readonly hasUnsavedChanges = unsavedChanges(() => this.form.dirty && !this.saving(), () => this.form);
+  readonly hasUnsavedChanges = unsavedChanges(
+    () => (this.form.dirty && !this.saving()) || !!this.orgPanel()?.isDirty(),
+    () => this.form,
+  );
+  private readonly orgPanel = viewChild(CoreAdminUserOrgComponent);
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly dialogs = inject(BeaAdminDialogService);

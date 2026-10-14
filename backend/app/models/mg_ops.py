@@ -39,6 +39,10 @@ class MgBonCommande(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     fournisseur_telephone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     fournisseur_adresse: Mapped[str | None] = mapped_column(Text, nullable=True)
     departement: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Entité de l'organigramme ; renseignée depuis `departement` par trigger (alias exact) ou CORE ADMIN.
+    org_entite_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departements.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     projet: Mapped[str | None] = mapped_column(String(255), nullable=True)
     acheteur_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
@@ -118,6 +122,10 @@ class MgBcLigne(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     code_produit: Mapped[str | None] = mapped_column(String(60), nullable=True)
     departement: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Entité de l'organigramme ; renseignée depuis `departement` par trigger (alias exact) ou CORE ADMIN.
+    org_entite_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departements.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     description: Mapped[str] = mapped_column(String(255))
     quantite: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("1"))
     quantite_recue: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("0"))
@@ -174,6 +182,10 @@ class MgNoteFrais(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     demandeur_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
     departement: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Entité de l'organigramme ; renseignée depuis `departement` par trigger (alias exact) ou CORE ADMIN.
+    org_entite_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departements.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     fonction: Mapped[str | None] = mapped_column(String(120), nullable=True)
     objet: Mapped[str | None] = mapped_column(String(255), nullable=True)
     periode_debut: Mapped[date | None] = mapped_column(Date, nullable=True)

@@ -26,7 +26,8 @@ est encore valide. Détail auth : [socle-bea-digital.md](socle-bea-digital.md).
 | A | Utilisateurs | `users` | Email unique, bcrypt, `is_active`, soft-delete |
 | B | Rôles | `roles` + `user_roles` | Immo = codes courts legacy (`comptable`, …). Nouveaux modules = `{module}.{profil}` (`credit.admin`). Helpers : `module_role_code` / `role_module_code` |
 | C | Permissions | `permissions` + `role_permissions` | `{module}.{action}` ; `{module}.admin` couvre `{module}.*` |
-| D | Départements | `plateforme_espaces` | Comptabilité, Moyens Généraux, Crédit, RH, … **≠** `departements` (org immo / centres de coût). Catalogue : [catalogue-modules-futurs.md](catalogue-modules-futurs.md) · MG : [moyens-generaux/README.md](moyens-generaux/README.md) |
+| D | Départements | `plateforme_espaces` | Comptabilité, Moyens Généraux, Crédit, RH, … **≠** `departements` (entités de l’organigramme BEA). Catalogue : [catalogue-modules-futurs.md](catalogue-modules-futurs.md) · MG : [moyens-generaux/README.md](moyens-generaux/README.md) |
+| D″ | Organigramme | `departements` (entités), `org_postes`, `org_affectations`, `agences.org_entite_id` | Référentiel organisationnel central partagé par tous les modules : [referentiel-organisationnel.md](referentiel-organisationnel.md) |
 | D′ | Domaines | `plateforme_domaines` | Regroupement **visuel** dans un département (2 niveaux max : domaine → sous-domaine). Aucun droit attaché : l’accès reste au module. CORE ADMIN `/plateforme/admin/domaines`. Ex. : [conformite/README.md](conformite/README.md) |
 | E | Modules | `plateforme_modules` | Actifs : `immobilisations`, `stock-fournitures` (+ stubs bientôt). `domaine_id` (nullable) + `icon` |
 | F | Accès | `user_espace_acces`, `user_module_acces` | User → département, User → module |
@@ -48,6 +49,8 @@ Ces URLs restent `/api/v1/...` (pas de préfixe `/comptabilite/`).
 | Dashboard CORE ADMIN | `/api/v1/plateforme/admin/dashboard` | Login 1 + `core.admin.access` |
 | Utilisateurs CORE ADMIN | `/api/v1/plateforme/admin/users*` | Login 1 + `core.admin.users` |
 | Départements CORE ADMIN | `/api/v1/plateforme/admin/departments*` | Login 1 + `core.admin.departments` |
+| Organigramme CORE ADMIN | `/api/v1/plateforme/admin/organisation/*` | Login 1 + `core.admin.organisation` |
+| Organigramme (lecture modules) | `/api/v1/organisation/*` | Login 1 ou Login 2 |
 | Modules CORE ADMIN | `/api/v1/plateforme/admin/modules*` | Login 1 + `core.admin.modules` |
 | Rôles CORE ADMIN | `/api/v1/plateforme/admin/roles*` | Login 1 + `core.admin.roles` |
 | Permissions CORE ADMIN | `/api/v1/plateforme/admin/permissions*` | Login 1 + `core.admin.permissions` |
@@ -89,7 +92,8 @@ toujours Login 2 `immobilisations`.
 
 ## Ce que le CORE n’est pas
 
-- Le référentiel org `directions` / `departements` / `centres_cout` / `agences`
-  (utilisé par le parc immo).
+- Un module « Organisation » : l’organigramme est une brique CORE administrée dans CORE ADMIN
+  (`departements` = entités, voir [referentiel-organisationnel.md](referentiel-organisationnel.md)).
+  `directions` reste une table legacy ; `centres_cout` et `agences` restent leurs référentiels.
 - Le moteur VNC / `amortissement_engine.py`.
 - Un second front ou une seconde base.

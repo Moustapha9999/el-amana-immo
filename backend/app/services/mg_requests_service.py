@@ -26,6 +26,7 @@ from app.models.mg_requests import (
 )
 from app.models.mg_stock import MgArticle
 from app.models.organisation import Departement
+from app.services import org_referentiel as org
 from app.schemas.mg_achats import DemandeCreate, DemandeLigneIn
 from app.schemas.mg_requests import (
     BatchCreate,
@@ -1473,12 +1474,11 @@ class MgRequestsService:
                 )
             ).scalars().all()
         )
-        depts = list(
-            (
-                await self.db.execute(
-                    select(Departement).where(Departement.deleted_at.is_(None)).order_by(Departement.libelle)
-                )
-            ).scalars().all()
+        arbre = await org.charger_arbre(self.db)
+        depts = sorted(
+            (e for e in arbre.entites.values()
+             if e.is_active and e.type_entite not in ("CONSEIL", "COMITE")),
+            key=lambda e: arbre.libelle_chemin(e.id) or e.libelle,
         )
         articles = list(
             (
@@ -1492,7 +1492,9 @@ class MgRequestsService:
         )
         return {
             "agences": [{"id": a.id, "label": a.libelle, "extra": a.code} for a in agences],
-            "departements": [{"id": d.id, "label": d.libelle, "extra": d.code} for d in depts],
+            "departements": [
+                {"id": d.id, "label": arbre.libelle_chemin(d.id) or d.libelle, "extra": d.code} for d in depts
+            ],
             "articles": [
                 {"id": a.id, "label": a.designation, "extra": a.code} for a in articles
             ],

@@ -34,6 +34,8 @@ class EntiteIn(BaseModel):
     perimetre_id: uuid.UUID | None = None
     lieu_id: uuid.UUID | None = None
     agence_id: uuid.UUID | None = None
+    # Entité de l'organigramme BEA (référentiel CORE). Absent = inchangé, null = détacher.
+    org_entite_id: uuid.UUID | None = None
     actif: bool | None = None
 
 

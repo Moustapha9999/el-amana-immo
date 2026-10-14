@@ -7,6 +7,7 @@ import { Observable, Subject, debounceTime, distinctUntilChanged, of, switchMap 
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
+import { OrgEntiteSelectComponent } from '../../core/org/org-entite-select.component';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
 import { Domaine, Membre, RefItem, TypeUnite, Unite, UtilisateurTrouve, dateFr } from '../reclamations.models';
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
@@ -36,6 +37,7 @@ interface BrouillonUnite {
   code: string;
   parent_id: string;
   agence_id: string;
+  org_entite_id: string | null;
   email: string;
   description: string;
   ordre: number;
@@ -56,7 +58,7 @@ const ENFANT: Partial<Record<Domaine, Domaine>> = { TYPE: 'MOTIF', MOTIF: 'SOUS_
 @Component({
   selector: 'bea-rc-parametres',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, MatIconModule, ReclamationsUiComponent],
+  imports: [FormsModule, RouterLink, MatIconModule, ReclamationsUiComponent, OrgEntiteSelectComponent],
   template: `
     <bea-rc-styles />
     <section class="bea-mg bea-ct bea-rc">
@@ -214,6 +216,13 @@ const ENFANT: Partial<Record<Domaine, Domaine>> = { TYPE: 'MOTIF', MOTIF: 'SOUS_
                       </label>
                       <label>E-mail de l’unité <input type="email" [(ngModel)]="u.email" name="email" maxlength="255" /></label>
                     </div>
+                    @if (u.type_unite !== 'AGENCE') {
+                      <div class="bea-rc-row">
+                        <label>Entité de l’organigramme BEA
+                          <bea-org-entite-select [(ngModel)]="u.org_entite_id" name="org_entite_id" placeholder="— Non rattachée —" />
+                        </label>
+                      </div>
+                    }
                     <div class="bea-rc-row">
                       <label>Description <textarea [(ngModel)]="u.description" name="description" rows="2" maxlength="2000"></textarea></label>
                       @if (u.id) { <label>Ordre d’affichage <input type="number" min="0" [(ngModel)]="u.ordre" name="ordre" /></label> }
@@ -245,6 +254,7 @@ const ENFANT: Partial<Record<Domaine, Domaine>> = { TYPE: 'MOTIF', MOTIF: 'SOUS_
                     <dt>Code</dt><dd>{{ u.code ?? '—' }}</dd>
                     <dt>Rattachée à</dt><dd>{{ libelleUnite(u.parent_id) }}</dd>
                     <dt>Agence ORION</dt><dd>{{ u.agence ?? '—' }}</dd>
+                    @if (u.type_unite !== 'AGENCE') { <dt>Organigramme BEA</dt><dd>{{ u.org_entite ?? 'Non rattachée' }}</dd> }
                     <dt>E-mail</dt><dd>{{ u.email ?? '—' }}</dd>
                     <dt>Dossiers liés</dt><dd>{{ u.nb_dossiers }}</dd>
                     <dt>État</dt><dd><span class="bea-ct-badge" [attr.data-tone]="u.actif ? 'ACTIF' : 'SUSPENDU'">{{ u.actif ? 'Active' : 'Inactive' }}</span>
@@ -616,13 +626,17 @@ export class RcParametresComponent implements OnInit {
 
   nouvelleUnite(parent: Unite | null): void {
     const type: TypeUnite = parent?.type_unite === 'DIRECTION' ? 'DEPARTEMENT' : parent ? 'SERVICE' : 'DIRECTION';
-    this.ouvrirUnite({ id: null, type_unite: type, libelle: '', code: '', parent_id: parent?.id ?? '', agence_id: '', email: '', description: '', ordre: 0 });
+    this.ouvrirUnite({
+      id: null, type_unite: type, libelle: '', code: '', parent_id: parent?.id ?? '', agence_id: '', org_entite_id: null,
+      email: '', description: '', ordre: 0,
+    });
   }
 
   editerUnite(u: Unite): void {
     this.ouvrirUnite({
       id: u.id, type_unite: u.type_unite, libelle: u.libelle, code: u.code ?? '', parent_id: u.parent_id ?? '',
-      agence_id: u.agence_id ?? '', email: u.email ?? '', description: u.description ?? '', ordre: u.ordre,
+      agence_id: u.agence_id ?? '', org_entite_id: u.org_entite_id ?? null, email: u.email ?? '',
+      description: u.description ?? '', ordre: u.ordre,
     });
   }
 
@@ -652,9 +666,12 @@ export class RcParametresComponent implements OnInit {
       else corps['detacher_parent'] = true;
       if (u.agence_id) corps['agence_id'] = u.agence_id;
       else corps['detacher_agence'] = true;
+      if (u.org_entite_id && u.type_unite !== 'AGENCE') corps['org_entite_id'] = u.org_entite_id;
+      else corps['detacher_org_entite'] = true;
     } else {
       corps['parent_id'] = u.parent_id || null;
       corps['agence_id'] = u.agence_id || null;
+      corps['org_entite_id'] = u.type_unite !== 'AGENCE' ? u.org_entite_id || null : null;
     }
     const appel = u.id ? this.rc.modifierUnite(u.id, corps) : this.rc.creerUnite(corps);
     this.feedback

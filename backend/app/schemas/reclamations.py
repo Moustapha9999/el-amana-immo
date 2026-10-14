@@ -39,6 +39,7 @@ class UniteCreate(BaseModel):
     code: str | None = Field(default=None, max_length=40)
     parent_id: uuid.UUID | None = None
     agence_id: uuid.UUID | None = None
+    org_entite_id: uuid.UUID | None = None
     email: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, max_length=2000)
 
@@ -51,6 +52,8 @@ class UnitePatch(BaseModel):
     detacher_parent: bool = False
     agence_id: uuid.UUID | None = None
     detacher_agence: bool = False
+    org_entite_id: uuid.UUID | None = None
+    detacher_org_entite: bool = False
     email: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, max_length=2000)
     ordre: int | None = Field(default=None, ge=0, le=100000)

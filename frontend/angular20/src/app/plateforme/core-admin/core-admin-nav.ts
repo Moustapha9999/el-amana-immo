@@ -28,6 +28,7 @@ export const CORE_ADMIN_NAV: CoreAdminNavGroup[] = [
   {
     label: 'Organisation',
     items: [
+      { label: 'Organigramme BEA', path: '/admin/organigramme', icon: 'account_tree' },
       { label: 'Départements', path: '/admin/departments', icon: 'domain' },
       { label: 'Modules', path: '/admin/modules', icon: 'apps' },
       { label: 'Demandes', path: '/admin/demandes', icon: 'assignment' },

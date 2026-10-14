@@ -522,6 +522,7 @@ CORE_PERMISSIONS: list[tuple[str, str, str]] = [
     ("ged.write", "Dépôt / suppression GED", "ged"),
     ("ged.download", "Téléchargement GED", "ged"),
     ("ged.export", "Export rapports GED", "ged"),
+    ("org.scope.all", "Périmètre organisationnel global (toutes entités)", "organisation"),
 ]
 
 # CORE ADMIN — catalogue seulement. Ne pas lier au rôle immo `administrateur`.
@@ -531,6 +532,7 @@ CORE_ADMIN_PERMISSIONS: list[tuple[str, str, str]] = [
     ("core.admin.roles", "Administration des rôles (CORE ADMIN)", "core"),
     ("core.admin.permissions", "Administration des permissions (CORE ADMIN)", "core"),
     ("core.admin.departments", "Administration des départements (CORE ADMIN)", "core"),
+    ("core.admin.organisation", "Administration de l'organigramme et des affectations (CORE ADMIN)", "core"),
     ("core.admin.modules", "Administration des modules (CORE ADMIN)", "core"),
     ("core.admin.sessions", "Administration des sessions (CORE ADMIN)", "core"),
     ("core.admin.audit", "Consultation de l'audit (CORE ADMIN)", "core"),
