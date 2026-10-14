@@ -266,6 +266,8 @@ class RegleDelaiVersion(RegleDelaiCreate):
 
     libelle: str | None = Field(default=None, max_length=200)  # type: ignore[assignment]
     duree: int | None = Field(default=None, ge=1, le=3650)  # type: ignore[assignment]
+    detacher_seuil: bool = False
+    detacher_delai_service: bool = False
 
 
 class ValidationReferentielIn(BaseModel):

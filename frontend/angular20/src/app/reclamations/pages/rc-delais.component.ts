@@ -421,7 +421,9 @@ export class RcDelaisComponent implements OnInit {
       delai_service: nombre(b.delai_service), destinataires: b.destinataires,
       date_effet: b.date_effet, date_fin: b.date_fin || null, commentaire: b.commentaire.trim() || null,
     };
-    if (b.mode !== 'version') {
+    if (b.mode === 'version') {
+      Object.assign(corps, { detacher_seuil: seuil === null, detacher_delai_service: !b.delai_service });
+    } else {
       Object.assign(corps, {
         type_id: b.type_id || null, motif_id: b.motif_id || null, sous_motif_id: b.sous_motif_id || null,
         priorite: b.priorite || null,

@@ -236,7 +236,8 @@ async def versionner_regle(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUI
     if await db.scalar(select(func.count()).where(ReclamationRegleDelai.remplace_id == ancienne.id,
                                                   ReclamationRegleDelai.statut_validation != "REJETEE")):
         raise conflit("Une nouvelle version de cette règle existe déjà", "VERSION_EXISTANTE")
-    return await creer_regle(db, s, {**data, "date_fin": data.get("date_fin")}, remplace=ancienne)
+    # Seuil, délai service et fin peuvent être vidés ; la fin n'est jamais reprise de l'ancienne version.
+    return await creer_regle(db, s, {**data, "detacher_fin": not data.get("date_fin")}, remplace=ancienne)
 
 
 async def modifier_regle(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data: dict) -> dict:

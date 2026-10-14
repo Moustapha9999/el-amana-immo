@@ -27,7 +27,7 @@ const DUREE_ANIMATION = 900;
   selector: 'bea-rc-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatIconModule, RouterLink, ReclamationsUiComponent, RcExportComponent, RcPilotageComponent, RcComparaisonComponent],
-  styleUrl: './rc-dashboard.component.css',
+  styleUrls: ['./rc-dashboard.component.css', './rc-dashboard-graphiques.css'],
   template: `
     <bea-rc-styles />
     <section class="bea-mg bea-ct bea-rc rcd">

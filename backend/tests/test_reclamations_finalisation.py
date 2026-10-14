@@ -96,6 +96,7 @@ async def test_regle_creer_modifier_activer_valider_versionner(db):
     # Nouvelle version à date d'effet : l'ancienne est bornée à la validation, sans recalcul du passé.
     v = await delais.versionner_regle(db, sr, rid, {"date_effet": AUJOURDHUI, "duree": 5})
     assert (v["remplace_id"], v["statut_validation"], v["duree"], v["type_id"]) == (str(rid), "A_VALIDER", 5, str(tid))
+    assert v["seuil_alerte"] == 2
     await _refus(delais.versionner_regle(db, sr, rid, {"date_effet": AUJOURDHUI, "duree": 4}), "VERSION_EXISTANTE")
     await _refus(delais.versionner_regle(db, sr, uuid.UUID(v["id"]), {"date_effet": date(2019, 1, 1)}),
                  "DATE_EFFET_INVALIDE")
@@ -108,11 +109,16 @@ async def test_regle_creer_modifier_activer_valider_versionner(db):
     nouveau = await _dossier(db, sr, unite, _marqueur(), type_id=tid, date_premiere_reception=NOW - timedelta(minutes=1))
     assert nouveau.regle_delai_id == uuid.UUID(v["id"])
 
+    # Version suivante : seuil d'alerte vidé ; la fin n'est pas reprise de la version remplacée.
+    v2 = await delais.versionner_regle(db, sr, uuid.UUID(v["id"]), {
+        "date_effet": AUJOURDHUI + timedelta(days=30), "detacher_seuil": True})
+    assert (v2["seuil_alerte"], v2["date_fin"], v2["duree"]) == (None, None, 5)
+
     histo = await delais.historique_regle(db, rid)
     actions = {e["action"] for e in histo["evenements"]}
     assert {"reclamations.delai.create", "reclamations.delai.update", "reclamations.delai.validate",
             "reclamations.delai.version"} <= actions
-    assert [x["id"] for x in histo["versions"]] == [v["id"], str(rid)]
+    assert [x["id"] for x in histo["versions"]] == [v2["id"], v["id"], str(rid)]
     regles = {x["id"]: x for x in await delais.lister_regles(db)}
     assert regles[str(rid)]["remplacee_par"] == v["id"] and regles[str(rid)]["nb_dossiers"] == 1
 

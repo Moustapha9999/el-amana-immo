@@ -185,6 +185,9 @@ défaut SR + service), date d’effet, date de fin, statut de validation, commen
 actif. Une **nouvelle version** (`remplace_id`) porte une date d’effet postérieure ; à sa
 validation, l’ancienne version est bornée à la veille. Une règle déjà appliquée à des dossiers
 ne voit plus ses paramètres de calcul modifiés (409 `REGLE_UTILISEE`) : on crée une version.
+Une version reprend les paramètres non renseignés de la précédente, sauf la date de fin (jamais
+reprise) ; le seuil d’alerte et le délai service peuvent être vidés (`detacher_seuil`,
+`detacher_delai_service`).
 Toute création ou modification d’un paramètre de calcul remet la règle « À valider ».
 
 **Sélection** (`services/reclamations/echeances.py`, service unique) :
@@ -279,7 +282,8 @@ tableau de bord et les rapports ; valeurs cliquables vers la liste de chaque pé
 
 `reclamation_referentiels.statut_validation` (`PROPOSEE` par défaut, `VALIDEE`), `valide_par_id`,
 `valide_le`. Validation par `reclamations.references.validate` (rôle admin seulement ; à
-attribuer à la Conformité via CORE ADMIN) : `POST /referentiels/{id}/validation`. Un enfant ne se
+attribuer à la Conformité via CORE ADMIN ; créée et rattachée au rôle admin par la migration
+`20261014_reclamations_06`) : `POST /referentiels/{id}/validation`. Un enfant ne se
 valide pas avant son parent (`PARENT_NON_VALIDE`) ; un parent ne repasse pas en proposé si des
 enfants sont validés (`ENFANTS_VALIDES`) ; modifier le libellé d’une valeur validée la remet en
 proposé. Les valeurs proposées restent utilisables (signalées « proposé » à la saisie). Désactiver
