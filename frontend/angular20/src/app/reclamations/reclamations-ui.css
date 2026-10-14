@@ -105,6 +105,10 @@
 .bea-rc-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: 0.75rem; margin: 0 0 1rem; }
 .bea-rc-kpi { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.85rem 1rem; border: 1px solid #e2e8f0; border-radius: 0.85rem; background: #fff; text-decoration: none; color: inherit; }
 .bea-rc-kpi mat-icon { color: #1a5278; }
+a.bea-rc-kpi { transition: transform 0.2s, box-shadow 0.2s; }
+a.bea-rc-kpi:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgba(15, 23, 42, 0.07); }
+.bea-rc-note > .bea-mg__btn { margin-left: auto; }
+.bea-rc-ico-s { width: 0.95rem; height: 0.95rem; font-size: 0.95rem; vertical-align: -0.15rem; }
 .bea-rc-kpi p { margin: 0; font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em; }
 .bea-rc-kpi strong { font-size: 1.55rem; color: #0f172a; }
 .bea-rc-kpi small { color: #64748b; font-size: 0.75rem; }

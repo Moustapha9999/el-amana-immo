@@ -4,13 +4,16 @@ import { describeApiErrorAsync } from '../core/feedback/api-error';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { ApiService } from '../core/services/api.service';
 import {
+  AlertesDelais,
   ApercuClient,
   Capacite,
   ColonneCircuit,
+  Comparaison,
   Domaine,
   Dossier,
   DossierLigne,
   Evenement,
+  HistoriqueRegle,
   Membre,
   Page,
   Pieces,
@@ -25,6 +28,7 @@ import {
 } from './reclamations.models';
 
 export type Filtres = Record<string, string | number | boolean | string[] | null | undefined>;
+export interface Periodes { a_debut: string; a_fin: string; b_debut: string; b_fin: string }
 
 function parametres(filtres: Filtres): Record<string, string> {
   const params: Record<string, string> = {};
@@ -163,8 +167,20 @@ export class ReclamationsService {
     return this.api.get(`${RC_BASE}/circuit`);
   }
 
-  alertes(): Observable<{ retards: DossierLigne[]; alertes: DossierLigne[]; nb_retards: number; nb_alertes: number }> {
+  alertes(): Observable<AlertesDelais> {
     return this.api.get(`${RC_BASE}/alertes`);
+  }
+
+  comparaison(periodes: Periodes, filtres: Filtres = {}): Observable<Comparaison> {
+    return this.api.get(`${RC_BASE}/comparaison`, { ...parametres(filtres), ...periodes });
+  }
+
+  exportPilotage(filtres: Filtres = {}, format: 'xlsx' | 'pdf' = 'xlsx'): Observable<Blob> {
+    return this.api.download(`${RC_BASE}/export/pilotage`, { ...parametres(filtres), format });
+  }
+
+  exportComparaison(periodes: Periodes, filtres: Filtres = {}, format: 'xlsx' | 'pdf' = 'xlsx'): Observable<Blob> {
+    return this.api.download(`${RC_BASE}/export/comparaison`, { ...parametres(filtres), ...periodes, format });
   }
 
   exportUrl(filtres: Filtres = {}): string {
@@ -190,6 +206,22 @@ export class ReclamationsService {
 
   validerRegle(id: string, corps: unknown): Observable<RegleDelai> {
     return this.api.post(`${RC_BASE}/regles-delai/${id}/validation`, corps);
+  }
+
+  versionnerRegle(id: string, corps: unknown): Observable<RegleDelai> {
+    return this.api.post(`${RC_BASE}/regles-delai/${id}/versions`, corps);
+  }
+
+  historiqueRegle(id: string): Observable<HistoriqueRegle> {
+    return this.api.get(`${RC_BASE}/regles-delai/${id}/historique`);
+  }
+
+  appliquerDelais(): Observable<{ examines: number; calcules: number; restants: number }> {
+    return this.api.post(`${RC_BASE}/delais/appliquer`, {});
+  }
+
+  validerReferentiel(id: string, statut: 'VALIDEE' | 'PROPOSEE', commentaire = ''): Observable<RefItem> {
+    return this.api.post(`${RC_BASE}/referentiels/${id}/validation`, { statut_validation: statut, commentaire });
   }
 
   feries(): Observable<Array<{ jour: string; libelle: string }>> {

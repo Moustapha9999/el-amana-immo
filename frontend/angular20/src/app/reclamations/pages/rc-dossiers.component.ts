@@ -6,7 +6,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
-import { DossierLigne, dateFr, montantFr, toneStatut, tonePriorite } from '../reclamations.models';
+import { DossierLigne, Page, dateFr, montantFr, toneStatut, tonePriorite } from '../reclamations.models';
 import { Filtres, ReclamationsService, ReclamationsStore } from '../reclamations.service';
 import { RcExportComponent } from '../shared/rc-export.component';
 import { optionsRestauration, optionsSuppression } from '../shared/rc-suppression';
@@ -16,7 +16,30 @@ const ANNULABLES = new Set(['A_QUALIFIER', 'A_AFFECTER', 'REOUVERTE']);
 const TAILLE = 25;
 const TRIS = new Set(['reference', 'date_reclamation', 'date_premiere_reception', 'date_reception_sr', 'echeance', 'statut', 'priorite', 'client_nom', 'updated_at']);
 const CHAMPS = ['q', 'groupe', 'statut', 'etape', 'type_id', 'motif_id', 'canal_id', 'priorite', 'client_categorie',
-  'client_agence_id', 'unite_reception_id', 'unite_concernee_id', 'unite_traitement_id', 'date_debut', 'date_fin'] as const;
+  'client_agence_id', 'unite_reception_id', 'unite_concernee_id', 'unite_traitement_id', 'date_debut', 'date_fin',
+  'situation_delai', 'etat_delai', 'indicateur', 'kpi_debut', 'kpi_fin', 'kpi_unite_id'] as const;
+const KPI = ['indicateur', 'kpi_debut', 'kpi_fin', 'kpi_unite_id'] as const;
+
+const DELAIS: Record<string, string> = {
+  prise_en_charge: 'délai de prise en charge', traitement_service: 'délai de traitement du service',
+  reponse_client: 'délai de réponse au client', cloture: 'délai de clôture',
+};
+const MODES: Record<string, string> = {
+  termines: 'mesurés (terminés)', en_cours: 'en cours', anomalies: 'durée négative (anomalie de saisie)',
+};
+const INDICATEURS: Record<string, string> = {
+  clotures: 'Clôturés sur la période', reouvertes: 'Clôturés puis réouverts sur la période',
+  service_affectes: 'Affectés au service sur la période', service_en_cours: 'En cours chez le service',
+  service_retournes: 'Retournés par le service sur la période', service_retard: 'En retard chez le service',
+  respect_delai: 'Terminés dans le délai', hors_delai: 'Terminés hors délai',
+  avec_operations: 'Dossiers avec opérations contestées',
+};
+
+function libelleIndicateur(code: string): string {
+  const m = /^delai_(.+)_(termines|en_cours|anomalies)$/.exec(code);
+  if (m && DELAIS[m[1]]) return `Dossiers du ${DELAIS[m[1]]} — ${MODES[m[2]]}`;
+  return INDICATEURS[code] ?? code;
+}
 const BOOLEENS = ['ouvertes', 'en_retard', 'sans_echeance', 'archivees', 'corbeille'] as const;
 
 interface VueListe {
@@ -134,7 +157,20 @@ const VUES: Record<string, VueListe> = {
         <label class="bea-mg__field">Agence
           <select formControlName="client_agence_id" (change)="appliquer()">
             <option value="">Toutes</option>
+            <option value="AUCUNE">Sans agence</option>
             @for (a of store.config()?.agences ?? []; track a.id) { <option [value]="a.id">{{ a.code }} — {{ a.libelle }}</option> }
+          </select>
+        </label>
+        <label class="bea-mg__field">Situation du délai
+          <select formControlName="situation_delai" (change)="appliquer()">
+            <option value="">Toutes</option>
+            @for (s of store.libelles('situations_delai'); track s.code) { <option [value]="s.code">{{ s.libelle }}</option> }
+          </select>
+        </label>
+        <label class="bea-mg__field">Calcul du délai
+          <select formControlName="etat_delai" (change)="appliquer()">
+            <option value="">Tous</option>
+            @for (s of store.libelles('etats_delai'); track s.code) { <option [value]="s.code">{{ s.libelle }}</option> }
           </select>
         </label>
         <label class="bea-mg__field">Service concerné
@@ -166,6 +202,13 @@ const VUES: Record<string, VueListe> = {
           }
         </div>
       </form>
+
+      @if (indicateur(); as ind) {
+        <div class="bea-rc-note"><mat-icon>insights</mat-icon>
+          <span>Indicateur : <strong>{{ ind.libelle }}</strong>{{ ind.periode }}{{ nomUnite(ind.uniteId) }}</span>
+          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="retirerIndicateur()"><mat-icon>close</mat-icon> Retirer</button>
+        </div>
+      }
 
       @if (erreur()) {
         <div class="bea-ct-empty bea-ct-empty--hero"><mat-icon>cloud_off</mat-icon>
@@ -217,8 +260,14 @@ const VUES: Record<string, VueListe> = {
                     @if (d.priorite !== 'NORMALE') { <span class="bea-ct-badge" [attr.data-tone]="tonePriorite(d.priorite)">{{ d.priorite_libelle }}</span> }
                   </td>
                   <td class="is-nowrap">
-                    @if (d.echeance) { <span [class.bea-rc-late]="d.en_retard">{{ date(d.echeance) }}</span>@if (d.en_retard) { <small class="bea-ct-sub bea-rc-late">En retard</small> } }
-                    @else { <span class="bea-rc-muted" title="Aucune règle de délai applicable">—</span> }
+                    @if (d.echeance) {
+                      <span [class.bea-rc-late]="d.en_retard">{{ date(d.echeance) }}</span>
+                      @if (d.situation_delai_libelle) { <small class="bea-ct-sub" [class.bea-rc-late]="d.en_retard || d.situation_delai === 'DEPASSE'">{{ d.situation_delai_libelle }}</small> }
+                    } @else if (d.termine) {
+                      <span class="bea-rc-muted">—</span>
+                    } @else {
+                      <span class="bea-rc-muted">—</span><small class="bea-ct-sub">{{ d.etat_delai_libelle || 'Délai non configuré' }}</small>
+                    }
                   </td>
                   <td class="bea-mg__actions-cell is-nowrap">
                     <a class="bea-mg__icon-btn" [routerLink]="['/reclamations/dossiers', d.id]" title="Consulter la fiche" aria-label="Consulter la fiche"><mat-icon>visibility</mat-icon></a>
@@ -251,7 +300,9 @@ const VUES: Record<string, VueListe> = {
 
         @if (total() > 0) {
           <div class="bea-rc-pager">
-            <p class="bea-ct-count">{{ debut() }}–{{ fin() }} sur {{ total() }} réclamation{{ total() > 1 ? 's' : '' }}</p>
+            <p class="bea-ct-count">{{ debut() }}–{{ fin() }} sur {{ total() }} réclamation{{ total() > 1 ? 's' : '' }}
+              @if (totaux(); as t) { · {{ t.nb_operations }} opération(s) dans {{ t.dossiers_avec_operations }} dossier(s) · {{ montant(t.montant_total, t.devise) }} }
+            </p>
             <div class="bea-mg__actions">
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="page() <= 1" (click)="allerPage(page() - 1)"><mat-icon>chevron_left</mat-icon> Précédent</button>
               <span class="bea-rc-pager__num">Page {{ page() }} / {{ pages() }}</span>
@@ -277,12 +328,15 @@ export class RcDossiersComponent implements OnInit {
   readonly filtres = this.fb.nonNullable.group({
     q: '', groupe: '', statut: '', etape: '', type_id: '', motif_id: '', canal_id: '', priorite: '', client_categorie: '',
     client_agence_id: '', unite_reception_id: '', unite_concernee_id: '', unite_traitement_id: '', date_debut: '', date_fin: '',
+    situation_delai: '', etat_delai: '', indicateur: '', kpi_debut: '', kpi_fin: '', kpi_unite_id: '',
     ouvertes: false, en_retard: false, sans_echeance: false, archivees: false, corbeille: false,
   });
   readonly vue = signal<VueListe | null>(null);
   readonly corbeille = signal(false);
   readonly lignes = signal<DossierLigne[]>([]);
   readonly total = signal(0);
+  readonly totaux = signal<Page<DossierLigne>['totaux'] | null>(null);
+  readonly indicateur = signal<{ libelle: string; periode: string; uniteId: string } | null>(null);
   readonly page = signal(1);
   readonly tri = signal('date_premiere_reception');
   readonly ordre = signal<'asc' | 'desc'>('desc');
@@ -326,6 +380,7 @@ export class RcDossiersComponent implements OnInit {
       this.ordre.set(q.get('ordre') === 'asc' ? 'asc' : 'desc');
       const { corbeille: _c, ...autres } = this.filtres.getRawValue();
       this.filtresActifs.set(Object.values(autres).some(Boolean));
+      this.indicateur.set(this.decrireIndicateur());
       this.charger();
     });
   }
@@ -338,6 +393,7 @@ export class RcDossiersComponent implements OnInit {
       next: (r) => {
         this.lignes.set(r.items);
         this.total.set(r.total);
+        this.totaux.set(r.totaux ?? null);
         this.chargement.set(false);
       },
       error: (e) => {
@@ -369,6 +425,25 @@ export class RcDossiersComponent implements OnInit {
     if (preset?.ouvertes) params['ouvertes'] = 'true';
     if (preset?.archivees) params['archivees'] = 'true';
     if (this.corbeille()) params['corbeille'] = 'true';
+    this.naviguer(params);
+  }
+
+  private decrireIndicateur(): { libelle: string; periode: string; uniteId: string } | null {
+    const v = this.filtres.getRawValue();
+    if (!v.indicateur) return null;
+    const periode = v.kpi_debut && v.kpi_fin ? ` du ${dateFr(v.kpi_debut)} au ${dateFr(v.kpi_fin)}`
+      : v.kpi_debut ? ` depuis le ${dateFr(v.kpi_debut)}` : v.kpi_fin ? ` jusqu’au ${dateFr(v.kpi_fin)}` : '';
+    return { libelle: libelleIndicateur(v.indicateur), periode, uniteId: v.kpi_unite_id };
+  }
+
+  nomUnite(id: string): string {
+    const u = id ? this.store.unites().find((x) => x.id === id) : null;
+    return u ? ` — ${u.libelle}` : '';
+  }
+
+  retirerIndicateur(): void {
+    const params: Record<string, string | null> = { page: null };
+    for (const k of KPI) params[k] = null;
     this.naviguer(params);
   }
 

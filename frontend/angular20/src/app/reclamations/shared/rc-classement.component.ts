@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, model } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { AUTRE, Dossier } from '../reclamations.models';
+import { AUTRE, Domaine, Dossier, RefItem } from '../reclamations.models';
 import { ReclamationsStore } from '../reclamations.service';
 
 /** Type → motif → sous-motif. `motif` / `sous_motif` : id du référentiel, `AUTRE` ou vide. */
@@ -50,13 +50,13 @@ export function classementCorps(c: Classement): Record<string, string | null> {
       <label>Type de réclamation
         <select [value]="valeur().type_id" (change)="choisirType(champ($event))">
           <option value="">— À qualifier —</option>
-          @for (t of store.refs('TYPE'); track t.id) { <option [value]="t.id" [selected]="t.id === valeur().type_id">{{ t.libelle }}</option> }
+          @for (t of store.refs('TYPE'); track t.id) { <option [value]="t.id" [selected]="t.id === valeur().type_id">{{ lib(t) }}</option> }
         </select>
       </label>
       <label>Motif
         <select [value]="valeur().motif" (change)="choisirMotif(champ($event))">
           <option value="">— Choisir —</option>
-          @for (m of motifs(); track m.id) { <option [value]="m.id" [selected]="m.id === valeur().motif">{{ m.libelle }}</option> }
+          @for (m of motifs(); track m.id) { <option [value]="m.id" [selected]="m.id === valeur().motif">{{ lib(m) }}</option> }
           <option [value]="autre" [selected]="valeur().motif === autre">Autre (préciser)</option>
         </select>
         @if (!motifs().length) {
@@ -66,7 +66,7 @@ export function classementCorps(c: Classement): Record<string, string | null> {
       <label>Sous-motif
         <select [value]="valeur().sous_motif" (change)="choisirSousMotif(champ($event))" [disabled]="!valeur().motif">
           <option value="">{{ valeur().motif ? '— Aucun —' : '— Choisir d’abord un motif —' }}</option>
-          @for (m of sousMotifs(); track m.id) { <option [value]="m.id" [selected]="m.id === valeur().sous_motif">{{ m.libelle }}</option> }
+          @for (m of sousMotifs(); track m.id) { <option [value]="m.id" [selected]="m.id === valeur().sous_motif">{{ lib(m) }}</option> }
           @if (valeur().motif) { <option [value]="autre" [selected]="valeur().sous_motif === autre">Autre (préciser)</option> }
         </select>
       </label>
@@ -89,6 +89,9 @@ export function classementCorps(c: Classement): Record<string, string | null> {
         }
       </div>
     }
+    @if (proposes()) {
+      <p class="bea-rc-hint">« Proposé » : valeur de travail en attente de validation par la Conformité.</p>
+    }
     @if (store.cap('referentiels_gerer')) {
       <p class="bea-rc-hint">Motifs et sous-motifs : <a routerLink="/reclamations/parametres">gérer le référentiel</a> (ajout, modification, activation).</p>
     }
@@ -107,6 +110,18 @@ export class RcClassementComponent {
   readonly sousMotifs = computed(() => {
     const m = this.valeur().motif;
     return m && m !== AUTRE ? this.store.enfants('SOUS_MOTIF', m) : [];
+  });
+
+  /** Valeur non encore validée par la Conformité : signalée, mais utilisable. */
+  lib(r: RefItem): string {
+    return r.a_valider && r.statut_validation !== 'VALIDEE' ? `${r.libelle} (proposé)` : r.libelle;
+  }
+
+  readonly proposes = computed(() => {
+    const v = this.valeur();
+    const ids = [v.type_id, v.motif, v.sous_motif].filter(Boolean);
+    return ['TYPE', 'MOTIF', 'SOUS_MOTIF'].flatMap((d) => this.store.refs(d as Domaine, true))
+      .some((r) => ids.includes(r.id) && r.a_valider && r.statut_validation !== 'VALIDEE');
   });
 
   champ(e: Event): string {

@@ -15,15 +15,35 @@ from app.models import Agence, ReclamationReferentiel, ReclamationUnite, Reclama
 from app.services.permission_service import load_user_permission_codes
 from app.services.reclamations import constantes as C
 from app.services.reclamations.acces import ReclamationsScope, permissions_effectives
-from app.services.reclamations.outils import auditer, cle, code_propre, conflit, erreur, iso, propre, texte_long
+from app.services.reclamations.outils import (
+    auditer,
+    cle,
+    code_propre,
+    conflit,
+    erreur,
+    iso,
+    maintenant,
+    propre,
+    texte_long,
+)
 
 
 # ------------------------------------------------------------------ référentiels
+# Nomenclature soumise à validation de la banque (les canaux sont des listes techniques).
+DOMAINES_A_VALIDER = frozenset({"TYPE", "MOTIF", "SOUS_MOTIF"})
+
+
 def referentiel_dict(r: ReclamationReferentiel, usage: int = 0) -> dict:
+    a_valider = r.domaine in DOMAINES_A_VALIDER
+    statut = r.statut_validation or "PROPOSEE"
     return {
         "id": str(r.id), "domaine": r.domaine, "code": r.code, "libelle": r.libelle,
         "parent_id": str(r.parent_id) if r.parent_id else None, "description": r.description,
         "ordre": r.ordre, "actif": r.actif, "usage": usage,
+        "a_valider": a_valider,
+        "statut_validation": statut if a_valider else None,
+        "statut_validation_libelle": C.VALIDATION_REFERENTIEL_LIBELLES.get(statut) if a_valider else None,
+        "valide_le": iso(r.valide_le) if a_valider else None,
     }
 
 
@@ -38,6 +58,7 @@ async def _usages_referentiels(db: AsyncSession) -> dict[uuid.UUID, int]:
           UNION ALL SELECT canal_envoi_id, count(*) FROM reclamation_reponses WHERE canal_envoi_id IS NOT NULL GROUP BY 1
           UNION ALL SELECT type_id, count(*) FROM reclamation_regles_delai WHERE type_id IS NOT NULL GROUP BY 1
           UNION ALL SELECT motif_id, count(*) FROM reclamation_regles_delai WHERE motif_id IS NOT NULL GROUP BY 1
+          UNION ALL SELECT sous_motif_id, count(*) FROM reclamation_regles_delai WHERE sous_motif_id IS NOT NULL GROUP BY 1
           UNION ALL SELECT parent_id, count(*) FROM reclamation_referentiels WHERE parent_id IS NOT NULL GROUP BY 1
         ) u GROUP BY id
         """
@@ -126,6 +147,9 @@ async def modifier_referentiel(db: AsyncSession, s: ReclamationsScope, rid: uuid
         raise erreur("Libellé obligatoire", "LIBELLE_OBLIGATOIRE")
     code = code_propre(data["code"]) if "code" in data and data["code"] is not None else r.code
     await _verifier_unicite(db, r.domaine, r.parent_id, libelle, code if code != r.code else None, exclure=r.id)
+    if libelle != r.libelle and r.statut_validation == "VALIDEE":
+        # Un libellé validé qui change redevient une proposition : la banque n'a pas validé le nouveau.
+        r.statut_validation, r.valide_par_id, r.valide_le = "PROPOSEE", None, None
     r.libelle, r.cle, r.code = libelle, cle(libelle), code
     if "description" in data and data["description"] is not None:
         r.description = texte_long(data["description"])
@@ -142,6 +166,37 @@ async def modifier_referentiel(db: AsyncSession, s: ReclamationsScope, rid: uuid
     apres = referentiel_dict(r)
     await auditer(db, s, "reclamations.referentiel.update", "reclamation_referentiel", r.id,
                   before=avant, after=apres)
+    return apres
+
+
+async def valider_referentiel(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data: dict) -> dict:
+    """Validation (ou retour en proposition) d'un type, motif ou sous-motif par la banque."""
+    s.exiger("reclamations.references.validate")
+    r = await _referentiel(db, rid)
+    if r.domaine not in DOMAINES_A_VALIDER:
+        raise erreur("Ce référentiel n'est pas soumis à validation", "VALIDATION_NON_APPLICABLE")
+    statut = data["statut_validation"]
+    avant = referentiel_dict(r)
+    if statut == "VALIDEE":
+        if r.parent_id:
+            parent = await _referentiel(db, r.parent_id)
+            if parent.statut_validation != "VALIDEE":
+                raise conflit(f"Validez d'abord « {parent.libelle} » ({C.DOMAINE_LIBELLES[parent.domaine].lower()})",
+                              "PARENT_NON_VALIDE")
+        r.valide_par_id, r.valide_le = s.user_id, maintenant()
+    else:
+        enfants = await db.scalar(select(func.count()).where(
+            ReclamationReferentiel.parent_id == r.id, ReclamationReferentiel.statut_validation == "VALIDEE"))
+        if enfants:
+            raise conflit("Des valeurs rattachées sont validées : repassez-les d'abord en proposition",
+                          "ENFANTS_VALIDES")
+        r.valide_par_id, r.valide_le = None, None
+    r.statut_validation = statut
+    r.updated_by_id = s.user_id
+    await db.flush()
+    apres = referentiel_dict(r)
+    await auditer(db, s, "reclamations.referentiel.validate", "reclamation_referentiel", r.id,
+                  before=avant, after={**apres, "commentaire": texte_long(data.get("commentaire"))})
     return apres
 
 

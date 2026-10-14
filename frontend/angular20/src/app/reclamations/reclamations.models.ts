@@ -20,6 +20,11 @@ export interface RefItem {
   ordre: number;
   actif: boolean;
   usage: number;
+  /** Types, motifs, sous-motifs : valeur proposée ou validée par la Conformité. */
+  a_valider?: boolean;
+  statut_validation?: 'PROPOSEE' | 'VALIDEE' | null;
+  statut_validation_libelle?: string | null;
+  valide_le?: string | null;
 }
 
 export interface Unite {
@@ -70,8 +75,8 @@ export type Capacite =
   | 'examiner_retour' | 'envoyer_reponse' | 'refuser'
   | 'annuler' | 'cloturer' | 'rouvrir' | 'archiver' | 'supprimer' | 'documents_voir' | 'documents_deposer'
   | 'documents_telecharger' | 'documents_retirer' | 'reporting_voir' | 'reporting_exporter'
-  | 'referentiels_voir' | 'referentiels_gerer' | 'unites_gerer' | 'delais_gerer' | 'delais_valider'
-  | 'admin';
+  | 'referentiels_voir' | 'referentiels_gerer' | 'referentiels_valider' | 'unites_gerer' | 'delais_gerer'
+  | 'delais_valider' | 'admin';
 
 export interface Acces {
   user_id: string;
@@ -106,6 +111,11 @@ export interface RcConfig {
     validations_regle: CodeLibelle[];
     unites_duree: CodeLibelle[];
     points_depart: CodeLibelle[];
+    points_arrivee: CodeLibelle[];
+    etats_delai: CodeLibelle[];
+    situations_delai: CodeLibelle[];
+    destinataires_alerte: CodeLibelle[];
+    validations_referentiel: CodeLibelle[];
   };
   parametres: { enregistrement_appels_autorise: boolean };
   aujourdhui: string;
@@ -142,6 +152,12 @@ export interface DossierLigne {
   date_cloture: string | null;
   echeance: string | null;
   en_retard: boolean;
+  etat_delai?: string;
+  etat_delai_libelle?: string | null;
+  situation_delai?: string;
+  situation_delai_libelle?: string | null;
+  date_fin_delai?: string | null;
+  jours_restants?: number;
   nb_operations: number;
   montant_total: string | null;
   devise: string;
@@ -222,6 +238,11 @@ export interface Dossier extends Omit<DossierLigne, 'suppression'> {
   dates: Record<string, string | null>;
   echeance_initiale: string | null;
   regle_delai_id: string | null;
+  date_alerte?: string | null;
+  regle_delai?: {
+    id: string; libelle: string; duree: number; unite_duree: string; unite_duree_libelle: string | null;
+    point_depart_libelle: string | null; point_arrivee_libelle: string | null; validee: boolean;
+  } | null;
   gestionnaire: string | null;
   responsable_traitement: string | null;
   motif_refus: string | null;
@@ -342,13 +363,20 @@ export interface TableauBord {
   cloturees_30j: number;
   echeances_7j: number;
   a_risque: DossierLigne[];
+  echeances_proches: number;
   performance: {
     cloturees: number;
     delai_moyen_jours: number | null;
     dans_delai: number;
     hors_delai: number;
     taux_dans_delai: number | null;
+    delai_cloture_jours: number | null;
+    delai_cloture_n: number;
   };
+  pilotage: Pilotage;
+  /** Paramètres de liste reproduisant chaque KPI cliquable. */
+  liens: Record<string, Record<string, string | null>>;
+  filtres: { client_agence_id: string | null; date_debut: string | null; date_fin: string | null };
   anciennete: Compteur[];
   tendance: { mois: string; libelle: string; recues: number; cloturees: number }[];
   resultats: Compteur[];
@@ -370,6 +398,85 @@ export interface TableauBord {
   dossiers_retard: DossierLigne[];
 }
 
+export interface IndicateurDelai {
+  code: string;
+  libelle: string;
+  definition: string;
+  unite: string;
+  unite_duree: string;
+  termines: { n: number; moyenne_heures: number | null; moyenne_jours: number | null };
+  anomalies: { n: number; references: string[] };
+  en_cours: { n: number; age_moyen_heures: number | null; age_moyen_jours: number | null };
+}
+
+export interface Reouverture {
+  cloturees: number;
+  reouvertes: number;
+  taux: number | null;
+  nb_reouvertures: number;
+  dossiers_reouverts: number;
+  dossiers_plusieurs_reouvertures: number;
+  formule: string;
+}
+
+export interface PerformanceService {
+  unite_id: string;
+  libelle: string;
+  affectes: number;
+  en_cours: number;
+  retournes: number;
+  en_retard: number;
+  delai_moyen_heures: number | null;
+  delai_moyen_jours: number | null;
+  age_moyen_heures: number | null;
+  age_moyen_jours: number | null;
+}
+
+export interface Pilotage {
+  periode: { debut: string | null; fin: string | null };
+  delais: IndicateurDelai[];
+  reouverture: Reouverture;
+  services: PerformanceService[];
+}
+
+export interface LigneComparaison {
+  code: string;
+  libelle: string;
+  unite: string;
+  a: number | string | null;
+  b: number | string | null;
+  ecart: number | null;
+  variation: number | null;
+  favorable: boolean | null;
+  sens: 'hausse_favorable' | 'baisse_favorable' | null;
+  indicateur: string | null;
+}
+
+export interface Comparaison {
+  a: { debut: string; fin: string; jours: number; valeurs: Record<string, unknown> };
+  b: { debut: string; fin: string; jours: number; valeurs: Record<string, unknown> };
+  lignes: LigneComparaison[];
+  avertissements: string[];
+}
+
+export interface AlertesDelais {
+  retards: DossierLigne[];
+  alertes: DossierLigne[];
+  sans_delai: DossierLigne[];
+  nb_retards: number;
+  nb_alertes: number;
+  nb_sans_delai: number;
+  sans_delai_par_etat: { etat: string; libelle: string; n: number }[];
+}
+
+export interface HistoriqueRegle {
+  versions: RegleDelai[];
+  evenements: {
+    id: string; action: string; regle_id: string; le: string | null; auteur: string | null;
+    avant: Record<string, unknown> | null; apres: Record<string, unknown> | null;
+  }[];
+}
+
 export interface ColonneCircuit {
   etape: string;
   libelle: string;
@@ -383,23 +490,37 @@ export interface RegleDelai {
   type: string | null;
   motif_id: string | null;
   motif: string | null;
+  sous_motif_id: string | null;
+  sous_motif: string | null;
   priorite: string | null;
   priorite_libelle: string | null;
+  specificite: number;
   duree: number;
   unite_duree: string;
   unite_duree_libelle: string;
   point_depart: string;
   point_depart_libelle: string;
+  point_arrivee: string;
+  point_arrivee_libelle: string;
   seuil_alerte: number | null;
   delai_service: number | null;
   neutraliser_suspension: boolean;
+  destinataires: string[];
+  destinataires_libelles: string[];
   date_effet: string | null;
   date_fin: string | null;
   statut_validation: string;
   statut_validation_libelle: string;
+  valide_le: string | null;
   reglementaire: boolean;
+  etat_effectif: string;
+  etat_effectif_libelle: string;
   commentaire: string | null;
   actif: boolean;
+  remplace_id: string | null;
+  conflits?: string[];
+  remplacee_par?: string | null;
+  nb_dossiers?: number;
 }
 
 export interface Page<T> {
@@ -407,6 +528,7 @@ export interface Page<T> {
   total: number;
   page: number;
   taille: number;
+  totaux?: { nb_operations: number; dossiers_avec_operations: number; montant_total: string; devise: string };
 }
 
 export interface Evenement {

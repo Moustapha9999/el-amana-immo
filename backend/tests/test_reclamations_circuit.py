@@ -333,7 +333,13 @@ async def test_regle_delai_calcule_echeance(db):
         "date_effet": date(2020, 1, 1),
     })
     assert regle["statut_validation"] == "A_VALIDER"
+    # Règle non validée : jamais appliquée, l'état du délai le dit explicitement.
     d = await dossiers.creer(db, sr, await _saisie(
         db, unite_sr.id, type_id=uuid.UUID(t["id"]),
         date_premiere_reception=datetime.now(UTC) - timedelta(days=1)))
-    assert d["echeance"] is not None
+    assert d["echeance"] is None and d["etat_delai"] == "EN_ATTENTE_VALIDATION"
+    await delais.valider_regle(db, sr, uuid.UUID(regle["id"]), {"statut_validation": "VALIDEE"})
+    d = await dossiers.creer(db, sr, await _saisie(
+        db, unite_sr.id, type_id=uuid.UUID(t["id"]),
+        date_premiere_reception=datetime.now(UTC) - timedelta(days=1)))
+    assert d["echeance"] is not None and d["etat_delai"] == "CALCULE"

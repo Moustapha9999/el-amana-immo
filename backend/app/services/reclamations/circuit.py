@@ -21,7 +21,7 @@ from app.models import Reclamation, ReclamationAffectation, ReclamationDocument,
 from app.services.reclamations import constantes as C
 from app.services.reclamations import suppression
 from app.services.reclamations.acces import ReclamationsScope
-from app.services.reclamations.delais import appliquer, echeance_service
+from app.services.reclamations.delais import actualiser, appliquer, echeance_service
 from app.services.reclamations.dossiers import (
     Contexte,
     _evenement,
@@ -73,6 +73,7 @@ async def _appliquer(db: AsyncSession, s: ReclamationsScope, r: Reclamation, *,
     r.statut, r.etape = statut, C.ETAPE_DU_STATUT[statut]
     r.revision += 1
     r.updated_by_id = s.user_id
+    await actualiser(db, r)
     ev = _evenement(r, s, type_evenement, statut_avant=avant_s, etape_avant=avant_e,
                     unite_id=unite_id, commentaire=commentaire, donnees=donnees or {})
     ev.affectation_id = affectation_id

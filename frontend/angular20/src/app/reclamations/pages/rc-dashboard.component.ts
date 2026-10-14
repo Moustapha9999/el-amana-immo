@@ -6,7 +6,9 @@ import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
 import { Compteur, TableauBord, dateFr, montantFr, tonePriorite, toneStatut } from '../reclamations.models';
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
+import { RcComparaisonComponent } from '../shared/rc-comparaison.component';
 import { RcExportComponent } from '../shared/rc-export.component';
+import { RcPilotageComponent } from '../shared/rc-pilotage.component';
 
 type Periode = 'tout' | '30' | '90' | '365' | 'annee';
 
@@ -24,7 +26,7 @@ const DUREE_ANIMATION = 900;
 @Component({
   selector: 'bea-rc-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule, RouterLink, ReclamationsUiComponent, RcExportComponent],
+  imports: [MatIconModule, RouterLink, ReclamationsUiComponent, RcExportComponent, RcPilotageComponent, RcComparaisonComponent],
   styleUrl: './rc-dashboard.component.css',
   template: `
     <bea-rc-styles />
@@ -44,10 +46,19 @@ const DUREE_ANIMATION = 900;
             <mat-icon>refresh</mat-icon>
           </button>
         </div>
-        <div class="rcd-periodes" role="tablist" aria-label="Période de réception">
-          @for (p of periodes; track p.code) {
-            <button type="button" role="tab" [attr.aria-selected]="periode() === p.code" [class.is-on]="periode() === p.code" (click)="choisirPeriode(p.code)">{{ p.libelle }}</button>
-          }
+        <div class="rcd-filtres">
+          <div class="rcd-periodes" role="tablist" aria-label="Période">
+            @for (p of periodes; track p.code) {
+              <button type="button" role="tab" [attr.aria-selected]="periode() === p.code" [class.is-on]="periode() === p.code" (click)="choisirPeriode(p.code)">{{ p.libelle }}</button>
+            }
+          </div>
+          <label class="rcd-agence"><mat-icon>store</mat-icon>
+            <select [value]="agence()" (change)="choisirAgence($any($event.target).value)" aria-label="Agence du client">
+              <option value="">Toutes les agences</option>
+              <option value="AUCUNE">Sans agence</option>
+              @for (a of store.config()?.agences ?? []; track a.id) { <option [value]="a.id">{{ a.code }} — {{ a.libelle }}</option> }
+            </select>
+          </label>
         </div>
       </header>
 
@@ -58,43 +69,63 @@ const DUREE_ANIMATION = 900;
         </div>
       } @else if (data(); as d) {
         <div class="rcd-kpis" [class.is-loading]="chargement()">
-          <a class="rcd-kpi" style="--i: 0" routerLink="/reclamations/dossiers">
+          <a class="rcd-kpi" style="--i: 0" routerLink="/reclamations/dossiers" [queryParams]="kpi('total')">
             <span class="rcd-kpi__ico"><mat-icon>forum</mat-icon></span>
             <p>Total</p><strong>{{ n(d.total) }}</strong><small>dans le périmètre</small>
           </a>
-          <a class="rcd-kpi" style="--i: 1" routerLink="/reclamations/dossiers" [queryParams]="{ ouvertes: 'true' }">
+          <a class="rcd-kpi" style="--i: 1" routerLink="/reclamations/dossiers" [queryParams]="kpi('ouvertes')">
             <span class="rcd-kpi__ico"><mat-icon>pending_actions</mat-icon></span>
             <p>Ouvertes</p><strong>{{ n(d.ouvertes) }}</strong><small>{{ pct(d.ouvertes, d.total) }} % du total</small>
           </a>
-          <a class="rcd-kpi" style="--i: 2" data-tone="danger" routerLink="/reclamations/dossiers" [queryParams]="{ en_retard: 'true' }">
+          <a class="rcd-kpi" style="--i: 2" data-tone="danger" routerLink="/reclamations/dossiers" [queryParams]="kpi('retards')">
             <span class="rcd-kpi__ico" [class.is-pulse]="d.retards > 0"><mat-icon>timer_off</mat-icon></span>
             <p>En retard</p><strong>{{ n(d.retards) }}</strong><small>échéance dépassée</small>
           </a>
-          <a class="rcd-kpi" style="--i: 3" data-tone="warn" routerLink="/reclamations/delais">
+          <a class="rcd-kpi" style="--i: 3" data-tone="warn" routerLink="/reclamations/dossiers" [queryParams]="kpi('echeances_proches')">
             <span class="rcd-kpi__ico"><mat-icon>hourglass_bottom</mat-icon></span>
-            <p>Échéance ≤ 7 j</p><strong>{{ n(d.echeances_7j) }}</strong><small>{{ d.sans_echeance }} sans échéance</small>
+            <p>Échéance proche</p><strong>{{ n(d.echeances_proches) }}</strong><small>seuil d’alerte atteint</small>
           </a>
-          <div class="rcd-kpi" style="--i: 4">
+          <a class="rcd-kpi" style="--i: 4" routerLink="/reclamations/dossiers" [queryParams]="kpi('sans_delai')">
+            <span class="rcd-kpi__ico"><mat-icon>schedule</mat-icon></span>
+            <p>Sans délai</p><strong>{{ n(d.sans_echeance) }}</strong><small>non configuré, en attente ou conflit</small>
+          </a>
+          <a class="rcd-kpi" style="--i: 5" routerLink="/reclamations/dossiers" [queryParams]="kpi('volume_30j')">
             <span class="rcd-kpi__ico"><mat-icon>calendar_month</mat-icon></span>
             <p>Reçues 30 j</p><strong>{{ n(d.volume_30j) }}</strong>
             <small class="rcd-delta" [attr.data-sens]="delta(d).sens"><mat-icon>{{ delta(d).icone }}</mat-icon>{{ delta(d).texte }}</small>
-          </div>
-          <div class="rcd-kpi" style="--i: 5" data-tone="ok">
+          </a>
+          <a class="rcd-kpi" style="--i: 6" data-tone="ok" routerLink="/reclamations/dossiers" [queryParams]="kpi('delai_moyen')">
             <span class="rcd-kpi__ico"><mat-icon>task_alt</mat-icon></span>
-            <p>Délai moyen</p>
-            <strong>{{ d.performance.delai_moyen_jours === null ? '—' : d.performance.delai_moyen_jours + ' j' }}</strong>
-            <small>{{ d.cloturees_30j }} clôturée(s) sur 30 j</small>
-          </div>
-          <div class="rcd-kpi" style="--i: 6">
+            <p>Délai moyen de clôture</p>
+            <strong>{{ d.performance.delai_cloture_jours === null ? 'N/A' : d.performance.delai_cloture_jours + ' j' }}</strong>
+            <small>sur {{ d.performance.delai_cloture_n }} dossier(s) clôturé(s)</small>
+          </a>
+          <a class="rcd-kpi" style="--i: 7" routerLink="/reclamations/dossiers" [queryParams]="kpi('operations')">
             <span class="rcd-kpi__ico"><mat-icon>receipt_long</mat-icon></span>
             <p>Opérations</p><strong>{{ n(d.nb_operations) }}</strong><small>dans {{ d.dossiers_avec_operations }} dossier(s)</small>
-          </div>
-          <div class="rcd-kpi" style="--i: 7">
+          </a>
+          <a class="rcd-kpi" style="--i: 8" routerLink="/reclamations/dossiers" [queryParams]="kpi('operations')">
             <span class="rcd-kpi__ico"><mat-icon>payments</mat-icon></span>
             <p>Montant total</p><strong class="rcd-kpi__montant">{{ montant(d.montant_total, d.devise) }}</strong>
             <small>chaque opération comptée une fois</small>
-          </div>
+          </a>
         </div>
+
+        <section class="bea-mg__panel rcd-card rcd-bloc" style="--i: 9">
+          <div class="bea-mg__panel-top"><h2><mat-icon>timer</mat-icon> Délais de traitement, réouverture et services</h2>
+            <bea-rc-export cible="pilotage" [filtres]="base()" />
+          </div>
+          <bea-rc-pilotage [pilotage]="d.pilotage" [filtres]="base()" />
+        </section>
+
+        @if (store.cap('reporting_voir')) {
+          <section class="bea-mg__panel rcd-card rcd-bloc" style="--i: 10">
+            <div class="bea-mg__panel-top"><h2><mat-icon>compare_arrows</mat-icon> Comparer deux périodes</h2>
+              <small class="bea-rc-hint">{{ agenceLibelle() }}</small>
+            </div>
+            <bea-rc-comparaison [filtres]="base()" />
+          </section>
+        }
 
         <div class="rcd-row rcd-row--chart">
           <section class="bea-mg__panel rcd-card" style="--i: 8">
@@ -279,6 +310,7 @@ export class RcDashboardComponent implements OnInit {
   readonly erreur = signal(false);
   readonly chargement = signal(false);
   readonly periode = signal<Periode>('tout');
+  readonly agence = signal('');
   /** Avancement 0 → 1 de l'animation d'entrée (compteurs, barres, anneau). */
   private readonly progres = signal(1);
   readonly pret = computed(() => this.progres() > 0);
@@ -293,11 +325,24 @@ export class RcDashboardComponent implements OnInit {
     this.charger();
   }
 
+  /** Filtres de la page repris par chaque lien vers la liste (agence, y compris « sans agence », et période). */
+  readonly base = computed<Record<string, string | null>>(() => ({
+    client_agence_id: this.agence() || null,
+    date_debut: this.dateDebut(this.periode()),
+  }));
+
+  readonly agenceLibelle = computed(() => {
+    const a = this.agence();
+    if (!a) return 'Toutes les agences';
+    if (a === 'AUCUNE') return 'Dossiers sans agence';
+    const ag = this.store.config()?.agences.find((x) => x.id === a);
+    return ag ? `Agence ${ag.code} — ${ag.libelle}` : '';
+  });
+
   charger(): void {
     this.erreur.set(false);
     this.chargement.set(true);
-    const debut = this.dateDebut(this.periode());
-    this.rc.tableauDeBord(debut ? { date_debut: debut } : {}).subscribe({
+    this.rc.tableauDeBord(this.base()).subscribe({
       next: (d) => {
         this.data.set(d);
         this.chargement.set(false);
@@ -315,6 +360,22 @@ export class RcDashboardComponent implements OnInit {
     if (p === this.periode()) return;
     this.periode.set(p);
     this.charger();
+  }
+
+  choisirAgence(a: string): void {
+    if (a === this.agence()) return;
+    this.agence.set(a);
+    this.charger();
+  }
+
+  /** Paramètres de liste d'un KPI : fournis par le serveur (même condition que le calcul) + agence. */
+  kpi(code: string): Record<string, string | null> {
+    const l = this.data()?.liens[code] ?? {};
+    return { ...l, client_agence_id: this.agence() || null };
+  }
+
+  private avecBase(params: Record<string, string>): Record<string, string | null> {
+    return { ...this.base(), ...params };
   }
 
   private dateDebut(p: Periode): string | null {
@@ -397,11 +458,11 @@ export class RcDashboardComponent implements OnInit {
     if (!d) return [];
     return [
       { titre: 'Par statut', ton: 'statut', items: d.statuts, max: this.maxDe(d.statuts),
-        filtre: (g: Compteur) => ({ statut: g.code }) },
+        filtre: (g: Compteur) => this.avecBase({ statut: g.code ?? '' }) },
       { titre: 'Par étape du circuit', ton: 'etape', items: d.etapes, max: this.maxDe(d.etapes),
-        filtre: (g: Compteur) => ({ etape: g.code }) },
+        filtre: (g: Compteur) => this.avecBase({ etape: g.code ?? '' }) },
       { titre: 'Par priorité', ton: 'priorite', items: d.priorites, max: this.maxDe(d.priorites),
-        filtre: (g: Compteur) => ({ priorite: g.code }) },
+        filtre: (g: Compteur) => this.avecBase({ priorite: g.code ?? '' }) },
     ];
   });
 
@@ -420,20 +481,20 @@ export class RcDashboardComponent implements OnInit {
     const d = this.data();
     if (!d) return [];
     return [
-      { titre: 'Échéance dans 7 jours', icone: 'hourglass_bottom', ton: 'warn', items: d.a_risque, priorite: false,
-        lien: '/reclamations/delais', params: {}, lienLibelle: 'Délais et alertes',
+      { titre: 'Échéance proche', icone: 'hourglass_bottom', ton: 'warn', items: d.a_risque, priorite: false,
+        lien: '/reclamations/dossiers', params: this.kpi('echeances_proches'), lienLibelle: 'Toutes les échéances proches',
         vide: 'Aucune échéance proche.', videIcone: 'event_available' },
       { titre: 'Dossiers en retard', icone: 'timer_off', ton: 'danger', items: d.dossiers_retard, priorite: false,
-        lien: '/reclamations/dossiers', params: { en_retard: 'true' }, lienLibelle: 'Tous les retards',
+        lien: '/reclamations/dossiers', params: this.kpi('retards'), lienLibelle: 'Tous les retards',
         vide: 'Aucun dossier ouvert en retard.', videIcone: 'verified' },
       { titre: 'Derniers dossiers', icone: 'history', ton: '', items: d.recents, priorite: true,
-        lien: '/reclamations/dossiers', params: {}, lienLibelle: 'Toutes les réclamations',
+        lien: '/reclamations/dossiers', params: this.kpi('total'), lienLibelle: 'Toutes les réclamations',
         vide: 'Aucune réclamation dans votre périmètre.', videIcone: 'inbox' },
     ];
   });
 
-  filtre(param: string, c: Compteur): Record<string, string> {
-    return { [param]: c.id ?? '' };
+  filtre(param: string, c: Compteur): Record<string, string | null> {
+    return this.avecBase({ [param]: c.id ?? '' });
   }
 
   montant(v: string | null, devise: string): string {

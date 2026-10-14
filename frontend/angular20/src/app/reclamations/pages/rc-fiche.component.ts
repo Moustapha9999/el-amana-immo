@@ -228,7 +228,12 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
                     <dt>Canal</dt><dd>{{ d.canal_ref?.libelle ?? '—' }}</dd>
                     <dt>Point de réception</dt><dd>{{ d.unite_reception_ref?.libelle ?? '—' }}</dd>
                     <dt>Échéance</dt>
-                    <dd [class.bea-rc-late]="d.en_retard">{{ d.echeance ? date(d.echeance) + (d.en_retard ? ' — dépassée' : '') : 'Aucune règle de délai applicable' }}</dd>
+                    <dd [class.bea-rc-late]="d.en_retard">
+                      {{ d.echeance ? date(d.echeance, true) : (d.etat_delai_libelle || 'Délai non configuré') }}
+                      @if (d.echeance && d.situation_delai_libelle) { <small class="bea-ct-sub">{{ d.situation_delai_libelle }}</small> }
+                      @if (d.regle_delai; as g) { <small class="bea-ct-sub">Règle « {{ g.libelle }} » : {{ g.duree }} {{ g.unite_duree_libelle }}, {{ g.point_depart_libelle }} → {{ g.point_arrivee_libelle }}</small> }
+                      @if (d.date_alerte && !d.termine) { <small class="bea-ct-sub">Alerte à partir du {{ date(d.date_alerte, true) }}</small> }
+                    </dd>
                   </dl>
                 </section>
                 <section class="bea-mg__panel">

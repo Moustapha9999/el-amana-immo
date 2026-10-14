@@ -16,6 +16,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import auth_http_error, get_current_user
+from app.core.exceptions import AppError
 from app.db.session import get_db
 from app.models import User
 from app.schemas.reclamations import (
@@ -36,6 +37,7 @@ from app.schemas.reclamations import (
     ReferentielPatch,
     RegleDelaiCreate,
     RegleDelaiPatch,
+    RegleDelaiVersion,
     ReponseEnvoyeeIn,
     RestaurerIn,
     RetournerIn,
@@ -43,6 +45,7 @@ from app.schemas.reclamations import (
     SupprimerIn,
     UniteCreate,
     UnitePatch,
+    ValidationReferentielIn,
     ValidationRegleIn,
 )
 from app.services.reclamations import constantes as C
@@ -123,6 +126,11 @@ async def config(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = 
             "validations_regle": _libelles(C.VALIDATION_REGLE_LIBELLES),
             "unites_duree": _libelles(C.UNITE_DUREE_LIBELLES),
             "points_depart": _libelles(C.POINT_DEPART_LIBELLES),
+            "points_arrivee": _libelles(C.POINT_ARRIVEE_LIBELLES),
+            "etats_delai": _libelles(C.ETAT_DELAI_LIBELLES),
+            "situations_delai": _libelles(C.SITUATION_DELAI_LIBELLES),
+            "destinataires_alerte": _libelles(C.DESTINATAIRES_ALERTE),
+            "validations_referentiel": _libelles(C.VALIDATION_REFERENTIEL_LIBELLES),
         },
         "parametres": {"enregistrement_appels_autorise": await dossiers.enregistrement_autorise(db)},
         "aujourdhui": date.today().isoformat(),
@@ -147,6 +155,12 @@ async def creer_referentiel(body: ReferentielCreate, s: ReclamationsScope = Depe
 async def modifier_referentiel(rid: uuid.UUID, body: ReferentielPatch, s: ReclamationsScope = Depends(scope(
         "reclamations.references.manage")), db: AsyncSession = Depends(get_db)) -> dict:
     return await organisation.modifier_referentiel(db, s, rid, body.model_dump(exclude_unset=True))
+
+
+@router.post("/referentiels/{rid}/validation")
+async def valider_referentiel(rid: uuid.UUID, body: ValidationReferentielIn, s: ReclamationsScope = Depends(scope(
+        "reclamations.references.validate")), db: AsyncSession = Depends(get_db)) -> dict:
+    return await organisation.valider_referentiel(db, s, rid, body.model_dump())
 
 
 @router.delete("/referentiels/{rid}", status_code=204)
@@ -224,7 +238,7 @@ def filtres_dossiers(
     priorite: str | None = None,
     client_categorie: str | None = None,
     client_racine: str | None = Query(None, max_length=6),
-    client_agence_id: uuid.UUID | None = None,
+    client_agence_id: uuid.UUID | Literal["AUCUNE"] | None = None,
     unite_reception_id: uuid.UUID | None = None,
     unite_concernee_id: uuid.UUID | None = None,
     unite_traitement_id: uuid.UUID | None = None,
@@ -236,8 +250,19 @@ def filtres_dossiers(
     sans_echeance: bool = False,
     archivees: bool | None = None,
     corbeille: bool = False,
+    situation_delai: Literal["DANS_DELAI", "ECHEANCE_PROCHE", "EN_RETARD", "RESPECTE", "DEPASSE",
+                             "NON_CALCULABLE"] | None = None,
+    etat_delai: Literal["CALCULE", "NON_CONFIGURE", "EN_ATTENTE_VALIDATION", "CONFLIT", "SANS_DEPART"] | None = None,
+    indicateur: str | None = Query(None, max_length=60, pattern=r"^[a-z_]+$"),
+    kpi_debut: date | None = None,
+    kpi_fin: date | None = None,
+    kpi_unite_id: uuid.UUID | None = None,
 ) -> dict:
-    """Filtres communs à la liste et aux exports (``corbeille`` : liste seulement, dossiers supprimés)."""
+    """Filtres communs à la liste, au tableau de bord et aux exports.
+
+    ``corbeille`` : liste seulement ; ``indicateur`` + ``kpi_*`` : dossiers d'un KPI cliqué."""
+    if date_debut and date_fin and date_fin < date_debut:
+        raise AppError("La date de fin précède la date de début", 422, code="PERIODE_INVALIDE")
     return {
         "corbeille": corbeille,
         "q": q, "statut": statut, "groupe": groupe, "etape": etape, "type_id": type_id, "motif_id": motif_id,
@@ -247,6 +272,8 @@ def filtres_dossiers(
         "unite_traitement_id": unite_traitement_id,
         "gestionnaire_id": gestionnaire_id, "date_debut": date_debut, "date_fin": date_fin, "ouvertes": ouvertes,
         "en_retard": en_retard, "sans_echeance": sans_echeance, "archivees": archivees,
+        "situation_delai": situation_delai, "etat_delai": etat_delai,
+        "indicateur": indicateur, "kpi_debut": kpi_debut, "kpi_fin": kpi_fin, "kpi_unite_id": kpi_unite_id,
     }
 
 
@@ -448,6 +475,25 @@ async def valider_regle(rid: uuid.UUID, body: ValidationRegleIn,
     return await delais.valider_regle(db, s, rid, body.model_dump())
 
 
+@router.post("/regles-delai/{rid}/versions", status_code=201)
+async def versionner_regle(rid: uuid.UUID, body: RegleDelaiVersion,
+                           s: ReclamationsScope = Depends(scope("reclamations.delais.manage")),
+                           db: AsyncSession = Depends(get_db)) -> dict:
+    return await delais.versionner_regle(db, s, rid, body.model_dump(exclude_unset=True))
+
+
+@router.get("/regles-delai/{rid}/historique")
+async def historique_regle(rid: uuid.UUID, s: ReclamationsScope = Depends(scope(
+        "reclamations.delais.manage", "reclamations.delais.validate")), db: AsyncSession = Depends(get_db)) -> dict:
+    return await delais.historique_regle(db, rid)
+
+
+@router.post("/delais/appliquer")
+async def appliquer_delais(s: ReclamationsScope = Depends(scope("reclamations.delais.manage")),
+                           db: AsyncSession = Depends(get_db)) -> dict:
+    return await delais.appliquer_sans_delai(db, s)
+
+
 @router.get("/jours-feries")
 async def lister_feries(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = Depends(get_db)) -> list[dict]:
     return await delais.lister_feries(db)
@@ -473,9 +519,56 @@ async def alertes(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession =
 
 # ------------------------------------------------------------------ pilotage
 @router.get("/tableau-de-bord")
-async def tableau_de_bord(date_debut: date | None = None, date_fin: date | None = None,
+async def tableau_de_bord(filtres: dict = Depends(filtres_dossiers),
                           s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = Depends(get_db)) -> dict:
-    return await reporting.tableau_de_bord(db, s, {"date_debut": date_debut, "date_fin": date_fin})
+    return await reporting.tableau_de_bord(db, s, _sans_liste(filtres))
+
+
+def _sans_liste(filtres: dict) -> dict:
+    """Le tableau de bord et les rapports ignorent les filtres propres à la liste (corbeille, KPI cliqué)."""
+    return {k: v for k, v in filtres.items()
+            if k not in ("corbeille", "indicateur", "kpi_debut", "kpi_fin", "kpi_unite_id")}
+
+
+def _periodes(a_debut: date, a_fin: date, b_debut: date, b_fin: date):
+    from app.services.reclamations.indicateurs import Periode
+
+    return Periode.de(a_debut, a_fin), Periode.de(b_debut, b_fin)
+
+
+@router.get("/comparaison")
+async def comparaison(a_debut: date, a_fin: date, b_debut: date, b_fin: date,
+                      filtres: dict = Depends(filtres_dossiers),
+                      s: ReclamationsScope = Depends(scope("reclamations.reporting.view")),
+                      db: AsyncSession = Depends(get_db)) -> dict:
+    from app.services.reclamations import indicateurs
+
+    pa, pb = _periodes(a_debut, a_fin, b_debut, b_fin)
+    return await indicateurs.comparaison(db, s, _sans_liste(filtres), pa, pb)
+
+
+@router.get("/export/pilotage")
+async def exporter_pilotage(format: Literal["xlsx", "pdf"] = "xlsx", filtres: dict = Depends(filtres_dossiers),
+                            s: ReclamationsScope = Depends(scope("reclamations.reporting.export")),
+                            db: AsyncSession = Depends(get_db)) -> Response:
+    contenu = await reporting.exporter_pilotage(db, s, _sans_liste(filtres), format=format)
+    return _export(contenu, f"pilotage-reclamations-{date.today().isoformat()}", format)
+
+
+@router.get("/export/comparaison")
+async def exporter_comparaison(a_debut: date, a_fin: date, b_debut: date, b_fin: date,
+                               format: Literal["xlsx", "pdf"] = "xlsx", filtres: dict = Depends(filtres_dossiers),
+                               s: ReclamationsScope = Depends(scope("reclamations.reporting.export")),
+                               db: AsyncSession = Depends(get_db)) -> Response:
+    pa, pb = _periodes(a_debut, a_fin, b_debut, b_fin)
+    contenu = await reporting.exporter_comparaison(db, s, _sans_liste(filtres), pa, pb, format=format)
+    return _export(contenu, f"comparaison-reclamations-{a_debut}-{b_debut}", format)
+
+
+def _export(contenu: bytes, base: str, format: str) -> Response:
+    if format == "pdf":
+        return _fichier(contenu, f"{base}.pdf", "application/pdf")
+    return _fichier(contenu, f"{base}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @router.get("/circuit")

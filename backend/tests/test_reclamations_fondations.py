@@ -75,11 +75,17 @@ def test_profils_reclamations():
         # Pièces clients : jamais via la GED générique / Archive Générale.
         assert not any(p.startswith("ged.") for p in accordees), role
     assert set(ROLE_PERMISSIONS["reclamations.admin"]) == perms
-    # Clôture et validation de la réponse : Service Réclamations (responsable) uniquement.
+    # Clôture : Service Réclamations (responsable) uniquement.
     for role in ("reclamations.agent_traitement", "reclamations.responsable_service", "reclamations.agent_sr"):
         assert "reclamations.close" not in ROLE_PERMISSIONS[role]
-        assert "reclamations.response.validate" not in ROLE_PERMISSIONS[role]
     assert "reclamations.close" in ROLE_PERMISSIONS["reclamations.responsable_sr"]
+    # Permissions retirées (migration 20261014_reclamations_05) : aucune étape du circuit ne les exige.
+    assert not perms & {"reclamations.suspend", "reclamations.response.prepare",
+                        "reclamations.response.validate", "reclamations.audit.view"}
+    # Validation de la nomenclature : réservée à l'administration du module.
+    assert "reclamations.references.validate" in perms
+    assert not any("reclamations.references.validate" in ROLE_PERMISSIONS[r] for r in ROLES
+                   if r != "reclamations.admin")
     # Les services destinataires ne voient que leurs dossiers.
     for role in ("reclamations.point_reception", "reclamations.agent_traitement",
                  "reclamations.responsable_service"):

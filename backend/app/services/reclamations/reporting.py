@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -17,8 +17,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Reclamation, ReclamationOperation
 from app.services.reclamations import constantes as C
+from app.services.reclamations import echeances as E
+from app.services.reclamations import indicateurs as I
 from app.services.reclamations.acces import ReclamationsScope
-from app.services.reclamations.dossiers import Contexte, _filtres, libelle_motif, libelle_sous_motif, ligne
+from app.services.reclamations.dossiers import (
+    AUCUNE,
+    Contexte,
+    _filtres,
+    libelle_motif,
+    libelle_sous_motif,
+    ligne,
+)
 from app.services.reclamations.outils import maintenant
 from app.services.reporting_export import build_styled_pdf, build_styled_workbook_multi, format_period_label
 
@@ -36,19 +45,22 @@ async def _resumes(db: AsyncSession, ids_query) -> dict[uuid.UUID, tuple[int, De
 
 
 def _repartition(rows: list[Reclamation], resumes: dict, cle: Callable[[Reclamation], object],
-                 libelle: Callable[[object], str | None]) -> list[dict]:
+                 libelle: Callable[[object], str | None], *, aucun: str | None = None) -> list[dict]:
+    """``aucun`` : libellé de la ligne regroupant les dossiers sans valeur (sinon ignorés)."""
     acc: dict[object, list] = {}
     for r in rows:
         k = cle(r)
         if k is None:
-            continue
+            if aucun is None:
+                continue
+            k = AUCUNE
         n_ops, montant = resumes.get(r.id, (0, None))
         a = acc.setdefault(k, [0, 0, ZERO])
         a[0] += 1
         a[1] += n_ops
         a[2] += montant or ZERO
-    out = [{"id": str(k), "libelle": libelle(k) or "—", "n": n, "nb_operations": nops, "montant": str(m)}
-           for k, (n, nops, m) in acc.items()]
+    out = [{"id": str(k), "libelle": (aucun if k == AUCUNE else libelle(k)) or "—", "n": n,
+            "nb_operations": nops, "montant": str(m)} for k, (n, nops, m) in acc.items()]
     return sorted(out, key=lambda x: (-x["n"], x["libelle"]))
 
 
@@ -59,11 +71,12 @@ def _compter(valeurs) -> list[tuple[str, int]]:
     return sorted(acc.items(), key=lambda kv: -kv[1])
 
 
-def _performance(rows: list[Reclamation]) -> dict:
+def _performance(rows: list[Reclamation], now=None) -> dict:
     """Délai moyen de clôture et respect de l'échéance, sur les seuls dossiers clôturés."""
+    now = now or maintenant()
     cloturees = [r for r in rows if r.statut == "CLOTUREE" and r.date_cloture]
-    avec_echeance = [r for r in cloturees if r.echeance]
-    dans_delai = sum(1 for r in avec_echeance if r.date_cloture <= r.echeance)
+    avec_echeance = [r for r in cloturees if E.calcule(r)]
+    dans_delai = sum(1 for r in avec_echeance if E.situation(r, now) == "RESPECTE")
     jours = [(r.date_cloture - r.date_premiere_reception).total_seconds() / 86400 for r in cloturees]
     return {
         "cloturees": len(cloturees),
@@ -125,17 +138,45 @@ def _recurrents(rows: list[Reclamation], limite: int = 5) -> list[dict]:
     return sorted((a for a in acc.values() if a["n"] >= 2), key=lambda a: (-a["n"], a["nom"] or ""))[:limite]
 
 
+def _jour_iso(d) -> str | None:
+    return d.isoformat() if d else None
+
+
+def liens_kpi(filtres: dict, aujourdhui) -> dict:
+    """Paramètres de liste reproduisant exactement chaque KPI cliquable (mêmes filtres, même période)."""
+    debut, fin = filtres.get("date_debut"), filtres.get("date_fin")
+    debut_30j = max(d for d in (aujourdhui - timedelta(days=30), debut) if d)
+    return {
+        "volume_30j": {"date_debut": _jour_iso(debut_30j), "date_fin": _jour_iso(fin)},
+        "ouvertes": {"date_debut": _jour_iso(debut), "date_fin": _jour_iso(fin), "ouvertes": "true"},
+        "retards": {"date_debut": _jour_iso(debut), "date_fin": _jour_iso(fin), "en_retard": "true"},
+        "echeances_proches": {"date_debut": _jour_iso(debut), "date_fin": _jour_iso(fin),
+                              "situation_delai": "ECHEANCE_PROCHE"},
+        "sans_delai": {"date_debut": _jour_iso(debut), "date_fin": _jour_iso(fin), "sans_echeance": "true"},
+        "operations": {"date_debut": _jour_iso(debut), "date_fin": _jour_iso(fin), "indicateur": "avec_operations"},
+        "delai_moyen": {"indicateur": "delai_cloture_termines", "kpi_debut": _jour_iso(debut),
+                        "kpi_fin": _jour_iso(fin)},
+        "total": {"date_debut": _jour_iso(debut), "date_fin": _jour_iso(fin)},
+    }
+
+
 async def tableau_de_bord(db: AsyncSession, s: ReclamationsScope, filtres: dict | None = None) -> dict:
+    filtres = filtres or {}
     ctx = await Contexte.charger(db)
-    q = _filtres(select(Reclamation).where(s.filtre_dossiers()), filtres or {})
+    q = _filtres(select(Reclamation).where(s.filtre_dossiers()), filtres)
     rows = list((await db.scalars(q)).all())
-    resumes = await _resumes(db, _filtres(select(Reclamation.id).where(s.filtre_dossiers()), filtres or {}))
+    resumes = await _resumes(db, _filtres(select(Reclamation.id).where(s.filtre_dossiers()), filtres))
     now = maintenant()
     ouvertes = [r for r in rows if r.statut not in C.STATUTS_TERMINAUX and not r.archivee_le]
-    retards = [r for r in ouvertes if r.echeance and r.echeance < now]
-    sans_echeance = [r for r in ouvertes if r.echeance is None]
+    situations = {r.id: E.situation(r, now) for r in rows}
+    retards = sorted((r for r in rows if situations[r.id] == "EN_RETARD"), key=lambda r: r.echeance)
+    sans_echeance = [r for r in rows if r.statut not in C.STATUTS_TERMINAUX and r.echeance is None]
     recents = sorted(rows, key=lambda r: r.updated_at or r.created_at or now, reverse=True)[:8]
-    depuis = now - timedelta(days=30)
+    liens = liens_kpi(filtres, now.date())
+    depuis = I.borne(date.fromisoformat(liens["volume_30j"]["date_debut"]))
+    periode = I.Periode.de(filtres.get("date_debut"), filtres.get("date_fin"))
+    pilotage = await I.pilotage(db, s, filtres, periode, lambda i: (ctx.unite(i) or {}).get("libelle"))
+    d_cloture = next(d for d in pilotage["delais"] if d["code"] == "cloture")
 
     def _compte(valeurs: dict[str, str], attr: str) -> list[dict]:
         n = {k: 0 for k in valeurs}
@@ -153,8 +194,7 @@ async def tableau_de_bord(db: AsyncSession, s: ReclamationsScope, filtres: dict 
         return (ctx.unite(i) or {}).get("libelle")
 
     montant_total = sum((m or ZERO for _, m in resumes.values()), ZERO)
-    a_risque = sorted((r for r in ouvertes if r.echeance and now <= r.echeance <= now + timedelta(days=7)),
-                      key=lambda r: r.echeance)
+    a_risque = sorted((r for r in rows if situations[r.id] == "ECHEANCE_PROCHE"), key=lambda r: r.echeance)
     return {
         "total": len(rows),
         "ouvertes": len(ouvertes),
@@ -164,8 +204,15 @@ async def tableau_de_bord(db: AsyncSession, s: ReclamationsScope, filtres: dict 
         "volume_30j_precedent": sum(1 for r in rows if depuis - timedelta(days=30) <= r.date_premiere_reception < depuis),
         "cloturees_30j": sum(1 for r in rows if r.date_cloture and r.date_cloture >= depuis),
         "echeances_7j": len(a_risque),
+        "echeances_proches": len(a_risque),
         "a_risque": [ligne(r, ctx, resume=resumes.get(r.id)) for r in a_risque[:8]],
-        "performance": _performance(rows),
+        "performance": {**_performance(rows, now),
+                        "delai_cloture_jours": d_cloture["termines"]["moyenne_jours"],
+                        "delai_cloture_n": d_cloture["termines"]["n"]},
+        "pilotage": pilotage,
+        "liens": liens,
+        "filtres": {"client_agence_id": str(filtres["client_agence_id"]) if filtres.get("client_agence_id") else None,
+                    "date_debut": _jour_iso(filtres.get("date_debut")), "date_fin": _jour_iso(filtres.get("date_fin"))},
         "anciennete": _anciennete(ouvertes, now),
         "tendance": _tendance(rows, now),
         "resultats": [{"code": k, "libelle": C.RESULTAT_LIBELLES.get(k, k), "n": n}
@@ -182,7 +229,7 @@ async def tableau_de_bord(db: AsyncSession, s: ReclamationsScope, filtres: dict 
         "motifs": _repartition(rows, resumes, _motif, _lib_motif),
         "canaux": _repartition(rows, resumes, lambda r: r.canal_id, ctx.lib),
         "agences": _repartition(rows, resumes, lambda r: r.client_agence_id,
-                                lambda i: (ctx.agence(i) or {}).get("libelle")),
+                                lambda i: (ctx.agence(i) or {}).get("libelle"), aucun="Sans agence"),
         "services": _repartition(rows, resumes, lambda r: r.unite_traitement_id or r.unite_concernee_id,
                                  _lib_unite),
         "unites_reception": _repartition(rows, resumes, lambda r: r.unite_reception_id, _lib_unite),
@@ -204,6 +251,11 @@ def _sous_titre(filtres: dict, total: int) -> str:
         morceaux.append("En cours uniquement")
     if filtres.get("en_retard"):
         morceaux.append("En retard")
+    if filtres.get("situation_delai"):
+        morceaux.append(C.SITUATION_DELAI_LIBELLES.get(filtres["situation_delai"], filtres["situation_delai"]))
+    if filtres.get("indicateur"):
+        periode_kpi = format_period_label(filtres.get("kpi_debut"), filtres.get("kpi_fin"))
+        morceaux.append(f"Indicateur : {filtres['indicateur']}" + (f" ({periode_kpi})" if periode_kpi else ""))
     if total >= LIMITE_EXPORT:
         morceaux.append(f"limité aux {LIMITE_EXPORT} premières")
     return " · ".join(morceaux)
@@ -236,8 +288,15 @@ async def exporter(db: AsyncSession, s: ReclamationsScope, filtres: dict | None 
     def service(r):
         return (ctx.unite(r.unite_traitement_id or r.unite_concernee_id) or {}).get("libelle")
 
-    sous_titre = _sous_titre(filtres, len(rows))
+    sous_titre = " · ".join([_sous_titre(filtres, len(rows)), *_filtres_libelle(ctx, filtres)])
     titre = "Registre des réclamations clients"
+    now = maintenant()
+
+    def delai(r) -> str:
+        sit = E.situation(r, now)
+        if sit == "NON_CALCULABLE":
+            return C.ETAT_DELAI_LIBELLES.get(E.etat_dossier(r), "—")
+        return C.SITUATION_DELAI_LIBELLES[sit]
 
     if format == "pdf":
         entetes = ["Référence", "Date", "Client", "Agence", "Canal", "Motif / sous-motif", "Objet",
@@ -263,7 +322,7 @@ async def exporter(db: AsyncSession, s: ReclamationsScope, filtres: dict | None 
     entetes = ["Référence", "Date réclamation", "Réception banque", "Client", "Racine", "Agence", "Canal",
                "Type", "Motif", "Sous-motif", "Objet", "Service concerné", "Service de traitement",
                "Priorité", "Étape", "Statut", "Nb opérations", f"Montant total ({C.DEVISE})", "Échéance",
-               "Clôture", "Résultat"]
+               "Situation du délai", "Clôture", "Résultat"]
     lignes = []
     for r in rows:
         nb, total = resumes.get(r.id, (0, ZERO))
@@ -274,9 +333,10 @@ async def exporter(db: AsyncSession, s: ReclamationsScope, filtres: dict | None 
             (ctx.unite(r.unite_concernee_id) or {}).get("libelle"),
             (ctx.unite(r.unite_traitement_id) or {}).get("libelle"), C.PRIORITE_LIBELLES.get(r.priorite),
             C.ETAPE_LIBELLES.get(r.etape), C.STATUT_LIBELLES.get(r.statut), nb, total if nb else None,
-            _jour(r.echeance), _jour(r.date_cloture), C.RESULTAT_LIBELLES.get(r.resultat or ""),
+            _jour(r.echeance), delai(r), _jour(r.date_cloture), C.RESULTAT_LIBELLES.get(r.resultat or ""),
         ])
-    lignes.append(["Total", f"{len(rows)} dossier(s)", *([None] * 14), nb_total, montant_total, None, None, None])
+    lignes.append(["Total", f"{len(rows)} dossier(s)", *([None] * 14), nb_total, montant_total, None, None, None,
+                   None])
     references = {r.id: r for r in rows}
     lignes_ops = [[references[o.reclamation_id].reference, references[o.reclamation_id].client_nom, o.ordre,
                    o.reference, o.montant, o.devise] for o in operations]
@@ -290,6 +350,137 @@ async def exporter(db: AsyncSession, s: ReclamationsScope, filtres: dict | None 
         ],
         subtitle=sous_titre,
     )
+
+
+def _na(v, suffixe: str = "") -> str:
+    if v is None or v == "":
+        return "N/A"
+    if isinstance(v, float):
+        return f"{v:.1f}".replace(".", ",") + suffixe
+    return f"{v}{suffixe}"
+
+
+def _filtres_libelle(ctx: Contexte, filtres: dict) -> list[str]:
+    morceaux = []
+    agence = filtres.get("client_agence_id")
+    if agence == AUCUNE:
+        morceaux.append("Agence : sans agence")
+    elif agence:
+        morceaux.append(f"Agence : {(ctx.agence(agence) or {}).get('libelle', '—')}")
+    else:
+        morceaux.append("Toutes les agences")
+    for champ, nom in (("type_id", "Type"), ("canal_id", "Canal"), ("unite_concernee_id", "Service")):
+        if filtres.get(champ):
+            lib = ctx.lib(filtres[champ]) if champ != "unite_concernee_id" else (ctx.unite(filtres[champ]) or {}).get("libelle")
+            morceaux.append(f"{nom} : {lib or '—'}")
+    return morceaux
+
+
+def _lignes_pilotage(tb: dict) -> list[list]:
+    p = tb["pilotage"]
+    lignes: list[list] = [
+        ["Volumes", "Réclamations (période, date de réception)", tb["total"], "dossiers", ""],
+        ["Volumes", "En cours", tb["ouvertes"], "dossiers", ""],
+        ["Volumes", "En retard (échéance dépassée, délai non arrêté)", tb["retards"], "dossiers", ""],
+        ["Volumes", "Échéance proche", tb["echeances_proches"], "dossiers", ""],
+        ["Volumes", "Sans échéance (délai non configuré / en attente)", tb["sans_echeance"], "dossiers", ""],
+        ["Volumes", "Opérations contestées", tb["nb_operations"], "opérations",
+         f"{tb['dossiers_avec_operations']} dossier(s)"],
+        ["Volumes", f"Montant contesté ({C.DEVISE})", float(tb["montant_total"]), C.DEVISE,
+         "Somme des opérations, chaque montant compté une fois"],
+    ]
+    for d in p["delais"]:
+        t, a, c = d["termines"], d["anomalies"], d["en_cours"]
+        lignes.append(["Délais", f"{d['libelle']} — terminés", _na(t["moyenne_heures"], " h"), "heures (moyenne)",
+                       f"{t['n']} {d['unite']}(s) ; {_na(t['moyenne_jours'], ' j')}"])
+        lignes.append(["Délais", f"{d['libelle']} — en cours", _na(c["age_moyen_heures"], " h"), "heures (âge moyen)",
+                       f"{c['n']} {d['unite']}(s)"])
+        if a["n"]:
+            lignes.append(["Délais", f"{d['libelle']} — anomalies (durée négative, exclues)", a["n"], d["unite"],
+                           ", ".join(a["references"])])
+    ro = p["reouverture"]
+    lignes.append(["Réouverture", "Taux de réouverture", _na(ro["taux"], " %"), "%",
+                   f"{ro['reouvertes']} / {ro['cloturees']} — {ro['nb_reouvertures']} réouverture(s)"])
+    for sv in p["services"]:
+        lignes.append(["Services", sv["libelle"],
+                       f"{sv['affectes']} affectés · {sv['en_cours']} en cours · {sv['retournes']} retournés",
+                       "dossiers", f"Délai moyen {_na(sv['delai_moyen_jours'], ' j')} · âge moyen "
+                                   f"{_na(sv['age_moyen_jours'], ' j')} · {sv['en_retard']} en retard"])
+    for ag in tb["agences"]:
+        lignes.append(["Agences", ag["libelle"], ag["n"], "dossiers",
+                       f"{ag['nb_operations']} opération(s) · {_na(float(ag['montant']))} {C.DEVISE}"])
+    return lignes
+
+
+async def exporter_pilotage(db: AsyncSession, s: ReclamationsScope, filtres: dict, format: str = "xlsx") -> bytes:
+    """Rapport de pilotage (mêmes filtres que l'écran) : volumes, délais, réouverture, services, agences."""
+    s.exiger("reclamations.reporting.export", "reclamations.reporting.view")
+    ctx = await Contexte.charger(db)
+    tb = await tableau_de_bord(db, s, filtres)
+    titre = "Pilotage des réclamations clients"
+    sous_titre = " · ".join([format_period_label(filtres.get("date_debut"), filtres.get("date_fin"))
+                             or "Toute la période", *_filtres_libelle(ctx, filtres), "périmètre de l'utilisateur"])
+    entetes = ["Rubrique", "Indicateur", "Valeur", "Unité", "Détail"]
+    lignes = _lignes_pilotage(tb)
+    if format == "pdf":
+        return build_styled_pdf(report_title=titre, headers=entetes, rows=lignes, subtitle=sous_titre)
+    p = tb["pilotage"]
+    delais_rows = [[d["libelle"], d["definition"], d["unite"], d["termines"]["n"], d["termines"]["moyenne_heures"],
+                    d["termines"]["moyenne_jours"], d["en_cours"]["n"], d["en_cours"]["age_moyen_heures"],
+                    d["anomalies"]["n"], ", ".join(d["anomalies"]["references"])] for d in p["delais"]]
+    services_rows = [[v["libelle"], v["affectes"], v["en_cours"], v["retournes"], v["delai_moyen_heures"],
+                      v["delai_moyen_jours"], v["age_moyen_jours"], v["en_retard"]] for v in p["services"]]
+    ro = p["reouverture"]
+    return build_styled_workbook_multi(report_title=titre, subtitle=sous_titre, sheets=[
+        ("Synthèse", "Synthèse", entetes, lignes),
+        ("Délais", "Quatre délais (moyennes hors durées négatives)",
+         ["Délai", "Définition", "Unité de compte", "Terminés", "Moyenne (h)", "Moyenne (j)", "En cours",
+          "Âge moyen (h)", "Anomalies", "Références en anomalie"], delais_rows),
+        ("Services", "Performance des services",
+         ["Service", "Affectés (flux)", "En cours (stock)", "Retournés (flux)", "Délai moyen (h)",
+          "Délai moyen (j)", "Âge moyen en cours (j)", "En retard"], services_rows),
+        ("Réouverture", "Taux de réouverture", ["Indicateur", "Valeur"], [
+            ["Formule", ro["formule"]], ["Clôturées sur la période", ro["cloturees"]],
+            ["Clôturées puis réouvertes", ro["reouvertes"]], ["Taux (%)", _na(ro["taux"])],
+            ["Réouvertures (événements)", ro["nb_reouvertures"]],
+            ["Dossiers réouverts plusieurs fois", ro["dossiers_plusieurs_reouvertures"]]]),
+        ("Agences", "Répartition par agence", ["Agence", "Dossiers", "Opérations", f"Montant ({C.DEVISE})"],
+         [[a["libelle"], a["n"], a["nb_operations"], float(a["montant"])] for a in tb["agences"]]),
+    ])
+
+
+def _lignes_comparaison(comp: dict) -> list[list]:
+    out = []
+    for lg in comp["lignes"]:
+        appreciation = {True: "Favorable", False: "Défavorable"}.get(lg["favorable"], "—")
+        out.append([lg["libelle"], _na(lg["a"]), _na(lg["b"]), _na(lg["ecart"]),
+                    _na(lg["variation"], " %"), appreciation])
+    return out
+
+
+async def exporter_comparaison(db: AsyncSession, s: ReclamationsScope, filtres: dict, pa, pb,
+                               format: str = "xlsx") -> bytes:
+    s.exiger("reclamations.reporting.export", "reclamations.reporting.view")
+    ctx = await Contexte.charger(db)
+    comp = await I.comparaison(db, s, filtres, pa, pb)
+    titre = "Comparaison de deux périodes — réclamations"
+    sous_titre = " · ".join([
+        f"A (référence) : {format_period_label(pa.jour_debut, pa.jour_fin)}",
+        f"B : {format_period_label(pb.jour_debut, pb.jour_fin)}", *_filtres_libelle(ctx, filtres),
+        *comp["avertissements"]])
+    entetes = ["Indicateur", "Période A", "Période B", "Écart (B − A)", "Variation", "Appréciation"]
+    lignes = _lignes_comparaison(comp)
+    if format == "pdf":
+        return build_styled_pdf(report_title=titre, headers=entetes, rows=lignes, subtitle=sous_titre)
+    return build_styled_workbook_multi(report_title=titre, subtitle=sous_titre, sheets=[
+        ("Comparaison", "Période A / période B", entetes, lignes),
+        ("Méthode", "Règles de calcul", ["Règle", "Détail"], [
+            ["Variation", "Écart ÷ valeur de la période A × 100 ; N/A si la valeur de référence vaut 0"],
+            ["Appréciation", "Indiquée seulement si le sens favorable est défini (délais et réouverture : "
+                             "baisse favorable ; clôtures et respect de l'échéance : hausse favorable)"],
+            ["Périodes", "Chaque flux est daté par son propre événement (réception, clôture, réouverture, fin du délai)"],
+        ]),
+    ])
 
 
 async def circuit(db: AsyncSession, s: ReclamationsScope) -> dict:

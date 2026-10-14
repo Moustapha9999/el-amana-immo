@@ -724,10 +724,7 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("reclamations.treat", "Réception, traitement et retour par le service destinataire", "reclamations"),
     ("reclamations.service.manage", "Désignation du responsable de traitement dans son unité", "reclamations"),
     ("reclamations.review", "Examen du retour du service (suffisant / insuffisant)", "reclamations"),
-    ("reclamations.response.prepare", "Rédaction de la réponse au client", "reclamations"),
-    ("reclamations.response.validate", "Validation de la réponse au client", "reclamations"),
     ("reclamations.response.send", "Enregistrement de l'envoi de la réponse et de sa preuve", "reclamations"),
-    ("reclamations.suspend", "Suspension et reprise d'une réclamation", "reclamations"),
     ("reclamations.reject", "Refus / irrecevabilité motivé", "reclamations"),
     ("reclamations.cancel", "Annulation et déclaration de doublon", "reclamations"),
     ("reclamations.close", "Clôture d'une réclamation", "reclamations"),
@@ -742,10 +739,10 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("reclamations.reporting.export", "Exports PDF / Excel réclamations", "reclamations"),
     ("reclamations.references.view", "Consultation des référentiels réclamations", "reclamations"),
     ("reclamations.references.manage", "Gestion des types, motifs, sous-motifs et canaux", "reclamations"),
+    ("reclamations.references.validate", "Validation des types, motifs et sous-motifs proposés", "reclamations"),
     ("reclamations.services.manage", "Gestion des unités (services, départements) et de leurs membres", "reclamations"),
     ("reclamations.delais.manage", "Paramétrage des délais et du calendrier", "reclamations"),
     ("reclamations.delais.validate", "Validation Conformité des règles de délai", "reclamations"),
-    ("reclamations.audit.view", "Consultation du journal d'audit réclamations", "reclamations"),
     ("reclamations.admin", "Administration du module Réclamations", "reclamations"),
 ]
 
@@ -968,14 +965,11 @@ _RECLAMATIONS_AGENT_SR = (
     "reclamations.qualify",
     "reclamations.assign",
     "reclamations.review",
-    "reclamations.response.prepare",
     "reclamations.response.send",
-    "reclamations.suspend",
     "reclamations.reporting.view",
     "reclamations.references.view",
 ) + _RECLAMATIONS_DOCS
 _RECLAMATIONS_RESPONSABLE_SR = _RECLAMATIONS_AGENT_SR + (
-    "reclamations.response.validate",
     "reclamations.reject",
     "reclamations.cancel",
     "reclamations.close",
@@ -984,7 +978,6 @@ _RECLAMATIONS_RESPONSABLE_SR = _RECLAMATIONS_AGENT_SR + (
     "reclamations.document.remove",
     "reclamations.reporting.export",
     "reclamations.services.manage",
-    "reclamations.audit.view",
 )
 _RECLAMATIONS_LECTEUR = (
     "reclamations.view",
@@ -994,7 +987,6 @@ _RECLAMATIONS_LECTEUR = (
     "reclamations.reporting.view",
     "reclamations.reporting.export",
     "reclamations.references.view",
-    "reclamations.audit.view",
 )
 _CORE_ADMIN = (
     "plateforme.users.read",

@@ -54,6 +54,7 @@ CAPACITES: dict[str, str] = {
     "reporting_exporter": "reclamations.reporting.export",
     "referentiels_voir": "reclamations.references.view",
     "referentiels_gerer": "reclamations.references.manage",
+    "referentiels_valider": "reclamations.references.validate",
     "unites_gerer": "reclamations.services.manage",
     "delais_gerer": "reclamations.delais.manage",
     "delais_valider": "reclamations.delais.validate",

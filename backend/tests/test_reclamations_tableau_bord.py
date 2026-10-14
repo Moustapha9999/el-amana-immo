@@ -15,6 +15,7 @@ def _r(jours: int, statut: str = "EN_COURS", cloture_j: int | None = None, echea
         statut=statut, date_premiere_reception=recu, client_racine=racine, client_nom=f"Client {racine}",
         date_cloture=recu + timedelta(days=cloture_j) if cloture_j is not None else None,
         echeance=recu + timedelta(days=echeance_j) if echeance_j is not None else None,
+        etat_delai=None, date_fin_delai=None, date_alerte=None,
     )
 
 

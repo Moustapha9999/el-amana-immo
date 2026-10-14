@@ -99,7 +99,9 @@ const ENFANT: Partial<Record<Domaine, Domaine>> = { TYPE: 'MOTIF', MOTIF: 'SOUS_
             </div>
             <div class="bea-mg__table-wrap">
               <table class="bea-mg__table">
-                <thead><tr><th>Libellé</th><th>Code</th><th>Niveau</th><th title="Dossiers, éléments rattachés et règles de délai">Utilisations</th><th>État</th>@if (gererRefs()) { <th></th> }</tr></thead>
+                <thead><tr><th>Libellé</th><th>Code</th><th>Niveau</th><th title="Dossiers, éléments rattachés et règles de délai">Utilisations</th><th>État</th>
+                  @if (vue() === 'CLASSEMENT') { <th title="Valeur proposée ou validée par la Conformité">Validation</th> }
+                  @if (gererRefs() || validerRefs()) { <th></th> }</tr></thead>
                 <tbody>
                   @for (l of lignesRef(); track l.item.id) {
                     <tr>
@@ -112,8 +114,24 @@ const ENFANT: Partial<Record<Domaine, Domaine>> = { TYPE: 'MOTIF', MOTIF: 'SOUS_
                       <td>{{ libelleDomaine(l.item.domaine) }}</td>
                       <td>{{ l.item.usage }}</td>
                       <td><span class="bea-ct-badge" [attr.data-tone]="l.item.actif ? 'ACTIF' : 'SUSPENDU'">{{ l.item.actif ? 'Actif' : 'Inactif' }}</span></td>
-                      @if (gererRefs()) {
+                      @if (vue() === 'CLASSEMENT') {
+                        <td>
+                          @if (l.item.a_valider) {
+                            <span class="bea-ct-badge" [attr.data-tone]="l.item.statut_validation === 'VALIDEE' ? 'ACTIF' : 'ATTENTION'">{{ l.item.statut_validation_libelle }}</span>
+                            @if (l.item.valide_le) { <small class="bea-ct-sub">{{ dateFr(l.item.valide_le) }}</small> }
+                          }
+                        </td>
+                      }
+                      @if (gererRefs() || validerRefs()) {
                         <td class="bea-mg__row-actions">
+                          @if (validerRefs() && l.item.a_valider) {
+                            @if (l.item.statut_validation !== 'VALIDEE') {
+                              <button type="button" class="bea-mg__icon-btn" title="Valider (Conformité)" [disabled]="busy()" (click)="validerRef(l.item, 'VALIDEE')"><mat-icon>verified</mat-icon></button>
+                            } @else {
+                              <button type="button" class="bea-mg__icon-btn" title="Repasser en « proposé »" [disabled]="busy()" (click)="validerRef(l.item, 'PROPOSEE')"><mat-icon>undo</mat-icon></button>
+                            }
+                          }
+                          @if (gererRefs()) {
                           @if (enfant(l.item.domaine) && l.item.actif) {
                             <button type="button" class="bea-mg__icon-btn" [title]="'Ajouter un ' + (l.item.domaine === 'TYPE' ? 'motif' : 'sous-motif')" (click)="nouveauRef(enfant(l.item.domaine)!, l.item)"><mat-icon>add</mat-icon></button>
                           }
@@ -124,11 +142,12 @@ const ENFANT: Partial<Record<Domaine, Domaine>> = { TYPE: 'MOTIF', MOTIF: 'SOUS_
                           @if (!l.item.usage) {
                             <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer (aucune utilisation)" [disabled]="busy()" (click)="supprimerRef(l.item)"><mat-icon>delete</mat-icon></button>
                           }
+                          }
                         </td>
                       }
                     </tr>
                   } @empty {
-                    <tr><td colspan="6">
+                    <tr><td colspan="7">
                       <div class="bea-ct-empty"><mat-icon>category</mat-icon>
                         <p>{{ vue() === 'CLASSEMENT' ? 'Aucun type de réclamation. Créez la nomenclature validée par la banque.' : 'Aucun canal.' }}</p>
                       </div>
@@ -361,6 +380,8 @@ export class RcParametresComponent implements OnInit {
   private readonly saisie$ = new Subject<string>();
 
   readonly gererRefs = computed(() => this.store.cap('referentiels_gerer'));
+  readonly validerRefs = computed(() => this.store.cap('referentiels_valider'));
+  readonly dateFr = dateFr;
   readonly gererUnites = computed(() => this.store.cap('unites_gerer'));
   readonly voirUnites = computed(() => this.store.cap('unites_gerer') || this.store.cap('tout_voir'));
   readonly domaineRacine = computed<Domaine>(() => {
@@ -538,6 +559,25 @@ export class RcParametresComponent implements OnInit {
         busy: this.busy,
         success: () => ({ title: actif ? 'Élément réactivé' : 'Élément désactivé', details: [{ label: 'Libellé', value: r.libelle }] }),
         errorTitle: 'Action refusée',
+        retry: false,
+      })
+      .subscribe(() => this.rafraichir());
+  }
+
+  validerRef(r: RefItem, statut: 'VALIDEE' | 'PROPOSEE'): void {
+    this.feedback
+      .run(() => this.rc.validerReferentiel(r.id, statut), {
+        confirm: {
+          title: statut === 'VALIDEE' ? 'Valider la valeur' : 'Repasser en « proposé »',
+          message: statut === 'VALIDEE'
+            ? `« ${r.libelle} » sera marqué comme validé par la Conformité. Le parent doit déjà être validé.`
+            : `« ${r.libelle} » redeviendra une valeur proposée, en attente de validation. Les dossiers existants la conservent.`,
+          confirmLabel: statut === 'VALIDEE' ? 'Valider' : 'Repasser en proposé',
+          tone: statut === 'VALIDEE' ? 'success' : 'warn',
+        },
+        busy: this.busy,
+        success: () => ({ title: statut === 'VALIDEE' ? 'Valeur validée' : 'Valeur repassée en proposé', details: [{ label: 'Libellé', value: r.libelle }] }),
+        errorTitle: 'Validation refusée',
         retry: false,
       })
       .subscribe(() => this.rafraichir());

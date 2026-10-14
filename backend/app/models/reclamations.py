@@ -75,9 +75,13 @@ CATEGORIES_DOCUMENT = (
     "AUTRE",
 )
 STATUTS_RAPPEL = ("AUCUN", "A_RAPPELER", "RAPPELE", "ECHEC")
-UNITES_DUREE = ("JOURS_CALENDAIRES", "JOURS_OUVRES")
+UNITES_DUREE = ("JOURS_CALENDAIRES", "JOURS_OUVRES", "HEURES")
 POINTS_DEPART = ("PREMIERE_RECEPTION", "RECEPTION_SR")
+POINTS_ARRIVEE = ("CLOTURE", "REPONSE_CLIENT")
 VALIDATIONS_REGLE = ("A_VALIDER", "VALIDEE", "REJETEE")
+VALIDATIONS_REFERENTIEL = ("PROPOSEE", "VALIDEE")
+ETATS_DELAI = ("CALCULE", "NON_CONFIGURE", "EN_ATTENTE_VALIDATION", "CONFLIT", "SANS_DEPART")
+NIVEAUX_ALERTE = ("PROCHE", "RETARD")
 
 
 def _in(colonne: str, valeurs: tuple[str, ...], nullable: bool = False) -> str:
@@ -113,6 +117,8 @@ class ReclamationReferentiel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __mapper_args__ = {"eager_defaults": True}
     __table_args__ = (
         CheckConstraint(_in("domaine", DOMAINES_REFERENTIEL), name="ck_reclamation_referentiels_domaine"),
+        CheckConstraint(_in("statut_validation", VALIDATIONS_REFERENTIEL),
+                        name="ck_reclamation_referentiels_validation"),
     )
 
     domaine: Mapped[str] = mapped_column(String(20), index=True)
@@ -124,6 +130,10 @@ class ReclamationReferentiel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     ordre: Mapped[int] = mapped_column(Integer, default=0)
     actif: Mapped[bool] = mapped_column(Boolean, default=True)
+    # PROPOSEE tant que la banque n'a pas validé la nomenclature : affiché « en attente », jamais « officiel ».
+    statut_validation: Mapped[str] = mapped_column(String(20), default="PROPOSEE", server_default="PROPOSEE")
+    valide_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    valide_le: Mapped[datetime | None] = _ts()
     created_by_id: Mapped[uuid.UUID | None] = _user_fk()
     updated_by_id: Mapped[uuid.UUID | None] = _user_fk()
 
@@ -176,8 +186,11 @@ class ReclamationUniteMembre(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class ReclamationRegleDelai(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Délai cible paramétrable (motif > type > règle générale). Jamais présenté comme
-    réglementaire tant que ``statut_validation`` ≠ VALIDEE (validation Conformité)."""
+    """Délai cible paramétrable (sous-motif > motif > type > règle générale). Jamais appliqué ni
+    présenté comme réglementaire tant que ``statut_validation`` ≠ VALIDEE (validation Conformité).
+
+    Une règle déjà appliquée à un dossier ne se modifie plus : une nouvelle version (``remplace_id``)
+    prend effet à sa ``date_effet`` et l'ancienne est bornée par ``date_fin``."""
 
     __tablename__ = "reclamation_regles_delai"
     __mapper_args__ = {"eager_defaults": True}
@@ -188,6 +201,7 @@ class ReclamationRegleDelai(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("date_fin IS NULL OR date_fin >= date_effet", name="ck_reclamation_regles_delai_periode"),
         CheckConstraint(_in("unite_duree", UNITES_DUREE), name="ck_reclamation_regles_delai_unite"),
         CheckConstraint(_in("point_depart", POINTS_DEPART), name="ck_reclamation_regles_delai_depart"),
+        CheckConstraint(_in("point_arrivee", POINTS_ARRIVEE), name="ck_reclamation_regles_delai_arrivee"),
         CheckConstraint(_in("priorite", PRIORITES, nullable=True), name="ck_reclamation_regles_delai_priorite"),
         CheckConstraint(_in("statut_validation", VALIDATIONS_REGLE), name="ck_reclamation_regles_delai_validation"),
     )
@@ -195,10 +209,14 @@ class ReclamationRegleDelai(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     libelle: Mapped[str] = mapped_column(String(200))
     type_id: Mapped[uuid.UUID | None] = _ref_fk()
     motif_id: Mapped[uuid.UUID | None] = _ref_fk()
+    sous_motif_id: Mapped[uuid.UUID | None] = _ref_fk()
     priorite: Mapped[str | None] = mapped_column(String(10), nullable=True)
     duree: Mapped[int] = mapped_column(Integer)
     unite_duree: Mapped[str] = mapped_column(String(20), default="JOURS_CALENDAIRES")
     point_depart: Mapped[str] = mapped_column(String(30), default="PREMIERE_RECEPTION")
+    point_arrivee: Mapped[str] = mapped_column(String(30), default="CLOTURE", server_default="CLOTURE")
+    remplace_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), _fk("reclamation_regles_delai.id", "SET NULL"), nullable=True)
     seuil_alerte: Mapped[int | None] = mapped_column(Integer, nullable=True)
     delai_service: Mapped[int | None] = mapped_column(Integer, nullable=True)
     neutraliser_suspension: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -236,6 +254,8 @@ class Reclamation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
                         name="ck_reclamations_date_cloture"),
         CheckConstraint("doublon_de_id IS NULL OR doublon_de_id <> id", name="ck_reclamations_doublon"),
         CheckConstraint("reclamation_liee_id IS NULL OR reclamation_liee_id <> id", name="ck_reclamations_liee"),
+        CheckConstraint(_in("etat_delai", ETATS_DELAI, nullable=True), name="ck_reclamations_etat_delai"),
+        CheckConstraint(_in("niveau_alerte", NIVEAUX_ALERTE, nullable=True), name="ck_reclamations_niveau_alerte"),
         UniqueConstraint("annee", "numero", name="uq_reclamations_annee_numero"),
         Index("ix_reclamations_actives_echeance", "echeance",
               postgresql_where=text("supprimee_le IS NULL AND archivee_le IS NULL "
@@ -310,6 +330,14 @@ class Reclamation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UUID(as_uuid=True), _fk("reclamation_regles_delai.id", "SET NULL"), nullable=True)
     echeance: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     echeance_initiale: Mapped[datetime | None] = _ts()
+    # Pourquoi une échéance existe (CALCULE) ou non (règle absente, en attente, en conflit, départ manquant).
+    etat_delai: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Dernier niveau notifié : une alerte par franchissement de seuil, jamais une par passage du batch.
+    niveau_alerte: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    alerte_notifiee_le: Mapped[datetime | None] = _ts()
+    # Début de la zone « échéance proche » (échéance − seuil de la règle) et arrêt du délai (événement de fin).
+    date_alerte: Mapped[datetime | None] = _ts()
+    date_fin_delai: Mapped[datetime | None] = _ts()
 
     statut_avant_suspension: Mapped[str | None] = mapped_column(String(30), nullable=True)
     motif_suspension: Mapped[str | None] = mapped_column(Text, nullable=True)

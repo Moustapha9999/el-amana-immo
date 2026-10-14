@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
@@ -6,13 +7,15 @@ import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
 import { TableauBord, montantFr } from '../reclamations.models';
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
+import { RcComparaisonComponent } from '../shared/rc-comparaison.component';
 import { RcExportComponent } from '../shared/rc-export.component';
+import { RcPilotageComponent } from '../shared/rc-pilotage.component';
 
-/** Rapports : répartitions du périmètre et export Excel (plafond serveur 5 000 lignes). */
+/** Rapports : pilotage (délais, réouverture, services), comparaison de périodes, répartitions et exports. */
 @Component({
   selector: 'bea-rc-rapports',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule, RouterLink, ReclamationsUiComponent, RcExportComponent],
+  imports: [FormsModule, MatIconModule, RouterLink, ReclamationsUiComponent, RcExportComponent, RcPilotageComponent, RcComparaisonComponent],
   template: `
     <bea-rc-styles />
     <section class="bea-mg bea-ct bea-rc">
@@ -20,13 +23,29 @@ import { RcExportComponent } from '../shared/rc-export.component';
         <div>
           <p class="bea-stock-page__kicker">Management & Qualité · Réclamations</p>
           <h1>Rapports & statistiques</h1>
-          <p class="bea-ct-head__sub">Répartitions calculées sur les dossiers de votre périmètre. L’export Excel est plafonné à 5 000 lignes.</p>
+          <p class="bea-ct-head__sub">Calculés sur les dossiers de votre périmètre. Chaque nombre cliquable ouvre la liste exacte des dossiers comptés.</p>
         </div>
         <div class="bea-mg__actions">
-          <bea-rc-export />
-          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="charger()"><mat-icon>refresh</mat-icon></button>
+          <bea-rc-export cible="pilotage" [filtres]="base()" />
+          <bea-rc-export [filtres]="base()" />
+          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="charger()" title="Actualiser" aria-label="Actualiser"><mat-icon>refresh</mat-icon></button>
         </div>
       </header>
+
+      <form class="bea-mg__search bea-ct-filters bea-rc-filters" (ngSubmit)="charger()">
+        <label class="bea-mg__field">Agence du client
+          <select [(ngModel)]="agence" name="agence" (change)="charger()">
+            <option value="">Toutes</option>
+            <option value="AUCUNE">Sans agence</option>
+            @for (a of store.config()?.agences ?? []; track a.id) { <option [value]="a.id">{{ a.code }} — {{ a.libelle }}</option> }
+          </select>
+        </label>
+        <label class="bea-mg__field">Période du <input type="date" [(ngModel)]="debut" name="debut" /></label>
+        <label class="bea-mg__field">au <input type="date" [(ngModel)]="fin" name="fin" /></label>
+        <div class="bea-ct-filters__btns">
+          <button type="submit" class="bea-mg__btn bea-mg__btn--ghost"><mat-icon>search</mat-icon> Appliquer</button>
+        </div>
+      </form>
 
       @if (erreur()) {
         <div class="bea-ct-empty bea-ct-empty--hero"><mat-icon>cloud_off</mat-icon>
@@ -35,70 +54,39 @@ import { RcExportComponent } from '../shared/rc-export.component';
         </div>
       } @else if (data(); as d) {
         <div class="bea-rc-kpis">
-          <div class="bea-rc-kpi"><mat-icon>forum</mat-icon><p>Total</p><strong>{{ d.total }}</strong></div>
-          <div class="bea-rc-kpi"><mat-icon>pending_actions</mat-icon><p>Ouvertes</p><strong>{{ d.ouvertes }}</strong></div>
-          <div class="bea-rc-kpi" data-tone="danger"><mat-icon>timer_off</mat-icon><p>Retards</p><strong>{{ d.retards }}</strong></div>
-          <div class="bea-rc-kpi"><mat-icon>task_alt</mat-icon><p>Clôturées 30 j</p><strong>{{ d.cloturees_30j }}</strong></div>
-          <div class="bea-rc-kpi"><mat-icon>receipt_long</mat-icon><p>Opérations</p><strong>{{ d.nb_operations }}</strong><small>dans {{ d.dossiers_avec_operations }} dossier(s)</small></div>
-          <div class="bea-rc-kpi"><mat-icon>payments</mat-icon><p>Montant total</p><strong>{{ montant(d.montant_total, d.devise) }}</strong></div>
+          <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="kpi('total')"><mat-icon>forum</mat-icon><p>Reçues</p><strong>{{ d.total }}</strong></a>
+          <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="kpi('ouvertes')"><mat-icon>pending_actions</mat-icon><p>Ouvertes</p><strong>{{ d.ouvertes }}</strong></a>
+          <a class="bea-rc-kpi" data-tone="danger" routerLink="/reclamations/dossiers" [queryParams]="kpi('retards')"><mat-icon>timer_off</mat-icon><p>Retards</p><strong>{{ d.retards }}</strong></a>
+          <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="kpi('sans_delai')"><mat-icon>schedule</mat-icon><p>Sans délai</p><strong>{{ d.sans_echeance }}</strong></a>
+          <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="kpi('operations')"><mat-icon>receipt_long</mat-icon><p>Opérations</p><strong>{{ d.nb_operations }}</strong><small>dans {{ d.dossiers_avec_operations }} dossier(s)</small></a>
+          <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="kpi('operations')"><mat-icon>payments</mat-icon><p>Montant total</p><strong>{{ montant(d.montant_total, d.devise) }}</strong></a>
         </div>
+
+        <section class="bea-mg__panel">
+          <div class="bea-mg__panel-top"><h2>Délais, réouverture et services</h2></div>
+          <div class="bea-rc-pad"><bea-rc-pilotage [pilotage]="d.pilotage" [filtres]="base()" /></div>
+        </section>
+
+        <section class="bea-mg__panel">
+          <div class="bea-mg__panel-top"><h2>Comparaison de deux périodes</h2><small class="bea-rc-hint">Agence : {{ agenceLibelle() }}</small></div>
+          <div class="bea-rc-pad"><bea-rc-comparaison [filtres]="base()" /></div>
+        </section>
+
         <div class="bea-rc-grid">
-          <section class="bea-mg__panel">
-            <div class="bea-mg__panel-top"><h2>Types</h2></div>
-            <ul class="bea-rc-bars">
-              @for (t of d.types; track t.id) {
-                <li><a [routerLink]="['/reclamations/dossiers']" [queryParams]="{ type_id: t.id }">{{ t.libelle }}</a><span class="bea-rc-bars__n">{{ t.n }}</span></li>
-              } @empty { <li class="bea-rc-muted">Aucun type renseigné.</li> }
-            </ul>
-          </section>
-          <section class="bea-mg__panel">
-            <div class="bea-mg__panel-top"><h2>Motifs</h2></div>
-            <ul class="bea-rc-bars">
-              @for (m of d.motifs; track m.id) {
-                <li>
-                  @if (m.id !== 'None') { <a [routerLink]="['/reclamations/dossiers']" [queryParams]="{ motif_id: m.id }">{{ m.libelle }}</a> }
-                  @else { <span>Non qualifié</span> }
-                  <span><span class="bea-rc-bars__n">{{ m.n }}</span>@if (m.nb_operations) { <small class="bea-rc-hint"> · {{ montant(m.montant ?? null, d.devise) }}</small> }</span>
-                </li>
-              } @empty { <li class="bea-rc-muted">Aucun motif renseigné.</li> }
-            </ul>
-          </section>
-          <section class="bea-mg__panel">
-            <div class="bea-mg__panel-top"><h2>Agences</h2></div>
-            <ul class="bea-rc-bars">
-              @for (a of d.agences; track a.id) {
-                <li>
-                  @if (a.id !== 'None') { <a [routerLink]="['/reclamations/dossiers']" [queryParams]="{ client_agence_id: a.id }">{{ a.libelle }}</a> }
-                  @else { <span>Non renseignée</span> }
-                  <span><span class="bea-rc-bars__n">{{ a.n }}</span>@if (a.nb_operations) { <small class="bea-rc-hint"> · {{ montant(a.montant ?? null, d.devise) }}</small> }</span>
-                </li>
-              } @empty { <li class="bea-rc-muted">Aucune agence renseignée.</li> }
-            </ul>
-          </section>
-          <section class="bea-mg__panel">
-            <div class="bea-mg__panel-top"><h2>Canaux</h2></div>
-            <ul class="bea-rc-bars">
-              @for (c of d.canaux; track c.id) {
-                <li><a [routerLink]="['/reclamations/dossiers']" [queryParams]="{ canal_id: c.id }">{{ c.libelle }}</a><span class="bea-rc-bars__n">{{ c.n }}</span></li>
-              } @empty { <li class="bea-rc-muted">Aucun canal renseigné.</li> }
-            </ul>
-          </section>
-          <section class="bea-mg__panel">
-            <div class="bea-mg__panel-top"><h2>Unités de réception</h2></div>
-            <ul class="bea-rc-bars">
-              @for (u of d.unites_reception; track u.id) {
-                <li><a [routerLink]="['/reclamations/dossiers']" [queryParams]="{ unite_reception_id: u.id }">{{ u.libelle }}</a><span class="bea-rc-bars__n">{{ u.n }}</span></li>
-              } @empty { <li class="bea-rc-muted">Aucune unité de réception.</li> }
-            </ul>
-          </section>
-          <section class="bea-mg__panel">
-            <div class="bea-mg__panel-top"><h2>Services</h2></div>
-            <ul class="bea-rc-bars">
-              @for (u of d.services; track u.id) {
-                <li><span>{{ u.id === 'None' ? 'Non déterminé' : u.libelle }}</span><span class="bea-rc-bars__n">{{ u.n }}</span></li>
-              } @empty { <li class="bea-rc-muted">Aucun service.</li> }
-            </ul>
-          </section>
+          @for (r of repartitions(); track r.titre) {
+            <section class="bea-mg__panel">
+              <div class="bea-mg__panel-top"><h2>{{ r.titre }}</h2></div>
+              <ul class="bea-rc-bars">
+                @for (c of r.items; track c.id) {
+                  <li>
+                    @if (r.param && c.id !== 'None') { <a [routerLink]="['/reclamations/dossiers']" [queryParams]="filtre(r.param, c.id)">{{ c.libelle }}</a> }
+                    @else { <span>{{ c.id === 'None' ? 'Non renseigné' : c.libelle }}</span> }
+                    <span><span class="bea-rc-bars__n">{{ c.n }}</span>@if (c.nb_operations) { <small class="bea-rc-hint"> · {{ montant(c.montant ?? null, d.devise) }}</small> }</span>
+                  </li>
+                } @empty { <li class="bea-rc-muted">Aucune donnée.</li> }
+              </ul>
+            </section>
+          }
         </div>
       } @else {
         <p class="bea-rc-pad bea-rc-muted">Chargement des rapports…</p>
@@ -113,6 +101,32 @@ export class RcRapportsComponent implements OnInit {
 
   readonly data = signal<TableauBord | null>(null);
   readonly erreur = signal(false);
+  private readonly appliques = signal<Record<string, string | null>>({});
+  agence = '';
+  debut = '';
+  fin = '';
+
+  readonly base = computed(() => this.appliques());
+
+  readonly agenceLibelle = computed(() => {
+    const a = this.appliques()['client_agence_id'];
+    if (!a) return 'toutes';
+    if (a === 'AUCUNE') return 'sans agence';
+    return this.store.config()?.agences.find((x) => x.id === a)?.libelle ?? '';
+  });
+
+  readonly repartitions = computed(() => {
+    const d = this.data();
+    if (!d) return [];
+    return [
+      { titre: 'Types', items: d.types, param: 'type_id' },
+      { titre: 'Motifs', items: d.motifs, param: 'motif_id' },
+      { titre: 'Agences', items: d.agences, param: 'client_agence_id' },
+      { titre: 'Canaux', items: d.canaux, param: 'canal_id' },
+      { titre: 'Unités de réception', items: d.unites_reception, param: 'unite_reception_id' },
+      { titre: 'Services (traitement ou concerné)', items: d.services, param: '' },
+    ];
+  });
 
   ngOnInit(): void {
     this.store.charger();
@@ -120,8 +134,13 @@ export class RcRapportsComponent implements OnInit {
   }
 
   charger(): void {
+    if (this.debut && this.fin && this.fin < this.debut) {
+      this.feedback.warning({ title: 'Dates incohérentes', message: 'La date de fin précède la date de début.' });
+      return;
+    }
+    this.appliques.set({ client_agence_id: this.agence || null, date_debut: this.debut || null, date_fin: this.fin || null });
     this.erreur.set(false);
-    this.rc.tableauDeBord().subscribe({
+    this.rc.tableauDeBord(this.base()).subscribe({
       next: (d) => this.data.set(d),
       error: (e) => {
         this.erreur.set(true);
@@ -130,8 +149,15 @@ export class RcRapportsComponent implements OnInit {
     });
   }
 
+  kpi(code: string): Record<string, string | null> {
+    return { ...(this.data()?.liens[code] ?? {}), client_agence_id: this.base()['client_agence_id'] ?? null };
+  }
+
+  filtre(param: string, id: string | undefined): Record<string, string | null> {
+    return { ...this.base(), [param]: id ?? null };
+  }
+
   montant(v: string | null, devise: string): string {
     return montantFr(v, devise);
   }
-
 }
