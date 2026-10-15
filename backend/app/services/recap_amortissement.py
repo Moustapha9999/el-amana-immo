@@ -273,10 +273,6 @@ def _mouvements_immo(
 
     if sorti_en_n:
         assert date_fin is not None
-        if use_bank and cumul_fin_n_db is not None and not montants_dotation_db:
-            cession = _q(cumul_fin_n_db)
-        else:
-            cession = cumul_amortissement_a_date(immo, date_fin)
         dotation = dotation_exercice(
             immo,
             annee,
@@ -284,6 +280,13 @@ def _mouvements_immo(
             date_limite=date_fin,
             uniquement_comptabilisees=True,
         )
+        if not use_bank and dotation < 0:
+            dotation = _zero()
+        # La sortie reprend exactement le cumul comptabilisé (ouverture + dotations de N) :
+        # un cumul théorique à la date de sortie laissait un reliquat (cumul fin N ≠ 0).
+        cession = _q(cumul_n1 + dotation)
+        if not use_bank and cession < 0:
+            cession = _zero()
     else:
         cession = _zero()
         dotation = dotation_exercice(

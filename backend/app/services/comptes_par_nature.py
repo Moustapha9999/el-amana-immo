@@ -147,20 +147,17 @@ async def build_comptes_par_nature(
         agence = agences.get(immo.agence_id) if immo.agence_id else None
         valeur_acquisition = _q(immo.valeur_brute)
 
-        date_n = date(annee, 12, 31)
-        detenue_fin_n = immo.date_fin is None or immo.date_fin > date_n
+        # État à la clôture : un bien cédé / mis au rebut dans l'exercice n'est plus détenu
+        # (il figure dans la colonne « Cessions » du récapitulatif, pas ici).
+        if immo.date_fin is not None and immo.date_fin <= date(annee, 12, 31):
+            continue
 
-        if detenue_fin_n:
-            montant_amt = mvts["amorts_cumules_n"]
-            vnc = mvts["vnc"]
-            if not _is_import_banque(immo):
-                vnc = _q(valeur_acquisition - montant_amt)
-                if vnc < 0:
-                    vnc = _zero()
-        else:
-            # Bien sorti dans l'exercice : montant amt = cumul à la sortie, VNC nulle
-            montant_amt = mvts["cessions_annee"]
-            vnc = _zero()
+        montant_amt = mvts["amorts_cumules_n"]
+        vnc = mvts["vnc"]
+        if not _is_import_banque(immo):
+            vnc = _q(valeur_acquisition - montant_amt)
+            if vnc < 0:
+                vnc = _zero()
 
         by_compte[compte_immo].append(
             CompteNatureLigne(

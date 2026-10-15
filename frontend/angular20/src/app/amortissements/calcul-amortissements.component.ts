@@ -140,6 +140,7 @@ export class CalculAmortissementsComponent implements OnInit {
 
   readonly categories = signal<Categorie[]>([]);
   readonly periodes = signal<PeriodeComptable[]>([]);
+  readonly categorieIds = signal<string[]>([]);
   readonly loading = signal(false);
   readonly result = signal<CalculResponse | null>(null);
   readonly periodicite = signal<Periodicite>('trimestriel');
@@ -169,20 +170,45 @@ export class CalculAmortissementsComponent implements OnInit {
     statut: [''],
   });
 
+  readonly validationBlocage = computed((): string | null => {
+    if (this.periodicite() !== 'trimestriel') {
+      return 'La comptabilisation se fait par arrêté trimestriel : choisissez la périodicité « Trimestriel ».';
+    }
+    const index = this.periodeIndex();
+    const current = this.periodes().find((p) => p.trimestre === index);
+    if (!current) {
+      return null;
+    }
+    if (current.statut === 'validee' || current.statut === 'cloturee') {
+      return `T${index} est déjà ${this.periodeStatutLabel(current.statut).toLowerCase()}.`;
+    }
+    if (index === 1) {
+      return null;
+    }
+    const previous = this.periodes().find((p) => p.trimestre === index - 1);
+    if (previous?.statut === 'validee' || previous?.statut === 'cloturee') {
+      return null;
+    }
+    const prevStatut = previous ? this.periodeStatutLabel(previous.statut) : 'inconnue';
+    const partielle =
+      previous?.statut === 'calculee'
+        ? ` T${index - 1} n’a été comptabilisée que pour une partie des catégories :` +
+          ` sélectionnez T${index - 1}, cochez « Toutes » les catégories, puis Simuler et Valider.`
+        : ` Validez d’abord T${index - 1}.`;
+    return `T${index} ne peut pas être comptabilisée tant que T${index - 1} n’est pas validée (statut : ${prevStatut}).${partielle}`;
+  });
+
   readonly canValiderPeriode = computed(() => {
     if (this.periodicite() !== 'trimestriel') {
       return false;
     }
-    const index = this.periodeIndex();
-    const current = this.periodes().find((p) => p.trimestre === index);
-    if (!current || current.statut === 'validee' || current.statut === 'cloturee') {
-      return false;
-    }
-    if (index === 1) {
-      return true;
-    }
-    const previous = this.periodes().find((p) => p.trimestre === index - 1);
-    return previous?.statut === 'validee' || previous?.statut === 'cloturee';
+    const current = this.periodes().find((p) => p.trimestre === this.periodeIndex());
+    return !!current && this.validationBlocage() === null;
+  });
+
+  readonly selectionPartielle = computed(() => {
+    const n = this.categorieIds().length;
+    return n > 0 && n < this.categories().length;
   });
 
   readonly periodOptions = computed(() => {
@@ -260,6 +286,7 @@ export class CalculAmortissementsComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadPeriodes();
+    this.form.controls.categorie_ids.valueChanges.subscribe((ids) => this.categorieIds.set(ids));
     this.api.get<Paginated<Categorie>>('/categories', { page: 1, size: 100 }).subscribe({
       next: (res) => {
         const amort = (res.items ?? []).filter((c) => c.amortissable);
@@ -356,7 +383,7 @@ export class CalculAmortissementsComponent implements OnInit {
     }
     if (!this.canValiderPeriode()) {
       void this.dialogs
-        .error('Cette période ne peut pas encore être comptabilisée. Validez la période précédente.')
+        .error(this.validationBlocage() ?? 'Cette période ne peut pas encore être comptabilisée.')
         .subscribe();
       return;
     }

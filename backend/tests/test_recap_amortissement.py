@@ -99,6 +99,35 @@ def test_mouvements_cession_year():
     ).quantize(Decimal("0.01"))
 
 
+def test_mouvements_cession_reprend_le_cumul_comptabilise():
+    """Sortie sans dotation comptabilisée dans N : la cession reprend le cumul N-1, cumul fin N = 0."""
+    immo = _immo(
+        date_acquisition=date(2024, 12, 19),
+        date_fin=date(2026, 4, 21),
+        valeur_brute=Decimal("3000000.00"),
+        taux=Decimal("4.0000"),
+        duree_annees=25,
+        compte_immobilisation="142020",
+        compte_amortissement="148220",
+        metadata_json={"source": "import_banque"},
+    )
+    mvts = _mouvements_immo(
+        immo,
+        2026,
+        montants_dotation_db=[Decimal("0.00"), Decimal("0.00")],
+        cumul_n1_db=Decimal("120000.00"),
+        cumul_fin_n_db=Decimal("120000.00"),
+        vnc_fin_n_db=Decimal("2880000.00"),
+    )
+    assert mvts is not None
+    assert mvts["valeur_brute"] == Decimal("0.00")
+    assert mvts["amorts_cumules_n1"] == Decimal("120000.00")
+    assert mvts["cessions_annee"] == Decimal("120000.00")
+    assert mvts["dotations_annee"] == Decimal("0.00")
+    assert mvts["amorts_cumules_n"] == Decimal("0.00")
+    assert mvts["vnc"] == Decimal("0.00")
+
+
 def test_mouvements_exited_before_year_excluded():
     immo = _immo(date_acquisition=date(2023, 1, 1), date_fin=date(2024, 12, 31))
     assert _mouvements_immo(immo, 2025) is None

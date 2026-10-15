@@ -114,6 +114,14 @@
           Valider et comptabiliser
         </button>
       </div>
+      @if (validationBlocage(); as blocage) {
+        <p class="calc__notice calc__notice--blocked" role="status">{{ blocage }}</p>
+      } @else if (selectionPartielle()) {
+        <p class="calc__notice" role="status">
+          Sélection partielle des catégories : la période restera « Calculée » après comptabilisation
+          et le trimestre suivant restera bloqué. Cochez « Toutes » pour valider la période.
+        </p>
+      }
     </form>
   </section>
 
