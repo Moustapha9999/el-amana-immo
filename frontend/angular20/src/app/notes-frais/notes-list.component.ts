@@ -12,6 +12,7 @@ import { PaginationComponent } from '../shared/pagination.component';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
+import { OrgEntiteLibelleSelectComponent } from '../core/org/org-entite-libelle-select.component';
 import { NoteApercuComponent } from './note-apercu.component';
 import { PaiementFormComponent } from './paiement-form.component';
 import {
@@ -57,6 +58,7 @@ interface Paginated {
     PaginationComponent,
     NoteApercuComponent,
     PaiementFormComponent,
+    OrgEntiteLibelleSelectComponent,
   ],
   template: `
     <section class="bea-mg bea-nf">
@@ -225,8 +227,8 @@ interface Paginated {
                     <input formControlName="demandeur_nom" placeholder="Nom Prénom" />
                   </div>
                   <div class="bea-nf-fiche__id-row">
-                    <label>Département</label>
-                    <input formControlName="departement" />
+                    <label>Département / service</label>
+                    <bea-org-entite-libelle-select formControlName="departement" />
                   </div>
                   <div class="bea-nf-fiche__id-row">
                     <label>Fonction</label>

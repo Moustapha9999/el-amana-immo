@@ -23,6 +23,7 @@ import { ApiService } from '../core/services/api.service';
 import { MgGedPanelComponent } from '../moyens-generaux/mg-ged-panel.component';
 import { SupplierSelectComponent } from './supplier-select.component';
 import { AchatsBonApercuComponent } from './achats-apercu.component';
+import { OrgEntiteLibelleSelectComponent } from '../core/org/org-entite-libelle-select.component';
 import { feedbackSignal } from '../core/feedback/feedback-signal';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 
@@ -70,6 +71,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
     MatIconModule,
     SupplierSelectComponent,
     AchatsBonApercuComponent,
+    OrgEntiteLibelleSelectComponent,
   ],
   styleUrl: './achats-bons.component.css',
   template: `
@@ -144,7 +146,7 @@ const MOYENS_PRESET = ['Amanty', 'Virement', 'Cash'] as const;
                 }
               </select>
             </label>
-            <label>Département <input formControlName="departement" /></label>
+            <label>Département / service <bea-org-entite-libelle-select formControlName="departement" /></label>
             <label>Projet <input formControlName="projet" /></label>
             <label>Nom acheteur <input formControlName="acheteur_nom" placeholder="Agent BEA" /></label>
             <label>Tél. acheteur <input formControlName="acheteur_tel" placeholder="+222 …" /></label>
@@ -376,7 +378,7 @@ export class AchatsBonsComponent implements OnInit {
     fournisseur_adresse: [''],
     agence_facturation_id: [''],
     agence_livraison_id: [''],
-    departement: ['Siege'],
+    departement: [''],
     projet: [''],
     acheteur_nom: [''],
     acheteur_tel: [''],

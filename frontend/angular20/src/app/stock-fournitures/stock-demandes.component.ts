@@ -11,6 +11,7 @@ import { feedbackSignal } from '../core/feedback/feedback-signal';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { StockMouvementActions } from './stock-mouvement-edit.component';
+import { OrgEntiteLibelleSelectComponent } from '../core/org/org-entite-libelle-select.component';
 
 interface Agence {
   id: string;
@@ -52,7 +53,16 @@ interface Paginated<T> {
 @Component({
   selector: 'bea-stock-demandes',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MatIconModule, DatePipe, QuantitePipe, MgGedPanelComponent, PaginationComponent],
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    MatIconModule,
+    DatePipe,
+    QuantitePipe,
+    MgGedPanelComponent,
+    PaginationComponent,
+    OrgEntiteLibelleSelectComponent,
+  ],
   template: `
     <section class="bea-mg">
       @if (mode() === 'list') {
@@ -217,8 +227,8 @@ interface Paginated<T> {
                 </select>
               </label>
               <label>
-                Département
-                <input formControlName="departement" />
+                Département / service
+                <bea-org-entite-libelle-select formControlName="departement" />
               </label>
               <label class="bea-mg__span2">
                 Fonction

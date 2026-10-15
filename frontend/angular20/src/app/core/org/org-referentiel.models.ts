@@ -49,6 +49,8 @@ export interface OrgEntiteOption {
   a_confirmer: boolean;
   chemin: string | null;
   profondeur: number;
+  /** Libellés reconnus, déjà normalisés (`org_cle`). */
+  alias?: string[];
 }
 
 export interface OrgAgenceOption {

@@ -40,6 +40,25 @@ Signalées dans les données (`a_confirmer`, `note_confirmation`) et listées da
 - rattachement des agences : seules AGENCE CENTRALE ENTREPRISES (00005 → Clientèle Entreprises) et
   AGENCE CENTRALE PARTICULIERS (00001 → Clientèle Retail) sont rattachées ; les autres restent à confirmer.
 
+## Compléments provisoires (ajouts suggérés 🟡)
+
+En attendant l’organigramme complet, la migration `20261015_org_02` ajoute 42 entités usuelles d’une
+banque (achats & logistique, courrier & archives, back-office, compensation, fiscalité, LCB-FT, KYC,
+réseau d’agences, data / BI, etc.), définies dans `app/data/organigramme_bea_suggestions.py`.
+
+- Toujours `a_confirmer = true`, `source = SUGGESTION_2026_10`, `metadonnees.statut_validation = suggere` :
+  distinctes de l’officiel (`ORGANIGRAMME_2024_07`), listées dans CORE ADMIN → Contrôles.
+- À la réception de l’organigramme réel : **Marquer confirmée**, renommer / déplacer, ou **Désactiver**
+  (rien n’est supprimé, les dossiers rattachés sont conservés). Ne pas modifier le fichier de données.
+- Aucune entité officielle n’est modifiée ; une entité déjà présente (même code, ou même libellé sous le
+  même parent) n’est pas recréée.
+
+Champs « Département / service » encore stockés en texte (notes de frais, bons de commande, demandes
+de fournitures, mouvements de stock) : saisie via `OrgEntiteLibelleSelectComponent`
+(`core/org/org-entite-libelle-select.component.ts`), qui enregistre le libellé exact de l’entité ; le
+déclencheur `org_rattacher_texte` renseigne `org_entite_id`. Depuis `org_02`, modifier le texte sans
+fixer explicitement `org_entite_id` recalcule le rattachement.
+
 ## Reprise des données existantes
 
 - Saisies libres conservées telles quelles (`departement` texte des tables MG). Colonne `org_entite_id`

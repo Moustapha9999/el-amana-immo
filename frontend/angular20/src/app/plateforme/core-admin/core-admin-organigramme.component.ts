@@ -229,7 +229,7 @@ const TYPE_COURT: Record<OrgTypeEntite, string> = {
                   </div>
                   <dl class="bea-org-dl">
                     <dt>Code</dt><dd><code>{{ f.entite.code }}</code></dd>
-                    <dt>Source</dt><dd>{{ f.entite.source || '—' }}</dd>
+                    <dt>Source</dt><dd>{{ sourceLibelle(f.entite.source) }}</dd>
                     <dt>Sous-entités</dt><dd>{{ f.entite.nb_enfants }}</dd>
                     <dt>Utilisateurs</dt><dd>{{ f.entite.nb_utilisateurs }}</dd>
                     @if (f.entite.alias.length) { <dt>Libellés reconnus</dt><dd>{{ f.entite.alias.join(' ; ') }}</dd> }
@@ -1230,6 +1230,19 @@ export class CoreAdminOrganigrammeComponent implements OnInit {
 
   typeLibelle(t: OrgTypeEntite): string {
     return ORG_TYPE_LIBELLES[t];
+  }
+
+  sourceLibelle(source: string | null): string {
+    switch (source) {
+      case 'ORGANIGRAMME_2024_07':
+        return 'Organigramme officiel (juillet 2024)';
+      case 'SUGGESTION_2026_10':
+        return 'Ajout suggéré — en attente de l’organigramme réel';
+      case 'MANUEL':
+        return 'Saisie CORE ADMIN';
+      default:
+        return source || '—';
+    }
   }
 
   typeCourt(t: OrgTypeEntite): string {
