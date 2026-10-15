@@ -23,6 +23,7 @@ from app.data.clientele_indicateurs import (
     par_code,
 )
 from app.models import (
+    Agence,
     ClienteleAlerte,
     ClienteleClassifHistorique,
     ClienteleClassification,
@@ -677,9 +678,9 @@ class ClienteleIndicateursService:
                 "date_ouverture", "premiere_extraction"]
         q = select(
             ClienteleCompte.racine_client, ClienteleCompte.compte, ClienteleCompte.rib,
-            ClienteleCompte.etat_compte, ClienteleCompte.code_agence,
+            ClienteleCompte.etat_compte, Agence.code.label("code_agence"),
             ClienteleCompte.date_ouverture, ClienteleCompte.premiere_extraction,
-        ).where(ClienteleCompte.premiere_extraction <= cutoff)
+        ).join(Agence, Agence.id == ClienteleCompte.agence_id).where(ClienteleCompte.premiere_extraction <= cutoff)
         if filtres.actif():
             q = self._join_sit(q, ClienteleCompte)
             q = filtres.appliquer(q)

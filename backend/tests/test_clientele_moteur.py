@@ -146,6 +146,9 @@ async def test_un_client_trois_comptes_distinct(db):
     trop = await svc.detail("cli.stock", periode="personnalisee", date_debut=DEBUT, date_fin=FIN,
                             page=1, taille=500)
     assert trop["taille"] == PAGE_MAX
+    comptes = await svc.detail("cli.comptes", periode="personnalisee", date_debut=DEBUT, date_fin=FIN)
+    assert comptes["total"] == 4
+    assert all(r["code_agence"] for r in comptes["items"])
 
 
 @pytest.mark.asyncio
