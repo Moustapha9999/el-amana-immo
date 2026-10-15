@@ -17,13 +17,21 @@ interface Resultat {
   selector: 'bea-cl-classer-client',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, RouterLink, MatIconModule],
+  styles: [`
+    .bea-cl-recherche { display: grid; grid-template-columns: minmax(0, 32rem) auto; align-items: end; gap: 1rem; padding: 0.95rem 1.1rem; }
+    .bea-cl-recherche label { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
+    .bea-cl-recherche input { box-sizing: border-box; width: 100%; min-height: 2.5rem; padding: 0.5rem 0.75rem; font: inherit; font-size: 0.88rem; font-weight: 500; text-transform: none; color: #0f172a; background: #fff; border: 1px solid #cbd5e1; border-radius: 0.6rem; }
+    .bea-cl-recherche input:focus { outline: none; border-color: #1a5278; box-shadow: 0 0 0 3px rgba(26, 82, 120, 0.15); }
+    .bea-cl-recherche button { min-height: 2.5rem; white-space: nowrap; }
+    @media (max-width: 640px) { .bea-cl-recherche { grid-template-columns: 1fr; } }
+  `],
   template: `
     <section class="bea-mg__panel">
       <div class="bea-mg__panel-top"><div><h2>Classer un client</h2>
         <p class="bea-cl-hint">Recherche par identifiant stable (racine, compte, RIB, NNI, NIF) ou par nom. La décision se prend sur la fiche : niveau, motif et analyste KYC obligatoires, historique conservé.</p></div>
       </div>
-      <div class="bea-cl-filters" style="align-items:flex-end">
-        <label style="flex:1;min-width:18rem">Client
+      <div class="bea-cl-recherche">
+        <label>Client
           <input [(ngModel)]="q" (keyup.enter)="chercher(1)" maxlength="60" placeholder="Racine, compte, RIB, NNI, NIF ou nom" />
         </label>
         <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="chercher(1)" [disabled]="busy() || q.trim().length < 2"><mat-icon>search</mat-icon> Rechercher</button>
