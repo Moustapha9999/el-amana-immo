@@ -7,8 +7,11 @@ import { FeedbackService } from '../../core/feedback/feedback.service';
 import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
 import { ApiService } from '../../core/services/api.service';
 import { ClienteleUiComponent } from '../clientele-ui.component';
-import { CL_BASE, FicheClient, MODES_DECISION, TraceClassification, dateFr, dateHeureFr } from '../clientele.models';
+import {
+  CL_BASE, FicheClient, MODES_DECISION, SOURCE_IMPORT_HEBDO, TraceClassification, dateFr, dateHeureFr,
+} from '../clientele.models';
 import { ClienteleStore } from '../clientele.store';
+import { ClJournalClientsComponent } from './cl-journal-clients.component';
 
 interface EvaluationMoteur {
   score_total: number; niveau_final: string | null; statut: string; admissible: boolean;
@@ -36,9 +39,9 @@ const RESULTATS: Record<string, string> = {
 @Component({
   selector: 'bea-cl-fiche',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, MatIconModule, ClienteleUiComponent],
+  imports: [FormsModule, RouterLink, MatIconModule, ClienteleUiComponent, ClJournalClientsComponent],
   styles: `
-    .bea-cl-decision { display: grid; grid-template-columns: minmax(10rem, 13rem) minmax(16rem, 1fr) auto auto; align-items: end; gap: 0.75rem; padding: 0.95rem 1.1rem; }
+    .bea-cl-decision { display: grid; grid-template-columns: minmax(10rem, 13rem) minmax(16rem, 1fr) minmax(12rem, 16rem) auto auto; align-items: end; gap: 0.75rem; padding: 0.95rem 1.1rem; }
     .bea-cl-decision > label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
     .bea-cl-decision select, .bea-cl-decision__motif input { font: inherit; font-size: 0.88rem; font-weight: 500; text-transform: none; min-height: 2.5rem; padding: 0.5rem 0.65rem; border: 1px solid #cbd5e1; border-radius: 0.6rem; background: #fff; color: #0f172a; }
     .bea-cl-decision select:focus, .bea-cl-decision__motif input:focus { outline: none; border-color: #1a5278; box-shadow: 0 0 0 3px rgba(26, 82, 120, 0.15); }
@@ -63,6 +66,11 @@ const RESULTATS: Record<string, string> = {
         </div>
       </header>
       @if (f(); as x) {
+        @if (x.client['source'] === hebdo) {
+          <div class="bea-cl-note bea-cl-note--info"><mat-icon>info</mat-icon>
+            <span>Fiche créée par l’import hebdomadaire après décision — <strong>sans compte ORION</strong>. Exclue des indicateurs et de la déclaration BCM jusqu’à ce qu’ORION reprenne la racine.</span>
+          </div>
+        }
         <div class="bea-cl-grid">
           <section class="bea-mg__panel">
             <div class="bea-mg__panel-top"><h2>Identité</h2>
@@ -92,6 +100,23 @@ const RESULTATS: Record<string, string> = {
               <dd>@if (x.classification) { <span class="bea-cl-badge" [attr.data-s]="x.classification.niveau">{{ x.classification.niveau }}</span> } @else { Non classé }</dd>
               <dt>Dernier import</dt><dd>{{ x.dernier_import?.fichier_nom || '—' }}</dd>
             </dl>
+          </section>
+          <section class="bea-mg__panel">
+            <div class="bea-mg__panel-top"><h2>Données KYC</h2>
+              @if (x.kyc) { <small class="bea-cl-hint">MAJ {{ dateHeureFr(x.kyc.maj_le) }}</small> }
+            </div>
+            @if (x.kyc; as k) {
+              <dl class="bea-cl-dl">
+                <dt>Date EER</dt><dd>{{ dateFr(k.date_eer) }}</dd>
+                <dt>Profil</dt><dd>{{ k.profil || '—' }} @if (k.sous_profil) { / {{ k.sous_profil }} }</dd>
+                <dt>Statut gel</dt><dd>{{ k.statut_gel || '—' }}</dd>
+                <dt>MAJ client</dt><dd>{{ dateFr(k.date_maj_client) }}</dd>
+                <dt>Création entreprise</dt><dd>{{ dateFr(k.date_creation_entreprise) }}</dd>
+                <dt>Analyste KYC</dt><dd>{{ k.analyste_kyc || '—' }}</dd>
+              </dl>
+            } @else {
+              <p class="bea-cl-hint" style="padding:0.9rem 1.1rem">Aucune donnée KYC complémentaire. Alimentée par l’import hebdomadaire après décision (les données ORION ne sont jamais remplacées).</p>
+            }
           </section>
         </div>
         <section class="bea-mg__panel">
@@ -178,18 +203,26 @@ const RESULTATS: Record<string, string> = {
               <label class="bea-cl-decision__motif">Motif de la décision (obligatoire)
                 <input [(ngModel)]="motif" maxlength="2000" placeholder="Ex. revue KYC du 15/10 : activité confirmée" />
               </label>
+              <label class="bea-cl-decision__motif">Analyste KYC (obligatoire)
+                <input [(ngModel)]="analyste" list="bea-cl-analystes" maxlength="120" placeholder="Nom de l’analyste" />
+                <datalist id="bea-cl-analystes">@for (a of analystes(); track a) { <option [value]="a"></option> }</datalist>
+              </label>
               @if (store.cap().classif_forcer) {
                 <label class="bea-cl-decision__force" [class.is-on]="forcer">
                   <input type="checkbox" [(ngModel)]="forcer" />
                   <span><strong>Forçage</strong><small>Lever un blocage INTERDIT du moteur</small></span>
                 </label>
               }
-              <button type="button" class="bea-mg__btn bea-mg__btn--primary bea-cl-decision__btn" (click)="classer()" [disabled]="busy() || !motif.trim()">
+              <button type="button" class="bea-mg__btn bea-mg__btn--primary bea-cl-decision__btn" (click)="classer()" [disabled]="busy() || !motif.trim() || !analyste.trim()">
                 <mat-icon>gavel</mat-icon> Enregistrer la décision
               </button>
             </div>
-            <p class="bea-cl-hint" style="padding:0 1.1rem 0.9rem">Auteur, date, niveau retenu et motif sont historisés. Un INTERDIT proposé par le moteur ne peut être abaissé que par forçage (permission dédiée).</p>
+            <p class="bea-cl-hint" style="padding:0 1.1rem 0.9rem">Ancien et nouveau niveau, motif, analyste KYC, auteur, date et heure sont historisés. Un INTERDIT proposé par le moteur ne peut être abaissé que par forçage (permission dédiée).</p>
           </section>
+        }
+
+        @if (store.cap().classif_voir) {
+          <bea-cl-journal-clients [racine]="x.client['racine_client']" [version]="versionJournal()" />
         }
 
         @if (historique().length) {
@@ -280,11 +313,18 @@ export class ClFicheComponent implements OnInit {
   }
   niveau = 'MOYEN';
   motif = '';
+  analyste = '';
+  readonly hebdo = SOURCE_IMPORT_HEBDO;
+  readonly analystes = signal<string[]>([]);
+  readonly versionJournal = signal(0);
   readonly hasUnsavedChanges = unsavedChanges(() => !!this.motif.trim());
 
   ngOnInit(): void {
     this.store.charger();
     this.recharger();
+    this.api.get<string[]>(`${CL_BASE}/classification/analystes`).subscribe({
+      next: (a) => this.analystes.set(a), error: () => this.analystes.set([]),
+    });
   }
 
   private racine(): string {
@@ -301,18 +341,20 @@ export class ClFicheComponent implements OnInit {
       next: (h) => this.historique.set(h),
       error: () => this.historique.set([]),
     });
+    this.versionJournal.update((v) => v + 1);
   }
 
   classer(): void {
     const racine = this.racine();
     const motif = this.motif.trim();
-    if (!motif) {
-      this.feedback.warning({ title: 'Motif obligatoire', message: 'Indiquez le motif de la décision manuelle.' });
+    const analyste = this.analyste.trim();
+    if (!motif || !analyste) {
+      this.feedback.warning({ title: 'Saisie incomplète', message: 'Le motif et l’analyste KYC sont obligatoires.' });
       return;
     }
     const forcer = this.forcer && !!this.store.cap().classif_forcer;
     this.feedback.run(() => this.api.post(`${CL_BASE}/clients/${racine}/classification`, {
-      niveau: this.niveau, motif_classement: motif, forcer, confirmation: forcer,
+      niveau: this.niveau, motif_classement: motif, analyste_kyc: analyste, forcer, confirmation: forcer,
     }), {
       confirm: forcer
         ? { title: 'Forçage de classification', message: `FORÇAGE — retenir ${this.niveau} pour ${racine} ?`, hint: 'Lève un éventuel blocage INTERDIT du moteur. Action tracée dans l’audit (levée de blocage).', confirmLabel: 'Confirmer le forçage', tone: 'danger' }
@@ -335,7 +377,9 @@ export class ClFicheComponent implements OnInit {
     const e = this.evaluation();
     if (!e) return;
     this.feedback.runWithReason(
-      (motif) => this.api.post<{ resultat: string }>(`${CL_BASE}/clients/${racine}/classification/moteur`, { motif }),
+      (motif) => this.api.post<{ resultat: string }>(`${CL_BASE}/clients/${racine}/classification/moteur`, {
+        motif, analyste_kyc: this.analyste.trim() || null,
+      }),
       {
         reason: {
           title: 'Enregistrer le résultat du moteur',

@@ -48,8 +48,6 @@ const SOURCES: readonly Source[] = ['orion', 'situation', 'liste'];
 
       @if (source() === 'situation') {
         <bea-cl-lot type="SITUATION" />
-      } @else if (source() === 'liste') {
-        <bea-cl-lot type="LISTE" />
       } @else if (!imp()) {
         @if (store.cap().imports_executer) {
           <section class="bea-mg__panel" style="padding:1rem">
@@ -233,7 +231,7 @@ export class ClImportsComponent implements OnInit {
   readonly options: { code: Source; icon: string; titre: string; aide: string }[] = [
     { code: 'orion', icon: 'account_balance', titre: 'État des comptes ORION', aide: 'Extraction ORION (une ligne = un compte) : crée et met à jour clients et comptes.' },
     { code: 'situation', icon: 'assignment', titre: 'Situation des comptes PP & PM', aide: 'Classeur Conformité : reprise de la classe de risque LBC/FT par racine.' },
-    { code: 'liste', icon: 'group_add', titre: 'Liste de clients', aide: 'Tout fichier avec une colonne Racine client : contrôler, évaluer, classer, exporter.' },
+    { code: 'liste', icon: 'group_add', titre: 'Import hebdomadaire KYC', aide: 'Liste Excel hebdomadaire : nouveaux clients, propositions de classement à décider (module Classification).' },
   ];
   readonly source = signal<Source>('orion');
   readonly etapes = ['Analyse & mapping', 'Contrôles', 'Aperçu', 'Confirmation'];
@@ -266,11 +264,23 @@ export class ClImportsComponent implements OnInit {
   ngOnInit(): void {
     this.store.charger();
     const s = this.route.snapshot.queryParamMap.get('source') as Source | null;
+    if (s === 'liste') {
+      this.versImportHebdo();
+      return;
+    }
     if (s && SOURCES.includes(s)) this.source.set(s);
     this.chargerHistorique();
   }
 
+  private versImportHebdo(): void {
+    void this.router.navigate(['/clientele/classification'], { queryParams: { onglet: 'import' }, replaceUrl: true });
+  }
+
   choisirSource(s: Source): void {
+    if (s === 'liste') {
+      this.versImportHebdo();
+      return;
+    }
     if (s === this.source()) return;
     this.source.set(s);
     void this.router.navigate([], { relativeTo: this.route, queryParams: { source: s === 'orion' ? null : s }, replaceUrl: true });

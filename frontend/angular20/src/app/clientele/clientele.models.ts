@@ -214,6 +214,65 @@ export interface FicheClient {
   } & Partial<TraceClassification> | null;
   alertes_ouvertes: { id: string; statut: string; motif: string; precedent_faux_positif: boolean }[];
   sources: SourceColonne[];
+  kyc: DonneesKyc | null;
+}
+
+export interface DonneesKyc {
+  date_eer: string | null; profil: string | null; sous_profil: string | null; statut_gel: string | null;
+  date_maj_client: string | null; analyste_kyc: string | null; date_creation_entreprise: string | null;
+  source: string; lot_id: string | null; ligne_source: number | null; maj_le: string | null;
+}
+
+export const SOURCE_IMPORT_HEBDO = 'IMPORT_HEBDO';
+
+export const LIBELLES_ACTION: Record<string, string> = {
+  CREATION: 'Création de la fiche', MAJ_DONNEES: 'Mise à jour de données', PROPOSITION: 'Proposition',
+  ACCEPTATION: 'Acceptation', MODIFICATION: 'Modification', REJET: 'Rejet', VERIFICATION: 'Vérification manuelle',
+};
+
+export interface EntreeJournal {
+  id: string; racine_client: string; nom_client: string | null; type_action: string; libelle_action: string;
+  champ: string | null; ancienne_valeur: string | null; nouvelle_valeur: string | null; motif: string | null;
+  analyste_kyc: string | null; origine: 'SAISIE' | 'IMPORT'; lot_id: string | null; ligne_source: number | null;
+  groupe_id: string | null; utilisateur: string | null; date: string | null;
+}
+
+export interface PageJournal { total: number; page: number; taille: number; items: EntreeJournal[]; }
+
+export const ETATS_PROPOSITION: Record<string, string> = {
+  PROPOSE: 'Proposé', A_VERIFIER: 'À vérifier', NON_CLASSIFIABLE: 'Non classifiable', A_EVALUER: 'À évaluer',
+};
+
+export const STATUTS_DECISION: Record<string, string> = {
+  EN_ATTENTE: 'En attente', ACCEPTEE: 'Acceptée', MODIFIEE: 'Modifiée', REJETEE: 'Rejetée', ANCIEN_CIRCUIT: 'Ancien circuit',
+};
+
+export const STATUTS_CLIENT: Record<string, string> = {
+  EXISTANT: 'Existant', NOUVEAU: 'Nouveau', AMBIGU: 'Identité ambiguë', DOUBLON: 'Doublon', INVALIDE: 'Racine invalide',
+};
+
+export interface Proposition {
+  etat: string; niveau: string | null; origine: 'FICHIER' | 'MOTEUR' | null; categorie: string | null;
+  categorie_libelle: string | null; raison: string | null; niveau_moteur: string | null; statut_moteur: string | null;
+  ecart_moteur: boolean;
+}
+
+export interface LigneHebdo {
+  ligne: number; racine: string | null; brut: string | null; statut: string; statut_client: string; nom: string | null;
+  niveau_fichier: string | null; niveau_fichier_brut: string | null; analyste: string | null; anomalies: string[];
+  classe_actuelle: string | null; source_actuelle: string | null; proposition: Proposition;
+  verification: string[]; identite: string[]; statut_decision: string; exclusion_groupe: string | null;
+  decision_ligne: {
+    decision: string; niveau: string | null; motif: string | null; analyste_kyc: string | null;
+    client_cree: boolean; groupe_id: string | null; par_nom: string | null; le: string | null;
+  } | null;
+}
+
+export interface LotHebdo {
+  id: string; fichier_nom: string; type: string; statut_lot: string; periode_reference: string | null;
+  stats: Record<string, number>; evaluation: Record<string, unknown> | null; message: string | null;
+  total_filtre: number; page: number; taille: number; lignes: LigneHebdo[]; created_at: string | null;
+  fichier_disponible: boolean; limite_evaluation: number;
 }
 
 export interface ColonneMapping {

@@ -4,14 +4,16 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
-import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
 import { ApiService } from '../../core/services/api.service';
 import { ClienteleUiComponent } from '../clientele-ui.component';
 import {
-  CL_BASE, FICHE_SCORING, MATRICE_LBC, MODES_DECISION, STATUTS_REGLE, TraceClassification, dateHeureFr, libSource, n, telecharger,
+  CL_BASE, FICHE_SCORING, MATRICE_LBC, MODES_DECISION, STATUTS_REGLE, TraceClassification, dateHeureFr, libSource, n,
 } from '../clientele.models';
 import { ClienteleStore } from '../clientele.store';
+import { ClClasserClientComponent } from './cl-classer-client.component';
 import { ClClasserComponent } from './cl-classer.component';
+import { ClHebdoComponent } from './cl-hebdo.component';
+import { ClJournalClientsComponent } from './cl-journal-clients.component';
 
 interface Item {
   racine_client: string; raison_sociale: string; niveau: string; source: string;
@@ -56,8 +58,12 @@ interface ValeurMaitre {
 }
 interface SyntheseValeurs { total?: number; total_filtre?: number; nb_conflits?: number; nb_blocking?: number; par_dimension?: Record<string, number>; }
 
-type Onglet = 'clients' | 'simulation' | 'referentiel' | 'criteres' | 'divergences' | 'reexamens' | 'versions';
-const ONGLETS: readonly Onglet[] = ['clients', 'simulation', 'referentiel', 'criteres', 'divergences', 'reexamens', 'versions'];
+type Onglet = 'classer' | 'import' | 'clients' | 'reexamens' | 'journal'
+  | 'simulation' | 'referentiel' | 'criteres' | 'divergences' | 'versions' | 'masse';
+const ONGLETS: readonly Onglet[] = [
+  'classer', 'import', 'clients', 'reexamens', 'journal', 'simulation', 'referentiel', 'criteres', 'divergences', 'versions', 'masse',
+];
+const PARAMETRAGE: readonly Onglet[] = ['simulation', 'referentiel', 'criteres', 'divergences', 'versions', 'masse'];
 const STATUTS_DIVERGENCE: Record<string, string> = {
   A_ARBITRER: 'À arbitrer', VALIDEE: 'Validée', INVALIDE_SOURCE: 'Source invalidée', ALIGNEE: 'Alignée',
 };
@@ -66,20 +72,30 @@ const TAILLE_VALEURS = 80;
 @Component({
   selector: 'bea-cl-classification',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, MatIconModule, ClienteleUiComponent, ClClasserComponent],
+  imports: [
+    FormsModule, RouterLink, MatIconModule, ClienteleUiComponent, ClClasserComponent, ClClasserClientComponent,
+    ClHebdoComponent, ClJournalClientsComponent,
+  ],
   template: `
     <bea-cl-styles />
-    <div class="bea-mg bea-cl">
+    <div class="bea-mg bea-cl bea-cl--large">
       <header class="bea-mg__head bea-cl-head">
         <div>
-          <p class="bea-stock-page__kicker">Risque</p>
+          <p class="bea-stock-page__kicker">Risque LBC/FT</p>
           <h1>Classification des clients</h1>
-          <p class="bea-cl-head__sub">Au niveau CLIENT (racine 6 chiffres), jamais RIB. Moteur SCORE (CDC 1.0) fondé sur la {{ matrice }} et la {{ fiche }}.</p>
+          <p class="bea-cl-head__sub">Classer un client, importer la liste hebdomadaire, décider des propositions. Au niveau CLIENT (racine 6 chiffres), jamais RIB.</p>
         </div>
+        @if (store.cap().classif_voir) {
+          <div class="bea-mg__actions">
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [class.is-on]="parametrage()" (click)="basculerParametrage()">
+              <mat-icon>tune</mat-icon> {{ parametrage() ? 'Retour au module' : 'Paramétrage Conformité' }}
+            </button>
+          </div>
+        }
       </header>
 
       <nav class="bea-cl-tabs" role="tablist" aria-label="Classification">
-        @for (o of onglets; track o.code) {
+        @for (o of ongletsVisibles(); track o.code) {
           <button type="button" role="tab" [class.is-on]="onglet() === o.code" [attr.aria-selected]="onglet() === o.code" (click)="ouvrir(o.code)">
             <mat-icon>{{ o.icon }}</mat-icon>{{ o.libelle }}
             @if (o.compte(); as c) { <span class="bea-cl-tabs__n">{{ n(c) }}</span> }
@@ -88,24 +104,29 @@ const TAILLE_VALEURS = 80;
       </nav>
 
       @switch (onglet()) {
+        @case ('classer') {
+          <bea-cl-classer-client />
+        }
+        @case ('import') {
+          <bea-cl-hebdo />
+        }
+        @case ('journal') {
+          <bea-cl-journal-clients />
+        }
+        @case ('masse') {
+          <section class="bea-mg__panel">
+            <div class="bea-mg__panel-top"><h2>Classification massive (moteur)</h2></div>
+            <p class="bea-cl-hint" style="padding:0 1.1rem 0.6rem">Traitement global verrouillé : il ne s’exécute qu’après autorisation explicite de la Conformité. Les décisions manuelles ne sont jamais remplacées.</p>
+            @if (store.cap().classif_executer) {
+              <bea-cl-classer (termine)="classementTermine()" />
+            }
+          </section>
+        }
         @case ('clients') {
           <section class="bea-mg__panel">
             <div class="bea-mg__panel-top">
               <h2>Clients classés</h2>
-              @if (store.cap().classif_executer) {
-                <span style="display:flex;gap:0.4rem;flex-wrap:wrap">
-                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="modele()"><mat-icon>download</mat-icon> Modèle Excel</button>
-                  <label class="bea-mg__btn bea-mg__btn--ghost">
-                    <mat-icon>upload_file</mat-icon> Excel contrôlé
-                    <input type="file" accept=".xlsx" hidden (change)="excel($any($event.target))" />
-                  </label>
-                  <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/clientele/imports" [queryParams]="{ source: 'liste' }"><mat-icon>group_add</mat-icon> Classer une liste</a>
-                </span>
-              }
             </div>
-            @if (store.cap().classif_executer) {
-              <bea-cl-classer (termine)="classementTermine()" />
-            }
             <div class="bea-cl-filters">
               <label>Niveau
                 <select [(ngModel)]="niveau" (ngModelChange)="charger(1)">
@@ -136,7 +157,7 @@ const TAILLE_VALEURS = 80;
                       <td>{{ dh(i.classifie_le) }}</td>
                     </tr>
                   } @empty {
-                    <tr><td colspan="6"><div class="bea-cl-empty">Aucun client classé. Saisie sur la fiche client, Excel contrôlé, liste importée, ou bouton « Classer ».</div></td></tr>
+                    <tr><td colspan="6"><div class="bea-cl-empty">Aucun client classé. Classez un client depuis sa fiche ou décidez les propositions de l’import hebdomadaire.</div></td></tr>
                   }
                 </tbody>
               </table>
@@ -466,30 +487,38 @@ export class ClClassificationComponent implements OnInit {
   readonly synValeurs = signal<SyntheseValeurs>({});
   readonly pageValeurs = signal(1);
   readonly tailleValeurs = TAILLE_VALEURS;
-  readonly onglet = signal<Onglet>('clients');
+  readonly onglet = signal<Onglet>('classer');
+  readonly parametrage = signal(false);
   readonly onglets: { code: Onglet; libelle: string; icon: string; compte: () => number | null }[] = [
+    { code: 'classer', libelle: 'Classer un client', icon: 'person_search', compte: () => null },
+    { code: 'import', libelle: 'Import hebdomadaire', icon: 'upload_file', compte: () => null },
     { code: 'clients', libelle: 'Clients classés', icon: 'verified_user', compte: () => this.total() },
+    { code: 'reexamens', libelle: 'Réexamens', icon: 'pending_actions', compte: () => this.nbReex() || null },
+    { code: 'journal', libelle: 'Journal', icon: 'history_edu', compte: () => null },
     { code: 'simulation', libelle: 'Simulation', icon: 'calculate', compte: () => null },
     { code: 'referentiel', libelle: 'Référentiel maître', icon: 'table_view', compte: () => this.synValeurs().total ?? null },
     { code: 'criteres', libelle: 'Critères', icon: 'checklist', compte: () => this.criteres().length || null },
     { code: 'divergences', libelle: 'Divergences', icon: 'call_split', compte: () => this.nbDiv() || null },
-    { code: 'reexamens', libelle: 'Réexamens', icon: 'pending_actions', compte: () => this.nbReex() || null },
     { code: 'versions', libelle: 'Versions', icon: 'history', compte: () => null },
+    { code: 'masse', libelle: 'Classification massive', icon: 'lock', compte: () => null },
   ];
+  readonly ongletsVisibles = computed(() =>
+    this.onglets.filter((o) => PARAMETRAGE.includes(o.code) === this.parametrage()));
   niveau = '';
   q = '';
   racineEval = '';
   dimension = '';
   statutValeur = '';
-  pendingLignes: Record<string, unknown>[] | null = null;
-  readonly hasUnsavedChanges = unsavedChanges(() => !!this.pendingLignes);
   readonly n = n;
   readonly dh = dateHeureFr;
 
   ngOnInit(): void {
     this.store.charger();
     const o = this.route.snapshot.queryParamMap.get('onglet') as Onglet | null;
-    if (o && ONGLETS.includes(o)) this.onglet.set(o);
+    if (o && ONGLETS.includes(o)) {
+      this.onglet.set(o);
+      this.parametrage.set(PARAMETRAGE.includes(o));
+    }
     this.api.get<{ versions: Version[]; avertissement: string }>(`${CL_BASE}/classification/referentiel`).subscribe({
       next: (r) => { this.versions.set(r.versions); this.avertissement.set(r.avertissement); },
       error: (e) => void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Référentiel indisponible')),
@@ -571,7 +600,13 @@ export class ClClassificationComponent implements OnInit {
 
   ouvrir(o: Onglet): void {
     this.onglet.set(o);
-    void this.router.navigate([], { relativeTo: this.route, queryParams: { onglet: o === 'clients' ? null : o }, replaceUrl: true });
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { onglet: o === 'classer' ? null : o }, replaceUrl: true });
+  }
+
+  basculerParametrage(): void {
+    const on = !this.parametrage();
+    this.parametrage.set(on);
+    this.ouvrir(on ? 'simulation' : 'classer');
   }
 
   chargerValeurs(page: number): void {
@@ -642,33 +677,5 @@ export class ClClassificationComponent implements OnInit {
     this.charger(1);
     this.chargerReexamens();
     this.store.charger(true);
-  }
-
-  modele(): void {
-    this.api.download(`${CL_BASE}/classification/modele.xlsx`).subscribe({
-      next: (b) => telecharger(b, 'modele-classification.xlsx'),
-      error: (e) => void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Modèle indisponible')),
-    });
-  }
-
-  excel(input: HTMLInputElement): void {
-    const f = input.files?.[0];
-    input.value = '';
-    if (!f) return;
-    const fd = new FormData();
-    fd.append('fichier', f);
-    this.feedback.run(() => this.api.post<{ nb_valides: number; nb_rejets: number; lignes: Record<string, unknown>[] }>(`${CL_BASE}/classification/excel/analyse`, fd), {
-      busy: this.busy, loading: 'Analyse…',
-      success: (r) => ({ title: 'Analyse Excel', message: `${r.nb_valides} ligne(s) valide(s), ${r.nb_rejets} rejet(s)` }),
-      errorTitle: 'Fichier refusé',
-    }).subscribe((r) => {
-      this.pendingLignes = r.lignes;
-      if (!r.lignes.length) return;
-      this.feedback.run(() => this.api.post<{ modifies: number }>(`${CL_BASE}/classification/excel/confirmer`, { lignes: r.lignes }), {
-        confirm: { action: 'validation', title: 'Importer la classification', message: `Enregistrer ${r.nb_valides} classement(s) ?`, hint: 'La racine client n’est jamais modifiée.' },
-        busy: this.busy, success: (x) => ({ title: 'Excel importé', message: `${x.modifies} client(s)` }),
-        errorTitle: 'Import refusé',
-      }).subscribe(() => { this.pendingLignes = null; this.charger(); });
-    });
   }
 }
