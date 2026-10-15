@@ -219,7 +219,7 @@ const ICONE_CONTROLE: Record<StatutControle, string> = {
               </label>
             }
             <label>Période de référence <input type="date" [(ngModel)]="periode" /></label>
-            <label>&nbsp;<button type="button" class="bea-mg__btn" (click)="recartographier()" [disabled]="busy() || !colonnes.racine">Appliquer les colonnes</button></label>
+            <label>&nbsp;<button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="recartographier()" [disabled]="busy() || !colonnes.racine">Appliquer les colonnes</button></label>
           </div>
         }
         @if (l.message) {

@@ -171,7 +171,7 @@ const TAILLE_VALEURS = 80;
               <label>Racine client (6 chiffres)
                 <input [(ngModel)]="racineEval" maxlength="6" inputmode="numeric" placeholder="000001" (keyup.enter)="evaluer()" />
               </label>
-              <button type="button" class="bea-mg__btn" style="padding:0.55rem 1.2rem;font-weight:700" (click)="evaluer()" [disabled]="busy() || !racineEval.trim()">
+              <button type="button" class="bea-mg__btn bea-mg__btn--primary" style="padding:0.55rem 1.2rem;font-weight:700" (click)="evaluer()" [disabled]="busy() || !racineEval.trim()">
                 <mat-icon>calculate</mat-icon> Calculer le score
               </button>
             </div>

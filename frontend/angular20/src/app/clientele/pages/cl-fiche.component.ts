@@ -37,6 +37,21 @@ const RESULTATS: Record<string, string> = {
   selector: 'bea-cl-fiche',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, RouterLink, MatIconModule, ClienteleUiComponent],
+  styles: `
+    .bea-cl-decision { display: grid; grid-template-columns: minmax(10rem, 13rem) minmax(16rem, 1fr) auto auto; align-items: end; gap: 0.75rem; padding: 0.95rem 1.1rem; }
+    .bea-cl-decision > label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
+    .bea-cl-decision select, .bea-cl-decision__motif input { font: inherit; font-size: 0.88rem; font-weight: 500; text-transform: none; min-height: 2.5rem; padding: 0.5rem 0.65rem; border: 1px solid #cbd5e1; border-radius: 0.6rem; background: #fff; color: #0f172a; }
+    .bea-cl-decision select:focus, .bea-cl-decision__motif input:focus { outline: none; border-color: #1a5278; box-shadow: 0 0 0 3px rgba(26, 82, 120, 0.15); }
+    .bea-cl-decision > .bea-cl-decision__force { flex-direction: row; align-items: center; gap: 0.55rem; min-height: 2.5rem; padding: 0.35rem 0.75rem; border: 1px dashed #cbd5e1; border-radius: 0.6rem; background: #f8fafc; text-transform: none; cursor: pointer; }
+    .bea-cl-decision__force input { width: 1.05rem; height: 1.05rem; accent-color: #b45309; }
+    .bea-cl-decision__force span { display: flex; flex-direction: column; line-height: 1.2; }
+    .bea-cl-decision__force strong { font-size: 0.82rem; color: #0f172a; }
+    .bea-cl-decision__force small { font-size: 0.7rem; font-weight: 500; color: #64748b; }
+    .bea-cl-decision__force.is-on { border-style: solid; border-color: #f59e0b; background: #fffbeb; }
+    .bea-cl-decision__force.is-on strong { color: #b45309; }
+    .bea-cl-decision__btn { min-height: 2.5rem; padding: 0.55rem 1.15rem; white-space: nowrap; }
+    @media (max-width: 900px) { .bea-cl-decision { grid-template-columns: 1fr; } .bea-cl-decision__btn { justify-content: center; } }
+  `,
   template: `
     <bea-cl-styles />
     <div class="bea-mg bea-cl">
@@ -116,7 +131,7 @@ const RESULTATS: Record<string, string> = {
               <span style="display:flex;gap:0.4rem">
                 <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="evaluer()" [disabled]="busy()"><mat-icon>calculate</mat-icon> Évaluer avec le moteur</button>
                 @if (store.cap().classif_executer && evaluation()?.admissible) {
-                  <button type="button" class="bea-mg__btn" (click)="enregistrerMoteur()" [disabled]="busy()"><mat-icon>save</mat-icon> Enregistrer le résultat du moteur</button>
+                  <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="enregistrerMoteur()" [disabled]="busy()"><mat-icon>save</mat-icon> Enregistrer le résultat du moteur</button>
                 }
               </span>
             </div>
@@ -156,15 +171,22 @@ const RESULTATS: Record<string, string> = {
         @if (store.cap().classif_executer) {
           <section class="bea-mg__panel">
             <div class="bea-mg__panel-top"><h2>Décision manuelle</h2></div>
-            <div class="bea-cl-filters">
+            <div class="bea-cl-decision">
               <label>Niveau retenu
                 <select [(ngModel)]="niveau"><option>FAIBLE</option><option>MOYEN</option><option>ELEVE</option><option>INTERDIT</option></select>
               </label>
-              <label style="flex:1">Motif de la décision (obligatoire)<input [(ngModel)]="motif" maxlength="2000" /></label>
+              <label class="bea-cl-decision__motif">Motif de la décision (obligatoire)
+                <input [(ngModel)]="motif" maxlength="2000" placeholder="Ex. revue KYC du 15/10 : activité confirmée" />
+              </label>
               @if (store.cap().classif_forcer) {
-                <label class="bea-cl-check"><input type="checkbox" [(ngModel)]="forcer" /> Forçage (levée d’un blocage INTERDIT)</label>
+                <label class="bea-cl-decision__force" [class.is-on]="forcer">
+                  <input type="checkbox" [(ngModel)]="forcer" />
+                  <span><strong>Forçage</strong><small>Lever un blocage INTERDIT du moteur</small></span>
+                </label>
               }
-              <label>&nbsp;<button type="button" class="bea-mg__btn" (click)="classer()" [disabled]="busy()">Enregistrer la décision</button></label>
+              <button type="button" class="bea-mg__btn bea-mg__btn--primary bea-cl-decision__btn" (click)="classer()" [disabled]="busy() || !motif.trim()">
+                <mat-icon>gavel</mat-icon> Enregistrer la décision
+              </button>
             </div>
             <p class="bea-cl-hint" style="padding:0 1.1rem 0.9rem">Auteur, date, niveau retenu et motif sont historisés. Un INTERDIT proposé par le moteur ne peut être abaissé que par forçage (permission dédiée).</p>
           </section>

@@ -45,7 +45,7 @@ const AVEC_SYNTHESE: Vue360[] = ['synthese', 'filtrage', 'listes'];
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="exporter()" [disabled]="busy()"><mat-icon>download</mat-icon> Export Excel</button>
           }
           @if (store.cap().filtrage_executer) {
-            <button type="button" class="bea-mg__btn" (click)="scanner()" [disabled]="busy()"><mat-icon>search</mat-icon> Lancer le filtrage</button>
+            <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="scanner()" [disabled]="busy()"><mat-icon>search</mat-icon> Lancer le filtrage</button>
           }
         </div>
       </header>

@@ -45,6 +45,10 @@ div.bea-cl-kpi { cursor: default; }
 .bea-cl-filters select { max-width: 100%; }
 .bea-cl-filters label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
 .bea-cl-filters select, .bea-cl-filters input { font: inherit; font-size: 0.85rem; text-transform: none; font-weight: 500; padding: 0.45rem 0.55rem; border: 1px solid #dbe3ee; border-radius: 0.55rem; background: #fff; color: #0f172a; }
+/* Bouton posé dans une colonne de filtres : ne pas hériter du libellé (majuscules, petite police). */
+.bea-cl-filters label > .bea-mg__btn { justify-content: center; min-height: 2.35rem; font-size: 0.85rem; font-weight: 700; text-transform: none; }
+.bea-cl .bea-mg__btn--primary { font-weight: 700; }
+.bea-cl .bea-mg__btn--primary:focus-visible, .bea-cl .bea-mg__btn--ghost:focus-visible { outline: 3px solid rgba(26, 82, 120, 0.35); outline-offset: 2px; }
 .bea-cl-badge { display: inline-flex; align-items: center; padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.74rem; font-weight: 700; background: #eef2f7; color: #334155; }
 .bea-cl-badge[data-s='ANALYSE'] { background: #e0f2fe; color: #075985; }
 .bea-cl-badge[data-s='IMPORTE'] { background: #dcfce7; color: #166534; }

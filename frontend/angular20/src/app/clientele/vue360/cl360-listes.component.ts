@@ -90,7 +90,7 @@ interface Entree {
             <label>Prénom<input [(ngModel)]="entree.prenom" name="pr" maxlength="160" /></label>
             <label>Identifiant<input [(ngModel)]="entree.identifiant" name="id" maxlength="80" /></label>
             <label>Nationalité<input [(ngModel)]="entree.nationalite" name="nat" maxlength="80" /></label>
-            <label>&nbsp;<button type="submit" class="bea-mg__btn" [disabled]="busy() || (!entree.raison_sociale.trim() && !entree.identifiant.trim())">Ajouter une entrée</button></label>
+            <label>&nbsp;<button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy() || (!entree.raison_sociale.trim() && !entree.identifiant.trim())">Ajouter une entrée</button></label>
           </form>
           <p class="bea-cl-hint" style="padding:0 1rem 0.85rem">L’ajout est tracé dans le journal d’audit. Les clients concernés ne seront rapprochés qu’au prochain filtrage.</p>
         }

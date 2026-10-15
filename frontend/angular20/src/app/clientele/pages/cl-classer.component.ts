@@ -182,7 +182,7 @@ const INTERVALLE_SUIVI_MS = 1500;
           Non classés = aucun critère évaluable (NON CLASSÉ) ou résultat non admissible, rien n’est écrit.
           Lancée le {{ dh(t.created_at) }}@if (t.fin) { · terminée le {{ dh(t.fin) }}}.
           @if (t.reprenable && store.cap().classif_executer && autorise()) {
-            <button type="button" class="bea-mg__btn" (click)="reprendre(t)" [disabled]="busy()"><mat-icon>replay</mat-icon> Reprendre</button>
+            <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="reprendre(t)" [disabled]="busy()"><mat-icon>replay</mat-icon> Reprendre</button>
           }
         </p>
       </div>

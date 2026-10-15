@@ -210,7 +210,7 @@ type Onglet = 'synthese' | 'profilage' | 'filtrage' | 'alertes' | 'comptes' | 'h
           <div class="bea-cl-modal__foot-l"><span class="bea-cl-hint">Aucun recalcul à l’ouverture. Consultation tracée dans l’audit.</span></div>
           <div class="bea-cl-modal__foot-r">
             <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="['/clientele/clients', racine()]"><mat-icon>badge</mat-icon> Fiche complète et actions</a>
-            <button type="button" class="bea-mg__btn" (click)="fermer.emit()">Fermer</button>
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="fermer.emit()">Fermer</button>
           </div>
         </div>
       </div>

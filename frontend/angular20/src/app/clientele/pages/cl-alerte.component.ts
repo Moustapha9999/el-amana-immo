@@ -71,7 +71,7 @@ interface Detail {
             <div class="bea-mg__actions" style="margin-top:0.7rem">
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="commenter()" [disabled]="busy() || !commentaire.trim()"><mat-icon>comment</mat-icon> Ajouter le commentaire</button>
               @for (t of x.transitions; track t) {
-                <button type="button" class="bea-mg__btn" (click)="decider(t)" [disabled]="busy()">{{ t.replaceAll('_',' ') }}</button>
+                <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="decider(t)" [disabled]="busy()">{{ t.replaceAll('_',' ') }}</button>
               }
             </div>
             <label class="bea-mg__btn bea-mg__btn--ghost" style="margin-top:0.7rem">

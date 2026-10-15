@@ -23,7 +23,7 @@ import {
           <label style="grid-column:span 2">Racine, nom / raison sociale, NNI, NIF, compte ou RIB
             <input [(ngModel)]="saisie" name="q" maxlength="80" placeholder="ex. 000667, NNI, 11 chiffres du compte…" />
           </label>
-          <label>&nbsp;<button type="submit" class="bea-mg__btn"><mat-icon>search</mat-icon> Rechercher</button></label>
+          <label>&nbsp;<button type="submit" class="bea-mg__btn bea-mg__btn--primary"><mat-icon>search</mat-icon> Rechercher</button></label>
         </form>
         <p class="bea-cl-hint" style="padding:0 1rem 0.85rem">Un client = une racine ORION : ses comptes sont regroupés, jamais fusionnés sur une ressemblance de nom. Un compte ou un RIB doit être saisi en entier.</p>
       </section>

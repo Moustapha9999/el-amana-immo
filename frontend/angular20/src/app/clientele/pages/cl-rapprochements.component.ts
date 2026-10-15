@@ -63,7 +63,7 @@ interface Ecart {
             </label>
           </div>
           <div style="padding:0 1rem 1rem">
-            <button type="button" class="bea-mg__btn" [disabled]="!importA || !importB || importA===importB || busy()" (click)="calculer()">
+            <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="!importA || !importB || importA===importB || busy()" (click)="calculer()">
               <mat-icon>compare_arrows</mat-icon> Calculer
             </button>
           </div>

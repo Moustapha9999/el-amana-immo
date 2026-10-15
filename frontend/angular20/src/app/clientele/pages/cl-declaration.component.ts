@@ -106,13 +106,13 @@ const ETAPES = ['BROUILLON', 'CALCULEE', 'A_CONTROLER', 'VALIDEE', 'CLOTUREE', '
               <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="agir('calculer', 'Calculer')" [disabled]="busy()"><mat-icon>calculate</mat-icon> Calculer</button>
             }
             @if (x.actions.controler && store.cap().bcm_preparer) {
-              <button type="button" class="bea-mg__btn" (click)="agir('controler', 'Soumettre au contrôle', { action: 'validation', title: 'Soumettre au contrôle', message: 'Passer en à contrôler ?' })"><mat-icon>rule</mat-icon> Contrôle</button>
+              <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="agir('controler', 'Soumettre au contrôle', { action: 'validation', title: 'Soumettre au contrôle', message: 'Passer en à contrôler ?' })"><mat-icon>rule</mat-icon> Contrôle</button>
             }
             @if (x.actions.valider && store.cap().bcm_valider) {
-              <button type="button" class="bea-mg__btn" (click)="agir('valider', 'Valider', { action: 'validation', title: 'Valider la déclaration', message: 'Figer le snapshot ? Elle ne se recalculera plus.', hint: 'Les cellules À CONFIGURER restent vides.' })"><mat-icon>verified</mat-icon> Valider</button>
+              <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="agir('valider', 'Valider', { action: 'validation', title: 'Valider la déclaration', message: 'Figer le snapshot ? Elle ne se recalculera plus.', hint: 'Les cellules À CONFIGURER restent vides.' })"><mat-icon>verified</mat-icon> Valider</button>
             }
             @if (x.actions.cloturer && store.cap().bcm_cloturer) {
-              <button type="button" class="bea-mg__btn" (click)="agir('cloturer', 'Clôturer', { action: 'validation', title: 'Clôturer', message: 'Clôturer cette déclaration validée ?' })"><mat-icon>lock</mat-icon> Clôturer</button>
+              <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="agir('cloturer', 'Clôturer', { action: 'validation', title: 'Clôturer', message: 'Clôturer cette déclaration validée ?' })"><mat-icon>lock</mat-icon> Clôturer</button>
             }
             @if (x.actions.archiver && store.cap().bcm_cloturer) {
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="agir('archiver', 'Archiver', { action: 'validation', title: 'Archiver', message: 'Archiver cette déclaration clôturée ?' })"><mat-icon>inventory_2</mat-icon> Archiver</button>
