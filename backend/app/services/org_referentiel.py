@@ -82,6 +82,8 @@ LIAISONS: tuple[Liaison, ...] = (
             "departement"),
     Liaison("mg_stock_mouvements", "stock-fournitures", "Mouvements de stock", "mg_stock_mouvements",
             "org_entite_id", "departement"),
+    Liaison("mg_stock_sorties_service", "stock-fournitures", "Sorties de stock (service destinataire)",
+            "mg_stock_mouvements", "service_id"),
     Liaison("mg_demandes_fourniture", "stock-fournitures", "Demandes de fournitures", "mg_demandes_fourniture",
             "org_entite_id", "departement"),
     Liaison("mg_notes_frais", "notes-frais", "Notes de frais", "mg_notes_frais", "org_entite_id", "departement"),

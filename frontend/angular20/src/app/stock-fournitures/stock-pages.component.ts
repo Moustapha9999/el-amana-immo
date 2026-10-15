@@ -9,6 +9,8 @@ import {
   inject,
   input,
   signal,
+  viewChild,
+  viewChildren,
 } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -24,6 +26,9 @@ import {
   StockMouvementViewComponent,
 } from './stock-mouvement-edit.component';
 import { StockAlertesWatcherService } from './stock-alertes-watcher.service';
+import { StockMotifsSortiePanelComponent } from './stock-motifs-sortie-panel.component';
+import { StockSortieFormComponent } from './stock-sortie-form.component';
+import { StockEntreeFormComponent } from './stock-entree-form.component';
 
 interface Article {
   id: string;
@@ -43,6 +48,12 @@ interface Mouvement extends StockMouvementRow {
   departement: string | null;
   initiateur_nom?: string | null;
   stock_disponible?: number | null;
+  destination_type?: 'DEPARTEMENT' | 'AGENCE' | null;
+  destination_libelle?: string | null;
+  demandeur_nom?: string | null;
+  provenance_type?: string | null;
+  provenance_libelle?: string | null;
+  piece_reference?: string | null;
 }
 
 interface BcLigneReception {
@@ -689,6 +700,9 @@ export class StockAlertesComponent implements OnInit {
     PaginationComponent,
     StockMouvementEditComponent,
     StockMouvementViewComponent,
+    StockSortieFormComponent,
+    StockEntreeFormComponent,
+    RouterLink,
   ],
   template: `
     <section class="bea-mg">
@@ -708,8 +722,12 @@ export class StockAlertesComponent implements OnInit {
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="openReception()">
               <mat-icon>local_shipping</mat-icon> Réception BC
             </button>
+          } @else if (typeMouvement() === 'SORTIE') {
+            <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/stock-fournitures/rapports/consommation_destinataires">
+              <mat-icon>leaderboard</mat-icon> Consommation
+            </a>
           }
-          <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="openCreate()">
+          <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="typeMouvement() === 'SORTIE' ? sortieOpen.set(true) : entreeOpen.set(true)">
             <mat-icon>add</mat-icon>
             {{ typeMouvement() === 'SORTIE' ? 'Nouvelle sortie' : 'Nouvelle entrée' }}
           </button>
@@ -719,8 +737,33 @@ export class StockAlertesComponent implements OnInit {
       <form class="bea-mg__search" [formGroup]="filters" (ngSubmit)="$event.preventDefault()">
         <label class="bea-mg__field bea-mg__field--grow">
           <mat-icon>search</mat-icon>
-          <input formControlName="q" placeholder="Rechercher référence ou motif…" (input)="onSearchInput()" />
+          <input
+            formControlName="q"
+            [placeholder]="typeMouvement() === 'SORTIE' ? 'Rechercher référence, article, motif, demandeur…' : 'Rechercher référence, article, fournisseur, n° de pièce…'"
+            (input)="onSearchInput()"
+          />
         </label>
+        @if (typeMouvement() === 'SORTIE') {
+          <label class="bea-mg__field">
+            <mat-icon>alt_route</mat-icon>
+            <select formControlName="destination_type" (change)="goToPage(1)" aria-label="Destination">
+              <option value="">Toutes destinations</option>
+              <option value="DEPARTEMENT">Département / Service</option>
+              <option value="AGENCE">Agence</option>
+            </select>
+          </label>
+        } @else {
+          <label class="bea-mg__field">
+            <mat-icon>input</mat-icon>
+            <select formControlName="provenance_type" (change)="goToPage(1)" aria-label="Provenance">
+              <option value="">Toutes provenances</option>
+              <option value="FOURNISSEUR">Fournisseur</option>
+              <option value="RETOUR_DEPARTEMENT">Retour département</option>
+              <option value="RETOUR_AGENCE">Retour agence</option>
+              <option value="AUTRE">Autre</option>
+            </select>
+          </label>
+        }
       </form>
 
 
@@ -736,7 +779,13 @@ export class StockAlertesComponent implements OnInit {
               <th>Réf.</th>
               <th>Date</th>
               <th>Article</th>
-              <th>Initiateur</th>
+              <th>{{ typeMouvement() === 'SORTIE' ? 'Sorti par' : 'Reçu par' }}</th>
+              @if (typeMouvement() === 'SORTIE') {
+                <th>Destination</th>
+                <th>Demandé par</th>
+              } @else {
+                <th>Provenance</th>
+              }
               <th>Stock dispo.</th>
               <th>{{ typeMouvement() === 'SORTIE' ? 'Qté sortie' : 'Qté entrée' }}</th>
               <th>Motif</th>
@@ -750,6 +799,22 @@ export class StockAlertesComponent implements OnInit {
                 <td>{{ m.date_mouvement | date: 'dd/MM/yyyy HH:mm' }}</td>
                 <td>{{ m.article_code || articleLabel(m.article_id) }}</td>
                 <td>{{ m.initiateur_nom || '—' }}</td>
+                @if (typeMouvement() === 'SORTIE') {
+                  <td>
+                    @if (m.destination_type) {
+                      <mat-icon style="font-size:1rem;width:1rem;height:1rem;vertical-align:-0.15rem;color:#64748b" [title]="m.destination_type === 'AGENCE' ? 'Agence' : 'Département / Service'">
+                        {{ m.destination_type === 'AGENCE' ? 'storefront' : 'account_tree' }}
+                      </mat-icon>
+                    }
+                    {{ m.destination_libelle || '—' }}
+                  </td>
+                  <td>{{ m.demandeur_nom || '—' }}</td>
+                } @else {
+                  <td>
+                    {{ m.provenance_libelle || (m.source_type === 'achat_reception' ? 'Réception BC' : '—') }}
+                    @if (m.piece_reference) { <small style="display:block;color:#64748b">{{ m.piece_reference }}</small> }
+                  </td>
+                }
                 <td>{{ m.stock_disponible | quantite }}</td>
                 <td>{{ m.quantite | quantite }}</td>
                 <td>{{ m.motif || '—' }}</td>
@@ -773,7 +838,7 @@ export class StockAlertesComponent implements OnInit {
               </tr>
             } @empty {
               <tr>
-                <td colspan="8" class="bea-mg__empty">
+                <td [attr.colspan]="typeMouvement() === 'SORTIE' ? 10 : 9" class="bea-mg__empty">
                   <mat-icon>swap_vert</mat-icon>
                   <p>Aucun mouvement.</p>
                 </td>
@@ -793,67 +858,12 @@ export class StockAlertesComponent implements OnInit {
         }
       </div>
 
-      @if (createOpen()) {
-        <div class="bea-mg__backdrop" (click)="closeCreate()" role="presentation"></div>
-        <div
-          class="bea-mg__modal"
-          role="dialog"
-          aria-modal="true"
-          [attr.aria-label]="typeMouvement() === 'SORTIE' ? 'Nouvelle sortie' : 'Nouvelle entrée'"
-        >
-          <header class="bea-mg__modal-head">
-            <div>
-              <p class="bea-stock-page__kicker">Saisie</p>
-              <h2>{{ typeMouvement() === 'SORTIE' ? 'Nouvelle sortie' : 'Nouvelle entrée' }}</h2>
-            </div>
-            <button type="button" class="bea-mg__icon-btn" (click)="closeCreate()" title="Fermer">
-              <mat-icon>close</mat-icon>
-            </button>
-          </header>
-          <form [formGroup]="form" (ngSubmit)="save()">
-            <div class="bea-mg__modal-body">
-              <div class="bea-mg__grid">
-                <label class="bea-mg__span2">
-                  Article
-                  <select formControlName="article_id">
-                    <option value="">—</option>
-                    @for (a of articles(); track a.id) {
-                      <option [value]="a.id">
-                        {{ a.code }} — {{ a.designation }} ({{ a.stock_actuel | quantite }})
-                      </option>
-                    }
-                  </select>
-                </label>
-                <label>
-                  Quantité
-                  <input type="number" formControlName="quantite" min="0.001" step="0.001" />
-                </label>
-                <label>
-                  Agence
-                  <select formControlName="agence_id">
-                    <option value="">—</option>
-                    @for (a of agences(); track a.id) {
-                      <option [value]="a.id">{{ a.libelle }}</option>
-                    }
-                  </select>
-                </label>
-                <label class="bea-mg__span2">
-                  Motif
-                  <input formControlName="motif" placeholder="Motif du mouvement…" />
-                </label>
-              </div>
-              @if (modalErreur()) {
-                <p class="bea-stock-page__error">{{ modalErreur() }}</p>
-              }
-            </div>
-            <footer class="bea-mg__modal-foot">
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="closeCreate()">Annuler</button>
-              <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="form.invalid || saving()">
-                Enregistrer
-              </button>
-            </footer>
-          </form>
-        </div>
+      @if (entreeOpen()) {
+        <bea-stock-entree-form (closed)="entreeOpen.set(false)" (saved)="entreeOpen.set(false); apresMutation()" />
+      }
+
+      @if (sortieOpen()) {
+        <bea-stock-sortie-form (closed)="sortieOpen.set(false)" (saved)="sortieOpen.set(false); apresMutation()" />
       }
 
       @if (detail(); as d) {
@@ -1009,7 +1019,12 @@ export class StockFluxComponent implements OnInit {
   readonly pageSize = 50;
   readonly detail = signal<Mouvement | null>(null);
   readonly editTarget = signal<Mouvement | null>(null);
-  readonly createOpen = signal(false);
+  readonly entreeOpen = signal(false);
+  readonly sortieOpen = signal(false);
+  private readonly sortieForm = viewChild(StockSortieFormComponent);
+  private readonly entreeForm = viewChild(StockEntreeFormComponent);
+  readonly hasUnsavedChanges = (): boolean =>
+    (this.sortieForm()?.hasUnsavedChanges() ?? false) || (this.entreeForm()?.hasUnsavedChanges() ?? false);
   readonly receptionOpen = signal(false);
   readonly bonsReception = signal<BonReception[]>([]);
   readonly selectedBonId = signal('');
@@ -1023,14 +1038,7 @@ export class StockFluxComponent implements OnInit {
   readonly saving = signal(false);
   readonly q = signal('');
 
-  readonly filters = this.fb.nonNullable.group({ q: '' });
-
-  readonly form = this.fb.nonNullable.group({
-    article_id: ['', Validators.required],
-    quantite: [1, [Validators.required, Validators.min(0.001)]],
-    agence_id: [''],
-    motif: [''],
-  });
+  readonly filters = this.fb.nonNullable.group({ q: '', destination_type: '', provenance_type: '' });
 
   readonly filtered = computed(() => {
     const term = this.q().trim().toLowerCase();
@@ -1041,6 +1049,10 @@ export class StockFluxComponent implements OnInit {
       return (
         m.reference.toLowerCase().includes(term) ||
         (m.motif || '').toLowerCase().includes(term) ||
+        (m.demandeur_nom || '').toLowerCase().includes(term) ||
+        (m.destination_libelle || '').toLowerCase().includes(term) ||
+        (m.provenance_libelle || '').toLowerCase().includes(term) ||
+        (m.piece_reference || '').toLowerCase().includes(term) ||
         art.includes(term)
       );
     });
@@ -1057,11 +1069,7 @@ export class StockFluxComponent implements OnInit {
       this.closeReception();
       return;
     }
-    if (this.detail()) {
-      this.closeDetail();
-      return;
-    }
-    if (this.createOpen()) this.closeCreate();
+    if (this.detail()) this.closeDetail();
   }
 
   ngOnInit(): void {
@@ -1097,10 +1105,18 @@ export class StockFluxComponent implements OnInit {
     this.reload();
   }
 
+  private filtresServeur(): Record<string, string> {
+    const params: Record<string, string> = { type_mouvement: this.typeMouvement() };
+    const { destination_type, provenance_type } = this.filters.getRawValue();
+    if (destination_type && this.typeMouvement() === 'SORTIE') params['destination_type'] = destination_type;
+    if (provenance_type && this.typeMouvement() === 'ENTREE') params['provenance_type'] = provenance_type;
+    return params;
+  }
+
   reload(): void {
     this.api
       .get<Paginated<Mouvement>>('/mg/stock/mouvements', {
-        type_mouvement: this.typeMouvement(),
+        ...this.filtresServeur(),
         page: this.page(),
         size: this.pageSize,
       })
@@ -1115,17 +1131,6 @@ export class StockFluxComponent implements OnInit {
           this.erreur.set('Chargement impossible.');
         },
       });
-  }
-
-  openCreate(): void {
-    this.modalErreur.set('');
-    this.ok.set('');
-    this.form.reset({ article_id: '', quantite: 1, agence_id: '', motif: '' });
-    this.createOpen.set(true);
-  }
-
-  closeCreate(): void {
-    this.createOpen.set(false);
   }
 
   openDetail(m: Mouvement): void {
@@ -1145,7 +1150,7 @@ export class StockFluxComponent implements OnInit {
     this.mouvementActions.supprimer(m).subscribe(() => this.apresMutation());
   }
 
-  private apresMutation(): void {
+  protected apresMutation(): void {
     this.reload();
     this.loadArticles();
     this.alertesWatcher.refresh(true);
@@ -1267,34 +1272,8 @@ export class StockFluxComponent implements OnInit {
     });
   }
 
-  save(): void {
-    if (this.form.invalid) return;
-    this.saving.set(true);
-    this.modalErreur.set('');
-    const v = this.form.getRawValue();
-    const body: Record<string, unknown> = {
-      article_id: v.article_id,
-      quantite: v.quantite,
-      type_mouvement: this.typeMouvement(),
-      motif: v.motif || null,
-    };
-    if (v.agence_id) body['agence_id'] = v.agence_id;
-    this.api.post('/mg/stock/mouvements', body).subscribe({
-      next: () => {
-        this.saving.set(false);
-        this.ok.set('Mouvement enregistré.');
-        this.closeCreate();
-        this.apresMutation();
-      },
-      error: (err) => {
-        this.saving.set(false);
-        this.modalErreur.set(err?.error?.detail || 'Enregistrement refusé (stock / permission).');
-      },
-    });
-  }
-
   exportFile(format: 'xlsx' | 'pdf'): void {
-    const params: Record<string, string> = { format, type_mouvement: this.typeMouvement() };
+    const params: Record<string, string> = { ...this.filtresServeur(), format };
     if (this.q().trim()) params['q'] = this.q().trim();
     this.api
       .download('/mg/stock/mouvements/export', params)
@@ -1312,7 +1291,10 @@ export class StockFluxComponent implements OnInit {
   imports: [StockFluxComponent],
   template: `<bea-stock-flux typeMouvement="ENTREE" titre="Entrées de stock" />`,
 })
-export class StockEntreesComponent {}
+export class StockEntreesComponent {
+  private readonly flux = viewChild(StockFluxComponent);
+  readonly hasUnsavedChanges = (): boolean => this.flux()?.hasUnsavedChanges() ?? false;
+}
 
 @Component({
   selector: 'bea-stock-sorties',
@@ -1320,14 +1302,17 @@ export class StockEntreesComponent {}
   imports: [StockFluxComponent],
   template: `<bea-stock-flux typeMouvement="SORTIE" titre="Sorties de stock" />`,
 })
-export class StockSortiesComponent {}
+export class StockSortiesComponent {
+  private readonly flux = viewChild(StockFluxComponent);
+  readonly hasUnsavedChanges = (): boolean => this.flux()?.hasUnsavedChanges() ?? false;
+}
 
 /* ───────────────── Paramètres ───────────────── */
 
 @Component({
   selector: 'bea-stock-parametres',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MatIconModule, RouterLink, QuantitePipe],
+  imports: [ReactiveFormsModule, MatIconModule, RouterLink, QuantitePipe, StockMotifsSortiePanelComponent],
   template: `
     <section class="bea-mg">
       <header class="bea-mg__head">
@@ -1510,6 +1495,9 @@ export class StockSortiesComponent {}
           </div>
         </section>
       </div>
+
+      <bea-stock-motifs-sortie-panel sens="SORTIE" />
+      <bea-stock-motifs-sortie-panel sens="ENTREE" />
 
       @if (familleModal(); as mode) {
         <div class="bea-mg__backdrop" (click)="closeFamilleModal()" role="presentation"></div>
@@ -1841,6 +1829,8 @@ export class StockSortiesComponent {}
 export class StockParametresComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly fb = inject(FormBuilder);
+  private readonly motifsPanels = viewChildren(StockMotifsSortiePanelComponent);
+  readonly hasUnsavedChanges = (): boolean => this.motifsPanels().some((p) => p.hasUnsavedChanges());
 
   readonly familles = signal<Famille[]>([]);
   readonly parametres = signal<Parametre[]>([]);

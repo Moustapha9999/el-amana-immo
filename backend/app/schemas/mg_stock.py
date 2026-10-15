@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -112,6 +113,67 @@ class MouvementCreate(BaseModel):
     allow_negative: bool = False
 
 
+class SortieCreate(BaseModel):
+    """Sortie de stock : destination DEPARTEMENT (département [+ service]) ou AGENCE, jamais les deux."""
+
+    article_id: UUID
+    quantite: QtyPos
+    destination_type: Literal["DEPARTEMENT", "AGENCE"]
+    departement_id: UUID | None = None
+    service_id: UUID | None = None
+    agence_id: UUID | None = None
+    demandeur_id: UUID | None = None
+    demandeur_nom: str | None = Field(default=None, max_length=255)
+    motif_id: UUID
+    observation: str | None = Field(default=None, max_length=2000)
+    # Stock affiché à l'ouverture du formulaire : refus si le stock a bougé entre-temps.
+    stock_attendu: Qty | None = None
+
+
+class EntreeCreate(BaseModel):
+    """Entrée de stock : une seule provenance (fournisseur, retour département, retour agence ou autre)."""
+
+    article_id: UUID
+    quantite: QtyPos
+    provenance_type: Literal["FOURNISSEUR", "RETOUR_DEPARTEMENT", "RETOUR_AGENCE", "AUTRE"]
+    fournisseur_id: UUID | None = None
+    piece_reference: str | None = Field(default=None, max_length=80)
+    departement_id: UUID | None = None
+    service_id: UUID | None = None
+    agence_id: UUID | None = None
+    remis_par: str | None = Field(default=None, max_length=255)
+    motif_id: UUID
+    observation: str | None = Field(default=None, max_length=2000)
+    stock_attendu: Qty | None = None
+
+
+class MotifSortieOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    code: str
+    libelle: str
+    sens: str = "SORTIE"
+    observation_obligatoire: bool
+    ordre: int
+    is_active: bool
+
+
+class MotifSortieCreate(BaseModel):
+    sens: Literal["SORTIE", "ENTREE"] = "SORTIE"
+    code: str = Field(min_length=1, max_length=40)
+    libelle: str = Field(min_length=1, max_length=160)
+    observation_obligatoire: bool = False
+    ordre: int = 0
+
+
+class MotifSortieUpdate(BaseModel):
+    libelle: str | None = Field(default=None, min_length=1, max_length=160)
+    observation_obligatoire: bool | None = None
+    ordre: int | None = None
+    is_active: bool | None = None
+
+
 class MouvementUpdate(BaseModel):
     date_mouvement: datetime | None = None
     article_id: UUID | None = None
@@ -161,6 +223,19 @@ class MouvementOut(BaseModel):
     article_code: str | None = None
     article_designation: str | None = None
     stock_disponible: Qty | None = None
+    destination_type: str | None = None
+    org_entite_id: UUID | None = None
+    service_id: UUID | None = None
+    service_libelle: str | None = None
+    agence_libelle: str | None = None
+    destination_libelle: str | None = None
+    demandeur_id: UUID | None = None
+    demandeur_nom: str | None = None
+    motif_id: UUID | None = None
+    provenance_type: str | None = None
+    fournisseur_id: UUID | None = None
+    piece_reference: str | None = None
+    provenance_libelle: str | None = None
 
 
 class DemandeLigneIn(BaseModel):

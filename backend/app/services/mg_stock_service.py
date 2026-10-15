@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.auth import Agence, User
+from app.models.organisation import Fournisseur, OrgEntite
 from app.models.mg_stock import (
     MgArticle,
     MgArticleFamille,
@@ -335,6 +336,15 @@ class MgStockService:
             "departement": mvt.departement,
             "motif": mvt.motif,
             "observation": mvt.observation,
+            "destination_type": mvt.destination_type,
+            "org_entite_id": str(mvt.org_entite_id) if mvt.org_entite_id else None,
+            "service_id": str(mvt.service_id) if mvt.service_id else None,
+            "demandeur_id": str(mvt.demandeur_id) if mvt.demandeur_id else None,
+            "demandeur_nom": mvt.demandeur_nom,
+            "motif_id": str(mvt.motif_id) if mvt.motif_id else None,
+            "provenance_type": mvt.provenance_type,
+            "fournisseur_id": str(mvt.fournisseur_id) if mvt.fournisseur_id else None,
+            "piece_reference": mvt.piece_reference,
         }
 
     async def _mouvement_locked(self, mvt_id: uuid.UUID) -> tuple[MgStockMouvement, MgStockPeriode | None]:
@@ -401,6 +411,21 @@ class MgStockService:
         mvt, periode = await self._mouvement_locked(mvt_id)
         before = self.mouvement_snapshot(mvt)
         fields = data.model_dump(exclude_unset=True)
+
+        if mvt.destination_type or mvt.provenance_type:
+            for key in ("agence_id", "departement", "motif"):
+                if key in fields and (fields[key] or None) != (getattr(mvt, key) or None):
+                    if mvt.provenance_type:
+                        raise AppError(
+                            "La provenance et le motif d’une entrée validée ne se modifient pas ici. "
+                            "Supprimez l’entrée puis ressaisissez-la.",
+                            code="ENTREE_PROVENANCE_VERROUILLEE",
+                        )
+                    raise AppError(
+                        "La destination et le motif d’une sortie validée ne se modifient pas ici. "
+                        "Supprimez la sortie puis ressaisissez-la.",
+                        code="SORTIE_DESTINATION_VERROUILLEE",
+                    )
 
         nouvelle_date = fields.get("date_mouvement")
         if nouvelle_date is not None:
@@ -602,6 +627,13 @@ class MgStockService:
         q: str | None = None,
         page: int = 1,
         size: int = 50,
+        destination_type: str | None = None,
+        org_entite_ids: set[uuid.UUID] | None = None,
+        demandeur_id: uuid.UUID | None = None,
+        date_debut: date | None = None,
+        date_fin: date | None = None,
+        provenance_type: str | None = None,
+        fournisseur_id: uuid.UUID | None = None,
     ) -> tuple[list[MgStockMouvement], int]:
         filters = []
         if q and q.strip():
@@ -613,15 +645,43 @@ class MgStockService:
                 or_(
                     MgStockMouvement.reference.ilike(like),
                     MgStockMouvement.motif.ilike(like),
+                    MgStockMouvement.demandeur_nom.ilike(like),
+                    MgStockMouvement.departement.ilike(like),
+                    MgStockMouvement.piece_reference.ilike(like),
+                    MgStockMouvement.fournisseur_id.in_(
+                        select(Fournisseur.id).where(Fournisseur.raison_sociale.ilike(like))
+                    ),
                     MgStockMouvement.article_id.in_(articles),
                 )
             )
+        if provenance_type:
+            filters.append(MgStockMouvement.provenance_type == provenance_type.upper())
+        if fournisseur_id:
+            filters.append(MgStockMouvement.fournisseur_id == fournisseur_id)
         if article_id:
             filters.append(MgStockMouvement.article_id == article_id)
         if type_mouvement:
             filters.append(MgStockMouvement.type_mouvement == type_mouvement.upper())
         if agence_id:
             filters.append(MgStockMouvement.agence_id == agence_id)
+        if destination_type:
+            filters.append(MgStockMouvement.destination_type == destination_type.upper())
+        if org_entite_ids:
+            filters.append(
+                or_(
+                    MgStockMouvement.org_entite_id.in_(org_entite_ids),
+                    MgStockMouvement.service_id.in_(org_entite_ids),
+                )
+            )
+        if demandeur_id:
+            filters.append(MgStockMouvement.demandeur_id == demandeur_id)
+        if date_debut:
+            filters.append(MgStockMouvement.date_mouvement >= datetime.combine(date_debut, datetime.min.time(), tzinfo=timezone.utc))
+        if date_fin:
+            filters.append(
+                MgStockMouvement.date_mouvement
+                < datetime.combine(date_fin + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+            )
         count_stmt = select(func.count()).select_from(MgStockMouvement)
         if filters:
             count_stmt = count_stmt.where(*filters)
@@ -662,12 +722,55 @@ class MgStockService:
                 await self.db.execute(select(MgStockPeriode).where(MgStockPeriode.id.in_(periode_ids)))
             ).scalars().all()
             periodes = {p.id: p for p in rows}
+        entite_ids = {i for m in mouvements for i in (m.org_entite_id, m.service_id) if i}
+        entites: dict[uuid.UUID, str] = {}
+        if entite_ids:
+            rows = (
+                await self.db.execute(select(OrgEntite.id, OrgEntite.libelle).where(OrgEntite.id.in_(entite_ids)))
+            ).all()
+            entites = {i: libelle for i, libelle in rows}
+        agence_ids = {m.agence_id for m in mouvements if m.agence_id}
+        agences: dict[uuid.UUID, str] = {}
+        if agence_ids:
+            rows = (await self.db.execute(select(Agence.id, Agence.libelle).where(Agence.id.in_(agence_ids)))).all()
+            agences = {i: libelle for i, libelle in rows}
+        fournisseur_ids = {m.fournisseur_id for m in mouvements if getattr(m, "fournisseur_id", None)}
+        fournisseurs: dict[uuid.UUID, str] = {}
+        if fournisseur_ids:
+            rows = (
+                await self.db.execute(
+                    select(Fournisseur.id, Fournisseur.raison_sociale).where(Fournisseur.id.in_(fournisseur_ids))
+                )
+            ).all()
+            fournisseurs = {i: libelle for i, libelle in rows}
         out: list[dict] = []
         for m in mouvements:
             article = articles.get(m.article_id)
             initiateur = users.get(m.initiateur_id) if m.initiateur_id else None
             periode = periodes.get(m.periode_id) if m.periode_id else None
             cloturee = bool(periode and periode.statut == "CLOTUREE")
+            agence_libelle = agences.get(m.agence_id) if m.agence_id else None
+            service_libelle = entites.get(m.service_id) if m.service_id else None
+            if m.destination_type == "AGENCE":
+                destination_libelle = agence_libelle
+            elif m.destination_type == "DEPARTEMENT":
+                dep = entites.get(m.org_entite_id) if m.org_entite_id else m.departement
+                destination_libelle = f"{dep} › {service_libelle}" if service_libelle else dep
+            else:
+                destination_libelle = m.departement or agence_libelle
+            provenance_type = getattr(m, "provenance_type", None)
+            provenance_libelle = None
+            if provenance_type:
+                destination_libelle = None
+                if provenance_type == "FOURNISSEUR":
+                    provenance_libelle = fournisseurs.get(m.fournisseur_id) or "Fournisseur"
+                elif provenance_type == "RETOUR_AGENCE":
+                    provenance_libelle = f"Retour · {agence_libelle or 'agence'}"
+                elif provenance_type == "RETOUR_DEPARTEMENT":
+                    dep = entites.get(m.org_entite_id) if m.org_entite_id else m.departement
+                    provenance_libelle = f"Retour · {dep} › {service_libelle}" if service_libelle else f"Retour · {dep}"
+                else:
+                    provenance_libelle = "Autre provenance"
             out.append(
                 {
                     "id": m.id,
@@ -697,6 +800,19 @@ class MgStockService:
                         and m.type_mouvement in MOUVEMENTS_EDITABLES
                         and (m.source_type or "") not in WORKFLOW_SOURCES
                     ),
+                    "destination_type": m.destination_type,
+                    "org_entite_id": m.org_entite_id,
+                    "service_id": m.service_id,
+                    "service_libelle": service_libelle,
+                    "agence_libelle": agence_libelle,
+                    "destination_libelle": destination_libelle,
+                    "demandeur_id": m.demandeur_id,
+                    "demandeur_nom": m.demandeur_nom,
+                    "motif_id": m.motif_id,
+                    "provenance_type": provenance_type,
+                    "fournisseur_id": getattr(m, "fournisseur_id", None),
+                    "piece_reference": getattr(m, "piece_reference", None),
+                    "provenance_libelle": provenance_libelle,
                 }
             )
         return out
@@ -1299,6 +1415,7 @@ class MgStockService:
         allow_zero: bool = False,
         force_stock: Decimal | None = None,
         allow_negative: bool = False,
+        extra: dict | None = None,
     ) -> MgStockMouvement:
         qty = Decimal(quantite)
         if type_mouvement == "AJUSTEMENT":
@@ -1363,6 +1480,7 @@ class MgStockService:
             source_type=source_type,
             source_id=source_id,
             periode_id=periode.id,
+            **(extra or {}),
         )
         self.db.add(mvt)
         await self.db.flush()

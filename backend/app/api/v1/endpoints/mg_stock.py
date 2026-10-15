@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
@@ -42,6 +43,10 @@ from app.schemas.mg_stock import (
     InventaireTransition,
     InventaireUpdate,
     InventaireValidationPreview,
+    EntreeCreate,
+    MotifSortieCreate,
+    MotifSortieOut,
+    MotifSortieUpdate,
     MouvementCreate,
     MouvementOut,
     MouvementUpdate,
@@ -54,16 +59,27 @@ from app.schemas.mg_stock import (
     ParametreOut,
     ParametreUpdate,
     ReceptionBcIn,
+    SortieCreate,
 )
+from app.core.exceptions import AppError
+from app.services import org_referentiel
 from app.services.mg_inventaire_import import InventaireImportService
 from app.services.mg_inventaire_reference import InventaireReferenceService
 from app.services.mg_inventaire_service import MgInventaireService
 from app.services.mg_stock_events import audit_stock, notify_stock_roles, notify_stock_user
+from app.services.mg_stock_entrees import MgStockEntreeService
 from app.services.mg_stock_service import MgStockService
+from app.services.mg_stock_sorties import (
+    TYPES_DEPARTEMENT,
+    TYPES_SERVICE,
+    MgStockSortieService,
+    quantite_entiere_requise,
+)
 from app.services.permission_service import load_user_permission_codes
 from app.services.mg_pdf_service import pdf_demande_fourniture
 
 router = APIRouter(prefix="/mg/stock", tags=["mg-stock"])
+PROVENANCES = "^(FOURNISSEUR|RETOUR_DEPARTEMENT|RETOUR_AGENCE|AUTRE)$"
 
 _module = [Depends(require_module_access("stock-fournitures"))]
 
@@ -314,13 +330,31 @@ async def export_mouvements(
     type_mouvement: str | None = None,
     agence_id: UUID | None = None,
     q: str | None = None,
+    destination_type: str | None = Query(None, pattern="^(DEPARTEMENT|AGENCE)$"),
+    org_entite_id: UUID | None = None,
+    demandeur_id: UUID | None = None,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    provenance_type: str | None = Query(None, pattern=PROVENANCES),
+    fournisseur_id: UUID | None = None,
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.stock.export")),
 ):
     svc = MgStockService(db)
     rows, _ = await svc.list_mouvements(
-        type_mouvement=type_mouvement, agence_id=agence_id, q=q, page=1, size=500
+        type_mouvement=type_mouvement,
+        agence_id=agence_id,
+        q=q,
+        page=1,
+        size=500,
+        destination_type=destination_type,
+        org_entite_ids=await org_referentiel.sous_arbre(db, org_entite_id) if org_entite_id else None,
+        demandeur_id=demandeur_id,
+        date_debut=date_debut,
+        date_fin=date_fin,
+        provenance_type=provenance_type,
+        fournisseur_id=fournisseur_id,
     )
     enriched = await svc.enrich_mouvements(rows)
     headers = [
@@ -330,8 +364,9 @@ async def export_mouvements(
         "Article",
         "Quantité",
         "Stock disponible",
-        "Initiateur",
-        "Département",
+        "Saisi par",
+        "Destination / provenance",
+        "Demandeur / remis par",
         "Motif",
     ]
     data_rows = [
@@ -347,7 +382,9 @@ async def export_mouvements(
             as_qty(m["quantite"] or 0),
             float(m["stock_disponible"] or 0) if m.get("stock_disponible") is not None else "",
             m.get("initiateur_nom") or "",
-            m.get("departement") or "",
+            m.get("destination_libelle")
+            or " · ".join(x for x in (m.get("provenance_libelle"), m.get("piece_reference")) if x),
+            m.get("demandeur_nom") or "",
             m.get("motif") or "",
         ]
         for m in enriched
@@ -389,6 +426,13 @@ async def list_mouvements(
     type_mouvement: str | None = None,
     agence_id: UUID | None = None,
     q: str | None = None,
+    destination_type: str | None = Query(None, pattern="^(DEPARTEMENT|AGENCE)$"),
+    org_entite_id: UUID | None = None,
+    demandeur_id: UUID | None = None,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    provenance_type: str | None = Query(None, pattern=PROVENANCES),
+    fournisseur_id: UUID | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
@@ -402,9 +446,169 @@ async def list_mouvements(
         q=q,
         page=page,
         size=size,
+        destination_type=destination_type,
+        org_entite_ids=await org_referentiel.sous_arbre(db, org_entite_id) if org_entite_id else None,
+        demandeur_id=demandeur_id,
+        date_debut=date_debut,
+        date_fin=date_fin,
+        provenance_type=provenance_type,
+        fournisseur_id=fournisseur_id,
     )
     items = await svc.enrich_mouvements(rows)
     return PaginatedResponse(items=items, total=total, page=page, size=size)
+
+
+@router.get("/sorties/referentiels", dependencies=_module)
+async def sortie_referentiels(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.exit")),
+):
+    """Données du formulaire de sortie. Départements, services et agences : API CORE `/organisation`."""
+    svc = MgStockSortieService(db)
+    return {
+        "articles": [
+            {
+                "id": str(a.id),
+                "code": a.code,
+                "designation": a.designation,
+                "uom": a.uom,
+                "stock_actuel": as_qty(a.stock_actuel or 0),
+                "quantite_entiere": quantite_entiere_requise(a.uom),
+            }
+            for a in await svc.articles_disponibles()
+        ],
+        "motifs": [MotifSortieOut.model_validate(m) for m in await svc.list_motifs()],
+        "demandeur_libre": await svc.demandeur_libre(),
+        "types_departement": sorted(TYPES_DEPARTEMENT),
+        "types_service": sorted(TYPES_SERVICE),
+        "utilisateur": {"id": str(user.id), "nom": user.full_name},
+    }
+
+
+@router.get("/sorties/demandeurs", dependencies=_module)
+async def sortie_demandeurs(
+    q: str = Query(min_length=2, max_length=100),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.exit")),
+):
+    return await MgStockSortieService(db).rechercher_demandeurs(q)
+
+
+@router.post("/sorties", response_model=MouvementOut, status_code=201, dependencies=_module)
+async def create_sortie(
+    body: SortieCreate,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.exit")),
+):
+    svc = MgStockService(db)
+    mvt, rejoue = await MgStockSortieService(db).creer(
+        body, user, cle_idempotence=request.headers.get("Idempotency-Key")
+    )
+    if rejoue:
+        response.status_code = 200
+    else:
+        await audit_stock(
+            db, user, "create", "mg_stock_mouvement", mvt.id, request=request,
+            after=svc.mouvement_snapshot(mvt) | {"quantite": str(mvt.quantite), "article_id": str(mvt.article_id)},
+        )
+    return (await svc.enrich_mouvements([mvt]))[0]
+
+
+@router.get("/entrees/referentiels", dependencies=_module)
+async def entree_referentiels(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.entry")),
+):
+    """Données du formulaire d'entrée. Départements, services et agences : API CORE `/organisation`."""
+    svc = MgStockEntreeService(db)
+    return {
+        "articles": [
+            {
+                "id": str(a.id),
+                "code": a.code,
+                "designation": a.designation,
+                "uom": a.uom,
+                "stock_actuel": as_qty(a.stock_actuel or 0),
+                "stock_max": as_qty(a.stock_max) if a.stock_max is not None else None,
+                "fournisseur_habituel": a.fournisseur_habituel,
+                "quantite_entiere": quantite_entiere_requise(a.uom),
+            }
+            for a in await svc.articles_actifs()
+        ],
+        "fournisseurs": [
+            {"id": str(f.id), "code": f.code, "raison_sociale": f.raison_sociale}
+            for f in await svc.fournisseurs_actifs()
+        ],
+        "motifs": [MotifSortieOut.model_validate(m) for m in await svc.list_motifs(sens="ENTREE")],
+        "types_departement": sorted(TYPES_DEPARTEMENT),
+        "types_service": sorted(TYPES_SERVICE),
+        "utilisateur": {"id": str(user.id), "nom": user.full_name},
+    }
+
+
+@router.post("/entrees", response_model=MouvementOut, status_code=201, dependencies=_module)
+async def create_entree(
+    body: EntreeCreate,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.entry")),
+):
+    svc = MgStockService(db)
+    mvt, rejoue = await MgStockEntreeService(db).creer(
+        body, user, cle_idempotence=request.headers.get("Idempotency-Key")
+    )
+    if rejoue:
+        response.status_code = 200
+    else:
+        await audit_stock(
+            db, user, "create", "mg_stock_mouvement", mvt.id, request=request,
+            after=svc.mouvement_snapshot(mvt) | {"quantite": str(mvt.quantite), "article_id": str(mvt.article_id)},
+        )
+    return (await svc.enrich_mouvements([mvt]))[0]
+
+
+@router.get("/motifs-sortie", response_model=list[MotifSortieOut], dependencies=_module)
+async def list_motifs_sortie(
+    inclure_inactifs: bool = False,
+    sens: str | None = Query(None, pattern="^(SORTIE|ENTREE)$"),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.view")),
+):
+    return await MgStockSortieService(db).list_motifs(actifs_seulement=not inclure_inactifs, sens=sens)
+
+
+@router.post("/motifs-sortie", response_model=MotifSortieOut, status_code=201, dependencies=_module)
+async def create_motif_sortie(
+    body: MotifSortieCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.create")),
+):
+    motif = await MgStockSortieService(db).create_motif(body)
+    await audit_stock(
+        db, user, "create", "mg_stock_motif_sortie", motif.id, request=request,
+        after={"code": motif.code, "libelle": motif.libelle},
+    )
+    return motif
+
+
+@router.patch("/motifs-sortie/{motif_id}", response_model=MotifSortieOut, dependencies=_module)
+async def update_motif_sortie(
+    motif_id: UUID,
+    body: MotifSortieUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.create")),
+):
+    motif = await MgStockSortieService(db).update_motif(motif_id, body)
+    await audit_stock(
+        db, user, "update", "mg_stock_motif_sortie", motif.id, request=request,
+        after=body.model_dump(exclude_unset=True),
+    )
+    return motif
 
 
 @router.post("/mouvements", response_model=MouvementOut, dependencies=_module)
@@ -428,6 +632,18 @@ async def create_mouvement(
     have = await load_user_permission_codes(db, user)
     if not user_has_permission_codes(have, needed):
         raise HTTPException(403, detail=f"Permission requise : {needed}")
+    if t == "SORTIE":
+        raise AppError(
+            "Une sortie de stock se saisit avec le formulaire « Nouvelle sortie » "
+            "(destination, demandeur et motif obligatoires).",
+            code="SORTIE_VIA_FORMULAIRE",
+        )
+    if t == "ENTREE":
+        raise AppError(
+            "Une entrée de stock se saisit avec le formulaire « Nouvelle entrée » "
+            "(provenance et motif obligatoires) ou par réception de bon de commande.",
+            code="ENTREE_VIA_FORMULAIRE",
+        )
     if body.allow_negative and not user_has_permission_codes(have, "mg.stock.negative"):
         raise HTTPException(403, detail="Permission requise : mg.stock.negative")
     if body.allow_negative and not (body.motif or "").strip():
@@ -1520,6 +1736,10 @@ async def rapport_preview(
     famille_id: UUID | None = None,
     annee: int | None = None,
     mois: int | None = None,
+    axe: str | None = None,
+    detail: str | None = None,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -1540,6 +1760,10 @@ async def rapport_preview(
             "famille_id": str(famille_id) if famille_id else None,
             "annee": annee,
             "mois": mois,
+            "axe": axe,
+            "detail": detail,
+            "date_debut": date_debut.isoformat() if date_debut else None,
+            "date_fin": date_fin.isoformat() if date_fin else None,
         },
         page=page,
         size=size,

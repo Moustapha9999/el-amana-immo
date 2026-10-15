@@ -1,6 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { QuantitePipe } from '../shared/montant.pipe';
-import { ChangeDetectionStrategy, Component, HostListener, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, OnInit, inject, signal, viewChild } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../core/services/api.service';
@@ -13,6 +13,8 @@ import {
   StockMouvementViewComponent,
 } from './stock-mouvement-edit.component';
 import { StockAlertesWatcherService } from './stock-alertes-watcher.service';
+import { StockSortieFormComponent } from './stock-sortie-form.component';
+import { StockEntreeFormComponent } from './stock-entree-form.component';
 
 interface Article {
   id: string;
@@ -46,6 +48,8 @@ interface Paginated<T> {
     PaginationComponent,
     StockMouvementEditComponent,
     StockMouvementViewComponent,
+    StockSortieFormComponent,
+    StockEntreeFormComponent,
   ],
   template: `
     <section class="bea-mg">
@@ -60,6 +64,12 @@ interface Paginated<T> {
           </button>
           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="exportFile('pdf')" title="PDF">
             <mat-icon>picture_as_pdf</mat-icon> PDF
+          </button>
+          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="entreeOpen.set(true)">
+            <mat-icon>south_west</mat-icon> Nouvelle entrée
+          </button>
+          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="sortieOpen.set(true)">
+            <mat-icon>north_east</mat-icon> Nouvelle sortie
           </button>
           <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="openCreate()">
             <mat-icon>add</mat-icon> Nouveau mouvement
@@ -189,8 +199,6 @@ interface Paginated<T> {
                 <label>
                   Type
                   <select formControlName="type_mouvement">
-                    <option value="ENTREE">Entrée</option>
-                    <option value="SORTIE">Sortie</option>
                     <option value="AJUSTEMENT">Ajustement</option>
                     <option value="INVENTAIRE">Inventaire</option>
                   </select>
@@ -225,6 +233,13 @@ interface Paginated<T> {
             </footer>
           </form>
         </div>
+      }
+
+      @if (sortieOpen()) {
+        <bea-stock-sortie-form (closed)="sortieOpen.set(false)" (saved)="sortieOpen.set(false); apresMutation()" />
+      }
+      @if (entreeOpen()) {
+        <bea-stock-entree-form (closed)="entreeOpen.set(false)" (saved)="entreeOpen.set(false); apresMutation()" />
       }
 
       @if (viewTarget(); as m) {
@@ -264,6 +279,12 @@ export class StockMouvementsComponent implements OnInit {
   readonly msg = feedbackSignal('success', '');
   readonly modalErreur = signal('');
   readonly createOpen = signal(false);
+  readonly sortieOpen = signal(false);
+  readonly entreeOpen = signal(false);
+  private readonly sortieForm = viewChild(StockSortieFormComponent);
+  private readonly entreeForm = viewChild(StockEntreeFormComponent);
+  readonly hasUnsavedChanges = (): boolean =>
+    (this.sortieForm()?.hasUnsavedChanges() ?? false) || (this.entreeForm()?.hasUnsavedChanges() ?? false);
   readonly viewTarget = signal<Mouvement | null>(null);
   readonly editTarget = signal<Mouvement | null>(null);
   protected readonly mouvementActions = inject(StockMouvementActions);
@@ -280,7 +301,7 @@ export class StockMouvementsComponent implements OnInit {
 
   readonly form = this.fb.nonNullable.group({
     article_id: ['', Validators.required],
-    type_mouvement: ['ENTREE', Validators.required],
+    type_mouvement: ['AJUSTEMENT', Validators.required],
     quantite: [1, [Validators.required, Validators.min(0.001)]],
     motif: [''],
     agence_id: [''],
@@ -378,7 +399,7 @@ export class StockMouvementsComponent implements OnInit {
     const first = this.articles()[0]?.id || '';
     this.form.reset({
       article_id: first,
-      type_mouvement: 'ENTREE',
+      type_mouvement: 'AJUSTEMENT',
       quantite: 1,
       motif: '',
       agence_id: this.agences()[0]?.id || '',

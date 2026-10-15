@@ -76,10 +76,36 @@ interface Famille {
             </select>
           </label>
         }
+        @if (hasFilter('axe')) {
+          <label class="bea-mg__field">
+            <mat-icon>leaderboard</mat-icon>
+            <select formControlName="axe" (change)="applyFilters()" aria-label="Regrouper par">
+              @for (a of axes; track a.value) {
+                <option [value]="a.value">{{ a.label }}</option>
+              }
+            </select>
+          </label>
+        }
+        @if (hasFilter('detail')) {
+          <label class="bea-mg__field">
+            <input type="checkbox" formControlName="detail" (change)="applyFilters()" />
+            Détail par article
+          </label>
+        }
         @if (hasFilter('q')) {
           <label class="bea-mg__field bea-mg__field--grow">
             <mat-icon>search</mat-icon>
             <input formControlName="q" placeholder="Rechercher…" />
+          </label>
+        }
+        @if (hasFilter('date_debut')) {
+          <label class="bea-mg__field" title="Du">
+            <input type="date" formControlName="date_debut" aria-label="Date de début" />
+          </label>
+        }
+        @if (hasFilter('date_fin')) {
+          <label class="bea-mg__field" title="Au">
+            <input type="date" formControlName="date_fin" aria-label="Date de fin" />
           </label>
         }
         @if (hasFilter('annee')) {
@@ -175,7 +201,12 @@ interface Famille {
         <div class="bea-mg__panel">
           <div class="bea-mg__panel-top">
             <h2>{{ p.label }}</h2>
-            <span class="bea-mg__count">{{ p.total }} ligne(s) · {{ p.filters_label }}</span>
+            <span class="bea-mg__count">
+              {{ p.total }} ligne(s) · {{ p.filters_label }}
+              @if (p.totals['nb_sorties'] != null) {
+                · Total {{ quantite(p.totals['quantite']) }} unités sur {{ p.totals['nb_sorties'] }} sortie(s)
+              }
+            </span>
           </div>
           <div class="bea-mg__table-scroll">
             <table class="bea-mg__table">
@@ -246,8 +277,19 @@ export class StockRapportViewerComponent implements OnInit {
     nature_ecart: [''],
     type: [''],
     motif: [''],
+    axe: ['departement'],
+    detail: [false],
+    date_debut: [''],
+    date_fin: [''],
     dataset: ['etat_stock'],
   });
+
+  readonly axes = [
+    { value: 'departement', label: 'Par département' },
+    { value: 'service', label: 'Par service' },
+    { value: 'agence', label: 'Par agence' },
+    { value: 'demandeur', label: 'Par demandeur' },
+  ];
 
   /** Requête de la liste affichée : l'export reprend exactement celle-ci, pas le formulaire en cours de saisie. */
   private readonly affichee = signal<{ filters: Record<string, string>; dataset: string; columns: string[] } | null>(null);
@@ -281,6 +323,8 @@ export class StockRapportViewerComponent implements OnInit {
         this.catalog.set(rows);
         const key = this.route.snapshot.paramMap.get('key') || '';
         this.reportKey.set(key);
+        const axe = this.route.snapshot.queryParamMap.get('axe');
+        if (axe && this.axes.some((a) => a.value === axe)) this.filters.patchValue({ axe });
         const meta = rows.find((r) => r.key === key) ?? null;
         this.meta.set(meta);
         if (key === 'personnalise') {
@@ -334,9 +378,13 @@ export class StockRapportViewerComponent implements OnInit {
       'nature_ecart',
       'type',
       'motif',
+      'axe',
+      'date_debut',
+      'date_fin',
     ] as const) {
       if (v[k] && this.hasFilter(k)) p[k] = String(v[k]);
     }
+    if (v.detail && this.hasFilter('detail')) p['detail'] = '1';
     return p;
   }
 
@@ -432,6 +480,10 @@ export class StockRapportViewerComponent implements OnInit {
 
   rowId(row: Record<string, unknown>, index: number): string {
     return String(row['id'] ?? index);
+  }
+
+  quantite(v: number | undefined): string {
+    return formatQuantite(v);
   }
 
   cell(row: Record<string, unknown>, col: Col): string {

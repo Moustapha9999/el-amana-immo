@@ -25,7 +25,9 @@ from app.models.mg_stock import (
     MgStockPeriode,
     MgStockSolde,
 )
+from app.models.organisation import OrgEntite
 from app.services.mg_stock_periodes import MOIS_FR, compute_theorique, nature_ecart
+from app.services.mg_stock_sorties import TYPES_DEPARTEMENT, TYPES_SERVICE
 from app.services.reporting_export import (
     build_styled_pdf,
     build_styled_workbook,
@@ -261,6 +263,25 @@ REPORTS: dict[str, ReportDef] = {
         filters=["annee", "mois", "departement", "agence_id"],
         group="analyses",
     ),
+    "consommation_destinataires": ReportDef(
+        key="consommation_destinataires",
+        label="Consommation par destinataire",
+        description="Sorties par département, service, agence ou demandeur, avec détail par article.",
+        icon="leaderboard",
+        columns=[
+            ReportColumn("destinataire", "Destinataire"),
+            ReportColumn("rattachement", "Rattachement / destination"),
+            ReportColumn("article_code", "Code"),
+            ReportColumn("article", "Article"),
+            ReportColumn("nb_sorties", "Sorties", "number"),
+            ReportColumn("nb_articles", "Articles distincts", "number"),
+            ReportColumn("quantite", "Quantité sortie", "number"),
+            ReportColumn("part", "Part du total"),
+            ReportColumn("derniere_sortie", "Dernière sortie", "date"),
+        ],
+        filters=["axe", "detail", "annee", "mois", "date_debut", "date_fin", "famille_id", "q"],
+        group="analyses",
+    ),
     "par_famille": ReportDef(
         key="par_famille",
         label="Par famille",
@@ -285,6 +306,30 @@ REPORTS: dict[str, ReportDef] = {
         group="analyses",
     ),
 }
+
+
+AXES_CONSOMMATION = {
+    "departement": "Par département",
+    "service": "Par service",
+    "agence": "Par agence",
+    "demandeur": "Par demandeur",
+}
+COLONNES_DETAIL_ARTICLE = {"article_code", "article"}
+NON_RENSEIGNE = "Non renseigné"
+LIBELLE_HISTORIQUE = "Libellé historique, non rattaché au référentiel"
+
+
+def _colonnes(spec: ReportDef, f: dict, columns: list[str] | None) -> list[ReportColumn]:
+    cols = spec.columns
+    if spec.key == "consommation_destinataires":
+        if f.get("detail"):
+            cols = [c for c in cols if c.key != "nb_articles"]
+        else:
+            cols = [c for c in cols if c.key not in COLONNES_DETAIL_ARTICLE]
+    if columns:
+        wanted = set(columns)
+        cols = [c for c in cols if c.key in wanted] or cols
+    return cols
 
 
 def catalog() -> list[dict]:
@@ -335,9 +380,18 @@ def _norm_filters(raw: dict[str, Any] | None) -> dict[str, Any]:
         "sort_dir",
         "date_debut",
         "date_fin",
+        "axe",
+        "detail",
     ):
         if f.get(key):
             out[key] = str(f[key]).strip()
+    if out.get("axe") not in AXES_CONSOMMATION:
+        out["axe"] = "departement"
+    for key in ("date_debut", "date_fin"):
+        try:
+            out[key] = date.fromisoformat(out[key]) if out.get(key) else None
+        except ValueError:
+            out[key] = None
     out["agence_id"] = _parse_uuid(f.get("agence_id"))
     out["famille_id"] = _parse_uuid(f.get("famille_id"))
     out["annee"] = _int(f.get("annee"))
@@ -391,10 +445,7 @@ class MgStockReportingService:
         size = max(1, min(size, 200))
         start = (page - 1) * size
         page_rows = rows[start : start + size]
-        cols = spec.columns
-        if columns:
-            wanted = set(columns)
-            cols = [c for c in spec.columns if c.key in wanted] or spec.columns
+        cols = _colonnes(spec, f, columns)
         return {
             "report_key": report_key,
             "label": spec.label,
@@ -404,7 +455,7 @@ class MgStockReportingService:
             "columns": [{"key": c.key, "label": c.label, "kind": c.kind} for c in cols],
             "rows": [{c.key: r.get(c.key) for c in cols} for r in page_rows],
             "totals": totals,
-            "filters_label": self._filters_label(f),
+            "filters_label": self._filters_label(f, report_key),
             "empty_message": "Aucune donnée disponible.",
         }
 
@@ -428,14 +479,11 @@ class MgStockReportingService:
         rows, total, totals = await self._fetch(report_key, f, ids=use_ids, limit=limit)
         if not rows:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Aucune donnée à exporter.")
-        cols = spec.columns
-        if columns:
-            wanted = set(columns)
-            cols = [c for c in spec.columns if c.key in wanted] or spec.columns
+        cols = _colonnes(spec, f, columns)
         headers = [c.label for c in cols]
         data_rows = [[r.get(c.key) if r.get(c.key) is not None else "" for c in cols] for r in rows]
         when = export_now()
-        subtitle = f"{DEPT} · {self._filters_label(f)} · {format_export_datetime(when)}"
+        subtitle = f"{DEPT} · {self._filters_label(f, report_key)} · {format_export_datetime(when)}"
         if user and user.full_name:
             subtitle += f" · {user.full_name}"
         title = f"{spec.label} — Stock & Fournitures"
@@ -475,8 +523,14 @@ class MgStockReportingService:
         )
         return content, "application/pdf", f"stock-{report_key}-{stamp}.pdf", total
 
-    def _filters_label(self, f: dict) -> str:
+    def _filters_label(self, f: dict, report_key: str | None = None) -> str:
         bits = []
+        if report_key == "consommation_destinataires":
+            bits.append(AXES_CONSOMMATION[f["axe"]] + (" · détail article" if f.get("detail") else ""))
+        if f.get("date_debut") or f.get("date_fin"):
+            debut = f["date_debut"].strftime("%d/%m/%Y") if f.get("date_debut") else "…"
+            fin = f["date_fin"].strftime("%d/%m/%Y") if f.get("date_fin") else "…"
+            bits.append(f"du {debut} au {fin}")
         if f.get("annee"):
             bits.append(str(f["annee"]))
         if f.get("mois"):
@@ -526,13 +580,14 @@ class MgStockReportingService:
             "par_direction": self._rows_par_direction,
             "par_service": self._rows_par_service,
             "par_famille": self._rows_par_famille,
+            "consommation_destinataires": self._rows_conso_destinataires,
         }
         h = handlers.get(key)
         if h is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Rapport inconnu")
         if key in {"entrees", "sorties", "ajustements", "journal"}:
             return await h()
-        if key in {"vue_generale", "etat_stock", "etat_annuel", "consommation", "inventaires", "ecarts", "par_agence", "par_direction", "par_service", "par_famille"}:
+        if key in {"vue_generale", "etat_stock", "etat_annuel", "consommation", "inventaires", "ecarts", "par_agence", "par_direction", "par_service", "par_famille", "consommation_destinataires"}:
             return await h(f, ids=ids, limit=limit)
         return await h()
 
@@ -924,3 +979,236 @@ class MgStockReportingService:
 
     async def _rows_par_service(self, f, *, ids, limit):
         return await self._rows_conso(f, ids=ids, limit=limit)
+
+    async def _rows_conso_destinataires(self, f, *, ids, limit):
+        M = MgStockMouvement
+        stmt = (
+            select(
+                M.destination_type,
+                M.org_entite_id,
+                M.service_id,
+                M.agence_id,
+                M.demandeur_id,
+                M.demandeur_nom,
+                MgArticle.id,
+                MgArticle.code,
+                MgArticle.designation,
+                M.departement,
+                func.coalesce(func.sum(M.quantite), 0),
+                func.count(M.id),
+                func.max(M.date_mouvement),
+            )
+            .join(MgArticle, MgArticle.id == M.article_id)
+            .where(M.type_mouvement == "SORTIE")
+            .group_by(
+                M.destination_type,
+                M.org_entite_id,
+                M.service_id,
+                M.agence_id,
+                M.demandeur_id,
+                M.demandeur_nom,
+                MgArticle.id,
+                MgArticle.code,
+                MgArticle.designation,
+                M.departement,
+            )
+        )
+        if f.get("annee"):
+            stmt = stmt.where(extract("year", M.date_mouvement) == f["annee"])
+        if f.get("mois"):
+            stmt = stmt.where(extract("month", M.date_mouvement) == f["mois"])
+        if f.get("date_debut"):
+            stmt = stmt.where(func.date(M.date_mouvement) >= f["date_debut"])
+        if f.get("date_fin"):
+            stmt = stmt.where(func.date(M.date_mouvement) <= f["date_fin"])
+        if f.get("famille_id"):
+            stmt = stmt.where(MgArticle.famille_id == f["famille_id"])
+        lignes = [
+            {
+                "destination_type": r[0],
+                "org_entite_id": r[1],
+                "service_id": r[2],
+                "agence_id": r[3],
+                "demandeur_id": r[4],
+                "demandeur_nom": r[5],
+                "article_id": r[6],
+                "article_code": r[7],
+                "article": r[8],
+                "departement": r[9],
+                "quantite": Decimal(r[10] or 0),
+                "nb": int(r[11] or 0),
+                "derniere": r[12],
+            }
+            for r in (await self.db.execute(stmt)).all()
+        ]
+        entites = {
+            e.id: {"libelle": e.libelle, "sigle": e.sigle, "type": e.type_entite, "parent_id": e.parent_id}
+            for e in (await self.db.execute(select(OrgEntite))).scalars()
+        }
+        agences = {
+            a.id: {"code": a.code, "libelle": a.libelle}
+            for a in (await self.db.execute(select(Agence))).scalars()
+        }
+        user_ids = {l["demandeur_id"] for l in lignes if l["demandeur_id"]}
+        users: dict[uuid.UUID, str] = {}
+        if user_ids:
+            for u in (await self.db.execute(select(User).where(User.id.in_(user_ids)))).scalars():
+                users[u.id] = u.full_name or u.email
+        rows, totals = agreger_consommation(
+            lignes,
+            axe=f["axe"],
+            detail=bool(f.get("detail")),
+            entites=entites,
+            agences=agences,
+            users=users,
+            q=f.get("q"),
+        )
+        total = len(rows)
+        if limit:
+            rows = rows[:limit]
+        return rows, total, totals
+
+
+def _ancetre(entites: dict, eid: uuid.UUID | None, types: frozenset[str]) -> uuid.UUID | None:
+    vus: set[uuid.UUID] = set()
+    while eid and eid not in vus:
+        vus.add(eid)
+        e = entites.get(eid)
+        if e is None:
+            return None
+        if e["type"] in types:
+            return eid
+        eid = e["parent_id"]
+    return None
+
+
+def _libelle_entite(entites: dict, eid: uuid.UUID | None) -> str:
+    e = entites.get(eid) if eid else None
+    if e is None:
+        return ""
+    return f"{e['libelle']} ({e['sigle']})" if e.get("sigle") else e["libelle"]
+
+
+def _destination(ligne: dict, entites: dict, agences: dict) -> str:
+    if ligne["destination_type"] == "AGENCE" or (ligne["agence_id"] and not ligne["org_entite_id"]):
+        a = agences.get(ligne["agence_id"])
+        return a["libelle"] if a else ""
+    dep = _libelle_entite(entites, ligne["org_entite_id"])
+    srv = _libelle_entite(entites, ligne["service_id"])
+    return f"{dep} › {srv}" if dep and srv else dep or srv or " ".join((ligne.get("departement") or "").split())
+
+
+def _cle_axe(ligne: dict, axe: str, entites: dict, agences: dict, users: dict) -> tuple[str, str, str] | None:
+    """(clé, destinataire, rattachement) de la ligne sur l'axe, ou None si elle n'y appartient pas."""
+    vers_agence = ligne["destination_type"] == "AGENCE" or (
+        ligne["destination_type"] is None and ligne["agence_id"] and not ligne["org_entite_id"]
+    )
+    if axe == "agence":
+        if not vers_agence or not ligne["agence_id"]:
+            return None
+        a = agences.get(ligne["agence_id"], {"code": "", "libelle": NON_RENSEIGNE})
+        return str(ligne["agence_id"]), a["libelle"], a["code"]
+    if axe == "demandeur":
+        if ligne["demandeur_id"]:
+            nom = users.get(ligne["demandeur_id"]) or NON_RENSEIGNE
+            return f"u:{ligne['demandeur_id']}", nom, ""
+        if ligne["demandeur_nom"]:
+            nom = " ".join(ligne["demandeur_nom"].split())
+            return f"n:{nom.casefold()}", nom, ""
+        return "-", NON_RENSEIGNE, ""
+    if vers_agence:
+        return None
+    entite = ligne["org_entite_id"]
+    if axe == "departement":
+        dep = _ancetre(entites, entite, TYPES_DEPARTEMENT)
+        if dep is None:
+            texte = " ".join((ligne.get("departement") or "").split())
+            if ligne["destination_type"] is None and not entite and texte:
+                return f"h:{texte.casefold()}", texte, LIBELLE_HISTORIQUE
+            return None
+        parent = _ancetre(entites, entites[dep]["parent_id"], TYPES_DEPARTEMENT)
+        return str(dep), _libelle_entite(entites, dep), _libelle_entite(entites, parent)
+    srv = ligne["service_id"]
+    if srv is None and entite and entites.get(entite, {}).get("type") in TYPES_SERVICE:
+        srv = entite
+    if srv is None:
+        return None
+    dep = _ancetre(entites, entites.get(srv, {}).get("parent_id"), TYPES_DEPARTEMENT)
+    return str(srv), _libelle_entite(entites, srv) or NON_RENSEIGNE, _libelle_entite(entites, dep)
+
+
+def agreger_consommation(
+    lignes: list[dict],
+    *,
+    axe: str,
+    detail: bool,
+    entites: dict,
+    agences: dict,
+    users: dict,
+    q: str | None = None,
+) -> tuple[list[dict], dict]:
+    groupes: dict[tuple, dict] = {}
+    for l in lignes:
+        cle = _cle_axe(l, axe, entites, agences, users)
+        if cle is None:
+            continue
+        cle_axe, destinataire, rattachement = cle
+        if axe == "demandeur":
+            rattachement = _destination(l, entites, agences)
+        cle_groupe = (cle_axe, l["article_id"]) if detail else (cle_axe,)
+        g = groupes.setdefault(
+            cle_groupe,
+            {
+                "id": "|".join(str(c) for c in cle_groupe),
+                "destinataire": destinataire,
+                "rattachements": {},
+                "article_code": l["article_code"] if detail else "",
+                "article": l["article"] if detail else "",
+                "nb_sorties": 0,
+                "articles": set(),
+                "quantite": Decimal("0"),
+                "derniere": None,
+            },
+        )
+        if rattachement:
+            g["rattachements"][rattachement] = g["rattachements"].get(rattachement, 0) + l["nb"]
+        g["nb_sorties"] += l["nb"]
+        g["articles"].add(l["article_id"])
+        g["quantite"] += l["quantite"]
+        if l["derniere"] and (g["derniere"] is None or l["derniere"] > g["derniere"]):
+            g["derniere"] = l["derniere"]
+
+    if q:
+        needle = q.casefold()
+        groupes = {
+            k: g
+            for k, g in groupes.items()
+            if needle in g["destinataire"].casefold()
+            or needle in g["article"].casefold()
+            or needle in g["article_code"].casefold()
+            or any(needle in r.casefold() for r in g["rattachements"])
+        }
+
+    total = sum((g["quantite"] for g in groupes.values()), Decimal("0"))
+    rows = []
+    for g in sorted(groupes.values(), key=lambda x: (-x["quantite"], x["destinataire"], x["article_code"])):
+        ratt = sorted(g["rattachements"], key=lambda r: -g["rattachements"][r])
+        part = (g["quantite"] * 100 / total) if total else Decimal("0")
+        rows.append(
+            {
+                "id": g["id"],
+                "destinataire": g["destinataire"],
+                "rattachement": ", ".join(ratt[:2]) + (" …" if len(ratt) > 2 else ""),
+                "article_code": g["article_code"],
+                "article": g["article"],
+                "nb_sorties": g["nb_sorties"],
+                "nb_articles": len(g["articles"]),
+                "quantite": float(g["quantite"]),
+                "part": f"{part:.1f} %".replace(".", ","),
+                "derniere_sortie": g["derniere"].astimezone(_TZ).strftime("%d/%m/%Y")
+                if g["derniere"] and g["derniere"].tzinfo
+                else (g["derniere"].strftime("%d/%m/%Y") if g["derniere"] else ""),
+            }
+        )
+    totals = {"quantite": float(total), "nb_sorties": sum(r["nb_sorties"] for r in rows)}
+    return rows, totals

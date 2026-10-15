@@ -170,6 +170,7 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
         exclusive_tables=[
             "mg_article_familles",
             "mg_articles",
+            "mg_stock_motifs_sortie",
             "mg_stock_mouvements",
             "mg_demandes_fourniture",
             "mg_demande_fourniture_lignes",

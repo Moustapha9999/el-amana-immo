@@ -18,6 +18,7 @@ import { AuthService } from '../core/services/auth.service';
 import { FeedbackService } from '../core/feedback/feedback.service';
 import { unsavedChanges } from '../core/feedback/unsaved-changes.guard';
 import { QuantitePipe } from '../shared/montant.pipe';
+import { OrgEntiteLibelleSelectComponent } from '../core/org/org-entite-libelle-select.component';
 
 interface ArticleOption {
   id: string;
@@ -45,7 +46,15 @@ export interface StockMouvementRow {
   periode_fin?: string | null;
   periode_cloturee?: boolean;
   quantite_modifiable?: boolean;
+  destination_type?: 'DEPARTEMENT' | 'AGENCE' | null;
+  destination_libelle?: string | null;
+  demandeur_nom?: string | null;
+  provenance_type?: string | null;
+  provenance_libelle?: string | null;
+  piece_reference?: string | null;
 }
+
+const SOURCES_SAISIE = new Set(['usb_import', 'manuel', 'sortie_manuelle', 'entree_manuelle']);
 
 export interface StockAgenceOption {
   id: string;
@@ -134,7 +143,7 @@ const TYPE_VIEW: Record<string, { label: string; icon: string; qte: string }> = 
 };
 
 export function raisonVerrouMouvement(m: StockMouvementRow): string {
-  if (m.source_type && m.source_type !== 'usb_import' && m.source_type !== 'manuel') {
+  if (m.source_type && !SOURCES_SAISIE.has(m.source_type)) {
     return 'mouvement généré par un workflow (demande, inventaire, réception) : modifiez l’opération d’origine.';
   }
   if (m.type_mouvement === 'INVENTAIRE') return 'un mouvement d’inventaire fixe le stock ; saisissez un ajustement.';
@@ -191,17 +200,41 @@ export function raisonVerrouMouvement(m: StockMouvementRow): string {
             <dd>{{ m().date_mouvement | date: 'dd/MM/yyyy HH:mm' }}</dd>
           </div>
           <div>
-            <dt><mat-icon>person</mat-icon> Initiateur</dt>
+            <dt><mat-icon>person</mat-icon> {{ m().type_mouvement === 'SORTIE' ? 'Sorti par' : m().type_mouvement === 'ENTREE' ? 'Reçu par' : 'Initiateur' }}</dt>
             <dd>{{ m().initiateur_nom || '—' }}</dd>
           </div>
-          <div>
-            <dt><mat-icon>apartment</mat-icon> Agence</dt>
-            <dd>{{ agence() || '—' }}</dd>
-          </div>
-          <div>
-            <dt><mat-icon>groups</mat-icon> Département</dt>
-            <dd>{{ m().departement || '—' }}</dd>
-          </div>
+          @if (m().provenance_type) {
+            <div>
+              <dt><mat-icon>{{ m().provenance_type === 'FOURNISSEUR' ? 'local_shipping' : m().provenance_type === 'RETOUR_AGENCE' ? 'storefront' : m().provenance_type === 'RETOUR_DEPARTEMENT' ? 'account_tree' : 'more_horiz' }}</mat-icon> Provenance</dt>
+              <dd>{{ m().provenance_libelle || '—' }}</dd>
+            </div>
+            <div>
+              <dt><mat-icon>receipt_long</mat-icon> Bon de livraison / facture</dt>
+              <dd>{{ m().piece_reference || '—' }}</dd>
+            </div>
+            <div class="bea-stock-view__wide">
+              <dt><mat-icon>badge</mat-icon> {{ m().provenance_type === 'FOURNISSEUR' ? 'Livré par' : 'Remis par' }}</dt>
+              <dd>{{ m().demandeur_nom || '—' }}</dd>
+            </div>
+          } @else if (m().destination_type) {
+            <div>
+              <dt><mat-icon>{{ m().destination_type === 'AGENCE' ? 'storefront' : 'account_tree' }}</mat-icon> Destination</dt>
+              <dd>{{ m().destination_libelle || '—' }}</dd>
+            </div>
+            <div class="bea-stock-view__wide">
+              <dt><mat-icon>record_voice_over</mat-icon> Demandé par</dt>
+              <dd>{{ m().demandeur_nom || '—' }}</dd>
+            </div>
+          } @else {
+            <div>
+              <dt><mat-icon>apartment</mat-icon> Agence</dt>
+              <dd>{{ agence() || '—' }}</dd>
+            </div>
+            <div>
+              <dt><mat-icon>groups</mat-icon> Département</dt>
+              <dd>{{ m().departement || '—' }}</dd>
+            </div>
+          }
           <div class="bea-stock-view__wide">
             <dt><mat-icon>notes</mat-icon> Motif</dt>
             <dd>{{ m().motif || '—' }}</dd>
@@ -288,7 +321,7 @@ function toLocalInput(iso: string): string {
 @Component({
   selector: 'bea-stock-mouvement-edit',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MatIconModule, DatePipe, QuantitePipe],
+  imports: [ReactiveFormsModule, MatIconModule, DatePipe, QuantitePipe, OrgEntiteLibelleSelectComponent],
   template: `
     <div class="bea-mg__backdrop" (click)="fermer()" role="presentation"></div>
     <div class="bea-mg__modal" role="dialog" aria-modal="true" aria-label="Modifier le mouvement">
@@ -347,23 +380,35 @@ function toLocalInput(iso: string): string {
               {{ ajustement() ? 'Correction (+ ajoute, − retire)' : 'Quantité' }}
               <input type="number" formControlName="quantite" [attr.min]="ajustement() ? null : 0.001" step="0.001" />
             </label>
-            <label>
-              Agence
-              <select formControlName="agence_id">
-                <option value="">—</option>
-                @for (a of agences(); track a.id) {
-                  <option [value]="a.id">{{ a.libelle }}</option>
-                }
-              </select>
-            </label>
-            <label>
-              Département
-              <input formControlName="departement" />
-            </label>
-            <label class="bea-mg__span2">
-              Motif
-              <input formControlName="motif" />
-            </label>
+            @if (mouvement().provenance_type) {
+              <label class="bea-mg__span2">
+                Provenance et motif (verrouillés : supprimer puis ressaisir l’entrée pour les changer)
+                <input [value]="(mouvement().provenance_libelle || '—') + ' · ' + (mouvement().motif || '—')" readonly />
+              </label>
+            } @else if (mouvement().destination_type) {
+              <label class="bea-mg__span2">
+                Destination et motif (verrouillés : supprimer puis ressaisir la sortie pour les changer)
+                <input [value]="(mouvement().destination_libelle || '—') + ' · ' + (mouvement().motif || '—')" readonly />
+              </label>
+            } @else {
+              <label>
+                Agence
+                <select formControlName="agence_id">
+                  <option value="">—</option>
+                  @for (a of agences(); track a.id) {
+                    <option [value]="a.id">{{ a.libelle }}</option>
+                  }
+                </select>
+              </label>
+              <label>
+                Département / service
+                <bea-org-entite-libelle-select formControlName="departement" />
+              </label>
+              <label class="bea-mg__span2">
+                Motif
+                <input formControlName="motif" />
+              </label>
+            }
             <label class="bea-mg__span2">
               Observation
               <input formControlName="observation" />
@@ -421,6 +466,11 @@ export class StockMouvementEditComponent implements OnInit {
         : Validators.min(0.001),
     );
     q.updateValueAndValidity({ emitEvent: false });
+    if (m.destination_type || m.provenance_type) {
+      this.form.controls.agence_id.disable();
+      this.form.controls.departement.disable();
+      this.form.controls.motif.disable();
+    }
     if (!m.quantite_modifiable) {
       q.disable();
       this.form.controls.article_id.disable();
@@ -459,9 +509,9 @@ export class StockMouvementEditComponent implements OnInit {
     if (c.date_mouvement.dirty) body['date_mouvement'] = `${c.date_mouvement.value}:00Z`;
     if (c.article_id.enabled && c.article_id.value !== m.article_id) body['article_id'] = c.article_id.value;
     if (c.quantite.enabled && c.quantite.dirty) body['quantite'] = c.quantite.value;
-    if (c.agence_id.dirty) body['agence_id'] = c.agence_id.value || null;
-    if (c.departement.dirty) body['departement'] = c.departement.value;
-    if (c.motif.dirty) body['motif'] = c.motif.value;
+    if (c.agence_id.enabled && c.agence_id.dirty) body['agence_id'] = c.agence_id.value || null;
+    if (c.departement.enabled && c.departement.dirty) body['departement'] = c.departement.value;
+    if (c.motif.enabled && c.motif.dirty) body['motif'] = c.motif.value;
     if (c.observation.dirty) body['observation'] = c.observation.value;
     this.feedback
       .run(() => this.api.patch<StockMouvementRow>(`/mg/stock/mouvements/${m.id}`, body), {

@@ -78,9 +78,42 @@ class MgStockMouvement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     periode_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("mg_stock_periodes.id"), nullable=True, index=True
     )
+    # Sortie : DEPARTEMENT (org_entite_id [+ service_id], agence vide) | AGENCE (agence_id seule).
+    # Exclusion garantie en base (ck_mg_stock_mvt_destination) ; NULL = mouvement historique.
+    destination_type: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    service_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departements.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    demandeur_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    demandeur_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    motif_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_stock_motifs_sortie.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    cle_idempotence: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Entrée : FOURNISSEUR | RETOUR_DEPARTEMENT | RETOUR_AGENCE | AUTRE (ck_mg_stock_mvt_provenance).
+    provenance_type: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    fournisseur_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("fournisseurs.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    piece_reference: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
     article: Mapped[MgArticle] = relationship(back_populates="mouvements")
     periode: Mapped[MgStockPeriode | None] = relationship(back_populates="mouvements")
+
+
+class MgStockMotifSortie(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
+    """Motifs configurables des sorties et des entrées (``sens``), Paramètres du module."""
+
+    __tablename__ = "mg_stock_motifs_sortie"
+    __table_args__ = (UniqueConstraint("code", name="uq_mg_stock_motifs_sortie_code"),)
+
+    code: Mapped[str] = mapped_column(String(40))
+    sens: Mapped[str] = mapped_column(String(10), default="SORTIE", server_default="SORTIE", index=True)
+    libelle: Mapped[str] = mapped_column(String(160))
+    observation_obligatoire: Mapped[bool] = mapped_column(Boolean, default=False)
+    ordre: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class MgDemandeFourniture(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
