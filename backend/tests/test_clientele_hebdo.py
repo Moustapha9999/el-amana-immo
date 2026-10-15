@@ -86,6 +86,13 @@ def test_statut_decision_et_identifiant():
 async def db():
     from app.db.session import AsyncSessionLocal, engine
 
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception:
+        await engine.dispose()
+        pytest.skip("Base PostgreSQL indisponible")
+
     async with AsyncSessionLocal() as session:
         try:
             yield session
