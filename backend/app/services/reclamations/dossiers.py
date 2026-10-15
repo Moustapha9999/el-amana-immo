@@ -30,9 +30,12 @@ from app.models import (
     Reclamation,
     ReclamationAffectation,
     ReclamationAppel,
+    ReclamationCompte,
     ReclamationEvenement,
+    ReclamationImport,
     ReclamationOperation,
     ReclamationParametre,
+    ReclamationParticipant,
     ReclamationReferentiel,
     ReclamationUnite,
 )
@@ -190,12 +193,20 @@ def peut_modifier(s: ReclamationsScope, r: Reclamation) -> bool:
     return s.peut("reclamations.create") and r.created_by_id == s.user_id and r.statut == "A_QUALIFIER"
 
 
+def voit_tous_clients(s: ReclamationsScope, r: Reclamation) -> bool:
+    """Identité des clients associés et de leurs comptes : périmètre global, auteur, ou unité en charge
+    (réception, service concerné, traitement). Les autres accès au dossier (périmètre organisationnel,
+    ancienne affectation) ne voient que le client principal ; les clients associés sont masqués."""
+    return (s.toutes or r.created_by_id == s.user_id
+            or any(s.membre_de(u) for u in (r.unite_reception_id, r.unite_concernee_id, r.unite_traitement_id)))
+
+
 def actions(s: ReclamationsScope, r: Reclamation) -> dict[str, bool]:
     ouvert = r.statut not in C.STATUTS_TERMINAUX and not r.archivee_le and not r.supprimee_le
     modifiable = not r.archivee_le and not r.supprimee_le
     return {
         "modifier": peut_modifier(s, r),
-        "modifier_operations": peut_modifier(s, r),
+        "modifier_operations": peut_modifier(s, r) and voit_tous_clients(s, r),
         "ajouter_appel": ouvert and (s.peut("reclamations.update") or peut_modifier(s, r)),
         "documents_voir": s.peut("reclamations.document.view"),
         "documents_deposer": s.peut("reclamations.document.upload") and modifiable,
@@ -230,12 +241,35 @@ async def detail(db: AsyncSession, s: ReclamationsScope, r: Reclamation, ctx: Co
         Reclamation.id.in_([i for i in (r.reclamation_liee_id, r.doublon_de_id) if i])))).all()}
     operations = await ops.lister(db, r.id)
     montant_total = ops.total([o.montant for o in operations])
+    participants = await ops.participants(db, r.id)
+    comptes = await ops.comptes(db, r.id)
+    tous = voit_tous_clients(s, r)
+    masques = {p.id for p in participants if p.role != "PRINCIPAL" and not tous}
+    par_p = {p.id: p for p in participants}
+    par_c = {c.id: c for c in comptes}
+    imports = list((await db.scalars(select(ReclamationImport).where(
+        ReclamationImport.reclamation_id == r.id).order_by(ReclamationImport.created_at.desc()))).all())
+    noms_imports = await noms_utilisateurs(db, {i.created_by_id for i in imports} | {i.confirme_par_id for i in imports})
     return {
         **ligne(r, ctx, nb_documents, (len(operations), montant_total)),
         "description": r.description, "source": r.source,
         "type_ref": ctx.ref(r.type_id), "motif_ref": ctx.ref(r.motif_id), "sous_motif_ref": ctx.ref(r.sous_motif_id),
         "motif_autre": r.motif_autre, "sous_motif_autre": r.sous_motif_autre,
-        "operations": [ops.en_dict(o) for o in operations],
+        "operations": [ops.en_dict(o, par_p, par_c, masques) for o in operations],
+        "montant_conteste_total": ops.montant_str(ops.total([ops.conteste(o) for o in operations])),
+        "participants": [ops.participant_dict(p, operations, p.id in masques) for p in participants],
+        "comptes": [ops.compte_dict(c, operations, c.participant_id in masques) for c in comptes],
+        "nb_clients": len({p.client_racine for p in participants if p.client_racine}),
+        "justification_regroupement": r.justification_regroupement,
+        "clients_masques": bool(masques),
+        "imports": [{
+            "id": str(i.id), "nom_fichier": i.nom_fichier, "statut": i.statut, "mode": i.mode,
+            "nb_lignes": i.nb_lignes, "nb_valides": i.nb_valides, "nb_erreurs": i.nb_erreurs,
+            "nb_avertissements": i.nb_avertissements, "document_id": str(i.document_id) if i.document_id else None,
+            "created_at": iso(i.created_at), "par": noms_imports.get(i.created_by_id) if i.created_by_id else None,
+            "confirme_le": iso(i.confirme_le),
+            "confirme_par": noms_imports.get(i.confirme_par_id) if i.confirme_par_id else None,
+        } for i in imports],
         "canal_ref": ctx.ref(r.canal_id),
         "canal_telephone": bool(r.canal_id in ctx.refs and ctx.refs[r.canal_id].code == C.CANAL_TELEPHONE),
         "unite_reception_ref": ctx.unite(r.unite_reception_id), "unite_suivi_ref": ctx.unite(r.unite_suivi_id),
@@ -289,7 +323,12 @@ def _filtres(q, f: dict[str, Any]):
                         Reclamation.client_nom.ilike(motif), Reclamation.client_racine.ilike(motif),
                         Reclamation.compte_reference.ilike(motif), Reclamation.motif_autre.ilike(motif),
                         Reclamation.id.in_(select(ReclamationOperation.reclamation_id).where(
-                            ReclamationOperation.reference.ilike(motif)))))
+                            ReclamationOperation.reference.ilike(motif))),
+                        Reclamation.id.in_(select(ReclamationParticipant.reclamation_id).where(or_(
+                            ReclamationParticipant.client_racine.ilike(motif),
+                            ReclamationParticipant.client_nom.ilike(motif)))),
+                        Reclamation.id.in_(select(ReclamationCompte.reclamation_id).where(
+                            ReclamationCompte.compte_reference.ilike(motif)))))
     if f.get("statut"):
         q = q.where(Reclamation.statut.in_(f["statut"]))
     if f.get("groupe"):
@@ -316,9 +355,13 @@ def _filtres(q, f: dict[str, Any]):
         q = q.where(Reclamation.motif_autre.is_not(None))
     elif f.get("motif_id"):
         q = q.where(Reclamation.motif_id == f["motif_id"])
-    for champ in ("priorite", "client_categorie", "client_racine"):
+    for champ in ("priorite", "client_categorie"):
         if f.get(champ):
             q = q.where(getattr(Reclamation, champ) == f[champ])
+    if f.get("client_racine"):
+        q = q.where(or_(Reclamation.client_racine == f["client_racine"],
+                        Reclamation.id.in_(select(ReclamationParticipant.reclamation_id).where(
+                            ReclamationParticipant.client_racine == f["client_racine"]))))
     if f.get("date_debut"):
         q = q.where(Reclamation.date_premiere_reception >= datetime.combine(f["date_debut"], datetime.min.time())
                     .astimezone())
@@ -402,8 +445,12 @@ def _ref_valide(ctx: Contexte, rid: uuid.UUID | None, domaine: str, *, conserver
     r = ctx.refs.get(rid)
     if r is None or r.domaine != domaine:
         raise erreur(f"{C.DOMAINE_LIBELLES[domaine]} introuvable", "REFERENTIEL_INVALIDE")
-    if not r.actif and rid != conserver:
-        raise erreur(f"{C.DOMAINE_LIBELLES[domaine]} « {r.libelle} » désactivé", "REFERENTIEL_INACTIF")
+    if rid != conserver:
+        parent: ReclamationReferentiel | None = r
+        while parent is not None:
+            if not parent.actif or parent.supprime_le is not None:
+                raise erreur(f"{C.DOMAINE_LIBELLES[domaine]} « {r.libelle} » désactivé", "REFERENTIEL_INACTIF")
+            parent = ctx.refs.get(parent.parent_id) if parent.parent_id else None
     return r
 
 
@@ -641,6 +688,9 @@ async def creer(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
     if not objet or not description:
         raise erreur("Objet et description sont obligatoires", "CHAMPS_OBLIGATOIRES")
     carte = _carte(data.get("carte_masquee"))
+    racine = client.racine_client if client else None
+    compte_dossier = propre(data.get("compte_reference")) or None
+    await ops.preparer(db, lignes, racine, {compte_dossier: racine} if compte_dossier else None)
 
     now = maintenant()
     numero = await _numero(db, now.year)
@@ -666,11 +716,15 @@ async def creer(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
         revision=1, created_by_id=s.user_id, updated_by_id=s.user_id)
     db.add(r)
     await db.flush()
-    ops.inserer(db, r.id, lignes, s.user_id)
-    montant_total = ops.total([m for _, m in lignes])
+    multi = await ops.verifier_regroupement(db, r, data.get("justification_regroupement"),
+                                            {lg.client_racine for lg in lignes if lg.client_racine}
+                                            | ({racine} if racine else set()))
+    await ops.ecrire(db, r, lignes, s.user_id)
+    montant_total = ops.total([lg.montant for lg in lignes])
     db.add(_evenement(r, s, "CREATION", date_effet=premiere, unite_id=unite_reception_id,
                       donnees={"canal": canal.libelle, "enregistre_par_service_central": bool(reception_sr),
-                               "nb_operations": len(lignes), "montant_total": ops.montant_str(montant_total)}))
+                               "nb_operations": len(lignes), "montant_total": ops.montant_str(montant_total),
+                               **({"multi_clients": True} if multi else {})}))
     if reception_sr:
         db.add(_evenement(r, s, "RECEPTION_SR", date_effet=reception_sr, statut_avant="A_QUALIFIER",
                           etape_avant="RECEPTION", unite_id=central.id if central else None))
@@ -683,7 +737,8 @@ async def creer(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
         "reference": r.reference, "statut": r.statut, "canal": canal.libelle, "objet": r.objet,
         "unite_reception": ctx.unite(unite_reception_id)["libelle"], "date_reclamation": iso(date_reclamation),
         "date_premiere_reception": iso(premiere), "date_reception_sr": iso(reception_sr),
-        "operations": [{"reference": ref, "montant": str(m)} for ref, m in lignes]})
+        "operations": [lg.brut() for lg in lignes],
+        **({"justification_regroupement": r.justification_regroupement} if multi else {})})
     return await detail(db, s, r, ctx)
 
 
@@ -775,6 +830,10 @@ async def modifier(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data:
     avant = {k: serialisable(getattr(r, k)) for k in changes}
     for k, v in changes.items():
         setattr(r, k, v)
+    if set(changes) & {"client_racine", "client_nom", "client_categorie", "compte_reference"}:
+        await ops.synchroniser_principal(db, r, s.user_id)
+        await ops.nettoyer(db, r)
+        await ops.verifier_regroupement(db, r, None)
     r.revision += 1
     r.updated_by_id = s.user_id
     apres = {k: serialisable(v) for k, v in changes.items()}
@@ -797,26 +856,42 @@ async def remplacer_operations(db: AsyncSession, s: ReclamationsScope, rid: uuid
     if data["revision"] != r.revision:
         raise conflit("Le dossier a été modifié entre-temps : rechargez-le", "CONFLIT_REVISION",
                       revision=r.revision)
+    if not voit_tous_clients(s, r):
+        raise erreur("Ce dossier concerne des clients que vous ne pouvez pas consulter", "PERMISSION_DENIED", 403)
     lignes = ops.normaliser(data.get("operations"))
+    await ops.preparer(db, lignes, r.client_racine,
+                       {r.compte_reference: r.client_racine} if r.compte_reference else None)
     actuelles = await ops.lister(db, r.id)
-    avant = [(o.reference, o.montant) for o in actuelles]
-    if avant == lignes:
+    par_p = {p.id: p for p in await ops.participants(db, r.id)}
+    par_c = {c.id: c for c in await ops.comptes(db, r.id)}
+    avant = ops.lignes_existantes(actuelles, par_p, par_c)
+    justification = texte_long(data.get("justification_regroupement"))
+
+    def signature(liste: list[ops.Ligne]) -> list[tuple]:
+        return [(*lg.cle_identique(), lg.motif_detail) for lg in liste]
+
+    if signature(avant) == signature(lignes) and justification in (None, r.justification_regroupement):
         return await detail(db, s, r)
+    await ops.verifier_regroupement(db, r, justification, {lg.client_racine for lg in lignes if lg.client_racine}
+                                    | ({r.client_racine} if r.client_racine else set()))
     for o in actuelles:
         await db.delete(o)
     await db.flush()
-    ops.inserer(db, r.id, lignes, s.user_id)
+    await ops.ecrire(db, r, lignes, s.user_id)
+    await ops.nettoyer(db, r)
+    await ops.verifier_regroupement(db, r, justification)
     r.revision += 1
     r.updated_by_id = s.user_id
-    total_avant, total_apres = ops.total([m for _, m in avant]), ops.total([m for _, m in lignes])
+    total_avant, total_apres = ops.total([a.montant for a in avant]), ops.total([lg.montant for lg in lignes])
     db.add(_evenement(r, s, "OPERATIONS", statut_avant=r.statut, etape_avant=r.etape,
                       commentaire=texte_long(data.get("motif")),
                       donnees={"avant": {"nb": len(avant), "total": ops.montant_str(total_avant)},
                                "apres": {"nb": len(lignes), "total": ops.montant_str(total_apres)}}))
     await db.flush()
     await auditer(db, s, "reclamations.operations.update", C.GED_ENTITE, r.id,
-                  before={"operations": [{"reference": ref, "montant": ops.montant_str(m)} for ref, m in avant]},
-                  after={"operations": [{"reference": ref, "montant": str(m)} for ref, m in lignes]})
+                  before={"operations": [a.brut() for a in avant]},
+                  after={"operations": [lg.brut() for lg in lignes],
+                         **({"justification_regroupement": justification} if justification else {})})
     await db.refresh(r)
     return await detail(db, s, r)
 

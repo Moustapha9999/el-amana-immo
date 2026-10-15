@@ -54,6 +54,10 @@ const ICONES_UNITE: Record<TypeUnite, string> = {
 
 const ENFANT: Partial<Record<Domaine, Domaine>> = { TYPE: 'MOTIF', MOTIF: 'SOUS_MOTIF' };
 
+function normaliser(texte: string): string {
+  return texte.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
 /** Paramètres du module : référentiels de qualification et organisation (unités, membres). */
 @Component({
   selector: 'bea-rc-parametres',
@@ -66,7 +70,7 @@ const ENFANT: Partial<Record<Domaine, Domaine>> = { TYPE: 'MOTIF', MOTIF: 'SOUS_
         <div>
           <p class="bea-stock-page__kicker">Management & Qualité · Réclamations</p>
           <h1>Paramètres</h1>
-          <p class="bea-ct-head__sub">Référentiels de qualification et organisation des unités. Un élément utilisé par des dossiers se désactive : il ne se supprime pas.</p>
+          <p class="bea-ct-head__sub">Référentiels de qualification et organisation des unités. Un élément désactivé ou supprimé n’est plus proposé dans les listes ; les dossiers existants conservent leur libellé.</p>
         </div>
         <div class="bea-mg__actions">
           <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reclamations/dossiers"><mat-icon>arrow_back</mat-icon> Réclamations</a>
@@ -99,33 +103,51 @@ const ENFANT: Partial<Record<Domaine, Domaine>> = { TYPE: 'MOTIF', MOTIF: 'SOUS_
                 </button>
               }
             </div>
+            <div class="bea-rc-filtres-ref">
+              <label class="bea-mg__field">
+                <span>Rechercher</span>
+                <input type="search" [ngModel]="filtreRef()" (ngModelChange)="filtreRef.set($event)" placeholder="Libellé ou code (ex. T21)" />
+              </label>
+              <label class="bea-rc-toggle">
+                <input type="checkbox" [ngModel]="voirInactifs()" (ngModelChange)="voirInactifs.set($event)" />
+                Afficher les éléments désactivés ({{ nbInactifs() }})
+              </label>
+            </div>
             <div class="bea-mg__table-wrap">
-              <table class="bea-mg__table">
-                <thead><tr><th>Libellé</th><th>Code</th><th>Niveau</th><th title="Dossiers, éléments rattachés et règles de délai">Utilisations</th><th>État</th>
-                  @if (vue() === 'CLASSEMENT') { <th title="Valeur proposée ou validée par la Conformité">Validation</th> }
-                  @if (gererRefs() || validerRefs()) { <th></th> }</tr></thead>
+              <table class="bea-mg__table bea-rc-refs">
+                <thead><tr><th class="bea-rc-refs__lib">Libellé</th><th class="bea-rc-refs__code">Code</th><th class="bea-rc-refs__niv">Niveau</th>
+                  <th class="bea-rc-refs__num" title="Dossiers et éléments rattachés">Utilisations</th><th class="bea-rc-refs__etat">État</th>
+                  @if (vue() === 'CLASSEMENT') { <th class="bea-rc-refs__val" title="Valeur proposée ou validée par la Conformité">Validation</th> }
+                  @if (gererRefs() || validerRefs()) { <th class="bea-rc-refs__act"></th> }</tr></thead>
                 <tbody>
                   @for (l of lignesRef(); track l.item.id) {
                     <tr>
-                      <td [style.padding-left.rem]="0.75 + l.niveau * 1.5">
+                      <td class="bea-rc-refs__lib" [style.padding-left.rem]="0.75 + l.niveau * 1.5">
                         @if (l.niveau) { <span class="bea-rc-muted">└ </span> }
-                        <span [class.bea-rc-muted]="!l.item.actif">{{ l.item.libelle }}</span>
+                        <span [class.bea-rc-muted]="!l.item.actif" [class.bea-rc-refs__type]="!l.niveau">{{ l.item.libelle }}</span>
                         @if (l.item.description) { <br /><small class="bea-rc-hint">{{ l.item.description }}</small> }
                       </td>
-                      <td><code>{{ l.item.code ?? '' }}</code></td>
-                      <td>{{ libelleDomaine(l.item.domaine) }}</td>
-                      <td>{{ l.item.usage }}</td>
-                      <td><span class="bea-ct-badge" [attr.data-tone]="l.item.actif ? 'ACTIF' : 'SUSPENDU'">{{ l.item.actif ? 'Actif' : 'Inactif' }}</span></td>
+                      <td class="bea-rc-refs__code"><code>{{ l.item.code ?? '' }}</code></td>
+                      <td class="bea-rc-refs__niv">{{ libelleDomaine(l.item.domaine) }}</td>
+                      <td class="bea-rc-refs__num">{{ l.item.usage }}</td>
+                      <td class="bea-rc-refs__etat">
+                        @if (l.item.actif && !store.utilisable(l.item)) {
+                          <span class="bea-ct-badge" data-tone="SUSPENDU" title="Le type ou le motif parent est désactivé">Masqué (parent inactif)</span>
+                        } @else {
+                          <span class="bea-ct-badge" [attr.data-tone]="l.item.actif ? 'ACTIF' : 'SUSPENDU'">{{ l.item.actif ? 'Actif' : 'Inactif' }}</span>
+                        }
+                      </td>
                       @if (vue() === 'CLASSEMENT') {
-                        <td>
+                        <td class="bea-rc-refs__val">
                           @if (l.item.a_valider) {
-                            <span class="bea-ct-badge" [attr.data-tone]="l.item.statut_validation === 'VALIDEE' ? 'ACTIF' : 'ATTENTION'">{{ l.item.statut_validation_libelle }}</span>
+                            <span class="bea-ct-badge" [attr.data-tone]="l.item.statut_validation === 'VALIDEE' ? 'ACTIF' : 'ATTENTION'"
+                                  [title]="l.item.statut_validation_libelle">{{ l.item.statut_validation === 'VALIDEE' ? 'Validée' : 'À valider' }}</span>
                             @if (l.item.valide_le) { <small class="bea-ct-sub">{{ dateFr(l.item.valide_le) }}</small> }
                           }
                         </td>
                       }
                       @if (gererRefs() || validerRefs()) {
-                        <td class="bea-mg__row-actions">
+                        <td class="bea-rc-refs__act"><span class="bea-rc-refs__btns">
                           @if (validerRefs() && l.item.a_valider) {
                             @if (l.item.statut_validation !== 'VALIDEE') {
                               <button type="button" class="bea-mg__icon-btn" title="Valider (Conformité)" [disabled]="busy()" (click)="validerRef(l.item, 'VALIDEE')"><mat-icon>verified</mat-icon></button>
@@ -141,17 +163,15 @@ const ENFANT: Partial<Record<Domaine, Domaine>> = { TYPE: 'MOTIF', MOTIF: 'SOUS_
                           <button type="button" class="bea-mg__icon-btn" [title]="l.item.actif ? 'Désactiver' : 'Réactiver'" [disabled]="busy()" (click)="basculerRef(l.item)">
                             <mat-icon>{{ l.item.actif ? 'toggle_on' : 'toggle_off' }}</mat-icon>
                           </button>
-                          @if (!l.item.usage) {
-                            <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer (aucune utilisation)" [disabled]="busy()" (click)="supprimerRef(l.item)"><mat-icon>delete</mat-icon></button>
+                          <button type="button" class="bea-mg__icon-btn bea-mg__icon-btn--danger" title="Supprimer" [disabled]="busy()" (click)="supprimerRef(l.item)"><mat-icon>delete</mat-icon></button>
                           }
-                          }
-                        </td>
+                        </span></td>
                       }
                     </tr>
                   } @empty {
                     <tr><td colspan="7">
                       <div class="bea-ct-empty"><mat-icon>category</mat-icon>
-                        <p>{{ vue() === 'CLASSEMENT' ? 'Aucun type de réclamation. Créez la nomenclature validée par la banque.' : 'Aucun canal.' }}</p>
+                        <p>{{ filtreRef() ? 'Aucun élément ne correspond à la recherche.' : vue() === 'CLASSEMENT' ? 'Aucun type de réclamation. Créez la nomenclature validée par la banque.' : 'Aucun canal.' }}</p>
                       </div>
                     </td></tr>
                   }
@@ -400,21 +420,41 @@ export class RcParametresComponent implements OnInit {
   });
   readonly selection = computed(() => this.store.unites().find((u) => u.id === this.selectionId()) ?? null);
 
-  readonly lignesRef = computed<LigneRef[]>(() => {
+  readonly filtreRef = signal('');
+  readonly voirInactifs = signal(false);
+
+  private readonly arbreRef = computed<Array<LigneRef & { lignee: string[] }>>(() => {
     const vue = this.vue();
-    if (vue !== 'CLASSEMENT') return this.store.refs(vue, true).map((item) => ({ item, niveau: 0 }));
+    if (vue !== 'CLASSEMENT') return this.store.refs(vue, true).map((item) => ({ item, niveau: 0, lignee: [] }));
     const motifs = this.store.refs('MOTIF', true);
     const sous = this.store.refs('SOUS_MOTIF', true);
-    const lignes: LigneRef[] = [];
+    const lignes: Array<LigneRef & { lignee: string[] }> = [];
     for (const t of this.store.refs('TYPE', true)) {
-      lignes.push({ item: t, niveau: 0 });
+      lignes.push({ item: t, niveau: 0, lignee: [] });
       for (const m of motifs.filter((x) => x.parent_id === t.id)) {
-        lignes.push({ item: m, niveau: 1 });
-        for (const s of sous.filter((x) => x.parent_id === m.id)) lignes.push({ item: s, niveau: 2 });
+        lignes.push({ item: m, niveau: 1, lignee: [t.id] });
+        for (const s of sous.filter((x) => x.parent_id === m.id)) lignes.push({ item: s, niveau: 2, lignee: [t.id, m.id] });
       }
     }
     return lignes;
   });
+
+  readonly nbInactifs = computed(() => this.arbreRef().filter((l) => !this.store.utilisable(l.item)).length);
+
+  /** Filtre texte : une valeur trouvée s'affiche avec ses parents et ses enfants. */
+  readonly lignesRef = computed<LigneRef[]>(() => {
+    const voirInactifs = this.voirInactifs();
+    const visibles = this.arbreRef().filter((l) => voirInactifs || this.store.utilisable(l.item));
+    const q = normaliser(this.filtreRef());
+    if (!q) return visibles;
+    const trouves = new Set(visibles.filter((l) => normaliser(`${l.item.libelle} ${l.item.code ?? ''}`).includes(q)).map((l) => l.item.id));
+    const parents = new Set(visibles.filter((l) => trouves.has(l.item.id)).flatMap((l) => l.lignee));
+    return visibles.filter((l) => trouves.has(l.item.id) || parents.has(l.item.id) || l.lignee.some((id) => trouves.has(id)));
+  });
+
+  descendants(r: RefItem): RefItem[] {
+    return this.arbreRef().filter((l) => l.lignee.includes(r.id)).map((l) => l.item);
+  }
 
   readonly arbre = computed<NoeudUnite[]>(() => {
     const unites = this.store.unites();
@@ -562,7 +602,7 @@ export class RcParametresComponent implements OnInit {
       .run(() => this.rc.modifierReferentiel(r.id, { actif }), {
         confirm: actif ? undefined : {
           title: 'Désactiver l’élément',
-          message: `« ${r.libelle} » ne sera plus proposé à la saisie. Les dossiers existants le conservent.`,
+          message: `« ${r.libelle} » ne sera plus proposé à la saisie${this.descendants(r).length ? ', ni ses motifs et sous-motifs' : ''}. Les dossiers existants le conservent.`,
           confirmLabel: 'Désactiver',
           tone: 'warn',
         },
@@ -594,11 +634,26 @@ export class RcParametresComponent implements OnInit {
   }
 
   supprimerRef(r: RefItem): void {
+    const n = this.descendants(r).length;
+    const cascade = n ? ` Ses ${n} élément(s) rattaché(s) (motifs, sous-motifs) seront supprimés avec lui.` : '';
+    const historique = r.usage
+      ? ' Les éléments déjà portés par des dossiers ne sont que masqués : les dossiers existants conservent leur libellé.'
+      : '';
     this.feedback
       .run(() => this.rc.supprimerReferentiel(r.id), {
-        confirm: { action: 'suppression', message: `Supprimer définitivement « ${r.libelle} » ? Il n’est utilisé par aucun dossier.` },
+        confirm: {
+          action: 'suppression',
+          message: `Supprimer « ${r.libelle} » ? Il ne sera plus proposé dans aucune liste.${cascade}${historique}`,
+        },
         busy: this.busy,
-        success: () => ({ title: 'Élément supprimé', details: [{ label: 'Libellé', value: r.libelle }] }),
+        success: (x) => ({
+          title: 'Élément supprimé',
+          details: [
+            { label: 'Libellé', value: r.libelle },
+            ...(x.supprimes ? [{ label: 'Effacés définitivement', value: String(x.supprimes) }] : []),
+            ...(x.conserves ? [{ label: 'Masqués (historique conservé)', value: String(x.conserves) }] : []),
+          ],
+        }),
         errorTitle: 'Suppression refusée',
         retry: false,
       })

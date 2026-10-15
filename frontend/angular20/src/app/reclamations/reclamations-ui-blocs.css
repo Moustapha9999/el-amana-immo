@@ -68,6 +68,38 @@ a.bea-rc-kpi:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgba(15
 .bea-rc-ops__m .bea-rc-input { text-align: right; }
 .bea-rc-ops__x { width: 3.5rem; text-align: right; }
 .bea-rc-ops tfoot td { border-top: 2px solid #e2e8f0; padding-top: 0.5rem; }
+.bea-rc-ops--large { min-width: 72rem; }
+.bea-rc-ops--large .bea-rc-ops__m { width: 9.5rem; }
+.bea-rc-ops__c { width: 6.5rem; }
+.bea-rc-ops__cpt { width: 9.5rem; }
+.bea-rc-ops__d { width: 9.5rem; }
+/* Paramètres — référentiels : libellé extensible, colonnes courtes sur une ligne. */
+.bea-rc .bea-rc-refs { table-layout: auto; min-width: 58rem; }
+.bea-rc .bea-rc-refs th, .bea-rc .bea-rc-refs td { overflow-wrap: normal; word-break: normal; }
+.bea-rc .bea-rc-refs__lib { width: 100%; min-width: 18rem; overflow-wrap: break-word !important; }
+.bea-rc .bea-rc-refs__type { font-weight: 700; color: #0f172a; }
+.bea-rc .bea-rc-refs__code, .bea-rc .bea-rc-refs__niv, .bea-rc .bea-rc-refs__num,
+.bea-rc .bea-rc-refs__etat, .bea-rc .bea-rc-refs__val, .bea-rc .bea-rc-refs__act { white-space: nowrap; width: 1%; }
+.bea-rc .bea-rc-refs__num { text-align: center; }
+.bea-rc .bea-rc-refs__val .bea-ct-sub { display: block; margin-top: 0.2rem; }
+.bea-rc .bea-rc-refs__btns { display: inline-flex; flex-wrap: nowrap; gap: 0.25rem; justify-content: flex-end; }
+.bea-rc .bea-rc-refs .bea-ct-badge { white-space: nowrap; }
+.bea-rc-filtres-ref { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem 1.25rem; padding: 0 1.15rem 0.75rem; }
+.bea-rc-filtres-ref .bea-mg__field { min-width: 18rem; }
+
+/* Opérations groupées client → compte. */
+.bea-rc-groupe { border-top: 1px solid #e2e8f0; }
+.bea-rc-groupe__client { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; padding: 0.7rem 1.15rem; background: #f8fafc; }
+.bea-rc-groupe__client strong { font-size: 0.9rem; color: #0f172a; }
+.bea-rc-groupe__tot { margin-left: auto; font-size: 0.84rem; color: #334155; text-align: right; }
+.bea-rc-groupe__compte { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; padding: 0.45rem 1.15rem 0.45rem 2rem; font-size: 0.84rem; color: #334155; border-top: 1px dashed #e2e8f0; }
+.bea-rc-groupe table { margin: 0; }
+.bea-rc-import__lignes { max-height: 22rem; overflow: auto; }
+.bea-rc-import__lignes tr[data-statut='ERREUR'] td { background: #fef2f2; }
+.bea-rc-import__lignes tr[data-statut='AVERTISSEMENT'] td { background: #fffbeb; }
+.bea-rc-import__msg { display: block; font-size: 0.75rem; }
+.bea-rc-import__msg--err { color: #b91c1c; }
+.bea-rc-import__msg--warn { color: #9a3412; }
 .bea-rc-ops .is-invalid { border-color: #dc2626; }
 .bea-rc-pipe { list-style: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.35rem; margin: 0.75rem 0 1rem; padding: 0; }
 .bea-rc-pipe li { display: flex; align-items: center; gap: 0.45rem; padding: 0.55rem 0.75rem; border-radius: 0.65rem; background: #f1f5f9; color: #64748b; font-size: 0.84rem; font-weight: 600; }

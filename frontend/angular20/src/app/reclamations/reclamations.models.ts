@@ -113,8 +113,13 @@ export interface RcConfig {
     statuts_reponse: CodeLibelle[];
     evaluations: CodeLibelle[];
     validations_referentiel: CodeLibelle[];
+    statuts_identification: CodeLibelle[];
   };
-  parametres: { enregistrement_appels_autorise: boolean };
+  parametres: {
+    enregistrement_appels_autorise: boolean;
+    regroupement_multi_clients_autorise: boolean;
+    max_operations: number;
+  };
   aujourdhui: string;
   utilisateur: string;
 }
@@ -199,6 +204,13 @@ export interface Dossier extends Omit<DossierLigne, 'suppression'> {
   motif_autre: string | null;
   sous_motif_autre: string | null;
   operations: Operation[];
+  montant_conteste_total: string | null;
+  participants: Participant[];
+  comptes: CompteDossier[];
+  nb_clients: number;
+  justification_regroupement: string | null;
+  clients_masques: boolean;
+  imports: ImportResume[];
   canal_ref: RefCourt | null;
   canal_telephone: boolean;
   unite_reception_ref: UniteCourte | null;
@@ -248,6 +260,15 @@ export interface Dossier extends Omit<DossierLigne, 'suppression'> {
   };
 }
 
+export interface SuppressionReferentiel {
+  id: string;
+  libelle: string;
+  /** Effacés définitivement (jamais utilisés). */
+  supprimes: number;
+  /** Masqués partout, libellé conservé sur les dossiers existants. */
+  conserves: number;
+}
+
 export interface SuppressionResultat {
   id: string;
   reference: string;
@@ -255,18 +276,126 @@ export interface SuppressionResultat {
   documents_supprimes: number;
 }
 
+export type StatutIdentification = 'VERIFIE' | 'A_VERIFIER' | 'A_RENSEIGNER';
+
 export interface Operation {
   id: string;
   ordre: number;
   reference: string;
   montant: string | null;
+  montant_conteste: string | null;
+  montant_conteste_effectif: string | null;
   devise: string;
+  date_operation: string | null;
+  motif_detail: string | null;
+  participant_id: string | null;
+  compte_id: string | null;
+  client_racine: string | null;
+  compte_reference: string | null;
+  statut_compte: StatutIdentification;
+  import_id: string | null;
+  ligne_import: number | null;
 }
 
-/** Ligne en saisie : montant gardé en texte tant qu'il n'est pas validé. */
+/** Client du dossier : principal (client saisi) ou associé (regroupement exceptionnel justifié). */
+export interface Participant {
+  id: string;
+  role: 'PRINCIPAL' | 'ASSOCIE';
+  role_libelle: string | null;
+  racine: string | null;
+  nom: string | null;
+  categorie: string | null;
+  statut: StatutIdentification;
+  statut_libelle: string | null;
+  /** Identité masquée : l'utilisateur n'est pas en charge du dossier. */
+  masque: boolean;
+  nb_operations: number;
+  montant_total: string | null;
+  montant_conteste_total: string | null;
+}
+
+export interface CompteDossier {
+  id: string;
+  participant_id: string | null;
+  compte_reference: string;
+  statut: StatutIdentification;
+  statut_libelle: string | null;
+  masque: boolean;
+  nb_operations: number;
+  montant_total: string | null;
+  montant_conteste_total: string | null;
+}
+
+export interface ImportResume {
+  id: string;
+  nom_fichier: string;
+  statut: 'ANALYSE' | 'CONFIRME' | 'ABANDONNE';
+  mode: 'AJOUT' | 'REMPLACEMENT' | null;
+  nb_lignes: number;
+  nb_valides: number;
+  nb_erreurs: number;
+  nb_avertissements: number;
+  document_id: string | null;
+  created_at: string | null;
+  par: string | null;
+  confirme_le: string | null;
+  confirme_par: string | null;
+}
+
+export interface ImportLigne {
+  ligne: number;
+  reference: string;
+  montant: string | null;
+  montant_conteste: string | null;
+  date_operation: string | null;
+  client_racine: string | null;
+  compte_reference: string | null;
+  motif_detail: string | null;
+  client_nom: string | null;
+  statut_client: StatutIdentification | null;
+  statut_compte: StatutIdentification | null;
+  statut: 'OK' | 'AVERTISSEMENT' | 'ERREUR';
+  erreurs: string[];
+  avertissements: string[];
+}
+
+export interface ImportTotaux {
+  nb: number;
+  nb_erreurs: number;
+  montant: string | null;
+  montant_conteste: string | null;
+}
+
+export interface ImportAnalyse extends ImportResume {
+  reclamation_id: string;
+  revision: number;
+  lignes: ImportLigne[];
+  clients: Array<ImportTotaux & {
+    racine: string | null;
+    nom: string | null;
+    principal: boolean;
+    statut: StatutIdentification;
+    comptes: Array<ImportTotaux & { compte_reference: string | null; statut: StatutIdentification }>;
+  }>;
+  totaux: ImportTotaux;
+  nb_clients: number;
+  multi_clients: boolean;
+  regroupement_autorise: boolean;
+  justification_requise: boolean;
+  justification_actuelle: string | null;
+  apres_import: { nb: number; montant: string | null; montant_conteste: string | null };
+  nb_conservees: number;
+}
+
+/** Ligne en saisie : montants gardés en texte tant qu'ils ne sont pas validés. */
 export interface OperationSaisie {
   reference: string;
   montant: string;
+  client_racine: string;
+  compte_reference: string;
+  date_operation: string;
+  montant_conteste: string;
+  motif_detail: string;
 }
 
 export interface Affectation {

@@ -10,7 +10,7 @@ import { ReclamationsUiComponent } from '../reclamations-ui.component';
 import { ApercuClient, OperationSaisie, depuisSaisieLocale, maintenantLocal } from '../reclamations.models';
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
 import { CLASSEMENT_VIDE, Classement, RcClassementComponent, classementCorps, classementErreur } from '../shared/rc-classement.component';
-import { RcOperationsComponent, operationsCorps, operationsErreur } from '../shared/rc-operations.component';
+import { RcOperationsComponent, clientsSaisis, operationsCorps, operationsErreur } from '../shared/rc-operations.component';
 
 function aujourdhui(): string {
   return maintenantLocal().slice(0, 10);
@@ -197,7 +197,19 @@ function aujourdhui(): string {
           <section class="bea-mg__panel">
             <div class="bea-mg__panel-top"><h2>Opérations concernées</h2></div>
             <div class="bea-rc-form">
-              <bea-rc-operations [(lignes)]="operations" [tente]="tente()" />
+              <bea-rc-operations [(lignes)]="operations" [tente]="tente()" [principal]="form.controls.client_racine.value || null" />
+              @if (regroupement()) {
+                <label>Justification du regroupement multi-clients
+                  @if (multiClients()) { <em>*</em> }
+                  <textarea [value]="justification()" (input)="justification.set($any($event.target).value)" maxlength="4000" rows="2"
+                            [class.is-invalid]="tente() && multiClients() && !justification().trim()"
+                            placeholder="Obligatoire si les opérations concernent plusieurs clients (même fait, même fraude…)"></textarea>
+                  @if (!store.config()?.parametres?.regroupement_multi_clients_autorise) {
+                    <span class="bea-rc-hint">La banque n’autorise pas le regroupement de plusieurs clients : créez un dossier par client.</span>
+                  }
+                </label>
+              }
+              <p class="bea-rc-hint">Nombreuses opérations : enregistrez la réclamation, puis importez le fichier Excel depuis la fiche (modèle téléchargeable).</p>
             </div>
           </section>
 
@@ -229,6 +241,10 @@ export class RcNouvelleComponent implements OnInit {
   readonly client = signal<ApercuClient | null>(null);
   readonly classement = signal<Classement>({ ...CLASSEMENT_VIDE });
   readonly operations = signal<OperationSaisie[]>([]);
+  readonly justification = signal('');
+  private readonly racine = signal('');
+  readonly regroupement = computed(() => this.operations().some((l) => l.client_racine.trim() || l.compte_reference.trim()));
+  readonly multiClients = computed(() => clientsSaisis(this.operations(), this.racine().trim() || null) > 1);
   private readonly canal = signal('');
   private initial = '';
 
@@ -269,7 +285,7 @@ export class RcNouvelleComponent implements OnInit {
   readonly hasUnsavedChanges = unsavedChanges(() => !this.busy() && this.instantane() !== this.initial);
 
   private instantane(): string {
-    return JSON.stringify([this.form.getRawValue(), this.classement(), this.operations()]);
+    return JSON.stringify([this.form.getRawValue(), this.classement(), this.operations(), this.justification()]);
   }
 
   ngOnInit(): void {
@@ -280,7 +296,10 @@ export class RcNouvelleComponent implements OnInit {
     c.date_premiere_reception.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => {
       if (!c.appel.controls.appel_le.dirty) c.appel.controls.appel_le.setValue(v, { emitEvent: false });
     });
-    c.client_racine.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.client.set(null));
+    c.client_racine.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => {
+      this.client.set(null);
+      this.racine.set(v);
+    });
   }
 
   /** Point de réception mono-unité : unité pré-sélectionnée dès que la configuration est disponible. */
@@ -328,7 +347,9 @@ export class RcNouvelleComponent implements OnInit {
     const v = this.form.getRawValue();
     const erreur = this.form.invalid
       ? 'Vérifiez les champs signalés en rouge.'
-      : classementErreur(this.classement()) ?? operationsErreur(this.operations());
+      : classementErreur(this.classement()) ?? operationsErreur(this.operations())
+        ?? (this.multiClients() && !this.justification().trim()
+          ? 'Les opérations concernent plusieurs clients : justifiez le regroupement dans un même dossier.' : null);
     if (erreur) {
       this.feedback.warning({ title: 'Champs à corriger', message: erreur });
       return;
@@ -364,6 +385,7 @@ export class RcNouvelleComponent implements OnInit {
       objet: v.objet.trim(), description: v.description.trim(),
       ...classementCorps(this.classement()),
       operations: operationsCorps(this.operations()),
+      justification_regroupement: texte(this.justification()),
     };
     this.feedback
       .run(() => this.rc.creer(corps), {

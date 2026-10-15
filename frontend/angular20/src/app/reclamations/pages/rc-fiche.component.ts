@@ -6,7 +6,6 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
-import { formatMontant } from '../../shared/montant.pipe';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
 import {
   Dossier,
@@ -24,7 +23,9 @@ import { ReclamationsService, ReclamationsStore } from '../reclamations.service'
 import { RcPiecesComponent } from '../shared/rc-pieces.component';
 import { RcActionsComponent } from '../shared/rc-actions.component';
 import { CLASSEMENT_VIDE, Classement, RcClassementComponent, classementCorps, classementDe, classementErreur } from '../shared/rc-classement.component';
-import { RcOperationsComponent, operationsCorps, operationsErreur } from '../shared/rc-operations.component';
+import { RcImportComponent } from '../shared/rc-import.component';
+import { RcOperationsComponent, clientsSaisis, operationsCorps, operationsErreur, versSaisie } from '../shared/rc-operations.component';
+import { RcOperationsVueComponent } from '../shared/rc-operations-vue.component';
 import { optionsRestauration, optionsSuppression } from '../shared/rc-suppression';
 
 type Onglet = 'general' | 'traitement' | 'documents' | 'chronologie';
@@ -45,6 +46,7 @@ const ETAPES: ReadonlyArray<{ code: string; libelle: string; icone: string }> = 
 
 const ICONES_EVENEMENT: Record<string, string> = {
   CREATION: 'add_circle', RECEPTION_SR: 'move_to_inbox', MODIFICATION: 'edit', APPEL: 'call', OPERATIONS: 'receipt_long',
+  IMPORT_ANALYSE: 'fact_check', IMPORT_CONFIRME: 'upload_file', IMPORT_ABANDONNE: 'cancel',
   DOCUMENT_AJOUT: 'attach_file', DOCUMENT_RETRAIT: 'delete', QUALIFICATION: 'rule',
   AFFECTATION: 'send', PRISE_EN_CHARGE: 'play_arrow', RETOUR_SERVICE: 'assignment_return',
   EVALUATION: 'fact_check', RENVOI: 'replay', TRAITEMENT_INTERNE: 'home_repair_service',
@@ -65,7 +67,8 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
 @Component({
   selector: 'bea-rc-fiche',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, FormsModule, RouterLink, MatIconModule, ReclamationsUiComponent, RcPiecesComponent, RcActionsComponent, RcClassementComponent, RcOperationsComponent],
+  imports: [ReactiveFormsModule, FormsModule, RouterLink, MatIconModule, ReclamationsUiComponent, RcPiecesComponent, RcActionsComponent, RcClassementComponent, RcOperationsComponent,
+    RcOperationsVueComponent, RcImportComponent],
   template: `
     <bea-rc-styles />
     <section class="bea-mg bea-ct bea-rc">
@@ -249,12 +252,24 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
                 <div class="bea-mg__panel-top">
                   <h2>Opérations concernées</h2>
                   @if (d.actions['modifier_operations'] && !editionOps()) {
-                    <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="ouvrirOperations()"><mat-icon>edit</mat-icon> Modifier les opérations</button>
+                    <span class="bea-mg__actions">
+                      <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [class.is-on]="importOuvert()" (click)="importOuvert.set(!importOuvert())"><mat-icon>upload_file</mat-icon> Importer (Excel)</button>
+                      <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="ouvrirOperations()"><mat-icon>edit</mat-icon> Modifier les opérations</button>
+                    </span>
                   }
                 </div>
+                @if (d.actions['modifier_operations'] && !editionOps() && (importOuvert() || importEnAttente())) {
+                  <bea-rc-import [dossier]="d" (modifie)="apresImport($event)" />
+                }
                 @if (editionOps()) {
                   <div class="bea-rc-form">
-                    <bea-rc-operations [(lignes)]="operations" [tente]="tenteOps()" />
+                    <bea-rc-operations [(lignes)]="operations" [tente]="tenteOps()" [principal]="d.client.racine" />
+                    @if (regroupementOps()) {
+                      <label>Justification du regroupement multi-clients
+                        <textarea [(ngModel)]="justificationOps" name="justification_ops" rows="2" maxlength="4000"
+                                  [placeholder]="d.justification_regroupement ?? 'Obligatoire si les opérations concernent plusieurs clients'"></textarea>
+                      </label>
+                    }
                     <label>Motif de la modification
                       <textarea [(ngModel)]="motifOps" name="motif_ops" rows="2" maxlength="4000" placeholder="Facultatif — conservé dans l’historique"></textarea>
                     </label>
@@ -264,19 +279,7 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
                     </span>
                   </div>
                 } @else if (d.operations.length) {
-                  <div class="bea-mg__table-wrap">
-                    <table class="bea-mg__table bea-rc-ops">
-                      <thead><tr><th class="bea-rc-ops__n">N°</th><th>Référence</th><th class="bea-rc-ops__m">Montant</th></tr></thead>
-                      <tbody>
-                        @for (o of d.operations; track o.id; let i = $index) {
-                          <tr><td class="bea-rc-ops__n">{{ i + 1 }}</td><td>{{ o.reference }}</td><td class="bea-rc-ops__m">{{ montant(o.montant, o.devise) }}</td></tr>
-                        }
-                      </tbody>
-                      <tfoot>
-                        <tr><td colspan="2"><strong>{{ d.nb_operations }} opération{{ d.nb_operations > 1 ? 's' : '' }}</strong></td><td class="bea-rc-ops__m"><strong>{{ montant(d.montant_total, d.devise) }}</strong></td></tr>
-                      </tfoot>
-                    </table>
-                  </div>
+                  <bea-rc-operations-vue [dossier]="d" />
                 } @else {
                   <p class="bea-rc-pad bea-rc-muted">Aucune opération rattachée.</p>
                 }
@@ -500,7 +503,12 @@ export class RcFicheComponent implements OnInit {
   readonly tenteOps = signal(false);
   readonly classement = signal<Classement>({ ...CLASSEMENT_VIDE });
   readonly operations = signal<OperationSaisie[]>([]);
+  readonly importOuvert = signal(false);
+  readonly importEnAttente = computed(() => !!this.dossier()?.imports.some((i) => i.statut === 'ANALYSE'));
+  readonly regroupementOps = computed(() =>
+    (this.dossier()?.nb_clients ?? 0) > 1 || this.operations().some((l) => l.client_racine.trim() || l.compte_reference.trim()));
   motifOps = '';
+  justificationOps = '';
   private readonly premiere = signal('');
   private readonly receptionSr = signal('');
   private id = '';
@@ -657,12 +665,19 @@ export class RcFicheComponent implements OnInit {
     return ctl.invalid && (ctl.touched || this.tente());
   }
 
+  apresImport(d: Dossier): void {
+    this.importOuvert.set(false);
+    this.applique(d);
+  }
+
   ouvrirOperations(): void {
     const d = this.dossier();
     if (!d) return;
-    this.operations.set(d.operations.map((o) => ({ reference: o.reference, montant: o.montant ? formatMontant(o.montant) : '' })));
+    this.operations.set(d.operations.map(versSaisie));
     this.initialOps = JSON.stringify(this.operations());
     this.motifOps = '';
+    this.justificationOps = '';
+    this.importOuvert.set(false);
     this.tenteOps.set(false);
     this.editionOps.set(true);
   }
@@ -671,12 +686,18 @@ export class RcFicheComponent implements OnInit {
     const d = this.dossier();
     if (!d) return;
     this.tenteOps.set(true);
-    const erreur = operationsErreur(this.operations());
+    const multi = clientsSaisis(this.operations(), d.client.racine) > 1;
+    const erreur = operationsErreur(this.operations())
+      ?? (multi && !this.justificationOps.trim() && !d.justification_regroupement
+        ? 'Les opérations concernent plusieurs clients : justifiez le regroupement dans un même dossier.' : null);
     if (erreur) {
       this.feedback.warning({ title: 'Opérations à corriger', message: erreur });
       return;
     }
-    const corps = { revision: d.revision, operations: operationsCorps(this.operations()), motif: this.motifOps.trim() || null };
+    const corps = {
+      revision: d.revision, operations: operationsCorps(this.operations()), motif: this.motifOps.trim() || null,
+      justification_regroupement: this.justificationOps.trim() || null,
+    };
     this.feedback
       .run(() => this.rc.remplacerOperations(d.id, corps), {
         busy: this.busy,

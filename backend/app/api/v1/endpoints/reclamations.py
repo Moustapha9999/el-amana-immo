@@ -28,6 +28,7 @@ from app.schemas.reclamations import (
     DossierCreate,
     DossierPatch,
     EvaluerIn,
+    ImportConfirmIn,
     MembreIn,
     MembrePatch,
     OperationsIn,
@@ -48,11 +49,13 @@ from app.services.reclamations import (
     circuit,
     documents,
     dossiers,
+    imports,
     organisation,
     reporting,
     reponses,
     suppression,
 )
+from app.services.reclamations import operations as ops
 from app.services.reclamations.acces import ReclamationsScope, charger_scope
 
 router = APIRouter(prefix="/reclamations", tags=["Gestion des réclamations"])
@@ -118,8 +121,11 @@ async def config(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = 
             "statuts_reponse": _libelles(C.STATUT_REPONSE_LIBELLES),
             "evaluations": _libelles(C.EVALUATION_LIBELLES),
             "validations_referentiel": _libelles(C.VALIDATION_REFERENTIEL_LIBELLES),
+            "statuts_identification": _libelles(C.STATUT_IDENTIFICATION_LIBELLES),
         },
-        "parametres": {"enregistrement_appels_autorise": await dossiers.enregistrement_autorise(db)},
+        "parametres": {"enregistrement_appels_autorise": await dossiers.enregistrement_autorise(db),
+                       "regroupement_multi_clients_autorise": await ops.regroupement_autorise(db),
+                       "max_operations": C.MAX_OPERATIONS},
         "aujourdhui": date.today().isoformat(),
         "utilisateur": s.user.full_name,
     }
@@ -150,11 +156,10 @@ async def valider_referentiel(rid: uuid.UUID, body: ValidationReferentielIn, s: 
     return await organisation.valider_referentiel(db, s, rid, body.model_dump())
 
 
-@router.delete("/referentiels/{rid}", status_code=204)
+@router.delete("/referentiels/{rid}")
 async def supprimer_referentiel(rid: uuid.UUID, s: ReclamationsScope = Depends(scope(
-        "reclamations.references.manage")), db: AsyncSession = Depends(get_db)) -> Response:
-    await organisation.supprimer_referentiel(db, s, rid)
-    return Response(status_code=204)
+        "reclamations.references.manage")), db: AsyncSession = Depends(get_db)) -> dict:
+    return await organisation.supprimer_referentiel(db, s, rid)
 
 
 # ---------------------------------------------------------------------- unités
@@ -303,6 +308,41 @@ async def remplacer_operations(rid: uuid.UUID, body: OperationsIn,
                                db: AsyncSession = Depends(get_db)) -> dict:
     await dossiers.remplacer_operations(db, s, rid, body.model_dump())
     return await circuit.fiche(db, s, await dossiers.charger(db, s, rid))
+
+
+@router.get("/imports/modele")
+async def modele_import(s: ReclamationsScope = Depends(scope("reclamations.update", "reclamations.create"))) -> Response:
+    return _fichier(imports.modele(), "modele-import-operations-reclamation.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@router.post("/dossiers/{rid}/imports", status_code=201)
+async def analyser_import(rid: uuid.UUID, file: UploadFile = File(...),
+                          mode: Literal["AJOUT", "REMPLACEMENT"] = Form("AJOUT"),
+                          s: ReclamationsScope = Depends(scope("reclamations.update", "reclamations.create")),
+                          db: AsyncSession = Depends(get_db)) -> dict:
+    return await imports.analyser(db, s, rid, file, mode)
+
+
+@router.get("/dossiers/{rid}/imports/{iid}")
+async def lire_import(rid: uuid.UUID, iid: uuid.UUID, s: ReclamationsScope = Depends(scope(VUE)),
+                      db: AsyncSession = Depends(get_db)) -> dict:
+    return await imports.lire(db, s, rid, iid)
+
+
+@router.post("/dossiers/{rid}/imports/{iid}/confirmer")
+async def confirmer_import(rid: uuid.UUID, iid: uuid.UUID, body: ImportConfirmIn,
+                           s: ReclamationsScope = Depends(scope("reclamations.update", "reclamations.create")),
+                           db: AsyncSession = Depends(get_db)) -> dict:
+    await imports.confirmer(db, s, rid, iid, body.model_dump())
+    return await circuit.fiche(db, s, await dossiers.charger(db, s, rid))
+
+
+@router.post("/dossiers/{rid}/imports/{iid}/abandonner")
+async def abandonner_import(rid: uuid.UUID, iid: uuid.UUID,
+                            s: ReclamationsScope = Depends(scope("reclamations.update", "reclamations.create")),
+                            db: AsyncSession = Depends(get_db)) -> dict:
+    return await imports.abandonner(db, s, rid, iid)
 
 
 @router.post("/dossiers/{rid}/appels", status_code=201)

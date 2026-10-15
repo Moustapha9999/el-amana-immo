@@ -22,7 +22,7 @@ from app.models.reclamations import CATEGORIES_DOCUMENT
 from app.services.ged_service import GedService
 from app.services.reclamations import constantes as C
 from app.services.reclamations.acces import ReclamationsScope
-from app.services.reclamations.dossiers import _evenement, actions, charger
+from app.services.reclamations.dossiers import _evenement, actions, charger, voit_tous_clients
 from app.services.reclamations.outils import (
     auditer,
     conflit,
@@ -62,8 +62,11 @@ async def lister(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID) -> dict
                   GedDocument.filename))).all()
     noms = await noms_utilisateurs(db, {d.uploaded_by_id for d, _m in rows})
     items = []
+    tous_clients = voit_tous_clients(s, r)
     for d, m in rows:
         categorie = m.categorie if m else "AUTRE"
+        if categorie == C.CATEGORIE_IMPORT and not tous_clients:
+            continue
         items.append({
             "id": str(d.id), "titre": d.title, "date_document": iso(d.date_document),
             "filename": d.filename, "mime_type": d.mime_type, "size_bytes": d.size_bytes,
@@ -82,7 +85,7 @@ async def deposer(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, fichie
                   commentaire: str | None, *, titre: str | None = None, date_document: date | None = None) -> dict:
     """Nouvelle pièce (jamais d'écrasement). Une note (``NOTE``) = scan PDF / image, titre obligatoire."""
     s.exiger("reclamations.document.upload")
-    if categorie not in CATEGORIES_DOCUMENT:
+    if categorie not in CATEGORIES_DOCUMENT or categorie == C.CATEGORIE_IMPORT:
         raise erreur("Catégorie de document inconnue", "CATEGORIE_INVALIDE")
     titre = propre(titre)
     if categorie == C.CATEGORIE_NOTE:
@@ -157,6 +160,9 @@ async def fichier(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, did: u
     s.exiger("reclamations.document.download")
     r = await charger(db, s, rid)
     doc = await _document(db, r.id, did)
+    meta = await db.get(ReclamationDocument, doc.id)
+    if meta and meta.categorie == C.CATEGORIE_IMPORT and not voit_tous_clients(s, r):
+        raise erreur("Document introuvable", "NOT_FOUND", 404)
     chemin = GedService(db).absolute_path(doc.stored_path)
     if not chemin.exists():
         raise erreur("Fichier introuvable sur le serveur", "NOT_FOUND", 404)

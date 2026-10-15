@@ -81,10 +81,10 @@ async def test_referentiels_hierarchie_et_usage(db):
     t2 = await organisation.creer_referentiel(db, s, {"domaine": "TYPE", "libelle": f"Autre {uuid.uuid4().hex[:6]}"})
     await organisation.creer_referentiel(db, s, {"domaine": "MOTIF", "libelle": "Motif test",
                                                  "parent_id": uuid.UUID(t2["id"])})
-    # Valeur utilisée (parent d'un motif) : désactivation seulement.
-    with pytest.raises(HTTPException) as e:
-        await organisation.supprimer_referentiel(db, s, uuid.UUID(t["id"]))
-    assert _code(e.value) == "REFERENTIEL_UTILISE"
+    # Jamais utilisée : suppression définitive, motifs compris.
+    res = await organisation.supprimer_referentiel(db, s, uuid.UUID(t2["id"]))
+    assert (res["supprimes"], res["conserves"]) == (2, 0)
+    assert await db.get(ReclamationReferentiel, uuid.UUID(t2["id"])) is None
     off = await organisation.modifier_referentiel(db, s, uuid.UUID(t["id"]), {"actif": False})
     assert off["actif"] is False
     with pytest.raises(AppError) as e:
@@ -93,6 +93,48 @@ async def test_referentiels_hierarchie_et_usage(db):
     with pytest.raises(HTTPException) as e:
         await organisation.creer_referentiel(db, lecteur, {"domaine": "TYPE", "libelle": "Interdit"})
     assert e.value.status_code == 403
+
+
+async def test_referentiel_supprime_masque_partout(db):
+    s = await _sr(db)
+    unite = await _unite(db)
+    t, m, sm = await _classement(db, s)
+    d = await dossiers.creer(db, s, await _saisie(db, unite.id, type_id=uuid.UUID(t["id"]),
+                                                  motif_id=uuid.UUID(m["id"])))
+    # Type et motif portés par un dossier : masqués (historique conservé) ; sous-motif inutilisé : effacé.
+    res = await organisation.supprimer_referentiel(db, s, uuid.UUID(t["id"]))
+    assert (res["supprimes"], res["conserves"]) == (1, 2)
+    visibles = {x["id"] for x in await organisation.lister_referentiels(db)}
+    assert not visibles & {t["id"], m["id"], sm["id"]}
+    fiche = await dossiers.detail(db, s, await dossiers.charger(db, s, uuid.UUID(d["id"])))
+    assert fiche["type_ref"]["libelle"] == t["libelle"]
+    with pytest.raises((HTTPException, AppError)) as e:
+        await dossiers.creer(db, s, await _saisie(db, unite.id, type_id=uuid.UUID(t["id"])))
+    assert _code(e.value) == "REFERENTIEL_INACTIF"
+    # Recréer le même libellé restaure la valeur (même identifiant).
+    restaure = await organisation.creer_referentiel(db, s, {"domaine": "TYPE", "libelle": t["libelle"]})
+    assert restaure["id"] == t["id"] and restaure["actif"] is True
+
+
+async def test_type_desactive_masque_ses_motifs(db):
+    s = await _sr(db)
+    unite = await _unite(db)
+    t, m, _sm = await _classement(db, s)
+    await organisation.modifier_referentiel(db, s, uuid.UUID(t["id"]), {"actif": False})
+    with pytest.raises((HTTPException, AppError)) as e:
+        await dossiers.creer(db, s, await _saisie(db, unite.id, motif_id=uuid.UUID(m["id"])))
+    assert _code(e.value) in ("REFERENTIEL_INACTIF", "CLASSEMENT_INCOHERENT")
+
+
+async def test_nomenclature_banque_chargee(db):
+    actifs = (await db.scalars(select(ReclamationReferentiel).where(
+        ReclamationReferentiel.domaine == "TYPE", ReclamationReferentiel.actif.is_(True),
+        ReclamationReferentiel.supprime_le.is_(None), ReclamationReferentiel.code.like("T__")))).all()
+    assert len(actifs) >= 26
+    fraude = next(x for x in actifs if x.code == "T21")
+    motifs = (await db.scalars(select(ReclamationReferentiel).where(
+        ReclamationReferentiel.parent_id == fraude.id))).all()
+    assert motifs and all(x.code.startswith("T21_M") for x in motifs)
 
 
 # ---------------------------------------------------------------------- unités

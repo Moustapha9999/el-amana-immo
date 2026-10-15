@@ -12,12 +12,14 @@ import {
   Dossier,
   DossierLigne,
   Evenement,
+  ImportAnalyse,
   Membre,
   Page,
   Pieces,
   RC_BASE,
   RcConfig,
   RefItem,
+  SuppressionReferentiel,
   SuppressionResultat,
   TableauBord,
   Unite,
@@ -116,8 +118,29 @@ export class ReclamationsService {
     return this.api.patch(`${RC_BASE}/referentiels/${id}`, corps);
   }
 
-  supprimerReferentiel(id: string): Observable<void> {
+  supprimerReferentiel(id: string): Observable<SuppressionReferentiel> {
     return this.api.delete(`${RC_BASE}/referentiels/${id}`);
+  }
+
+  modeleImport(): Observable<Blob> {
+    return this.api.download(`${RC_BASE}/imports/modele`);
+  }
+
+  analyserImport(id: string, fichier: File, mode: 'AJOUT' | 'REMPLACEMENT'): Observable<ImportAnalyse> {
+    return this.api.upload(`${RC_BASE}/dossiers/${id}/imports`, fichier, { mode });
+  }
+
+  lireImport(id: string, importId: string): Observable<ImportAnalyse> {
+    return this.api.get(`${RC_BASE}/dossiers/${id}/imports/${importId}`);
+  }
+
+  confirmerImport(id: string, importId: string, corps: { revision: number; justification_regroupement?: string | null }
+  ): Observable<Dossier> {
+    return this.api.post(`${RC_BASE}/dossiers/${id}/imports/${importId}/confirmer`, corps);
+  }
+
+  abandonnerImport(id: string, importId: string): Observable<ImportAnalyse> {
+    return this.api.post(`${RC_BASE}/dossiers/${id}/imports/${importId}/abandonner`, {});
   }
 
   unites(): Observable<Unite[]> {
@@ -220,9 +243,26 @@ export class ReclamationsStore {
     return !!this.config()?.acces.capacites[c];
   }
 
+  private readonly parId = computed(() => {
+    const m = new Map<string, RefItem>();
+    for (const liste of Object.values(this.config()?.referentiels ?? {})) for (const r of liste) m.set(r.id, r);
+    return m;
+  });
+
+  /** Valeur proposable : active, ainsi que toute sa lignée (un type désactivé masque ses motifs). */
+  utilisable(r: RefItem): boolean {
+    const vus = new Set<string>();
+    for (let x: RefItem | undefined = r; x; x = x.parent_id ? this.parId().get(x.parent_id) : undefined) {
+      if (!x.actif || vus.has(x.id)) return false;
+      vus.add(x.id);
+      if (x.parent_id && !this.parId().has(x.parent_id)) return false;
+    }
+    return true;
+  }
+
   refs(domaine: Domaine, inclureInactifs = false): RefItem[] {
     const liste = this.config()?.referentiels[domaine] ?? [];
-    return inclureInactifs ? liste : liste.filter((r) => r.actif);
+    return inclureInactifs ? liste : liste.filter((r) => this.utilisable(r));
   }
 
   enfants(domaine: Domaine, parentId: string | null | undefined): RefItem[] {

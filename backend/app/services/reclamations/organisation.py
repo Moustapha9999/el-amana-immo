@@ -1,12 +1,15 @@
 """Référentiels (types, motifs, sous-motifs, canaux) et unités organisationnelles du module.
 
-Une valeur ou une unité utilisée se désactive, elle ne se supprime pas : les dossiers gardent
-leur classement d'origine. Toute écriture est auditée (avant / après).
+Référentiel : une valeur désactivée ou supprimée n'est plus proposée à la saisie. La suppression
+est physique si la valeur n'a jamais servi, logique sinon (les dossiers gardent leur libellé) ;
+supprimer un type supprime ses motifs et sous-motifs. Une unité utilisée se désactive seulement.
+Toute écriture est auditée (avant / après).
 """
 
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,10 +51,7 @@ def referentiel_dict(r: ReclamationReferentiel, usage: int = 0) -> dict:
     }
 
 
-async def _usages_referentiels(db: AsyncSession) -> dict[uuid.UUID, int]:
-    sql = text(
-        """
-        SELECT id, sum(n)::int FROM (
+_USAGES_DOSSIERS = """
           SELECT type_id AS id, count(*) n FROM reclamations WHERE type_id IS NOT NULL GROUP BY 1
           UNION ALL SELECT motif_id, count(*) FROM reclamations WHERE motif_id IS NOT NULL GROUP BY 1
           UNION ALL SELECT sous_motif_id, count(*) FROM reclamations WHERE sous_motif_id IS NOT NULL GROUP BY 1
@@ -59,16 +59,19 @@ async def _usages_referentiels(db: AsyncSession) -> dict[uuid.UUID, int]:
           UNION ALL SELECT canal_envoi_id, count(*) FROM reclamation_reponses WHERE canal_envoi_id IS NOT NULL GROUP BY 1
           UNION ALL SELECT type_id, count(*) FROM reclamation_regles_delai WHERE type_id IS NOT NULL GROUP BY 1
           UNION ALL SELECT motif_id, count(*) FROM reclamation_regles_delai WHERE motif_id IS NOT NULL GROUP BY 1
-          UNION ALL SELECT sous_motif_id, count(*) FROM reclamation_regles_delai WHERE sous_motif_id IS NOT NULL GROUP BY 1
-          UNION ALL SELECT parent_id, count(*) FROM reclamation_referentiels WHERE parent_id IS NOT NULL GROUP BY 1
-        ) u GROUP BY id
-        """
-    )
+          UNION ALL SELECT sous_motif_id, count(*) FROM reclamation_regles_delai WHERE sous_motif_id IS NOT NULL GROUP BY 1"""
+
+
+async def _usages_referentiels(db: AsyncSession, *, avec_enfants: bool = True) -> dict[uuid.UUID, int]:
+    """Utilisations par dossiers, réponses et règles ; ``avec_enfants`` ajoute les valeurs rattachées visibles."""
+    enfants = ("\n          UNION ALL SELECT parent_id, count(*) FROM reclamation_referentiels "
+               "WHERE parent_id IS NOT NULL AND supprime_le IS NULL GROUP BY 1") if avec_enfants else ""
+    sql = text(f"SELECT id, sum(n)::int FROM ({_USAGES_DOSSIERS}{enfants}\n        ) u GROUP BY id")
     return {row[0]: row[1] for row in (await db.execute(sql)).all()}
 
 
 async def lister_referentiels(db: AsyncSession, domaine: str | None = None) -> list[dict]:
-    q = select(ReclamationReferentiel).order_by(
+    q = select(ReclamationReferentiel).where(ReclamationReferentiel.supprime_le.is_(None)).order_by(
         ReclamationReferentiel.domaine, ReclamationReferentiel.ordre, ReclamationReferentiel.libelle)
     if domaine:
         q = q.where(ReclamationReferentiel.domaine == domaine)
@@ -78,13 +81,15 @@ async def lister_referentiels(db: AsyncSession, domaine: str | None = None) -> l
 
 async def _referentiel(db: AsyncSession, rid: uuid.UUID) -> ReclamationReferentiel:
     r = await db.get(ReclamationReferentiel, rid)
-    if r is None:
+    if r is None or r.supprime_le is not None:
         raise erreur("Valeur de référentiel introuvable", "NOT_FOUND", 404)
     return r
 
 
 async def _verifier_unicite(db: AsyncSession, domaine: str, parent_id: uuid.UUID | None, libelle: str,
-                            code: str | None, exclure: uuid.UUID | None = None) -> None:
+                            code: str | None, exclure: uuid.UUID | None = None
+                            ) -> ReclamationReferentiel | None:
+    """Refuse un doublon visible ; renvoie la valeur supprimée de même libellé (à restaurer), s'il y en a une."""
     q = select(ReclamationReferentiel).where(
         ReclamationReferentiel.domaine == domaine, ReclamationReferentiel.cle == cle(libelle),
         ReclamationReferentiel.parent_id.is_(None) if parent_id is None
@@ -92,17 +97,23 @@ async def _verifier_unicite(db: AsyncSession, domaine: str, parent_id: uuid.UUID
     if exclure:
         q = q.where(ReclamationReferentiel.id != exclure)
     existant = await db.scalar(q)
-    if existant:
+    supprime = existant if existant is not None and existant.supprime_le is not None else None
+    if existant is not None and supprime is None:
         etat = "" if existant.actif else " (désactivée — réactivez-la)"
         raise conflit(f"« {existant.libelle} » existe déjà{etat}", "REFERENTIEL_EXISTANT",
                       existant=referentiel_dict(existant))
+    if supprime is not None and exclure:
+        raise conflit(f"« {supprime.libelle} » a été supprimé : recréez-le pour le restaurer",
+                      "REFERENTIEL_SUPPRIME")
     if code:
         q = select(ReclamationReferentiel.id).where(
             ReclamationReferentiel.domaine == domaine, ReclamationReferentiel.code == code)
-        if exclure:
-            q = q.where(ReclamationReferentiel.id != exclure)
+        for autre in (exclure, supprime.id if supprime else None):
+            if autre:
+                q = q.where(ReclamationReferentiel.id != autre)
         if await db.scalar(q):
             raise conflit(f"Le code {code} est déjà utilisé dans ce référentiel", "CODE_EXISTANT")
+    return supprime
 
 
 async def creer_referentiel(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
@@ -125,7 +136,18 @@ async def creer_referentiel(db: AsyncSession, s: ReclamationsScope, data: dict) 
     elif parent_id:
         raise erreur(f"Le domaine {C.DOMAINE_LIBELLES[domaine]} n'a pas de parent", "PARENT_INVALIDE")
     code = code_propre(data.get("code"))
-    await _verifier_unicite(db, domaine, parent_id, libelle, code)
+    supprime = await _verifier_unicite(db, domaine, parent_id, libelle, code)
+    if supprime is not None:
+        # Recréer une valeur supprimée la restaure : les dossiers qui la portent la retrouvent.
+        supprime.supprime_le, supprime.supprime_par_id, supprime.actif = None, None, True
+        supprime.libelle, supprime.code = libelle, code or supprime.code
+        if data.get("description") is not None:
+            supprime.description = texte_long(data["description"])
+        supprime.updated_by_id = s.user_id
+        await db.flush()
+        apres = referentiel_dict(supprime)
+        await auditer(db, s, "reclamations.referentiel.restore", "reclamation_referentiel", supprime.id, after=apres)
+        return apres
     ordre = await db.scalar(select(func.coalesce(func.max(ReclamationReferentiel.ordre), 0)).where(
         ReclamationReferentiel.domaine == domaine))
     r = ReclamationReferentiel(
@@ -201,15 +223,46 @@ async def valider_referentiel(db: AsyncSession, s: ReclamationsScope, rid: uuid.
     return apres
 
 
-async def supprimer_referentiel(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID) -> None:
+async def supprimer_referentiel(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID) -> dict:
+    """Supprime la valeur et ses descendants (motifs, sous-motifs).
+
+    Physique pour ce qui n'a jamais servi ; logique (``supprime_le``) pour une valeur portée par un
+    dossier, une réponse ou une règle — ou parent d'une telle valeur — afin de conserver l'historique."""
     s.exiger("reclamations.references.manage")
     r = await _referentiel(db, rid)
-    if (await _usages_referentiels(db)).get(r.id, 0):
-        raise conflit("Valeur utilisée : désactivez-la plutôt que de la supprimer", "REFERENTIEL_UTILISE")
+    tous = list((await db.scalars(select(ReclamationReferentiel))).all())
+    enfants: dict[uuid.UUID, list[ReclamationReferentiel]] = defaultdict(list)
+    for x in tous:
+        if x.parent_id:
+            enfants[x.parent_id].append(x)
+    usages = await _usages_referentiels(db, avec_enfants=False)
+    physiques: list[ReclamationReferentiel] = []
+    logiques: list[ReclamationReferentiel] = []
+
+    def parcourir(x: ReclamationReferentiel) -> bool:
+        effacables = [parcourir(e) for e in enfants[x.id]]
+        if all(effacables) and not usages.get(x.id):
+            physiques.append(x)
+            return True
+        logiques.append(x)
+        return False
+
+    parcourir(r)
     avant = referentiel_dict(r)
-    await db.delete(r)
+    now = maintenant()
+    for x in logiques:
+        if x.supprime_le is None:
+            x.supprime_le, x.supprime_par_id = now, s.user_id
+        x.actif, x.updated_by_id = False, s.user_id
+    for x in physiques:
+        await db.delete(x)
+        await db.flush()
     await db.flush()
-    await auditer(db, s, "reclamations.referentiel.delete", "reclamation_referentiel", rid, before=avant)
+    resultat = {"id": str(rid), "libelle": r.libelle, "supprimes": len(physiques), "conserves": len(logiques)}
+    await auditer(db, s, "reclamations.referentiel.delete", "reclamation_referentiel", rid, before=avant,
+                  after={"supprimes_definitivement": [x.libelle for x in physiques],
+                         "masques_historique_conserve": [x.libelle for x in logiques]})
+    return resultat
 
 
 # ---------------------------------------------------------------------- unités

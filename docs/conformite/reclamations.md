@@ -60,11 +60,54 @@ REFUSEE → Rejetée ; ATTENTE_INFO / SUSPENDUE → statut d’avant la suspensi
 
 ## Opérations concernées
 
-Table `reclamation_operations` (1-N) : référence (obligatoire, unique par dossier sans tenir
-compte de la casse), montant en MRU (> 0, 2 décimales), ordre. L’ancienne opération unique
-(`operation_reference` / `montant_conteste`) est reprise comme première ligne. Liste, pipeline,
-fiche et export affichent le nombre d’opérations et le montant total. Les indicateurs comptent
-des **dossiers** ; les montants sont sommés par opération, chaque opération une seule fois.
+Table `reclamation_operations` (1-N) : référence (obligatoire), montant en MRU (> 0, 2 décimales),
+ordre. L’ancienne opération unique (`operation_reference` / `montant_conteste`) est reprise comme
+première ligne. Liste, pipeline, fiche et export affichent le nombre d’opérations et le montant
+total. Les indicateurs comptent des **dossiers** ; les montants sont sommés par opération, chaque
+opération une seule fois.
+
+### Dossier multi-comptes / multi-clients (migration `20261015_reclamations_09`)
+
+Un dossier (numéro, motif général, responsable, statut global) → clients participants → comptes →
+opérations.
+
+- `reclamation_participants` : client **principal** (le client saisi sur le dossier) et clients
+  **associés**. Statut `VERIFIE` (présent dans la base clientèle), `A_VERIFIER` (racine inconnue),
+  `A_RENSEIGNER` (non fournie).
+- `reclamation_comptes` : comptes du dossier, chacun rattaché à un participant ; `VERIFIE` ou
+  `A_VERIFIER`. Un compte absent de la base est accepté, jamais considéré comme vérifié.
+- `reclamation_operations` : + `participant_id`, `compte_id`, `date_operation`, `montant_conteste`
+  (≤ montant ; vide = montant de l’opération), `motif_detail`, `import_id`, `ligne_import`.
+- Client vide sur une ligne : titulaire du compte s’il est connu, sinon le client principal.
+  Compte appartenant à un autre client que celui indiqué : refusé (`COMPTE_AUTRE_CLIENT`).
+- Une même référence peut revenir (autre compte, date, montant) : simple avertissement. Seule une
+  ligne strictement identique est refusée (`OPERATION_DOUBLON`).
+- Plusieurs clients identifiés = cas exceptionnel : paramètre `regroupement_multi_clients_autorise`
+  (activé par la migration ; désactivé → `REGROUPEMENT_NON_AUTORISE`) **et** justification
+  obligatoire (`reclamations.justification_regroupement`, `JUSTIFICATION_REGROUPEMENT_OBLIGATOIRE`),
+  contrôlés avant toute écriture.
+- Sécurité : seuls le périmètre global, l’auteur et les membres des unités en charge (réception,
+  service concerné, traitement) voient l’identité des clients associés et leurs comptes. Les autres
+  accès au dossier voient ces clients masqués (`****12`, `••••3456`), ne peuvent pas modifier les
+  opérations ni ouvrir les fichiers d’import.
+- La fiche groupe les opérations par client puis par compte, avec sous-totaux (montant et contesté).
+
+### Import Excel des opérations
+
+Modèle unique (`GET /imports/modele`), une ligne par opération : Identifiant client, Référence du
+compte, Référence de l’opération, Date de l’opération, Montant de l’opération, Montant contesté,
+Motif détaillé (+ feuille « Consignes », sans donnée fictive). 2 000 lignes au plus.
+
+1. `POST /dossiers/{id}/imports` (fichier `.xlsx` + mode `AJOUT` / `REMPLACEMENT`) : le fichier est
+   conservé en GED (catégorie `IMPORT_OPERATIONS`, empreinte SHA-256), l’analyse est stockée dans
+   `reclamation_imports` (lignes avec erreurs / avertissements, groupes client → compte, totaux du
+   fichier et du dossier après import). **Rien n’est écrit au dossier.**
+2. `POST /dossiers/{id}/imports/{iid}/confirmer` (révision + justification si multi-clients) :
+   contrôles rejoués sur l’état courant ; refus tant qu’une ligne est en erreur (`IMPORT_ERREURS`).
+3. `POST /dossiers/{id}/imports/{iid}/abandonner`. Une nouvelle analyse abandonne la précédente.
+
+Chronologie : `IMPORT_ANALYSE`, `IMPORT_CONFIRME`, `IMPORT_ABANDONNE` ; audit
+`reclamations.operations.import.*`.
 
 ## Formulaire d’enregistrement
 
@@ -238,6 +281,19 @@ proposé. Les valeurs proposées restent utilisables (signalées « proposé » 
 n’efface rien : l’historique des dossiers conserve la valeur. Un sous-motif d’un autre motif est
 refusé (`CLASSEMENT_INCOHERENT`).
 
+**Nomenclature de la banque** (migration `20261015_reclamations_09`, source
+`app/data/reclamations_nomenclature.py`) : 26 types (familles A à E, codes `T01` … `T26`) et leurs
+motifs (`T01_M01` …). L’ancienne proposition est désactivée (réactivable), pas supprimée.
+
+**Désactiver / supprimer** (Paramètres) :
+- Désactiver masque la valeur **et ses descendants** de toutes les listes déroulantes (saisie,
+  qualification, filtres) ; une valeur dont un parent est inactif est refusée (`REFERENTIEL_INACTIF`).
+  Un dossier qui porte déjà la valeur la conserve (affichée « désactivé » en modification).
+- Supprimer (`DELETE /referentiels/{id}`) traite la valeur et ses descendants : effacement définitif
+  de ce qui n’a jamais servi ; suppression **logique** (`supprime_le`, masquée partout y compris dans
+  Paramètres) de ce qui est porté par un dossier, afin que l’historique garde son libellé. Réponse :
+  nombre d’éléments effacés / masqués. Recréer le même libellé restaure la valeur.
+
 ## Permissions retirées
 
 `reclamations.suspend`, `reclamations.response.prepare`, `reclamations.response.validate`,
@@ -270,7 +326,10 @@ décision de la banque.
 | Comparaison A/B, export de la comparaison | implémenté et testé |
 | Référentiels proposés / validés, compatibilité sous-motif | implémenté et testé |
 | Retrait des 4 permissions | implémenté et testé |
-| Nomenclature types / motifs / sous-motifs | en attente de validation (aucune valeur validée ; aucun sous-motif inséré) |
+| Nomenclature types / motifs (26 types, liste de la banque) | chargée ; validation Conformité à faire ; aucun sous-motif inséré |
+| Désactivation / suppression des types et motifs (masqués des listes) | implémenté et testé |
+| Dossier multi-comptes / multi-clients, masquage des clients associés | implémenté et testé |
+| Import Excel des opérations (modèle, aperçu, confirmation) | implémenté et testé |
 | Référence d’enregistrement d’appel | en attente de décision (désactivée) |
 | Unités Marketing | en attente de décision (non déplacées) |
 | État « suspendu » | non implémenté (pas de suspension dans le circuit) |

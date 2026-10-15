@@ -76,7 +76,7 @@ STATUTS_TERMINAUX = frozenset({"CLOTUREE", "REJETEE", "ANNULEE"})
 # Saisie libre « Autre » à la place d'un motif / sous-motif du référentiel.
 AUTRE = "Autre"
 DEVISE = "MRU"
-MAX_OPERATIONS = 200
+MAX_OPERATIONS = 2000
 
 PRIORITE_LIBELLES: dict[str, str] = {
     "BASSE": "Basse",
@@ -108,10 +108,12 @@ CATEGORIE_DOCUMENT_LIBELLES: dict[str, str] = {
     "JUSTIFICATIF_SERVICE": "Justificatif du service",
     "REPONSE_CLIENT": "Réponse envoyée au client",
     "PREUVE_ENVOI": "Preuve d'envoi",
+    "IMPORT_OPERATIONS": "Fichier d'import des opérations",
     "AUTRE": "Autre document",
 }
 # Note signée puis scannée : PDF ou image uniquement.
 CATEGORIE_NOTE = "NOTE"
+CATEGORIE_IMPORT = "IMPORT_OPERATIONS"
 FORMATS_SCAN = frozenset({".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"})
 # Pièces à valeur probante vis-à-vis du client : elles interdisent la suppression du dossier.
 CATEGORIES_OFFICIELLES = frozenset({"REPONSE_CLIENT", "PREUVE_ENVOI"})
@@ -173,6 +175,18 @@ EVENEMENT_LIBELLES: dict[str, str] = {
     "SUPPRESSION": "Dossier supprimé (corbeille)",
     "RESTAURATION": "Dossier restauré",
     "DELAI_CALCULE": "Échéance calculée (règle de délai validée)",
+    "IMPORT_ANALYSE": "Fichier d'opérations analysé",
+    "IMPORT_CONFIRME": "Opérations importées depuis Excel",
+    "IMPORT_ABANDONNE": "Import d'opérations abandonné",
+}
+STATUT_IDENTIFICATION_LIBELLES: dict[str, str] = {
+    "VERIFIE": "Vérifié",
+    "A_VERIFIER": "À vérifier",
+    "A_RENSEIGNER": "À renseigner",
+}
+ROLE_PARTICIPANT_LIBELLES: dict[str, str] = {
+    "PRINCIPAL": "Client principal",
+    "ASSOCIE": "Client associé",
 }
 STATUT_AFFECTATION_LIBELLES: dict[str, str] = {
     "TRANSMISE": "Transmise",
@@ -198,3 +212,6 @@ VALIDATION_REFERENTIEL_LIBELLES: dict[str, str] = {
 }
 # Paramètre (``reclamation_parametres``) : la banque autorise-t-elle la référence d'enregistrement d'appel ?
 PARAM_ENREGISTREMENT_APPELS = "enregistrement_appels_autorise"
+# Paramètre : un dossier peut-il réunir plusieurs clients ? (absent = oui, avec justification)
+PARAM_MULTI_CLIENTS = "regroupement_multi_clients_autorise"
+MAX_LIGNES_IMPORT = MAX_OPERATIONS

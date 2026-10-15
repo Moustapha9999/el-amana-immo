@@ -85,6 +85,11 @@ class AppelIn(BaseModel):
 class OperationIn(BaseModel):
     reference: str = Field(min_length=1, max_length=120)
     montant: Decimal = Field(gt=0, max_digits=18, decimal_places=2)
+    montant_conteste: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=2)
+    date_operation: date | None = None
+    client_racine: str | None = Field(default=None, max_length=6)
+    compte_reference: str | None = Field(default=None, max_length=60)
+    motif_detail: str | None = Field(default=None, max_length=4000)
 
 
 class _DossierChamps(BaseModel):
@@ -123,13 +128,20 @@ class DossierCreate(_DossierChamps):
     date_premiere_reception: datetime | None = None
     date_reception_sr: datetime | None = None
     appel: AppelIn | None = None
-    operations: list[OperationIn] = Field(default_factory=list, max_length=200)
+    operations: list[OperationIn] = Field(default_factory=list, max_length=2000)
+    justification_regroupement: str | None = Field(default=None, max_length=4000)
 
 
 class OperationsIn(BaseModel):
     revision: int
-    operations: list[OperationIn] = Field(default_factory=list, max_length=200)
+    operations: list[OperationIn] = Field(default_factory=list, max_length=2000)
     motif: str | None = Field(default=None, max_length=4000)
+    justification_regroupement: str | None = Field(default=None, max_length=4000)
+
+
+class ImportConfirmIn(BaseModel):
+    revision: int
+    justification_regroupement: str | None = Field(default=None, max_length=4000)
 
 
 class DossierPatch(_DossierChamps):

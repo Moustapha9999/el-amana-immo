@@ -131,7 +131,11 @@ async def test_plusieurs_operations_et_total(db):
     ligne = (await dossiers.lister(db, sr, {"q": "OP-2"}))["items"]
     assert any(x["id"] == d["id"] and x["nb_operations"] == 3 for x in ligne)
 
-    doublon = [{"reference": "A1", "montant": Decimal("1")}, {"reference": " a1 ", "montant": Decimal("2")}]
+    # Même référence dans un autre contexte (montant différent) : acceptée ; ligne identique : refusée.
+    repetee = [{"reference": "A1", "montant": Decimal("1")}, {"reference": " a1 ", "montant": Decimal("2")}]
+    d = await dossiers.creer(db, sr, await _saisie(db, unite.id, operations=repetee))
+    assert d["nb_operations"] == 2
+    doublon = [{"reference": "A1", "montant": Decimal("1")}, {"reference": " a1 ", "montant": Decimal("1")}]
     await _refus(dossiers.creer(db, sr, await _saisie(db, unite.id, operations=doublon)), "OPERATION_DOUBLON")
     await _refus(dossiers.creer(db, sr, await _saisie(db, unite.id, operations=_ops("0"))), "MONTANT_INVALIDE")
     await _refus(dossiers.creer(db, sr, await _saisie(db, unite.id, operations=_ops("-5"))), "MONTANT_INVALIDE")

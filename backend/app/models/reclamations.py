@@ -73,7 +73,13 @@ CATEGORIES_DOCUMENT = (
     "REPONSE_CLIENT",
     "PREUVE_ENVOI",
     "AUTRE",
+    "IMPORT_OPERATIONS",
 )
+ROLES_PARTICIPANT = ("PRINCIPAL", "ASSOCIE")
+STATUTS_IDENTIFICATION = ("VERIFIE", "A_VERIFIER", "A_RENSEIGNER")
+STATUTS_VERIFICATION_COMPTE = ("VERIFIE", "A_VERIFIER")
+STATUTS_IMPORT = ("ANALYSE", "CONFIRME", "ABANDONNE")
+MODES_IMPORT = ("AJOUT", "REMPLACEMENT")
 STATUTS_RAPPEL = ("AUCUN", "A_RAPPELER", "RAPPELE", "ECHEC")
 UNITES_DUREE = ("JOURS_CALENDAIRES", "JOURS_OUVRES", "HEURES")
 POINTS_DEPART = ("PREMIERE_RECEPTION", "RECEPTION_SR")
@@ -111,7 +117,10 @@ def _ts(nullable: bool = True) -> Mapped:
 
 class ReclamationReferentiel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Types, motifs (parent = type), sous-motifs (parent = motif), canaux de réception et
-    canaux d'envoi de la réponse. Une valeur utilisée se désactive, elle ne se supprime pas."""
+    canaux d'envoi de la réponse.
+
+    Suppression : physique si la valeur n'a jamais servi, sinon logique (``supprime_le``) — elle
+    disparaît du paramétrage et des listes de saisie, les dossiers gardent leur libellé."""
 
     __tablename__ = "reclamation_referentiels"
     __mapper_args__ = {"eager_defaults": True}
@@ -134,6 +143,8 @@ class ReclamationReferentiel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     statut_validation: Mapped[str] = mapped_column(String(20), default="PROPOSEE", server_default="PROPOSEE")
     valide_par_id: Mapped[uuid.UUID | None] = _user_fk()
     valide_le: Mapped[datetime | None] = _ts()
+    supprime_le: Mapped[datetime | None] = _ts()
+    supprime_par_id: Mapped[uuid.UUID | None] = _user_fk()
     created_by_id: Mapped[uuid.UUID | None] = _user_fk()
     updated_by_id: Mapped[uuid.UUID | None] = _user_fk()
 
@@ -358,6 +369,8 @@ class Reclamation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     supprimee_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     supprimee_par_id: Mapped[uuid.UUID | None] = _user_fk()
     motif_suppression: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Obligatoire dès que les opérations du dossier concernent plusieurs clients.
+    justification_regroupement: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_by_id: Mapped[uuid.UUID | None] = _user_fk()
@@ -500,14 +513,96 @@ class ReclamationAppel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     created_by_id: Mapped[uuid.UUID | None] = _user_fk()
 
 
+class ReclamationParticipant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Client associé au dossier : un PRINCIPAL (éventuellement non identifié) et 0..N ASSOCIE.
+
+    Plusieurs clients dans un même dossier = cas exceptionnel, justifié sur le dossier."""
+
+    __tablename__ = "reclamation_participants"
+    __mapper_args__ = {"eager_defaults": True}
+    __table_args__ = (
+        CheckConstraint(_in("role", ROLES_PARTICIPANT), name="ck_reclamation_participants_role"),
+        CheckConstraint(_in("statut_identification", STATUTS_IDENTIFICATION),
+                        name="ck_reclamation_participants_statut"),
+        CheckConstraint("client_racine IS NULL OR client_racine ~ '^[0-9]{6}$'",
+                        name="ck_reclamation_participants_racine"),
+        CheckConstraint("role = 'PRINCIPAL' OR client_racine IS NOT NULL",
+                        name="ck_reclamation_participants_associe_identifie"),
+    )
+
+    reclamation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), _fk("reclamations.id", "CASCADE"), index=True)
+    ordre: Mapped[int] = mapped_column(Integer, default=1)
+    role: Mapped[str] = mapped_column(String(12))
+    client_racine: Mapped[str | None] = mapped_column(String(6), nullable=True, index=True)
+    client_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    client_categorie: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    statut_identification: Mapped[str] = mapped_column(String(12))
+    created_by_id: Mapped[uuid.UUID | None] = _user_fk()
+
+
+class ReclamationCompte(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Compte concerné par le dossier. ``A_VERIFIER`` = absent de la base clientèle (jamais présumé valide)."""
+
+    __tablename__ = "reclamation_comptes"
+    __mapper_args__ = {"eager_defaults": True}
+    __table_args__ = (
+        CheckConstraint(_in("statut_verification", STATUTS_VERIFICATION_COMPTE), name="ck_reclamation_comptes_statut"),
+        CheckConstraint("length(btrim(compte_reference)) > 0", name="ck_reclamation_comptes_reference"),
+        UniqueConstraint("reclamation_id", "compte_reference", name="uq_reclamation_comptes_reference"),
+    )
+
+    reclamation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), _fk("reclamations.id", "CASCADE"), index=True)
+    participant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), _fk("reclamation_participants.id", "SET NULL"), nullable=True)
+    compte_reference: Mapped[str] = mapped_column(String(60), index=True)
+    devise: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    statut_verification: Mapped[str] = mapped_column(String(12))
+    created_by_id: Mapped[uuid.UUID | None] = _user_fk()
+
+
+class ReclamationImport(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Fichier Excel d'opérations : analyse (aperçu, erreurs) puis confirmation. Le fichier est en GED."""
+
+    __tablename__ = "reclamation_imports"
+    __mapper_args__ = {"eager_defaults": True}
+    __table_args__ = (
+        CheckConstraint(_in("statut", STATUTS_IMPORT), name="ck_reclamation_imports_statut"),
+        CheckConstraint(_in("mode", MODES_IMPORT, nullable=True), name="ck_reclamation_imports_mode"),
+    )
+
+    reclamation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), _fk("reclamations.id", "CASCADE"), index=True)
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), _fk("ged_documents.id", "SET NULL"), nullable=True)
+    nom_fichier: Mapped[str] = mapped_column(String(255))
+    empreinte: Mapped[str] = mapped_column(String(64))
+    statut: Mapped[str] = mapped_column(String(12), default="ANALYSE")
+    mode: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    nb_lignes: Mapped[int] = mapped_column(Integer, default=0)
+    nb_valides: Mapped[int] = mapped_column(Integer, default=0)
+    nb_erreurs: Mapped[int] = mapped_column(Integer, default=0)
+    nb_avertissements: Mapped[int] = mapped_column(Integer, default=0)
+    resultat: Mapped[dict] = mapped_column(JSONB, default=dict)
+    confirme_le: Mapped[datetime | None] = _ts()
+    confirme_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    created_by_id: Mapped[uuid.UUID | None] = _user_fk()
+
+
 class ReclamationOperation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Opération contestée (référence + montant) : une réclamation en porte 0..N."""
+    """Opération du dossier : référence, montant, compte et client (quand ils sont connus).
+
+    Une même référence peut figurer plusieurs fois (contextes différents) : seule une ligne
+    strictement identique est refusée."""
 
     __tablename__ = "reclamation_operations"
     __table_args__ = (
         CheckConstraint("montant IS NULL OR montant > 0", name="ck_reclamation_operations_montant"),
+        CheckConstraint("montant_conteste IS NULL OR montant_conteste > 0",
+                        name="ck_reclamation_operations_montant_conteste"),
         CheckConstraint("length(btrim(reference)) > 0", name="ck_reclamation_operations_reference"),
-        UniqueConstraint("reclamation_id", "reference", name="uq_reclamation_operations_reference"),
+        Index("ix_reclamation_operations_reference", "reclamation_id", "reference"),
     )
 
     reclamation_id: Mapped[uuid.UUID] = mapped_column(
@@ -516,6 +611,16 @@ class ReclamationOperation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     reference: Mapped[str] = mapped_column(String(120))
     montant: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     devise: Mapped[str] = mapped_column(String(3), default="MRU")
+    participant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), _fk("reclamation_participants.id", "SET NULL"), nullable=True, index=True)
+    compte_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), _fk("reclamation_comptes.id", "SET NULL"), nullable=True, index=True)
+    date_operation: Mapped[date | None] = mapped_column(Date, nullable=True)
+    montant_conteste: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    motif_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    import_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), _fk("reclamation_imports.id", "SET NULL"), nullable=True)
+    ligne_import: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_by_id: Mapped[uuid.UUID | None] = _user_fk()
 
 

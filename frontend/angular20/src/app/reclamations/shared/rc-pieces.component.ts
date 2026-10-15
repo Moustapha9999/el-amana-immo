@@ -196,7 +196,7 @@ export class RcPiecesComponent implements OnInit {
   readonly types = computed(() => {
     const tous = this.store.libelles('categories_document');
     if (this.mode() === 'note') return tous.filter((c) => c.code === NOTE);
-    const autres = tous.filter((c) => c.code !== NOTE);
+    const autres = tous.filter((c) => c.code !== NOTE && c.code !== 'IMPORT_OPERATIONS');
     const rang = (code: string) => {
       const i = TYPES_PRINCIPAUX.indexOf(code);
       return i < 0 ? TYPES_PRINCIPAUX.length : i;

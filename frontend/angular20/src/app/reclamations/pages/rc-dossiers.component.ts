@@ -126,7 +126,7 @@ const VUES: Record<string, VueListe> = {
         <label class="bea-mg__field">Type
           <select formControlName="type_id" (change)="filtres.controls.motif_id.setValue(''); appliquer()">
             <option value="">Tous</option>
-            @for (t of store.refs('TYPE', true); track t.id) { <option [value]="t.id">{{ t.libelle }}</option> }
+            @for (t of store.refs('TYPE'); track t.id) { <option [value]="t.id">{{ t.libelle }}</option> }
           </select>
         </label>
         <label class="bea-mg__field">Motif
@@ -332,7 +332,7 @@ export class RcDossiersComponent implements OnInit {
   readonly fin = computed(() => Math.min(this.page() * TAILLE, this.total()));
   readonly motifs = computed(() => {
     const t = this.typeChoisi();
-    const tous = this.store.refs('MOTIF', true);
+    const tous = this.store.refs('MOTIF');
     return t ? tous.filter((m) => m.parent_id === t) : tous;
   });
 

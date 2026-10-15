@@ -50,7 +50,7 @@ export function classementCorps(c: Classement): Record<string, string | null> {
       <label>Type de réclamation
         <select [value]="valeur().type_id" (change)="choisirType(champ($event))">
           <option value="">— À qualifier —</option>
-          @for (t of store.refs('TYPE'); track t.id) { <option [value]="t.id" [selected]="t.id === valeur().type_id">{{ lib(t) }}</option> }
+          @for (t of types(); track t.id) { <option [value]="t.id" [selected]="t.id === valeur().type_id">{{ lib(t) }}</option> }
         </select>
       </label>
       <label>Motif
@@ -100,17 +100,25 @@ export class RcClassementComponent {
   readonly tente = input(false);
   readonly autre = AUTRE;
 
+  readonly types = computed(() => this.avecActuel(this.store.refs('TYPE'), 'TYPE', this.valeur().type_id));
   readonly motifs = computed(() => {
     const t = this.valeur().type_id;
-    return t ? this.store.enfants('MOTIF', t) : this.store.refs('MOTIF');
+    return this.avecActuel(t ? this.store.enfants('MOTIF', t) : this.store.refs('MOTIF'), 'MOTIF', this.valeur().motif);
   });
   readonly sousMotifs = computed(() => {
     const m = this.valeur().motif;
-    return m && m !== AUTRE ? this.store.enfants('SOUS_MOTIF', m) : [];
+    return m && m !== AUTRE ? this.avecActuel(this.store.enfants('SOUS_MOTIF', m), 'SOUS_MOTIF', this.valeur().sous_motif) : [];
   });
 
+  /** Valeur désactivée déjà portée par le dossier : conservée dans la liste, jamais proposée ailleurs. */
+  private avecActuel(liste: RefItem[], domaine: 'TYPE' | 'MOTIF' | 'SOUS_MOTIF', id: string): RefItem[] {
+    if (!id || id === AUTRE || liste.some((r) => r.id === id)) return liste;
+    const actuel = this.store.refs(domaine, true).find((r) => r.id === id);
+    return actuel ? [actuel, ...liste] : liste;
+  }
+
   lib(r: RefItem): string {
-    return r.libelle;
+    return this.store.utilisable(r) ? r.libelle : `${r.libelle} (désactivé)`;
   }
 
   champ(e: Event): string {
