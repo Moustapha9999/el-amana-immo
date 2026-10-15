@@ -40,11 +40,14 @@ from app.schemas.clientele import (
     LotMajIn,
     LotControleDecisionIn,
     LotDivergencesIn,
+    LotLignesDecisionIn,
     LotMappingIn,
     RapprochementIn,
     ReexamenTraiterIn,
 )
 from app.data.clientele_import_hebdo import construire_modele
+from app.services.clientele.hebdo import ClienteleDecisionLotService
+from app.services.clientele.journal import lister_journal
 from app.services.clientele.lots import ClienteleLotService
 from app.services.clientele.classification import (
     ClienteleClassificationService,
@@ -321,9 +324,40 @@ async def lot_supprimer(lid: uuid.UUID,
     return Response(status_code=204)
 
 
+@router.post("/lots/{lid}/lignes/decision")
+async def lot_lignes_decision(lid: uuid.UUID, body: LotLignesDecisionIn,
+                              c: Ctx = Depends(ctx("clientele.classif.execute")),
+                              db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleDecisionLotService(db, c).decider(lid, body.model_dump())
+
+
+@router.get("/lots/{lid}/bilan")
+async def lot_bilan(lid: uuid.UUID,
+                    c: Ctx = Depends(ctx("clientele.import.execute", "clientele.classif.execute",
+                                         "clientele.classif.view")),
+                    db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleDecisionLotService(db, c).bilan(lid)
+
+
+@router.get("/lots/{lid}/bilan.xlsx")
+async def lot_bilan_xlsx(lid: uuid.UUID, c: Ctx = Depends(ctx("clientele.export", "clientele.classif.execute")),
+                         db: AsyncSession = Depends(get_db)) -> Response:
+    contenu, nom = await ClienteleDecisionLotService(db, c).bilan_xlsx(lid)
+    return _xlsx(contenu, nom)
+
+
+@router.get("/lots/{lid}/fichier")
+async def lot_fichier(lid: uuid.UUID, c: Ctx = Depends(ctx("clientele.export", "clientele.classif.execute")),
+                      db: AsyncSession = Depends(get_db)) -> Response:
+    contenu, nom = await ClienteleLotService(db, c).fichier(lid)
+    return _xlsx(contenu, nom)
+
+
 def _xlsx(contenu: bytes, nom: str) -> Response:
+    ascii_nom = nom.encode("ascii", "replace").decode().replace("?", "_").replace('"', "_")
     return Response(content=contenu, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    headers={"Content-Disposition": f"attachment; filename=\"{nom}\"; filename*=UTF-8''{quote(nom)}",
+                    headers={"Content-Disposition": f"attachment; filename=\"{ascii_nom}\"; "
+                                                    f"filename*=UTF-8''{quote(nom)}",
                              "Cache-Control": "no-store"})
 
 
@@ -576,6 +610,36 @@ async def classif_tache_reprendre(tache_id: uuid.UUID, c: Ctx = Depends(ctx("cli
 async def classif_client_historique(racine: str, c: Ctx = Depends(ctx("clientele.classif.view")),
                                     db: AsyncSession = Depends(get_db)) -> list[dict]:
     return await ClienteleClassificationService(db, c).historique(racine)
+
+
+@router.get("/clients/{racine}/journal")
+async def client_journal(racine: str, page: int = 1, taille: int = 100,
+                         c: Ctx = Depends(ctx("clientele.classif.view")),
+                         db: AsyncSession = Depends(get_db)) -> dict:
+    return await lister_journal(db, racine=ClienteleClassificationService._racine(racine), page=page,
+                                taille=taille)
+
+
+@router.get("/classification/recherche")
+async def classif_recherche(q: str = Query("", max_length=60), page: int = 1, taille: int = 25,
+                            c: Ctx = Depends(ctx("clientele.classif.view")),
+                            db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleClassificationService(db, c).rechercher(q, page=page, taille=taille)
+
+
+@router.get("/classification/analystes")
+async def classif_analystes(c: Ctx = Depends(ctx("clientele.classif.view")),
+                            db: AsyncSession = Depends(get_db)) -> list[str]:
+    return await ClienteleClassificationService(db, c).analystes()
+
+
+@router.get("/classification/journal")
+async def classif_journal(racine: str | None = None, lot_id: uuid.UUID | None = None,
+                          type_action: str | None = None, origine: str | None = None, page: int = 1,
+                          taille: int = 50, c: Ctx = Depends(ctx("clientele.classif.view")),
+                          db: AsyncSession = Depends(get_db)) -> dict:
+    return await lister_journal(db, racine=(racine or "").strip() or None, lot_id=lot_id,
+                                type_action=type_action, origine=origine, page=page, taille=taille)
 
 
 @router.get("/classification/reexamens")

@@ -21,6 +21,7 @@ from app.models import (
     ClienteleClient,
     ClienteleCompte,
     ClienteleImport,
+    ClienteleKyc,
     ClienteleRapprochement,
     ClienteleSituation,
 )
@@ -119,6 +120,20 @@ def _iso(valeur: date | datetime | None) -> str | None:
 
 def _vide(colonne):
     return or_(colonne.is_(None), colonne == "")
+
+
+def _dict_kyc(k: ClienteleKyc | None) -> dict | None:
+    if k is None:
+        return None
+    return {
+        "date_eer": k.date_eer.isoformat() if k.date_eer else None, "profil": k.profil,
+        "sous_profil": k.sous_profil, "statut_gel": k.statut_gel,
+        "date_maj_client": k.date_maj_client.isoformat() if k.date_maj_client else None,
+        "analyste_kyc": k.analyste_kyc,
+        "date_creation_entreprise": k.date_creation_entreprise.isoformat() if k.date_creation_entreprise else None,
+        "source": k.source, "lot_id": str(k.lot_id) if k.lot_id else None, "ligne_source": k.ligne_source,
+        "maj_le": k.maj_le.isoformat() if k.maj_le else None,
+    }
 
 
 def _dict_situation(row: ClienteleSituation) -> dict:
@@ -417,7 +432,9 @@ class ClienteleSituationService:
                 "type_client": client.type_client,
                 "premiere_extraction": client.premiere_extraction.isoformat() if client.premiere_extraction else None,
                 "date_extraction": client.date_extraction.isoformat() if client.date_extraction else None,
+                "source": client.source,
             },
+            "kyc": _dict_kyc(await self.db.get(ClienteleKyc, racine)),
             "situation": _dict_situation(sit) if sit else None,
             "comptes": comptes,
             "dernier_import": (

@@ -106,6 +106,11 @@ def _cell(donnees: dict, *aliases: str) -> str | None:
     return None
 
 
+def valeur_source(donnees: dict | None, *aliases: str) -> str | None:
+    """Valeur brute (non vide) d'une colonne du fichier, en-tête comparé sans casse ni accents."""
+    return _cell(donnees or {}, *aliases)
+
+
 def _index_secteurs() -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
     par_code: dict[str, tuple[str, str]] = {}
     par_lib: dict[str, str] = {}

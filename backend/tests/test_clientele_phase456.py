@@ -73,8 +73,10 @@ async def _nettoyer(session) -> None:
     await session.execute(text(
         f"DELETE FROM clientele_filtrage_empreintes WHERE racine_client IN {_IN}"))
     await session.execute(text(f"DELETE FROM clientele_alertes WHERE racine_client IN {_IN}"))
+    await session.execute(text("SET LOCAL session_replication_role = replica"))
     await session.execute(text(
         f"DELETE FROM clientele_classif_historique WHERE racine_client IN {_IN}"))
+    await session.execute(text("SET LOCAL session_replication_role = origin"))
     await session.execute(text(
         f"DELETE FROM clientele_classifications WHERE racine_client IN {_IN}"))
     await session.execute(text(

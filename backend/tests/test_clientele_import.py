@@ -55,8 +55,10 @@ async def db():
     await session.execute(text("DELETE FROM clientele_imports"))
     has03 = await session.scalar(text("SELECT to_regclass('public.clientele_classifications') IS NOT NULL"))
     if has03:
+        await session.execute(text("SET LOCAL session_replication_role = replica"))
         await session.execute(text(
             "DELETE FROM clientele_classif_historique WHERE racine_client IN ('000001','000002')"))
+        await session.execute(text("SET LOCAL session_replication_role = origin"))
         await session.execute(text(
             "DELETE FROM clientele_classifications WHERE racine_client IN ('000001','000002')"))
     await session.execute(text("DELETE FROM clientele_comptes WHERE racine_client IN ('000001','000002')"))
@@ -70,8 +72,10 @@ async def db():
         await session.execute(text("DELETE FROM clientele_import_lignes"))
         await session.execute(text("DELETE FROM clientele_imports"))
         if has03:
+            await session.execute(text("SET LOCAL session_replication_role = replica"))
             await session.execute(text(
                 "DELETE FROM clientele_classif_historique WHERE racine_client IN ('000001','000002')"))
+            await session.execute(text("SET LOCAL session_replication_role = origin"))
             await session.execute(text(
                 "DELETE FROM clientele_classifications WHERE racine_client IN ('000001','000002')"))
         await session.execute(text("DELETE FROM clientele_comptes WHERE racine_client IN ('000001','000002')"))

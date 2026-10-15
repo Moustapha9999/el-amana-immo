@@ -29,6 +29,11 @@ from app.db.base import Base
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 
+# Fiche créée par l'import hebdomadaire après décision, sans compte ORION : hors indicateurs et BCM
+# (la vue ``clientele_situation`` exige des comptes) jusqu'à ce qu'ORION la reprenne.
+SOURCE_IMPORT_HEBDO = "IMPORT_HEBDO"
+
+
 class _Provenance:
     source: Mapped[str] = mapped_column(String(30), default="ORION_ETAT_COMPTE", server_default="ORION_ETAT_COMPTE")
     premiere_extraction: Mapped[date] = mapped_column(Date)
@@ -736,6 +741,65 @@ class ClienteleClassifReexamen(UUIDPrimaryKeyMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     traite_par_id: Mapped[uuid.UUID | None] = _user_fk()
     traite_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+TYPES_ACTION_JOURNAL = ("CREATION", "MAJ_DONNEES", "PROPOSITION", "ACCEPTATION", "MODIFICATION", "REJET",
+                        "VERIFICATION")
+ORIGINES_JOURNAL = ("SAISIE", "IMPORT")
+
+
+class ClienteleJournal(UUIDPrimaryKeyMixin, Base):
+    """Journal des actions sur un client. Append-only : UPDATE / DELETE refusés par déclencheur.
+
+    Pas de clé étrangère : la ligne survit au lot, à l'utilisateur et à un rejet de création."""
+
+    __tablename__ = "clientele_journal"
+    __table_args__ = (
+        CheckConstraint("type_action IN ('CREATION','MAJ_DONNEES','PROPOSITION','ACCEPTATION','MODIFICATION',"
+                        "'REJET','VERIFICATION')", name="ck_clientele_journal_type"),
+        CheckConstraint("origine IN ('SAISIE','IMPORT')", name="ck_clientele_journal_origine"),
+        Index("ix_clientele_journal_racine", "racine_client", "created_at"),
+        Index("ix_clientele_journal_lot", "lot_id", "ligne_source"),
+        Index("ix_clientele_journal_date", "created_at"),
+    )
+
+    racine_client: Mapped[str] = mapped_column(String(6))
+    type_action: Mapped[str] = mapped_column(String(16))
+    champ: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    ancienne_valeur: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nouvelle_valeur: Mapped[str | None] = mapped_column(Text, nullable=True)
+    motif: Mapped[str | None] = mapped_column(Text, nullable=True)
+    analyste_kyc: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    origine: Mapped[str] = mapped_column(String(8))
+    lot_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    ligne_source: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    groupe_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    utilisateur_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    utilisateur_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ClienteleKyc(Base):
+    """Données KYC déclarées absentes d'ORION. Une donnée ORION n'est jamais copiée ici."""
+
+    __tablename__ = "clientele_kyc"
+
+    racine_client: Mapped[str] = mapped_column(
+        String(6), ForeignKey("clientele_clients.racine_client", ondelete="RESTRICT", onupdate="RESTRICT"),
+        primary_key=True)
+    date_eer: Mapped[date | None] = mapped_column(Date, nullable=True)
+    profil: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    sous_profil: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    statut_gel: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    date_maj_client: Mapped[date | None] = mapped_column(Date, nullable=True)
+    analyste_kyc: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    date_creation_entreprise: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source: Mapped[str] = mapped_column(String(20))
+    lot_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    ligne_source: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    maj_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    maj_le: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ClienteleClassifDivergenceDecision(UUIDPrimaryKeyMixin, Base):

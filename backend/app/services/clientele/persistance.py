@@ -10,11 +10,12 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import date
 
-from sqlalchemy import func, literal_column, select, text
+from sqlalchemy import case, func, literal_column, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Agence, ClienteleClient, ClienteleCompte
+from app.models.clientele import SOURCE_IMPORT_HEBDO
 from app.services.clientele.consolidation import Consolidation
 
 TAILLE_LOT = 1000
@@ -108,9 +109,12 @@ ON CONFLICT (racine_client) DO UPDATE SET
     nni = EXCLUDED.nni,
     nif = EXCLUDED.nif,
     rcs = EXCLUDED.rcs,
+    premiere_extraction = CASE WHEN clientele_clients.source = 'IMPORT_HEBDO'
+                               THEN EXCLUDED.premiere_extraction ELSE clientele_clients.premiere_extraction END,
+    source = 'ORION_ETAT_COMPTE',
     date_extraction = EXCLUDED.date_extraction,
     updated_at = now()
-WHERE clientele_clients.date_extraction <= EXCLUDED.date_extraction
+WHERE clientele_clients.source = 'IMPORT_HEBDO' OR clientele_clients.date_extraction <= EXCLUDED.date_extraction
 RETURNING (xmax = 0) AS cree
 """
 
@@ -175,10 +179,18 @@ async def _upsert(session: AsyncSession, modele, lignes: list[dict], cle: str) -
         stmt = insert(table).values(lot)
         maj_cols = {k: stmt.excluded[k] for k in lot[0] if k not in figees}
         maj_cols["updated_at"] = func.now()
+        condition = table.c.date_extraction <= stmt.excluded.date_extraction
+        if modele is ClienteleClient:
+            # Fiche créée par l'import hebdomadaire : ORION reprend la main dès qu'il connaît la racine.
+            hebdo = table.c.source == SOURCE_IMPORT_HEBDO
+            maj_cols["source"] = "ORION_ETAT_COMPTE"
+            maj_cols["premiere_extraction"] = case(
+                (hebdo, stmt.excluded.premiere_extraction), else_=table.c.premiere_extraction)
+            condition = or_(hebdo, condition)
         stmt = stmt.on_conflict_do_update(
             index_elements=[cle],
             set_=maj_cols,
-            where=table.c.date_extraction <= stmt.excluded.date_extraction,
+            where=condition,
         ).returning(literal_column("(xmax = 0)").label("cree"))
         for (cree,) in await session.execute(stmt):
             if cree:

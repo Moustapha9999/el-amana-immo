@@ -65,8 +65,10 @@ async def _nettoyer(session) -> None:
     for table in ("clientele_classif_reexamens", "clientele_classif_evaluations"):
         if await session.scalar(text(f"SELECT to_regclass('public.{table}') IS NOT NULL")):
             await session.execute(text(f"DELETE FROM {table} WHERE racine_client IN {_IN}"))
+    await session.execute(text("SET LOCAL session_replication_role = replica"))
     await session.execute(text(
         f"DELETE FROM clientele_classif_historique WHERE racine_client IN {_IN}"))
+    await session.execute(text("SET LOCAL session_replication_role = origin"))
     await session.execute(text(
         f"DELETE FROM clientele_classifications WHERE racine_client IN {_IN}"))
     await session.execute(text("DELETE FROM clientele_import_comptes"))

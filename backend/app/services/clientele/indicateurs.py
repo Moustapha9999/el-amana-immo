@@ -32,6 +32,7 @@ from app.models import (
     ClienteleSituation,
     EerDossier,
 )
+from app.models.clientele import SOURCE_IMPORT_HEBDO
 from app.services.clientele.periodes import (
     Fenetre,
     LIBELLES_PERIODES,
@@ -407,6 +408,7 @@ class ClienteleIndicateursService:
             .where(
                 ClienteleClient.premiere_extraction >= fenetre.date_debut,
                 ClienteleClient.premiere_extraction <= fenetre.date_fin,
+                ClienteleClient.source != SOURCE_IMPORT_HEBDO,
             )
         )
         if filtres.actif():
@@ -580,10 +582,14 @@ class ClienteleIndicateursService:
         classif_m1 = await self._classif_au(m1, filtres)
         classif_fin = await self._classif_au(fenetre.date_fin, filtres)
         eer = await self._eer_repartition(mois, filtres, fenetre.date_fin)
-        min_pe = await self.db.scalar(select(func.min(ClienteleClient.premiere_extraction)))
-        nb_ref = int(await self.db.scalar(select(func.count()).select_from(ClienteleClient)) or 0)
+        orion = ClienteleClient.source != SOURCE_IMPORT_HEBDO
+        min_pe = await self.db.scalar(select(func.min(ClienteleClient.premiere_extraction)).where(orion))
+        nb_ref = int(await self.db.scalar(select(func.count()).select_from(ClienteleClient).where(orion)) or 0)
         min_h = await self.db.scalar(select(func.min(jour_nktt(ClienteleClassifHistorique.created_at))))
-        nb_k = int(await self.db.scalar(select(func.count()).select_from(ClienteleClassification)) or 0)
+        nb_k = int(await self.db.scalar(
+            select(func.count()).select_from(ClienteleClassification)
+            .join(ClienteleClient, ClienteleClient.racine_client == ClienteleClassification.racine_client)
+            .where(orion)) or 0)
         ouv = int(await self.db.scalar(select(func.count()).select_from(ClienteleSituation).where(
             ClienteleSituation.date_ouverture >= mois.date_debut,
             ClienteleSituation.date_ouverture <= mois.date_fin)) or 0)

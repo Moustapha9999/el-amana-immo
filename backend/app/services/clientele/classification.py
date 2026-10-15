@@ -45,10 +45,12 @@ from app.models import (
     ClienteleClassification,
     ClienteleClient,
     ClienteleCompte,
+    ClienteleKyc,
     ClienteleSituation,
     EerDossier,
     User,
 )
+from app.services.clientele.journal import journaliser
 from app.services.clientele.scoring import (
     SOURCES_LIBELLES, DonneesClient, Evaluation, codes_liste_interdiction, divergences_dict, evaluer,
     matrice_maitre_dict, nommer, valeurs_maitre_dict,
@@ -314,6 +316,47 @@ class ClienteleClassificationService:
             "items": [{**self._classif_dict(c), "raison_sociale": nom} for c, nom in rows],
         }
 
+    async def rechercher(self, q: str, *, page: int = 1, taille: int = 25) -> dict:
+        """Recherche par identifiant stable (racine, compte, RIB, NNI, NIF) ou par nom."""
+        self.ctx.exiger("clientele.classif.view")
+        q = (q or "").strip()
+        if len(q) < 2:
+            raise AppError("Saisissez au moins 2 caractères (racine, compte, NNI, NIF ou nom)", 422,
+                           code="RECHERCHE_TROP_COURTE")
+        C = ClienteleClient
+        criteres = [C.raison_sociale.ilike(f"%{q}%"), C.prenoms.ilike(f"%{q}%")]
+        if q.isdigit():
+            criteres += [C.nni == q, C.nif == q, C.racine_client.in_(
+                select(ClienteleCompte.racine_client).where(or_(ClienteleCompte.compte == q,
+                                                                ClienteleCompte.rib == q)))]
+            if len(q) <= 6:
+                criteres.append(C.racine_client == q.zfill(6))
+        nb_comptes = (select(func.count()).select_from(ClienteleCompte)
+                      .where(ClienteleCompte.racine_client == C.racine_client).scalar_subquery())
+        stmt = (select(C, ClienteleClassification, nb_comptes.label("nb_comptes"))
+                .outerjoin(ClienteleClassification, ClienteleClassification.racine_client == C.racine_client)
+                .where(or_(*criteres)))
+        page, taille = max(1, page), min(max(1, taille), 100)
+        total = await self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        rows = (await self.db.execute(stmt.order_by(C.racine_client).offset((page - 1) * taille)
+                                      .limit(taille))).all()
+        return {"total": int(total), "page": page, "taille": taille, "items": [{
+            "racine_client": c.racine_client, "raison_sociale": c.raison_sociale, "prenoms": c.prenoms,
+            "nni": c.nni, "nif": c.nif, "source_fiche": c.source, "nb_comptes": int(n or 0),
+            "classification": ({"niveau": k.niveau, "source": k.source, "mode_decision": k.mode_decision,
+                                "classifie_le": k.classifie_le.isoformat() if k.classifie_le else None}
+                               if k else None),
+        } for c, k, n in rows]}
+
+    async def analystes(self) -> list[str]:
+        """Noms d'analystes KYC déjà rencontrés (fichiers, décisions). Suggestions, pas un référentiel."""
+        self.ctx.exiger("clientele.classif.view")
+        noms: set[str] = set()
+        for col in (ClienteleClassifLotLigne.analyste_kyc, ClienteleKyc.analyste_kyc,
+                    ClienteleClassification.analyste_kyc):
+            noms.update(x for x in (await self.db.scalars(select(col).distinct().where(col.is_not(None)))).all())
+        return sorted({n.strip() for n in noms if n and n.strip()}, key=str.casefold)
+
     async def historique(self, racine: str) -> list[dict]:
         self.ctx.exiger("clientele.classif.view")
         racine = self._racine(racine)
@@ -341,8 +384,12 @@ class ClienteleClassificationService:
 
     async def decider_manuel(self, racine: str, niveau: str, motif: str, *, motif_risque: str | None = None,
                              forcer: bool = False, confirmation: bool = False,
-                             trace: dict | None = None) -> str:
-        """Décision humaine. Motif obligatoire. INTERDIT moteur : abaissement seulement par forçage."""
+                             trace: dict | None = None, type_action: str = "MODIFICATION",
+                             groupe_id: uuid.UUID | None = None, detail_journal: dict | None = None) -> str:
+        """Décision humaine. Motif obligatoire. INTERDIT moteur : abaissement seulement par forçage.
+
+        Journalisée (``type_action`` : MODIFICATION ou ACCEPTATION d'une proposition) ; origine IMPORT
+        si la décision porte sur une ligne de lot, SAISIE sinon."""
         self.ctx.exiger("clientele.classif.execute")
         niveau = (niveau or "").upper()
         if niveau not in NIVEAUX:
@@ -351,6 +398,8 @@ class ClienteleClassificationService:
         if not motif:
             raise AppError("Motif de décision obligatoire", 422, code="MOTIF_OBLIGATOIRE")
         trace = dict(trace or {})
+        precedente = await self.db.get(ClienteleClassification, racine)
+        avant = (precedente.niveau, precedente.source) if precedente else (None, None)
         if "niveau_propose" not in trace:
             ev = await self.evaluer_racine(racine, persister=True)
             trace.update(trace_evaluation(ev))
@@ -370,12 +419,20 @@ class ClienteleClassificationService:
             trace={**trace, "mode_decision": "MANUEL", "motif_decision_manuelle": motif,
                    "force": blocage_leve, "blocage_leve": blocage_leve})
         await self._clore_reexamens(racine, f"Décision manuelle {niveau} : {motif}")
+        await journaliser(
+            self.db, self.ctx, racine, type_action, origine="IMPORT" if trace.get("lot_id") else "SAISIE",
+            champ="classification", avant=avant[0], apres=niveau, motif=motif, analyste=trace.get("analyste_kyc"),
+            lot_id=trace.get("lot_id"), ligne=trace.get("ligne_source"), groupe_id=groupe_id,
+            detail={"source_precedente": avant[1], "niveau_moteur": trace.get("niveau_propose"),
+                    "classe_fichier": trace.get("classe_source_fichier"), "force": blocage_leve,
+                    **(detail_journal or {})})
         await self.svc.audit(
             "clientele.classif.manuel.blocage_leve" if blocage_leve else "clientele.classif.manuel",
             "clientele_classification", racine,
             after={"niveau": niveau, "niveau_propose": trace.get("niveau_propose"),
                    "score": trace.get("score_calcule"), "lot_id": str(trace.get("lot_id") or "") or None,
-                   "ligne": trace.get("ligne_source")})
+                   "ligne": trace.get("ligne_source"), "type_action": type_action,
+                   "groupe_id": str(groupe_id) if groupe_id else None})
         return "ECRIT"
 
     async def modifier_individuel(self, racine: str, payload: dict) -> dict:
@@ -385,10 +442,15 @@ class ClienteleClassificationService:
                            code="RACINE_IMMUTABLE")
         racine = self._racine(racine)
         await self._client_existe(racine)
+        analyste = (payload.get("analyste_kyc") or "").strip()
+        if not analyste:
+            raise AppError("Analyste KYC obligatoire : indiquez l'analyste concerné par la décision", 422,
+                           code="ANALYSTE_OBLIGATOIRE")
         await self.decider_manuel(
             racine, payload.get("niveau") or "", payload.get("motif_classement") or "",
             motif_risque=(payload.get("motif_risque") or "").strip() or None,
-            forcer=bool(payload.get("forcer")), confirmation=bool(payload.get("confirmation")))
+            forcer=bool(payload.get("forcer")), confirmation=bool(payload.get("confirmation")),
+            trace={"analyste_kyc": analyste[:120]})
         return await self.courante(racine)
 
     async def ecrire_resultat_moteur(self, racine: str, ev: dict, motif: str, *, forcer: bool = False,
@@ -451,9 +513,17 @@ class ClienteleClassificationService:
         self.ctx.exiger("clientele.classif.execute")
         racine = self._racine(racine)
         ev = await self.evaluer_racine(racine, persister=True)
+        avant = (ev.get("classification_courante") or {}).get("niveau")
+        analyste = (payload.get("analyste_kyc") or "").strip()[:120] or None
         resultat = await self.ecrire_resultat_moteur(
             racine, ev, payload.get("motif") or "", forcer=bool(payload.get("forcer")),
-            confirmation=bool(payload.get("confirmation")))
+            confirmation=bool(payload.get("confirmation")), trace={"analyste_kyc": analyste})
+        if resultat == "ECRIT":
+            await journaliser(
+                self.db, self.ctx, racine, "ACCEPTATION", origine="SAISIE", champ="classification",
+                avant=avant, apres=ev.get("niveau_final"), motif=payload.get("motif"), analyste=analyste,
+                detail={"proposition": "MOTEUR", "score": ev.get("score_total"),
+                        "evaluation_id": ev.get("evaluation_id")})
         await self.svc.audit("clientele.classif.moteur_scoring", "clientele_classification", racine,
                              after={"resultat": resultat, "niveau_propose": ev.get("niveau_final"),
                                     "statut": ev.get("statut"), "score": ev.get("score_total")})

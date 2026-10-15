@@ -64,8 +64,19 @@ class LotControleDecisionIn(BaseModel):
     confirmation: bool = False
 
 
+class LotLignesDecisionIn(BaseModel):
+    lignes: list[int] = Field(..., max_length=5000)
+    decision: Literal["ACCEPTER", "MODIFIER", "REJETER"]
+    niveau: str | None = Field(None, max_length=10)
+    motif: str | None = Field(None, max_length=2000)
+    analyste_kyc: str | None = Field(None, max_length=120)
+    forcer: bool = False
+    confirmation: bool = False
+
+
 class ClassifMoteurScoringIn(BaseModel):
     motif: str
+    analyste_kyc: str | None = Field(None, max_length=120)
     forcer: bool = False
     confirmation: bool = False
 
@@ -106,6 +117,7 @@ class ClassifManuelIn(BaseModel):
     niveau: str
     motif_risque: str | None = None
     motif_classement: str
+    analyste_kyc: str | None = Field(None, max_length=120)
     racine_client: str | None = None
     forcer: bool = False
     confirmation: bool = False

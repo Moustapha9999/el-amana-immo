@@ -5,18 +5,21 @@ Deux usages :
 - ``SITUATION`` : classeur Conformité « Situation des comptes PP et PM » → reprise de la
   classe de risque historique (source ``EXCEL_CONFORMITE``).
 
-Workflow : Import → Mapping → Contrôles → Aperçu → Évaluation → Divergences → Enregistrement →
-Historique → Export. Le lot et ses lignes sont conservés en base (``clientele_classif_lots``) ;
-seul le fichier brut est temporaire (7 jours, pour recartographier). Un lot peut être fermé
-(conservé) ou supprimé (lignes retirées, classifications clients inchangées). La racine n'est
-jamais modifiée ; une racine absente n'est jamais créée ici.
+Import hebdomadaire (``LISTE``) : dépôt → contrôles de format et de colonnes → rapprochement par racine
+(jamais par le nom seul) et contrôle d'identité (NOM / NNI / NIF vs ORION) → nouveaux clients →
+proposition par ligne (classe de l'analyste KYC du fichier, sinon moteur SCORE admissible, sinon
+« À vérifier » / « Non classifiable » motivé) → décision humaine (``hebdo.py``) → bilan.
+
+Le lot, ses lignes et le fichier brut sont conservés (``clientele_classif_lots`` + stockage) : le fichier
+importé reste téléchargeable pour l'audit. Un lot fermé reste consultable ; un lot comportant des
+décisions ne se supprime pas. La racine n'est jamais modifiée ; une racine absente n'est créée qu'après
+acceptation explicite de la ligne (``hebdo.py``).
 """
 
 from __future__ import annotations
 
 import hashlib
 import re
-import time
 import uuid
 from datetime import date, datetime, timedelta
 from io import BytesIO
@@ -34,7 +37,7 @@ from app.core.exceptions import AppError
 from app.data.clientele_classif_matrice import VERSION_MOTEUR, VERSION_REGLES
 from app.data.clientele_import_hebdo import (
     colonnes_export, date_ouverture_interdite, est_feuille_clients, est_feuille_technique,
-    est_ligne_consigne, est_valeur_consigne, ligne_export_hebdo, valider_ligne_hebdo,
+    est_ligne_consigne, est_valeur_consigne, ligne_export_hebdo, valeur_source, valider_ligne_hebdo,
 )
 from app.models import (
     ClienteleClassifEvaluation,
@@ -56,7 +59,6 @@ TAILLE_MAX = 40 * 1024 * 1024
 LIGNES_MAX = 80_000
 LIMITE_EVALUATION = 2_000
 APERCU = 300
-DUREE_VIE_S = 7 * 24 * 3600
 TYPES = ("LISTE", "SITUATION")
 
 ENTETES_RACINE = ("RACINE_CLIENT", "RACINE CLIENT", "RACINE", "CLIENT", "CODE CLIENT", "NUMERO CLIENT")
@@ -174,6 +176,126 @@ def comparer_niveaux(brut_fichier: Any, classification: Any | None) -> dict:
                 "message": "Le niveau du fichier correspond au niveau du moteur SCORE. Aucune décision requise."}
     return {**out, "statut": "ECART",
             "message": f"Écart détecté : fichier {out['niveau_fichier']}, moteur SCORE {moteur}."}
+
+
+# ------------------------------------------------------------------ import hebdomadaire : proposition / décision
+DECISIONS_LIGNE = ("ACCEPTEE", "MODIFIEE", "REJETEE")
+ETATS_PROPOSITION = ("PROPOSE", "A_VERIFIER", "NON_CLASSIFIABLE", "A_EVALUER")
+CATEGORIES_PROPOSITION = {
+    "IDENTIFICATION": "Erreur d'identification",
+    "DONNEES_MANQUANTES": "Données manquantes",
+    "CONFLIT_REGLES": "Conflit de règles",
+    "DONNEES_CONTRADICTOIRES": "Données contradictoires",
+}
+ALIAS_NOM = ("NOM CLIENT", "RAISON SOCIALE", "RAISON_SOCIAL", "NOM")
+STATUT_CLIENT = {"OK": "EXISTANT", "INCONNUE": "NOUVEAU", "AMBIGU": "AMBIGU", "DOUBLON": "DOUBLON",
+                 "INVALIDE": "INVALIDE"}
+
+
+def _g(x: Any, k: str) -> Any:
+    return x.get(k) if isinstance(x, dict) else getattr(x, k)
+
+
+def _s(x: Any, k: str, v: Any) -> None:
+    if isinstance(x, dict):
+        x[k] = v
+    else:
+        setattr(x, k, v)
+
+
+def identifiant(v: Any) -> str | None:
+    """NNI / NIF comparé tel quel (sans zéro ni troncature) ; seul un « .0 » Excel est retiré."""
+    s = str(v).strip() if v is not None else ""
+    s = re.sub(r"\.0+$", "", s) if re.fullmatch(r"\d+\.0+", s) else s
+    return s or None
+
+
+def statut_decision(x: Any) -> str:
+    """EN_ATTENTE / ACCEPTEE / MODIFIEE / REJETEE ; ANCIEN_CIRCUIT = décision de l'ancien flux (conservée)."""
+    d = _g(x, "decision")
+    if d in DECISIONS_LIGNE:
+        return d
+    if d or (_g(x, "decision_detail") or {}).get("decision_controle"):
+        return "ANCIEN_CIRCUIT"
+    return "EN_ATTENTE"
+
+
+def proposition(x: Any) -> dict:
+    """Proposition d'une ligne : classe de l'analyste KYC (fichier), sinon moteur SCORE admissible, sinon
+    « À vérifier » / « Non classifiable » avec la raison. N'écrit rien ; aucune règle nouvelle."""
+    statut = _g(x, "statut")
+    det = _g(x, "decision_detail") or {}
+    st_moteur = _g(x, "statut_moteur")
+    moteur = _g(x, "niveau_propose") if st_moteur else None
+
+    def p(etat: str, categorie: str | None = None, raison: str | None = None, niveau: str | None = None,
+          origine: str | None = None) -> dict:
+        return {"etat": etat, "niveau": niveau, "origine": origine, "categorie": categorie,
+                "categorie_libelle": CATEGORIES_PROPOSITION.get(categorie or ""), "raison": raison,
+                "niveau_moteur": moteur, "statut_moteur": st_moteur,
+                "ecart_moteur": bool(niveau and origine == "FICHIER" and moteur in NIVEAUX
+                                     and _g(x, "admissible") and moteur != niveau)}
+
+    if statut == "INVALIDE":
+        return p("NON_CLASSIFIABLE", "IDENTIFICATION", "Racine client absente ou invalide : aucun rapprochement")
+    if statut == "DOUBLON":
+        return p("NON_CLASSIFIABLE", "IDENTIFICATION",
+                 "Racine en double dans le fichier : seule la première ligne est traitée")
+    if statut == "AMBIGU":
+        return p("A_VERIFIER", "IDENTIFICATION",
+                 "Identité ambiguë : " + "; ".join(det.get("identite") or ["à vérifier"]))
+    fichier, brut = _g(x, "classe_source"), _g(x, "classe_source_brut")
+    if fichier in NIVEAUX:
+        prop = p("PROPOSE", raison=f"Classe de l'analyste KYC (fichier) : {fichier}", niveau=fichier,
+                 origine="FICHIER")
+    elif brut:
+        prop = p("A_VERIFIER", "DONNEES_MANQUANTES", f"Classe du fichier « {brut} » illisible")
+    elif st_moteur and _g(x, "admissible") and moteur in NIVEAUX:
+        prop = p("PROPOSE", raison="Classe absente du fichier : proposition du moteur SCORE", niveau=moteur,
+                 origine="MOTEUR")
+    elif st_moteur:
+        prop = p("NON_CLASSIFIABLE", "CONFLIT_REGLES" if st_moteur == "A_ARBITRER" else "DONNEES_MANQUANTES",
+                 f"Moteur {st_moteur} : {_g(x, 'motif_moteur') or 'pas de niveau admissible'}")
+    elif statut == "INCONNUE":
+        prop = p("A_VERIFIER", "DONNEES_MANQUANTES",
+                 "Nouveau client sans classe dans le fichier : évaluable par le moteur après création de la fiche")
+    else:
+        prop = p("A_EVALUER", raison="Classe absente du fichier : lancez l'évaluation moteur")
+    if statut == "INCONNUE" and not (valeur_source(_g(x, "donnees"), *ALIAS_NOM) or _g(x, "nom")):
+        prop.update(etat="A_VERIFIER", categorie="IDENTIFICATION",
+                    categorie_libelle=CATEGORIES_PROPOSITION["IDENTIFICATION"],
+                    raison="Nom client absent : la fiche du nouveau client ne peut pas être créée")
+    if det.get("verification"):
+        prop.update(etat="A_VERIFIER" if prop["etat"] == "PROPOSE" else prop["etat"],
+                    categorie="DONNEES_CONTRADICTOIRES",
+                    categorie_libelle=CATEGORIES_PROPOSITION["DONNEES_CONTRADICTOIRES"],
+                    raison="Données contradictoires avec ORION : " + "; ".join(det["verification"])
+                    + (f" — {prop['raison']}" if prop.get("raison") else ""))
+    return prop
+
+
+def exclusion_groupe(x: Any) -> str | None:
+    """Raison pour laquelle une ligne ne peut pas entrer dans une décision groupée (None = admissible)."""
+    if statut_decision(x) != "EN_ATTENTE":
+        return "ligne déjà décidée"
+    if _g(x, "statut") not in ("OK", "INCONNUE"):
+        return "identification à vérifier"
+    prop = (_g(x, "decision_detail") or {}).get("proposition") or proposition(x)
+    if prop.get("etat") != "PROPOSE":
+        return "proposition à vérifier ou non classifiable"
+    if _g(x, "source_actuelle") in SOURCES_MANUELLES:
+        return "classement manuel existant"
+    if "INTERDIT" in (prop.get("niveau"), _g(x, "classe_actuelle"), prop.get("niveau_moteur")):
+        return "niveau Interdit"
+    if _g(x, "anomalies"):
+        return "anomalies à examiner"
+    return None
+
+
+def maj_proposition(x: Any) -> None:
+    det = dict(_g(x, "decision_detail") or {})
+    det["proposition"] = proposition(x)
+    _s(x, "decision_detail", det)
 
 
 def lire_date(v: Any) -> date | str | None:
@@ -342,7 +464,7 @@ class ClienteleLotService:
         self.ctx = ctx
         self.svc = ClienteleService(db, ctx)
 
-    # ------------------------------------------------------------------ fichier temporaire
+    # ------------------------------------------------------------------ fichier importé (conservé)
     def _dossier(self) -> Path:
         p = Path(get_settings().upload_dir) / "clientele" / "lots"
         p.mkdir(parents=True, exist_ok=True)
@@ -351,14 +473,18 @@ class ClienteleLotService:
     def _xlsx(self, lid: uuid.UUID) -> Path:
         return self._dossier() / f"{lid}.xlsx"
 
-    def _purger(self) -> None:
-        limite = time.time() - DUREE_VIE_S
-        for p in self._dossier().glob("*"):
-            try:
-                if p.stat().st_mtime < limite:
-                    p.unlink()
-            except OSError:
-                pass
+    async def fichier(self, lid: uuid.UUID) -> tuple[bytes, str]:
+        """Fichier importé, tel que déposé (preuve d'audit)."""
+        lot = await self._charger(lid)
+        p = self._xlsx(lid)
+        if not p.exists():
+            raise AppError("Fichier d'origine non disponible pour ce lot (lot antérieur à la conservation "
+                           "des fichiers)", 404, code="FICHIER_ABSENT")
+        return p.read_bytes(), lot.fichier_nom or f"lot-{lid}.xlsx"
+
+    async def _nb_decisions(self, lid: uuid.UUID) -> int:
+        return int(await self.db.scalar(select(func.count()).select_from(ClienteleClassifLotLigne).where(
+            ClienteleClassifLotLigne.lot_id == lid, ClienteleClassifLotLigne.decision.in_(DECISIONS_LIGNE))) or 0)
 
     async def _charger(self, lid: uuid.UUID) -> ClienteleClassifLot:
         lot = await self.db.get(ClienteleClassifLot, lid)
@@ -422,6 +548,9 @@ class ClienteleLotService:
             if lot.statut in ("ENREGISTRE", "FERME"):
                 raise AppError("Lot déjà enregistré ou fermé : déposez un nouveau fichier pour changer le "
                                "mapping (l'historique du lot est conservé).", 409, code="LOT_FIGE")
+            if await self._nb_decisions(lid):
+                raise AppError("Des lignes de ce lot ont déjà été décidées : déposez un nouveau fichier pour "
+                               "changer le mapping (les décisions sont conservées).", 409, code="LOT_DECIDE")
             if (lot.stats or {}).get("controle_ecarts_decides"):
                 raise AppError("Des écarts fichier / moteur SCORE ont déjà été décidés sur ce lot : déposez un "
                                "nouveau fichier pour changer le mapping (les décisions sont conservées).", 409,
@@ -447,7 +576,6 @@ class ClienteleLotService:
             for i in range(0, len(lignes), 2000):
                 await self.db.execute(insert(ClienteleClassifLotLigne), [
                     {"id": uuid.uuid4(), "lot_id": lot.id, **x} for x in lignes[i:i + 2000]])
-        self._purger()
         self._xlsx(lot.id).write_bytes(contenu)
         await self.svc.audit("clientele.lot.analyse", "clientele_classif_lot", lot.id,
                              after={"fichier": nom_fichier, "type": type_lot, "sha256": sha,
@@ -458,7 +586,7 @@ class ClienteleLotService:
         lot = await self._charger(lid)
         p = self._xlsx(lid)
         if not p.exists():
-            raise AppError("Fichier du lot expiré ; déposez-le de nouveau", 409, code="FICHIER_ABSENT")
+            raise AppError("Fichier du lot indisponible ; déposez-le de nouveau", 409, code="FICHIER_ABSENT")
         mapping = {
             "racine": payload.get("colonne_racine"), "niveau": payload.get("colonne_niveau"),
             "motif": payload.get("colonne_motif"),
@@ -496,6 +624,7 @@ class ClienteleLotService:
                 x["statut"] = "DOUBLON"
             elif r not in connus:
                 x["statut"] = "INCONNUE"
+                vues.add(r)
             else:
                 x["statut"] = "OK"
                 vues.add(r)
@@ -506,6 +635,72 @@ class ClienteleLotService:
             x["decision_detail"] = (
                 {"controle": comparer_niveaux(x["classe_source_brut"], objets.get(r))}
                 if type_lot == "LISTE" and x["statut"] == "OK" else None)
+        if type_lot == "LISTE":
+            await self._verifier_identites(lignes)
+            for x in lignes:
+                maj_proposition(x)
+
+    async def _verifier_identites(self, lignes: list[Any]) -> None:
+        """Racine reconnue : NOM / NNI / NIF du fichier comparés à ORION (écart → vérification manuelle,
+        aucune donnée ORION remplacée). Nouvelle racine : NNI / NIF déjà portés par une autre racine ou par
+        une autre nouvelle ligne → AMBIGU (aucune création). Le nom seul ne rapproche jamais deux clients."""
+        C = ClienteleClient
+        ok = sorted({_g(x, "racine_client") for x in lignes if _g(x, "statut") == "OK"})
+        fiches: dict[str, tuple[str | None, str | None, str | None]] = {}
+        for i in range(0, len(ok), 5000):
+            for r, nom, nni, nif in (await self.db.execute(
+                    select(C.racine_client, C.raison_sociale, C.nni, C.nif)
+                    .where(C.racine_client.in_(ok[i:i + 5000])))).all():
+                fiches[r] = (nom, identifiant(nni), identifiant(nif))
+        nouveaux = [x for x in lignes if _g(x, "statut") in ("INCONNUE", "AMBIGU")]
+        ids_fichier: dict[tuple[str, str], int] = {}
+        for x in nouveaux:
+            for lib in ("NNI", "NIF"):
+                v = identifiant(valeur_source(_g(x, "donnees"), lib))
+                if v:
+                    ids_fichier[(lib, v)] = ids_fichier.get((lib, v), 0) + 1
+        existants: dict[tuple[str, str], set[str]] = {}
+        for lib, col in (("NNI", C.nni), ("NIF", C.nif)):
+            vals = sorted({v for (k, v) in ids_fichier if k == lib})
+            for i in range(0, len(vals), 5000):
+                for r, v in (await self.db.execute(
+                        select(C.racine_client, col).where(col.in_(vals[i:i + 5000])))).all():
+                    existants.setdefault((lib, identifiant(v) or ""), set()).add(r)
+        for x in lignes:
+            if statut_decision(x) != "EN_ATTENTE":
+                continue
+            det = dict(_g(x, "decision_detail") or {})
+            det.pop("verification", None)
+            det.pop("identite", None)
+            d = _g(x, "donnees")
+            r, statut = _g(x, "racine_client"), _g(x, "statut")
+            if statut == "OK" and r in fiches:
+                nom_o, nni_o, nif_o = fiches[r]
+                nom_f = valeur_source(d, *ALIAS_NOM)
+                ecarts = []
+                if nom_f and nom_o and _norm(nom_f) != _norm(nom_o):
+                    ecarts.append(f"nom fichier « {nom_f} » ≠ ORION « {nom_o} »")
+                for lib, orion in (("NNI", nni_o), ("NIF", nif_o)):
+                    v = identifiant(valeur_source(d, lib))
+                    if v and orion and v != orion:
+                        ecarts.append(f"{lib} fichier {v} ≠ ORION {orion}")
+                if ecarts:
+                    det["verification"] = ecarts
+            elif statut in ("INCONNUE", "AMBIGU"):
+                motifs = []
+                for lib in ("NNI", "NIF"):
+                    v = identifiant(valeur_source(d, lib))
+                    if not v:
+                        continue
+                    autres = existants.get((lib, v), set()) - {r}
+                    if autres:
+                        motifs.append(f"{lib} {v} déjà porté par la racine {', '.join(sorted(autres))}")
+                    if ids_fichier.get((lib, v), 0) > 1:
+                        motifs.append(f"{lib} {v} présent sur plusieurs nouvelles racines du fichier")
+                _s(x, "statut", "AMBIGU" if motifs else "INCONNUE")
+                if motifs:
+                    det["identite"] = motifs
+            _s(x, "decision_detail", det or None)
 
     async def _rafraichir_classes(self, lignes: list[ClienteleClassifLotLigne]) -> None:
         racines = [x.racine_client for x in lignes if x.statut == "OK"]
@@ -533,6 +728,9 @@ class ClienteleLotService:
 
         def decide(x: Any) -> bool:
             return bool((g(x, "decision_detail") or {}).get("decision_controle"))
+
+        def etat(x: Any) -> str | None:
+            return ((g(x, "decision_detail") or {}).get("proposition") or {}).get("etat")
         return {
             "controle_conformes": sum(1 for x in ok if controle(x) == "CONFORME"),
             "controle_ecarts": sum(1 for x in ok if controle(x) == "ECART"),
@@ -554,6 +752,14 @@ class ClienteleLotService:
             "avec_anomalie": n(lambda x: bool(g(x, "anomalies"))),
             "deja_classes": sum(1 for x in ok if g(x, "classe_actuelle")),
             "manuels": sum(1 for x in ok if g(x, "source_actuelle") in SOURCES_MANUELLES),
+            "nouveaux": n(lambda x: g(x, "statut") == "INCONNUE"),
+            "ambigus": n(lambda x: g(x, "statut") == "AMBIGU"),
+            "contradictions": n(lambda x: bool((g(x, "decision_detail") or {}).get("verification"))),
+            **{f"proposition_{e.lower()}": n(lambda x, e=e: etat(x) == e) for e in ETATS_PROPOSITION},
+            "en_attente": n(lambda x: statut_decision(x) == "EN_ATTENTE"),
+            "acceptees": n(lambda x: g(x, "decision") == "ACCEPTEE"),
+            "modifiees": n(lambda x: g(x, "decision") == "MODIFIEE"),
+            "rejetees": n(lambda x: g(x, "decision") == "REJETEE"),
         }
 
     # ------------------------------------------------------------------ lecture
@@ -581,13 +787,32 @@ class ClienteleLotService:
             "decision_detail": x.decision_detail,
             "controle": (x.decision_detail or {}).get("controle"),
             "decision_controle": (x.decision_detail or {}).get("decision_controle"),
+            "statut_client": STATUT_CLIENT.get(x.statut, x.statut),
+            "proposition": (x.decision_detail or {}).get("proposition") or proposition(x),
+            "verification": (x.decision_detail or {}).get("verification") or [],
+            "identite": (x.decision_detail or {}).get("identite") or [],
+            "statut_decision": statut_decision(x),
+            "decision_ligne": (x.decision_detail or {}).get("decision_ligne"),
+            "exclusion_groupe": exclusion_groupe(x),
         }
 
     async def _public(self, lot: ClienteleClassifLot, *, statut: str | None = None, page: int = 1,
                       taille: int = APERCU) -> dict:
         L = ClienteleClassifLotLigne
         q = select(L).where(L.lot_id == lot.id)
-        if statut == "DIVERGENCE":
+        if statut == "EN_ATTENTE":
+            q = q.where(L.decision.is_(None), L.decision_detail["decision_controle"].is_(None))
+        elif statut == "DECIDEE":
+            q = q.where(L.decision.in_(DECISIONS_LIGNE))
+        elif statut in DECISIONS_LIGNE:
+            q = q.where(L.decision == statut)
+        elif statut in ETATS_PROPOSITION:
+            q = q.where(L.decision_detail["proposition"]["etat"].astext == statut)
+        elif statut == "NOUVEAU":
+            q = q.where(L.statut.in_(("INCONNUE", "AMBIGU")))
+        elif statut == "CONTRADICTION":
+            q = q.where(L.decision_detail["verification"].is_not(None))
+        elif statut == "DIVERGENCE":
             q = q.where(L.divergence_fichier_moteur.is_(True))
         elif statut == "ANOMALIE":
             q = q.where(func.jsonb_array_length(L.anomalies) > 0)
@@ -645,10 +870,26 @@ class ClienteleLotService:
             "lignes": [self._ligne_dict(x) for x in rows],
             "limite_evaluation": LIMITE_EVALUATION,
             "created_at": lot.created_at.isoformat() if lot.created_at else None,
+            "fichier_disponible": self._xlsx(lot.id).exists(),
         }
 
+    async def preparer(self, lot: ClienteleClassifLot) -> None:
+        """Lot importé avant le circuit de décision : contrôle d'identité et propositions calculés une fois
+        (lecture des lignes ; aucune classification modifiée)."""
+        if lot.type != "LISTE" or "en_attente" in (lot.stats or {}):
+            return
+        lignes = await self._lignes(lot.id)
+        await self._verifier_identites(lignes)
+        for x in lignes:
+            if statut_decision(x) == "EN_ATTENTE":
+                maj_proposition(x)
+        lot.stats = self._stats(lignes, ignorees=(lot.stats or {}).get("lignes_ignorees", 0))
+        await self.db.flush()
+
     async def detail(self, lid: uuid.UUID, *, statut: str | None = None, page: int = 1) -> dict:
-        return await self._public(await self._charger(lid), statut=statut, page=page)
+        lot = await self._charger(lid)
+        await self.preparer(lot)
+        return await self._public(lot, statut=statut, page=page)
 
     async def lister(self, *, page: int = 1, taille: int = 30) -> dict:
         if not self.ctx.peut("clientele.import.execute", "clientele.classif.execute", "clientele.classif.view"):
@@ -668,7 +909,7 @@ class ClienteleLotService:
                 "voir": True, "exporter": True,
                 "modifier": x.statut != "FERME",
                 "fermer": x.statut != "FERME",
-                "supprimer": True,
+                "supprimer": not any((x.stats or {}).get(k) for k in ("acceptees", "modifiees", "rejetees")),
             },
         } for x in rows]}
 
@@ -696,11 +937,8 @@ class ClienteleLotService:
         return await self._public(lot)
 
     async def fermer(self, lid: uuid.UUID) -> None:
-        """Ferme le lot : fichier temporaire retiré, lot et lignes conservés."""
+        """Ferme le lot : plus aucune décision ; lot, lignes et fichier importé conservés."""
         lot = await self._charger(lid)
-        p = self._xlsx(lid)
-        if p.exists():
-            p.unlink()
         lot.statut = "FERME"
         lot.updated_at = maintenant()
         await self.db.flush()
@@ -712,6 +950,9 @@ class ClienteleLotService:
         motif = (motif or "").strip()
         if not motif:
             raise AppError("Motif de suppression obligatoire", 422, code="MOTIF_OBLIGATOIRE")
+        if await self._nb_decisions(lid):
+            raise AppError("Ce lot comporte des décisions tracées : il ne peut pas être supprimé. "
+                           "Fermez-le pour le conserver en lecture seule.", 409, code="LOT_DECIDE")
         avant = {"fichier_nom": lot.fichier_nom, "type": lot.type, "statut": lot.statut,
                  "sha256": lot.sha256, "stats": lot.stats,
                  "periode_reference": lot.periode_reference.isoformat() if lot.periode_reference else None}
@@ -733,6 +974,8 @@ class ClienteleLotService:
             ClienteleClassifLotLigne.lot_id == lid, ClienteleClassifLotLigne.ligne == int(payload.get("ligne") or 0)))
         if not x or x.statut != "OK":
             raise AppError("Ligne introuvable ou racine non reconnue", 404, code="NOT_FOUND")
+        if statut_decision(x) != "EN_ATTENTE":
+            raise AppError("Ligne déjà décidée : la décision est conservée", 409, code="DEJA_DECIDE")
         brut = payload.get("date_ouverture")
         valeur = lire_date(brut) if brut not in (None, "") else None
         if valeur == INVALIDE:
@@ -750,7 +993,8 @@ class ClienteleLotService:
         x.admissible = None
         x.evaluation_id = None
         x.divergence_fichier_moteur = False
-        lot.stats = self._stats(await self._lignes(lid))
+        maj_proposition(x)
+        lot.stats = self._stats(await self._lignes(lid), ignorees=(lot.stats or {}).get("lignes_ignorees", 0))
         await self.db.flush()
         await self.svc.audit("clientele.lot.date_ouverture", "clientele_classif_lot", lid,
                              before={"ligne": x.ligne, "date_ouverture": avant},
@@ -772,9 +1016,13 @@ class ClienteleLotService:
     async def evaluer(self, lid: uuid.UUID) -> dict:
         self.ctx.exiger("clientele.classif.view")
         lot = await self._charger(lid)
-        lignes = [x for x in await self._lignes(lid) if x.statut == "OK"]
+        if lot.statut == "FERME":
+            raise AppError("Lot fermé", 409, code="LOT_FIGE")
+        lignes = [x for x in await self._lignes(lid)
+                  if x.statut == "OK" and statut_decision(x) == "EN_ATTENTE"]
         if not lignes:
-            raise AppError("Aucune racine connue du référentiel dans ce fichier", 422, code="AUCUNE_RACINE")
+            raise AppError("Aucune racine connue en attente de décision dans ce fichier", 422,
+                           code="AUCUNE_RACINE")
         if len(lignes) > LIMITE_EVALUATION:
             raise AppError(
                 f"{len(lignes)} racines : l'évaluation moteur est limitée à {LIMITE_EVALUATION} par lot. "
@@ -805,6 +1053,7 @@ class ClienteleLotService:
             if x.classe_source and not x.admissible:
                 x.decision_detail = {**(x.decision_detail or {}), "comparaison": "NON_COMPARABLE",
                                      "raison": f"Moteur {ev.get('statut')} : pas de niveau proposé admissible."}
+            maj_proposition(x)
         await self._rafraichir_classes(lignes)
         lot.evaluation = {
             "nb": len(lignes), "par_niveau": compteurs,
@@ -874,7 +1123,7 @@ class ClienteleLotService:
         if not lot.evaluation:
             raise AppError("Lancez d'abord l'évaluation moteur du lot (comparaison fichier / moteur)", 409,
                            code="EVALUATION_ABSENTE")
-        lignes = [x for x in await self._lignes(lid) if x.statut == "OK"]
+        lignes = [x for x in await self._lignes(lid) if x.statut == "OK" and x.decision not in DECISIONS_LIGNE]
         bilan = {"ECRIT": 0, "INCHANGE": 0, "MANUEL_PRESERVE": 0, "NON_ADMISSIBLE": 0,
                  "NON_CLASSABLE": 0, "DIVERGENCE_A_TRAITER": 0, "A_REEVALUER": 0}
         for x in lignes:
@@ -958,6 +1207,8 @@ class ClienteleLotService:
             if not x or x.statut != "OK" or not x.statut_moteur:
                 raise AppError(f"Ligne {d.get('ligne')} : racine non reconnue ou non évaluée", 422,
                                code="LIGNE_INVALIDE")
+            if x.decision in DECISIONS_LIGNE:
+                raise AppError(f"Ligne {x.ligne} déjà décidée : la décision est conservée", 409, code="DEJA_DECIDE")
             choix = (d.get("choix") or "").upper()
             niveau = {"MOTEUR": x.niveau_propose, "FICHIER": x.classe_source}.get(choix) or (
                 (d.get("niveau") or "").upper() if choix == "AUTRE" else None)
@@ -1003,7 +1254,7 @@ class ClienteleLotService:
             ClienteleClassifLotLigne.lot_id == lid, ClienteleClassifLotLigne.ligne == int(payload.get("ligne") or 0)))
         if not x or x.statut != "OK":
             raise AppError("Ligne introuvable ou racine non reconnue", 404, code="NOT_FOUND")
-        if (x.decision_detail or {}).get("decision_controle"):
+        if (x.decision_detail or {}).get("decision_controle") or x.decision in DECISIONS_LIGNE:
             raise AppError("Écart déjà décidé : la décision est conservée dans l'historique", 409,
                            code="DEJA_DECIDE")
         actuelle = await self.db.get(ClienteleClassification, x.racine_client)
