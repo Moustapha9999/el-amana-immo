@@ -109,6 +109,59 @@ Motif détaillé (+ feuille « Consignes », sans donnée fictive). 2 000 lignes
 Chronologie : `IMPORT_ANALYSE`, `IMPORT_CONFIRME`, `IMPORT_ABANDONNE` ; audit
 `reclamations.operations.import.*`.
 
+## Règles par motif, devises, rattachement et régularisation (migration `20261016_reclamations_10`)
+
+**Rattachement** (formulaire simplifié) : agence de réception ; « Réception » = Service ou
+Département ; puis le service concerné **ou** le département concerné (obligatoire), pris dans
+l’organigramme CORE (`departements`). Un service enregistre aussi son département (déduit côté
+backend, contrôle `SERVICE_HORS_DEPARTEMENT`). Ne sont plus saisis : l’unité de réception du
+circuit (déduite : unité unique de l’agent, unité de l’agence de réception, sinon Service
+Réclamations ; choix demandé seulement si ambigu), l’unité concernée (déduite du service),
+l’agence du client (reprise d’ORION à la recherche du client) et le point de réception
+(`POINT_RECEPTION`, conservé en base pour l’historique, plus proposé).
+
+**Règle par motif** (`reclamation_regles_motifs`, onglet Paramètres → « Règles par motif &
+devises ») : champs obligatoires par opération, opérations minimum, nature attendue (D/C),
+contrôle spécifique (extourne partielle, doublon, mauvais compte, montant incorrect…),
+justificatif exigé, régularisation à confirmer. Gestion `references.manage`, validation
+`references.validate` ; toute modification repasse la règle en « proposée ». Sans règle : règle
+par défaut (référence + montant). Les règles chargées sont des **propositions** à valider.
+
+**Opérations** : client, compte, référence, date, nature D/C, devise, montant initial, montant à
+extourner, motif ligne, commentaire (+ montant attendu, compte attendu, rôle selon le motif).
+Saisie : ajout, modification, duplication, retrait ; erreurs par cellule renvoyées par
+`POST /operations/verifier` (vérification à blanc, rien n’est écrit).
+
+**Import** : modèle par motif (`GET /imports/modele?motif_id=`), colonnes obligatoires selon la
+règle, zéros initiaux conservés, 5 Mo au plus, doublons exacts / potentiels signalés (jamais
+supprimés), réimport du même fichier refusé (`FICHIER_DEJA_IMPORTE`) sauf choix explicite tracé
+(`forcer`), rapport d’erreurs Excel (`GET /dossiers/{id}/imports/{iid}/rapport`), enregistrement
+tout ou rien.
+Devise absente : MRU par défaut, avec avertissement, quand le motif n’exige pas la devise.
+
+**Devises** : liste paramétrable (`PUT /parametres/devises`, MRU obligatoire). Totaux toujours
+présentés par devise (fiche, liste, import, tableau de bord) : aucune somme ni conversion entre
+devises. Les répartitions du tableau de bord (par motif, service…) ne chiffrent que la devise de
+référence.
+
+**Régularisation** : une décision favorable sur un motif « régularisation » ouvre une
+régularisation `A_EFFECTUER` (≠ extourne exécutée). Confirmation par
+`POST /dossiers/{id}/regularisation` (permission `reclamations.regularisation.confirm` :
+responsable SR, admin) : date (non future), référence, commentaire, et une pièce
+`PREUVE_REGULARISATION` déjà jointe. Archivage refusé tant qu’elle est en attente
+(`REGULARISATION_EN_ATTENTE`). Aucune connexion à ORION : la preuve est saisie et jointe.
+
+**Pièces par opération** : une pièce peut viser une opération (`operation_reference`, contrôlée :
+`OPERATION_INCONNUE`).
+
+**Filtres** (liste, tableau de bord, exports) : agence de réception, département et
+service (sous-entités incluses), référence d’opération, compte, devise, régularisation.
+
+Tests : `test_reclamations_regles.py` (règles, champs requis, natures, extourne partielle,
+montants, mauvais compte, devises, doublons, zéros initiaux, totaux par devise, récapitulatif,
+rattachement, régularisation et permissions, pièces par opération, import : erreurs, rapport,
+réimport, taille, modèle par motif ; filtres et tableau de bord).
+
 ## Formulaire d’enregistrement
 
 1. Informations générales : référence (automatique), date de la réclamation, date de réception
@@ -122,7 +175,8 @@ Chronologie : `IMPORT_ANALYSE`, `IMPORT_CONFIRME`, `IMPORT_ABANDONNE` ; audit
 
 ## Droits
 
-Permissions `reclamations.*` (29) contrôlées côté backend et sur les données.
+Permissions `reclamations.*` (28, dont `reclamations.regularisation.confirm`) contrôlées côté
+backend et sur les données.
 
 | Rôle | Contenu |
 |------|---------|
@@ -301,7 +355,8 @@ motifs (`T01_M01` …). L’ancienne proposition est désactivée (réactivable)
 05 (cascade sur les attributions ; la descente les réinsère). Traçabilité conservée : la
 chronologie (`reclamation_evenements`, append-only) et `audit_logs` ne sont pas touchés ; le
 journal reste lisible dans l’onglet Historique de chaque fiche. `reclamations.delais.manage` et
-`reclamations.delais.validate` ont suivi (migration 07). Le module compte 27 permissions.
+`reclamations.delais.validate` ont suivi (migration 07). La migration 10 ajoute
+`reclamations.regularisation.confirm` : le module compte 28 permissions.
 
 ## Enregistrement des appels
 
@@ -330,6 +385,8 @@ décision de la banque.
 | Désactivation / suppression des types et motifs (masqués des listes) | implémenté et testé |
 | Dossier multi-comptes / multi-clients, masquage des clients associés | implémenté et testé |
 | Import Excel des opérations (modèle, aperçu, confirmation) | implémenté et testé |
+| Règles par motif, devises, rattachement département / service, régularisation, pièces par opération | implémenté et testé (backend) ; écrans vérifiés par build |
+| Import de l’organigramme (CORE ADMIN → Organigramme → Import Excel) | implémenté et testé (backend) ; liste de la banque à importer |
 | Référence d’enregistrement d’appel | en attente de décision (désactivée) |
 | Unités Marketing | en attente de décision (non déplacées) |
 | État « suspendu » | non implémenté (pas de suspension dans le circuit) |
@@ -350,5 +407,10 @@ KPI = listes et absence des KPI d’échéance ; comparaison et exports ; permis
   banque, horodatée, reste le point de départ des durées mesurées.
 - Autorisation d’enregistrer une référence d’enregistrement d’appel.
 - Unités « MARKETING & COMMUNICATION » / « MARKETING ET COMMUNICATION » (voir ci-dessus).
+- Règles par motif : toutes « proposées », à valider (champs exigés, contrôles, justificatifs).
+- Liste réelle des départements et services de la banque : à fournir puis importer dans le CORE.
+- Devise par défaut MRU à l’import quand le motif n’exige pas la devise.
+- Preuve jointe obligatoire pour confirmer une régularisation ; agent = utilisateur connecté.
+- Import tout ou rien (pas d’import partiel des lignes valides).
 
 Le module n’est **pas** déclaré validé par la Conformité tant que ces décisions ne sont pas prises.
