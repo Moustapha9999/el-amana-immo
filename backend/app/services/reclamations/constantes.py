@@ -109,6 +109,7 @@ CATEGORIE_DOCUMENT_LIBELLES: dict[str, str] = {
     "REPONSE_CLIENT": "Réponse envoyée au client",
     "PREUVE_ENVOI": "Preuve d'envoi",
     "IMPORT_OPERATIONS": "Fichier d'import des opérations",
+    "PREUVE_REGULARISATION": "Preuve de régularisation (extourne, correction)",
     "AUTRE": "Autre document",
 }
 # Note signée puis scannée : PDF ou image uniquement.
@@ -132,10 +133,22 @@ DOMAINE_LIBELLES: dict[str, str] = {
     "SOUS_MOTIF": "Sous-motif",
     "CANAL": "Canal de réception",
     "CANAL_REPONSE": "Canal d'envoi de la réponse",
+    "POINT_RECEPTION": "Point de réception",
 }
 # Hiérarchie des référentiels : domaine → domaine parent obligatoire.
 DOMAINE_PARENT: dict[str, str] = {"MOTIF": "TYPE", "SOUS_MOTIF": "MOTIF"}
 CANAL_TELEPHONE = "TELEPHONE"
+# Point de réception « Service concerné » : réclamation reçue directement par le service mis en cause.
+POINT_SERVICE_CONCERNE = "SERVICE_CONCERNE"
+# Niveaux de l'organigramme CORE proposés comme « Département concerné » et « Service concerné ».
+TYPES_ORG_DEPARTEMENT = frozenset({"DIRECTION_GENERALE", "DIRECTION", "DEPARTEMENT"})
+TYPES_ORG_SERVICE = frozenset({"SERVICE", "SECTION", "CELLULE"})
+REGULARISATION_LIBELLES: dict[str, str] = {
+    "A_EFFECTUER": "Régularisation à effectuer (hors BEA DIGITAL)",
+    "EFFECTUEE": "Régularisation confirmée",
+}
+NATURE_LIBELLES: dict[str, str] = {"DEBIT": "Débit", "CREDIT": "Crédit"}
+ROLE_OPERATION_LIBELLES: dict[str, str] = {"INITIALE": "Opération initiale", "DOUBLON": "Opération en double"}
 
 STATUT_RAPPEL_LIBELLES: dict[str, str] = {
     "AUCUN": "Aucun rappel",
@@ -178,6 +191,8 @@ EVENEMENT_LIBELLES: dict[str, str] = {
     "IMPORT_ANALYSE": "Fichier d'opérations analysé",
     "IMPORT_CONFIRME": "Opérations importées depuis Excel",
     "IMPORT_ABANDONNE": "Import d'opérations abandonné",
+    "REGULARISATION_A_EFFECTUER": "Régularisation à effectuer (décision favorable)",
+    "REGULARISATION_CONFIRMEE": "Régularisation confirmée (pièces justificatives)",
 }
 STATUT_IDENTIFICATION_LIBELLES: dict[str, str] = {
     "VERIFIE": "Vérifié",

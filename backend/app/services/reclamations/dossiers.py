@@ -39,8 +39,10 @@ from app.models import (
     ReclamationReferentiel,
     ReclamationUnite,
 )
+from app.services import org_referentiel as org
 from app.services.reclamations import constantes as C
 from app.services.reclamations import operations as ops
+from app.services.reclamations import regles
 from app.services.reclamations.acces import ReclamationsScope
 from app.services.reclamations.outils import (
     auditer,
@@ -74,13 +76,15 @@ EFFACABLES = frozenset({
     "type_id", "motif_id", "sous_motif_id", "motif_autre", "sous_motif_autre", "unite_concernee_id", "client_racine", "client_categorie", "client_telephone",
     "client_email", "client_adresse", "client_agence_id", "compte_reference", "carte_masquee",
     "operation_reference", "operation_date", "montant_conteste", "devise", "reclamation_liee_id",
+    "point_reception_id", "agence_reception_id", "org_departement_id", "org_service_id",
 })
+CHAMPS_RATTACHEMENT = ("point_reception_id", "agence_reception_id", "org_departement_id", "org_service_id")
 CHAMPS_TEXTE = ("client_nom", "client_telephone", "client_email", "compte_reference", "carte_masquee",
                 "operation_reference")
 CHAMPS_LIBELLES = {
     "objet": "Objet", "description": "Description", "type_id": "Type", "motif_id": "Motif",
     "sous_motif_id": "Sous-motif", "motif_autre": "Motif (autre)", "sous_motif_autre": "Sous-motif (autre)",
-    "priorite": "Priorité", "unite_reception_id": "Unité de réception", "unite_concernee_id": "Service concerné",
+    "priorite": "Priorité", "unite_reception_id": "Unité de réception", "unite_concernee_id": "Unité concernée (circuit)",
     "date_reclamation": "Date de la réclamation",
     "client_racine": "Racine client", "client_categorie": "Catégorie de client", "client_nom": "Nom du client",
     "client_telephone": "Téléphone du client", "client_email": "E-mail du client",
@@ -89,6 +93,8 @@ CHAMPS_LIBELLES = {
     "operation_reference": "Référence de l'opération", "operation_date": "Date de l'opération",
     "montant_conteste": "Montant contesté", "devise": "Devise", "reclamation_liee_id": "Réclamation liée",
     "date_premiere_reception": "Date de première réception", "date_reception_sr": "Date de réception SR",
+    "point_reception_id": "Point de réception", "agence_reception_id": "Agence de réception",
+    "org_departement_id": "Département concerné", "org_service_id": "Service concerné (organigramme)",
 }
 DATES_CLES = ("date_premiere_reception", "date_reception_sr")
 
@@ -98,10 +104,11 @@ class Contexte:
     """Référentiels, unités et agences chargés une fois par requête (tables courtes)."""
 
     def __init__(self, refs: list[ReclamationReferentiel], unites: list[ReclamationUnite],
-                 agences: dict[uuid.UUID, tuple[str, str]]):
+                 agences: dict[uuid.UUID, tuple[str, str]], arbre: org.Arbre | None = None):
         self.refs = {r.id: r for r in refs}
         self.unites = {u.id: u for u in unites}
         self.agences = agences
+        self.arbre = arbre or org.Arbre(entites={}, enfants={})
 
     @classmethod
     async def charger(cls, db: AsyncSession) -> Contexte:
@@ -109,7 +116,13 @@ class Contexte:
         unites = list((await db.scalars(select(ReclamationUnite))).all())
         agences = {i: (c, lib) for i, c, lib in (await db.execute(
             select(Agence.id, Agence.code, Agence.libelle))).all()}
-        return cls(refs, unites, agences)
+        return cls(refs, unites, agences, await org.charger_arbre(db))
+
+    def entite(self, eid: uuid.UUID | None) -> dict | None:
+        e = self.arbre.entites.get(eid) if eid else None
+        return {"id": str(e.id), "code": e.code, "libelle": e.libelle, "sigle": e.sigle,
+                "type_entite": e.type_entite, "actif": bool(e.is_active),
+                "chemin": self.arbre.libelle_chemin(e.id)} if e else None
 
     def ref(self, rid: uuid.UUID | None) -> dict | None:
         r = self.refs.get(rid) if rid else None
@@ -162,8 +175,8 @@ def libelle_sous_motif(ctx: Contexte, r: Reclamation) -> str | None:
 
 
 def ligne(r: Reclamation, ctx: Contexte, nb_documents: int = 0,
-          resume: tuple[int, Any] | None = None) -> dict:
-    nb_operations, montant_total = resume or (0, None)
+          resume: tuple[int, Any, str | None] | None = None) -> dict:
+    nb_operations, montant_total, devise = resume or (0, None, C.DEVISE)
     return {
         "id": str(r.id), "reference": r.reference, "objet": r.objet,
         "client_nom": r.client_nom, "client_racine": r.client_racine, "client_categorie": r.client_categorie,
@@ -175,10 +188,16 @@ def ligne(r: Reclamation, ctx: Contexte, nb_documents: int = 0,
         "unite_concernee": (ctx.unite(r.unite_concernee_id) or {}).get("libelle"),
         "unite_traitement": (ctx.unite(r.unite_traitement_id) or {}).get("libelle"),
         "agence": (ctx.agence(r.client_agence_id) or {}).get("libelle"),
+        "point_reception": ctx.lib(r.point_reception_id),
+        "agence_reception": (ctx.agence(r.agence_reception_id) or {}).get("libelle"),
+        "departement_concerne": (ctx.entite(r.org_departement_id) or {}).get("libelle"),
+        "service_concerne": (ctx.entite(r.org_service_id) or {}).get("libelle"),
+        "regularisation_statut": r.regularisation_statut,
         "date_reclamation": iso(r.date_reclamation),
         "date_premiere_reception": iso(r.date_premiere_reception), "date_reception_sr": iso(r.date_reception_sr),
         "date_cloture": iso(r.date_cloture),
-        "nb_operations": nb_operations, "montant_total": ops.montant_str(montant_total), "devise": C.DEVISE,
+        "nb_operations": nb_operations, "montant_total": ops.montant_str(montant_total), "devise": devise,
+        "devises_multiples": nb_operations > 0 and devise is None,
         "nb_documents": nb_documents, "revision": r.revision, "updated_at": iso(r.updated_at),
         "supprimee_le": iso(r.supprimee_le), "motif_suppression": r.motif_suppression,
     }
@@ -212,6 +231,8 @@ def actions(s: ReclamationsScope, r: Reclamation) -> dict[str, bool]:
         "documents_deposer": s.peut("reclamations.document.upload") and modifiable,
         "documents_telecharger": s.peut("reclamations.document.download"),
         "documents_retirer": s.peut("reclamations.document.remove") and modifiable,
+        "confirmer_regularisation": (s.peut("reclamations.regularisation.confirm") and modifiable
+                                     and r.regularisation_statut == "A_EFFECTUER"),
     }
 
 
@@ -233,6 +254,7 @@ async def detail(db: AsyncSession, s: ReclamationsScope, r: Reclamation, ctx: Co
         ReclamationAppel.reclamation_id == r.id).order_by(ReclamationAppel.appel_le))).all())
     noms = await noms_utilisateurs(db, {r.created_by_id, r.updated_by_id, r.gestionnaire_id,
                                         r.responsable_traitement_id, r.cloture_par_id,
+                                        r.regularisation_agent_id, r.regularisation_confirme_par_id,
                                         *(a.agent_id for a in appels)})
     nb_documents = await db.scalar(select(func.count()).select_from(GedDocument).where(
         GedDocument.module_code == C.MODULE_CODE, GedDocument.entity == C.GED_ENTITE,
@@ -240,7 +262,10 @@ async def detail(db: AsyncSession, s: ReclamationsScope, r: Reclamation, ctx: Co
     liees = {i: ref for i, ref in (await db.execute(select(Reclamation.id, Reclamation.reference).where(
         Reclamation.id.in_([i for i in (r.reclamation_liee_id, r.doublon_de_id) if i])))).all()}
     operations = await ops.lister(db, r.id)
-    montant_total = ops.total([o.montant for o in operations])
+    montant_total, devise = ops.montant_unique(operations)
+    conteste_total, _ = ops.montant_unique(operations, ops.conteste)
+    ex = await regles.exigences(db, r.motif_id)
+    nb_pieces = await regles.nb_justificatifs(db, r.id)
     participants = await ops.participants(db, r.id)
     comptes = await ops.comptes(db, r.id)
     tous = voit_tous_clients(s, r)
@@ -251,12 +276,28 @@ async def detail(db: AsyncSession, s: ReclamationsScope, r: Reclamation, ctx: Co
         ReclamationImport.reclamation_id == r.id).order_by(ReclamationImport.created_at.desc()))).all())
     noms_imports = await noms_utilisateurs(db, {i.created_by_id for i in imports} | {i.confirme_par_id for i in imports})
     return {
-        **ligne(r, ctx, nb_documents, (len(operations), montant_total)),
+        **ligne(r, ctx, nb_documents, (len(operations), montant_total, devise)),
         "description": r.description, "source": r.source,
         "type_ref": ctx.ref(r.type_id), "motif_ref": ctx.ref(r.motif_id), "sous_motif_ref": ctx.ref(r.sous_motif_id),
         "motif_autre": r.motif_autre, "sous_motif_autre": r.sous_motif_autre,
+        "point_reception_ref": ctx.ref(r.point_reception_id),
+        "agence_reception_ref": ctx.agence(r.agence_reception_id),
+        "departement_ref": ctx.entite(r.org_departement_id), "service_ref": ctx.entite(r.org_service_id),
         "operations": [ops.en_dict(o, par_p, par_c, masques) for o in operations],
-        "montant_conteste_total": ops.montant_str(ops.total([ops.conteste(o) for o in operations])),
+        "montant_conteste_total": ops.montant_str(conteste_total),
+        "par_devise": ops.par_devise(operations),
+        "regle": ex.to_dict(), "nb_justificatifs": nb_pieces,
+        "a_completer_avant_transmission": regles.controles_dossier(ex, operations, nb_pieces),
+        "regularisation": {
+            "statut": r.regularisation_statut,
+            "statut_libelle": C.REGULARISATION_LIBELLES.get(r.regularisation_statut or ""),
+            "effectuee_le": iso(r.regularisation_le),
+            "agent": noms.get(r.regularisation_agent_id) if r.regularisation_agent_id else None,
+            "reference": r.regularisation_reference, "commentaire": r.regularisation_commentaire,
+            "confirme_par": noms.get(r.regularisation_confirme_par_id) if r.regularisation_confirme_par_id
+            else None,
+            "confirme_le": iso(r.regularisation_confirme_le),
+        } if r.regularisation_statut else None,
         "participants": [ops.participant_dict(p, operations, p.id in masques) for p in participants],
         "comptes": [ops.compte_dict(c, operations, c.participant_id in masques) for c in comptes],
         "nb_clients": len({p.client_racine for p in participants if p.client_racine}),
@@ -347,6 +388,25 @@ def _filtres(q, f: dict[str, Any]):
             Reclamation.id.in_(select(ReclamationAffectation.reclamation_id).where(
                 ReclamationAffectation.unite_destinataire_id.in_(unites))),
         ) if unites else false())
+    for champ in ("point_reception_id", "agence_reception_id", "regularisation_statut"):
+        if f.get(champ):
+            q = q.where(getattr(Reclamation, champ) == f[champ])
+    if f.get("org_departement_ids") is not None:
+        ids = list(f["org_departement_ids"])
+        q = q.where(or_(Reclamation.org_departement_id.in_(ids), Reclamation.org_service_id.in_(ids)))
+    if f.get("org_service_ids") is not None:
+        q = q.where(Reclamation.org_service_id.in_(list(f["org_service_ids"])))
+    if f.get("operation_reference"):
+        q = q.where(Reclamation.id.in_(select(ReclamationOperation.reclamation_id).where(
+            ReclamationOperation.reference.ilike(f"%{propre(f['operation_reference'])}%"))))
+    if f.get("compte_reference"):
+        motif_compte = f"%{propre(f['compte_reference'])}%"
+        q = q.where(or_(Reclamation.compte_reference.ilike(motif_compte),
+                        Reclamation.id.in_(select(ReclamationCompte.reclamation_id).where(
+                            ReclamationCompte.compte_reference.ilike(motif_compte)))))
+    if f.get("devise"):
+        q = q.where(Reclamation.id.in_(select(ReclamationOperation.reclamation_id).where(
+            ReclamationOperation.devise == f["devise"])))
     if f.get("client_agence_id") == AUCUNE:
         q = q.where(Reclamation.client_agence_id.is_(None))
     elif f.get("client_agence_id"):
@@ -409,13 +469,20 @@ async def lister(db: AsyncSession, s: ReclamationsScope, f: dict[str, Any], *, p
         for item, r in zip(items, rows, strict=True):
             item["suppression"] = {"possible": True, "restaurable": bool(r.supprimee_le)}
     ids = base.with_only_columns(Reclamation.id).order_by(None).correlate(None)
-    nb_ops, somme, avec = (await db.execute(select(
-        func.count(ReclamationOperation.id), func.sum(ReclamationOperation.montant),
-        func.count(func.distinct(ReclamationOperation.reclamation_id)),
+    nb_ops, avec = (await db.execute(select(
+        func.count(ReclamationOperation.id), func.count(func.distinct(ReclamationOperation.reclamation_id)),
     ).where(ReclamationOperation.reclamation_id.in_(ids)))).one()
+    par_devise = [{"devise": d, "nb": n, "montant": ops.montant_str(m) if m is not None else "0.00"}
+                  for d, n, m in (await db.execute(select(
+                      ReclamationOperation.devise, func.count(), func.sum(ReclamationOperation.montant))
+                      .where(ReclamationOperation.reclamation_id.in_(ids), ReclamationOperation.devise.is_not(None))
+                      .group_by(ReclamationOperation.devise))).all()]
+    par_devise.sort(key=lambda x: (x["devise"] != C.DEVISE, x["devise"]))
+    principale = next((x for x in par_devise if x["devise"] == C.DEVISE), None)
     return {"items": items, "total": total, "page": max(page, 1), "taille": taille,
             "totaux": {"nb_operations": nb_ops or 0, "dossiers_avec_operations": avec or 0,
-                       "montant_total": ops.montant_str(somme) if somme is not None else "0.00", "devise": C.DEVISE}}
+                       "montant_total": principale["montant"] if principale else "0.00", "devise": C.DEVISE,
+                       "par_devise": par_devise}}
 
 
 async def chronologie(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID) -> list[dict]:
@@ -498,6 +565,55 @@ def _unite_concernee(ctx: Contexte, uid: uuid.UUID | None, actuelle: uuid.UUID |
     if not u.actif and uid != actuelle:
         raise erreur(f"Le service « {u.libelle} » est désactivé", "UNITE_INACTIVE")
     return uid
+
+
+def _entite_org(ctx: Contexte, eid: uuid.UUID | None, types: frozenset[str], libelle: str,
+                conserver: uuid.UUID | None) -> Any:
+    if eid is None:
+        return None
+    e = ctx.arbre.entites.get(eid)
+    if e is None:
+        raise erreur(f"{libelle} introuvable dans l'organigramme", "ENTITE_INCONNUE")
+    if e.type_entite not in types:
+        raise erreur(f"« {e.libelle} » n'est pas un {libelle.lower()} dans l'organigramme", "ENTITE_TYPE_INVALIDE")
+    if not e.is_active and eid != conserver:
+        raise erreur(f"« {e.libelle} » est désactivé dans l'organigramme", "ENTITE_INACTIVE")
+    return e
+
+
+def rattachement(ctx: Contexte, valeurs: dict[str, Any], actuel: Reclamation | None = None) -> dict[str, Any]:
+    """Point de réception, agence de réception, département → service concerné (organigramme CORE).
+
+    Le service doit appartenir au sous-arbre du département ; sans département, le plus proche ancêtre de
+    type département / direction est repris. Le point de réception « Service concerné » exige le service."""
+    point = _ref_valide(ctx, valeurs.get("point_reception_id"), "POINT_RECEPTION",
+                        conserver=actuel.point_reception_id if actuel else None)
+    agence_id = valeurs.get("agence_reception_id")
+    if agence_id and agence_id not in ctx.agences:
+        raise erreur("Agence de réception introuvable", "AGENCE_INCONNUE")
+    service = _entite_org(ctx, valeurs.get("org_service_id"), C.TYPES_ORG_SERVICE, "Service",
+                          actuel.org_service_id if actuel else None)
+    departement = _entite_org(ctx, valeurs.get("org_departement_id"), C.TYPES_ORG_DEPARTEMENT, "Département",
+                              actuel.org_departement_id if actuel else None)
+    if service is not None:
+        ancetres = ctx.arbre.chemin(service.id)[:-1]
+        if departement is not None and departement.id not in {a.id for a in ancetres}:
+            raise erreur(f"Le service « {service.libelle} » ne dépend pas du département « {departement.libelle} »",
+                         "SERVICE_HORS_DEPARTEMENT")
+        if departement is None:
+            departement = next((a for a in reversed(ancetres) if a.type_entite in C.TYPES_ORG_DEPARTEMENT), None)
+    if point is not None and point.code == C.POINT_SERVICE_CONCERNE and service is None:
+        raise erreur("Réclamation reçue par le service concerné : indiquez ce service", "SERVICE_OBLIGATOIRE")
+    return {"point_reception_id": point.id if point else None, "agence_reception_id": agence_id,
+            "org_departement_id": departement.id if departement else None,
+            "org_service_id": service.id if service else None}
+
+
+def unite_du_service(ctx: Contexte, service_id: uuid.UUID | None) -> uuid.UUID | None:
+    """Unité Réclamations active rattachée au service CORE (pour le circuit d'affectation), sinon ``None``."""
+    if service_id is None:
+        return None
+    return next((u.id for u in ctx.unites.values() if u.org_entite_id == service_id and u.actif), None)
 
 
 def _date_reclamation(valeur: date, premiere: datetime) -> date:
@@ -675,8 +791,11 @@ async def creer(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
         reception_sr = max(premiere, maintenant())
     classement = classer(ctx, data.get("type_id"), data.get("motif_id"), data.get("sous_motif_id"),
                          data.get("motif_autre"), data.get("sous_motif_autre"))
-    lignes = ops.normaliser(data.get("operations"))
-    unite_concernee_id = _unite_concernee(ctx, data.get("unite_concernee_id"))
+    ex = await regles.exigences(db, classement["motif_id"])
+    lignes = ops.normaliser(data.get("operations"), ex)
+    lien = rattachement(ctx, data)
+    unite_concernee_id = (_unite_concernee(ctx, data.get("unite_concernee_id"))
+                          or unite_du_service(ctx, lien["org_service_id"]))
     unite_reception_id = _unite_reception(s, ctx, data.get("unite_reception_id"))
     client = await _client(db, propre(data.get("client_racine")) or None)
     nom = propre(data.get("client_nom")) or (_nom_client(client) if client else "")
@@ -690,7 +809,7 @@ async def creer(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
     carte = _carte(data.get("carte_masquee"))
     racine = client.racine_client if client else None
     compte_dossier = propre(data.get("compte_reference")) or None
-    await ops.preparer(db, lignes, racine, {compte_dossier: racine} if compte_dossier else None)
+    await ops.preparer(db, lignes, racine, {compte_dossier: racine} if compte_dossier else None, ex=ex)
 
     now = maintenant()
     numero = await _numero(db, now.year)
@@ -700,7 +819,7 @@ async def creer(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
         priorite=data.get("priorite") or "NORMALE",
         statut="A_QUALIFIER", etape="RECEPTION",
         source="CENTRE_APPEL" if telephone else "MANUEL", canal_id=canal.id, unite_reception_id=unite_reception_id,
-        unite_concernee_id=unite_concernee_id, date_reclamation=date_reclamation,
+        unite_concernee_id=unite_concernee_id, date_reclamation=date_reclamation, **lien,
         client_racine=client.racine_client if client else None,
         client_categorie=data.get("client_categorie") or (_categorie(client) if client else None),
         client_nom=nom, client_telephone=propre(data.get("client_telephone")) or None,
@@ -720,10 +839,9 @@ async def creer(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
                                             {lg.client_racine for lg in lignes if lg.client_racine}
                                             | ({racine} if racine else set()))
     await ops.ecrire(db, r, lignes, s.user_id)
-    montant_total = ops.total([lg.montant for lg in lignes])
     db.add(_evenement(r, s, "CREATION", date_effet=premiere, unite_id=unite_reception_id,
                       donnees={"canal": canal.libelle, "enregistre_par_service_central": bool(reception_sr),
-                               "nb_operations": len(lignes), "montant_total": ops.montant_str(montant_total),
+                               "nb_operations": len(lignes), "par_devise": ops.par_devise(lignes),
                                **({"multi_clients": True} if multi else {})}))
     if reception_sr:
         db.add(_evenement(r, s, "RECEPTION_SR", date_effet=reception_sr, statut_avant="A_QUALIFIER",
@@ -736,6 +854,7 @@ async def creer(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
     await auditer(db, s, "reclamations.dossier.create", C.GED_ENTITE, r.id, after={
         "reference": r.reference, "statut": r.statut, "canal": canal.libelle, "objet": r.objet,
         "unite_reception": ctx.unite(unite_reception_id)["libelle"], "date_reclamation": iso(date_reclamation),
+        **{k: str(v) for k, v in lien.items() if v},
         "date_premiere_reception": iso(premiere), "date_reception_sr": iso(reception_sr),
         "operations": [lg.brut() for lg in lignes],
         **({"justification_regroupement": r.justification_regroupement} if multi else {})})
@@ -793,6 +912,19 @@ async def modifier(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data:
         sm_id = valeur("sous_motif_id") if not (sous_choisi and data.get("sous_motif_autre") is not None) else None
         sm_autre = valeur("sous_motif_autre") if not (sous_choisi and data.get("sous_motif_id") is not None) else None
         cible.update(classer(ctx, valeur("type_id"), m_id, sm_id, m_autre, sm_autre, actuel=r))
+    if any(data.get(k) is not None for k in CHAMPS_RATTACHEMENT) or effacer & set(CHAMPS_RATTACHEMENT):
+        valeurs = {k: None if k in effacer else (data.get(k) if data.get(k) is not None else getattr(r, k))
+                   for k in CHAMPS_RATTACHEMENT}
+        if data.get("org_service_id") is not None and data.get("org_departement_id") is None:
+            valeurs["org_departement_id"] = None
+        elif (data.get("org_departement_id") is not None and data.get("org_service_id") is None
+              and valeurs["org_service_id"] is not None
+              and valeurs["org_service_id"] not in ctx.arbre.descendants(data["org_departement_id"])):
+            valeurs["org_service_id"] = None
+        cible.update(rattachement(ctx, valeurs, actuel=r))
+        if (data.get("unite_concernee_id") is None and "unite_concernee_id" not in effacer
+                and cible["org_service_id"] != r.org_service_id):
+            cible["unite_concernee_id"] = unite_du_service(ctx, cible["org_service_id"]) or r.unite_concernee_id
     if data.get("unite_concernee_id") is not None:
         cible["unite_concernee_id"] = _unite_concernee(ctx, data["unite_concernee_id"], r.unite_concernee_id)
     if data.get("date_reclamation") is not None:
@@ -858,9 +990,10 @@ async def remplacer_operations(db: AsyncSession, s: ReclamationsScope, rid: uuid
                       revision=r.revision)
     if not voit_tous_clients(s, r):
         raise erreur("Ce dossier concerne des clients que vous ne pouvez pas consulter", "PERMISSION_DENIED", 403)
-    lignes = ops.normaliser(data.get("operations"))
+    ex = await regles.exigences(db, r.motif_id)
+    lignes = ops.normaliser(data.get("operations"), ex)
     await ops.preparer(db, lignes, r.client_racine,
-                       {r.compte_reference: r.client_racine} if r.compte_reference else None)
+                       {r.compte_reference: r.client_racine} if r.compte_reference else None, ex=ex)
     actuelles = await ops.lister(db, r.id)
     par_p = {p.id: p for p in await ops.participants(db, r.id)}
     par_c = {c.id: c for c in await ops.comptes(db, r.id)}
@@ -868,7 +1001,8 @@ async def remplacer_operations(db: AsyncSession, s: ReclamationsScope, rid: uuid
     justification = texte_long(data.get("justification_regroupement"))
 
     def signature(liste: list[ops.Ligne]) -> list[tuple]:
-        return [(*lg.cle_identique(), lg.motif_detail) for lg in liste]
+        return [(*lg.cle_identique(), lg.motif_detail, lg.montant_attendu, lg.compte_attendu, lg.role_operation,
+                 lg.commentaire) for lg in liste]
 
     if signature(avant) == signature(lignes) and justification in (None, r.justification_regroupement):
         return await detail(db, s, r)
@@ -882,11 +1016,10 @@ async def remplacer_operations(db: AsyncSession, s: ReclamationsScope, rid: uuid
     await ops.verifier_regroupement(db, r, justification)
     r.revision += 1
     r.updated_by_id = s.user_id
-    total_avant, total_apres = ops.total([a.montant for a in avant]), ops.total([lg.montant for lg in lignes])
     db.add(_evenement(r, s, "OPERATIONS", statut_avant=r.statut, etape_avant=r.etape,
                       commentaire=texte_long(data.get("motif")),
-                      donnees={"avant": {"nb": len(avant), "total": ops.montant_str(total_avant)},
-                               "apres": {"nb": len(lignes), "total": ops.montant_str(total_apres)}}))
+                      donnees={"avant": {"nb": len(avant), "par_devise": ops.par_devise(avant)},
+                               "apres": {"nb": len(lignes), "par_devise": ops.par_devise(lignes)}}))
     await db.flush()
     await auditer(db, s, "reclamations.operations.update", C.GED_ENTITE, r.id,
                   before={"operations": [a.brut() for a in avant]},
@@ -894,6 +1027,32 @@ async def remplacer_operations(db: AsyncSession, s: ReclamationsScope, rid: uuid
                          **({"justification_regroupement": justification} if justification else {})})
     await db.refresh(r)
     return await detail(db, s, r)
+
+
+async def verifier_operations(db: AsyncSession, s: ReclamationsScope, data: dict) -> dict:
+    """Contrôle à blanc d'une saisie d'opérations : erreurs par ligne et par champ, récapitulatif par devise.
+
+    Rien n'est enregistré ; l'enregistrement refait les mêmes contrôles."""
+    if not s.peut("reclamations.update"):
+        s.exiger("reclamations.create")
+    racine = propre(data.get("client_racine")) or None
+    compte = propre(data.get("compte_reference")) or None
+    motif_id, nb_pieces = data.get("motif_id"), 0
+    if data.get("reclamation_id"):
+        r = await charger(db, s, data["reclamation_id"])
+        if not voit_tous_clients(s, r):
+            raise erreur("Ce dossier concerne des clients que vous ne pouvez pas consulter", "PERMISSION_DENIED", 403)
+        racine, compte = r.client_racine, r.compte_reference
+        motif_id = motif_id or r.motif_id
+        nb_pieces = await regles.nb_justificatifs(db, r.id)
+    elif racine:
+        racine = (await _client(db, racine)).racine_client
+    ex = await regles.exigences(db, motif_id)
+    lignes = ops.lire_saisie(data.get("operations"), ex)
+    await ops.resoudre(db, lignes, racine, {compte: racine} if compte else None, ex)
+    ops.controler(lignes)
+    return {"lignes": [lg.apercu() for lg in lignes],
+            "recapitulatif": ops.recapitulatif(lignes, ex, nb_pieces=nb_pieces, racine_principale=racine)}
 
 
 async def ajouter_appel(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data: dict) -> dict:

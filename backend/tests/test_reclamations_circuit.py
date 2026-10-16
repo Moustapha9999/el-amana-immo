@@ -294,7 +294,7 @@ async def test_indicateurs_sans_double_comptage(db):
     assert classeur.sheetnames == ["Réclamations", "Opérations"]
     valeurs = [row for row in classeur["Réclamations"].iter_rows(values_only=True)]
     total = next(row for row in valeurs if row[0] == "Total")
-    assert total[16] == 4 and Decimal(str(total[17])) == Decimal("650.50")
+    assert total[20] == 4 and Decimal(str(total[21])) == Decimal("650.50") and total[22] == C.DEVISE
     pdf = await reporting.exporter(db, sr, {"q": marqueur}, format="pdf")
     assert pdf.startswith(b"%PDF")
 

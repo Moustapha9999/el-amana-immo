@@ -31,10 +31,13 @@ from app.schemas.reclamations import (
     ImportConfirmIn,
     MembreIn,
     MembrePatch,
+    DevisesIn,
     OperationsIn,
     QualifierIn,
     ReferentielCreate,
     ReferentielPatch,
+    RegleMotifIn,
+    RegularisationIn,
     ReponseEnvoyeeIn,
     RestaurerIn,
     RetournerIn,
@@ -43,6 +46,7 @@ from app.schemas.reclamations import (
     UniteCreate,
     UnitePatch,
     ValidationReferentielIn,
+    VerificationOperationsIn,
 )
 from app.services.reclamations import constantes as C
 from app.services.reclamations import (
@@ -55,7 +59,9 @@ from app.services.reclamations import (
     reponses,
     suppression,
 )
+from app.services import org_referentiel
 from app.services.reclamations import operations as ops
+from app.services.reclamations import regles
 from app.services.reclamations.acces import ReclamationsScope, charger_scope
 
 router = APIRouter(prefix="/reclamations", tags=["Gestion des réclamations"])
@@ -90,6 +96,27 @@ VUE = "reclamations.view"
 REFERENTIELS = ("reclamations.references.view", "reclamations.references.manage")
 
 
+def organigramme_concerne(ctx: dossiers.Contexte) -> dict:
+    """Départements et services proposables, lus dans l'organigramme central (jamais une liste locale)."""
+    arbre = ctx.arbre
+    departements, services = [], []
+    for e in sorted(arbre.entites.values(), key=lambda x: (arbre.libelle_chemin(x.id) or "")):
+        if not e.is_active:
+            continue
+        if e.type_entite in C.TYPES_ORG_DEPARTEMENT:
+            departements.append({"id": str(e.id), "libelle": e.libelle, "sigle": e.sigle, "type": e.type_entite,
+                                 "chemin": arbre.libelle_chemin(e.id), "a_confirmer": e.a_confirmer})
+        elif e.type_entite in C.TYPES_ORG_SERVICE:
+            ancetres = arbre.chemin(e.id)[:-1]
+            parent = next((a for a in reversed(ancetres) if a.type_entite in C.TYPES_ORG_DEPARTEMENT), None)
+            services.append({"id": str(e.id), "libelle": e.libelle, "sigle": e.sigle, "type": e.type_entite,
+                             "chemin": arbre.libelle_chemin(e.id), "a_confirmer": e.a_confirmer,
+                             "departement_id": str(parent.id) if parent else None,
+                             "ancetres": [str(a.id) for a in ancetres],
+                             "unite_id": str(u) if (u := dossiers.unite_du_service(ctx, e.id)) else None})
+    return {"departements": departements, "services": services}
+
+
 # ------------------------------------------------------------------ configuration
 @router.get("/config")
 async def config(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = Depends(get_db)) -> dict:
@@ -97,13 +124,19 @@ async def config(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = 
     par_domaine: dict[str, list[dict]] = {d: [] for d in C.DOMAINE_LIBELLES}
     for r in refs:
         par_domaine[r["domaine"]].append(r)
+    ctx = await dossiers.Contexte.charger(db)
+    regles_motifs = await regles.lister(db)
     return {
         "acces": s.to_dict(),
         "referentiels": par_domaine,
         "unites": await organisation.lister_unites(db),
         "agences": [{"id": str(i), "code": c, "libelle": lib}
-                    for i, (c, lib) in sorted((await dossiers.Contexte.charger(db)).agences.items(),
-                                              key=lambda x: x[1][0])],
+                    for i, (c, lib) in sorted(ctx.agences.items(), key=lambda x: x[1][0])],
+        "organisation": organigramme_concerne(ctx),
+        "devises": regles_motifs["devises"],
+        "regles_motifs": {x["motif_id"]: x for x in regles_motifs["items"]},
+        "regle_defaut": regles_motifs["defaut"],
+        "champs_operation": regles_motifs["champs"],
         "libelles": {
             "statuts": _libelles(C.STATUT_LIBELLES),
             "etapes": _libelles(C.ETAPE_LIBELLES),
@@ -122,6 +155,9 @@ async def config(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = 
             "evaluations": _libelles(C.EVALUATION_LIBELLES),
             "validations_referentiel": _libelles(C.VALIDATION_REFERENTIEL_LIBELLES),
             "statuts_identification": _libelles(C.STATUT_IDENTIFICATION_LIBELLES),
+            "natures_mouvement": _libelles(C.NATURE_LIBELLES),
+            "roles_operation": _libelles(C.ROLE_OPERATION_LIBELLES),
+            "regularisations": _libelles(C.REGULARISATION_LIBELLES),
         },
         "parametres": {"enregistrement_appels_autorise": await dossiers.enregistrement_autorise(db),
                        "regroupement_multi_clients_autorise": await ops.regroupement_autorise(db),
@@ -160,6 +196,32 @@ async def valider_referentiel(rid: uuid.UUID, body: ValidationReferentielIn, s: 
 async def supprimer_referentiel(rid: uuid.UUID, s: ReclamationsScope = Depends(scope(
         "reclamations.references.manage")), db: AsyncSession = Depends(get_db)) -> dict:
     return await organisation.supprimer_referentiel(db, s, rid)
+
+
+# ------------------------------------------------------------- règles par motif
+@router.get("/regles")
+async def lister_regles(type_id: uuid.UUID | None = None,
+                        s: ReclamationsScope = Depends(scope(VUE, *REFERENTIELS)),
+                        db: AsyncSession = Depends(get_db)) -> dict:
+    return await regles.lister(db, type_id)
+
+
+@router.put("/regles/{motif_id}")
+async def enregistrer_regle(motif_id: uuid.UUID, body: RegleMotifIn, s: ReclamationsScope = Depends(scope(
+        "reclamations.references.manage")), db: AsyncSession = Depends(get_db)) -> dict:
+    return await regles.enregistrer(db, s, motif_id, body.model_dump())
+
+
+@router.post("/regles/{motif_id}/validation")
+async def valider_regle(motif_id: uuid.UUID, body: ValidationReferentielIn, s: ReclamationsScope = Depends(scope(
+        "reclamations.references.validate")), db: AsyncSession = Depends(get_db)) -> dict:
+    return await regles.valider(db, s, motif_id, body.statut_validation)
+
+
+@router.put("/parametres/devises")
+async def modifier_devises(body: DevisesIn, s: ReclamationsScope = Depends(scope(
+        "reclamations.references.manage")), db: AsyncSession = Depends(get_db)) -> list[str]:
+    return await regles.modifier_devises(db, s, body.devises)
 
 
 # ---------------------------------------------------------------------- unités
@@ -245,17 +307,32 @@ async def filtres_dossiers(
     kpi_fin: date | None = None,
     kpi_unite_id: uuid.UUID | None = None,
     org_entite_id: uuid.UUID | None = None,
+    point_reception_id: uuid.UUID | None = None,
+    agence_reception_id: uuid.UUID | None = None,
+    org_departement_id: uuid.UUID | None = None,
+    org_service_id: uuid.UUID | None = None,
+    operation_reference: str | None = Query(None, max_length=120),
+    compte_reference: str | None = Query(None, max_length=60),
+    devise: str | None = Query(None, pattern=r"^[A-Z]{3}$"),
+    regularisation_statut: Literal["A_EFFECTUER", "EFFECTUEE"] | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Filtres communs à la liste, au tableau de bord et aux exports.
 
     ``corbeille`` : liste seulement ; ``indicateur`` + ``kpi_*`` : dossiers d'un KPI cliqué ;
-    ``org_entite_id`` : direction / département / service de l'organigramme central, sous-entités incluses."""
+    ``org_entite_id`` : direction / département / service de l'organigramme central, sous-entités incluses ;
+    ``org_departement_id`` / ``org_service_id`` : département / service concerné (sous-entités incluses)."""
     if date_debut and date_fin and date_fin < date_debut:
         raise AppError("La date de fin précède la date de début", 422, code="PERIODE_INVALIDE")
     org_unites, org_libelle = (await organisation.unites_de_entite(db, org_entite_id)) if org_entite_id \
         else (None, None)
+    arbre = await org_referentiel.charger_arbre(db) if (org_departement_id or org_service_id) else None
     return {
+        "point_reception_id": point_reception_id, "agence_reception_id": agence_reception_id,
+        "org_departement_ids": arbre.descendants(org_departement_id) if org_departement_id else None,
+        "org_service_ids": arbre.descendants(org_service_id) if org_service_id else None,
+        "operation_reference": operation_reference, "compte_reference": compte_reference, "devise": devise,
+        "regularisation_statut": regularisation_statut,
         "org_entite_id": org_entite_id, "org_unites": org_unites, "org_entite_libelle": org_libelle,
         "corbeille": corbeille,
         "q": q, "statut": statut, "groupe": groupe, "etape": etape, "type_id": type_id, "motif_id": motif_id,
@@ -310,18 +387,38 @@ async def remplacer_operations(rid: uuid.UUID, body: OperationsIn,
     return await circuit.fiche(db, s, await dossiers.charger(db, s, rid))
 
 
+@router.post("/operations/verifier")
+async def verifier_operations(body: VerificationOperationsIn,
+                              s: ReclamationsScope = Depends(scope("reclamations.update", "reclamations.create")),
+                              db: AsyncSession = Depends(get_db)) -> dict:
+    return await dossiers.verifier_operations(db, s, body.model_dump())
+
+
 @router.get("/imports/modele")
-async def modele_import(s: ReclamationsScope = Depends(scope("reclamations.update", "reclamations.create"))) -> Response:
-    return _fichier(imports.modele(), "modele-import-operations-reclamation.xlsx",
+async def modele_import(motif_id: uuid.UUID | None = None,
+                        s: ReclamationsScope = Depends(scope("reclamations.update", "reclamations.create")),
+                        db: AsyncSession = Depends(get_db)) -> Response:
+    ex = await regles.exigences(db, motif_id)
+    ctx = await dossiers.Contexte.charger(db) if motif_id else None
+    motif = ctx.lib(motif_id) if ctx else None
+    return _fichier(imports.modele(ex, motif), "modele-import-operations-reclamation.xlsx",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @router.post("/dossiers/{rid}/imports", status_code=201)
 async def analyser_import(rid: uuid.UUID, file: UploadFile = File(...),
                           mode: Literal["AJOUT", "REMPLACEMENT"] = Form("AJOUT"),
+                          forcer: bool = Form(False),
                           s: ReclamationsScope = Depends(scope("reclamations.update", "reclamations.create")),
                           db: AsyncSession = Depends(get_db)) -> dict:
-    return await imports.analyser(db, s, rid, file, mode)
+    return await imports.analyser(db, s, rid, file, mode, forcer=forcer)
+
+
+@router.get("/dossiers/{rid}/imports/{iid}/rapport")
+async def rapport_import(rid: uuid.UUID, iid: uuid.UUID, s: ReclamationsScope = Depends(scope(VUE)),
+                         db: AsyncSession = Depends(get_db)) -> Response:
+    return _fichier(await imports.rapport_erreurs(db, s, rid, iid), "rapport-import-operations.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @router.get("/dossiers/{rid}/imports/{iid}")
@@ -370,9 +467,11 @@ async def deposer_document(rid: uuid.UUID, file: UploadFile = File(...), categor
                            commentaire: str | None = Form(None, max_length=2000),
                            titre: str | None = Form(None, max_length=255),
                            date_document: date | None = Form(None),
+                           operation_reference: str | None = Form(None, max_length=120),
                            s: ReclamationsScope = Depends(scope("reclamations.document.upload")),
                            db: AsyncSession = Depends(get_db)) -> dict:
     return await documents.deposer(db, s, rid, file, categorie, commentaire, titre=titre,
+                                   operation_reference=operation_reference,
                                    date_document=date_document)
 
 
@@ -458,6 +557,13 @@ async def rouvrir(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends
 async def archiver(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends(scope("reclamations.archive")),
                    db: AsyncSession = Depends(get_db)) -> dict:
     return await circuit.archiver(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/regularisation")
+async def confirmer_regularisation(rid: uuid.UUID, body: RegularisationIn,
+                                   s: ReclamationsScope = Depends(scope("reclamations.regularisation.confirm")),
+                                   db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.confirmer_regularisation(db, s, rid, body.model_dump())
 
 
 @router.post("/dossiers/{rid}/supprimer")

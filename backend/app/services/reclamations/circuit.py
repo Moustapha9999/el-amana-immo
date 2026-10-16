@@ -17,9 +17,10 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Reclamation, ReclamationAffectation, ReclamationDocument, ReclamationReponse
+from app.models import GedDocument, Reclamation, ReclamationAffectation, ReclamationDocument, ReclamationReponse
 from app.services.reclamations import constantes as C
-from app.services.reclamations import suppression
+from app.services.reclamations import operations as ops
+from app.services.reclamations import regles, suppression
 from app.services.reclamations.acces import ReclamationsScope
 from app.services.reclamations.dossiers import (
     Contexte,
@@ -31,7 +32,16 @@ from app.services.reclamations.dossiers import (
     detail,
 )
 from app.services.reclamations.notifier import destinataires_sr, membres_unite, notifier
-from app.services.reclamations.outils import auditer, conflit, erreur, iso, maintenant, texte_long
+from app.services.reclamations.outils import (
+    auditer,
+    conflit,
+    erreur,
+    iso,
+    maintenant,
+    noms_utilisateurs,
+    propre,
+    texte_long,
+)
 
 AVANT_AFFECTATION = frozenset({"A_QUALIFIER", "A_AFFECTER", "REOUVERTE"})
 # Seules actions conservées sur un dossier supprimé (corbeille).
@@ -195,6 +205,34 @@ async def _charger(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data:
     return r
 
 
+async def exiger_complet(db: AsyncSession, r: Reclamation) -> None:
+    """Avant transmission (affectation ou traitement interne) : opérations et pièces conformes à la règle
+    du motif. Le dossier peut être enregistré incomplet ; il ne peut pas être transmis incomplet."""
+    ex = await regles.exigences(db, r.motif_id)
+    operations = await ops.lister(db, r.id)
+    par_p = {p.id: p for p in await ops.participants(db, r.id)}
+    par_c = {c.id: c for c in await ops.comptes(db, r.id)}
+    lignes = ops.lignes_existantes(operations, par_p, par_c)
+    for rang, lg in enumerate(lignes, start=1):
+        lg.rang = rang
+        ops.appliquer_regle(lg, ex)
+    en_erreur = [lg for lg in lignes if lg.erreurs]
+    if en_erreur:
+        lg = en_erreur[0]
+        raise erreur(f"{len(en_erreur)} opération(s) à compléter pour ce motif (opération {lg.rang} : "
+                     f"{lg.erreurs[0][1]}) : corrigez les opérations avant de transmettre", "OPERATIONS_INCOMPLETES")
+    manques = regles.controles_dossier(ex, lignes, await regles.nb_justificatifs(db, r.id))
+    if manques:
+        raise erreur("Dossier incomplet pour ce motif : " + " ; ".join(manques), "DOSSIER_INCOMPLET")
+
+
+async def _nb_preuves_regularisation(db: AsyncSession, rid: uuid.UUID) -> int:
+    return await db.scalar(select(func.count()).select_from(ReclamationDocument).join(
+        GedDocument, GedDocument.id == ReclamationDocument.document_id).where(
+        ReclamationDocument.reclamation_id == rid, ReclamationDocument.categorie == "PREUVE_REGULARISATION",
+        GedDocument.deleted_at.is_(None))) or 0
+
+
 def _prise_en_compte_sr(r: Reclamation, ctx: Contexte) -> None:
     """Première intervention du SR : date de réception SR et unité de suivi, si pas encore posées."""
     now = maintenant()
@@ -278,6 +316,7 @@ async def affecter(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data:
     if not r.type_id:
         raise erreur("Renseignez le type de réclamation (Corriger les données) avant de transmettre",
                      "TYPE_OBLIGATOIRE")
+    await exiger_complet(db, r)
     ctx = await Contexte.charger(db)
     _prise_en_compte_sr(r, ctx)
     if r.date_qualification is None:
@@ -301,6 +340,7 @@ async def traiter_interne(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID
     if not r.type_id:
         raise erreur("Renseignez le type de réclamation (Corriger les données) avant de traiter",
                      "TYPE_OBLIGATOIRE")
+    await exiger_complet(db, r)
     ctx = await Contexte.charger(db)
     _prise_en_compte_sr(r, ctx)
     analyse = _motif(data)
@@ -403,8 +443,69 @@ async def cloturer(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data:
     r.motif_resolution = texte_long(data.get("motif_resolution") or data.get("motif"))
     r.date_cloture = max(maintenant(), r.date_premiere_reception)
     r.cloture_par_id = s.user_id
+    # Décision favorable ≠ extourne exécutée : la régularisation reste « à effectuer » jusqu'à sa
+    # confirmation documentée ; rien n'est exécuté dans ORION depuis BEA DIGITAL.
+    ex = await regles.exigences(db, r.motif_id)
+    favorable = resultat in ("FAVORABLE", "PARTIELLEMENT_FAVORABLE")
+    a_regulariser = favorable and bool(ex.regle.get("regularisation")) and r.regularisation_statut != "EFFECTUEE"
+    if a_regulariser:
+        r.regularisation_statut = "A_EFFECTUER"
+    elif r.regularisation_statut == "A_EFFECTUER":
+        r.regularisation_statut = None
     await _appliquer(db, s, r, statut="CLOTUREE", type_evenement="CLOTURE",
-                     commentaire=r.motif_resolution, donnees={"resultat": r.resultat})
+                     commentaire=r.motif_resolution, donnees={"resultat": r.resultat,
+                                                              **({"regularisation": "A_EFFECTUER"}
+                                                                 if a_regulariser else {})})
+    if a_regulariser:
+        db.add(_evenement(r, s, "REGULARISATION_A_EFFECTUER", statut_avant=r.statut, etape_avant=r.etape,
+                          donnees={"resultat": resultat}))
+        await db.flush()
+    return await fiche(db, s, r)
+
+
+async def confirmer_regularisation(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data: dict) -> dict:
+    """Constat documenté d'une régularisation exécutée hors BEA DIGITAL (date, agent, référence, pièce).
+
+    Ne change pas le statut du dossier ; réservé aux habilités ``reclamations.regularisation.confirm``."""
+    r = await _charger(db, s, rid, data)
+    s.exiger("reclamations.regularisation.confirm")
+    if r.archivee_le:
+        raise conflit("Dossier archivé", "DOSSIER_ARCHIVE")
+    if r.regularisation_statut != "A_EFFECTUER":
+        raise conflit("Aucune régularisation en attente sur ce dossier", "ACTION_INVALIDE")
+    effectuee_le = data.get("effectuee_le")
+    if effectuee_le is None:
+        raise erreur("La date de la régularisation est obligatoire", "DATE_OBLIGATOIRE")
+    if effectuee_le > maintenant().date():
+        raise erreur("La date de la régularisation ne peut pas être dans le futur", "DATE_FUTURE")
+    if effectuee_le < r.date_premiere_reception.date():
+        raise erreur("La régularisation ne peut pas précéder la réception de la réclamation", "DATE_INCOHERENTE")
+    reference = propre(data.get("reference"))
+    if not reference:
+        raise erreur("La référence de la preuve (n° d'écriture, d'extourne…) est obligatoire",
+                     "REFERENCE_OBLIGATOIRE")
+    agent_id = data.get("agent_id") or s.user_id
+    noms = await noms_utilisateurs(db, {agent_id})
+    if agent_id not in noms:
+        raise erreur("Agent ayant effectué la régularisation introuvable", "UTILISATEUR_INCONNU")
+    if not await _nb_preuves_regularisation(db, r.id):
+        raise erreur("Joignez d'abord la preuve (onglet Documents, catégorie « Preuve de régularisation »)",
+                     "PREUVE_OBLIGATOIRE")
+    commentaire = texte_long(data.get("commentaire"))
+    r.regularisation_statut = "EFFECTUEE"
+    r.regularisation_le, r.regularisation_agent_id = effectuee_le, agent_id
+    r.regularisation_reference, r.regularisation_commentaire = reference[:120], commentaire
+    r.regularisation_confirme_par_id, r.regularisation_confirme_le = s.user_id, maintenant()
+    r.revision += 1
+    r.updated_by_id = s.user_id
+    apres = {"regularisation_le": iso(effectuee_le), "agent": noms[agent_id], "reference": reference}
+    db.add(_evenement(r, s, "REGULARISATION_CONFIRMEE", statut_avant=r.statut, etape_avant=r.etape,
+                      commentaire=commentaire, donnees=apres))
+    await db.flush()
+    await auditer(db, s, "reclamations.regularisation.confirm", C.GED_ENTITE, r.id,
+                  before={"regularisation_statut": "A_EFFECTUER"},
+                  after={"regularisation_statut": "EFFECTUEE", **apres,
+                         **({"commentaire": commentaire} if commentaire else {})})
     return await fiche(db, s, r)
 
 
@@ -465,6 +566,8 @@ async def archiver(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data:
         raise conflit("Seuls les dossiers terminés s'archivent", "ACTION_INVALIDE")
     if r.archivee_le:
         raise conflit("Dossier déjà archivé", "DOSSIER_ARCHIVE")
+    if r.regularisation_statut == "A_EFFECTUER":
+        raise conflit("Régularisation à confirmer avant l'archivage", "REGULARISATION_EN_ATTENTE")
     r.archivee_le = maintenant()
     r.archivee_par_id = s.user_id
     r.revision += 1
@@ -487,6 +590,7 @@ ACTIONS = {
     "cloturer": cloturer,
     "rouvrir": rouvrir,
     "archiver": archiver,
+    "confirmer_regularisation": confirmer_regularisation,
 }
 
 

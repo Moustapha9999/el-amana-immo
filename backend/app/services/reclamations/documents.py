@@ -14,10 +14,10 @@ from datetime import date
 from pathlib import Path
 
 from fastapi import UploadFile
-from sqlalchemy import case, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import GedDocument, ReclamationDocument
+from app.models import GedDocument, ReclamationDocument, ReclamationOperation
 from app.models.reclamations import CATEGORIES_DOCUMENT
 from app.services.ged_service import GedService
 from app.services.reclamations import constantes as C
@@ -73,6 +73,7 @@ async def lister(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID) -> dict
             "nature": _nature(d.mime_type, d.filename), "categorie": categorie,
             "categorie_libelle": C.CATEGORIE_DOCUMENT_LIBELLES.get(categorie, categorie),
             "commentaire": m.commentaire if m else None, "created_at": iso(d.created_at),
+            "operation_reference": (m.operation_reference if m and tous_clients else None),
             "depose_par": noms.get(d.uploaded_by_id) if d.uploaded_by_id else None,
             "ocr_status": d.ocr_status,
         })
@@ -82,8 +83,11 @@ async def lister(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID) -> dict
 
 
 async def deposer(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, fichier: UploadFile, categorie: str,
-                  commentaire: str | None, *, titre: str | None = None, date_document: date | None = None) -> dict:
-    """Nouvelle pièce (jamais d'écrasement). Une note (``NOTE``) = scan PDF / image, titre obligatoire."""
+                  commentaire: str | None, *, titre: str | None = None, date_document: date | None = None,
+                  operation_reference: str | None = None) -> dict:
+    """Nouvelle pièce (jamais d'écrasement). Une note (``NOTE``) = scan PDF / image, titre obligatoire.
+
+    ``operation_reference`` : pièce propre à une opération du dossier (référence existante exigée)."""
     s.exiger("reclamations.document.upload")
     if categorie not in CATEGORIES_DOCUMENT or categorie == C.CATEGORIE_IMPORT:
         raise erreur("Catégorie de document inconnue", "CATEGORIE_INVALIDE")
@@ -99,6 +103,15 @@ async def deposer(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, fichie
     r = await charger(db, s, rid, verrou=True)
     if r.archivee_le:
         raise conflit("Dossier archivé : aucune pièce ne peut être ajoutée", "DOSSIER_ARCHIVE")
+    operation_reference = propre(operation_reference) or None
+    if operation_reference:
+        if not voit_tous_clients(s, r):
+            raise erreur("Ce dossier concerne des clients que vous ne pouvez pas consulter", "PERMISSION_DENIED", 403)
+        existe = await db.scalar(select(func.count()).select_from(ReclamationOperation).where(
+            ReclamationOperation.reclamation_id == r.id,
+            func.lower(ReclamationOperation.reference) == operation_reference.lower()))
+        if not existe:
+            raise erreur(f"Aucune opération « {operation_reference} » dans ce dossier", "OPERATION_INCONNUE")
     doc = await GedService(db).upload(file=fichier, espace_code=C.ESPACE_CODE, module_code=C.MODULE_CODE,
                                       entity=C.GED_ENTITE, entity_id=str(r.id), uploaded_by_id=s.user_id)
     doc.doc_type = f"RECLAMATION_{categorie}"
@@ -109,14 +122,16 @@ async def deposer(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, fichie
     doc.ocr_status = "skipped"
     commentaire = texte_long(commentaire)
     db.add(ReclamationDocument(document_id=doc.id, reclamation_id=r.id, categorie=categorie,
-                               commentaire=commentaire, created_by_id=s.user_id))
+                               commentaire=commentaire, operation_reference=operation_reference,
+                               created_by_id=s.user_id))
     db.add(_evenement(r, s, "DOCUMENT_AJOUT", statut_avant=r.statut, etape_avant=r.etape, commentaire=commentaire,
                       donnees={"fichier": doc.filename, "categorie": C.CATEGORIE_DOCUMENT_LIBELLES[categorie],
-                               **({"titre": titre} if titre else {})}))
+                               **({"titre": titre} if titre else {}),
+                               **({"operation": operation_reference} if operation_reference else {})}))
     await db.flush()
     await auditer(db, s, "reclamations.document.upload", C.GED_ENTITE, r.id, after={
         "document_id": str(doc.id), "fichier": doc.filename, "categorie": categorie, "taille": doc.size_bytes,
-        "titre": titre, "date_document": iso(doc.date_document)})
+        "titre": titre, "date_document": iso(doc.date_document), "operation_reference": operation_reference})
     await db.commit()
     return await lister(db, s, rid)
 

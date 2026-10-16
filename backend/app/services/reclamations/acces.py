@@ -48,6 +48,7 @@ CAPACITES: dict[str, str] = {
     "refuser": "reclamations.reject",
     "annuler": "reclamations.cancel",
     "cloturer": "reclamations.close",
+    "confirmer_regularisation": "reclamations.regularisation.confirm",
     "rouvrir": "reclamations.reopen",
     "archiver": "reclamations.archive",
     "supprimer": "reclamations.delete",

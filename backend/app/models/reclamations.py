@@ -38,7 +38,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
-DOMAINES_REFERENTIEL = ("TYPE", "MOTIF", "SOUS_MOTIF", "CANAL", "CANAL_REPONSE")
+DOMAINES_REFERENTIEL = ("TYPE", "MOTIF", "SOUS_MOTIF", "CANAL", "CANAL_REPONSE", "POINT_RECEPTION")
 TYPES_UNITE = ("DIRECTION", "DEPARTEMENT", "SERVICE", "AGENCE", "CELLULE")
 ROLES_MEMBRE = ("RESPONSABLE", "AGENT")
 STATUTS = (
@@ -74,11 +74,15 @@ CATEGORIES_DOCUMENT = (
     "PREUVE_ENVOI",
     "AUTRE",
     "IMPORT_OPERATIONS",
+    "PREUVE_REGULARISATION",
 )
 ROLES_PARTICIPANT = ("PRINCIPAL", "ASSOCIE")
 STATUTS_IDENTIFICATION = ("VERIFIE", "A_VERIFIER", "A_RENSEIGNER")
 STATUTS_VERIFICATION_COMPTE = ("VERIFIE", "A_VERIFIER")
 STATUTS_IMPORT = ("ANALYSE", "CONFIRME", "ABANDONNE")
+NATURES_MOUVEMENT = ("DEBIT", "CREDIT")
+ROLES_OPERATION = ("INITIALE", "DOUBLON")
+STATUTS_REGULARISATION = ("A_EFFECTUER", "EFFECTUEE")
 MODES_IMPORT = ("AJOUT", "REMPLACEMENT")
 STATUTS_RAPPEL = ("AUCUN", "A_RAPPELER", "RAPPELE", "ECHEC")
 UNITES_DUREE = ("JOURS_CALENDAIRES", "JOURS_OUVRES", "HEURES")
@@ -270,6 +274,11 @@ class Reclamation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("reclamation_liee_id IS NULL OR reclamation_liee_id <> id", name="ck_reclamations_liee"),
         CheckConstraint(_in("etat_delai", ETATS_DELAI, nullable=True), name="ck_reclamations_etat_delai"),
         CheckConstraint(_in("niveau_alerte", NIVEAUX_ALERTE, nullable=True), name="ck_reclamations_niveau_alerte"),
+        CheckConstraint(_in("regularisation_statut", STATUTS_REGULARISATION, nullable=True),
+                        name="ck_reclamations_regularisation"),
+        CheckConstraint("regularisation_statut IS DISTINCT FROM 'EFFECTUEE' OR (regularisation_le IS NOT NULL "
+                        "AND regularisation_reference IS NOT NULL AND regularisation_confirme_le IS NOT NULL)",
+                        name="ck_reclamations_regularisation_preuve"),
         UniqueConstraint("annee", "numero", name="uq_reclamations_annee_numero"),
         Index("ix_reclamations_actives_echeance", "echeance",
               postgresql_where=text("supprimee_le IS NULL AND archivee_le IS NULL "
@@ -294,8 +303,17 @@ class Reclamation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source: Mapped[str] = mapped_column(String(20), default="MANUEL")
 
     canal_id: Mapped[uuid.UUID] = _ref_fk(nullable=False)
+    # Circuit de réception (« Point de réception » / « Service concerné ») ≠ entité qui a reçu (unité).
+    point_reception_id: Mapped[uuid.UUID | None] = _ref_fk()
     unite_reception_id: Mapped[uuid.UUID | None] = _unite_fk()
+    agence_reception_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), _fk("agences.id", "SET NULL"), nullable=True, index=True)
     unite_concernee_id: Mapped[uuid.UUID | None] = _unite_fk()
+    # Département et service auxquels se rapporte la réclamation (organigramme central) ; ≠ service de traitement.
+    org_departement_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), _fk("departements.id"), nullable=True, index=True)
+    org_service_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), _fk("departements.id"), nullable=True, index=True)
 
     client_racine: Mapped[str | None] = mapped_column(String(6), nullable=True, index=True)
     client_categorie: Mapped[str | None] = mapped_column(String(12), nullable=True)
@@ -371,8 +389,36 @@ class Reclamation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     motif_suppression: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Obligatoire dès que les opérations du dossier concernent plusieurs clients.
     justification_regroupement: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Décision favorable ≠ régularisation exécutée : confirmée ensuite, preuve à l'appui, hors statut du circuit.
+    regularisation_statut: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    regularisation_le: Mapped[date | None] = mapped_column(Date, nullable=True)
+    regularisation_agent_id: Mapped[uuid.UUID | None] = _user_fk()
+    regularisation_reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    regularisation_commentaire: Mapped[str | None] = mapped_column(Text, nullable=True)
+    regularisation_confirme_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    regularisation_confirme_le: Mapped[datetime | None] = _ts()
 
     revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_by_id: Mapped[uuid.UUID | None] = _user_fk()
+    updated_by_id: Mapped[uuid.UUID | None] = _user_fk()
+
+
+class ReclamationRegleMotif(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Champs requis et contrôles appliqués aux opérations d'un motif (voir ``app.data.reclamations_regles``)."""
+
+    __tablename__ = "reclamation_regles_motif"
+    __mapper_args__ = {"eager_defaults": True}
+    __table_args__ = (
+        CheckConstraint(_in("statut_validation", VALIDATIONS_REFERENTIEL),
+                        name="ck_reclamation_regles_motif_validation"),
+    )
+
+    motif_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), _fk("reclamation_referentiels.id", "CASCADE"), unique=True)
+    regles: Mapped[dict] = mapped_column(JSONB, default=dict)
+    statut_validation: Mapped[str] = mapped_column(String(20), default="PROPOSEE", server_default="PROPOSEE")
+    valide_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    valide_le: Mapped[datetime | None] = _ts()
     created_by_id: Mapped[uuid.UUID | None] = _user_fk()
     updated_by_id: Mapped[uuid.UUID | None] = _user_fk()
 
@@ -479,6 +525,8 @@ class ReclamationDocument(Base):
     reponse_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), _fk("reclamation_reponses.id", "SET NULL"), nullable=True)
     commentaire: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Référence de l'opération concernée (stable : les lignes d'opérations sont réécrites à chaque correction).
+    operation_reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_by_id: Mapped[uuid.UUID | None] = _user_fk()
 
@@ -601,16 +649,25 @@ class ReclamationOperation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("montant IS NULL OR montant > 0", name="ck_reclamation_operations_montant"),
         CheckConstraint("montant_conteste IS NULL OR montant_conteste > 0",
                         name="ck_reclamation_operations_montant_conteste"),
-        CheckConstraint("length(btrim(reference)) > 0", name="ck_reclamation_operations_reference"),
+        CheckConstraint("reference IS NULL OR length(btrim(reference)) > 0", name="ck_reclamation_operations_reference"),
+        CheckConstraint(_in("nature_mouvement", NATURES_MOUVEMENT, nullable=True),
+                        name="ck_reclamation_operations_nature"),
+        CheckConstraint(_in("role_operation", ROLES_OPERATION, nullable=True), name="ck_reclamation_operations_role"),
+        CheckConstraint("montant_attendu IS NULL OR montant_attendu >= 0",
+                        name="ck_reclamation_operations_montant_attendu"),
+        CheckConstraint("devise IS NULL OR devise ~ '^[A-Z]{3}$'", name="ck_reclamation_operations_devise"),
         Index("ix_reclamation_operations_reference", "reclamation_id", "reference"),
+        Index("ix_reclamation_operations_ref_globale", "reference"),
     )
 
     reclamation_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), _fk("reclamations.id", "CASCADE"), index=True)
     ordre: Mapped[int] = mapped_column(Integer, default=1)
-    reference: Mapped[str] = mapped_column(String(120))
+    # Facultative selon les règles du motif (obligatoire par défaut).
+    reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
     montant: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
-    devise: Mapped[str] = mapped_column(String(3), default="MRU")
+    # Vide seulement pour une ligne sans aucun montant (jamais complétée d'office).
+    devise: Mapped[str | None] = mapped_column(String(3), nullable=True)
     participant_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), _fk("reclamation_participants.id", "SET NULL"), nullable=True, index=True)
     compte_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -618,6 +675,11 @@ class ReclamationOperation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     date_operation: Mapped[date | None] = mapped_column(Date, nullable=True)
     montant_conteste: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     motif_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nature_mouvement: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    montant_attendu: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    compte_attendu: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    role_operation: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    commentaire: Mapped[str | None] = mapped_column(Text, nullable=True)
     import_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), _fk("reclamation_imports.id", "SET NULL"), nullable=True)
     ligne_import: Mapped[int | None] = mapped_column(Integer, nullable=True)

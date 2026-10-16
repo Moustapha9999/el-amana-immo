@@ -100,11 +100,16 @@ async def test_plusieurs_clients_justification_et_masquage(db):
         *lignes, _op("R10", "5", cb)]}), "REGROUPEMENT_NON_AUTORISE")
 
 
+# En-têtes de l'ancien modèle (libellés français) : toujours reconnus.
+ANCIENS_ENTETES = ["Identifiant client", "Référence du compte", "Référence de l'opération", "Date de l'opération",
+                   "Montant de l'opération", "Montant contesté", "Motif détaillé"]
+
+
 def _classeur(lignes: list[list]) -> UploadFile:
     wb = Workbook()
     ws = wb.active
     ws.title = "Opérations"
-    ws.append([libelle for _c, libelle, _a in imports.COLONNES])
+    ws.append(ANCIENS_ENTETES)
     for ligne in lignes:
         ws.append(ligne)
     buf = BytesIO()
@@ -116,7 +121,7 @@ def _classeur(lignes: list[list]) -> UploadFile:
 async def test_modele_import():
     wb = load_workbook(BytesIO(imports.modele()))
     assert wb.sheetnames == ["Opérations", "Consignes"]
-    assert [c.value for c in wb["Opérations"][1]] == [lib for _c, lib, _a in imports.COLONNES]
+    assert [c.value for c in wb["Opérations"][1]] == [code for _c, code, *_ in imports.colonnes_du_modele()]
     assert wb["Opérations"].max_row >= 1 and wb["Opérations"]["A2"].value is None
 
 

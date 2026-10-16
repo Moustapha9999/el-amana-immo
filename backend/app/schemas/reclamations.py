@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-Domaine = Literal["TYPE", "MOTIF", "SOUS_MOTIF", "CANAL", "CANAL_REPONSE"]
+Domaine = Literal["TYPE", "MOTIF", "SOUS_MOTIF", "CANAL", "CANAL_REPONSE", "POINT_RECEPTION"]
 TypeUnite = Literal["DIRECTION", "DEPARTEMENT", "SERVICE", "AGENCE", "CELLULE"]
 RoleMembre = Literal["RESPONSABLE", "AGENT"]
 Priorite = Literal["BASSE", "NORMALE", "HAUTE", "URGENTE"]
@@ -83,13 +83,45 @@ class AppelIn(BaseModel):
 
 
 class OperationIn(BaseModel):
-    reference: str = Field(min_length=1, max_length=120)
-    montant: Decimal = Field(gt=0, max_digits=18, decimal_places=2)
+    """Champs obligatoires fixés par la règle du motif (contrôlés côté service, erreurs par champ)."""
+
+    reference: str | None = Field(default=None, max_length=120)
+    montant: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=2)
     montant_conteste: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=2)
     date_operation: date | None = None
     client_racine: str | None = Field(default=None, max_length=6)
     compte_reference: str | None = Field(default=None, max_length=60)
     motif_detail: str | None = Field(default=None, max_length=4000)
+    nature_mouvement: Literal["DEBIT", "CREDIT"] | None = None
+    devise: str | None = Field(default=None, max_length=3)
+    montant_attendu: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    compte_attendu: str | None = Field(default=None, max_length=60)
+    role_operation: Literal["INITIALE", "DOUBLON"] | None = None
+    commentaire: str | None = Field(default=None, max_length=4000)
+
+
+class VerificationOperationsIn(BaseModel):
+    """Contrôle à blanc : dossier existant (``reclamation_id``) ou saisie d'un nouveau dossier."""
+
+    reclamation_id: uuid.UUID | None = None
+    motif_id: uuid.UUID | None = None
+    client_racine: str | None = Field(default=None, max_length=6)
+    compte_reference: str | None = Field(default=None, max_length=60)
+    operations: list[OperationIn] = Field(default_factory=list, max_length=2000)
+
+
+class RegleMotifIn(BaseModel):
+    champs_requis: list[str] = Field(default_factory=list, max_length=20)
+    operations_min: int = Field(default=0, ge=0, le=2000)
+    nature_attendue: Literal["DEBIT", "CREDIT"] | None = None
+    controle: str | None = Field(default=None, max_length=40)
+    justificatif_requis: bool = False
+    regularisation: bool = False
+    consigne: str | None = Field(default=None, max_length=2000)
+
+
+class DevisesIn(BaseModel):
+    devises: list[str] = Field(min_length=1, max_length=30)
 
 
 class _DossierChamps(BaseModel):
@@ -118,6 +150,10 @@ class _DossierChamps(BaseModel):
     montant_conteste: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     devise: str | None = Field(default=None, max_length=3)
     reclamation_liee_id: uuid.UUID | None = None
+    point_reception_id: uuid.UUID | None = None
+    agence_reception_id: uuid.UUID | None = None
+    org_departement_id: uuid.UUID | None = None
+    org_service_id: uuid.UUID | None = None
 
 
 class DossierCreate(_DossierChamps):
@@ -228,3 +264,12 @@ class ReponseEnvoyeeIn(ActionIn):
 class ValidationReferentielIn(BaseModel):
     statut_validation: Literal["VALIDEE", "PROPOSEE"]
     commentaire: str | None = Field(default=None, max_length=2000)
+
+
+class RegularisationIn(ActionIn):
+    """Confirmation documentée d'une régularisation exécutée hors BEA DIGITAL (aucune écriture ORION)."""
+
+    effectuee_le: date
+    agent_id: uuid.UUID | None = None
+    reference: str = Field(min_length=1, max_length=120)
+    commentaire: str | None = Field(default=None, max_length=4000)
