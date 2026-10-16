@@ -7,7 +7,7 @@ import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { OrgEntiteSelectComponent } from '../../core/org/org-entite-select.component';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
-import { DossierLigne, Page, dateFr, montantFr, toneStatut, tonePriorite } from '../reclamations.models';
+import { DossierLigne, Page, dateFr, montantFr, toneStatut, tonePriorite, totauxParDevise } from '../reclamations.models';
 import { Filtres, ReclamationsService, ReclamationsStore } from '../reclamations.service';
 import { RcExportComponent } from '../shared/rc-export.component';
 import { optionsRestauration, optionsSuppression } from '../shared/rc-suppression';
@@ -18,7 +18,8 @@ const TAILLE = 25;
 const TRIS = new Set(['reference', 'date_reclamation', 'date_premiere_reception', 'date_reception_sr', 'statut', 'priorite', 'client_nom', 'updated_at']);
 const CHAMPS = ['q', 'groupe', 'statut', 'etape', 'type_id', 'motif_id', 'canal_id', 'priorite', 'client_categorie',
   'client_agence_id', 'unite_reception_id', 'unite_concernee_id', 'unite_traitement_id', 'org_entite_id', 'date_debut',
-  'date_fin', 'indicateur', 'kpi_debut', 'kpi_fin', 'kpi_unite_id'] as const;
+  'date_fin', 'indicateur', 'kpi_debut', 'kpi_fin', 'kpi_unite_id', 'agence_reception_id',
+  'org_departement_id', 'org_service_id', 'operation_reference', 'compte_reference', 'devise', 'regularisation_statut'] as const;
 const KPI = ['indicateur', 'kpi_debut', 'kpi_fin', 'kpi_unite_id'] as const;
 
 const DELAIS: Record<string, string> = {
@@ -169,6 +170,42 @@ const VUES: Record<string, VueListe> = {
             }
           </select>
         </label>
+        <label class="bea-mg__field">Département concerné
+          <select formControlName="org_departement_id" (change)="filtres.controls.org_service_id.setValue(''); appliquer()">
+            <option value="">Tous</option>
+            @for (e of store.departements(); track e.id) { <option [value]="e.id">{{ e.libelle }}</option> }
+          </select>
+        </label>
+        <label class="bea-mg__field">Service concerné (organigramme)
+          <select formControlName="org_service_id" (change)="appliquer()">
+            <option value="">Tous</option>
+            @for (e of servicesFiltre(); track e.id) { <option [value]="e.id">{{ e.libelle }}</option> }
+          </select>
+        </label>
+        <label class="bea-mg__field">Agence de réception
+          <select formControlName="agence_reception_id" (change)="appliquer()">
+            <option value="">Toutes</option>
+            @for (a of store.config()?.agences ?? []; track a.id) { <option [value]="a.id">{{ a.code }} — {{ a.libelle }}</option> }
+          </select>
+        </label>
+        <label class="bea-mg__field">Référence d’opération
+          <input formControlName="operation_reference" maxlength="120" placeholder="Exacte" />
+        </label>
+        <label class="bea-mg__field">Compte
+          <input formControlName="compte_reference" maxlength="60" placeholder="Référence du compte" />
+        </label>
+        <label class="bea-mg__field">Devise
+          <select formControlName="devise" (change)="appliquer()">
+            <option value="">Toutes</option>
+            @for (c of store.devises(); track c) { <option [value]="c">{{ c }}</option> }
+          </select>
+        </label>
+        <label class="bea-mg__field">Régularisation
+          <select formControlName="regularisation_statut" (change)="appliquer()">
+            <option value="">Toutes</option>
+            @for (r of store.libelles('regularisations'); track r.code) { <option [value]="r.code">{{ r.libelle }}</option> }
+          </select>
+        </label>
         <label class="bea-mg__field">Organigramme (direction, département, service)
           <bea-org-entite-select formControlName="org_entite_id" placeholder="Toutes" ariaLabel="Filtrer par entité de l’organigramme" />
         </label>
@@ -241,8 +278,15 @@ const VUES: Record<string, VueListe> = {
                   <td class="is-wide">{{ d.objet }}<small class="bea-ct-sub">{{ d.type || 'Non qualifiée' }}</small></td>
                   <td class="is-wide">{{ d.motif || '—' }}@if (d.sous_motif) { <small class="bea-ct-sub">{{ d.sous_motif }}</small> }</td>
                   <td class="is-num">{{ d.nb_operations || '—' }}</td>
-                  <td class="is-num is-nowrap">{{ d.nb_operations ? montant(d.montant_total, d.devise) : '—' }}</td>
-                  <td class="is-wide">{{ d.unite_traitement || d.unite_concernee || '—' }}</td>
+                  <td class="is-num is-nowrap">
+                    @if (!d.nb_operations) { — }
+                    @else if (d.devises_multiples) { <span class="bea-ct-badge" data-tone="ATTENTION" title="Opérations en plusieurs devises : totaux par devise dans la fiche">Plusieurs devises</span> }
+                    @else { {{ montant(d.montant_total, d.devise ?? 'MRU') }} }
+                  </td>
+                  <td class="is-wide">{{ d.service_concerne || d.unite_traitement || d.unite_concernee || '—' }}
+                    @if (d.departement_concerne) { <small class="bea-ct-sub">{{ d.departement_concerne }}</small> }
+                    @if (d.regularisation_statut === 'A_EFFECTUER') { <small class="bea-ct-sub bea-rc-late">Régularisation à effectuer</small> }
+                  </td>
                   <td class="is-nowrap">{{ d.etape_libelle }}</td>
                   <td class="is-nowrap">
                     <span class="bea-ct-badge" [attr.data-tone]="toneStatut(d.statut)">{{ d.statut_libelle }}</span>
@@ -280,7 +324,7 @@ const VUES: Record<string, VueListe> = {
         @if (total() > 0) {
           <div class="bea-rc-pager">
             <p class="bea-ct-count">{{ debut() }}–{{ fin() }} sur {{ total() }} réclamation{{ total() > 1 ? 's' : '' }}
-              @if (totaux(); as t) { · {{ t.nb_operations }} opération(s) dans {{ t.dossiers_avec_operations }} dossier(s) · {{ montant(t.montant_total, t.devise) }} }
+              @if (totaux(); as t) { · {{ t.nb_operations }} opération(s) dans {{ t.dossiers_avec_operations }} dossier(s) · {{ totauxPage(t) }} }
             </p>
             <div class="bea-mg__actions">
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="page() <= 1" (click)="allerPage(page() - 1)"><mat-icon>chevron_left</mat-icon> Précédent</button>
@@ -308,6 +352,8 @@ export class RcDossiersComponent implements OnInit {
     q: '', groupe: '', statut: '', etape: '', type_id: '', motif_id: '', canal_id: '', priorite: '', client_categorie: '',
     client_agence_id: '', unite_reception_id: '', unite_concernee_id: '', unite_traitement_id: '', org_entite_id: '',
     date_debut: '', date_fin: '',
+    agence_reception_id: '', org_departement_id: '', org_service_id: '',
+    operation_reference: '', compte_reference: '', devise: '', regularisation_statut: '',
     indicateur: '', kpi_debut: '', kpi_fin: '', kpi_unite_id: '',
     ouvertes: false, archivees: false, corbeille: false,
   });
@@ -326,6 +372,8 @@ export class RcDossiersComponent implements OnInit {
   readonly courant = signal<Filtres>({});
   readonly filtresActifs = signal(false);
   private readonly typeChoisi = signal('');
+  private readonly departementChoisi = signal('');
+  readonly servicesFiltre = computed(() => this.store.servicesDe(this.departementChoisi()));
 
   readonly pages = computed(() => Math.max(1, Math.ceil(this.total() / TAILLE)));
   readonly debut = computed(() => (this.page() - 1) * TAILLE + 1);
@@ -339,6 +387,7 @@ export class RcDossiersComponent implements OnInit {
   ngOnInit(): void {
     this.store.charger();
     this.filtres.controls.type_id.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((t) => this.typeChoisi.set(t));
+    this.filtres.controls.org_departement_id.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((d) => this.departementChoisi.set(d));
     this.filtres.controls.org_entite_id.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.appliquer());
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((q) => {
       const preset = VUES[this.route.snapshot.data['vue'] as string] ?? null;
@@ -355,6 +404,7 @@ export class RcDossiersComponent implements OnInit {
       this.filtres.setValue(valeurs, { emitEvent: false });
       this.corbeille.set(valeurs.corbeille);
       this.typeChoisi.set(q.get('type_id') ?? '');
+      this.departementChoisi.set(q.get('org_departement_id') ?? '');
       this.page.set(Math.max(1, Number(q.get('page')) || 1));
       const tri = q.get('tri') ?? 'date_premiere_reception';
       this.tri.set(TRIS.has(tri) ? tri : 'date_premiere_reception');
@@ -503,6 +553,10 @@ export class RcDossiersComponent implements OnInit {
 
   montant(v: string | null, devise: string): string {
     return montantFr(v, devise);
+  }
+
+  totauxPage(t: NonNullable<Page<DossierLigne>['totaux']>): string {
+    return t.par_devise?.length ? totauxParDevise(t.par_devise) : montantFr(t.montant_total, t.devise ?? 'MRU');
   }
 
   private naviguer(params: Record<string, string | null>): void {

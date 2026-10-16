@@ -89,8 +89,8 @@ const DUREE_ANIMATION = 900;
           </a>
           <a class="rcd-kpi" style="--i: 5" routerLink="/reclamations/dossiers" [queryParams]="kpi('operations')">
             <span class="rcd-kpi__ico"><mat-icon>payments</mat-icon></span>
-            <p>Montant total</p><strong class="rcd-kpi__montant">{{ montant(d.montant_total, d.devise) }}</strong>
-            <small>chaque opération comptée une fois</small>
+            <p>Montant total</p><strong class="rcd-kpi__montant">{{ d.montants_par_devise?.length ? parDevise(d) : montant(d.montant_total, d.devise) }}</strong>
+            <small>par devise, sans conversion · chaque opération comptée une fois</small>
           </a>
         </div>
 
@@ -194,7 +194,7 @@ const DUREE_ANIMATION = 900;
         <div class="rcd-row">
           @for (r of repartitions(); track r.titre; let ri = $index) {
             <section class="bea-mg__panel rcd-card" [style.--i]="16 + ri">
-              <div class="bea-mg__panel-top"><h2>{{ r.titre }}</h2><small class="bea-rc-hint">dossiers · opérations · montant</small></div>
+              <div class="bea-mg__panel-top"><h2>{{ r.titre }}</h2><small class="bea-rc-hint">dossiers · opérations · montant {{ d.devise }}</small></div>
               @if (r.items.length) {
                 <ul class="rcd-bars">
                   @for (c of r.items; track c.id) {
@@ -407,6 +407,8 @@ export class RcDashboardComponent implements OnInit {
         filtre: (g: Compteur) => this.avecBase({ etape: g.code ?? '' }) },
       { titre: 'Par priorité', ton: 'priorite', items: d.priorites, max: this.maxDe(d.priorites),
         filtre: (g: Compteur) => this.avecBase({ priorite: g.code ?? '' }) },
+      ...(d.regularisations?.length ? [{ titre: 'Régularisations (décisions favorables)', ton: 'etape', items: d.regularisations,
+        max: this.maxDe(d.regularisations), filtre: (g: Compteur) => this.avecBase({ regularisation_statut: g.code ?? '' }) }] : []),
     ];
   });
 
@@ -418,8 +420,12 @@ export class RcDashboardComponent implements OnInit {
       { titre: 'Par canal', items: d.canaux, param: 'canal_id' },
       { titre: 'Par agence', items: d.agences, param: 'client_agence_id' },
       { titre: 'Par service', items: d.services, param: '' },
-    ].map((r) => ({ ...r, max: this.maxDe(r.items) }));
+      { titre: 'Par département concerné', items: d.departements ?? [], param: 'org_departement_id' },    ].map((r) => ({ ...r, max: this.maxDe(r.items) }));
   });
+
+  parDevise(d: TableauBord): string {
+    return (d.montants_par_devise ?? []).map((t) => montantFr(t.montant, t.devise ?? d.devise)).join(' · ');
+  }
 
   filtre(param: string, c: Compteur): Record<string, string | null> {
     return this.avecBase({ [param]: c.id ?? '' });

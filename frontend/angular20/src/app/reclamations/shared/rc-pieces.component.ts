@@ -14,7 +14,7 @@ const NOTE = 'NOTE';
 const FORMATS_SCAN = '.pdf,.jpg,.jpeg,.png,.tif,.tiff,.webp';
 const FORMATS_DOCUMENT = `${FORMATS_SCAN},.doc,.docx,.xls,.xlsx,.gif`;
 /** Types proposés en premier pour « un autre document » (le reste suit dans l'ordre du référentiel). */
-const TYPES_PRINCIPAUX = ['COURRIER', 'JUSTIFICATIF', 'FICHE_TRAITEMENT', 'RETOUR_SERVICE', 'AUTRE'];
+const TYPES_PRINCIPAUX = ['COURRIER', 'JUSTIFICATIF', 'FICHE_TRAITEMENT', 'RETOUR_SERVICE', 'PREUVE_REGULARISATION', 'AUTRE'];
 
 type Mode = 'note' | 'document';
 type Filtre = 'tout' | 'notes' | 'autres';
@@ -25,6 +25,7 @@ interface Saisie {
   date: string;
   commentaire: string;
   fichier: File | null;
+  operation: string;
 }
 
 /** Notes et pièces jointes : chaque ajout est un nouveau fichier (jamais d'écrasement), retrait logique motivé. */
@@ -76,6 +77,7 @@ interface Saisie {
                 <strong [title]="d.titre || d.filename">{{ d.titre || d.filename }}</strong>
                 <small>
                   <span class="bea-ct-badge" [attr.data-tone]="ton(d.categorie)">{{ d.categorie_libelle }}</span>
+                  @if (d.operation_reference) { <span class="bea-ct-badge" data-tone="INFO" title="Pièce propre à cette opération">Opération {{ d.operation_reference }}</span> }
                   @if (d.date_document) { <span>Daté du {{ date(d.date_document) }}</span> · }
                   <span class="bea-rc-pj__file" [title]="d.filename">{{ d.filename }}</span> · {{ taille(d.size_bytes) }}
                 </small>
@@ -135,6 +137,14 @@ interface Saisie {
               <input type="date" name="date" [(ngModel)]="saisie.date" [max]="aujourdhui" [class.is-invalid]="tente() && !dateValide()" />
             </label>
           </div>
+          @if (m === 'document' && operations().length) {
+            <label>Opération concernée
+              <select name="operation" [(ngModel)]="saisie.operation">
+                <option value="">Tout le dossier</option>
+                @for (r of operations(); track r) { <option [value]="r">{{ r }}</option> }
+              </select>
+            </label>
+          }
           <label>Titre ou objet @if (m === 'note') { <em>*</em> }
             <input name="titre" [(ngModel)]="saisie.titre" maxlength="255" [class.is-invalid]="tente() && m === 'note' && !saisie.titre.trim()"
                    [placeholder]="m === 'note' ? 'Ex. Note interne — analyse du prélèvement contesté' : 'Facultatif — sinon le type de document est repris'" />
@@ -171,6 +181,8 @@ export class RcPiecesComponent implements OnInit {
 
   readonly dossierId = input.required<string>();
   readonly reference = input.required<string>();
+  /** Références des opérations du dossier (justificatif propre à une opération). */
+  readonly operations = input<string[]>([]);
   readonly modifie = output<number>();
 
   readonly pieces = signal<Pieces | null>(null);
@@ -225,7 +237,8 @@ export class RcPiecesComponent implements OnInit {
 
   ton(categorie: string): string {
     if (categorie === NOTE) return 'ACTIF';
-    return categorie === 'ORIGINAL' || categorie === 'REPONSE_CLIENT' || categorie === 'PREUVE_ENVOI' ? 'ATTENTION' : 'INFO';
+    return categorie === 'ORIGINAL' || categorie === 'REPONSE_CLIENT' || categorie === 'PREUVE_ENVOI' || categorie === 'PREUVE_REGULARISATION'
+      ? 'ATTENTION' : 'INFO';
   }
 
   date(iso: string | null, heure = false): string {
@@ -237,7 +250,7 @@ export class RcPiecesComponent implements OnInit {
   }
 
   private vide(categorie: string): Saisie {
-    return { categorie, titre: '', date: maintenantLocal().slice(0, 10), commentaire: '', fichier: null };
+    return { categorie, titre: '', date: maintenantLocal().slice(0, 10), commentaire: '', fichier: null, operation: '' };
   }
 
   ouvrir(m: Mode): void {
@@ -290,13 +303,14 @@ export class RcPiecesComponent implements OnInit {
     const libelle = this.store.libelles('categories_document').find((c) => c.code === s.categorie)?.libelle ?? s.categorie;
     this.feedback
       .run(() => this.rc.deposer(this.dossierId(), fichier, s.categorie, s.commentaire.trim(), {
-        titre: s.titre.trim(), date_document: s.date,
+        titre: s.titre.trim(), date_document: s.date, operation_reference: m === 'document' ? s.operation || undefined : undefined,
       }), {
         busy: this.busy,
         loading: 'Ajout du document…',
         success: () => ({ title: m === 'note' ? 'Note jointe au dossier' : 'Document joint au dossier', details: [
           { label: 'Type', value: libelle },
           ...(s.titre.trim() ? [{ label: 'Titre', value: s.titre.trim() }] : []),
+          ...(m === 'document' && s.operation ? [{ label: 'Opération', value: s.operation }] : []),
           { label: 'Fichier', value: fichier.name },
         ] }),
         errorTitle: 'Ajout refusé',

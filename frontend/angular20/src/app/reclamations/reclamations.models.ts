@@ -4,7 +4,11 @@ import { formatMontantOuTiret, parseMontant } from '../shared/montant.pipe';
 
 export const RC_BASE = '/reclamations';
 
-export type Domaine = 'TYPE' | 'MOTIF' | 'SOUS_MOTIF' | 'CANAL' | 'CANAL_REPONSE';
+export type Domaine = 'TYPE' | 'MOTIF' | 'SOUS_MOTIF' | 'CANAL' | 'CANAL_REPONSE' | 'POINT_RECEPTION';
+
+/** Point de réception « Service concerné » : le service concerné devient obligatoire. */
+export const POINT_SERVICE_CONCERNE = 'SERVICE_CONCERNE';
+export const DEVISE_REFERENCE = 'MRU';
 export type TypeUnite = 'DIRECTION' | 'DEPARTEMENT' | 'SERVICE' | 'AGENCE' | 'CELLULE';
 
 export interface CodeLibelle {
@@ -78,7 +82,7 @@ export interface Agence {
 export type Capacite =
   | 'voir' | 'tout_voir' | 'creer' | 'modifier' | 'qualifier' | 'affecter' | 'traiter' | 'gerer_service'
   | 'examiner_retour' | 'envoyer_reponse' | 'refuser'
-  | 'annuler' | 'cloturer' | 'rouvrir' | 'archiver' | 'supprimer' | 'documents_voir' | 'documents_deposer'
+  | 'annuler' | 'cloturer' | 'confirmer_regularisation' | 'rouvrir' | 'archiver' | 'supprimer' | 'documents_voir' | 'documents_deposer'
   | 'documents_telecharger' | 'documents_retirer' | 'reporting_voir' | 'reporting_exporter'
   | 'referentiels_voir' | 'referentiels_gerer' | 'referentiels_valider' | 'unites_gerer' | 'admin';
 
@@ -91,12 +95,98 @@ export interface Acces {
   capacites: Record<Capacite, boolean>;
 }
 
+/** Champ d'opération exigeable par la règle d'un motif. */
+export type ChampOperation =
+  | 'client_racine' | 'compte_reference' | 'reference' | 'date_operation' | 'nature_mouvement' | 'devise'
+  | 'montant' | 'montant_conteste' | 'montant_attendu' | 'compte_attendu' | 'role_operation' | 'motif_detail';
+
+export interface RegleContenu {
+  champs_requis: ChampOperation[];
+  operations_min: number;
+  nature_attendue: 'DEBIT' | 'CREDIT' | null;
+  controle: string | null;
+  justificatif_requis: boolean;
+  regularisation: boolean;
+  consigne: string | null;
+}
+
+/** Règle d'un motif (Paramètres) : proposée tant que la banque ne l'a pas validée. */
+export interface RegleMotif extends RegleContenu {
+  motif_id: string;
+  motif: string;
+  motif_code: string | null;
+  motif_actif: boolean;
+  type_id: string | null;
+  type: string | null;
+  personnalisee: boolean;
+  statut_validation: 'PROPOSEE' | 'VALIDEE' | null;
+  valide_le: string | null;
+  updated_at: string | null;
+}
+
+/** Règle effective d'un dossier (fiche, récapitulatif). */
+export interface RegleEffective extends RegleContenu {
+  motif_id: string | null;
+  personnalisee: boolean;
+  statut_validation: 'PROPOSEE' | 'VALIDEE' | null;
+  controle_libelle: string | null;
+  devises: string[];
+}
+
+export interface Regles {
+  items: RegleMotif[];
+  champs: CodeLibelle[];
+  controles: CodeLibelle[];
+  defaut: RegleContenu;
+  devises: string[];
+}
+
+export interface EntiteOrg {
+  id: string;
+  libelle: string;
+  sigle: string | null;
+  type: string;
+  chemin: string | null;
+  a_confirmer: boolean;
+}
+
+export interface ServiceOrg extends EntiteOrg {
+  departement_id: string | null;
+  ancetres: string[];
+  unite_id: string | null;
+}
+
+export interface EntiteOrgCourte {
+  id: string;
+  code: string;
+  libelle: string;
+  sigle: string | null;
+  type_entite: string;
+  actif: boolean;
+  chemin: string | null;
+}
+
+export interface TotalDevise {
+  devise: string | null;
+  nb: number;
+  montant: string | null;
+  montant_conteste: string | null;
+}
+
 export interface RcConfig {
   acces: Acces;
   referentiels: Record<Domaine, RefItem[]>;
   unites: Unite[];
   agences: Agence[];
+  organisation: { departements: EntiteOrg[]; services: ServiceOrg[] };
+  devises: string[];
+  regles_motifs: Record<string, RegleMotif>;
+  regle_defaut: RegleContenu;
+  champs_operation: CodeLibelle[];
   libelles: {
+    natures_mouvement: CodeLibelle[];
+    roles_operation: CodeLibelle[];
+    regularisations: CodeLibelle[];
     statuts: CodeLibelle[];
     etapes: CodeLibelle[];
     groupes: CodeLibelle[];
@@ -153,8 +243,15 @@ export interface DossierLigne {
   date_reception_sr: string | null;
   date_cloture: string | null;
   nb_operations: number;
+  /** `null` si les opérations sont dans plusieurs devises (jamais additionnées). */
   montant_total: string | null;
-  devise: string;
+  devise: string | null;
+  devises_multiples: boolean;
+  point_reception: string | null;
+  agence_reception: string | null;
+  departement_concerne: string | null;
+  service_concerne: string | null;
+  regularisation_statut: 'A_EFFECTUER' | 'EFFECTUEE' | null;
   nb_documents: number;
   revision: number;
   updated_at: string | null;
@@ -211,6 +308,15 @@ export interface Dossier extends Omit<DossierLigne, 'suppression'> {
   justification_regroupement: string | null;
   clients_masques: boolean;
   imports: ImportResume[];
+  par_devise: TotalDevise[];
+  regle: RegleEffective;
+  nb_justificatifs: number;
+  a_completer_avant_transmission: string[];
+  regularisation: Regularisation | null;
+  point_reception_ref: RefCourt | null;
+  agence_reception_ref: Agence | null;
+  departement_ref: EntiteOrgCourte | null;
+  service_ref: EntiteOrgCourte | null;
   canal_ref: RefCourt | null;
   canal_telephone: boolean;
   unite_reception_ref: UniteCourte | null;
@@ -276,7 +382,35 @@ export interface SuppressionResultat {
   documents_supprimes: number;
 }
 
+export interface Regularisation {
+  statut: 'A_EFFECTUER' | 'EFFECTUEE';
+  statut_libelle: string | null;
+  effectuee_le: string | null;
+  agent: string | null;
+  reference: string | null;
+  commentaire: string | null;
+  confirme_par: string | null;
+  confirme_le: string | null;
+}
+
 export type StatutIdentification = 'VERIFIE' | 'A_VERIFIER' | 'A_RENSEIGNER';
+
+/** Champs d'opération communs à la fiche, à la saisie contrôlée et à l'aperçu d'import. */
+export interface OperationChamps {
+  reference: string | null;
+  montant: string | null;
+  montant_conteste: string | null;
+  date_operation: string | null;
+  client_racine: string | null;
+  compte_reference: string | null;
+  motif_detail: string | null;
+  nature_mouvement: 'DEBIT' | 'CREDIT' | null;
+  devise: string | null;
+  montant_attendu: string | null;
+  compte_attendu: string | null;
+  role_operation: 'INITIALE' | 'DOUBLON' | null;
+  commentaire: string | null;
+}
 
 export interface Operation {
   id: string;
@@ -288,6 +422,11 @@ export interface Operation {
   devise: string;
   date_operation: string | null;
   motif_detail: string | null;
+  nature_mouvement: 'DEBIT' | 'CREDIT' | null;
+  montant_attendu: string | null;
+  compte_attendu: string | null;
+  role_operation: 'INITIALE' | 'DOUBLON' | null;
+  commentaire: string | null;
   participant_id: string | null;
   compte_id: string | null;
   client_racine: string | null;
@@ -342,21 +481,48 @@ export interface ImportResume {
   confirme_par: string | null;
 }
 
-export interface ImportLigne {
+export interface ErreurChamp {
+  code: string;
+  message: string;
+  /** Champ d'opération concerné (`null` : ligne entière, ex. doublon). */
+  champ: string | null;
+}
+
+/** Ligne contrôlée par le backend (vérification à blanc ou aperçu d'import). */
+export interface LigneControlee extends OperationChamps {
   ligne: number;
-  reference: string;
-  montant: string | null;
-  montant_conteste: string | null;
-  date_operation: string | null;
-  client_racine: string | null;
-  compte_reference: string | null;
-  motif_detail: string | null;
   client_nom: string | null;
   statut_client: StatutIdentification | null;
   statut_compte: StatutIdentification | null;
   statut: 'OK' | 'AVERTISSEMENT' | 'ERREUR';
   erreurs: string[];
+  erreurs_detail?: ErreurChamp[];
   avertissements: string[];
+}
+
+export type ImportLigne = LigneControlee;
+
+export interface Recapitulatif {
+  nb_operations: number;
+  nb_valides: number;
+  nb_clients: number;
+  nb_comptes: number;
+  par_devise: TotalDevise[];
+  devises_multiples: boolean;
+  montant_total: string | null;
+  montant_conteste_total: string | null;
+  devise: string | null;
+  nb_erreurs: number;
+  nb_lignes_en_erreur: number;
+  nb_avertissements: number;
+  nb_pieces: number;
+  a_completer_avant_transmission: string[];
+  regle: RegleEffective;
+}
+
+export interface Verification {
+  lignes: LigneControlee[];
+  recapitulatif: Recapitulatif;
 }
 
 export interface ImportTotaux {
@@ -364,6 +530,8 @@ export interface ImportTotaux {
   nb_erreurs: number;
   montant: string | null;
   montant_conteste: string | null;
+  devise?: string | null;
+  par_devise?: TotalDevise[];
 }
 
 export interface ImportAnalyse extends ImportResume {
@@ -383,8 +551,11 @@ export interface ImportAnalyse extends ImportResume {
   regroupement_autorise: boolean;
   justification_requise: boolean;
   justification_actuelle: string | null;
-  apres_import: { nb: number; montant: string | null; montant_conteste: string | null };
+  apres_import: ImportTotaux;
   nb_conservees: number;
+  recapitulatif?: Recapitulatif;
+  colonnes?: Array<{ champ: string; code: string; libelle: string; obligatoire: boolean }>;
+  fichier_deja_importe?: { ce_dossier: boolean; autres_dossiers: string[]; force: boolean };
 }
 
 /** Ligne en saisie : montants gardés en texte tant qu'ils ne sont pas validés. */
@@ -396,6 +567,27 @@ export interface OperationSaisie {
   date_operation: string;
   montant_conteste: string;
   motif_detail: string;
+  nature_mouvement: '' | 'DEBIT' | 'CREDIT';
+  devise: string;
+  montant_attendu: string;
+  compte_attendu: string;
+  role_operation: '' | 'INITIALE' | 'DOUBLON';
+  commentaire: string;
+}
+
+export function operationVide(devise = DEVISE_REFERENCE): OperationSaisie {
+  return {
+    reference: '', montant: '', client_racine: '', compte_reference: '', date_operation: '', montant_conteste: '',
+    motif_detail: '', nature_mouvement: '', devise, montant_attendu: '', compte_attendu: '', role_operation: '',
+    commentaire: '',
+  };
+}
+
+/** Totaux par devise affichés côte à côte : jamais additionnés entre devises. */
+export function totauxParDevise(totaux: TotalDevise[] | null | undefined, champ: 'montant' | 'montant_conteste' = 'montant'): string {
+  const lignes = (totaux ?? []).filter((t) => t[champ] !== null);
+  if (!lignes.length) return '—';
+  return lignes.map((t) => montantFr(t[champ], t.devise ?? DEVISE_REFERENCE)).join(' · ');
 }
 
 export interface Affectation {
@@ -477,8 +669,13 @@ export interface TableauBord {
   clients_recurrents: { racine: string; nom: string | null; n: number; ouvertes: number }[];
   nb_operations: number;
   dossiers_avec_operations: number;
+  /** Montant en devise de référence (MRU) ; les autres devises dans `montants_par_devise`. */
   montant_total: string;
   devise: string;
+  montants_par_devise?: { devise: string; montant: string }[];
+  points_reception?: Compteur[];
+  departements?: Compteur[];
+  regularisations?: Compteur[];
   statuts: Compteur[];
   etapes: Compteur[];
   priorites: Compteur[];
@@ -522,7 +719,10 @@ export interface Page<T> {
   total: number;
   page: number;
   taille: number;
-  totaux?: { nb_operations: number; dossiers_avec_operations: number; montant_total: string; devise: string };
+  totaux?: {
+    nb_operations: number; dossiers_avec_operations: number; montant_total: string; devise: string;
+    par_devise?: TotalDevise[];
+  };
 }
 
 export interface Evenement {
@@ -554,6 +754,8 @@ export interface Piece {
   categorie: string;
   categorie_libelle: string;
   commentaire: string | null;
+  /** Pièce propre à une opération du dossier (référence). */
+  operation_reference: string | null;
   created_at: string | null;
   depose_par: string | null;
 }

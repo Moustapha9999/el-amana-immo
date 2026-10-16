@@ -9,10 +9,17 @@ import { FeedbackService } from '../../core/feedback/feedback.service';
 import { unsavedChanges } from '../../core/feedback/unsaved-changes.guard';
 import { OrgEntiteSelectComponent } from '../../core/org/org-entite-select.component';
 import { ReclamationsUiComponent } from '../reclamations-ui.component';
-import { Domaine, Membre, RefItem, TypeUnite, Unite, UtilisateurTrouve, dateFr } from '../reclamations.models';
+import {
+  ChampOperation, DEVISE_REFERENCE, Domaine, Membre, RefItem, RegleContenu, RegleMotif, Regles, TypeUnite, Unite, UtilisateurTrouve, dateFr,
+} from '../reclamations.models';
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
 
-type Onglet = 'referentiels' | 'unites';
+type Onglet = 'referentiels' | 'regles' | 'unites';
+
+interface BrouillonRegle extends RegleContenu {
+  motif_id: string;
+  motif: string;
+}
 type Vue = 'CLASSEMENT' | 'CANAL' | 'CANAL_REPONSE';
 
 interface LigneRef {
@@ -84,10 +91,85 @@ function normaliser(texte: string): string {
           @if (store.cap('referentiels_voir')) {
             <button type="button" [class.is-on]="onglet() === 'referentiels'" (click)="choisir('referentiels')"><mat-icon>category</mat-icon> Référentiels</button>
           }
+          @if (store.cap('referentiels_voir')) {
+            <button type="button" [class.is-on]="onglet() === 'regles'" (click)="choisir('regles')"><mat-icon>rule</mat-icon> Règles par motif & devises</button>
+          }
           @if (voirUnites()) {
             <button type="button" [class.is-on]="onglet() === 'unites'" (click)="choisir('unites')"><mat-icon>account_tree</mat-icon> Unités & membres</button>
           }
         </nav>
+
+        @if (onglet() === 'regles' && store.cap('referentiels_voir')) {
+          @if (regles(); as rg) {
+            <section class="bea-mg__panel">
+              <div class="bea-mg__panel-top"><h2>Devises proposées</h2></div>
+              <div class="bea-rc-form">
+                <p class="bea-rc-hint">Codes ISO à 3 lettres. {{ deviseRef }} reste la devise de référence ; aucune conversion n’est faite : les totaux sont toujours présentés par devise.</p>
+                @if (gererRefs()) {
+                  <div class="bea-rc-row">
+                    <label>Devises (séparées par des espaces ou des virgules)
+                      <input [ngModel]="devisesSaisie()" (ngModelChange)="devisesSaisie.set($event)" name="devises" maxlength="200" placeholder="MRU USD EUR" />
+                    </label>
+                  </div>
+                  <span class="bea-mg__actions">
+                    <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy() || !devisesModifiees()" (click)="enregistrerDevises()"><mat-icon>save</mat-icon> Enregistrer les devises</button>
+                  </span>
+                } @else {
+                  <p>@for (c of rg.devises; track c) { <span class="bea-ct-badge" data-tone="INFO">{{ c }}</span> }</p>
+                }
+              </div>
+            </section>
+
+            <section class="bea-mg__panel">
+              <div class="bea-mg__panel-top"><h2>Règles par motif</h2></div>
+              <p class="bea-rc-hint bea-rc-pad">Champs exigés pour chaque opération, contrôle spécifique et pièces attendues. Une règle proposée s’applique déjà
+                mais doit être validée par la Conformité ; toute modification la repasse en « proposée ». Sans règle personnalisée, la règle par défaut s’applique
+                ({{ libellesChamps(rg.defaut.champs_requis) }}).</p>
+              <div class="bea-mg__table-wrap">
+                <table class="bea-mg__table">
+                  <thead><tr><th>Motif</th><th>Champs obligatoires</th><th>Contrôle</th><th>Pièces / régularisation</th><th>Validation</th>
+                    @if (gererRefs() || validerRefs()) { <th></th> }</tr></thead>
+                  <tbody>
+                    @for (r of rg.items; track r.motif_id) {
+                      <tr [class.bea-rc-muted]="!r.motif_actif">
+                        <td><strong>{{ r.motif }}</strong>@if (r.motif_code) { <code>{{ r.motif_code }}</code> }<small class="bea-ct-sub">{{ r.type ?? '' }}</small></td>
+                        <td>{{ libellesChamps(r.champs_requis) }}@if (r.operations_min) { <small class="bea-ct-sub">au moins {{ r.operations_min }} opération(s)</small> }</td>
+                        <td>{{ libelleControle(r.controle) }}@if (r.nature_attendue) { <small class="bea-ct-sub">nature attendue : {{ r.nature_attendue === 'DEBIT' ? 'débit' : 'crédit' }}</small> }</td>
+                        <td>{{ r.justificatif_requis ? 'Justificatif exigé' : '—' }}@if (r.regularisation) { <small class="bea-ct-sub">Régularisation à confirmer si favorable</small> }</td>
+                        <td>
+                          @if (!r.personnalisee) { <span class="bea-ct-badge" data-tone="SUSPENDU">Règle par défaut</span> }
+                          @else { <span class="bea-ct-badge" [attr.data-tone]="r.statut_validation === 'VALIDEE' ? 'ACTIF' : 'ATTENTION'">{{ r.statut_validation === 'VALIDEE' ? 'Validée' : 'Proposée' }}</span> }
+                          @if (r.valide_le) { <small class="bea-ct-sub">{{ dateFr(r.valide_le) }}</small> }
+                        </td>
+                        @if (gererRefs() || validerRefs()) {
+                          <td class="bea-rc-refs__act"><span class="bea-rc-refs__btns">
+                            @if (gererRefs()) {
+                              <button type="button" class="bea-mg__icon-btn" title="Modifier la règle" (click)="editerRegle(r)"><mat-icon>edit</mat-icon></button>
+                            }
+                            @if (validerRefs() && r.personnalisee) {
+                              @if (r.statut_validation !== 'VALIDEE') {
+                                <button type="button" class="bea-mg__icon-btn" title="Valider (Conformité)" [disabled]="busy()" (click)="validerRegle(r, 'VALIDEE')"><mat-icon>verified</mat-icon></button>
+                              } @else {
+                                <button type="button" class="bea-mg__icon-btn" title="Repasser en « proposée »" [disabled]="busy()" (click)="validerRegle(r, 'PROPOSEE')"><mat-icon>undo</mat-icon></button>
+                              }
+                            }
+                          </span></td>
+                        }
+                      </tr>
+                    } @empty {
+                      <tr><td colspan="6"><div class="bea-ct-empty"><mat-icon>rule</mat-icon><p>Aucun motif : créez d’abord les types et motifs dans l’onglet Référentiels.</p></div></td></tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          } @else if (reglesErreur()) {
+            <section class="bea-mg__panel bea-rc-pad"><div class="bea-ct-empty"><mat-icon>cloud_off</mat-icon><p>Règles indisponibles.</p>
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="chargerRegles()"><mat-icon>refresh</mat-icon> Réessayer</button></div></section>
+          } @else {
+            <section class="bea-mg__panel bea-rc-pad"><p class="bea-rc-muted">Chargement des règles…</p></section>
+          }
+        }
 
         @if (onglet() === 'referentiels' && store.cap('referentiels_voir')) {
           <section class="bea-mg__panel">
@@ -384,6 +466,54 @@ function normaliser(texte: string): string {
           </div>
         </form>
       }
+
+      @if (brouillonRegle(); as b) {
+        <div class="bea-mg__backdrop" (click)="fermerRegle()"></div>
+        <form class="bea-mg__modal bea-mg__modal--lg" role="dialog" aria-modal="true" (ngSubmit)="enregistrerRegle()">
+          <div class="bea-mg__modal-head">
+            <h2>Règle du motif — {{ b.motif }}</h2>
+            <button type="button" class="bea-ct-view__close" aria-label="Fermer" (click)="fermerRegle()"><mat-icon>close</mat-icon></button>
+          </div>
+          <div class="bea-rc-form">
+            <p class="bea-rc-hint">Champs obligatoires pour chaque opération (saisie manuelle et import Excel) :</p>
+            <div class="bea-rc-row bea-rc-regle__champs">
+              @for (c of regles()?.champs ?? []; track c.code) {
+                <label class="bea-rc-toggle"><input type="checkbox" [checked]="b.champs_requis.includes($any(c.code))" (change)="basculerChamp(c.code)" /> {{ c.libelle }}</label>
+              }
+            </div>
+            <div class="bea-rc-row">
+              <label>Contrôle spécifique
+                <select [(ngModel)]="b.controle" name="controle">
+                  <option [ngValue]="null">Aucun</option>
+                  @for (c of regles()?.controles ?? []; track c.code) { <option [ngValue]="c.code">{{ c.libelle }}</option> }
+                </select>
+              </label>
+              <label>Nature attendue
+                <select [(ngModel)]="b.nature_attendue" name="nature_attendue">
+                  <option [ngValue]="null">Indifférente</option>
+                  <option ngValue="DEBIT">Débit</option>
+                  <option ngValue="CREDIT">Crédit</option>
+                </select>
+              </label>
+              <label>Opérations minimum
+                <input type="number" min="0" max="500" [(ngModel)]="b.operations_min" name="operations_min" />
+              </label>
+            </div>
+            <div class="bea-rc-row">
+              <label class="bea-rc-toggle"><input type="checkbox" [(ngModel)]="b.justificatif_requis" name="justificatif_requis" /> Justificatif exigé avant transmission</label>
+              <label class="bea-rc-toggle"><input type="checkbox" [(ngModel)]="b.regularisation" name="regularisation" /> Décision favorable = régularisation à confirmer (extourne, correction)</label>
+            </div>
+            <label>Consigne aux agents
+              <textarea [(ngModel)]="b.consigne" name="consigne" rows="2" maxlength="2000" placeholder="Facultatif — affichée à la saisie"></textarea>
+            </label>
+            <div class="bea-rc-note bea-rc-note--warn"><mat-icon>info</mat-icon><span>L’enregistrement repasse la règle en « proposée » : elle s’applique aux nouvelles saisies et attend la validation de la Conformité.</span></div>
+          </div>
+          <div class="bea-mg__modal-foot">
+            <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="fermerRegle()">Annuler</button>
+            <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()"><mat-icon>save</mat-icon> Enregistrer la règle</button>
+          </div>
+        </form>
+      }
     </section>
   `,
 })
@@ -407,6 +537,13 @@ export class RcParametresComponent implements OnInit {
   roleAjout: 'AGENT' | 'RESPONSABLE' = 'AGENT';
   private initialRef = '';
   private initialUnite = '';
+  private initialRegle = '';
+  readonly deviseRef = DEVISE_REFERENCE;
+  readonly regles = signal<Regles | null>(null);
+  readonly reglesErreur = signal(false);
+  readonly brouillonRegle = signal<BrouillonRegle | null>(null);
+  readonly devisesSaisie = signal('');
+  readonly devisesModifiees = computed(() => this.parserDevises(this.devisesSaisie()).join(' ') !== (this.regles()?.devises ?? []).join(' '));
   private readonly saisie$ = new Subject<string>();
 
   readonly gererRefs = computed(() => this.store.cap('referentiels_gerer'));
@@ -499,13 +636,17 @@ export class RcParametresComponent implements OnInit {
     if (this.busy()) return false;
     const r = this.brouillonRef();
     const u = this.brouillonUnite();
-    return (!!r && JSON.stringify(r) !== this.initialRef) || (!!u && JSON.stringify(u) !== this.initialUnite);
+    const g = this.brouillonRegle();
+    return (!!r && JSON.stringify(r) !== this.initialRef) || (!!u && JSON.stringify(u) !== this.initialUnite)
+      || (!!g && JSON.stringify(g) !== this.initialRegle) || (this.onglet() === 'regles' && this.devisesModifiees());
   });
 
   ngOnInit(): void {
     this.store.charger();
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((q) => {
-      this.onglet.set(q.get('onglet') === 'unites' ? 'unites' : 'referentiels');
+      const o = q.get('onglet');
+      this.onglet.set(o === 'unites' ? 'unites' : o === 'regles' ? 'regles' : 'referentiels');
+      if (o === 'regles' && !this.regles()) this.chargerRegles();
     });
     this.saisie$
       .pipe(
@@ -522,6 +663,7 @@ export class RcParametresComponent implements OnInit {
 
   choisir(o: Onglet): void {
     void this.router.navigate([], { relativeTo: this.route, queryParams: { onglet: o === 'referentiels' ? null : o }, replaceUrl: true });
+    if (o === 'regles' && !this.regles()) this.chargerRegles();
   }
 
   libelleDomaine(d: Domaine): string {
@@ -658,6 +800,129 @@ export class RcParametresComponent implements OnInit {
         retry: false,
       })
       .subscribe(() => this.rafraichir());
+  }
+
+  // ------------------------------------------------------------ règles par motif & devises
+  chargerRegles(): void {
+    this.reglesErreur.set(false);
+    this.rc.regles().subscribe({
+      next: (r) => {
+        this.regles.set(r);
+        this.devisesSaisie.set(r.devises.join(' '));
+      },
+      error: (e) => {
+        this.reglesErreur.set(true);
+        void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Règles indisponibles'));
+      },
+    });
+  }
+
+  libellesChamps(champs: string[]): string {
+    const lib = new Map((this.regles()?.champs ?? []).map((c) => [c.code, c.libelle]));
+    return champs.length ? champs.map((c) => lib.get(c) ?? c).join(', ') : 'aucun';
+  }
+
+  libelleControle(code: string | null): string {
+    if (!code) return '—';
+    return this.regles()?.controles.find((c) => c.code === code)?.libelle ?? code;
+  }
+
+  private parserDevises(texte: string): string[] {
+    return [...new Set(texte.toUpperCase().split(/[\s,;]+/).filter(Boolean))];
+  }
+
+  enregistrerDevises(): void {
+    const devises = this.parserDevises(this.devisesSaisie());
+    const invalides = devises.filter((d) => !/^[A-Z]{3}$/.test(d));
+    if (invalides.length) {
+      this.feedback.warning({ title: 'Code devise invalide', message: `Codes ISO à 3 lettres attendus : ${invalides.join(', ')}.` });
+      return;
+    }
+    if (!devises.includes(DEVISE_REFERENCE)) {
+      this.feedback.warning({ title: 'Devise de référence obligatoire', message: `${DEVISE_REFERENCE} doit rester dans la liste.` });
+      return;
+    }
+    this.feedback
+      .run(() => this.rc.modifierDevises(devises), {
+        busy: this.busy,
+        loading: 'Enregistrement…',
+        success: (l) => ({ title: 'Devises enregistrées', details: [{ label: 'Devises', value: l.join(' ') }] }),
+        errorTitle: 'Enregistrement refusé',
+        retry: false,
+      })
+      .subscribe(() => {
+        this.chargerRegles();
+        this.rafraichir();
+      });
+  }
+
+  editerRegle(r: RegleMotif): void {
+    const b: BrouillonRegle = {
+      motif_id: r.motif_id, motif: r.motif, champs_requis: [...r.champs_requis], operations_min: r.operations_min,
+      nature_attendue: r.nature_attendue, controle: r.controle, justificatif_requis: r.justificatif_requis,
+      regularisation: r.regularisation, consigne: r.consigne ?? '',
+    };
+    this.initialRegle = JSON.stringify(b);
+    this.brouillonRegle.set(b);
+  }
+
+  fermerRegle(): void {
+    this.brouillonRegle.set(null);
+  }
+
+  basculerChamp(code: string): void {
+    this.brouillonRegle.update((b) => {
+      if (!b) return b;
+      const c = code as ChampOperation;
+      return { ...b, champs_requis: b.champs_requis.includes(c) ? b.champs_requis.filter((x) => x !== c) : [...b.champs_requis, c] };
+    });
+  }
+
+  enregistrerRegle(): void {
+    const b = this.brouillonRegle();
+    if (!b) return;
+    const corps: RegleContenu = {
+      champs_requis: b.champs_requis, operations_min: Math.max(0, Number(b.operations_min) || 0),
+      nature_attendue: b.nature_attendue, controle: b.controle, justificatif_requis: b.justificatif_requis,
+      regularisation: b.regularisation, consigne: b.consigne?.trim() || null,
+    };
+    this.feedback
+      .run(() => this.rc.enregistrerRegle(b.motif_id, corps), {
+        busy: this.busy,
+        loading: 'Enregistrement…',
+        success: (r) => ({ title: 'Règle enregistrée', message: 'Elle est « proposée » jusqu’à la validation de la Conformité.',
+          details: [{ label: 'Motif', value: r.motif }, { label: 'Champs obligatoires', value: this.libellesChamps(r.champs_requis) }] }),
+        errorTitle: 'Enregistrement refusé',
+        errorHint: 'Vos saisies ont été conservées.',
+        retry: false,
+      })
+      .subscribe(() => {
+        this.brouillonRegle.set(null);
+        this.chargerRegles();
+        this.rafraichir();
+      });
+  }
+
+  validerRegle(r: RegleMotif, statut: 'VALIDEE' | 'PROPOSEE'): void {
+    this.feedback
+      .run(() => this.rc.validerRegle(r.motif_id, statut), {
+        confirm: {
+          title: statut === 'VALIDEE' ? 'Valider la règle' : 'Repasser en « proposée »',
+          message: statut === 'VALIDEE'
+            ? `La règle du motif « ${r.motif} » sera marquée comme validée par la Conformité.`
+            : `La règle du motif « ${r.motif} » redeviendra proposée, en attente de validation.`,
+          confirmLabel: statut === 'VALIDEE' ? 'Valider' : 'Repasser en proposée',
+          tone: statut === 'VALIDEE' ? 'success' : 'warn',
+        },
+        busy: this.busy,
+        success: () => ({ title: statut === 'VALIDEE' ? 'Règle validée' : 'Règle repassée en proposée', details: [{ label: 'Motif', value: r.motif }] }),
+        errorTitle: 'Validation refusée',
+        retry: false,
+      })
+      .subscribe(() => {
+        this.chargerRegles();
+        this.rafraichir();
+      });
   }
 
   // ------------------------------------------------------------ unités

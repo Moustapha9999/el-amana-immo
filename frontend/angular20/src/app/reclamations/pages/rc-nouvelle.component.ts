@@ -74,25 +74,48 @@ function aujourdhui(): string {
                 </div>
               }
               <div class="bea-rc-row">
-                <label>Point de réception <em>*</em>
-                  <select formControlName="unite_reception_id" [class.is-invalid]="invalide('unite_reception_id')">
-                    <option value="">— Choisir —</option>
-                    @for (u of unitesReception(); track u.id) { <option [value]="u.id">{{ u.libelle }} ({{ u.type_libelle }})</option> }
-                  </select>
-                  @if (invalide('unite_reception_id')) { <span class="bea-rc-err">Le point de réception est obligatoire</span> }
-                </label>
-                <label>Agence concernée
-                  <select formControlName="client_agence_id">
+                <label>Agence de réception
+                  <select formControlName="agence_reception_id">
                     <option value="">—</option>
                     @for (a of store.config()!.agences; track a.id) { <option [value]="a.id">{{ a.code }} — {{ a.libelle }}</option> }
                   </select>
                 </label>
-                <label>Service concerné
-                  <select formControlName="unite_concernee_id">
-                    <option value="">— À déterminer —</option>
-                    @for (u of servicesConcernes(); track u.id) { <option [value]="u.id">{{ u.libelle }}</option> }
+                <label>Réception
+                  <select formControlName="niveau_concerne">
+                    <option value="SERVICE">Service</option>
+                    <option value="DEPARTEMENT">Département</option>
                   </select>
                 </label>
+                @if (form.controls.niveau_concerne.value === 'DEPARTEMENT') {
+                  <label>Département concerné <em>*</em>
+                    <select formControlName="org_departement_id" [class.is-invalid]="tente() && !form.controls.org_departement_id.value">
+                      <option value="">— Choisir —</option>
+                      @for (d of store.departements(); track d.id) { <option [value]="d.id" [title]="d.chemin ?? ''">{{ d.libelle }}{{ d.sigle ? ' (' + d.sigle + ')' : '' }}</option> }
+                    </select>
+                    @if (tente() && !form.controls.org_departement_id.value) { <span class="bea-rc-err">Indiquez le département concerné</span> }
+                  </label>
+                } @else {
+                  <label>Service concerné <em>*</em>
+                    <select formControlName="org_service_id" [class.is-invalid]="tente() && !form.controls.org_service_id.value">
+                      <option value="">— Choisir —</option>
+                      @for (s of store.services(); track s.id) { <option [value]="s.id" [title]="s.chemin ?? ''">{{ s.libelle }}{{ s.sigle ? ' (' + s.sigle + ')' : '' }}</option> }
+                    </select>
+                    @if (tente() && !form.controls.org_service_id.value) { <span class="bea-rc-err">Indiquez le service concerné</span> }
+                  </label>
+                }
+              </div>
+              @if (uniteAChoisir()) {
+                <div class="bea-rc-row">
+                  <label>Votre unité <em>*</em>
+                    <select formControlName="unite_reception_id" [class.is-invalid]="invalide('unite_reception_id')">
+                      <option value="">— Choisir —</option>
+                      @for (u of unitesReception(); track u.id) { <option [value]="u.id">{{ u.libelle }} ({{ u.type_libelle }})</option> }
+                    </select>
+                    <span class="bea-rc-hint">Vous êtes rattaché à plusieurs unités : indiquez celle qui enregistre la réclamation.</span>
+                  </label>
+                </div>
+              }
+              <div class="bea-rc-row">
                 <label>Priorité
                   <select formControlName="priorite">
                     @for (p of store.libelles('priorites'); track p.code) { <option [value]="p.code">{{ p.libelle }}</option> }
@@ -197,7 +220,8 @@ function aujourdhui(): string {
           <section class="bea-mg__panel">
             <div class="bea-mg__panel-top"><h2>Opérations concernées</h2></div>
             <div class="bea-rc-form">
-              <bea-rc-operations [(lignes)]="operations" [tente]="tente()" [principal]="form.controls.client_racine.value || null" />
+              <bea-rc-operations [(lignes)]="operations" [tente]="tente()" [principal]="racineValide()"
+                                 [regle]="regle()" [devises]="store.devises()" [motifId]="motifId()" />
               @if (regroupement()) {
                 <label>Justification du regroupement multi-clients
                   @if (multiClients()) { <em>*</em> }
@@ -246,6 +270,10 @@ export class RcNouvelleComponent implements OnInit {
   readonly regroupement = computed(() => this.operations().some((l) => l.client_racine.trim() || l.compte_reference.trim()));
   readonly multiClients = computed(() => clientsSaisis(this.operations(), this.racine().trim() || null) > 1);
   private readonly canal = signal('');
+  private readonly agenceReception = signal('');
+  readonly motifId = computed(() => classementCorps(this.classement())['motif_id']);
+  readonly regle = computed(() => this.store.regle(this.motifId()));
+  readonly racineValide = computed(() => (/^\d{6}$/.test(this.racine().trim()) ? this.racine().trim() : null));
   private initial = '';
 
   readonly form = this.fb.nonNullable.group({
@@ -254,8 +282,11 @@ export class RcNouvelleComponent implements OnInit {
     reception_differente: [false],
     date_premiere_reception: [maintenantLocal()],
     unite_reception_id: ['', Validators.required],
+    agence_reception_id: [''],
+    niveau_concerne: ['SERVICE' as 'SERVICE' | 'DEPARTEMENT'],
+    org_departement_id: [''],
+    org_service_id: [''],
     client_agence_id: [''],
-    unite_concernee_id: [''],
     priorite: ['NORMALE'],
     appel: this.fb.nonNullable.group({
       appel_le: [maintenantLocal()],
@@ -279,7 +310,20 @@ export class RcNouvelleComponent implements OnInit {
   });
 
   readonly unitesReception = computed(() => this.store.unitesReception());
-  readonly servicesConcernes = computed(() => this.store.unitesActives().filter((u) => !u.est_service_reclamations));
+  /** Unité du circuit déduite : seule unité de l'agent, unité de l'agence de réception, sinon Service Réclamations. */
+  readonly uniteDeduite = computed(() => {
+    const unites = this.unitesReception();
+    if (unites.length === 1) return unites[0].id;
+    const agence = this.agenceReception();
+    const parAgence = agence ? unites.filter((u) => u.agence_id === agence) : [];
+    if (parAgence.length === 1) return parAgence[0].id;
+    const acces = this.store.config()?.acces;
+    const miennes = unites.filter((u) => acces?.unites.includes(u.id));
+    if (miennes.length === 1) return miennes[0].id;
+    if (acces?.membre_service_central) return unites.find((u) => u.est_service_reclamations)?.id ?? null;
+    return null;
+  });
+  readonly uniteAChoisir = computed(() => this.unitesReception().length > 1 && !this.uniteDeduite());
   readonly telephone = computed(() => this.store.refs('CANAL', true).find((c) => c.id === this.canal())?.code === 'TELEPHONE');
 
   readonly hasUnsavedChanges = unsavedChanges(() => !this.busy() && this.instantane() !== this.initial);
@@ -300,15 +344,21 @@ export class RcNouvelleComponent implements OnInit {
       this.client.set(null);
       this.racine.set(v);
     });
+    c.agence_reception_id.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.agenceReception.set(v));
+    c.niveau_concerne.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((n) => {
+      if (n === 'DEPARTEMENT') c.org_service_id.setValue('');
+      else c.org_departement_id.setValue('');
+    });
   }
 
-  /** Point de réception mono-unité : unité pré-sélectionnée dès que la configuration est disponible. */
+  /** Unité du circuit renseignée automatiquement ; choix manuel seulement si elle ne peut pas être déduite. */
   private readonly preselection = effect(() => {
-    const unites = this.unitesReception();
+    const id = this.uniteDeduite();
     const ctl = this.form.controls.unite_reception_id;
-    if (unites.length === 1 && !ctl.value) {
-      ctl.setValue(unites[0].id);
-      this.initial = this.instantane();
+    if (id && !ctl.dirty && ctl.value !== id) {
+      const vierge = this.instantane() === this.initial;
+      ctl.setValue(id);
+      if (vierge) this.initial = this.instantane();
     }
   });
 
@@ -345,9 +395,13 @@ export class RcNouvelleComponent implements OnInit {
     this.tente.set(true);
     this.form.markAllAsTouched();
     const v = this.form.getRawValue();
-    const erreur = this.form.invalid
+    const erreur = !v.unite_reception_id && !this.uniteAChoisir()
+      ? 'Vous n’êtes rattaché à aucune unité Réclamations : demandez à l’administrateur du module de vous rattacher à votre agence ou service.'
+      : this.form.invalid
       ? 'Vérifiez les champs signalés en rouge.'
-      : classementErreur(this.classement()) ?? operationsErreur(this.operations())
+      : classementErreur(this.classement()) ?? operationsErreur(this.operations(), this.regle())
+        ?? (v.niveau_concerne === 'SERVICE' && !v.org_service_id ? 'Indiquez le service concerné.' : null)
+        ?? (v.niveau_concerne === 'DEPARTEMENT' && !v.org_departement_id ? 'Indiquez le département concerné.' : null)
         ?? (this.multiClients() && !this.justification().trim()
           ? 'Les opérations concernent plusieurs clients : justifiez le regroupement dans un même dossier.' : null);
     if (erreur) {
@@ -378,7 +432,9 @@ export class RcNouvelleComponent implements OnInit {
     const corps = {
       date_reclamation: v.date_reclamation, date_premiere_reception: premiere,
       canal_id: v.canal_id, unite_reception_id: v.unite_reception_id, appel,
-      client_agence_id: v.client_agence_id || null, unite_concernee_id: v.unite_concernee_id || null,
+      client_agence_id: v.client_agence_id || null, agence_reception_id: v.agence_reception_id || null,
+      org_departement_id: v.niveau_concerne === 'DEPARTEMENT' ? v.org_departement_id || null : null,
+      org_service_id: v.niveau_concerne === 'SERVICE' ? v.org_service_id || null : null,
       priorite: v.priorite,
       client_racine: texte(v.client_racine), client_categorie: v.client_categorie || null, client_nom: v.client_nom.trim(),
       client_telephone: texte(v.client_telephone), client_email: texte(v.client_email), client_adresse: texte(v.client_adresse),

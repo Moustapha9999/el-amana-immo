@@ -19,11 +19,17 @@ import {
   RC_BASE,
   RcConfig,
   RefItem,
+  RegleContenu,
+  RegleEffective,
+  RegleMotif,
+  Regles,
+  ServiceOrg,
   SuppressionReferentiel,
   SuppressionResultat,
   TableauBord,
   Unite,
   UtilisateurTrouve,
+  Verification,
 } from './reclamations.models';
 
 export type Filtres = Record<string, string | number | boolean | string[] | null | undefined>;
@@ -84,10 +90,41 @@ export class ReclamationsService {
   }
 
   deposer(id: string, fichier: File, categorie: string, commentaire: string,
-          meta: { titre?: string; date_document?: string } = {}): Observable<Pieces> {
+          meta: { titre?: string; date_document?: string; operation_reference?: string } = {}): Observable<Pieces> {
     return this.api.upload(`${RC_BASE}/dossiers/${id}/documents`, fichier, {
       categorie, commentaire, titre: meta.titre ?? '', date_document: meta.date_document ?? '',
+      operation_reference: meta.operation_reference ?? '',
     });
+  }
+
+  /** Contrôle à blanc des opérations (règle du motif, doublons, devises) : rien n'est enregistré. */
+  verifierOperations(corps: {
+    reclamation_id?: string | null; motif_id?: string | null; client_racine?: string | null;
+    compte_reference?: string | null; operations: unknown[];
+  }): Observable<Verification> {
+    return this.api.post(`${RC_BASE}/operations/verifier`, corps);
+  }
+
+  confirmerRegularisation(id: string, corps: {
+    revision: number; effectuee_le: string; reference: string; agent_id?: string | null; commentaire?: string | null;
+  }): Observable<Dossier> {
+    return this.api.post(`${RC_BASE}/dossiers/${id}/regularisation`, corps);
+  }
+
+  regles(): Observable<Regles> {
+    return this.api.get(`${RC_BASE}/regles`);
+  }
+
+  enregistrerRegle(motifId: string, corps: RegleContenu): Observable<RegleMotif> {
+    return this.api.put(`${RC_BASE}/regles/${motifId}`, corps);
+  }
+
+  validerRegle(motifId: string, statut: 'VALIDEE' | 'PROPOSEE'): Observable<RegleMotif> {
+    return this.api.post(`${RC_BASE}/regles/${motifId}/validation`, { statut_validation: statut, commentaire: '' });
+  }
+
+  modifierDevises(devises: string[]): Observable<string[]> {
+    return this.api.put(`${RC_BASE}/parametres/devises`, { devises });
   }
 
   supprimer(id: string, corps: { revision: number }): Observable<SuppressionResultat> {
@@ -122,12 +159,16 @@ export class ReclamationsService {
     return this.api.delete(`${RC_BASE}/referentiels/${id}`);
   }
 
-  modeleImport(): Observable<Blob> {
-    return this.api.download(`${RC_BASE}/imports/modele`);
+  modeleImport(motifId?: string | null): Observable<Blob> {
+    return this.api.download(`${RC_BASE}/imports/modele`, motifId ? { motif_id: motifId } : undefined);
   }
 
-  analyserImport(id: string, fichier: File, mode: 'AJOUT' | 'REMPLACEMENT'): Observable<ImportAnalyse> {
-    return this.api.upload(`${RC_BASE}/dossiers/${id}/imports`, fichier, { mode });
+  analyserImport(id: string, fichier: File, mode: 'AJOUT' | 'REMPLACEMENT', forcer = false): Observable<ImportAnalyse> {
+    return this.api.upload(`${RC_BASE}/dossiers/${id}/imports`, fichier, { mode, forcer: forcer ? 'true' : 'false' });
+  }
+
+  rapportImport(id: string, importId: string): Observable<Blob> {
+    return this.api.download(`${RC_BASE}/dossiers/${id}/imports/${importId}/rapport`);
   }
 
   lireImport(id: string, importId: string): Observable<ImportAnalyse> {
@@ -273,6 +314,30 @@ export class ReclamationsStore {
   libelles(cle: keyof RcConfig['libelles']): Array<{ code: string; libelle: string }> {
     const l = this.config()?.libelles[cle];
     return Array.isArray(l) ? l : [];
+  }
+
+  readonly departements = computed(() => this.config()?.organisation?.departements ?? []);
+  readonly services = computed(() => this.config()?.organisation?.services ?? []);
+  readonly devises = computed(() => this.config()?.devises ?? ['MRU']);
+
+  /** Services du département choisi (sous-arbre réel de l'organigramme), sinon tous. */
+  servicesDe(departementId: string | null | undefined): ServiceOrg[] {
+    if (!departementId) return this.services();
+    return this.services().filter((s) => s.ancetres.includes(departementId));
+  }
+
+  /** Règle effective d'un motif (règle par défaut si aucune n'est enregistrée). */
+  regle(motifId: string | null | undefined): RegleEffective {
+    const c = this.config();
+    const r = motifId ? c?.regles_motifs?.[motifId] : undefined;
+    const base = r ?? c?.regle_defaut ?? {
+      champs_requis: ['reference', 'montant'], operations_min: 0, nature_attendue: null, controle: null,
+      justificatif_requis: false, regularisation: false, consigne: null,
+    };
+    return {
+      ...base, motif_id: motifId ?? null, personnalisee: !!r, statut_validation: r?.statut_validation ?? null,
+      controle_libelle: null, devises: this.devises(),
+    };
   }
 
   /** Unités proposées comme point de réception : toutes (périmètre global) ou celles de l'agent. */

@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
-import { CompteDossier, Dossier, Operation, Participant, StatutIdentification, dateFr, montantFr } from '../reclamations.models';
+import {
+  CompteDossier, DEVISE_REFERENCE, Dossier, Operation, Participant, StatutIdentification, TotalDevise, dateFr, montantFr, totauxParDevise,
+} from '../reclamations.models';
 
 export const STATUT_ID_LIBELLE: Record<StatutIdentification, string> = {
   VERIFIE: 'Vérifié', A_VERIFIER: 'À vérifier', A_RENSEIGNER: 'À renseigner',
@@ -12,20 +14,33 @@ export const STATUT_ID_TON: Record<StatutIdentification, string> = {
 interface GroupeCompte {
   compte: CompteDossier | null;
   operations: Operation[];
-  montant: string | null;
-  conteste: string | null;
+  totaux: TotalDevise[];
 }
 
 interface GroupeClient {
   participant: Participant | null;
   comptes: GroupeCompte[];
   nb: number;
+  totaux: TotalDevise[];
 }
 
 function somme(valeurs: Array<string | null>): string | null {
   const connus = valeurs.filter((v): v is string => v !== null);
   if (!connus.length) return null;
   return (Math.round(connus.reduce((a, v) => a + Number(v) * 100, 0)) / 100).toFixed(2);
+}
+
+/** Jamais de somme entre devises : un total par devise. */
+function parDevise(ops: Operation[]): TotalDevise[] {
+  const groupes = new Map<string, Operation[]>();
+  for (const o of ops) groupes.set(o.devise, [...(groupes.get(o.devise) ?? []), o]);
+  return [...groupes.entries()]
+    .sort(([a], [b]) => (a === DEVISE_REFERENCE ? -1 : b === DEVISE_REFERENCE ? 1 : a.localeCompare(b)))
+    .map(([devise, liste]) => ({
+      devise, nb: liste.length,
+      montant: somme(liste.map((o) => o.montant)),
+      montant_conteste: somme(liste.map((o) => o.montant_conteste_effectif)),
+    }));
 }
 
 /** Opérations du dossier groupées par client puis par compte, avec sous-totaux et statuts de vérification.
@@ -56,8 +71,8 @@ function somme(valeurs: Array<string | null>): string | null {
             <span class="bea-ct-badge" [attr.data-tone]="ton(g.participant.statut)">{{ libelle(g.participant.statut) }}</span>
           }
           <span class="bea-rc-groupe__tot">
-            {{ g.nb }} opération{{ g.nb > 1 ? 's' : '' }} · {{ montant(g.participant?.montant_total ?? null) }}
-            <br /><small>Contesté : {{ montant(g.participant?.montant_conteste_total ?? null) }}</small>
+            {{ g.nb }} opération{{ g.nb > 1 ? 's' : '' }} · {{ tot(g.totaux) }}
+            <br /><small>À extourner : {{ tot(g.totaux, 'montant_conteste') }}</small>
           </span>
         </div>
         @for (c of g.comptes; track c.compte?.id ?? 'sans-compte') {
@@ -70,13 +85,15 @@ function somme(valeurs: Array<string | null>): string | null {
               <span>Compte non renseigné</span>
               <span class="bea-ct-badge" data-tone="SUSPENDU">À renseigner</span>
             }
-            <span class="bea-rc-groupe__tot">{{ c.operations.length }} · {{ montant(c.montant) }} <small>(contesté {{ montant(c.conteste) }})</small></span>
+            <span class="bea-rc-groupe__tot">{{ c.operations.length }} · {{ tot(c.totaux) }} <small>(à extourner {{ tot(c.totaux, 'montant_conteste') }})</small></span>
           </div>
           <div class="bea-mg__table-wrap">
             <table class="bea-mg__table bea-rc-ops">
               <thead><tr>
-                <th class="bea-rc-ops__n">N°</th><th>Référence</th><th class="bea-rc-ops__d">Date</th>
-                <th class="bea-rc-ops__m">Montant</th><th class="bea-rc-ops__m">Contesté</th><th>Motif détaillé</th>
+                <th class="bea-rc-ops__n">N°</th><th>Référence</th><th class="bea-rc-ops__d">Date</th><th>D/C</th><th>Devise</th>
+                <th class="bea-rc-ops__m">Montant initial</th><th class="bea-rc-ops__m">À extourner</th>
+                @if (avecControles()) { <th class="bea-rc-ops__m">Montant attendu</th><th>Compte attendu</th><th>Rôle</th> }
+                <th>Motif de la ligne</th><th>Commentaire</th>
               </tr></thead>
               <tbody>
                 @for (o of c.operations; track o.id) {
@@ -86,9 +103,17 @@ function somme(valeurs: Array<string | null>): string | null {
                       @if (o.ligne_import) { <small class="bea-rc-hint" title="Ligne du fichier importé"> · import l.{{ o.ligne_import }}</small> }
                     </td>
                     <td class="bea-rc-ops__d">{{ o.date_operation ? date(o.date_operation) : '—' }}</td>
+                    <td>{{ o.nature_mouvement === 'DEBIT' ? 'D' : o.nature_mouvement === 'CREDIT' ? 'C' : '—' }}</td>
+                    <td>{{ o.devise }}</td>
                     <td class="bea-rc-ops__m">{{ montant(o.montant, o.devise) }}</td>
                     <td class="bea-rc-ops__m">{{ montant(o.montant_conteste_effectif, o.devise) }}</td>
+                    @if (avecControles()) {
+                      <td class="bea-rc-ops__m">{{ o.montant_attendu !== null ? montant(o.montant_attendu, o.devise) : '' }}</td>
+                      <td>{{ o.compte_attendu ?? '' }}</td>
+                      <td>{{ o.role_operation === 'INITIALE' ? 'Initiale' : o.role_operation === 'DOUBLON' ? 'Doublon' : '' }}</td>
+                    }
                     <td>{{ o.motif_detail ?? '' }}</td>
+                    <td>{{ o.commentaire ?? '' }}</td>
                   </tr>
                 }
               </tbody>
@@ -100,8 +125,8 @@ function somme(valeurs: Array<string | null>): string | null {
     <div class="bea-rc-groupe bea-rc-groupe__client">
       <strong>Total du dossier</strong>
       <span class="bea-rc-groupe__tot">
-        {{ d.nb_operations }} opération{{ d.nb_operations > 1 ? 's' : '' }} · {{ montant(d.montant_total, d.devise) }}
-        <br /><small>Contesté : {{ montant(d.montant_conteste_total, d.devise) }}</small>
+        {{ d.nb_operations }} opération{{ d.nb_operations > 1 ? 's' : '' }} · {{ tot(d.par_devise) }}
+        <br /><small>À extourner : {{ tot(d.par_devise, 'montant_conteste') }}</small>
       </span>
     </div>
   `,
@@ -129,15 +154,22 @@ export class RcOperationsVueComponent {
           .map(([cid, ops]) => ({
             compte: cid ? comptes.get(cid) ?? null : null,
             operations: ops,
-            montant: somme(ops.map((o) => o.montant)),
-            conteste: somme(ops.map((o) => o.montant_conteste_effectif)),
+            totaux: parDevise(ops),
           }));
-        return { participant: p, comptes: groupes, nb: groupes.reduce((a, g) => a + g.operations.length, 0) };
+        const toutes = groupes.flatMap((g) => g.operations);
+        return { participant: p, comptes: groupes, nb: toutes.length, totaux: parDevise(toutes) };
       });
   });
 
+  readonly avecControles = computed(() =>
+    this.dossier().operations.some((o) => o.montant_attendu !== null || o.compte_attendu || o.role_operation));
+
   montant(v: string | null | undefined, devise = 'MRU'): string {
     return montantFr(v, devise);
+  }
+
+  tot(t: TotalDevise[] | null | undefined, champ: 'montant' | 'montant_conteste' = 'montant'): string {
+    return totauxParDevise(t, champ);
   }
 
   date(iso: string): string {

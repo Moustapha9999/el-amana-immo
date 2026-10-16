@@ -46,7 +46,7 @@ import { ReclamationsService, ReclamationsStore } from '../reclamations.service'
                       <strong>{{ d.reference }}</strong>
                       <span>{{ d.objet }}</span>
                       <small>{{ d.client_nom || '—' }} · {{ date(d.date_reclamation ?? d.date_premiere_reception) }}</small>
-                      @if (d.nb_operations) { <small>{{ d.nb_operations }} opération{{ d.nb_operations > 1 ? 's' : '' }} · {{ montant(d.montant_total, d.devise) }}</small> }
+                      @if (d.nb_operations) { <small>{{ d.nb_operations }} opération{{ d.nb_operations > 1 ? 's' : '' }} · {{ d.devises_multiples ? 'plusieurs devises' : montant(d.montant_total, d.devise ?? 'MRU') }}</small> }
                       <span class="bea-rc-kanban__badges">
                         <span class="bea-ct-badge" [attr.data-tone]="toneStatut(d.statut)">{{ d.statut_libelle }}</span>
                         @if (d.priorite !== 'NORMALE') { <span class="bea-ct-badge" [attr.data-tone]="tonePriorite(d.priorite)">{{ d.priorite_libelle }}</span> }

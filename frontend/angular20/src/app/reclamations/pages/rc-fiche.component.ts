@@ -11,7 +11,9 @@ import {
   Dossier,
   Evenement,
   OperationSaisie,
+  TotalDevise,
   dateFr,
+  totauxParDevise,
   depuisSaisieLocale,
   maintenantLocal,
   montantFr,
@@ -55,11 +57,13 @@ const ICONES_EVENEMENT: Record<string, string> = {
   REPONSE_VALIDEE: 'verified', REPONSE_RENVOYEE: 'undo', REPONSE_ENVOYEE: 'outgoing_mail',
   CLOTURE: 'task_alt', REOUVERTURE: 'lock_open', ARCHIVAGE: 'inventory_2', MIGRATION_CIRCUIT: 'sync_alt',
   SUPPRESSION: 'delete', RESTAURATION: 'restore_from_trash',
+  REGULARISATION_A_EFFECTUER: 'pending_actions', REGULARISATION_CONFIRMEE: 'verified',
 };
 
 /** Champs facultatifs vidés à la correction : envoyés dans `effacer` (le PATCH ignore les valeurs nulles). */
 const EFFACABLES = [
-  'client_racine', 'client_categorie', 'client_telephone', 'client_email', 'client_adresse', 'client_agence_id', 'unite_concernee_id',
+  'client_racine', 'client_categorie', 'client_telephone', 'client_email', 'client_adresse', 'client_agence_id',
+  'agence_reception_id', 'org_departement_id', 'org_service_id',
 ] as const;
 const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id', 'sous_motif_autre'] as const;
 
@@ -81,7 +85,10 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
             <div class="bea-rc-fiche__badges">
               <span class="bea-ct-badge" [attr.data-tone]="toneStatut(d.statut)">{{ d.statut_libelle }}</span>
               <span class="bea-ct-badge" [attr.data-tone]="tonePriorite(d.priorite)">{{ d.priorite_libelle }}</span>
-              @if (d.nb_operations) { <span class="bea-ct-badge" data-tone="INFO">{{ d.nb_operations }} opération{{ d.nb_operations > 1 ? 's' : '' }} · {{ montant(d.montant_total) }}</span> }
+              @if (d.nb_operations) { <span class="bea-ct-badge" data-tone="INFO">{{ d.nb_operations }} opération{{ d.nb_operations > 1 ? 's' : '' }} · {{ parDevise(d) }}</span> }
+              @if (d.regularisation; as rg) {
+                <span class="bea-ct-badge" [attr.data-tone]="rg.statut === 'A_EFFECTUER' ? 'ATTENTION' : 'ACTIF'">{{ rg.statut_libelle }}</span>
+              }
               @if (d.archivee_le) { <span class="bea-ct-badge" data-tone="ANNULEE">Archivée</span> }
               @if (d.supprimee_le) { <span class="bea-ct-badge" data-tone="URGENT">Supprimée</span> }
             </div>
@@ -150,18 +157,33 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
                       }
                     </div>
                     <div class="bea-rc-row">
-                      <label>Agence concernée
-                        <select formControlName="client_agence_id">
+                      <label>Agence de réception
+                        <select formControlName="agence_reception_id">
                           <option value="">—</option>
                           @for (a of store.config()?.agences ?? []; track a.id) { <option [value]="a.id">{{ a.code }} — {{ a.libelle }}</option> }
                         </select>
                       </label>
-                      <label>Service concerné
-                        <select formControlName="unite_concernee_id">
-                          <option value="">— À déterminer —</option>
-                          @for (u of servicesConcernes(); track u.id) { <option [value]="u.id">{{ u.libelle }}</option> }
+                      <label>Réception
+                        <select formControlName="niveau_concerne">
+                          <option value="SERVICE">Service</option>
+                          <option value="DEPARTEMENT">Département</option>
                         </select>
                       </label>
+                      @if (form.controls.niveau_concerne.value === 'DEPARTEMENT') {
+                        <label>Département concerné
+                          <select formControlName="org_departement_id">
+                            <option value="">— À déterminer —</option>
+                            @for (x of store.departements(); track x.id) { <option [value]="x.id" [title]="x.chemin ?? ''">{{ x.libelle }}{{ x.sigle ? ' (' + x.sigle + ')' : '' }}</option> }
+                          </select>
+                        </label>
+                      } @else {
+                        <label>Service concerné
+                          <select formControlName="org_service_id">
+                            <option value="">— À déterminer —</option>
+                            @for (x of store.services(); track x.id) { <option [value]="x.id" [title]="x.chemin ?? ''">{{ x.libelle }}{{ x.sigle ? ' (' + x.sigle + ')' : '' }}</option> }
+                          </select>
+                        </label>
+                      }
                       <label>Priorité
                         <select formControlName="priorite">
                           @for (p of store.libelles('priorites'); track p.code) { <option [value]="p.code">{{ p.libelle }}</option> }
@@ -209,8 +231,11 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
                     <dt>Type</dt><dd>{{ d.type_ref?.libelle ?? 'À qualifier' }}</dd>
                     <dt>Motif</dt><dd>{{ d.motif ?? '—' }}</dd>
                     <dt>Sous-motif</dt><dd>{{ d.sous_motif ?? '—' }}</dd>
-                    <dt>Service concerné</dt><dd>{{ d.unite_concernee_ref?.libelle ?? 'À déterminer' }}</dd>
-                    <dt>Agence concernée</dt><dd>{{ d.client.agence ? d.client.agence.code + ' — ' + d.client.agence.libelle : '—' }}</dd>
+                    @if (d.service_ref) {
+                      <dt>Service concerné</dt><dd [title]="d.service_ref.chemin ?? ''">{{ d.service_ref.libelle }}</dd>
+                    } @else {
+                      <dt>Département concerné</dt><dd [title]="d.departement_ref?.chemin ?? ''">{{ d.departement_ref?.libelle ?? 'À déterminer' }}</dd>
+                    }
                     @if (d.reclamation_liee) {
                       <dt>Réclamation liée</dt><dd><a [routerLink]="['/reclamations/dossiers', d.reclamation_liee.id]">{{ d.reclamation_liee.reference }}</a></dd>
                     }
@@ -226,7 +251,7 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
                     <dt>Reçue par la banque</dt><dd>{{ date(d.date_premiere_reception, true) }}</dd>
                     <dt>Reçue par le SR</dt><dd>{{ d.date_reception_sr ? date(d.date_reception_sr, true) : '—' }}</dd>
                     <dt>Canal</dt><dd>{{ d.canal_ref?.libelle ?? '—' }}</dd>
-                    <dt>Point de réception</dt><dd>{{ d.unite_reception_ref?.libelle ?? '—' }}</dd>
+                    <dt>Agence de réception</dt><dd>{{ d.agence_reception_ref ? d.agence_reception_ref.code + ' — ' + d.agence_reception_ref.libelle : '—' }}</dd>
                   </dl>
                 </section>
                 <section class="bea-mg__panel">
@@ -235,6 +260,7 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
                     <dt>Nom</dt><dd>{{ d.client.nom ?? '—' }}</dd>
                     <dt>Racine ORION</dt><dd>{{ d.client.racine ?? 'Non-client / non renseignée' }}</dd>
                     <dt>Catégorie</dt><dd>{{ d.client.categorie_libelle ?? '—' }}</dd>
+                    @if (d.client.agence) { <dt>Agence</dt><dd>{{ d.client.agence.code }} — {{ d.client.agence.libelle }}</dd> }
                     <dt>Téléphone</dt><dd>{{ d.client.telephone ?? '—' }}</dd>
                     <dt>E-mail</dt><dd>{{ d.client.email ?? '—' }}</dd>
                     <dt>Adresse</dt><dd>{{ d.client.adresse ?? '—' }}</dd>
@@ -258,12 +284,18 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
                     </span>
                   }
                 </div>
+                @if (d.a_completer_avant_transmission.length && d.etape === 'RECEPTION' && !d.termine) {
+                  <div class="bea-rc-note bea-rc-note--warn"><mat-icon>rule</mat-icon>
+                    <span><strong>À compléter avant transmission au service :</strong> {{ d.a_completer_avant_transmission.join(' ; ') }}</span>
+                  </div>
+                }
                 @if (d.actions['modifier_operations'] && !editionOps() && (importOuvert() || importEnAttente())) {
                   <bea-rc-import [dossier]="d" (modifie)="apresImport($event)" />
                 }
                 @if (editionOps()) {
                   <div class="bea-rc-form">
-                    <bea-rc-operations [(lignes)]="operations" [tente]="tenteOps()" [principal]="d.client.racine" />
+                    <bea-rc-operations [(lignes)]="operations" [tente]="tenteOps()" [principal]="d.client.racine"
+                                       [regle]="d.regle" [devises]="store.devises()" [reclamationId]="d.id" [motifId]="d.motif_ref?.id ?? null" />
                     @if (regroupementOps()) {
                       <label>Justification du regroupement multi-clients
                         <textarea [(ngModel)]="justificationOps" name="justification_ops" rows="2" maxlength="4000"
@@ -366,6 +398,33 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
                 <p class="bea-rc-text">{{ p.contenu }}</p>
               </section>
             }
+            @if (d.regularisation; as rg) {
+              <section class="bea-mg__panel">
+                <div class="bea-mg__panel-top"><h2>Régularisation</h2>
+                  <span class="bea-ct-badge" [attr.data-tone]="rg.statut === 'A_EFFECTUER' ? 'ATTENTION' : 'ACTIF'">{{ rg.statut_libelle }}</span>
+                </div>
+                @if (rg.statut === 'A_EFFECTUER') {
+                  <div class="bea-rc-note bea-rc-note--warn"><mat-icon>info</mat-icon>
+                    <span>Décision favorable : la régularisation (extourne, correction) s’exécute dans ORION, hors BEA DIGITAL.
+                      Une fois passée, confirmez-la ici avec sa preuve (catégorie « Preuve de régularisation » dans l’onglet Notes & pièces jointes).
+                      Le dossier ne peut pas être archivé avant cette confirmation.</span>
+                  </div>
+                  @if (d.actions['confirmer_regularisation']) {
+                    <span class="bea-mg__actions bea-rc-pad">
+                      <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="ouvrirRegularisation()"><mat-icon>verified</mat-icon> Confirmer la régularisation</button>
+                    </span>
+                  }
+                } @else {
+                  <dl class="bea-rc-dl">
+                    <dt>Effectuée le</dt><dd>{{ date(rg.effectuee_le) }}</dd>
+                    <dt>Par</dt><dd>{{ rg.agent ?? '—' }}</dd>
+                    <dt>Référence de la preuve</dt><dd>{{ rg.reference ?? '—' }}</dd>
+                    <dt>Confirmée</dt><dd>{{ date(rg.confirme_le, true) }}{{ rg.confirme_par ? ' par ' + rg.confirme_par : '' }}</dd>
+                    @if (rg.commentaire) { <dt>Commentaire</dt><dd>{{ rg.commentaire }}</dd> }
+                  </dl>
+                }
+              </section>
+            }
             @if (d.date_cloture || d.motif_refus || d.motif_annulation) {
               <section class="bea-mg__panel">
                 <div class="bea-mg__panel-top"><h2>Issue du dossier</h2></div>
@@ -414,12 +473,37 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
           @case ('documents') {
             <section class="bea-mg__panel bea-rc-pad bea-rc-pj">
               @if (d.actions['documents_voir']) {
-                <bea-rc-pieces [dossierId]="d.id" [reference]="d.reference" (modifie)="piecesModifiees($event)" />
+                <bea-rc-pieces [dossierId]="d.id" [reference]="d.reference" [operations]="referencesOperations()" (modifie)="piecesModifiees($event)" />
               } @else {
                 <p class="bea-rc-muted">Vous n’avez pas accès aux notes et pièces jointes de ce dossier.</p>
               }
             </section>
           }
+        }
+
+        @if (regularisationOuverte()) {
+          <div class="bea-mg__backdrop" (click)="regularisationOuverte.set(false)"></div>
+          <form class="bea-mg__modal" role="dialog" aria-modal="true" [formGroup]="regul" (ngSubmit)="confirmerRegularisation()">
+            <div class="bea-mg__modal-head">
+              <h2>Confirmer la régularisation — {{ d.reference }}</h2>
+              <button type="button" class="bea-ct-view__close" aria-label="Fermer" (click)="regularisationOuverte.set(false)"><mat-icon>close</mat-icon></button>
+            </div>
+            <div class="bea-rc-form">
+              <div class="bea-rc-note"><mat-icon>info</mat-icon>
+                <span>Constat d’une régularisation déjà passée dans ORION : BEA DIGITAL n’exécute aucune écriture. La preuve doit être jointe au dossier.</span>
+              </div>
+              <div class="bea-rc-row">
+                <label>Date de la régularisation <em>*</em><input type="date" formControlName="effectuee_le" [max]="aujourdhui" /></label>
+                <label>Référence de la preuve <em>*</em><input formControlName="reference" maxlength="120" placeholder="N° d’écriture, d’extourne…" /></label>
+              </div>
+              <label>Commentaire <textarea formControlName="commentaire" rows="3" maxlength="4000"></textarea></label>
+              <span class="bea-rc-hint">Agent ayant effectué la régularisation : vous-même ({{ store.config()?.utilisateur }}).</span>
+            </div>
+            <div class="bea-mg__modal-foot">
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="regularisationOuverte.set(false)">Annuler</button>
+              <button type="submit" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()"><mat-icon>verified</mat-icon> Confirmer</button>
+            </div>
+          </form>
         }
 
         @if (appelOuvert()) {
@@ -505,6 +589,7 @@ export class RcFicheComponent implements OnInit {
   readonly operations = signal<OperationSaisie[]>([]);
   readonly importOuvert = signal(false);
   readonly importEnAttente = computed(() => !!this.dossier()?.imports.some((i) => i.statut === 'ANALYSE'));
+  readonly referencesOperations = computed(() => [...new Set((this.dossier()?.operations ?? []).map((o) => o.reference))]);
   readonly regroupementOps = computed(() =>
     (this.dossier()?.nb_clients ?? 0) > 1 || this.operations().some((l) => l.client_racine.trim() || l.compte_reference.trim()));
   motifOps = '';
@@ -517,7 +602,6 @@ export class RcFicheComponent implements OnInit {
 
   readonly etapeIndex = computed(() => ETAPES.findIndex((e) => e.code === this.dossier()?.etape));
   readonly interrompu = computed(() => ['REJETEE', 'ANNULEE'].includes(this.dossier()?.statut ?? ''));
-  readonly servicesConcernes = computed(() => this.store.unitesActives().filter((u) => !u.est_service_reclamations));
   readonly dateModifiee = computed(() => {
     const d = this.dossier();
     if (!d) return false;
@@ -530,7 +614,10 @@ export class RcFicheComponent implements OnInit {
     description: ['', Validators.required],
     priorite: ['NORMALE'],
     date_reclamation: ['', Validators.required],
-    unite_concernee_id: [''],
+    agence_reception_id: [''],
+    niveau_concerne: ['SERVICE' as 'SERVICE' | 'DEPARTEMENT'],
+    org_departement_id: [''],
+    org_service_id: [''],
     client_racine: ['', Validators.pattern(/^[0-9]{6}$/)],
     client_categorie: [''],
     client_nom: ['', Validators.required],
@@ -555,10 +642,18 @@ export class RcFicheComponent implements OnInit {
     commentaire: [''],
   });
 
+  readonly regul = this.fb.nonNullable.group({
+    effectuee_le: [maintenantLocal().slice(0, 10), Validators.required],
+    reference: ['', Validators.required],
+    commentaire: [''],
+  });
+  readonly regularisationOuverte = signal(false);
+
   readonly hasUnsavedChanges = unsavedChanges(() => !this.busy() && (
     (this.edition() && this.instantane() !== this.initial)
     || (this.editionOps() && JSON.stringify(this.operations()) !== this.initialOps)
-    || (this.appelOuvert() && this.appel.dirty)));
+    || (this.appelOuvert() && this.appel.dirty)
+    || (this.regularisationOuverte() && this.regul.dirty)));
 
   private instantane(): string {
     return JSON.stringify([this.form.getRawValue(), this.classement()]);
@@ -569,7 +664,6 @@ export class RcFicheComponent implements OnInit {
     const c = this.form.controls;
     c.date_premiere_reception.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.premiere.set(v));
     c.date_reception_sr.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.receptionSr.set(v));
-
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((q) => {
       const o = q.get('onglet');
       this.onglet.set(ONGLETS.find((x) => x.code === o)?.code ?? 'general');
@@ -594,6 +688,10 @@ export class RcFicheComponent implements OnInit {
     return montantFr(v, devise);
   }
 
+  parDevise(d: Dossier): string {
+    return totauxParDevise(d.par_devise);
+  }
+
   icone(type: string): string {
     return ICONES_EVENEMENT[type] ?? 'radio_button_checked';
   }
@@ -601,9 +699,17 @@ export class RcFicheComponent implements OnInit {
   detailEvenement(e: Evenement): string | null {
     const d = e.donnees ?? {};
     if (e.type === 'OPERATIONS') {
-      const av = d['avant'] as { nb: number; total: string } | undefined;
-      const ap = d['apres'] as { nb: number; total: string } | undefined;
-      if (av && ap) return `Opérations : ${av.nb} (${montantFr(av.total)}) → ${ap.nb} (${montantFr(ap.total)})`;
+      type Etat = { nb: number; total?: string; par_devise?: TotalDevise[] };
+      const av = d['avant'] as Etat | undefined;
+      const ap = d['apres'] as Etat | undefined;
+      const lib = (x: Etat) => (x.par_devise ? totauxParDevise(x.par_devise) : montantFr(x.total ?? null));
+      if (av && ap) return `Opérations : ${av.nb} (${lib(av)}) → ${ap.nb} (${lib(ap)})`;
+    }
+    if (e.type === 'REGULARISATION_CONFIRMEE') {
+      return `Le ${dateFr(String(d['regularisation_le'] ?? ''))} par ${d['agent'] ?? '—'} · référence ${d['reference'] ?? '—'}`;
+    }
+    if (typeof d['operation'] === 'string' && typeof d['fichier'] === 'string') {
+      return `${d['fichier']} (${d['categorie'] ?? ''}) — opération ${d['operation']}`;
     }
     if (Array.isArray(d['champs'])) return `Champs : ${(d['champs'] as string[]).join(', ')}`;
     if (Array.isArray(d['operations'])) return `${(d['operations'] as unknown[]).length} opération(s) saisie(s)`;
@@ -687,7 +793,7 @@ export class RcFicheComponent implements OnInit {
     if (!d) return;
     this.tenteOps.set(true);
     const multi = clientsSaisis(this.operations(), d.client.racine) > 1;
-    const erreur = operationsErreur(this.operations())
+    const erreur = operationsErreur(this.operations(), d.regle)
       ?? (multi && !this.justificationOps.trim() && !d.justification_regroupement
         ? 'Les opérations concernent plusieurs clients : justifiez le regroupement dans un même dossier.' : null);
     if (erreur) {
@@ -706,7 +812,7 @@ export class RcFicheComponent implements OnInit {
           ? { title: 'Aucune modification', message: 'La liste des opérations était déjà à jour.' }
           : { title: 'Opérations enregistrées', details: [
             { label: 'Opérations', value: String(r.nb_operations) },
-            { label: 'Montant total', value: montantFr(r.montant_total, r.devise) },
+            { label: 'Montants', value: totauxParDevise(r.par_devise) },
           ] },
         errorTitle: 'Enregistrement refusé',
         errorHint: 'Vos saisies ont été conservées.',
@@ -725,7 +831,9 @@ export class RcFicheComponent implements OnInit {
     this.form.reset({
       objet: d.objet, description: d.description, priorite: d.priorite,
       date_reclamation: d.date_reclamation ?? d.date_premiere_reception.slice(0, 10),
-      unite_concernee_id: d.unite_concernee_ref?.id ?? '',
+      agence_reception_id: d.agence_reception_ref?.id ?? '',
+      niveau_concerne: !d.service_ref && d.departement_ref ? 'DEPARTEMENT' : 'SERVICE',
+      org_departement_id: d.departement_ref?.id ?? '', org_service_id: d.service_ref?.id ?? '',
       client_racine: d.client.racine ?? '', client_categorie: d.client.categorie ?? '', client_nom: d.client.nom ?? '',
       client_telephone: d.client.telephone ?? '', client_email: d.client.email ?? '',
       client_agence_id: d.client.agence?.id ?? '', client_adresse: d.client.adresse ?? '',
@@ -771,6 +879,8 @@ export class RcFicheComponent implements OnInit {
       motif: v.motif.trim() || null,
     };
     if (d.date_reception_sr && v.date_reception_sr) corps['date_reception_sr'] = depuisSaisieLocale(v.date_reception_sr);
+    if (v.niveau_concerne === 'SERVICE') v.org_departement_id = '';
+    else v.org_service_id = '';
     const effacer: string[] = [];
     for (const champ of EFFACABLES) {
       const valeur = v[champ].trim();
@@ -782,6 +892,7 @@ export class RcFicheComponent implements OnInit {
       if (cl[champ]) corps[champ] = cl[champ];
       else effacer.push(champ);
     }
+    if (v.niveau_concerne === 'DEPARTEMENT' && d.point_reception_ref) effacer.push('point_reception_id');
     corps['effacer'] = effacer;
     this.feedback
       .run(() => this.rc.modifier(d.id, corps), {
@@ -814,6 +925,43 @@ export class RcFicheComponent implements OnInit {
     this.feedback
       .runWithReason((motif) => this.rc.restaurer(d.id, { revision: d.revision, motif }), optionsRestauration(d.reference, this.busy))
       .subscribe((r) => this.applique(r));
+  }
+
+  ouvrirRegularisation(): void {
+    this.regul.reset({ effectuee_le: maintenantLocal().slice(0, 10), reference: '', commentaire: '' });
+    this.regularisationOuverte.set(true);
+  }
+
+  confirmerRegularisation(): void {
+    const d = this.dossier();
+    if (!d) return;
+    const v = this.regul.getRawValue();
+    if (!v.effectuee_le || !v.reference.trim()) {
+      this.feedback.warning({ title: 'Confirmation incomplète', message: 'La date et la référence de la preuve sont obligatoires.' });
+      return;
+    }
+    if (v.effectuee_le > this.aujourdhui) {
+      this.feedback.warning({ title: 'Date invalide', message: 'La date de la régularisation ne peut pas être dans le futur.' });
+      return;
+    }
+    this.feedback
+      .run(() => this.rc.confirmerRegularisation(d.id, {
+        revision: d.revision, effectuee_le: v.effectuee_le, reference: v.reference.trim(),
+        commentaire: v.commentaire.trim() || null,
+      }), {
+        busy: this.busy,
+        loading: 'Confirmation de la régularisation…',
+        success: (r) => ({ title: 'Régularisation confirmée', details: [
+          { label: 'Dossier', value: r.reference }, { label: 'Référence', value: r.regularisation?.reference ?? '' },
+        ] }),
+        errorTitle: 'Confirmation refusée',
+        errorHint: 'Vos saisies ont été conservées.',
+        retry: false,
+      })
+      .subscribe((r) => {
+        this.regularisationOuverte.set(false);
+        this.applique(r);
+      });
   }
 
   ouvrirAppel(): void {

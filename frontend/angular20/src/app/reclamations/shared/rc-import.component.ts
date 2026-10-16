@@ -2,7 +2,8 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, input, ou
 import { MatIconModule } from '@angular/material/icon';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
-import { Dossier, ImportAnalyse, ImportLigne, dateFr, montantFr, telechargerBlob } from '../reclamations.models';
+import { UiDialogService } from '../../shared/ui-dialog/ui-dialog.service';
+import { Dossier, ImportAnalyse, ImportLigne, ImportTotaux, dateFr, montantFr, telechargerBlob, totauxParDevise } from '../reclamations.models';
 import { ReclamationsService, ReclamationsStore } from '../reclamations.service';
 import { STATUT_ID_LIBELLE, STATUT_ID_TON } from './rc-operations-vue.component';
 
@@ -18,8 +19,9 @@ type Filtre = 'TOUTES' | 'ERREUR' | 'AVERTISSEMENT';
   template: `
     @if (!analyse()) {
       <div class="bea-rc-form">
-        <p class="bea-rc-hint">Un fichier Excel (.xlsx), une ligne par opération : identifiant client, référence du compte, référence de l’opération,
-          date, montant, montant contesté, motif détaillé. Les erreurs et les totaux s’affichent avant toute confirmation.</p>
+        <p class="bea-rc-hint">Un fichier Excel (.xlsx, 5 Mo au plus), une ligne par opération. Utilisez le modèle du motif du dossier :
+          colonnes obligatoires en rouge (<strong>{{ colonnesRequises() }}</strong>). Les erreurs, doublons et totaux par devise s’affichent
+          avant toute confirmation ; rien n’est enregistré tant qu’une ligne est en erreur.</p>
         <div class="bea-rc-row">
           <label>Mode
             <select [value]="mode()" (change)="mode.set($any($event.target).value)">
@@ -47,12 +49,24 @@ type Filtre = 'TOUTES' | 'ERREUR' | 'AVERTISSEMENT';
             @if (a.nb_erreurs) { Corrigez le fichier puis relancez l’import : aucune ligne n’est enregistrée tant qu’une erreur subsiste. }
           </span>
         </div>
+        @if (a.fichier_deja_importe?.force) {
+          <div class="bea-rc-note bea-rc-note--warn"><mat-icon>content_copy</mat-icon>
+            <span>Ce fichier a déjà été importé sur ce dossier : les lignes identiques sont signalées comme doublons.</span></div>
+        }
+        @if (a.fichier_deja_importe?.autres_dossiers?.length) {
+          <div class="bea-rc-note bea-rc-note--warn"><mat-icon>info</mat-icon>
+            <span>Le même fichier a déjà été importé sur : {{ a.fichier_deja_importe!.autres_dossiers.join(', ') }}.</span></div>
+        }
+        @if (a.recapitulatif?.a_completer_avant_transmission?.length) {
+          <div class="bea-rc-note"><mat-icon>rule</mat-icon>
+            <span>À compléter avant transmission : {{ a.recapitulatif!.a_completer_avant_transmission.join(' ; ') }}</span></div>
+        }
 
         <div class="bea-rc-kpis">
           <div class="bea-rc-kpi"><p>Clients</p><strong>{{ a.nb_clients }}</strong><small>{{ a.multi_clients ? 'regroupement multi-clients' : 'client unique' }}</small></div>
-          <div class="bea-rc-kpi"><p>Montant du fichier</p><strong>{{ montant(a.totaux.montant) }}</strong><small>lignes valides</small></div>
-          <div class="bea-rc-kpi"><p>Montant contesté</p><strong>{{ montant(a.totaux.montant_conteste) }}</strong></div>
-          <div class="bea-rc-kpi"><p>Dossier après import</p><strong>{{ a.apres_import.nb }}</strong><small>opérations · {{ montant(a.apres_import.montant) }}</small></div>
+          <div class="bea-rc-kpi"><p>Montant du fichier</p><strong>{{ parDevise(a.totaux) }}</strong><small>lignes valides, par devise</small></div>
+          <div class="bea-rc-kpi"><p>À extourner</p><strong>{{ parDevise(a.totaux, 'montant_conteste') }}</strong></div>
+          <div class="bea-rc-kpi"><p>Dossier après import</p><strong>{{ a.apres_import.nb }}</strong><small>opérations · {{ parDevise(a.apres_import) }}</small></div>
         </div>
 
         <div class="bea-mg__table-wrap">
@@ -67,14 +81,14 @@ type Filtre = 'TOUTES' | 'ERREUR' | 'AVERTISSEMENT';
                   </td>
                   <td><span class="bea-ct-badge" [attr.data-tone]="ton(c.statut)">{{ libelle(c.statut) }}</span></td>
                   <td class="bea-rc-ops__m">{{ c.nb }}</td><td class="bea-rc-ops__m">{{ c.nb_erreurs || '' }}</td>
-                  <td class="bea-rc-ops__m">{{ montant(c.montant) }}</td><td class="bea-rc-ops__m">{{ montant(c.montant_conteste) }}</td>
+                  <td class="bea-rc-ops__m">{{ parDevise(c) }}</td><td class="bea-rc-ops__m">{{ parDevise(c, 'montant_conteste') }}</td>
                 </tr>
                 @for (k of c.comptes; track k.compte_reference ?? 'aucun') {
                   <tr>
                     <td [style.padding-left.rem]="2"><span class="bea-rc-muted">└ </span>{{ k.compte_reference ? 'Compte ' + k.compte_reference : 'Compte non renseigné' }}</td>
                     <td><span class="bea-ct-badge" [attr.data-tone]="ton(k.statut)">{{ libelle(k.statut) }}</span></td>
                     <td class="bea-rc-ops__m">{{ k.nb }}</td><td class="bea-rc-ops__m">{{ k.nb_erreurs || '' }}</td>
-                    <td class="bea-rc-ops__m">{{ montant(k.montant) }}</td><td class="bea-rc-ops__m">{{ montant(k.montant_conteste) }}</td>
+                    <td class="bea-rc-ops__m">{{ parDevise(k) }}</td><td class="bea-rc-ops__m">{{ parDevise(k, 'montant_conteste') }}</td>
                   </tr>
                 }
               }
@@ -86,20 +100,26 @@ type Filtre = 'TOUTES' | 'ERREUR' | 'AVERTISSEMENT';
           <button type="button" [class.is-on]="filtre() === 'TOUTES'" (click)="filtre.set('TOUTES')">Toutes <small>{{ a.nb_lignes }}</small></button>
           <button type="button" [class.is-on]="filtre() === 'ERREUR'" (click)="filtre.set('ERREUR')">Erreurs <small>{{ a.nb_erreurs }}</small></button>
           <button type="button" [class.is-on]="filtre() === 'AVERTISSEMENT'" (click)="filtre.set('AVERTISSEMENT')">Avertissements <small>{{ a.nb_avertissements }}</small></button>
+          @if (a.nb_erreurs || a.nb_avertissements) {
+            <button type="button" (click)="rapport()" [disabled]="busy()"><mat-icon inline>download</mat-icon> Rapport d’erreurs (Excel)</button>
+          }
         </div>
         <div class="bea-mg__table-wrap bea-rc-import__lignes">
           <table class="bea-mg__table bea-rc-ops">
-            <thead><tr><th class="bea-rc-ops__n">Ligne</th><th>Client</th><th>Compte</th><th>Référence</th><th>Date</th><th class="bea-rc-ops__m">Montant</th><th class="bea-rc-ops__m">Contesté</th><th>Contrôles</th></tr></thead>
+            <thead><tr><th class="bea-rc-ops__n">Ligne</th><th>Client</th><th>Compte</th><th>Référence</th><th>Date</th><th>D/C</th><th>Devise</th>
+              <th class="bea-rc-ops__m">Montant initial</th><th class="bea-rc-ops__m">À extourner</th><th>Contrôles</th></tr></thead>
             <tbody>
               @for (l of lignes(); track l.ligne) {
                 <tr [attr.data-statut]="l.statut">
                   <td class="bea-rc-ops__n">{{ l.ligne }}</td>
-                  <td>{{ l.client_racine ?? '—' }}</td>
-                  <td>{{ l.compte_reference ?? '—' }}</td>
-                  <td>{{ l.reference || '—' }}</td>
-                  <td>{{ l.date_operation ? date(l.date_operation) : '—' }}</td>
-                  <td class="bea-rc-ops__m">{{ montant(l.montant) }}</td>
-                  <td class="bea-rc-ops__m">{{ l.montant_conteste ? montant(l.montant_conteste) : '' }}</td>
+                  <td [class.is-invalid]="ko(l, 'client_racine')">{{ l.client_racine ?? '—' }}</td>
+                  <td [class.is-invalid]="ko(l, 'compte_reference')">{{ l.compte_reference ?? '—' }}</td>
+                  <td [class.is-invalid]="ko(l, 'reference')">{{ l.reference || '—' }}</td>
+                  <td [class.is-invalid]="ko(l, 'date_operation')">{{ l.date_operation ? date(l.date_operation) : '—' }}</td>
+                  <td [class.is-invalid]="ko(l, 'nature_mouvement')">{{ l.nature_mouvement === 'DEBIT' ? 'D' : l.nature_mouvement === 'CREDIT' ? 'C' : '—' }}</td>
+                  <td [class.is-invalid]="ko(l, 'devise')">{{ l.devise ?? '—' }}</td>
+                  <td class="bea-rc-ops__m" [class.is-invalid]="ko(l, 'montant')">{{ montant(l.montant, l.devise) }}</td>
+                  <td class="bea-rc-ops__m" [class.is-invalid]="ko(l, 'montant_conteste')">{{ l.montant_conteste ? montant(l.montant_conteste, l.devise) : '' }}</td>
                   <td>
                     @for (m of l.erreurs; track $index) { <span class="bea-rc-import__msg bea-rc-import__msg--err">{{ m }}</span> }
                     @for (m of l.avertissements; track $index) { <span class="bea-rc-import__msg bea-rc-import__msg--warn">{{ m }}</span> }
@@ -107,7 +127,7 @@ type Filtre = 'TOUTES' | 'ERREUR' | 'AVERTISSEMENT';
                   </td>
                 </tr>
               } @empty {
-                <tr><td colspan="8" class="bea-rc-muted">Aucune ligne pour ce filtre.</td></tr>
+                <tr><td colspan="10" class="bea-rc-muted">Aucune ligne pour ce filtre.</td></tr>
               }
             </tbody>
           </table>
@@ -156,6 +176,7 @@ type Filtre = 'TOUTES' | 'ERREUR' | 'AVERTISSEMENT';
 export class RcImportComponent {
   private readonly rc = inject(ReclamationsService);
   private readonly feedback = inject(FeedbackService);
+  private readonly dialog = inject(UiDialogService);
   readonly store = inject(ReclamationsStore);
   readonly dossier = input.required<Dossier>();
   readonly modifie = output<Dossier>();
@@ -195,8 +216,36 @@ export class RcImportComponent {
     });
   });
 
-  montant(v: string | null | undefined): string {
-    return montantFr(v);
+  readonly colonnesRequises = computed(() => {
+    const regle = this.dossier().regle;
+    const libelles = new Map((this.store.config()?.champs_operation ?? []).map((c) => [c.code, c.libelle]));
+    return (regle?.champs_requis ?? ['reference', 'montant']).map((c) => libelles.get(c) ?? c).join(', ');
+  });
+
+  montant(v: string | null | undefined, devise?: string | null): string {
+    return montantFr(v, devise ?? 'MRU');
+  }
+
+  parDevise(t: ImportTotaux, champ: 'montant' | 'montant_conteste' = 'montant'): string {
+    return t.par_devise ? totauxParDevise(t.par_devise, champ) : montantFr(t[champ], t.devise ?? 'MRU');
+  }
+
+  ko(l: ImportLigne, champ: string): boolean {
+    return !!l.erreurs_detail?.some((e) => e.champ === champ);
+  }
+
+  rapport(): void {
+    const a = this.analyse();
+    if (!a) return;
+    this.feedback
+      .run(() => this.rc.rapportImport(this.dossier().id, a.id), {
+        busy: this.busy,
+        loading: 'Préparation du rapport…',
+        success: () => ({ title: 'Rapport téléchargé' }),
+        errorTitle: 'Téléchargement refusé',
+        retry: false,
+      })
+      .subscribe((b) => telechargerBlob(b, `rapport-import-${this.dossier().reference}.xlsx`));
   }
 
   date(iso: string | null, heure = false): string {
@@ -221,7 +270,7 @@ export class RcImportComponent {
 
   modele(): void {
     this.feedback
-      .run(() => this.rc.modeleImport(), {
+      .run(() => this.rc.modeleImport(this.dossier().motif_ref?.id), {
         busy: this.busy,
         loading: 'Préparation du modèle…',
         success: () => ({ title: 'Modèle téléchargé' }),
@@ -231,25 +280,44 @@ export class RcImportComponent {
       .subscribe((b) => telechargerBlob(b, 'modele-import-operations-reclamation.xlsx'));
   }
 
-  analyser(): void {
+  analyser(forcer = false): void {
     const f = this.fichier();
     if (!f) return;
-    this.feedback
-      .run(() => this.rc.analyserImport(this.dossier().id, f, this.mode()), {
-        busy: this.busy,
-        loading: 'Analyse du fichier…',
-        success: (a) => a.nb_erreurs
-          ? { title: 'Fichier analysé : erreurs à corriger', message: `${a.nb_erreurs} ligne(s) en erreur sur ${a.nb_lignes}.` }
-          : { title: 'Fichier analysé', message: `${a.nb_valides} opération(s) prêtes à être importées. Vérifiez l’aperçu puis confirmez.` },
-        errorTitle: 'Analyse refusée',
-        retry: false,
-      })
-      .subscribe((a) => {
+    this.busy.set(true);
+    this.rc.analyserImport(this.dossier().id, f, this.mode(), forcer).subscribe({
+      next: (a) => {
+        this.busy.set(false);
         this.vus.add(a.id);
         this.filtre.set(a.nb_erreurs ? 'ERREUR' : 'TOUTES');
         this.justification.set('');
         this.analyse.set(a);
-      });
+        if (a.nb_erreurs) {
+          this.feedback.warning({ title: 'Fichier analysé : erreurs à corriger', message: `${a.nb_erreurs} ligne(s) en erreur sur ${a.nb_lignes}.` });
+        } else {
+          this.feedback.success({ title: 'Fichier analysé', message: `${a.nb_valides} opération(s) prêtes à être importées. Vérifiez l’aperçu puis confirmez.` });
+        }
+      },
+      error: (e) => {
+        this.busy.set(false);
+        void describeApiErrorAsync(e).then((info) => {
+          if (info.code !== 'FICHIER_DEJA_IMPORTE' || forcer) {
+            this.feedback.apiError(info, 'Analyse refusée');
+            return;
+          }
+          // Réimport accidentel : seulement sur choix explicite (tracé dans l'audit).
+          this.dialog.confirm({
+            title: 'Fichier déjà importé',
+            message: 'Ce fichier a déjà été importé sur ce dossier. L’analyser à nouveau ?',
+            hint: 'Les lignes déjà présentes seront signalées comme doublons ; rien n’est supprimé.',
+            confirmLabel: 'Analyser à nouveau',
+            tone: 'warn',
+            icon: 'content_copy',
+          }).subscribe((ok) => {
+            if (ok) this.analyser(true);
+          });
+        });
+      },
+    });
   }
 
   confirmer(): void {
@@ -275,7 +343,7 @@ export class RcImportComponent {
           title: 'Import confirmé',
           details: [
             { label: 'Opérations du dossier', value: String(d.nb_operations) },
-            { label: 'Montant total', value: montantFr(d.montant_total, d.devise) },
+            { label: 'Montants', value: totauxParDevise(d.par_devise) },
           ],
         }),
         errorTitle: 'Import refusé',
