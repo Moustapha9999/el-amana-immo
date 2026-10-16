@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_platform_permission
@@ -23,6 +24,7 @@ from app.schemas.org import (
     PostePatch,
     TypeEntite,
 )
+from app.services import org_import
 from app.services import org_referentiel as org
 
 router = APIRouter(prefix="/plateforme/admin/organisation", tags=["core-admin-organisation"])
@@ -46,6 +48,27 @@ async def lister_entites(
 async def creer_entite(payload: EntiteCreate, request: Request, actor: User = Depends(_ORG),
                        db: AsyncSession = Depends(get_db)) -> dict:
     return await org.creer_entite(db, actor, payload.model_dump(), request)
+
+
+@router.get("/import/modele")
+async def modele_import(_: User = Depends(_ORG)) -> Response:
+    nom = "modele-import-organigramme.xlsx"
+    return Response(content=org_import.modele(),
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{nom}"', "Cache-Control": "no-store"})
+
+
+@router.post("/import/apercu")
+async def apercu_import(file: UploadFile = File(...), _: User = Depends(_ORG),
+                        db: AsyncSession = Depends(get_db)) -> dict:
+    return await org_import.apercu(db, file)
+
+
+@router.post("/import/appliquer")
+async def appliquer_import(request: Request, file: UploadFile = File(...),
+                           empreinte: str | None = Form(None, max_length=64),
+                           actor: User = Depends(_ORG), db: AsyncSession = Depends(get_db)) -> dict:
+    return await org_import.appliquer(db, actor, file, empreinte, request)
 
 
 @router.get("/entites/{entite_id}")

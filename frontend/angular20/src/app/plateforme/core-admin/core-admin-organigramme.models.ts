@@ -138,7 +138,48 @@ export const ORG_ACTION_LIBELLES: Record<string, string> = {
   'org.affectation.close': 'Affectation clôturée',
   'org.correspondance.apply': 'Correspondance appliquée',
   'org.agence.attach': 'Agence rattachée',
+  'org.entite.confirm': 'Entité confirmée (import)',
+  'org.import.apply': 'Import Excel appliqué',
 };
+
+export type OrgImportStatut = 'CREER' | 'EXISTANT' | 'A_CONFIRMER' | 'AMBIGU' | 'ERREUR';
+
+export interface OrgImportLigne {
+  ligne: number;
+  direction: string | null;
+  departement: string | null;
+  service: string | null;
+  statut: OrgImportStatut;
+  message: string | null;
+  type_entite?: string | null;
+  entite_id?: string | null;
+  chemin?: string | null;
+}
+
+export interface OrgImportEntiteCourte {
+  id: string;
+  libelle: string;
+  type_entite: string;
+  chemin: string | null;
+  a_confirmer?: boolean;
+}
+
+export interface OrgImportApercu {
+  empreinte: string;
+  lignes: OrgImportLigne[];
+  entites: { a_creer: number; existantes: number; a_confirmer: number; ambigues: number; erreurs: number };
+  nb_lignes: number;
+  nb_lignes_bloquantes: number;
+  applicable: boolean;
+  absentes_du_fichier: OrgImportEntiteCourte[];
+}
+
+export interface OrgImportResultat {
+  empreinte: string;
+  creees: OrgImportEntiteCourte[];
+  confirmees: OrgImportEntiteCourte[];
+  absentes_du_fichier: OrgImportEntiteCourte[];
+}
 
 /** Message d'erreur API lisible, avec la référence support quand le backend la fournit. */
 export function orgErreur(err: unknown, fallback: string): string {

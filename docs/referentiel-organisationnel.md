@@ -130,4 +130,21 @@ Préfixe `/api/v1/plateforme/admin/organisation`, Login 1 + `core.admin.organisa
 (PATCH), `affectations/{id}/cloturer`, `controles`, `correspondances`, `correspondances/{liaison}`,
 `agences`, `agences/{id}`, `historique`. Chaque écriture est auditée (`audit_logs`, actions `org.*`).
 
-Tests : `backend/tests/test_org_referentiel.py`.
+### Import Excel de la liste de la banque
+
+Écran CORE ADMIN → Organigramme → « Import Excel ». Colonnes : `direction`, `departement`,
+`service` (+ `type_service` SERVICE / SECTION / CELLULE, `code`, `sigle`), une ligne par entité.
+
+1. `GET import/modele` : modèle vierge.
+2. `POST import/apercu` (fichier) : statut par ligne — `CREER`, `EXISTANT`, `A_CONFIRMER`
+   (entité existante marquée « à confirmer » : sera confirmée), `AMBIGU` (plusieurs homonymes),
+   `ERREUR` ; empreinte SHA-256 du fichier ; liste des entités actives absentes du fichier.
+   **Rien n’est écrit.**
+3. `POST import/appliquer` (fichier + `empreinte`) : transaction unique, refusée si le fichier a
+   changé depuis l’aperçu (`FICHIER_MODIFIE`) ou si une ligne est bloquante (`IMPORT_BLOQUE`).
+   Crée les entités manquantes (source `LISTE_BANQUE`) et confirme les entités à confirmer.
+   **Aucune suppression, aucun déplacement** ; les absentes restent actives (à traiter à la main).
+
+Limites : 2 Mo, 2 000 lignes. Audit `org.entite.create`, `org.entite.confirm`, `org.import.apply`.
+
+Tests : `backend/tests/test_org_referentiel.py`, `backend/tests/test_org_import.py`.

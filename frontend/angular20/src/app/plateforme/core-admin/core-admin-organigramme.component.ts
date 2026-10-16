@@ -19,11 +19,22 @@ import {
   OrgEntiteAdmin,
   OrgFiche,
   OrgHistoriqueLigne,
+  OrgImportApercu,
+  OrgImportResultat,
+  OrgImportStatut,
   OrgPoste,
   orgErreur,
 } from './core-admin-organigramme.models';
 
-type Onglet = 'organigramme' | 'controles' | 'correspondances' | 'agences' | 'historique';
+type Onglet = 'organigramme' | 'controles' | 'correspondances' | 'agences' | 'import' | 'historique';
+
+const STATUTS_IMPORT: Record<OrgImportStatut, string> = {
+  CREER: 'À créer',
+  EXISTANT: 'Existe déjà',
+  A_CONFIRMER: 'Sera confirmée',
+  AMBIGU: 'Ambigu',
+  ERREUR: 'Erreur',
+};
 
 const BASE = '/plateforme/admin/organisation';
 const TYPES = Object.keys(ORG_TYPE_LIBELLES) as OrgTypeEntite[];
@@ -620,6 +631,85 @@ const TYPE_COURT: Record<OrgTypeEntite, string> = {
           </section>
         }
 
+        @case ('import') {
+          <section class="bea-admin-panel bea-org-card">
+            <h2 class="bea-org-card__title">Importer la liste des directions, départements et services</h2>
+            <p class="bea-org-muted">
+              Une ligne par entité : direction, département, service (et facultativement type_service, code, sigle).
+              L’aperçu montre ce qui sera créé, ce qui existe déjà et ce qui est ambigu ; rien n’est écrit avant votre confirmation.
+              Aucune entité n’est supprimée : les entités actives absentes du fichier sont seulement listées.
+            </p>
+            <div class="bea-org-actions">
+              <button type="button" class="bea-admin-btn bea-admin-btn--ghost" [disabled]="saving()" (click)="telechargerModeleImport()">
+                <bea-admin-icon name="download" /> Télécharger le modèle
+              </button>
+              <label class="bea-admin-btn bea-admin-btn--ghost">
+                <bea-admin-icon name="attach_file" /> {{ importFichier()?.name || 'Choisir un fichier .xlsx' }}
+                <input type="file" hidden accept=".xlsx" (change)="choisirImport($event)" />
+              </label>
+              <button type="button" class="bea-admin-btn" [disabled]="saving() || !importFichier()" (click)="analyserImport()">
+                <bea-admin-icon name="fact_check" /> Analyser
+              </button>
+            </div>
+          </section>
+
+          @if (importApercu(); as ap) {
+            <section class="bea-admin-panel bea-org-card">
+              <div class="bea-org-card__head">
+                <h2 class="bea-org-card__title">Aperçu — {{ ap.nb_lignes }} ligne(s)</h2>
+              </div>
+              <div class="bea-org-tags">
+                <span class="bea-badge bea-badge--info">{{ ap.entites.a_creer }} à créer</span>
+                <span class="bea-badge">{{ ap.entites.existantes }} existante(s)</span>
+                <span class="bea-badge bea-badge--warn">{{ ap.entites.a_confirmer }} à confirmer</span>
+                <span class="bea-badge bea-badge--warn">{{ ap.entites.ambigues }} ambiguë(s)</span>
+                <span class="bea-badge bea-badge--inactif">{{ ap.entites.erreurs }} erreur(s)</span>
+              </div>
+              @if (!ap.applicable) {
+                <p class="bea-org-alert"><bea-admin-icon name="block" />
+                  <span>{{ ap.nb_lignes_bloquantes }} ligne(s) bloquante(s) (erreur ou libellé ambigu) : corrigez le fichier puis relancez l’analyse. Rien n’est enregistré.</span></p>
+              }
+              <div class="bea-org-scroll bea-org-scroll--lg">
+                <table class="bea-admin-table bea-org-table">
+                  <thead><tr><th class="bea-org-num">Ligne</th><th>Direction</th><th>Département</th><th>Service</th><th>Résultat</th><th>Détail</th></tr></thead>
+                  <tbody>
+                    @for (l of ap.lignes; track l.ligne) {
+                      <tr>
+                        <td class="bea-org-num">{{ l.ligne }}</td>
+                        <td>{{ l.direction || '—' }}</td>
+                        <td>{{ l.departement || '—' }}</td>
+                        <td>{{ l.service || '—' }}</td>
+                        <td><span class="bea-badge" [class.bea-badge--info]="l.statut === 'CREER'" [class.bea-badge--warn]="l.statut === 'A_CONFIRMER' || l.statut === 'AMBIGU'"
+                                  [class.bea-badge--inactif]="l.statut === 'ERREUR'">{{ statutImport(l.statut) }}</span></td>
+                        <td class="bea-org-muted">{{ l.message || l.chemin || '' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              @if (ap.absentes_du_fichier.length) {
+                <details>
+                  <summary class="bea-org-muted">{{ ap.absentes_du_fichier.length }} entité(s) active(s) absente(s) du fichier — conservées, à vérifier</summary>
+                  <ul class="bea-org-items bea-org-scroll bea-org-scroll--sm">
+                    @for (e of ap.absentes_du_fichier; track e.id) {
+                      <li class="bea-org-item bea-org-item--row">
+                        <span class="bea-org-type" [attr.data-type]="e.type_entite">{{ typeCourt($any(e.type_entite)) }}</span>
+                        <button type="button" class="bea-org-link" (click)="voirEntite(e.id)">{{ e.chemin || e.libelle }}</button>
+                      </li>
+                    }
+                  </ul>
+                </details>
+              }
+              <div class="bea-org-actions">
+                <button type="button" class="bea-admin-btn bea-admin-btn--ghost" [disabled]="saving()" (click)="abandonnerImport()">Abandonner</button>
+                <button type="button" class="bea-admin-btn" [disabled]="saving() || !ap.applicable || !(ap.entites.a_creer + ap.entites.a_confirmer)" (click)="appliquerImport(ap)">
+                  {{ saving() ? 'Enregistrement…' : 'Appliquer l’import' }}
+                </button>
+              </div>
+            </section>
+          }
+        }
+
         @case ('historique') {
           <section class="bea-admin-panel bea-org-card">
             <div class="bea-org-card__head">
@@ -1164,7 +1254,7 @@ export class CoreAdminOrganigrammeComponent implements OnInit {
   private readonly referentiel = inject(OrgReferentielService);
 
   readonly hasUnsavedChanges = unsavedChanges(
-    () => this.mode() !== null && this.form.dirty && !this.saving(),
+    () => ((this.mode() !== null && this.form.dirty) || !!this.importApercu()) && !this.saving(),
     () => this.form,
   );
 
@@ -1174,8 +1264,11 @@ export class CoreAdminOrganigrammeComponent implements OnInit {
     { id: 'controles', label: 'Contrôles', icon: 'rule' },
     { id: 'correspondances', label: 'Correspondances', icon: 'link' },
     { id: 'agences', label: 'Agences', icon: 'store' },
+    { id: 'import', label: 'Import Excel', icon: 'upload_file' },
     { id: 'historique', label: 'Historique', icon: 'history' },
   ];
+  readonly importFichier = signal<File | null>(null);
+  readonly importApercu = signal<OrgImportApercu | null>(null);
 
   readonly onglet = signal<Onglet>('organigramme');
   readonly chargement = signal(true);
@@ -1557,6 +1650,75 @@ export class CoreAdminOrganigrammeComponent implements OnInit {
         this.chargerAgences();
         this.echec(err, 'Rattachement impossible.');
       },
+    });
+  }
+
+  // ------------------------------------------------------------------ import Excel
+  statutImport(s: OrgImportStatut): string {
+    return STATUTS_IMPORT[s] ?? s;
+  }
+
+  telechargerModeleImport(): void {
+    this.api.download(`${BASE}/import/modele`).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'modele-import-organigramme.xlsx';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      },
+      error: (err) => this.echec(err, 'Téléchargement du modèle impossible.'),
+    });
+  }
+
+  choisirImport(ev: Event): void {
+    const champ = ev.target as HTMLInputElement;
+    this.importFichier.set(champ.files?.[0] ?? null);
+    this.importApercu.set(null);
+    champ.value = '';
+  }
+
+  analyserImport(): void {
+    const f = this.importFichier();
+    if (!f || this.saving()) return;
+    this.saving.set(true);
+    this.api.upload<OrgImportApercu>(`${BASE}/import/apercu`, f).subscribe({
+      next: (ap) => {
+        this.saving.set(false);
+        this.importApercu.set(ap);
+      },
+      error: (err) => this.echec(err, 'Analyse du fichier impossible.'),
+    });
+  }
+
+  abandonnerImport(): void {
+    this.importApercu.set(null);
+    this.importFichier.set(null);
+  }
+
+  async appliquerImport(ap: OrgImportApercu): Promise<void> {
+    const f = this.importFichier();
+    if (!f) return;
+    const ok = await this.dialogs.confirm({
+      title: 'Appliquer l’import',
+      message: `Créer ${ap.entites.a_creer} entité(s) et confirmer ${ap.entites.a_confirmer} entité(s) de l’organigramme ? ` +
+        'Aucune entité n’est supprimée ni déplacée.',
+      confirmLabel: 'Appliquer',
+    });
+    if (!ok) return;
+    this.saving.set(true);
+    this.api.upload<OrgImportResultat>(`${BASE}/import/appliquer`, f, { empreinte: ap.empreinte }).subscribe({
+      next: async (r) => {
+        this.saving.set(false);
+        this.importApercu.set(null);
+        this.importFichier.set(null);
+        this.referentiel.invalider();
+        this.chargerEntites();
+        this.chargerControles();
+        await this.dialogs.success(`${r.creees.length} entité(s) créée(s), ${r.confirmees.length} confirmée(s).`);
+      },
+      error: (err) => this.echec(err, 'Import refusé : aucune modification enregistrée.'),
     });
   }
 
