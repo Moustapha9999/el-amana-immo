@@ -17,6 +17,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -795,6 +796,13 @@ class ClienteleKyc(Base):
     date_maj_client: Mapped[date | None] = mapped_column(Date, nullable=True)
     analyste_kyc: Mapped[str | None] = mapped_column(String(120), nullable=True)
     date_creation_entreprise: Mapped[date | None] = mapped_column(Date, nullable=True)
+    genre: Mapped[str | None] = mapped_column(String(1), nullable=True)
+    telephone: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    code_csp_bcm: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    code_secteur_bcm: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    sic_source: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    sic_maj_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    sic_maj_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     source: Mapped[str] = mapped_column(String(20))
     lot_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     ligne_source: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -943,6 +951,150 @@ class ClienteleBcmRegle(UUIDPrimaryKeyMixin, Base):
     decide_par_id: Mapped[uuid.UUID | None] = _user_fk()
     decide_par_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ClienteleBcmRefVersion(UUIDPrimaryKeyMixin, Base):
+    """Version importée du référentiel BCM (feuille ``ref``). Une seule ACTIVE ; une version utilisée par une
+    déclaration n'est jamais modifiée ni supprimée."""
+
+    __tablename__ = "clientele_bcm_ref_versions"
+    __table_args__ = (
+        CheckConstraint("statut IN ('BROUILLON','ACTIVE','ARCHIVEE')", name="ck_clientele_bcm_ref_versions_statut"),
+        Index("ix_clientele_bcm_ref_versions_statut", "statut"),
+    )
+
+    libelle: Mapped[str] = mapped_column(String(120))
+    fichier_nom: Mapped[str] = mapped_column(String(255))
+    sha256: Mapped[str] = mapped_column(String(64))
+    feuille: Mapped[str] = mapped_column(String(60))
+    statut: Mapped[str] = mapped_column(String(12), default="BROUILLON")
+    nb_codes: Mapped[int] = mapped_column(Integer, default=0)
+    nb_pp: Mapped[int] = mapped_column(Integer, default=0)
+    nb_pm: Mapped[int] = mapped_column(Integer, default=0)
+    anomalies: Mapped[list] = mapped_column(JSONB, default=list)
+    observations: Mapped[str | None] = mapped_column(Text, nullable=True)
+    importe_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    importe_par_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    activee_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    activee_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    archivee_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ClienteleBcmRefCode(UUIDPrimaryKeyMixin, Base):
+    """Code officiel d'une version du référentiel BCM. Immuable (trigger)."""
+
+    __tablename__ = "clientele_bcm_ref_codes"
+    __table_args__ = (
+        CheckConstraint("usage IN ('PP','PM','AUTRE')", name="ck_clientele_bcm_ref_codes_usage"),
+        Index("ix_clientele_bcm_ref_codes_version_code", "version_id", "code"),
+    )
+
+    version_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clientele_bcm_ref_versions.id", ondelete="CASCADE"))
+    ligne: Mapped[int] = mapped_column(Integer)
+    code: Mapped[str] = mapped_column(String(10))
+    libelle: Mapped[str] = mapped_column(Text)
+    categorie: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    usage: Mapped[str] = mapped_column(String(5))
+    actif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+
+
+class ClienteleSicAgence(UUIDPrimaryKeyMixin, Base):
+    """Valeur SIC « MoughataaAgence » d'une agence. Modifications tracées dans audit_logs."""
+
+    __tablename__ = "clientele_sic_agences"
+    __table_args__ = (UniqueConstraint("agence_id", name="uq_clientele_sic_agences_agence"),)
+
+    agence_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agences.id", ondelete="RESTRICT"))
+    valeur: Mapped[str] = mapped_column(String(120))
+    observation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    maj_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    maj_par_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    maj_le: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ClienteleSicSecteur(UUIDPrimaryKeyMixin, Base):
+    """Correspondance libellé secteur ORION → code secteur BCM (PM). Modifications tracées dans audit_logs."""
+
+    __tablename__ = "clientele_sic_secteurs"
+    __table_args__ = (
+        UniqueConstraint("libelle_orion", name="uq_clientele_sic_secteurs_libelle"),
+        CheckConstraint("statut IN ('CONFIRMEE','A_VALIDER')", name="ck_clientele_sic_secteurs_statut"),
+    )
+
+    libelle_orion: Mapped[str] = mapped_column(String(160))
+    code_bcm: Mapped[str] = mapped_column(String(10))
+    statut: Mapped[str] = mapped_column(String(12), default="A_VALIDER")
+    observation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    maj_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    maj_par_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    maj_le: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ClienteleDeclarationSic(UUIDPrimaryKeyMixin, Base):
+    """Déclaration SIC (fichier PP ou PM à déposer manuellement sur la plateforme SIC de la BCM)."""
+
+    __tablename__ = "clientele_declarations_sic"
+    __table_args__ = (
+        CheckConstraint("type IN ('PP','PM')", name="ck_clientele_declarations_sic_type"),
+        CheckConstraint(
+            "statut IN ('BROUILLON','A_CORRIGER','CONTROLEE','VALIDEE_EXPORT','GENEREE','DEPOSEE')",
+            name="ck_clientele_declarations_sic_statut"),
+        Index("ix_clientele_declarations_sic_type_date", "type", "date_reference"),
+    )
+
+    type: Mapped[str] = mapped_column(String(2))
+    date_reference: Mapped[date] = mapped_column(Date)
+    date_debut: Mapped[date | None] = mapped_column(Date, nullable=True)
+    statut: Mapped[str] = mapped_column(String(16), default="BROUILLON")
+    ref_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clientele_bcm_ref_versions.id", ondelete="RESTRICT"), nullable=True)
+    regles: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    controles: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    nb_candidats: Mapped[int] = mapped_column(Integer, default=0)
+    nb_lignes: Mapped[int] = mapped_column(Integer, default=0)
+    nb_exclus: Mapped[int] = mapped_column(Integer, default=0)
+    nb_bloquantes: Mapped[int] = mapped_column(Integer, default=0)
+    nb_a_corriger: Mapped[int] = mapped_column(Integer, default=0)
+    nb_avertissements: Mapped[int] = mapped_column(Integer, default=0)
+    fichier_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    fichier_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    fichier: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    controle_fichier: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    commentaire_validation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    depot_le: Mapped[date | None] = mapped_column(Date, nullable=True)
+    depot_resultat: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    depot_commentaire: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_id: Mapped[uuid.UUID | None] = _user_fk()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    controlee_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    controlee_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    validee_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    validee_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    generee_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    generee_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    depot_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    depot_saisi_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ClienteleSicLigne(UUIDPrimaryKeyMixin, Base):
+    """Un client candidat d'une déclaration SIC : valeurs produites (ordre du modèle) et anomalies."""
+
+    __tablename__ = "clientele_sic_lignes"
+    __table_args__ = (
+        CheckConstraint("statut IN ('EXPORTEE','EXCLUE')", name="ck_clientele_sic_lignes_statut"),
+        Index("ix_clientele_sic_lignes_decl", "declaration_id", "statut", "racine_client"),
+    )
+
+    declaration_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clientele_declarations_sic.id", ondelete="CASCADE"))
+    racine_client: Mapped[str] = mapped_column(String(40))
+    statut: Mapped[str] = mapped_column(String(8))
+    gravite_max: Mapped[str | None] = mapped_column(String(14), nullable=True)
+    valeurs: Mapped[list] = mapped_column(JSONB, default=list)
+    anomalies: Mapped[list] = mapped_column(JSONB, default=list)
 
 
 class ClienteleFiltrageEmpreinte(UUIDPrimaryKeyMixin, Base):

@@ -6,7 +6,7 @@ import uuid
 from datetime import date
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,7 @@ from app.schemas.clientele import (
     AlerteAttribuerIn,
     AlerteCommentaireIn,
     AlerteDecisionIn,
+    BcmRefActiverIn,
     BcmRegleDecisionIn,
     ClassifBacktestIn,
     ClassifEvaluerIn,
@@ -34,6 +35,9 @@ from app.schemas.clientele import (
     DeclarationBcmCreerIn,
     DeclarationBcmMotifIn,
     DeclarationBcmValiderIn,
+    DeclarationSicCreerIn,
+    DeclarationSicDepotIn,
+    DeclarationSicValiderIn,
     ImportConfirmIn,
     ImportMappingIn,
     LotClasserIn,
@@ -45,6 +49,9 @@ from app.schemas.clientele import (
     LotMappingIn,
     RapprochementIn,
     ReexamenTraiterIn,
+    SicAgenceIn,
+    SicComplementIn,
+    SicSecteurIn,
 )
 from app.data.clientele_import_hebdo import construire_modele
 from app.services.clientele.hebdo import ClienteleDecisionLotService
@@ -54,6 +61,7 @@ from app.services.clientele.classification import (
     ClienteleClassificationService,
     autorisation_classement_masse,
 )
+from app.services.clientele.bcm_referentiel import ClienteleBcmReferentielService
 from app.services.clientele.bcm_regles import ClienteleBcmReglesService
 from app.services.clientele.declaration import ClienteleDeclarationService
 from app.services.clientele.filtrage import ClienteleFiltrageService
@@ -61,6 +69,7 @@ from app.services.clientele.import_service import ClienteleImportService
 from app.services.clientele.indicateurs import ClienteleIndicateursService
 from app.services.clientele.rapprochement import ClienteleRapprochementService
 from app.services.clientele.service import Ctx
+from app.services.clientele.sic import ClienteleSicService
 from app.services.clientele.situation import ClienteleSituationService, SOURCES_COLONNES
 from app.services.clientele.taches import ClienteleTacheService
 from app.services.clientele.vue360 import ClienteleVue360Service, filtres_depuis
@@ -87,6 +96,8 @@ CAPACITES = {
     "bcm_preparer": ("clientele.bcm.prepare",),
     "bcm_valider": ("clientele.bcm.valider",),
     "bcm_cloturer": ("clientele.bcm.cloturer",),
+    "bcm_referentiel": ("clientele.bcm.referentiel",),
+    "sic_depot": ("clientele.sic.depot",),
     "exporter": ("clientele.export",),
     "admin": ("clientele.admin",),
 }
@@ -946,10 +957,211 @@ async def grille_bcm(
 
 @router.get("/bcm/regles")
 async def regles_bcm(
+    registre: str = Query("BCM", pattern="^(BCM|SIC)$"),
     c: Ctx = Depends(ctx("clientele.bcm.view", "clientele.reporting.view")),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    return await ClienteleBcmReglesService(db, c).lister()
+    return await ClienteleBcmReglesService(db, c).lister(registre)
+
+
+# --------------------------------------------------------------------------- référentiels BCM
+_REF_LIRE = ("clientele.bcm.view", "clientele.bcm.referentiel")
+
+
+@router.get("/bcm/referentiel/versions")
+async def ref_versions(c: Ctx = Depends(ctx(*_REF_LIRE)), db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await ClienteleBcmReferentielService(db, c).versions()
+
+
+@router.post("/bcm/referentiel/versions", status_code=201)
+async def ref_importer(
+    fichier: UploadFile = File(...),
+    libelle: str | None = Form(None),
+    observations: str | None = Form(None),
+    c: Ctx = Depends(ctx("clientele.bcm.referentiel")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    contenu = await fichier.read()
+    return await ClienteleBcmReferentielService(db, c).importer(
+        contenu, fichier.filename or "referentiel.xlsx", libelle, observations)
+
+
+@router.get("/bcm/referentiel/comparer")
+async def ref_comparer(a: uuid.UUID, b: uuid.UUID, c: Ctx = Depends(ctx(*_REF_LIRE)),
+                       db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleBcmReferentielService(db, c).comparer(a, b)
+
+
+@router.get("/bcm/referentiel/codes")
+async def ref_codes(
+    version: uuid.UUID | None = None,
+    q: str | None = None,
+    usage: str | None = Query(None, pattern="^(PP|PM|AUTRE)$"),
+    page: int = 1,
+    taille: int = 100,
+    c: Ctx = Depends(ctx(*_REF_LIRE)),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await ClienteleBcmReferentielService(db, c).codes(version, q, usage, page, taille)
+
+
+@router.post("/bcm/referentiel/versions/{vid}/activer")
+async def ref_activer(vid: uuid.UUID, body: BcmRefActiverIn, c: Ctx = Depends(ctx("clientele.bcm.referentiel")),
+                      db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleBcmReferentielService(db, c).activer(vid, body.motif)
+
+
+@router.delete("/bcm/referentiel/versions/{vid}", status_code=204)
+async def ref_supprimer(vid: uuid.UUID, c: Ctx = Depends(ctx("clientele.bcm.referentiel")),
+                        db: AsyncSession = Depends(get_db)) -> Response:
+    await ClienteleBcmReferentielService(db, c).supprimer(vid)
+    return Response(status_code=204)
+
+
+@router.get("/bcm/referentiel/agences")
+async def ref_agences(c: Ctx = Depends(ctx(*_REF_LIRE)), db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await ClienteleBcmReferentielService(db, c).agences()
+
+
+@router.put("/bcm/referentiel/agences/{agence_id}")
+async def ref_agence_definir(agence_id: uuid.UUID, body: SicAgenceIn,
+                             c: Ctx = Depends(ctx("clientele.bcm.referentiel")),
+                             db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await ClienteleBcmReferentielService(db, c).definir_agence(agence_id, body.valeur, body.observation)
+
+
+@router.delete("/bcm/referentiel/agences/{agence_id}")
+async def ref_agence_retirer(agence_id: uuid.UUID, c: Ctx = Depends(ctx("clientele.bcm.referentiel")),
+                             db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await ClienteleBcmReferentielService(db, c).retirer_agence(agence_id)
+
+
+@router.get("/bcm/referentiel/secteurs")
+async def ref_secteurs(c: Ctx = Depends(ctx(*_REF_LIRE)), db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleBcmReferentielService(db, c).secteurs()
+
+
+@router.put("/bcm/referentiel/secteurs")
+async def ref_secteur_definir(body: SicSecteurIn, c: Ctx = Depends(ctx("clientele.bcm.referentiel")),
+                              db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleBcmReferentielService(db, c).definir_secteur(
+        body.libelle_orion, body.code_bcm, body.statut, body.observation)
+
+
+@router.delete("/bcm/referentiel/secteurs")
+async def ref_secteur_retirer(libelle: str = Query(..., max_length=160),
+                              c: Ctx = Depends(ctx("clientele.bcm.referentiel")),
+                              db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleBcmReferentielService(db, c).retirer_secteur(libelle)
+
+
+@router.get("/bcm/referentiel/complements")
+async def ref_complements(racine: str | None = None, page: int = 1, taille: int = 50,
+                          c: Ctx = Depends(ctx(*_REF_LIRE)), db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleBcmReferentielService(db, c).complements(racine, page, taille)
+
+
+@router.get("/bcm/referentiel/complements/modele.xlsx")
+async def ref_complements_modele(c: Ctx = Depends(ctx(*_REF_LIRE))) -> Response:
+    return _xlsx(ClienteleBcmReferentielService.modele_complements(), "modele-complements-sic.xlsx")
+
+
+@router.post("/bcm/referentiel/complements/import")
+async def ref_complements_import(
+    fichier: UploadFile = File(...),
+    appliquer: bool = Query(False),
+    c: Ctx = Depends(ctx("clientele.bcm.referentiel")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    contenu = await fichier.read()
+    return await ClienteleBcmReferentielService(db, c).importer_complements(
+        contenu, fichier.filename or "complements.xlsx", appliquer)
+
+
+@router.put("/bcm/referentiel/complements/{racine}")
+async def ref_complement_definir(racine: str, body: SicComplementIn,
+                                 c: Ctx = Depends(ctx("clientele.bcm.referentiel")),
+                                 db: AsyncSession = Depends(get_db)) -> dict:
+    valeurs = body.model_dump(exclude={"motif"})
+    return await ClienteleBcmReferentielService(db, c).definir_complement(racine, valeurs, body.motif)
+
+
+# --------------------------------------------------------------------------- déclarations SIC
+@router.get("/declarations-historique")
+async def historique_declarations(c: Ctx = Depends(ctx("clientele.bcm.view")),
+                                  db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await ClienteleSicService(db, c).historique()
+
+
+@router.get("/sic")
+async def sic_lister(type: str | None = Query(None, pattern="^(PP|PM)$"), statut: str | None = None,
+                     c: Ctx = Depends(ctx("clientele.bcm.view")), db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await ClienteleSicService(db, c).lister(type, statut)
+
+
+@router.post("/sic", status_code=201)
+async def sic_creer(body: DeclarationSicCreerIn, c: Ctx = Depends(ctx("clientele.bcm.prepare")),
+                    db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleSicService(db, c).creer(body.type, body.date_reference, body.date_debut)
+
+
+@router.get("/sic/{did}")
+async def sic_detail(did: uuid.UUID, c: Ctx = Depends(ctx("clientele.bcm.view")),
+                     db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleSicService(db, c).detail(did)
+
+
+@router.get("/sic/{did}/lignes")
+async def sic_lignes(
+    did: uuid.UUID,
+    statut: str | None = Query(None, pattern="^(EXPORTEE|EXCLUE)$"),
+    gravite: str | None = Query(None, pattern="^(BLOQUANTE|A_CORRIGER|AVERTISSEMENT|AUCUNE)$"),
+    champ: str | None = Query(None, max_length=60),
+    racine: str | None = Query(None, max_length=40),
+    page: int = 1,
+    taille: int = 50,
+    c: Ctx = Depends(ctx("clientele.bcm.view")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await ClienteleSicService(db, c).lignes(did, statut, gravite, champ, racine, page, taille)
+
+
+@router.post("/sic/{did}/controler")
+async def sic_controler(did: uuid.UUID, c: Ctx = Depends(ctx("clientele.bcm.prepare")),
+                        db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleSicService(db, c).controler(did)
+
+
+@router.post("/sic/{did}/valider")
+async def sic_valider(did: uuid.UUID, body: DeclarationSicValiderIn | None = None,
+                      c: Ctx = Depends(ctx("clientele.bcm.valider")), db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleSicService(db, c).valider(did, body.commentaire if body else None)
+
+
+@router.post("/sic/{did}/generer")
+async def sic_generer(did: uuid.UUID, c: Ctx = Depends(ctx("clientele.bcm.prepare")),
+                      db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleSicService(db, c).generer(did)
+
+
+@router.get("/sic/{did}/fichier.xlsx")
+async def sic_fichier(did: uuid.UUID, c: Ctx = Depends(ctx("clientele.bcm.view")),
+                      db: AsyncSession = Depends(get_db)) -> Response:
+    contenu, nom = await ClienteleSicService(db, c).fichier(did)
+    return _xlsx(contenu, nom)
+
+
+@router.get("/sic/{did}/anomalies.xlsx")
+async def sic_rapport(did: uuid.UUID, c: Ctx = Depends(ctx("clientele.bcm.view")),
+                      db: AsyncSession = Depends(get_db)) -> Response:
+    contenu, nom = await ClienteleSicService(db, c).rapport(did)
+    return _xlsx(contenu, nom)
+
+
+@router.post("/sic/{did}/depot")
+async def sic_depot(did: uuid.UUID, body: DeclarationSicDepotIn, c: Ctx = Depends(ctx("clientele.sic.depot")),
+                    db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleSicService(db, c).deposer(did, body.depot_le, body.resultat, body.commentaire)
 
 
 @router.post("/bcm/regles/{code}")

@@ -203,3 +203,43 @@ class BcmRegleDecisionIn(BaseModel):
     valeur: Any = None
     statut: str
     motif: str
+
+
+class BcmRefActiverIn(BaseModel):
+    motif: str = Field(..., max_length=2000)
+
+
+class SicAgenceIn(BaseModel):
+    valeur: str = Field(..., max_length=120)
+    observation: str | None = Field(None, max_length=2000)
+
+
+class SicSecteurIn(BaseModel):
+    libelle_orion: str = Field(..., max_length=160)
+    code_bcm: str = Field(..., max_length=10)
+    statut: str = "A_VALIDER"
+    observation: str | None = Field(None, max_length=2000)
+
+
+class SicComplementIn(BaseModel):
+    genre: str | None = Field(None, max_length=20)
+    telephone: str | None = Field(None, max_length=40)
+    code_csp_bcm: str | None = Field(None, max_length=10)
+    code_secteur_bcm: str | None = Field(None, max_length=10)
+    motif: str = Field(..., max_length=2000)
+
+
+class DeclarationSicCreerIn(BaseModel):
+    type: str = Field(..., pattern="^(PP|PM)$")
+    date_reference: date
+    date_debut: date | None = None
+
+
+class DeclarationSicValiderIn(BaseModel):
+    commentaire: str | None = Field(None, max_length=2000)
+
+
+class DeclarationSicDepotIn(BaseModel):
+    depot_le: date
+    resultat: str
+    commentaire: str | None = Field(None, max_length=2000)
