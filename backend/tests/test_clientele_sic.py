@@ -137,7 +137,7 @@ def test_pp_complet_exporte_identifiants_texte():
 def test_pp_champs_absents_bloquants_jamais_inventes():
     [lg] = construire([_pp(eer_sexe=None, eer_telephone=None, kyc_csp=None, statut_resident=None, nni=None)],
                       "PP", _ctx())
-    assert lg["statut"] == "EXCLUE"
+    assert lg["statut"] == "EXPORTEE" and lg["gravite_max"] == BLOQUANTE
     for champ in ("Genre", "NumTel", "CodeCategorieSocioprofessionnelle", "StatutResidentiel", "NNI"):
         assert BLOQUANTE in _gravites(lg, champ), champ
     assert lg["valeurs"][5] is None and lg["valeurs"][6] is None
@@ -162,33 +162,33 @@ def test_pp_nni_hors_format_exporte_a_corriger_et_tel_invalide_bloque():
     [lg] = construire([_pp(nni="123456")], "PP", _ctx())
     assert lg["statut"] == "EXPORTEE" and lg["valeurs"][2] == "123456" and A_CORRIGER in _gravites(lg, "NNI")
     [tel] = construire([_pp(eer_telephone="123")], "PP", _ctx())
-    assert tel["statut"] == "EXCLUE" and BLOQUANTE in _gravites(tel, "NumTel")
+    assert tel["statut"] == "EXPORTEE" and tel["valeurs"][7] is None and BLOQUANTE in _gravites(tel, "NumTel")
 
 
 def test_pp_nom_non_decoupable_bloque():
     [lg] = construire([_pp(nom_complet="SIDI MOHAMED AHMED OULD", prenoms="[IDP] 1 AHMED")], "PP", _ctx())
-    assert lg["statut"] == "EXCLUE" and BLOQUANTE in _gravites(lg, "Nom")
+    assert lg["gravite_max"] == BLOQUANTE and BLOQUANTE in _gravites(lg, "Nom")
 
 
 def test_profil_non_identifie_et_confusion_pp_pm():
     [ni] = construire([_pp(profil="NON_IDENTIFIE")], "PP", _ctx())
-    assert ni["statut"] == "EXCLUE" and BLOQUANTE in _gravites(ni, "Profil")
+    assert ni["gravite_max"] == BLOQUANTE and BLOQUANTE in _gravites(ni, "Profil")
     formes = {"forme.correspondance": {"PP": ["PERSONNE PHYSIQUE"], "PM": ["SARL"], "CJ": []},
               "forme.repli_profil": False}
     [conf] = construire([_pp(categorie="SARL")], "PP", _ctx(regles_bcm=formes))
-    assert conf["statut"] == "EXCLUE" and BLOQUANTE in _gravites(conf, "Profil")
+    assert conf["gravite_max"] == BLOQUANTE and BLOQUANTE in _gravites(conf, "Profil")
 
 
 def test_agence_sans_correspondance_et_multi_agences():
     [sans] = construire([_pp()], "PP", _ctx(agences={}))
-    assert sans["statut"] == "EXCLUE" and BLOQUANTE in _gravites(sans, "MoughataaAgence")
+    assert sans["statut"] == "EXPORTEE" and sans["valeurs"][9] is None and BLOQUANTE in _gravites(sans, "MoughataaAgence")
     [multi] = construire([_pp(nb_agences=2, nb_comptes=3)], "PP", _ctx())
     assert multi["statut"] == "EXPORTEE" and _gravites(multi) == {AVERTISSEMENT}
 
 
 def test_doublons_racine_et_identifiant():
     lignes = construire([_pp(), _pp()], "PP", _ctx())
-    assert all(lg["statut"] == "EXCLUE" for lg in lignes)
+    assert all(lg["gravite_max"] == BLOQUANTE for lg in lignes)
     partage = construire([_pp(), _pp(racine="000124")], "PP", _ctx())
     assert all(A_CORRIGER in _gravites(lg, "NNI") for lg in partage)
 
@@ -211,14 +211,14 @@ def test_pm_complet_et_secteurs():
     assert a_valider["statut"] == "EXPORTEE" and A_CORRIGER in _gravites(a_valider, "CodeSecteurActivite")
     for lib in ("SANS", "DIVERS", "", "Pêche artisanale"):
         [lg] = construire([_pm(secteur_orion=lib)], "PM", _ctx())
-        assert lg["statut"] == "EXCLUE" and BLOQUANTE in _gravites(lg, "CodeSecteurActivite"), lib
+        assert lg["valeurs"][3] is None and BLOQUANTE in _gravites(lg, "CodeSecteurActivite"), lib
     [kyc] = construire([_pm(secteur_orion="SANS", kyc_secteur="101")], "PM", _ctx())
     assert kyc["statut"] == "EXPORTEE" and kyc["valeurs"][3] == "101"
 
 
 def test_pm_nif_absent_nni_jamais_substitue():
     [lg] = construire([_pm(nif=None, nni="0012345678")], "PM", _ctx())
-    assert lg["statut"] == "EXCLUE" and lg["valeurs"][1] is None and BLOQUANTE in _gravites(lg, "NIF")
+    assert lg["statut"] == "EXPORTEE" and lg["valeurs"][1] is None and BLOQUANTE in _gravites(lg, "NIF")
 
 
 # --------------------------------------------------------------------------- fichier Excel
@@ -234,6 +234,18 @@ def test_xlsx_relu_conforme(fmt):
     assert [c.value for c in ws[1]] == list(COLONNES["PP"])
     assert ws["A2"].value == "000123" and ws["A2"].data_type == "s" and ws["C2"].value == "0012345678"
     assert ws.max_row == 3
+
+
+def test_xlsx_incomplet_accepte_cellules_vides_signalees():
+    ctx = _ctx(agences={})
+    lignes = construire([_pp(eer_sexe=None), _pp(racine="000124", nni="0012345679")], "PP", ctx)
+    valeurs = [lg["valeurs"] for lg in lignes]
+    contenu = ecrire_xlsx("PP", valeurs, "TEXTE_JJ_MM_AAAA")
+    verif = verifier_xlsx(contenu, "PP", valeurs, "TEXTE_JJ_MM_AAAA", CODES, ctx.regles)
+    assert verif["ok"]
+    vides = next(c for c in verif["controles"] if c["code"] == "obligatoires")
+    assert not vides["ok"] and not vides["bloquant"] and "3 cellule(s) vide(s) sur 2 ligne(s)" in vides["detail"]
+    assert load_workbook(io.BytesIO(contenu))["pp"].max_row == 3
 
 
 def test_xlsx_controle_detecte_ecart():

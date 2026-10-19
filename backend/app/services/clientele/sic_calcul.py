@@ -1,7 +1,8 @@
 """Déclaration SIC : construction des lignes PP / PM, anomalies, fichier Excel et contre-vérification. Pur.
 
-Aucune valeur n'est inventée : une donnée obligatoire absente ou invalide produit une anomalie BLOQUANTE et le
-client est exclu du fichier, mais reste listé dans le rapport d'anomalies.
+Aucune valeur n'est inventée : une donnée obligatoire absente ou invalide produit une anomalie BLOQUANTE et la
+cellule reste vide. Tous les candidats sont exportés ; les lignes incomplètes sont listées dans le rapport
+d'anomalies.
 """
 
 from __future__ import annotations
@@ -248,7 +249,7 @@ def gravite_max(anomalies: list[dict]) -> str | None:
 
 
 def construire(candidats: list[CandidatSic], type_sic: str, ctx: ContexteSic) -> list[dict]:
-    """Une entrée par candidat : racine, statut EXPORTEE / EXCLUE, valeurs, anomalies, gravité maximale."""
+    """Une entrée par candidat (toujours EXPORTEE) : racine, valeurs, anomalies, gravité maximale."""
     fn = ligne_pp if type_sic == "PP" else ligne_pm
     lignes = []
     for c in candidats:
@@ -269,7 +270,7 @@ def construire(candidats: list[CandidatSic], type_sic: str, ctx: ContexteSic) ->
                                              "Vérifier s'il s'agit du même client (doublon de racine)"))
     for lg in lignes:
         lg["gravite_max"] = gravite_max(lg["anomalies"])
-        lg["statut"] = "EXCLUE" if lg["gravite_max"] == BLOQUANTE else "EXPORTEE"
+        lg["statut"] = "EXPORTEE"
         lg["valeurs"] = [v.isoformat() if isinstance(v, datetime) else v for v in lg["valeurs"]]
     return lignes
 
@@ -311,11 +312,18 @@ _MOTIF_DATE = {
 
 def verifier_xlsx(contenu: bytes, type_sic: str, attendu: list[list], fmt_date: str, codes_ref: dict[str, str],
                   regles: dict[str, Any]) -> dict:
-    """Relit le fichier généré : feuille, en-têtes, ordre, types, nombre de lignes, doublons, valeurs autorisées."""
+    """Relit le fichier généré : feuille, en-têtes, ordre, types, nombre de lignes, doublons, valeurs autorisées.
+
+    Seuls les contrôles de structure sont bloquants ; cellules vides et valeurs hors référentiel sont signalées.
+    """
     controles: list[dict] = []
 
-    def ok(code: str, libelle: str, reussi: bool, detail: str = "") -> None:
-        controles.append({"code": code, "libelle": libelle, "ok": bool(reussi), "detail": detail})
+    def ok(code: str, libelle: str, reussi: bool, detail: str = "", bloquant: bool = True) -> None:
+        controles.append({"code": code, "libelle": libelle, "ok": bool(reussi), "detail": detail,
+                          "bloquant": bloquant})
+
+    def hors(valeurs: list, admis) -> int:
+        return sum(1 for v in valeurs if v not in (None, "") and not admis(v))
 
     wb = load_workbook(io.BytesIO(contenu))
     colonnes = COLONNES[type_sic]
@@ -342,26 +350,39 @@ def verifier_xlsx(contenu: bytes, type_sic: str, attendu: list[list], fmt_date: 
     racines = [str(r[0]) if r and r[0] is not None else "" for r in lignes]
     doublons = [k for k, n in Counter(racines).items() if n > 1]
     ok("doublons", "Aucun CodeClient en double", not doublons, ", ".join(doublons[:10]))
-    ok("code_client", "CodeClient à 6 chiffres", all(re.fullmatch(r"\d{6}", r) for r in racines))
+    cc_ko = sum(1 for r in racines if not re.fullmatch(r"\d{6}", r))
+    ok("code_client", "CodeClient à 6 chiffres", cc_ko == 0, f"{cc_ko} hors format" if cc_ko else "", bloquant=False)
     vides = sum(1 for r in lignes for v in r if v in (None, ""))
-    ok("obligatoires", "Aucune cellule vide", vides == 0, f"{vides} cellule(s) vide(s)" if vides else "")
+    incompletes = sum(1 for r in lignes if any(v in (None, "") for v in r))
+    ok("obligatoires", "Aucune cellule vide", vides == 0,
+       f"{vides} cellule(s) vide(s) sur {incompletes} ligne(s), à compléter (voir rapport d'anomalies)" if vides
+       else "", bloquant=False)
     idx = {nom: j for j, nom in enumerate(colonnes)}
+
+    def colonne(nom: str) -> list:
+        return [r[idx[nom]] for r in lignes]
+
     d_ko = 0
     if fmt_date in _MOTIF_DATE:
-        d_ko = sum(1 for r in lignes if not re.fullmatch(_MOTIF_DATE[fmt_date], str(r[idx["DateEntreeEnRelation"]])))
-    ok("dates", "DateEntreeEnRelation au format paramétré", d_ko == 0, f"{d_ko} date(s) hors format" if d_ko else "")
+        d_ko = hors(colonne("DateEntreeEnRelation"), lambda v: re.fullmatch(_MOTIF_DATE[fmt_date], str(v)))
+    ok("dates", "DateEntreeEnRelation au format paramétré", d_ko == 0, f"{d_ko} date(s) hors format" if d_ko else "",
+       bloquant=False)
     if type_sic == "PP":
         resid = set((regles.get("sic.residence") or {}).values()) or {"MR", "ETR"}
-        ok("residence", "StatutResidentiel autorisé", all(r[idx["StatutResidentiel"]] in resid for r in lignes))
-        ok("genre", "Genre H / F", all(r[idx["Genre"]] in ("H", "F") for r in lignes))
-        ok("csp", "Code CSP présent dans le référentiel (PP)",
-           all(codes_ref.get(str(r[idx["CodeCategorieSocioprofessionnelle"]])) == "PP" for r in lignes))
+        n = hors(colonne("StatutResidentiel"), lambda v: v in resid)
+        ok("residence", "StatutResidentiel autorisé", n == 0, f"{n} hors liste" if n else "", bloquant=False)
+        n = hors(colonne("Genre"), lambda v: v in ("H", "F"))
+        ok("genre", "Genre H / F", n == 0, f"{n} hors H / F" if n else "", bloquant=False)
+        n = hors(colonne("CodeCategorieSocioprofessionnelle"), lambda v: codes_ref.get(str(v)) == "PP")
+        ok("csp", "Code CSP présent dans le référentiel (PP)", n == 0, f"{n} hors référentiel" if n else "",
+           bloquant=False)
     else:
-        ok("secteur", "Code secteur présent dans le référentiel (PM)",
-           all(codes_ref.get(str(r[idx["CodeSecteurActivite"]])) == "PM" for r in lignes))
+        n = hors(colonne("CodeSecteurActivite"), lambda v: codes_ref.get(str(v)) == "PM")
+        ok("secteur", "Code secteur présent dans le référentiel (PM)", n == 0, f"{n} hors référentiel" if n else "",
+           bloquant=False)
     relu = [[v.isoformat() if isinstance(v, datetime) else v for v in r] for r in lignes]
     ok("contenu", "Contenu identique aux lignes contrôlées", relu == attendu)
-    return {"ok": all(c["ok"] for c in controles), "controles": controles}
+    return {"ok": all(c["ok"] for c in controles if c["bloquant"]), "controles": controles}
 
 
 # --------------------------------------------------------------------------- rapport d'anomalies
@@ -396,7 +417,12 @@ def rapport_anomalies_xlsx(entete: list[tuple[str, Any]], lignes: list[dict]) ->
     wa.freeze_panes = "A2"
     wa.append([cellule(wa, h, police=gras, fond=_FOND_ENTETE) for h in _ENTETES_RAPPORT])
     for lg in lignes:
-        statut = "Exclue" if lg["statut"] == "EXCLUE" else "Exportée"
+        if lg["statut"] == "EXCLUE":
+            statut = "Exclue"
+        elif any(a["gravite"] == BLOQUANTE for a in lg["anomalies"]):
+            statut = "Incomplète"
+        else:
+            statut = "Exportée"
         for a in lg["anomalies"]:
             wa.append([str(lg["racine"]), statut, a["gravite"], a["champ"], a.get("valeur") or "", a["motif"],
                        a["action"]])

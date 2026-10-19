@@ -191,17 +191,16 @@ async def test_cycle_sic_complet_sans_modifier_les_clients(db):
 
     sic = ClienteleSicService(db, c)
     pp = await sic.creer("PP", REF_DATE, None, prefixe="997")
-    assert pp["nb_candidats"] == 2 and pp["nb_lignes"] == 1 and pp["nb_exclus"] == 1
+    assert pp["nb_candidats"] == 2 and pp["nb_lignes"] == 2 and pp["nb_exclus"] == 0
+    assert pp["nb_incompletes"] == 1
     assert pp["statut"] == "A_CORRIGER" and pp["ref_version_id"] == v["id"]
-    exclus = await sic.lignes(uuid.UUID(pp["id"]), "EXCLUE", None, None, None, 1, 50)
-    assert [x["racine"] for x in exclus["items"]] == ["997002"]
-    assert {a["champ"] for a in exclus["items"][0]["anomalies"]} >= {"NNI", "Genre", "NumTel", "Nom"}
+    incompletes = await sic.lignes(uuid.UUID(pp["id"]), "INCOMPLETE", None, None, None, 1, 50)
+    assert [x["racine"] for x in incompletes["items"]] == ["997002"]
+    assert {a["champ"] for a in incompletes["items"][0]["anomalies"]} >= {"NNI", "Genre", "NumTel", "Nom"}
 
-    with pytest.raises(AppError, match="commentaire"):
-        await sic.valider(uuid.UUID(pp["id"]), None)
     with pytest.raises(AppError):
         await sic.deposer(uuid.UUID(pp["id"]), date.today(), "ACCEPTE", None)
-    pp = await sic.valider(uuid.UUID(pp["id"]), "Exclusion de 997002 acceptée (test)")
+    pp = await sic.valider(uuid.UUID(pp["id"]), None)
     assert pp["statut"] == "VALIDEE_EXPORT"
     pp = await sic.generer(uuid.UUID(pp["id"]))
     assert pp["statut"] == "GENEREE" and pp["controle_fichier"]["ok"]
@@ -211,6 +210,7 @@ async def test_cycle_sic_complet_sans_modifier_les_clients(db):
     assert [x.value for x in ws[1]] == list(COLONNES["PP"])
     assert [x.value for x in ws[2]] == ["997001", "MR", "0012345678", "AHMED", "SIDI MOHAMED", "F", "1101",
                                         "22334455", "04/05/2001", "Tevragh Zeina"]
+    assert ws.max_row == 3 and ws["A3"].value == "997002" and ws["C3"].value is None
     with pytest.raises(AppError):
         await sic.controler(uuid.UUID(pp["id"]))
     rapport, _ = await sic.rapport(uuid.UUID(pp["id"]))

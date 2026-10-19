@@ -19,6 +19,7 @@ interface SicDetail extends SicResume {
   controlee_le: string | null; validee_le: string | null; depot_saisi_le: string | null;
   controlee_par: string | null; validee_par: string | null; generee_par: string | null; depot_par: string | null;
   synthese_anomalies: { gravite: string; champ: string; nombre: number }[];
+  nb_incompletes: number;
   actions: { controler: boolean; valider: boolean; generer: boolean; deposer: boolean; telecharger: boolean };
 }
 interface Anomalie { gravite: string; champ: string; valeur: string | null; motif: string; action: string; }
@@ -76,7 +77,7 @@ const LIBELLES_ETAPES = ['Brouillon', 'Contrôlée / à corriger', 'Validée pou
           <div class="bea-mg__table-wrap">
             <table class="bea-mg__table">
               <tbody>
-                <tr><th>Clients candidats</th><td>{{ x.nb_candidats }}</td><th>Clients exportés</th><td>{{ x.nb_lignes }}</td><th>Clients exclus</th><td>{{ x.nb_exclus }}</td></tr>
+                <tr><th>Clients candidats</th><td>{{ x.nb_candidats }}</td><th>Clients exportés</th><td>{{ x.nb_lignes }}</td><th>Lignes incomplètes</th><td>{{ x.nb_incompletes }}</td></tr>
                 <tr><th>Anomalies bloquantes</th><td>{{ x.nb_bloquantes }}</td><th>À corriger</th><td>{{ x.nb_a_corriger }}</td><th>Avertissements</th><td>{{ x.nb_avertissements }}</td></tr>
                 <tr><th>Colonnes</th><td colspan="5">{{ x.colonnes.join(' · ') }}</td></tr>
                 @if (x.commentaire_validation) {
@@ -111,7 +112,7 @@ const LIBELLES_ETAPES = ['Brouillon', 'Contrôlée / à corriger', 'Validée pou
               <span class="bea-cl-badge" [attr.data-s]="cf.ok ? 'VALIDEE' : 'A_CONTROLER'">{{ cf.ok ? 'Conforme' : 'Non conforme' }}</span></div>
             <ul class="bea-cl-anoms" style="margin:0 1.1rem 0.9rem">
               @for (c of cf.controles; track c.code) {
-                <li [attr.data-n]="c.ok ? 'ok' : 'bloquant'"><mat-icon>{{ c.ok ? 'check_circle' : 'block' }}</mat-icon>
+                <li [attr.data-n]="c.ok ? 'ok' : (c.bloquant === false ? 'alerte' : 'bloquant')"><mat-icon>{{ c.ok ? 'check_circle' : (c.bloquant === false ? 'warning' : 'block') }}</mat-icon>
                   <strong>{{ c.libelle }}</strong>@if (c.detail) { <span class="bea-cl-hint"> — {{ c.detail }}</span> }</li>
               }
             </ul>
@@ -150,7 +151,7 @@ const LIBELLES_ETAPES = ['Brouillon', 'Contrôlée / à corriger', 'Validée pou
           <form class="bea-cl-filters" (submit)="$event.preventDefault(); page.set(1); chargerLignes()">
             <label>Ligne
               <select [(ngModel)]="fStatut" name="f_statut">
-                <option value="">Toutes</option><option value="EXCLUE">Exclues</option><option value="EXPORTEE">Exportées</option>
+                <option value="">Toutes</option><option value="INCOMPLETE">Incomplètes</option><option value="COMPLETE">Complètes</option>
               </select>
             </label>
             <label>Gravité
@@ -176,9 +177,9 @@ const LIBELLES_ETAPES = ['Brouillon', 'Contrôlée / à corriger', 'Validée pou
               <thead><tr><th>Racine</th><th>Ligne</th>@for (c of x.colonnes.slice(1); track c) { <th>{{ c }}</th> }<th>Anomalies</th></tr></thead>
               <tbody>
                 @for (l of lignes()?.items ?? []; track l.racine) {
-                  <tr [class.is-off]="l.statut === 'EXCLUE'">
+                  <tr>
                     <td><a [routerLink]="['/clientele/clients', l.racine]">{{ l.racine }}</a></td>
-                    <td><span class="bea-cl-badge" [attr.data-s]="l.statut === 'EXCLUE' ? 'DESACTIVEE' : 'VALIDEE'">{{ l.statut === 'EXCLUE' ? 'Exclue' : 'Exportée' }}</span></td>
+                    <td><span class="bea-cl-badge" [attr.data-s]="l.gravite_max === 'BLOQUANTE' ? 'A_CONTROLER' : 'VALIDEE'">{{ l.gravite_max === 'BLOQUANTE' ? 'Incomplète' : 'Complète' }}</span></td>
                     @for (v of l.valeurs.slice(1); track $index) { <td>{{ v ?? '—' }}</td> }
                     <td>
                       <ul class="bea-cl-anoms" style="margin:0">
@@ -305,7 +306,7 @@ export class ClSicDetailComponent implements OnInit {
     this.feedback.run(() => this.api.post<SicDetail>(`${CL_BASE}/sic/${this.id()}/controler`, {}), {
       busy: this.busy,
       loading: 'Contrôle des clients…',
-      success: (d) => ({ title: 'Contrôle terminé', message: `${d.nb_lignes} exportable(s), ${d.nb_exclus} exclu(s).` }),
+      success: (d) => ({ title: 'Contrôle terminé', message: `${d.nb_lignes} client(s) à exporter, dont ${d.nb_incompletes} incomplet(s).` }),
       errorTitle: 'Contrôle impossible',
     }).subscribe((d) => this.apres(d));
   }
@@ -315,12 +316,12 @@ export class ClSicDetailComponent implements OnInit {
     this.feedback.runWithReason((commentaire) => this.api.post<SicDetail>(`${CL_BASE}/sic/${x.id}/valider`, { commentaire }), {
       reason: {
         title: 'Valider pour export',
-        message: x.nb_exclus
-          ? `${x.nb_exclus} client(s) exclu(s) ne figureront pas dans le fichier (listés dans le rapport d’anomalies). ${x.nb_lignes} client(s) seront exportés.`
+        message: x.nb_incompletes
+          ? `${x.nb_lignes} client(s) seront exportés, dont ${x.nb_incompletes} avec des cellules vides (listés dans le rapport d’anomalies).`
           : `${x.nb_lignes} client(s) seront exportés.`,
         hint: 'Après validation, les lignes ne sont plus recalculées.',
-        reasonLabel: 'Commentaire de validation',
-        required: x.statut === 'A_CORRIGER',
+        reasonLabel: 'Commentaire de validation (facultatif)',
+        required: false,
       },
       busy: this.busy,
       loading: 'Validation…',

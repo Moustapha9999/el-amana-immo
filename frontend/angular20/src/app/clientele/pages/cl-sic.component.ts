@@ -52,7 +52,7 @@ function finMoisPrecedent(): string {
           <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/clientele/declarations-historique"><mat-icon>history</mat-icon> Historique</a>
         </div>
       </header>
-      <p class="bea-cl-note bea-cl-note--info"><mat-icon>info</mat-icon>Aucune donnée n’est inventée : un champ obligatoire absent exclut le client du fichier et le liste dans le rapport d’anomalies. La déclaration ne modifie ni la classification, ni le KYC, ni les comptes.</p>
+      <p class="bea-cl-note bea-cl-note--info"><mat-icon>info</mat-icon>Tous les clients du périmètre sont exportés. Aucune donnée n’est inventée : un champ obligatoire absent laisse la cellule vide et figure dans le rapport d’anomalies. La déclaration ne modifie ni la classification, ni le KYC, ni les comptes.</p>
       @if (store.cap().bcm_preparer) {
         <form class="bea-mg__panel bea-cl-filters" (submit)="$event.preventDefault(); creer()">
           <label>Fichier
@@ -150,8 +150,8 @@ export class ClSicComponent implements OnInit {
         title: `Déclaration SIC ${r.type} préparée`,
         details: [
           { label: 'Candidats', value: String(r.nb_candidats) },
-          { label: 'Exportables', value: String(r.nb_lignes) },
-          { label: 'Exclus', value: String(r.nb_exclus) },
+          { label: 'À exporter', value: String(r.nb_lignes) },
+          { label: 'Anomalies bloquantes', value: String(r.nb_bloquantes) },
         ],
       }),
       errorTitle: 'Préparation impossible',

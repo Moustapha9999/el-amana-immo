@@ -1114,7 +1114,7 @@ async def sic_detail(did: uuid.UUID, c: Ctx = Depends(ctx("clientele.bcm.view"))
 @router.get("/sic/{did}/lignes")
 async def sic_lignes(
     did: uuid.UUID,
-    statut: str | None = Query(None, pattern="^(EXPORTEE|EXCLUE)$"),
+    statut: str | None = Query(None, pattern="^(EXPORTEE|EXCLUE|INCOMPLETE|COMPLETE)$"),
     gravite: str | None = Query(None, pattern="^(BLOQUANTE|A_CORRIGER|AVERTISSEMENT|AUCUNE)$"),
     champ: str | None = Query(None, max_length=60),
     racine: str | None = Query(None, max_length=40),

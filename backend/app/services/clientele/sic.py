@@ -11,7 +11,7 @@ import uuid
 from collections import Counter
 from datetime import date, datetime, timezone
 
-from sqlalchemy import delete, func, insert, select, text
+from sqlalchemy import delete, func, insert, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
@@ -133,6 +133,9 @@ class ClienteleSicService:
             WHERE l.declaration_id = :d GROUP BY 1, 2 ORDER BY 3 DESC
         """), {"d": d.id})).all()
         out["synthese_anomalies"] = [{"gravite": g, "champ": c, "nombre": n} for g, c, n in par_champ]
+        out["nb_incompletes"] = await self.db.scalar(
+            select(func.count()).select_from(ClienteleSicLigne).where(
+                ClienteleSicLigne.declaration_id == d.id, ClienteleSicLigne.gravite_max == BLOQUANTE)) or 0
         out["actions"] = {
             "controler": d.statut in STATUTS_SIC_MODIFIABLES and self.ctx.peut("clientele.bcm.prepare"),
             "valider": d.statut in ("CONTROLEE", "A_CORRIGER") and self.ctx.peut("clientele.bcm.valider"),
@@ -176,6 +179,10 @@ class ClienteleSicService:
         stmt = select(L).where(L.declaration_id == d.id)
         if statut in ("EXPORTEE", "EXCLUE"):
             stmt = stmt.where(L.statut == statut)
+        elif statut == "INCOMPLETE":
+            stmt = stmt.where(L.gravite_max == BLOQUANTE)
+        elif statut == "COMPLETE":
+            stmt = stmt.where(or_(L.gravite_max.is_(None), L.gravite_max != BLOQUANTE))
         if gravite == "AUCUNE":
             stmt = stmt.where(L.gravite_max.is_(None))
         elif gravite:
@@ -276,7 +283,7 @@ class ClienteleSicService:
             "WHERE s.racine_client = c.racine_client)")) or 0
         d.controles = self._controles(d, lignes, regles, version, ctx, perimetre)
         d.controles.append({"code": "perimetre.hors_vue", "libelle": "Aucun client avec compte hors périmètre de "
-                            "calcul (compte sans agence)", "ok": not hors_vue, "bloquant": bool(hors_vue),
+                            "calcul (compte sans agence)", "ok": not hors_vue, "bloquant": False,
                             "detail": f"{hors_vue} client(s) non évalué(s)" if hors_vue else ""})
         d.statut = "A_CORRIGER" if (compte[BLOQUANTE] or compte[A_CORRIGER]
                                     or any(c["bloquant"] and not c["ok"] for c in d.controles)) else "CONTROLEE"
@@ -300,21 +307,20 @@ class ClienteleSicService:
         racines = Counter(lg["racine"] for lg in lignes)
         agences_manquantes = sorted({a["valeur"] or "—" for lg in lignes for a in lg["anomalies"]
                                      if a["champ"] == "MoughataaAgence" and a["gravite"] == BLOQUANTE})
-        exportees = sum(lg["statut"] == "EXPORTEE" for lg in lignes)
+        incompletes = sum(lg["gravite_max"] == BLOQUANTE for lg in lignes)
         return [
             c("referentiel.actif", "Version active du référentiel BCM", version is not None,
               f"Version « {version.libelle} »" if version else "Aucune version active : codes CSP / secteur non "
-              "contrôlables", bloquant=True),
+              "contrôlables"),
             c("regles.a_valider", "Règles SIC confirmées", not a_valider,
               ("À valider : " + " ; ".join(a_valider)) if a_valider else ""),
             c("perimetre", "Périmètre appliqué", True, f"{perimetre} au {d.date_reference:%d/%m/%Y}"),
             c("colonnes", f"Structure du fichier {d.type}", True,
               f"{len(COLONNES[d.type])} colonnes : {', '.join(COLONNES[d.type])}"),
             c("candidats", "Clients candidats", bool(lignes), f"{len(lignes)} candidat(s)", bloquant=True),
-            c("lignes", "Clients exportables", exportees > 0, f"{exportees} exportable(s)", bloquant=True),
             c("unicite", "Une ligne par racine client", all(n == 1 for n in racines.values()), bloquant=True),
-            c("exclusions", "Aucun client exclu", not (len(lignes) - exportees),
-              f"{len(lignes) - exportees} client(s) exclu(s), listés dans le rapport d'anomalies"),
+            c("completude", "Lignes complètes", not incompletes,
+              f"{incompletes} ligne(s) exportée(s) avec des cellules vides, listées dans le rapport d'anomalies"),
             c("agences", "Correspondance MoughataaAgence complète", not agences_manquantes,
               ("Agences sans valeur : " + ", ".join(agences_manquantes[:20])) if agences_manquantes else ""),
             c("anomalies.champs", "Répartition des anomalies", not champs,
@@ -329,9 +335,6 @@ class ClienteleSicService:
             raise AppError("Seule une déclaration contrôlée peut être validée pour export", 409,
                            code="STATUT_INVALIDE")
         commentaire = (commentaire or "").strip()
-        if d.statut == "A_CORRIGER" and not commentaire:
-            raise AppError("Des anomalies subsistent : un commentaire d'acceptation est obligatoire (les clients "
-                           "exclus ne seront pas dans le fichier)", 422, code="MOTIF_OBLIGATOIRE")
         bloquants = [c["libelle"] for c in d.controles or [] if c.get("bloquant") and not c.get("ok")]
         if bloquants:
             raise AppError("Contrôles bloquants non satisfaits : " + " ; ".join(bloquants), 409,
@@ -342,7 +345,8 @@ class ClienteleSicService:
         d.validee_le, d.validee_par_id = _maintenant(), self.ctx.user.id
         await self.db.flush()
         await self.svc.audit("sic.valider", "clientele_declaration_sic", d.id, before={"statut": avant},
-                             after={"statut": d.statut, "commentaire": commentaire, "exclus": d.nb_exclus})
+                             after={"statut": d.statut, "commentaire": commentaire, "bloquantes": d.nb_bloquantes,
+                                    "a_corriger": d.nb_a_corriger})
         await self.db.commit()
         return await self._detail(d)
 
@@ -352,8 +356,6 @@ class ClienteleSicService:
         if d.statut != "VALIDEE_EXPORT":
             raise AppError("La déclaration doit être validée pour export avant génération", 409,
                            code="STATUT_INVALIDE")
-        if not d.ref_version_id:
-            raise AppError("Aucune version du référentiel BCM rattachée", 409, code="REFERENTIEL_ABSENT")
         L = ClienteleSicLigne
         valeurs = [r for r in (await self.db.scalars(
             select(L.valeurs).where(L.declaration_id == d.id, L.statut == "EXPORTEE").order_by(L.racine_client)
@@ -363,7 +365,8 @@ class ClienteleSicService:
         regles = {r["code"]: r["valeur"] for r in d.regles or []}
         fmt = regles.get("sic.format_date") or "TEXTE_JJ_MM_AAAA"
         contenu = ecrire_xlsx(d.type, valeurs, fmt)
-        verif = verifier_xlsx(contenu, d.type, valeurs, fmt, await self.ref.codes_version(d.ref_version_id), regles)
+        codes = await self.ref.codes_version(d.ref_version_id) if d.ref_version_id else {}
+        verif = verifier_xlsx(contenu, d.type, valeurs, fmt, codes, regles)
         d.controle_fichier = verif
         if not verif["ok"]:
             await self.db.commit()
@@ -401,7 +404,7 @@ class ClienteleSicService:
             ("Déclaration SIC", d.type), ("Date de référence", f"{d.date_reference:%d/%m/%Y}"),
             ("Statut", LIBELLES_STATUT.get(d.statut, d.statut)),
             ("Référentiel BCM", await self._version_libelle(d.ref_version_id) or "—"),
-            ("Clients candidats", d.nb_candidats), ("Clients exportés", d.nb_lignes), ("Clients exclus", d.nb_exclus),
+            ("Clients candidats", d.nb_candidats), ("Clients exportés", d.nb_lignes),
             ("Anomalies bloquantes", d.nb_bloquantes), ("Anomalies à corriger", d.nb_a_corriger),
             ("Avertissements", d.nb_avertissements),
             ("Édité le", f"{_maintenant():%d/%m/%Y %H:%M} UTC"),
