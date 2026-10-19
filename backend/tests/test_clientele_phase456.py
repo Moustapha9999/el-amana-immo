@@ -199,12 +199,14 @@ async def test_classification_moteur_configurable_et_manuel(db, masse_autorisee)
 
     await svc.modifier_individuel("000001", {
         "niveau": "MOYEN", "motif_classement": "TEST ajustement analyste", "motif_risque": "revue",
+        "analyste_kyc": "Analyste Test",
     })
     assert (await svc.courante("000001"))["classification"]["niveau"] == "MOYEN"
     assert (await svc.courante("000001"))["classification"]["source"] == "MANUEL"
 
     from app.schemas.clientele import ClassifManuelIn
-    corps_api = ClassifManuelIn(niveau="MOYEN", motif_classement="TEST corps API sans racine").model_dump()
+    corps_api = ClassifManuelIn(niveau="MOYEN", motif_classement="TEST corps API sans racine",
+                                analyste_kyc="Analyste Test").model_dump()
     await svc.modifier_individuel("000001", corps_api)
     assert (await svc.courante("000001"))["classification"]["motif_classement"] == "TEST corps API sans racine"
 
