@@ -76,3 +76,6 @@ storage/*.tar.gz
 # Extraits ORION / classeurs Conformité (données clients nominatives)
 /*.xlsx
 /*.pdf
+
+# Modèle BCM avec chiffres réels (test de comparaison local uniquement)
+Déclaration mensuelle - BEA - *.xlsx

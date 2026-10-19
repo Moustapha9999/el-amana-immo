@@ -21,6 +21,7 @@ from app.data.clientele_bcm import (
 )
 from app.data.clientele_indicateurs import MOTEUR_VERSION
 from app.models import ClienteleDeclarationBcm, User
+from app.services.clientele.declaration_modele import classeur_modele
 from app.services.clientele.indicateurs import ClienteleIndicateursService
 from app.services.clientele.periodes import (
     MOIS_FR,
@@ -29,7 +30,7 @@ from app.services.clientele.periodes import (
     fin_mois_precedent,
 )
 from app.services.clientele.service import Ctx, ClienteleService, maintenant
-from app.services.reporting_export import build_styled_pdf, build_styled_workbook_multi
+from app.services.reporting_export import build_styled_pdf
 
 PAGE_MAX = 200
 
@@ -357,42 +358,33 @@ class ClienteleDeclarationService:
         return {**cellule, **detail}
 
     async def exporter_xlsx(self, did: uuid.UUID) -> bytes:
+        """Classeur au format du modèle officiel BEA → BCM. Préparation : aucune transmission."""
         self.ctx.exiger("clientele.export")
         d = await self._get(did)
         if not d.cellules:
             raise AppError("Calculez la déclaration avant l'export.", 422, code="NON_CALCULEE")
-        sheets = []
-        for tab in (d.cellules or {}).get("tableaux") or []:
-            headers = ["Ligne"] + [c["libelle"] for c in tab["colonnes"]]
-            rows = []
-            for ligne in tab["lignes"]:
-                row = [ligne["libelle"]]
-                for col in tab["colonnes"]:
-                    cell = ligne["cellules"].get(col["code"], {})
-                    row.append(self._txt(cell))
-                rows.append(row)
-            sheets.append((tab["code"], tab["titre"], headers, rows))
-        ctrl = [["Code", "Libellé", "OK", "Bloquant", "Attendu", "Observé", "Message"]]
-        for c in d.controles or []:
-            ctrl.append([
-                c.get("code"), c.get("libelle"),
-                "oui" if c.get("ok") else "non",
-                "oui" if c.get("bloquant") else "non",
-                c.get("attendu"), c.get("observe"), c.get("message"),
-            ])
-        sheets.append(("Controles", "Contrôles (non bloquants sauf mention)",
-                       ctrl[0], ctrl[1:]))
-        return build_styled_workbook_multi(
-            report_title="Déclaration mensuelle BCM",
-            sheets=sheets,
-            subtitle=self._periode_libelle(d),
-        )
+        genere_le = maintenant()
+        meta = {
+            "periode": self._periode_libelle(d), "statut": d.statut, "genere_le": genere_le,
+            "genere_par": self.ctx.user.full_name or self.ctx.user.email,
+            "calculee_le": d.calculee_le, "validee_le": d.validee_le,
+            "moteur_version": d.moteur_version, "grille_version": d.grille_version,
+        }
+        contenu = classeur_modele(d.cellules, d.controles, meta)
+        await self._tracer_export(d, "xlsx", genere_le)
+        return contenu
+
+    async def _tracer_export(self, d: ClienteleDeclarationBcm, fmt: str, genere_le) -> None:
+        await self.svc.audit("bcm.exporter", "clientele_declaration_bcm", d.id, after={
+            "format": fmt, "annee": d.annee, "mois": d.mois, "statut": d.statut,
+            "genere_le": genere_le.isoformat(), "moteur_version": d.moteur_version})
 
     async def exporter_pdf(self, did: uuid.UUID) -> bytes:
         self.ctx.exiger("clientele.export")
         d = await self._get(did)
         if not d.cellules:
             raise AppError("Calculez la déclaration avant l'export.", 422, code="NON_CALCULEE")
+        await self._tracer_export(d, "pdf", maintenant())
         rows: list[list] = []
         for tab in (d.cellules or {}).get("tableaux") or []:
             for ligne in tab["lignes"]:

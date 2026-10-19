@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from io import BytesIO
 
 import pytest
+from openpyxl import load_workbook
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -197,6 +199,15 @@ async def test_declaration_aout_stock_et_a_configurer(db):
     assert identite["attendu"] == 0
     xlsx = await svc.exporter_xlsx(uuid.UUID(d["id"]))
     assert xlsx[:2] == b"PK"
+    ws = load_workbook(BytesIO(xlsx))["Déclaration mensuelle"]
+    assert (ws["B5"].value, ws["E5"].value, ws["D5"].value) == (2, 2, "À CONFIGURER")
+    assert (ws["B12"].value, ws["D12"].value, ws["E12"].value) == (0, 1, 2)
+    assert ws["E6"].value == "À CONFIGURER"
+    assert ws["B21"].value == "À CONFIGURER" and ws["B31"].value == "À CONFIGURER"
+    assert (ws["B41"].value, ws["B43"].value, ws["B44"].value, ws["C44"].value) == (1, 1, 2, 100.0)
+    exports = await db.scalar(text(
+        "SELECT count(*) FROM audit_logs WHERE action = 'bcm.exporter' AND entity_id = :i"), {"i": d["id"]})
+    assert exports == 1
     pdf = await svc.exporter_pdf(uuid.UUID(d["id"]))
     assert pdf[:4] == b"%PDF"
 

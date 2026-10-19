@@ -199,6 +199,20 @@ désactiver, réactiver, supprimer) et mêmes boutons sur la fiche, avec l’his
 
 Export : Excel / PDF de **préparation**. Pas de format d’import plateforme BCM tant qu’il n’est pas fourni.
 
+Excel au format du modèle officiel « Déclaration mensuelle - BEA - août - 2026 »
+(`services/clientele/declaration_modele.py`, 19/10/2026) :
+
+- Feuille « Déclaration mensuelle » : mêmes positions (A1:E44), intitulés repris mot pour mot, largeurs,
+  en-têtes en gras sur fond turquoise clair. Valeurs = cellules calculées de la déclaration (snapshot si validée),
+  jamais les chiffres du modèle. Cellule sans définition → « À CONFIGURER » ; ratio sur total nul →
+  « Non calculable ».
+- Feuille « Contrôle » : mois, statut, date et auteur de génération, versions moteur / grille,
+  liste des cellules « À CONFIGURER » avec leur réserve, contrôles de cohérence.
+- Chaque export Excel / PDF est tracé dans `audit_logs` (`bcm.exporter` : format, mois, statut, date).
+- Aucune transmission à la BCM.
+- Test : `tests/test_clientele_bcm_modele.py` compare l’export au modèle (intitulés, positions, fusion,
+  gras, largeurs) quand le fichier est présent à la racine du dépôt (non versionné : chiffres réels).
+
 ---
 
 ## 7. Reporting interne (révisé)
