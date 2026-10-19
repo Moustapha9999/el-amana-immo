@@ -136,6 +136,13 @@ Filtres communs : période, agence, PP/PM/CJ, risque, résidence — appliqués 
 
 ## 6. Catalogue Déclaration BCM (modèle août 2026)
 
+> **Mise à jour du 19/10/2026 (grille `2026.10.bcm.3`)** : les tableaux 1 et 4 ne passent plus par le moteur
+> d’indicateurs mais par `services/clientele/bcm_calcul.py`, selon des **règles enregistrées**
+> (`app/data/clientele_bcm_regles.py`, décisions dans `clientele_bcm_regles`). Stock = premier compte ORION
+> (plus `premiere_extraction`), EER du mois = premier compte ORION ouvert dans le mois, risque = historique à la
+> date. La correspondance champ par champ, les règles, les exceptions et les contrôles font foi dans
+> [`bcm-correspondance-champs.md`](bcm-correspondance-champs.md). Les tableaux ci-dessous décrivent l’état du 08/10.
+
 Période officielle d’une déclaration : `date_debut = 1er du mois`, `date_fin = dernier jour`, `fin_mois_precedent = date_fin - 1 mois`.
 
 Version moteur figée dans le snapshot.

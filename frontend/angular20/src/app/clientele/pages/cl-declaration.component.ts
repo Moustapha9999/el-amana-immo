@@ -9,6 +9,7 @@ import { ClDeclarationCycleService } from '../cl-declaration-cycle.service';
 import { ClienteleUiComponent } from '../clientele-ui.component';
 import { CL_BASE, dateFr, telecharger, valeurIndic } from '../clientele.models';
 import { ClienteleStore } from '../clientele.store';
+import { ClBcmReglesComponent, RegleBcm } from './cl-bcm-regles.component';
 
 interface FicheBcm {
   libelle_officiel: string; tableau: string; ligne: string; colonne: string;
@@ -20,7 +21,13 @@ interface FicheBcm {
 interface Cellule {
   code: string; valeur: number | null; ratio: number | null; statut: string;
   indicateur: string | null; cutoff: string; reserve: string | null; fiche?: FicheBcm | null;
-  fiabilite?: string | null;
+  fiabilite?: string | null; raison?: string | null; regles_a_valider?: string[];
+}
+interface Exceptions {
+  forme: Record<string, number>; categories_non_rattachees: Record<string, number>;
+  risque_fin: Record<string, number>; risque_m1: Record<string, number>;
+  gel_indetermine: number; sans_date_entree: number; sans_compte_orion: number; doublons: number;
+  eer_module: { realises: number; hors_premier_compte: number; premier_compte_sans_dossier: number };
 }
 interface Ligne { code: string; libelle: string; definition: string; cellules: Record<string, Cellule>; }
 interface Colonne { code: string; libelle: string; }
@@ -46,8 +53,10 @@ interface Declaration {
   simulation: boolean; bcm_officielle: boolean; commentaire: string | null;
   cellules: {
     tableaux: Tableau[];
-    mappings?: Record<string, string>;
     couverture?: Record<string, string | number | boolean | null>;
+    dates?: { debut: string; fin: string; fin_mois_precedent: string; fenetre_maj_debut: string };
+    exceptions?: Exceptions;
+    regles?: RegleBcm[];
   } | null;
   controles: Controle[]; actions: Actions;
   desactivee_le: string | null; motif_desactivation: string | null;
@@ -64,7 +73,7 @@ const ETAPES = ['BROUILLON', 'CALCULEE', 'A_CONTROLER', 'VALIDEE', 'CLOTUREE', '
 @Component({
   selector: 'bea-cl-declaration',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, MatIconModule, PaginationComponent, ClienteleUiComponent],
+  imports: [RouterLink, MatIconModule, PaginationComponent, ClienteleUiComponent, ClBcmReglesComponent],
   template: `
     <bea-cl-styles />
     <div class="bea-mg bea-cl">
@@ -109,7 +118,7 @@ const ETAPES = ['BROUILLON', 'CALCULEE', 'A_CONTROLER', 'VALIDEE', 'CLOTUREE', '
               <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="agir('controler', 'Soumettre au contrôle', { action: 'validation', title: 'Soumettre au contrôle', message: 'Passer en à contrôler ?' })"><mat-icon>rule</mat-icon> Contrôle</button>
             }
             @if (x.actions.valider && store.cap().bcm_valider) {
-              <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="agir('valider', 'Valider', { action: 'validation', title: 'Valider la déclaration', message: 'Figer le snapshot ? Elle ne se recalculera plus.', hint: 'Les cellules À CONFIGURER restent vides.' })"><mat-icon>verified</mat-icon> Valider</button>
+              <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="agir('valider', 'Valider', { action: 'validation', title: 'Valider la déclaration', message: 'Figer le snapshot ? Elle ne se recalculera plus.', hint: 'Les cellules sans source ou non calculables restent vides.' })"><mat-icon>verified</mat-icon> Valider</button>
             }
             @if (x.actions.cloturer && store.cap().bcm_cloturer) {
               <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="agir('cloturer', 'Clôturer', { action: 'validation', title: 'Clôturer', message: 'Clôturer cette déclaration validée ?' })"><mat-icon>lock</mat-icon> Clôturer</button>
@@ -138,19 +147,37 @@ const ETAPES = ['BROUILLON', 'CALCULEE', 'A_CONTROLER', 'VALIDEE', 'CLOTUREE', '
             </ol>
           </section>
         }
-        @if (x.cellules?.couverture; as cov) {
+        @if (x.cellules?.dates; as dt) {
           <section class="bea-mg__panel">
-            <div class="bea-mg__panel-top"><h2>Couverture historique</h2></div>
+            <div class="bea-mg__panel-top"><h2>Dates de référence et couverture</h2></div>
             <p class="bea-cl-hint" style="padding:0 1.1rem 0.8rem">
-              Référentiel {{ cov['nb_referentiel'] ?? '—' }} racines ·
-              première extraction {{ cov['premiere_extraction_min'] ?? '—' }} ·
-              historique SCORE {{ cov['historique_classif_min'] ?? '—' }} ·
-              stock fin mois précédent {{ cov['stock_m1_reconstructible'] ? 'reconstituable (proxy import)' : 'indisponible' }} ·
-              classification clôture {{ cov['classif_fin_reconstructible'] ? 'reconstituable' : 'indisponible' }} ·
-              ouvertures du mois {{ cov['ouvertures_mois'] ?? '—' }}
+              Fin du mois précédent {{ dateFr(dt.fin_mois_precedent) }} · mois {{ dateFr(dt.debut) }} → {{ dateFr(dt.fin) }} ·
+              fenêtre des mises à jour depuis le {{ dateFr(dt.fenetre_maj_debut) }} ·
+              historique de classification depuis le {{ dateFr($any(x.cellules?.couverture?.['historique_classif_min'])) || '—' }}
+              ({{ x.cellules?.couverture?.['classif_m1'] ? 'couvre' : 'ne couvre pas' }} la fin du mois précédent,
+              {{ x.cellules?.couverture?.['classif_fin'] ? 'couvre' : 'ne couvre pas' }} la fin du mois) ·
+              historique des mises à jour depuis le {{ dateFr($any(x.cellules?.couverture?.['maj_min'])) || '—' }}
             </p>
           </section>
         }
+        @if (x.cellules?.exceptions; as ex) {
+          <section class="bea-mg__panel">
+            <div class="bea-mg__panel-top"><h2>Exceptions</h2></div>
+            <p class="bea-cl-hint" style="padding:0 1.1rem">Clients jamais affectés à une colonne BCM : comptés dans les totaux, listés pour correction ou décision.</p>
+            <ul class="bea-cl-anoms">
+              @for (e of exceptionsListe(ex); track e.code) {
+                <li [attr.data-n]="e.nombre ? 'alerte' : 'info'">
+                  <mat-icon>{{ e.nombre ? 'report' : 'check_circle' }}</mat-icon>
+                  <span>{{ e.libelle }} : <strong>{{ e.nombre }}</strong>
+                    @if (e.nombre && e.code) { — <a href="" (click)="$event.preventDefault(); ouvrirCode(e.code)">voir les clients</a> }
+                  </span>
+                </li>
+              }
+            </ul>
+          </section>
+        }
+        <bea-cl-bcm-regles [appliquees]="x.cellules?.regles ?? []" />
+        
         @if (x.controles.length) {
           <section class="bea-mg__panel">
             <div class="bea-mg__panel-top"><h2>Contrôles</h2></div>
@@ -183,7 +210,7 @@ const ETAPES = ['BROUILLON', 'CALCULEE', 'A_CONTROLER', 'VALIDEE', 'CLOTUREE', '
                       @for (col of tab.colonnes; track col.code) {
                         <td>
                           @if (ligne.cellules[col.code]; as cell) {
-                            <button type="button" [class.is-lock]="cell.statut==='A_CONFIGURER'" [class.is-hist]="cell.fiabilite==='HISTORIQUE_INDISPONIBLE'" [class.is-on]="choisi()===cell.code" [title]="cell.fiabilite || cell.statut" (click)="ouvrir(cell)">{{ afficher(cell) }}</button>
+                            <button type="button" [class.is-lock]="cell.statut==='A_CONFIGURER'" [class.is-hist]="cell.valeur === null && cell.statut!=='A_CONFIGURER'" [class.is-on]="choisi()===cell.code" [title]="cell.raison || cell.fiabilite || cell.statut" (click)="ouvrir(cell)">{{ afficher(cell) }}</button>
                           }
                         </td>
                       }
@@ -211,6 +238,8 @@ const ETAPES = ['BROUILLON', 'CALCULEE', 'A_CONTROLER', 'VALIDEE', 'CLOTUREE', '
                 <dt>Historique</dt><dd>{{ f.historique_utilise ? 'oui' : 'non' }}</dd>
                 <dt>Validation métier</dt><dd><span class="bea-cl-badge" [attr.data-s]="f.validation_metier">{{ f.validation_metier }}</span></dd>
                 @if (det.fiabilite) { <dt>Fiabilité</dt><dd>{{ det.fiabilite }}</dd> }
+                @if (det.raison) { <dt>Pourquoi non chiffrée</dt><dd>{{ det.raison }}</dd> }
+                @if (det.regles_a_valider?.length) { <dt>Règles à valider</dt><dd>{{ det.regles_a_valider?.join(', ') }}</dd> }
                 @if (f.reserve) { <dt>Réserve</dt><dd>{{ f.reserve }}</dd> }
               } @else {
                 @if (det.ligne) { <dt>Ligne</dt><dd>{{ det.ligne }}</dd> }
@@ -220,8 +249,13 @@ const ETAPES = ['BROUILLON', 'CALCULEE', 'A_CONTROLER', 'VALIDEE', 'CLOTUREE', '
               }
             </dl>
             @if (!det.calcule) {
-              <p class="bea-cl-note"><mat-icon>block</mat-icon>Aucun chiffre n’est produit tant que la Conformité n’a pas défini cet indicateur.</p>
+              <p class="bea-cl-note"><mat-icon>block</mat-icon>{{ det.fiabilite === 'SOURCE_ABSENTE'
+                ? 'Source absente dans BEA DIGITAL : aucun chiffre n’est produit.'
+                : (det.reserve || 'Aucun chiffre n’est produit tant que la Conformité n’a pas défini cet indicateur.') }}</p>
             } @else {
+              @if (det.valeur === null && det.statut !== 'CONTROLE') {
+                <p class="bea-cl-note bea-cl-note--warn"><mat-icon>info</mat-icon>Cellule non calculable : la population ci-dessous est indicative et n’est pas déclarée.</p>
+              }
               <div class="bea-mg__table-wrap">
                 <table class="bea-mg__table">
                   <thead><tr>@for (c of det.colonnes; track c) { <th>{{ c }}</th> }</tr></thead>
@@ -279,8 +313,32 @@ export class ClDeclarationComponent implements OnInit {
   }
 
   afficher(cell: Cellule): string {
-    if (cell.code.endsWith('.ratio') && cell.valeur != null) return `${cell.valeur} %`;
+    if (cell.statut === 'A_CONFIGURER') return cell.fiabilite === 'SOURCE_ABSENTE' ? 'Source absente' : 'À CONFIGURER';
+    if (cell.valeur === null || cell.valeur === undefined) return 'Non calculable';
+    if (cell.code.endsWith('.ratio')) return `${cell.valeur.toFixed(2).replace('.', ',')} %`;
     return valeurIndic(cell.statut, cell.valeur);
+  }
+
+  exceptionsListe(ex: Exceptions): { code: string | null; libelle: string; nombre: number }[] {
+    const cats = Object.entries(ex.categories_non_rattachees ?? {}).map(([k, v]) => `${k} ${v}`).join(', ');
+    return [
+      { code: 'forme_EXC_FORME_VIDE', libelle: 'Catégorie juridique vide', nombre: ex.forme?.['EXC_FORME_VIDE'] ?? 0 },
+      { code: 'forme_EXC_FORME_NON_RATTACHEE', libelle: `Catégorie juridique non rattachée${cats ? ' (' + cats + ')' : ''}`, nombre: ex.forme?.['EXC_FORME_NON_RATTACHEE'] ?? 0 },
+      { code: 't4_INTERDIT', libelle: 'Clients INTERDIT à la fin du mois', nombre: ex.risque_fin?.['INTERDIT'] ?? 0 },
+      { code: 't4_NON_CLASSE', libelle: 'Clients sans classement à la fin du mois', nombre: ex.risque_fin?.['NON_CLASSE'] ?? 0 },
+      { code: 't4_INVALIDE', libelle: 'Classement invalide à la fin du mois', nombre: ex.risque_fin?.['INVALIDE'] ?? 0 },
+      { code: 'gel_indetermine', libelle: 'Statut de gel inconnu (actif non déterminable)', nombre: ex.gel_indetermine ?? 0 },
+      { code: null, libelle: 'Fiches sans compte ORION (hors déclaration)', nombre: ex.sans_compte_orion ?? 0 },
+      { code: null, libelle: 'Doublons de racine', nombre: ex.doublons ?? 0 },
+      { code: null, libelle: 'Dossiers EER du mois hors premières ouvertures ORION', nombre: ex.eer_module?.hors_premier_compte ?? 0 },
+      { code: null, libelle: 'Premières ouvertures ORION sans dossier EER', nombre: ex.eer_module?.premier_compte_sans_dossier ?? 0 },
+    ];
+  }
+
+  ouvrirCode(code: string): void {
+    this.choisi.set(`bcm.exc.${code}`);
+    this.page.set(1);
+    this.chargerDetail();
   }
 
   charger(): void {
