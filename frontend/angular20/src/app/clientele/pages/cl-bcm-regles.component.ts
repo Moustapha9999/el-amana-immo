@@ -9,24 +9,28 @@ import { CL_BASE, dateFr } from '../clientele.models';
 export interface RegleBcm {
   code: string; libelle: string; explication: string; valeur: unknown;
   statut: 'CONFIRMEE' | 'A_VALIDER'; origine: string;
-  valeur_defaut?: unknown; decidee?: boolean; decidee_le?: string | null;
+  valeur_defaut?: unknown; decidee?: boolean; decidee_le?: string | null; options?: string[];
 }
 interface Observe { valeur: string; nombre: number; }
 interface ReglesOut {
   regles: RegleBcm[];
   historique: { code: string; valeur: unknown; statut: string; motif: string; par: string | null; le: string | null }[];
-  observe: { categories_juridiques: Observe[]; statuts_gel: Observe[] };
+  observe: { categories_juridiques?: Observe[]; statuts_gel?: Observe[]; statuts_resident?: Observe[] };
   modifiable: boolean;
 }
-type Editeur = 'fixe' | 'liste' | 'interdit' | 'fenetre' | 'bool' | 'formes';
+type Editeur = 'fixe' | 'liste' | 'interdit' | 'fenetre' | 'bool' | 'formes' | 'option' | 'texte' | 'correspondance';
 interface Brouillon {
   code: string; statut: 'CONFIRMEE' | 'A_VALIDER'; liste: string; interdit: string;
   type: string; annees: number; bool: boolean; pp: string; pm: string; cj: string;
+  option: string; texte: string; correspondance: string;
 }
 
 const EDITEURS: Record<string, Editeur> = {
   'actif.valeurs_gel': 'liste', 'maj.evenements': 'liste', 'interdit.rattachement': 'interdit',
   'maj.fenetre': 'fenetre', 'forme.repli_profil': 'bool', 'forme.correspondance': 'formes',
+  'sic.perimetre': 'option', 'sic.format_date': 'option', 'sic.nom_prenom': 'option',
+  'sic.telephone_format': 'texte', 'sic.nni_format': 'texte', 'sic.nif_obligatoire': 'bool',
+  'sic.residence': 'correspondance', 'sic.genre': 'correspondance', 'sic.sources_complement': 'liste',
 };
 
 export function texteRegle(v: unknown): string {
@@ -45,7 +49,7 @@ export function texteRegle(v: unknown): string {
   template: `
     <section class="bea-mg__panel">
       <div class="bea-mg__panel-top">
-        <h2>Règles de calcul</h2>
+        <h2>{{ registre() === 'SIC' ? 'Règles SIC' : 'Règles de calcul' }}</h2>
         <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="ouvert.set(!ouvert())">
           <mat-icon>{{ ouvert() ? 'expand_less' : 'tune' }}</mat-icon> {{ ouvert() ? 'Masquer les règles courantes' : 'Règles courantes et décisions' }}
         </button>
@@ -99,7 +103,30 @@ export function texteRegle(v: unknown): string {
                 </label>
                 @if (b.code === 'actif.valeurs_gel') {
                   <p class="bea-cl-hint" style="flex-basis:100%">Valeurs observées :
-                    @for (o of x.observe.statuts_gel; track o.valeur) { {{ o.valeur }} ({{ o.nombre }}) · }
+                    @for (o of x.observe.statuts_gel ?? []; track o.valeur) { {{ o.valeur }} ({{ o.nombre }}) · }
+                  </p>
+                }
+                @if (b.code === 'sic.sources_complement') {
+                  <p class="bea-cl-hint" style="flex-basis:100%">Ordre de priorité, parmi EER et KYC.</p>
+                }
+              }
+              @case ('option') {
+                <label style="flex:1 1 18rem">Valeur
+                  <select [(ngModel)]="b.option" name="option">
+                    @for (o of options(b.code); track o) { <option [value]="o">{{ o }}</option> }
+                  </select>
+                </label>
+              }
+              @case ('texte') {
+                <label style="flex:1 1 24rem">Expression régulière<input [(ngModel)]="b.texte" name="texte" /></label>
+              }
+              @case ('correspondance') {
+                <label style="flex:1 1 20rem">Correspondance (une ligne « source = valeur SIC »)
+                  <textarea rows="4" [(ngModel)]="b.correspondance" name="correspondance"></textarea>
+                </label>
+                @if (b.code === 'sic.residence') {
+                  <p class="bea-cl-hint" style="flex-basis:100%">Statuts de résidence ORION observés :
+                    @for (o of x.observe.statuts_resident ?? []; track o.valeur) { {{ o.valeur }} ({{ o.nombre }}) · }
                   </p>
                 }
               }
@@ -128,7 +155,7 @@ export function texteRegle(v: unknown): string {
                 <label style="flex:1 1 16rem">Personnes morales<textarea rows="4" [(ngModel)]="b.pm" name="pm"></textarea></label>
                 <label style="flex:1 1 16rem">Constructions juridiques<textarea rows="4" [(ngModel)]="b.cj" name="cj"></textarea></label>
                 <p class="bea-cl-hint" style="flex-basis:100%">Catégories ORION observées :
-                  @for (o of x.observe.categories_juridiques; track o.valeur) { {{ o.valeur }} ({{ o.nombre }}) · }
+                  @for (o of x.observe.categories_juridiques ?? []; track o.valeur) { {{ o.valeur }} ({{ o.nombre }}) · }
                 </p>
               }
               @default {
@@ -164,6 +191,7 @@ export class ClBcmReglesComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly feedback = inject(FeedbackService);
   readonly appliquees = input<RegleBcm[]>([]);
+  readonly registre = input<'BCM' | 'SIC'>('BCM');
   readonly decidee = output<void>();
   readonly data = signal<ReglesOut | null>(null);
   readonly ouvert = signal(false);
@@ -177,14 +205,18 @@ export class ClBcmReglesComponent implements OnInit {
   }
 
   charger(): void {
-    this.api.get<ReglesOut>(`${CL_BASE}/bcm/regles`).subscribe({
+    this.api.get<ReglesOut>(`${CL_BASE}/bcm/regles`, { registre: this.registre() }).subscribe({
       next: (d) => this.data.set(d),
-      error: (e) => void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Règles BCM indisponibles')),
+      error: (e) => void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Règles indisponibles')),
     });
   }
 
   editeur(code: string): Editeur {
     return EDITEURS[code] ?? 'fixe';
+  }
+
+  options(code: string): string[] {
+    return this.data()?.regles.find((r) => r.code === code)?.options ?? [];
   }
 
   libelle(code: string): string {
@@ -202,6 +234,10 @@ export class ClBcmReglesComponent implements OnInit {
       type: fenetre.type ?? 'CALENDAIRE', annees: fenetre.annees ?? 5,
       bool: r.valeur === true,
       pp: (formes['PP'] ?? []).join('\n'), pm: (formes['PM'] ?? []).join('\n'), cj: (formes['CJ'] ?? []).join('\n'),
+      option: typeof r.valeur === 'string' ? r.valeur : '',
+      texte: typeof r.valeur === 'string' ? r.valeur : '',
+      correspondance: r.valeur && typeof r.valeur === 'object' && !Array.isArray(r.valeur)
+        ? Object.entries(r.valeur as Record<string, unknown>).map(([k, x]) => `${k} = ${x}`).join('\n') : '',
     });
   }
 
@@ -213,6 +249,11 @@ export class ClBcmReglesComponent implements OnInit {
       case 'fenetre': return { type: b.type, annees: Number(b.annees) };
       case 'bool': return b.bool;
       case 'formes': return { PP: lignes(b.pp), PM: lignes(b.pm), CJ: lignes(b.cj) };
+      case 'option': return b.option;
+      case 'texte': return b.texte.trim();
+      case 'correspondance':
+        return Object.fromEntries(lignes(b.correspondance).map((l) => l.split('=').map((x) => x.trim()))
+          .filter((p) => p.length === 2 && p[0] && p[1]));
       default: return this.data()?.regles.find((r) => r.code === b.code)?.valeur;
     }
   }
@@ -225,7 +266,7 @@ export class ClBcmReglesComponent implements OnInit {
       valeur, statut: b.statut, motif,
     }), {
       reason: {
-        title: 'Décision sur une règle BCM',
+        title: this.registre() === 'SIC' ? 'Décision sur une règle SIC' : 'Décision sur une règle BCM',
         message: `${this.libelle(b.code)} : ${texteRegle(valeur)} (${b.statut === 'CONFIRMEE' ? 'confirmée' : 'à valider'}).`,
         hint: 'La décision est historisée et s’applique au prochain calcul. Les déclarations validées ne changent pas.',
         reasonLabel: 'Motif (référence de la décision Conformité)',

@@ -442,7 +442,10 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
     { section: 'Imports & qualité', label: 'Mapping & sources', path: '/clientele/mapping', icon: 'account_tree', permissions: ['clientele.view'] },
     { section: 'Risque & conformité', label: 'Classification', path: '/clientele/classification', icon: 'verified_user', permissions: ['clientele.classif.view'] },
     { section: 'Risque & conformité', label: 'Filtrage & alertes', path: '/clientele/filtrage', icon: 'notification_important', permissions: ['clientele.filtrage.view'] },
-    { section: 'Déclaration BCM', label: 'Déclarations', path: '/clientele/declarations', icon: 'assignment', permissions: ['clientele.bcm.view', 'clientele.reporting.view'] },
+    { section: 'Déclarations BCM', label: 'Déclaration mensuelle BCM', path: '/clientele/declarations', icon: 'assignment', permissions: ['clientele.bcm.view', 'clientele.reporting.view'] },
+    { section: 'Déclarations BCM', label: 'Déclaration SIC', path: '/clientele/sic', icon: 'badge', permissions: ['clientele.bcm.view'] },
+    { section: 'Déclarations BCM', label: 'Historique des déclarations', path: '/clientele/declarations-historique', icon: 'history', permissions: ['clientele.bcm.view'] },
+    { section: 'Déclarations BCM', label: 'Gestion des référentiels BCM', path: '/clientele/referentiels-bcm', icon: 'library_books', permissions: ['clientele.bcm.view', 'clientele.bcm.referentiel'] },
   ],
   reclamations: [
     { section: 'Pilotage', label: 'Tableau de bord 360°', path: '/reclamations/dashboard', icon: 'insights', exact: true, permissions: ['reclamations.reporting.view', 'reclamations.view'] },

@@ -10,7 +10,7 @@ const AUCUNE: Capacites = {
   classif_voir: false, classif_executer: false, classif_admin: false, classif_forcer: false, classif_arbitrer: false,
   filtrage_voir: false, filtrage_executer: false, filtrage_decider: false,
   reporting_voir: false, bcm_voir: false, bcm_preparer: false, bcm_valider: false,
-  bcm_cloturer: false, exporter: false, admin: false,
+  bcm_cloturer: false, bcm_referentiel: false, sic_depot: false, exporter: false, admin: false,
 };
 
 @Injectable({ providedIn: 'root' })

@@ -82,6 +82,12 @@ const clReporting = () => import('./clientele/pages/cl-reporting.component').the
 const clMapping = () => import('./clientele/pages/cl-mapping.component').then((m) => m.ClMappingComponent);
 const clDeclarations = () => import('./clientele/pages/cl-declarations.component').then((m) => m.ClDeclarationsComponent);
 const clDeclaration = () => import('./clientele/pages/cl-declaration.component').then((m) => m.ClDeclarationComponent);
+const clSic = () => import('./clientele/pages/cl-sic.component').then((m) => m.ClSicComponent);
+const clSicDetail = () => import('./clientele/pages/cl-sic-detail.component').then((m) => m.ClSicDetailComponent);
+const clReferentielsBcm = () =>
+  import('./clientele/pages/cl-referentiels-bcm.component').then((m) => m.ClReferentielsBcmComponent);
+const clHistoriqueDeclarations = () =>
+  import('./clientele/pages/cl-declarations-historique.component').then((m) => m.ClDeclarationsHistoriqueComponent);
 const rcDossiers = () => import('./reclamations/pages/rc-dossiers.component').then((m) => m.RcDossiersComponent);
 const rcNouvelle = () => import('./reclamations/pages/rc-nouvelle.component').then((m) => m.RcNouvelleComponent);
 const rcFiche = () => import('./reclamations/pages/rc-fiche.component').then((m) => m.RcFicheComponent);
@@ -316,6 +322,10 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'reporting', loadComponent: clReporting },
       { path: 'declarations', loadComponent: clDeclarations },
       { path: 'declarations/:id', loadComponent: clDeclaration },
+      { path: 'declarations-historique', loadComponent: clHistoriqueDeclarations },
+      { path: 'sic', loadComponent: clSic },
+      { path: 'sic/:id', loadComponent: clSicDetail },
+      { path: 'referentiels-bcm', loadComponent: clReferentielsBcm },
       { path: 'imports', loadComponent: clImports },
       { path: 'mapping', loadComponent: clMapping },
       { path: 'rapprochements', loadComponent: clRapprochements },

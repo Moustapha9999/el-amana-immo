@@ -75,6 +75,8 @@ export interface Capacites {
   bcm_preparer: boolean;
   bcm_valider: boolean;
   bcm_cloturer: boolean;
+  bcm_referentiel: boolean;
+  sic_depot: boolean;
   exporter: boolean;
   admin: boolean;
 }
