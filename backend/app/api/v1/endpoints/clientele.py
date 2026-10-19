@@ -18,6 +18,7 @@ from app.schemas.clientele import (
     AlerteAttribuerIn,
     AlerteCommentaireIn,
     AlerteDecisionIn,
+    BcmRegleDecisionIn,
     ClassifBacktestIn,
     ClassifEvaluerIn,
     ClassifExcelIn,
@@ -53,6 +54,7 @@ from app.services.clientele.classification import (
     ClienteleClassificationService,
     autorisation_classement_masse,
 )
+from app.services.clientele.bcm_regles import ClienteleBcmReglesService
 from app.services.clientele.declaration import ClienteleDeclarationService
 from app.services.clientele.filtrage import ClienteleFiltrageService
 from app.services.clientele.import_service import ClienteleImportService
@@ -942,6 +944,24 @@ async def grille_bcm(
     return await ClienteleDeclarationService(db, c).grille()
 
 
+@router.get("/bcm/regles")
+async def regles_bcm(
+    c: Ctx = Depends(ctx("clientele.bcm.view", "clientele.reporting.view")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await ClienteleBcmReglesService(db, c).lister()
+
+
+@router.post("/bcm/regles/{code}")
+async def decider_regle_bcm(
+    code: str,
+    body: BcmRegleDecisionIn,
+    c: Ctx = Depends(ctx("clientele.bcm.valider")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await ClienteleBcmReglesService(db, c).decider(code, body.model_dump())
+
+
 @router.get("/declarations")
 async def lister_declarations(
     annee: int | None = None,
@@ -986,10 +1006,11 @@ async def drilldown_declaration(
     code: str,
     page: int = 1,
     taille: int = 50,
+    racine: str | None = None,
     c: Ctx = Depends(ctx("clientele.bcm.view", "clientele.reporting.view")),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    return await ClienteleDeclarationService(db, c).drilldown(did, code, page=page, taille=taille)
+    return await ClienteleDeclarationService(db, c).drilldown(did, code, page=page, taille=taille, racine=racine)
 
 
 @router.get("/declarations/{did}")

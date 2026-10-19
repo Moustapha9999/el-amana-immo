@@ -197,3 +197,9 @@ class DeclarationBcmMotifIn(BaseModel):
 
 class DeclarationBcmValiderIn(BaseModel):
     commentaire: str | None = None
+
+
+class BcmRegleDecisionIn(BaseModel):
+    valeur: Any = None
+    statut: str
+    motif: str

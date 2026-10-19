@@ -11,7 +11,7 @@ from openpyxl import load_workbook
 
 from app.data.clientele_bcm import tableaux
 from app.services.clientele.declaration_modele import (
-    A_CONFIGURER, BLOCS, FEUILLE, NON_CALCULABLE, classeur_modele, positions,
+    A_CONFIGURER, BLOCS, FEUILLE, NON_CALCULABLE, SOURCE_ABSENTE, classeur_modele, positions,
 )
 
 MODELE = Path(__file__).resolve().parents[2] / "Déclaration mensuelle - BEA - août - 2026.xlsx"
@@ -29,9 +29,11 @@ def _cellules(valeurs: dict[tuple[str, str, str], int | float | None],
             cells = {}
             for col in tab["colonnes"]:
                 cle = (tab["code"], ligne["code"], col["code"])
-                ac = (tab["code"], ligne["code"]) in a_configurer or ligne["statut"] == "A_CONFIGURER"
+                absente = ligne["statut"] == "A_CONFIGURER"
+                ac = (tab["code"], ligne["code"]) in a_configurer or absente
                 cells[col["code"]] = {"code": ".".join(cle), "statut": "A_CONFIGURER" if ac else ligne["statut"],
-                                      "valeur": None if ac else valeurs.get(cle, 0), "reserve": ligne["reserve"]}
+                                      "valeur": None if ac else valeurs.get(cle, 0), "reserve": ligne["reserve"],
+                                      "fiabilite": "SOURCE_ABSENTE" if absente else None}
             lignes.append({"code": ligne["code"], "cellules": cells})
         out.append({"code": tab["code"], "lignes": lignes})
     return {"tableaux": out}
@@ -87,10 +89,12 @@ def test_valeurs_calculees_aux_bonnes_positions():
 
 
 def test_a_configurer_jamais_un_nombre():
-    ws = _ws(classeur_modele(_cellules({("T1A", "cible", "total"): 589, ("T2", "extraites", "valeur"): 2492}),
-                             [], META))
-    for ref in ("B6", "E6", "B8", "B13", "B21", "B24", "B25", "B31", "B35"):
+    ws = _ws(classeur_modele(_cellules({("T1A", "cible", "total"): 589, ("T2", "extraites", "valeur"): 2492},
+                                       {("T1A", "cible"), ("T1A", "maj_5ans"), ("T1B", "cible")}), [], META))
+    for ref in ("B6", "E6", "B8", "B13"):
         assert ws[ref].value == A_CONFIGURER, ref
+    for ref in ("B21", "B24", "B25", "B31", "B35"):
+        assert ws[ref].value == SOURCE_ABSENTE, ref
 
 
 def test_mois_sans_activite_zeros_et_ratio_non_calculable():
@@ -106,8 +110,13 @@ def test_mois_sans_activite_zeros_et_ratio_non_calculable():
 
 def test_feuille_controle_tracabilite():
     controles = [{"code": "t4.somme", "etat": "AVEC_RESERVE", "libelle": "T4", "bloquant": False}]
-    ws = _ws(classeur_modele(_cellules({}), controles, META), "Contrôle")
+    meta = {**META, "regles": [{"code": "actif.valeurs_gel", "statut": "A_VALIDER", "libelle": "Gel actif",
+                                "valeur": ["ACTIF"], "origine": "Proposition"}],
+            "exceptions": {"forme": {"EXC_FORME_VIDE": 12}, "risque_fin": {"INTERDIT": 3}, "doublons": 0}}
+    ws = _ws(classeur_modele(_cellules({}, {("T1A", "cible")}), controles, meta), "Contrôle")
     textes = [c.value for row in ws.iter_rows() for c in row if c.value is not None]
     assert "Août 2026" in textes and "Analyste Test" in textes and "19/10/2026 11:40" in textes
     assert any(isinstance(t, str) and "Aucune transmission automatique" in t for t in textes)
-    assert "B6" in textes and "t4.somme" in textes
+    assert "B6" in textes and "B21" in textes and "t4.somme" in textes
+    assert "actif.valeurs_gel" in textes and "À valider" in textes and "ACTIF" in textes
+    assert "Forme juridique : EXC_FORME_VIDE" in textes and "Risque fin de mois : INTERDIT" in textes

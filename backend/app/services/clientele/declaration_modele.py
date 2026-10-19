@@ -17,6 +17,7 @@ from openpyxl.utils import get_column_letter
 
 A_CONFIGURER = "À CONFIGURER"
 NON_CALCULABLE = "Non calculable"
+SOURCE_ABSENTE = "Source absente"
 TITRE = "TABLEAU DE DECLARATION MENSUELLE BEA à LA BCM"
 FEUILLE = "Déclaration mensuelle"
 LARGEURS = {"A": 162.14, "B": 44.29, "C": 24.86, "D": 26.57, "E": 7.86}
@@ -120,7 +121,7 @@ def _cellules_par_code(cellules: dict | None) -> dict[tuple[str, str], dict[str,
 
 def _valeur(cell: dict | None) -> int | float | str:
     if not cell or cell.get("statut") == "A_CONFIGURER":
-        return A_CONFIGURER
+        return SOURCE_ABSENTE if (cell or {}).get("fiabilite") == "SOURCE_ABSENTE" else A_CONFIGURER
     if cell.get("valeur") is None:
         return NON_CALCULABLE
     return cell["valeur"]
@@ -166,9 +167,8 @@ def _feuille_declaration(ws, cellules: dict | None) -> list[list]:
                 c.font, c.border = _NORMAL, _BORDURE
                 if isinstance(v, str):
                     c.alignment = Alignment(horizontal="center")
-                    if v == A_CONFIGURER:
-                        a_configurer.append([c.coordinate, bloc["tableau"], libelle,
-                                             bloc["colonnes"][j], (cell or {}).get("reserve")])
+                    a_configurer.append([c.coordinate, bloc["tableau"], libelle, bloc["colonnes"][j], v,
+                                         (cell or {}).get("raison") or (cell or {}).get("reserve")])
                 else:
                     c.number_format = _FORMAT_RATIO if code_col == "ratio" else _FORMAT_NOMBRE
     return a_configurer
@@ -178,6 +178,29 @@ def _horodatage(v: Any) -> str | None:
     if isinstance(v, datetime):
         return v.strftime("%d/%m/%Y %H:%M")
     return v
+
+
+def _texte(v: Any) -> Any:
+    if isinstance(v, dict):
+        return "; ".join(f"{k} = {_texte(x)}" for k, x in v.items())
+    if isinstance(v, (list, tuple)):
+        return ", ".join(str(x) for x in v) or "—"
+    if isinstance(v, bool):
+        return "oui" if v else "non"
+    return v
+
+
+def _tableau(ws, r: int, titre: str, entetes: tuple[str, ...], lignes: list[list]) -> int:
+    ws.cell(row=r, column=1, value=titre).font = _GRAS
+    r += 1
+    for j, h in enumerate(entetes):
+        c = ws.cell(row=r, column=j + 1, value=h)
+        c.font, c.fill, c.border = _GRAS, _FOND_ENTETE, _BORDURE
+    for ligne in lignes:
+        r += 1
+        for j, v in enumerate(ligne):
+            ws.cell(row=r, column=j + 1, value=v).border = _BORDURE
+    return r + 2
 
 
 def _feuille_controle(ws, meta: dict, a_configurer: list[list], controles: list[dict]) -> None:
@@ -202,16 +225,23 @@ def _feuille_controle(ws, meta: dict, a_configurer: list[list], controles: list[
         ws.cell(row=r, column=2, value=valeur)
         r += 1
     r += 1
-    ws.cell(row=r, column=1, value=f"Cellules « {A_CONFIGURER} » (définition métier ou source absente)").font = _GRAS
-    r += 1
-    for j, h in enumerate(("Cellule", "Tableau", "Ligne", "Colonne", "Réserve")):
-        c = ws.cell(row=r, column=j + 1, value=h)
-        c.font, c.fill, c.border = _GRAS, _FOND_ENTETE, _BORDURE
-    for ligne in a_configurer:
-        r += 1
-        for j, v in enumerate(ligne):
-            ws.cell(row=r, column=j + 1, value=v).border = _BORDURE
-    r += 2
+    r = _tableau(ws, r, "Cellules non chiffrées (source absente, définition à établir ou donnée non calculable)",
+                 ("Cellule", "Tableau", "Ligne", "Colonne", "Mention", "Raison"), a_configurer)
+    r = _tableau(ws, r, "Règles de calcul appliquées (snapshot à la date du calcul)",
+                 ("Code", "Statut", "Libellé", "Valeur", "Origine"),
+                 [[x.get("code"), "Confirmée" if x.get("statut") == "CONFIRMEE" else "À valider",
+                   x.get("libelle"), _texte(x.get("valeur")), x.get("origine")] for x in meta.get("regles") or []])
+    exc = meta.get("exceptions") or {}
+    lignes_exc = [[f"Forme juridique : {k}", v] for k, v in (exc.get("forme") or {}).items()]
+    lignes_exc += [[f"Catégorie non rattachée : {k}", v] for k, v in (exc.get("categories_non_rattachees") or {}).items()]
+    lignes_exc += [[f"Risque fin de mois : {k}", v] for k, v in (exc.get("risque_fin") or {}).items()]
+    lignes_exc += [[f"Risque fin du mois précédent : {k}", v] for k, v in (exc.get("risque_m1") or {}).items()]
+    for k, lib in (("gel_indetermine", "Statut de gel inconnu"), ("sans_date_entree", "Sans date d'entrée"),
+                   ("sans_compte_orion", "Fiche sans compte ORION"), ("doublons", "Doublons de racine")):
+        if k in exc:
+            lignes_exc.append([lib, exc[k]])
+    lignes_exc += [[f"EER module : {k}", v] for k, v in (exc.get("eer_module") or {}).items()]
+    r = _tableau(ws, r, "Exceptions (jamais affectées à une colonne BCM)", ("Population", "Nombre"), lignes_exc)
     ws.cell(row=r, column=1, value="Contrôles de cohérence").font = _GRAS
     r += 1
     for j, h in enumerate(("Code", "État", "Libellé", "Attendu", "Message", "Observé", "Bloquant")):

@@ -289,6 +289,7 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
             "clientele_classif_divergences",
             "clientele_journal",
             "clientele_kyc",
+            "clientele_bcm_regles",
             "clientele_situation",
             "clientele_filtrage_listes",
             "clientele_filtrage_entrees",

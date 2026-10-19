@@ -927,6 +927,24 @@ class ClienteleDeclarationBcm(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     motif_desactivation: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ClienteleBcmRegle(UUIDPrimaryKeyMixin, Base):
+    """Décision sur une règle de calcul BCM. Append-only : la dernière décision par code s'applique."""
+
+    __tablename__ = "clientele_bcm_regles"
+    __table_args__ = (
+        CheckConstraint("statut IN ('CONFIRMEE','A_VALIDER')", name="ck_clientele_bcm_regles_statut"),
+        Index("ix_clientele_bcm_regles_code", "code", "created_at"),
+    )
+
+    code: Mapped[str] = mapped_column(String(60))
+    valeur: Mapped[object] = mapped_column(JSONB)
+    statut: Mapped[str] = mapped_column(String(12))
+    motif: Mapped[str] = mapped_column(Text)
+    decide_par_id: Mapped[uuid.UUID | None] = _user_fk()
+    decide_par_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ClienteleFiltrageEmpreinte(UUIDPrimaryKeyMixin, Base):
     """Décisions antérieures (faux positifs notamment) retrouvées à une nouvelle occurrence."""
 

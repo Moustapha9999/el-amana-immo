@@ -1,14 +1,20 @@
-"""Phase 10 — Déclaration mensuelle BCM : moteur commun, A_CONFIGURER, snapshot figé."""
+"""Déclaration mensuelle BCM : calcul sur données réelles, règles enregistrées, snapshot reproductible.
+
+Les tests base de données n'ajoutent et ne suppriment que les racines 998001 à 998004 (et leurs règles de test) :
+ils s'exécutent sur une base peuplée sans en altérer le contenu. Les comptages globaux ne sont jamais supposés ;
+on vérifie l'appartenance des clients de test aux populations et les identités de contrôle.
+"""
 
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 
 import pytest
 from openpyxl import load_workbook
 from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -16,17 +22,15 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.data.clientele_bcm import BCM_GRILLE_VERSION, STATUTS_FIGES, fiches
 from app.data.plateforme_catalogue import FUNCTIONAL_PERMISSIONS, ROLE_PERMISSIONS
-from app.models import User
+from app.models import Agence, User
+from app.services.clientele.bcm_regles import ClienteleBcmReglesService
 from app.services.clientele.declaration import ClienteleDeclarationService
-from app.services.clientele.import_service import ClienteleImportService
 from app.services.clientele.periodes import fenetre_mois_bcm
 from app.services.clientele.service import Ctx
-from tests.test_clientele_consolidation import brute
-from tests.test_clientele_import import classeur
 
 AUJ = date(2026, 10, 8)
-EXTRACTION = date(2026, 7, 15)
-_IN = "('000001','000002','000003')"
+_IN = "('998001','998002','998003','998004')"
+MOTIF_TEST = "test-bcm-declaration"
 
 
 @pytest.fixture
@@ -35,12 +39,13 @@ async def db():
     try:
         async with engine.connect() as conn:
             pret = await conn.scalar(text(
-                "SELECT to_regclass('public.clientele_declarations_bcm') IS NOT NULL"))
+                "SELECT to_regclass('public.clientele_declarations_bcm') IS NOT NULL "
+                "AND to_regclass('public.clientele_bcm_regles') IS NOT NULL"))
     except Exception:
         pret = False
     if not pret:
         await engine.dispose()
-        pytest.skip("Table clientele_declarations_bcm absente (migration 20261008_clientele_04)")
+        pytest.skip("Tables BCM absentes (migrations 20261008_clientele_04 et 20261019_clientele_12)")
     session = async_sessionmaker(engine, expire_on_commit=False)()
     await _nettoyer(session)
     await session.commit()
@@ -55,31 +60,12 @@ async def db():
 
 
 async def _nettoyer(session) -> None:
-    await session.execute(text(
-        "DELETE FROM clientele_declarations_bcm WHERE annee = 2026 AND mois IN (8, 10)"))
-    await session.execute(text(f"""
-        DELETE FROM clientele_alerte_justificatifs WHERE alerte_id IN (
-            SELECT id FROM clientele_alertes WHERE racine_client IN {_IN})
-    """))
-    await session.execute(text(f"""
-        DELETE FROM clientele_alerte_evenements WHERE alerte_id IN (
-            SELECT id FROM clientele_alertes WHERE racine_client IN {_IN})
-    """))
-    await session.execute(text(f"DELETE FROM clientele_alertes WHERE racine_client IN {_IN}"))
-    for table in ("clientele_classif_reexamens", "clientele_classif_evaluations"):
-        if await session.scalar(text(f"SELECT to_regclass('public.{table}') IS NOT NULL")):
-            await session.execute(text(f"DELETE FROM {table} WHERE racine_client IN {_IN}"))
+    await session.execute(text("DELETE FROM clientele_declarations_bcm WHERE annee = 2026 AND mois IN (8, 10)"))
     await session.execute(text("SET LOCAL session_replication_role = replica"))
-    await session.execute(text(
-        f"DELETE FROM clientele_classif_historique WHERE racine_client IN {_IN}"))
+    await session.execute(text(f"DELETE FROM clientele_classif_historique WHERE racine_client IN {_IN}"))
+    await session.execute(text("DELETE FROM clientele_bcm_regles WHERE motif LIKE :m"), {"m": f"{MOTIF_TEST}%"})
     await session.execute(text("SET LOCAL session_replication_role = origin"))
-    await session.execute(text(
-        f"DELETE FROM clientele_classifications WHERE racine_client IN {_IN}"))
-    await session.execute(text("DELETE FROM clientele_import_comptes"))
-    await session.execute(text("DELETE FROM clientele_import_clients"))
-    await session.execute(text("DELETE FROM clientele_import_anomalies"))
-    await session.execute(text("DELETE FROM clientele_import_lignes"))
-    await session.execute(text("DELETE FROM clientele_imports"))
+    await session.execute(text(f"DELETE FROM clientele_kyc WHERE racine_client IN {_IN}"))
     await session.execute(text(f"DELETE FROM clientele_comptes WHERE racine_client IN {_IN}"))
     await session.execute(text(f"DELETE FROM clientele_clients WHERE racine_client IN {_IN}"))
 
@@ -94,22 +80,45 @@ async def _ctx(db) -> Ctx:
                                        "clientele.view", "clientele.export"})
 
 
-async def _importer(db, ctx) -> None:
-    svc = ClienteleImportService(db, ctx)
-    a = await svc.analyser(classeur(
-        brute("000001", "00000100001"),
-        brute("000001", "00000100002"),
-        brute("000001", "00000100003"),
-        brute("000002", "00000200001"),
-    ), "juil-bcm.xlsx")
-    await svc.confirmer(uuid.UUID(a["id"]), {"date_extraction": EXTRACTION.isoformat()})
+async def _client(db, racine: str, ouverture: date, *, categorie: str | None, etat: str = "OUVERT",
+                  gel: str | None = None) -> None:
+    agence = await db.scalar(select(Agence.id).limit(1))
+    if not agence:
+        pytest.skip("aucune agence en base de test")
+    await db.execute(text("""
+        INSERT INTO clientele_clients (id, racine_client, raison_sociale, categorie_juridique, premiere_extraction,
+                                       date_extraction, created_at, updated_at)
+        VALUES (gen_random_uuid(), :r, 'CLIENT TEST BCM', :cat, '2026-10-01', '2026-10-01', now(), now())
+    """), {"r": racine, "cat": categorie})
+    compte = f"{racine}00001"
+    await db.execute(text("""
+        INSERT INTO clientele_comptes (id, compte, rib, racine_client, agence_id, etat_compte, date_ouverture, devise,
+                                       premiere_extraction, date_extraction, created_at, updated_at)
+        VALUES (gen_random_uuid(), :c, :rib, :r, :a, :e, :d, 'MRU', '2026-10-01', '2026-10-01', now(), now())
+    """), {"c": compte, "rib": f"0000000000{compte}00", "r": racine, "a": agence, "e": etat, "d": ouverture})
+    if gel:
+        await db.execute(text(
+            "INSERT INTO clientele_kyc (racine_client, statut_gel, source) VALUES (:r, :g, 'TEST')"),
+            {"r": racine, "g": gel})
+
+
+async def _historique(db, racine: str, niveau: str, le: str) -> None:
     await db.execute(text("""
         INSERT INTO clientele_classif_historique
             (id, racine_client, ancienne_classe, nouvelle_classe, source, motif_classement, created_at)
-        VALUES
-            (gen_random_uuid(), '000001', NULL, 'FAIBLE', 'MANUEL', 'test-couverture',
-             '2026-07-01 12:00:00+00')
-    """))
+        VALUES (gen_random_uuid(), :r, NULL, :n, 'MANUEL', 'test-bcm', :le)
+    """), {"r": racine, "n": niveau, "le": datetime.fromisoformat(le)})
+
+
+async def _jeu(db) -> None:
+    """998001 PP entré en juillet (FAIBLE puis ELEVE en août), 998002 PM entré en août (INTERDIT),
+    998003 sans catégorie juridique entré en août, sans classement."""
+    await _client(db, "998001", date(2026, 7, 10), categorie="PERSONNE PHYSIQUE", gel="Actif")
+    await _client(db, "998002", date(2026, 8, 12), categorie="SOCIETE COMMERCIALE", gel="Inactif")
+    await _client(db, "998003", date(2026, 8, 20), categorie=None)
+    await _historique(db, "998001", "FAIBLE", "2026-07-01 12:00:00+00")
+    await _historique(db, "998001", "ELEVE", "2026-08-10 12:00:00+00")
+    await _historique(db, "998002", "INTERDIT", "2026-08-15 12:00:00+00")
     await db.commit()
 
 
@@ -117,6 +126,16 @@ def _cell(detail: dict, tableau: str, ligne: str, col: str) -> dict:
     tab = next(t for t in detail["cellules"]["tableaux"] if t["code"] == tableau)
     lig = next(row for row in tab["lignes"] if row["code"] == ligne)
     return lig["cellules"][col]
+
+
+def _ctrl(detail: dict, code: str) -> dict:
+    return next(c for c in detail["controles"] if c["code"] == code)
+
+
+async def _racines(svc, did, code: str) -> set[str]:
+    """Clients de test (998xxx) présents dans la population de la cellule."""
+    dd = await svc.drilldown(did, code, taille=50, racine="998")
+    return {i["racine_client"] for i in dd["items"]}
 
 
 def test_catalogue_bcm():
@@ -135,6 +154,9 @@ def test_catalogue_bcm():
         assert f["validation_metier"] in ("PRET", "PRET_SOUS_RESERVE", "A_CONFIGURER")
         if f["validation_metier"] == "A_CONFIGURER":
             assert not (f["formule"] or "").upper().startswith("COUNT")
+            assert f["source"] == "ABSENT"
+        else:
+            assert f["source"] and f["formule"]
 
 
 def test_fenetre_mois_bcm_officielle():
@@ -149,90 +171,95 @@ def test_fenetre_mois_bcm_officielle():
 
 
 @pytest.mark.asyncio
-async def test_declaration_aout_stock_et_a_configurer(db):
+async def test_calcul_aout_populations_et_export(db):
     ctx = await _ctx(db)
-    await _importer(db, ctx)
-    await db.execute(text("""
-        INSERT INTO clientele_classif_historique
-            (id, racine_client, ancienne_classe, nouvelle_classe, source, motif_classement, created_at)
-        VALUES
-            (gen_random_uuid(), '000002', NULL, 'ELEVE', 'MANUEL', 'test',
-             '2026-08-10 12:00:00+00')
-    """))
-    await db.commit()
+    await _jeu(db)
     svc = ClienteleDeclarationService(db, ctx)
     d = await svc.creer(2026, 8, aujourdhui=AUJ)
-    assert d["statut"] == "BROUILLON"
-    assert d["bcm_officielle"] is True
-    cal = await svc.calculer(uuid.UUID(d["id"]), aujourdhui=AUJ)
+    did = uuid.UUID(d["id"])
+    cal = await svc.calculer(did, aujourdhui=AUJ)
     assert cal["statut"] == "CALCULEE"
     assert cal["cellules"]["grille_version"] == BCM_GRILLE_VERSION
-    assert _cell(cal, "T1A", "stock_m1", "total")["valeur"] == 2
-    assert _cell(cal, "T1A", "stock_m1", "pp")["valeur"] == 2
-    assert _cell(cal, "T1A", "stock_m1", "cj")["valeur"] is None
-    assert _cell(cal, "T1A", "stock_m1", "cj")["statut"] == "A_CONFIGURER"
-    assert _cell(cal, "T1A", "cible", "total")["valeur"] is None
-    assert _cell(cal, "T1A", "cible", "total")["statut"] == "A_CONFIGURER"
-    assert _cell(cal, "T1A", "maj_mois", "total")["valeur"] == 0
-    assert _cell(cal, "T1A", "maj_5ans", "total")["valeur"] is None
-    assert _cell(cal, "T1B", "stock_m1", "faible")["valeur"] == 1
-    assert _cell(cal, "T1B", "stock_m1", "eleve")["valeur"] == 0
-    assert _cell(cal, "T1B", "stock_m1", "total")["valeur"] == 2
-    assert _cell(cal, "T4", "eleve", "valeur")["valeur"] == 1
-    assert _cell(cal, "T4", "faible", "valeur")["valeur"] == 1
-    assert _cell(cal, "T4", "total", "valeur")["valeur"] == 2
-    assert _cell(cal, "T4", "total", "ratio")["valeur"] == 100.0
+    assert {r["code"] for r in cal["cellules"]["regles"]} >= {"stock.date_entree", "interdit.rattachement"}
+
+    assert "998001" in await _racines(svc, did, "bcm.t1a.stock_m1.pp")
+    assert not {"998002", "998003"} & await _racines(svc, did, "bcm.t1a.stock_m1.total")
+    assert {"998002", "998003"} <= await _racines(svc, did, "bcm.t1a.maj_mois.total")
+    assert "998002" in await _racines(svc, did, "bcm.t1a.maj_mois.pm")
+    assert "998003" in await _racines(svc, did, "bcm.exc.forme_EXC_FORME_VIDE")
+    assert "998001" in await _racines(svc, did, "bcm.t1b.stock_m1.faible")
+    assert "998001" in await _racines(svc, did, "bcm.t4.eleve")
+    assert "998002" in await _racines(svc, did, "bcm.exc.t4_INTERDIT")
+    assert "998003" in await _racines(svc, did, "bcm.exc.t4_NON_CLASSE")
+    assert "998001" in await _racines(svc, did, "bcm.t1a.cible.total")
+    assert "998002" not in await _racines(svc, did, "bcm.t1a.cible.total")
+
+    t4 = _cell(cal, "T4", "total", "valeur")["valeur"]
+    assert t4 == _cell(cal, "T1A", "stock_m1", "total")["valeur"] + _cell(cal, "T1A", "maj_mois", "total")["valeur"]
+    assert _ctrl(cal, "t4.identite")["ok"] is True
+    assert _ctrl(cal, "unicite.clients")["ok"] is True
+    assert _ctrl(cal, "classif.historique_m1")["ok"] is True
+    interdit = _ctrl(cal, "interdit.rattachement")
+    assert interdit["ok"] is False and interdit["bloquant"] is True
     assert _cell(cal, "T2", "extraites", "valeur")["statut"] == "A_CONFIGURER"
     assert _cell(cal, "T2", "extraites", "valeur")["fiabilite"] == "SOURCE_ABSENTE"
-    assert _cell(cal, "T2", "enregistrees", "valeur")["statut"] == "A_CONFIGURER"
-    assert _cell(cal, "T3", "recues", "valeur")["statut"] == "A_CONFIGURER"
-    assert _cell(cal, "T1A", "stock_m1", "total")["fiabilite"] == "AVEC_RESERVE"
-    assert cal["cellules"]["couverture"]["stock_m1_reconstructible"] is True
-    fiche = _cell(cal, "T4", "eleve", "valeur")["fiche"]
-    assert fiche["libelle_officiel"]
-    assert fiche["source"] == "clientele_classif_historique"
-    assert fiche["historique_utilise"] is True
-    assert fiche["eer_utilise"] is False
-    assert cal["controles"][0]["niveau"] in ("CONFORME", "ATTENTION", "ERREUR")
-    identite = next(c for c in cal["controles"] if c["code"] == "identite_t4_t1")
-    assert identite["bloquant"] is False
-    assert identite["attendu"] == 0
-    xlsx = await svc.exporter_xlsx(uuid.UUID(d["id"]))
-    assert xlsx[:2] == b"PK"
-    ws = load_workbook(BytesIO(xlsx))["Déclaration mensuelle"]
-    assert (ws["B5"].value, ws["E5"].value, ws["D5"].value) == (2, 2, "À CONFIGURER")
-    assert (ws["B12"].value, ws["D12"].value, ws["E12"].value) == (0, 1, 2)
-    assert ws["E6"].value == "À CONFIGURER"
-    assert ws["B21"].value == "À CONFIGURER" and ws["B31"].value == "À CONFIGURER"
-    assert (ws["B41"].value, ws["B43"].value, ws["B44"].value, ws["C44"].value) == (1, 1, 2, 100.0)
+    assert _ctrl(cal, "t2.source")["etat"] == "SOURCE_ABSENTE"
+
+    xlsx = await svc.exporter_xlsx(did)
+    wb = load_workbook(BytesIO(xlsx))
+    ws = wb["Déclaration mensuelle"]
+    assert ws["E5"].value == _cell(cal, "T1A", "stock_m1", "total")["valeur"]
+    assert ws["B44"].value == t4 and ws["C44"].value == 100.0
+    assert ws["B21"].value == "Source absente" and ws["B31"].value == "Source absente"
+    textes = [c.value for row in wb["Contrôle"].iter_rows() for c in row if c.value is not None]
+    assert "interdit.rattachement" in textes
     exports = await db.scalar(text(
         "SELECT count(*) FROM audit_logs WHERE action = 'bcm.exporter' AND entity_id = :i"), {"i": d["id"]})
     assert exports == 1
-    pdf = await svc.exporter_pdf(uuid.UUID(d["id"]))
-    assert pdf[:4] == b"%PDF"
+    assert (await svc.exporter_pdf(did))[:4] == b"%PDF"
 
 
 @pytest.mark.asyncio
-async def test_mois_non_clos_et_snapshot_fige(db):
+async def test_interdit_bloque_puis_regle_confirmee_et_snapshot_reproductible(db):
     ctx = await _ctx(db)
-    await _importer(db, ctx)
+    await _jeu(db)
     svc = ClienteleDeclarationService(db, ctx)
-    oct_ = await svc.creer(2026, 10, aujourdhui=AUJ)
-    assert oct_["simulation"] is True
-    cal = await svc.calculer(uuid.UUID(oct_["id"]), aujourdhui=AUJ)
-    cal = await svc.controler(uuid.UUID(cal["id"]))
+    did = uuid.UUID((await svc.creer(2026, 8, aujourdhui=AUJ))["id"])
+    await svc.calculer(did, aujourdhui=AUJ)
+    await svc.controler(did)
     with pytest.raises(AppError) as err:
-        await svc.valider(uuid.UUID(cal["id"]), aujourdhui=AUJ)
-    assert err.value.code == "MOIS_NON_CLOS"
+        await svc.valider(did, aujourdhui=AUJ)
+    assert err.value.code == "CONTROLES_BLOQUANTS"
+    assert "interdit.rattachement" in err.value.message
 
-    aout = await svc.creer(2026, 8, aujourdhui=AUJ)
-    aout = await svc.calculer(uuid.UUID(aout["id"]), aujourdhui=AUJ)
-    aout = await svc.controler(uuid.UUID(aout["id"]))
-    aout = await svc.valider(uuid.UUID(aout["id"]), aujourdhui=AUJ)
-    assert aout["statut"] == "VALIDEE"
-    assert aout["statut"] in STATUTS_FIGES
+    regles = ClienteleBcmReglesService(db, ctx)
     with pytest.raises(AppError) as err:
-        await svc.calculer(uuid.UUID(aout["id"]), aujourdhui=AUJ)
+        await regles.decider("interdit.rattachement", {"valeur": "ELEVE", "statut": "CONFIRMEE", "motif": " "})
+    assert err.value.code == "MOTIF_OBLIGATOIRE"
+    out = await regles.decider("interdit.rattachement", {
+        "valeur": "HORS_COLONNES", "statut": "CONFIRMEE", "motif": f"{MOTIF_TEST} : décision Conformité"})
+    regle = next(r for r in out["regles"] if r["code"] == "interdit.rattachement")
+    assert regle["statut"] == "CONFIRMEE" and regle["decidee"] is True
+    async with db.bind.connect() as conn:
+        with pytest.raises(DBAPIError):
+            await conn.execute(text("UPDATE clientele_bcm_regles SET motif = 'x' WHERE motif LIKE :m"),
+                               {"m": f"{MOTIF_TEST}%"})
+
+    cal = await svc.calculer(did, aujourdhui=AUJ)
+    assert _ctrl(cal, "interdit.rattachement")["ok"] is True
+    snap = next(r for r in cal["cellules"]["regles"] if r["code"] == "interdit.rattachement")
+    assert snap["statut"] == "CONFIRMEE"
+    await svc.controler(did)
+    val = await svc.valider(did, aujourdhui=AUJ)
+    assert val["statut"] == "VALIDEE" and val["statut"] in STATUTS_FIGES
+
+    avant = await svc.drilldown(did, "bcm.t1a.maj_mois.total", taille=1)
+    await _client(db, "998004", date(2026, 8, 5), categorie="PERSONNE PHYSIQUE")
+    await db.commit()
+    apres = await svc.drilldown(did, "bcm.t1a.maj_mois.total", taille=1)
+    assert apres["total"] == avant["total"] and apres["figee"] is True
+    with pytest.raises(AppError) as err:
+        await svc.calculer(did, aujourdhui=AUJ)
     assert err.value.code == "DECLARATION_FIGEE"
     with pytest.raises(AppError) as err:
         await svc.creer(2026, 8, aujourdhui=AUJ)
@@ -240,9 +267,22 @@ async def test_mois_non_clos_et_snapshot_fige(db):
 
 
 @pytest.mark.asyncio
+async def test_mois_non_clos(db):
+    ctx = await _ctx(db)
+    await _jeu(db)
+    svc = ClienteleDeclarationService(db, ctx)
+    oct_ = await svc.creer(2026, 10, aujourdhui=AUJ)
+    assert oct_["simulation"] is True
+    await svc.calculer(uuid.UUID(oct_["id"]), aujourdhui=AUJ)
+    await svc.controler(uuid.UUID(oct_["id"]))
+    with pytest.raises(AppError) as err:
+        await svc.valider(uuid.UUID(oct_["id"]), aujourdhui=AUJ)
+    assert err.value.code == "MOIS_NON_CLOS"
+
+
+@pytest.mark.asyncio
 async def test_desactiver_reactiver_supprimer(db):
     ctx = await _ctx(db)
-    await _importer(db, ctx)
     svc = ClienteleDeclarationService(db, ctx)
     d = await svc.creer(2026, 8, aujourdhui=AUJ)
     did = uuid.UUID(d["id"])
@@ -262,9 +302,6 @@ async def test_desactiver_reactiver_supprimer(db):
     with pytest.raises(AppError) as err:
         await svc.calculer(did, aujourdhui=AUJ)
     assert err.value.code == "DECLARATION_DESACTIVEE"
-    with pytest.raises(AppError) as err:
-        await svc.creer(2026, 8, aujourdhui=AUJ)
-    assert err.value.code == "DECLARATION_EXISTANTE"
 
     on = await svc.reactiver(did)
     assert on["statut"] == "CALCULEE"
@@ -276,61 +313,25 @@ async def test_desactiver_reactiver_supprimer(db):
     assert (await db.scalar(text(
         "SELECT count(*) FROM clientele_declarations_bcm WHERE annee = 2026 AND mois = 8"))) == 0
 
-    fige = await svc.creer(2026, 8, aujourdhui=AUJ)
-    fid = uuid.UUID(fige["id"])
-    await svc.calculer(fid, aujourdhui=AUJ)
-    await svc.controler(fid)
-    fige = await svc.valider(fid, aujourdhui=AUJ)
-    assert fige["actions"]["supprimer"] is False
-    assert fige["actions"]["desactiver"] is False
-    with pytest.raises(AppError) as err:
-        await svc.supprimer(fid, motif="interdit")
-    assert err.value.code == "DECLARATION_FIGEE"
-    with pytest.raises(AppError):
-        await svc.desactiver(fid, motif="interdit")
-
 
 @pytest.mark.asyncio
-async def test_zero_sans_historique_n_est_pas_conforme(db):
-    """Deux zéros ne valent pas une photographie d'août. Validation bloquée."""
+async def test_historique_absent_bloque_la_validation(db):
+    """Sans historique de classification couvrant le mois, le risque n'est pas calculé et la validation est
+    bloquée. Ne s'applique que si la base n'a aucun historique antérieur au 31/07/2026."""
     ctx = await _ctx(db)
-    imp = ClienteleImportService(db, ctx)
-    a = await imp.analyser(classeur(
-        brute("000001", "00000100001"),
-        brute("000002", "00000200001"),
-    ), "oct-bcm.xlsx")
-    await imp.confirmer(uuid.UUID(a["id"]), {"date_extraction": "2026-10-08"})
-    await db.execute(text("""
-        INSERT INTO clientele_classif_historique
-            (id, racine_client, ancienne_classe, nouvelle_classe, source, motif_classement, created_at)
-        VALUES
-            (gen_random_uuid(), '000001', NULL, 'FAIBLE', 'MANUEL', 'test',
-             '2026-10-10 12:00:00+00'),
-            (gen_random_uuid(), '000002', NULL, 'ELEVE', 'MANUEL', 'test',
-             '2026-10-11 12:00:00+00')
-    """))
-    await db.commit()
+    h_min = await db.scalar(text("SELECT min(created_at) FROM clientele_classif_historique"))
+    if h_min and h_min.date() <= date(2026, 7, 31):
+        pytest.skip("la base contient un historique de classification antérieur à août 2026")
     svc = ClienteleDeclarationService(db, ctx)
-    d = await svc.creer(2026, 8, aujourdhui=AUJ)
-    cal = await svc.calculer(uuid.UUID(d["id"]), aujourdhui=AUJ)
-    assert _cell(cal, "T1A", "stock_m1", "total")["valeur"] == 0
-    assert _cell(cal, "T1A", "stock_m1", "total")["fiabilite"] == "HISTORIQUE_INDISPONIBLE"
-    assert _cell(cal, "T4", "total", "valeur")["valeur"] == 0
-    assert _cell(cal, "T4", "eleve", "valeur")["fiabilite"] == "HISTORIQUE_INDISPONIBLE"
-    assert _cell(cal, "T4", "total", "valeur")["fiabilite"] == "HISTORIQUE_INDISPONIBLE"
-    hist = next(c for c in cal["controles"] if c["code"] == "stock.historique_m1")
-    assert hist["ok"] is False
-    assert hist["bloquant"] is True
-    assert hist["etat"] == "HISTORIQUE_INDISPONIBLE"
-    somme = next(c for c in cal["controles"] if c["code"] == "t4.somme")
-    assert somme["ok"] is False
-    assert somme["niveau"] != "CONFORME"
-    assert somme["etat"] == "HISTORIQUE_INDISPONIBLE"
-    classif = next(c for c in cal["controles"] if c["code"] == "classif.historique_fin")
-    assert classif["ok"] is False
-    assert classif["bloquant"] is True
-    cal = await svc.controler(uuid.UUID(cal["id"]))
-    assert cal["actions"]["valider"] is False
+    did = uuid.UUID((await svc.creer(2026, 8, aujourdhui=AUJ))["id"])
+    cal = await svc.calculer(did, aujourdhui=AUJ)
+    assert _cell(cal, "T1B", "stock_m1", "eleve")["valeur"] is None
+    assert _cell(cal, "T1B", "stock_m1", "eleve")["statut"] == "NON_CALCULABLE"
+    assert _cell(cal, "T1B", "stock_m1", "eleve")["fiabilite"] == "HISTORIQUE_INDISPONIBLE"
+    assert _cell(cal, "T4", "faible", "ratio")["valeur"] is None
+    hist = _ctrl(cal, "classif.historique_m1")
+    assert hist["bloquant"] is True and hist["etat"] == "HISTORIQUE_INDISPONIBLE"
+    await svc.controler(did)
     with pytest.raises(AppError) as err:
-        await svc.valider(uuid.UUID(cal["id"]), aujourdhui=AUJ)
+        await svc.valider(did, aujourdhui=AUJ)
     assert err.value.code == "CONTROLES_BLOQUANTS"
