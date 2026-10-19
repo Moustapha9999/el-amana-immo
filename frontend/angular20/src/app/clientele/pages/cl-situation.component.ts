@@ -19,8 +19,8 @@ import { ClienteleStore } from '../clientele.store';
     <div class="bea-mg bea-cl">
       <header class="bea-mg__head bea-cl-head">
         <div>
-          <p class="bea-stock-page__kicker">Référentiel clients</p>
-          <h1>Situation {{ profil() === 'PM' ? 'PM' : 'PP' }}</h1>
+          <p class="bea-stock-page__kicker">Base Clientèle</p>
+          <h1>Clients {{ profil() === 'PM' ? 'PM' : 'PP' }}</h1>
           <p class="bea-cl-head__sub">Vue sur la base clientèle (pas une copie). Profil dérivé d’ORION (agent puis catégorie) — ce n’est pas le champ Excel « Profil ORION retraité ».</p>
         </div>
       </header>
@@ -52,7 +52,7 @@ import { ClienteleStore } from '../clientele.store';
         <div class="bea-mg__panel-top"><h2>Clients</h2><span class="bea-mg__count">{{ n(data()?.total) }} distincts</span></div>
         <div class="bea-mg__table-wrap">
           <table class="bea-mg__table">
-            <thead><tr><th>Racine</th><th>Nom</th><th>Agence</th><th>Date ouv.</th><th>État</th><th>Profil</th><th class="is-num">Comptes</th><th>NNI / NIF</th></tr></thead>
+            <thead><tr><th>Racine</th><th>Nom</th><th>Agence</th><th>Date ouv.</th><th>État</th><th>Profil</th><th class="is-num">Comptes</th><th>NNI / NIF</th><th>Classe retenue</th><th>Classe moteur</th><th>Analyste KYC</th></tr></thead>
             <tbody>
               @for (r of data()?.items ?? []; track r.racine_client) {
                 <tr class="is-click" [routerLink]="['/clientele/clients', r.racine_client]" style="cursor:pointer">
@@ -64,9 +64,14 @@ import { ClienteleStore } from '../clientele.store';
                   <td><span class="bea-cl-badge" [attr.data-s]="r.profil_derive">{{ r.profil_derive }}</span></td>
                   <td>{{ r.nb_comptes_ouverts }} / {{ r.nb_comptes }}</td>
                   <td>{{ r.nni || r.nif || '—' }}</td>
+                  <td>@if (r.classe_retenue) { <span class="bea-cl-badge" [attr.data-s]="r.classe_retenue">{{ r.classe_retenue }}</span> <small class="bea-cl-hint">{{ r.source_classe }}</small> } @else { <small class="bea-cl-hint">non classé</small> }</td>
+                  <td>@if (r.classe_moteur) { <span class="bea-cl-badge" [attr.data-s]="r.classe_moteur">{{ r.classe_moteur }}</span> } @else { — }
+                    @if (r.ecart_moteur) { <span class="bea-cl-badge" data-s="A_VERIFIER" title="La classe moteur diffère de la classe retenue">Écart</span> }
+                  </td>
+                  <td>{{ r.analyste_kyc || '—' }}</td>
                 </tr>
               } @empty {
-                <tr><td colspan="8"><div class="bea-cl-empty"><mat-icon>group_off</mat-icon>Aucun client.</div></td></tr>
+                <tr><td colspan="11"><div class="bea-cl-empty"><mat-icon>group_off</mat-icon>Aucun client.</div></td></tr>
               }
             </tbody>
           </table>

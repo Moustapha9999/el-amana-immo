@@ -37,12 +37,19 @@ async def _boucle_echeances_eer(interval_heures: float) -> None:
     from app.db.session import AsyncSessionLocal
     from app.services import eer_echeances
 
+    from sqlalchemy import select
+
+    from app.models import PlateformeModule
+
     await asyncio.sleep(120)
     while True:
         try:
             async with AsyncSessionLocal() as session:
-                await eer_echeances.executer(session)
-                await session.commit()
+                statut = await session.scalar(
+                    select(PlateformeModule.statut).where(PlateformeModule.code == "eer"))
+                if statut == "actif":
+                    await eer_echeances.executer(session)
+                    await session.commit()
         except asyncio.CancelledError:
             raise
         except Exception:

@@ -17,6 +17,7 @@ from app.core.exceptions import AppError
 from app.models import (
     Agence,
     ClienteleAlerte,
+    ClienteleClassifEvaluation,
     ClienteleClassification,
     ClienteleClient,
     ClienteleCompte,
@@ -217,11 +218,33 @@ class ClienteleSituationService:
             base.order_by(ClienteleSituation.racine_client)
             .offset((page - 1) * taille).limit(taille)
         )).all())
+        racines = [r.racine_client for r in rows]
+        classes = {c.racine_client: c for c in (await self.db.scalars(
+            select(ClienteleClassification).where(ClienteleClassification.racine_client.in_(racines)))).all()}
+        kyc = dict((await self.db.execute(
+            select(ClienteleKyc.racine_client, ClienteleKyc.analyste_kyc)
+            .where(ClienteleKyc.racine_client.in_(racines)))).all())
+        E = ClienteleClassifEvaluation
+        moteur = dict((await self.db.execute(
+            select(E.racine_client, E.niveau_final).distinct(E.racine_client)
+            .where(E.racine_client.in_(racines), E.statut.in_(("EVALUE", "BLOQUANT")))
+            .order_by(E.racine_client, E.created_at.desc()))).all())
+
+        def ligne(r: ClienteleSituation) -> dict:
+            c = classes.get(r.racine_client)
+            return {
+                **_dict_situation(r),
+                "classe_retenue": c.niveau if c else None, "source_classe": c.source if c else None,
+                "classe_moteur": moteur.get(r.racine_client),
+                "ecart_moteur": bool(c and moteur.get(r.racine_client) and moteur[r.racine_client] != c.niveau),
+                "analyste_kyc": (c.analyste_kyc if c and c.analyste_kyc else None) or kyc.get(r.racine_client),
+                "classifie_le": c.classifie_le.isoformat() if c and c.classifie_le else None,
+            }
         return {
             "total": int(total),
             "page": page,
             "taille": taille,
-            "items": [_dict_situation(r) for r in rows],
+            "items": [ligne(r) for r in rows],
         }
 
     async def tableau_de_bord(self) -> dict:
@@ -369,6 +392,9 @@ class ClienteleSituationService:
             },
             "risques": risques,
             "non_classes": int(non_classes),
+            "clients_sans_compte": int(await self.db.scalar(
+                select(func.count()).select_from(ClienteleClient).where(
+                    ClienteleClient.racine_client.notin_(select(ClienteleSituation.racine_client)))) or 0),
             "agences": agences,
             "evolution": evolution,
             "activite": activite[:8],
@@ -405,6 +431,7 @@ class ClienteleSituationService:
             select(ClienteleImport).where(ClienteleImport.statut == "IMPORTE")
             .order_by(ClienteleImport.importe_le.desc()).limit(1))
         classif = await self.db.get(ClienteleClassification, racine)
+        calcul = await ClienteleClassificationService(self.db, self.ctx).dernier_calcul(racine)
         alertes = list((await self.db.scalars(
             select(ClienteleAlerte).where(
                 ClienteleAlerte.racine_client == racine, ClienteleAlerte.statut != "CLOTUREE")
@@ -442,6 +469,8 @@ class ClienteleSituationService:
                  "importe_le": dernier.importe_le.isoformat() if dernier.importe_le else None}
                 if dernier else None),
             "classification": ClienteleClassificationService._classif_dict(classif),
+            "dernier_calcul": calcul,
+            "ecart_moteur": ClienteleClassificationService.ecart(classif, calcul),
             "alertes_ouvertes": [{"id": str(a.id), "statut": a.statut, "motif": a.motif,
                                   "precedent_faux_positif": a.precedent_faux_positif}
                                  for a in alertes],

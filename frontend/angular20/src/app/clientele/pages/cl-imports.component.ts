@@ -23,7 +23,7 @@ const SOURCES: readonly Source[] = ['orion', 'situation', 'liste'];
     <div class="bea-mg bea-cl" [class.bea-cl--large]="source() !== 'orion'">
       <header class="bea-mg__head bea-cl-head">
         <div>
-          <p class="bea-stock-page__kicker">Référentiel clients</p>
+          <p class="bea-stock-page__kicker">Base Clientèle</p>
           <h1>Importer</h1>
           <p class="bea-cl-head__sub">Choisissez le type de fichier. Racine CLIENT sur 6 chiffres. Aucun client n’est supprimé. Rien n’est enregistré avant confirmation.</p>
         </div>
@@ -273,7 +273,7 @@ export class ClImportsComponent implements OnInit {
   }
 
   private versImportHebdo(): void {
-    void this.router.navigate(['/clientele/classification'], { queryParams: { onglet: 'import' }, replaceUrl: true });
+    void this.router.navigate(['/clientele/import-hebdo'], { replaceUrl: true });
   }
 
   choisirSource(s: Source): void {

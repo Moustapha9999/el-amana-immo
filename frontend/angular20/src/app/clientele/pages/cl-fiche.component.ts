@@ -133,7 +133,7 @@ const RESULTATS: Record<string, string> = {
               </dd>
               <dt>Mode de décision</dt><dd>{{ modes[c.mode_decision || ''] || '—' }} <small class="bea-cl-hint">({{ c.source }})</small></dd>
               <dt>Score calculé</dt><dd>{{ c.score_calcule ?? '—' }}</dd>
-              <dt>Niveau proposé (moteur)</dt><dd>{{ c.niveau_propose || '—' }}</dd>
+              <dt>Niveau proposé (moteur, à la décision)</dt><dd>{{ c.niveau_propose || '—' }}</dd>
               <dt>Classe du fichier</dt><dd>{{ c.classe_source_fichier || '—' }}</dd>
               <dt>Motif moteur</dt><dd>{{ c.motif_moteur || '—' }}</dd>
               <dt>Motif source</dt><dd>{{ c.motif_source || c.motif_risque || '—' }}</dd>
@@ -147,6 +147,23 @@ const RESULTATS: Record<string, string> = {
             </dl>
           } @else {
             <p class="bea-cl-hint" style="padding:0.9rem 1.1rem">Pas encore classé. Une donnée absente n’est jamais Faible. 0 critère exploitable → NON CLASSÉ (jamais enregistré).</p>
+          }
+          <div class="bea-mg__panel-top"><h2>Dernier calcul du moteur</h2>
+            @if (x.ecart_moteur) { <span class="bea-cl-badge" data-s="A_VERIFIER">Écart avec la classe retenue</span> }
+          </div>
+          @if (x.dernier_calcul; as m) {
+            <dl class="bea-cl-dl">
+              <dt>Classe moteur</dt><dd>@if (m.niveau) { <span class="bea-cl-badge" [attr.data-s]="m.niveau">{{ m.niveau }}</span> } @else { NON CLASSÉ } <small class="bea-cl-hint">({{ m.statut }}{{ m.admissible ? '' : ', non admissible' }})</small></dd>
+              <dt>Score</dt><dd>{{ m.score ?? '—' }}</dd>
+              <dt>Calculé le</dt><dd>{{ dateHeureFr(m.date_calcul) }}</dd>
+              <dt>Motif</dt><dd>{{ m.motif || '—' }}</dd>
+              <dt>Versions</dt><dd>{{ m.version_moteur || '—' }} / {{ m.version_regles || '—' }}</dd>
+            </dl>
+            @if (x.ecart_moteur) {
+              <p class="bea-cl-hint" style="padding:0 1.1rem 0.9rem">Le moteur ne remplace pas la classe retenue. Pour l’aligner, enregistrez une décision motivée ci-dessous.</p>
+            }
+          } @else {
+            <p class="bea-cl-hint" style="padding:0.9rem 1.1rem">Aucun calcul du moteur enregistré pour ce client.</p>
           }
         </section>
 
@@ -204,8 +221,11 @@ const RESULTATS: Record<string, string> = {
                 <input [(ngModel)]="motif" maxlength="2000" placeholder="Ex. revue KYC du 15/10 : activité confirmée" />
               </label>
               <label class="bea-cl-decision__motif">Analyste KYC (obligatoire)
-                <input [(ngModel)]="analyste" list="bea-cl-analystes" maxlength="120" placeholder="Nom de l’analyste" />
-                <datalist id="bea-cl-analystes">@for (a of analystes(); track a) { <option [value]="a"></option> }</datalist>
+                <select [(ngModel)]="analyste">
+                  <option value="">Choisir un analyste…</option>
+                  @for (a of analystes(); track a) { <option [value]="a">{{ a }}</option> }
+                </select>
+                @if (!analystes().length) { <small class="bea-cl-hint">Référentiel vide : ajoutez les analystes dans Classification › Analystes KYC.</small> }
               </label>
               @if (store.cap().classif_forcer) {
                 <label class="bea-cl-decision__force" [class.is-on]="forcer">

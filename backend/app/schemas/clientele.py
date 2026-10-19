@@ -74,6 +74,29 @@ class LotLignesDecisionIn(BaseModel):
     confirmation: bool = False
 
 
+class LotPreparationIn(BaseModel):
+    lignes: list[int] = Field(..., max_length=5000)
+    decision: Literal["ACCEPTER", "MODIFIER", "REJETER", "ATTENTE"]
+    niveau: str | None = Field(None, max_length=10)
+    motif: str | None = Field(None, max_length=2000)
+    analyste_kyc: str | None = Field(None, max_length=120)
+
+
+class LotMotifIn(BaseModel):
+    motif: str | None = Field(None, max_length=2000)
+
+
+class AnalysteKycIn(BaseModel):
+    nom: str = Field(..., min_length=1, max_length=120)
+    user_id: str | None = None
+
+
+class AnalysteKycMajIn(BaseModel):
+    nom: str | None = Field(None, min_length=1, max_length=120)
+    user_id: str | None = None
+    actif: bool | None = None
+
+
 class ClassifMoteurScoringIn(BaseModel):
     motif: str
     analyste_kyc: str | None = Field(None, max_length=120)

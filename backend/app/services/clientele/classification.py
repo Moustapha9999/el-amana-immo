@@ -24,7 +24,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from app.core.config import get_settings
 from app.core.exceptions import AppError
@@ -45,11 +45,11 @@ from app.models import (
     ClienteleClassification,
     ClienteleClient,
     ClienteleCompte,
-    ClienteleKyc,
     ClienteleSituation,
     EerDossier,
     User,
 )
+from app.services.clientele.analystes import ClienteleAnalysteService
 from app.services.clientele.journal import journaliser
 from app.services.clientele.scoring import (
     SOURCES_LIBELLES, DonneesClient, Evaluation, codes_liste_interdiction, divergences_dict, evaluer,
@@ -164,6 +164,36 @@ def _habiller_modele(ws, largeurs: list[int]) -> None:
     for i, largeur in enumerate(largeurs, start=1):
         ws.column_dimensions[get_column_letter(i)].width = largeur
     ws.freeze_panes = "A2"
+
+
+def _date_fr(iso: str | None, *, heure: bool = False) -> str | None:
+    if not iso:
+        return None
+    jour = f"{iso[8:10]}/{iso[5:7]}/{iso[0:4]}"
+    return f"{jour} {iso[11:16]}" if heure and len(iso) >= 16 else jour
+
+
+def _xlsx(titre: str, entetes: list[str], lignes: list[list]) -> bytes:
+    """Export tabulaire : racines et identifiants en texte (zéros de tête conservés)."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = titre[:31]
+    ws.append(entetes)
+    for lg in lignes:
+        ws.append(lg)
+    for row in ws.iter_rows(min_row=2, max_col=1):
+        for cell in row:
+            cell.number_format = "@"
+    entete = PatternFill("solid", fgColor="1E3A5F")
+    for i, cell in enumerate(ws[1], start=1):
+        cell.fill = entete
+        cell.font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+        ws.column_dimensions[get_column_letter(i)].width = max(12, min(40, len(entetes[i - 1]) + 6))
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 class ClienteleClassificationService:
@@ -290,13 +320,18 @@ class ClienteleClassificationService:
         return await self.version_detail(v.id)
 
     async def lister(self, *, niveau: str | None = None, source: str | None = None,
-                     q: str | None = None, page: int = 1, taille: int = 50) -> dict:
+                     q: str | None = None, analyste: str | None = None,
+                     page: int = 1, taille: int = 50) -> dict:
         self.ctx.exiger("clientele.classif.view")
         filtres = []
         if niveau:
             filtres.append(ClienteleClassification.niveau == niveau)
-        if source:
+        if source == "MANUELLES":
+            filtres.append(ClienteleClassification.source.in_(SOURCES_MANUELLES))
+        elif source:
             filtres.append(ClienteleClassification.source == source)
+        if analyste:
+            filtres.append(ClienteleClassification.analyste_kyc.ilike(f"%{analyste.strip()}%"))
         stmt = (select(ClienteleClassification, ClienteleClient.raison_sociale)
                 .join(ClienteleClient, ClienteleClient.racine_client == ClienteleClassification.racine_client))
         if filtres:
@@ -307,9 +342,11 @@ class ClienteleClassificationService:
                                   ClienteleClient.raison_sociale.ilike(like)))
         page, taille = max(1, page), min(max(1, taille), 200)
         total = await self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        ordre = ((ClienteleClassification.classifie_le.desc(), ClienteleClassification.racine_client)
+                 if source == "MANUELLES" else
+                 (ClienteleClassification.niveau.desc(), ClienteleClassification.racine_client))
         rows = (await self.db.execute(
-            stmt.order_by(ClienteleClassification.niveau.desc(), ClienteleClassification.racine_client)
-            .offset((page - 1) * taille).limit(taille)
+            stmt.order_by(*ordre).offset((page - 1) * taille).limit(taille)
         )).all()
         return {
             "total": int(total), "page": page, "taille": taille,
@@ -349,13 +386,9 @@ class ClienteleClassificationService:
         } for c, k, n in rows]}
 
     async def analystes(self) -> list[str]:
-        """Noms d'analystes KYC déjà rencontrés (fichiers, décisions). Suggestions, pas un référentiel."""
+        """Analystes KYC actifs du référentiel (seules valeurs acceptées pour une décision)."""
         self.ctx.exiger("clientele.classif.view")
-        noms: set[str] = set()
-        for col in (ClienteleClassifLotLigne.analyste_kyc, ClienteleKyc.analyste_kyc,
-                    ClienteleClassification.analyste_kyc):
-            noms.update(x for x in (await self.db.scalars(select(col).distinct().where(col.is_not(None)))).all())
-        return sorted({n.strip() for n in noms if n and n.strip()}, key=str.casefold)
+        return await ClienteleAnalysteService(self.db, self.ctx).noms_actifs()
 
     async def historique(self, racine: str) -> list[dict]:
         self.ctx.exiger("clientele.classif.view")
@@ -442,15 +475,12 @@ class ClienteleClassificationService:
                            code="RACINE_IMMUTABLE")
         racine = self._racine(racine)
         await self._client_existe(racine)
-        analyste = (payload.get("analyste_kyc") or "").strip()
-        if not analyste:
-            raise AppError("Analyste KYC obligatoire : indiquez l'analyste concerné par la décision", 422,
-                           code="ANALYSTE_OBLIGATOIRE")
+        analyste = await ClienteleAnalysteService(self.db, self.ctx).exiger(payload.get("analyste_kyc"))
         await self.decider_manuel(
             racine, payload.get("niveau") or "", payload.get("motif_classement") or "",
             motif_risque=(payload.get("motif_risque") or "").strip() or None,
             forcer=bool(payload.get("forcer")), confirmation=bool(payload.get("confirmation")),
-            trace={"analyste_kyc": analyste[:120]})
+            trace={"analyste_kyc": analyste})
         return await self.courante(racine)
 
     async def ecrire_resultat_moteur(self, racine: str, ev: dict, motif: str, *, forcer: bool = False,
@@ -514,7 +544,9 @@ class ClienteleClassificationService:
         racine = self._racine(racine)
         ev = await self.evaluer_racine(racine, persister=True)
         avant = (ev.get("classification_courante") or {}).get("niveau")
-        analyste = (payload.get("analyste_kyc") or "").strip()[:120] or None
+        analyste = None
+        if (payload.get("analyste_kyc") or "").strip():
+            analyste = await ClienteleAnalysteService(self.db, self.ctx).exiger(payload.get("analyste_kyc"))
         resultat = await self.ecrire_resultat_moteur(
             racine, ev, payload.get("motif") or "", forcer=bool(payload.get("forcer")),
             confirmation=bool(payload.get("confirmation")), trace={"analyste_kyc": analyste})
@@ -717,10 +749,186 @@ class ClienteleClassificationService:
         self.ctx.exiger("clientele.classif.view")
         racine = self._racine(racine)
         c = await self.db.get(ClienteleClassification, racine)
+        calcul = await self.dernier_calcul(racine)
         return {"racine_client": racine, "classification": self._classif_dict(c) if c else None,
+                "dernier_calcul": calcul, "ecart": self.ecart(c, calcul),
                 "historique": await self.historique(racine)}
 
+    async def dernier_calcul(self, racine: str) -> dict | None:
+        """Dernière évaluation du moteur pour la racine (photographie), distincte de la classe retenue."""
+        e = await self.db.scalar(
+            select(ClienteleClassifEvaluation).where(ClienteleClassifEvaluation.racine_client == racine)
+            .order_by(ClienteleClassifEvaluation.created_at.desc()).limit(1))
+        return self._calcul_dict(e)
+
+    @staticmethod
+    def _calcul_dict(e: ClienteleClassifEvaluation | None) -> dict | None:
+        if not e:
+            return None
+        return {
+            "evaluation_id": str(e.id), "niveau": e.niveau_final, "statut": e.statut,
+            "admissible": e.statut in ("EVALUE", "BLOQUANT") and e.niveau_final in NIVEAUX,
+            "score": e.score_total, "version_moteur": e.version_moteur, "version_regles": e.version_regles,
+            "date_calcul": e.created_at.isoformat() if e.created_at else None,
+            "date_reference": e.date_reference.isoformat() if e.date_reference else None,
+            "motif": e.motif_principal,
+            "lot_id": str(e.lot_id) if e.lot_id else None, "ligne_source": e.ligne_source,
+        }
+
+    @staticmethod
+    def ecart(retenue: ClienteleClassification | dict | None, calcul: dict | None) -> bool:
+        """Vrai si le dernier calcul admissible du moteur diffère de la classe retenue."""
+        if not retenue or not calcul or not calcul.get("admissible"):
+            return False
+        niveau = retenue.get("niveau") if isinstance(retenue, dict) else retenue.niveau
+        return niveau != calcul.get("niveau")
+
+    def _requete_resultats(self, *, ecart: bool | None = None, niveau: str | None = None,
+                           statut: str | None = None, source: str | None = None, q: str | None = None):
+        E = ClienteleClassifEvaluation
+        dern = (select(E).distinct(E.racine_client)
+                .order_by(E.racine_client, E.created_at.desc()).subquery())
+        e = aliased(E, dern)
+        K = ClienteleClassification
+        stmt = (select(e, K, ClienteleClient.raison_sociale, ClienteleSituation.profil_derive)
+                .join(ClienteleClient, ClienteleClient.racine_client == e.racine_client)
+                .outerjoin(K, K.racine_client == e.racine_client)
+                .outerjoin(ClienteleSituation, ClienteleSituation.racine_client == e.racine_client))
+        admissible = e.statut.in_(("EVALUE", "BLOQUANT")) & e.niveau_final.in_(NIVEAUX)
+        if ecart is True:
+            stmt = stmt.where(admissible, K.niveau.is_not(None), K.niveau != e.niveau_final)
+        elif ecart is False:
+            stmt = stmt.where(or_(~admissible, K.niveau.is_(None), K.niveau == e.niveau_final))
+        if niveau:
+            stmt = stmt.where(e.niveau_final == niveau)
+        if statut:
+            stmt = stmt.where(e.statut == statut)
+        if source == "MANUELLES":
+            stmt = stmt.where(K.source.in_(SOURCES_MANUELLES))
+        elif source:
+            stmt = stmt.where(K.source == source)
+        if q:
+            like = f"%{q.strip()}%"
+            stmt = stmt.where(or_(e.racine_client.like(like), ClienteleClient.raison_sociale.ilike(like)))
+        return stmt, e
+
+    def _resultat_dict(self, e, k, nom, profil) -> dict:
+        calcul = self._calcul_dict(e)
+        return {
+            "racine_client": e.racine_client, "raison_sociale": nom, "profil": profil,
+            "calcul": calcul, "retenue": self._classif_dict(k) if k else None, "ecart": self.ecart(k, calcul),
+        }
+
+    async def resultats(self, *, ecart: bool | None = None, niveau: str | None = None,
+                        statut: str | None = None, source: str | None = None, q: str | None = None,
+                        page: int = 1, taille: int = 50) -> dict:
+        """Résultats du moteur : dernier calcul par racine, face à la classe retenue (écart signalé)."""
+        self.ctx.exiger("clientele.classif.view")
+        stmt, e = self._requete_resultats(ecart=ecart, niveau=niveau, statut=statut, source=source, q=q)
+        page, taille = max(1, page), min(max(1, taille), 200)
+        total = await self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        rows = (await self.db.execute(
+            stmt.order_by(e.created_at.desc(), e.racine_client).offset((page - 1) * taille).limit(taille))).all()
+        return {"total": int(total), "page": page, "taille": taille,
+                "items": [self._resultat_dict(*r) for r in rows]}
+
+    async def resultats_xlsx(self, **filtres) -> bytes:
+        self.ctx.exiger("clientele.export")
+        stmt, e = self._requete_resultats(**filtres)
+        rows = (await self.db.execute(stmt.order_by(e.racine_client).limit(100_000))).all()
+        lignes = []
+        for r in rows:
+            d = self._resultat_dict(*r)
+            c, k = d["calcul"] or {}, d["retenue"] or {}
+            lignes.append([
+                d["racine_client"], d["profil"], d["raison_sociale"], c.get("niveau"), c.get("statut"),
+                c.get("score"), c.get("version_moteur"), _date_fr(c.get("date_calcul")), k.get("niveau"),
+                k.get("source"), k.get("analyste_kyc"), k.get("motif_decision_manuelle"),
+                "Oui" if d["ecart"] else "Non",
+            ])
+        await self.svc.audit("clientele.classif.resultats.export", "clientele_classif_evaluation", None,
+                             after={"lignes": len(lignes), **{k: v for k, v in filtres.items() if v is not None}})
+        return _xlsx("Résultats moteur", [
+            "Racine", "PP/PM", "Identité", "Classe moteur", "Statut moteur", "Score", "Version moteur",
+            "Date du calcul", "Classe retenue", "Source", "Analyste KYC", "Motif manuel", "Écart",
+        ], lignes)
+
+    def _requete_historique(self, *, q: str | None = None, source: str | None = None,
+                            analyste: str | None = None, lot_id: uuid.UUID | None = None,
+                            du: date | None = None, au: date | None = None):
+        H = ClienteleClassifHistorique
+        stmt = (select(H, User.full_name, ClienteleClient.raison_sociale, ClienteleSituation.profil_derive)
+                .outerjoin(User, User.id == H.created_by_id)
+                .outerjoin(ClienteleClient, ClienteleClient.racine_client == H.racine_client)
+                .outerjoin(ClienteleSituation, ClienteleSituation.racine_client == H.racine_client))
+        if q:
+            like = f"%{q.strip()}%"
+            stmt = stmt.where(or_(H.racine_client.like(like), ClienteleClient.raison_sociale.ilike(like)))
+        if source == "MANUELLES":
+            stmt = stmt.where(H.source.in_(SOURCES_MANUELLES))
+        elif source:
+            stmt = stmt.where(H.source == source)
+        if analyste:
+            stmt = stmt.where(H.analyste_kyc.ilike(f"%{analyste.strip()}%"))
+        if lot_id:
+            stmt = stmt.where(H.lot_id == lot_id)
+        if du:
+            stmt = stmt.where(func.date(H.created_at) >= du)
+        if au:
+            stmt = stmt.where(func.date(H.created_at) <= au)
+        return stmt
+
+    def _historique_dict(self, h, utilisateur, nom, profil) -> dict:
+        return {
+            "id": str(h.id), "racine_client": h.racine_client, "raison_sociale": nom, "profil": profil,
+            "ancienne_classe": h.ancienne_classe, "nouvelle_classe": h.nouvelle_classe,
+            "motif_risque": h.motif_risque, "motif_classement": h.motif_classement, "source": h.source,
+            "utilisateur": utilisateur, "date": h.created_at.isoformat() if h.created_at else None,
+            **self._trace_dict(h),
+        }
+
+    async def historique_global(self, *, q: str | None = None, source: str | None = None,
+                                analyste: str | None = None, lot_id: uuid.UUID | None = None,
+                                du: date | None = None, au: date | None = None,
+                                page: int = 1, taille: int = 50) -> dict:
+        """Historique de toutes les classifications (table en ajout seul)."""
+        self.ctx.exiger("clientele.classif.view")
+        stmt = self._requete_historique(q=q, source=source, analyste=analyste, lot_id=lot_id, du=du, au=au)
+        page, taille = max(1, page), min(max(1, taille), 200)
+        total = await self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        rows = (await self.db.execute(
+            stmt.order_by(ClienteleClassifHistorique.created_at.desc())
+            .offset((page - 1) * taille).limit(taille))).all()
+        return {"total": int(total), "page": page, "taille": taille,
+                "items": [self._historique_dict(*r) for r in rows]}
+
+    async def historique_xlsx(self, **filtres) -> bytes:
+        self.ctx.exiger("clientele.export")
+        stmt = self._requete_historique(**filtres)
+        rows = (await self.db.execute(
+            stmt.order_by(ClienteleClassifHistorique.created_at.desc()).limit(100_000))).all()
+        lignes = []
+        for r in rows:
+            d = self._historique_dict(*r)
+            lignes.append([
+                d["racine_client"], d["profil"], d["raison_sociale"], d["ancienne_classe"], d["nouvelle_classe"],
+                d["niveau_propose"], d["score_calcule"], d["version_moteur"], d["source"],
+                d["mode_decision"] or MODE_PAR_SOURCE.get(d["source"] or ""),
+                d["motif_decision_manuelle"] or d["motif_classement"],
+                d["analyste_kyc"], d["utilisateur"], _date_fr(d["date"], heure=True),
+                d["lot_id"], d["ligne_source"],
+            ])
+        await self.svc.audit("clientele.classif.historique.export", "clientele_classif_historique", None,
+                             after={"lignes": len(lignes)})
+        return _xlsx("Historique classifications", [
+            "Racine", "PP/PM", "Identité", "Ancienne classe", "Nouvelle classe", "Classe moteur", "Score",
+            "Version moteur", "Source", "Mode", "Motif", "Analyste KYC", "Utilisateur", "Date", "Lot",
+            "Ligne du fichier",
+        ], lignes)
+
     async def appliquer_moteur(self, *, racine: str | None = None, forcer: bool = False) -> dict:
+        """Ancien moteur à règles. Une décision manuelle n'est jamais remplacée ici, même avec ``forcer`` :
+        le remplacement d'un manuel passe par le forçage tracé (``ecrire_resultat_moteur``)."""
         self.ctx.exiger("clientele.classif.execute")
         if not racine:
             exiger_classement_masse_autorise()
@@ -743,7 +951,7 @@ class ClienteleClassificationService:
         traites = ignores = changes = 0
         for client in clients:
             actuelle = await self.db.get(ClienteleClassification, client.racine_client)
-            if actuelle and actuelle.source == "MANUEL" and not forcer:
+            if actuelle and actuelle.source in SOURCES_MANUELLES:
                 ignores += 1
                 continue
             comptes = list((await self.db.scalars(

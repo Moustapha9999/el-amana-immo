@@ -263,7 +263,7 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
         table_prefixes=["formation_"],
     ),
     "clientele": make_module_scope(
-        label="Référentiel clients",
+        label="Base Clientèle",
         exclusive_tables=[
             "clientele_clients",
             "clientele_comptes",
@@ -289,6 +289,7 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
             "clientele_classif_divergences",
             "clientele_journal",
             "clientele_kyc",
+            "clientele_analystes_kyc",
             "clientele_bcm_regles",
             "clientele_bcm_ref_versions",
             "clientele_bcm_ref_codes",

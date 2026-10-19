@@ -283,7 +283,7 @@ class ClienteleIndicateursService:
                        [[i["code"], i["libelle"], i["definition"], i["formule"] or "—", i["source"]]
                         for i in data["indicateurs"]]))
         return build_styled_workbook_multi(
-            report_title="Reporting interne — Référentiel clients",
+            report_title="Reporting interne — Base Clientèle",
             sheets=sheets,
             subtitle=_sous_titre(data),
         )
@@ -296,7 +296,7 @@ class ClienteleIndicateursService:
             lignes.extend([titre, *map(_milliers, _ligne_indicateur(i))]
                           for i in data["indicateurs"] if test(i["code"]))
         return build_styled_pdf(
-            report_title="Reporting interne — Référentiel clients",
+            report_title="Reporting interne — Base Clientèle",
             headers=["Rubrique", *_ENTETES_INDICATEURS],
             rows=lignes,
             subtitle=_sous_titre(data),

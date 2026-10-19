@@ -810,6 +810,18 @@ class ClienteleKyc(Base):
     maj_le: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ClienteleAnalysteKyc(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Analyste KYC reconnu (import hebdomadaire, décisions de classification). Désactivé, jamais supprimé."""
+
+    __tablename__ = "clientele_analystes_kyc"
+
+    nom: Mapped[str] = mapped_column(String(120))
+    nom_normalise: Mapped[str] = mapped_column(String(120), unique=True)
+    user_id: Mapped[uuid.UUID | None] = _user_fk()
+    actif: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by_id: Mapped[uuid.UUID | None] = _user_fk()
+
+
 class ClienteleClassifDivergenceDecision(UUIDPrimaryKeyMixin, Base):
     """Historique des arbitrages Matrice / Fiche de scoring."""
 

@@ -28,7 +28,7 @@ from typing import Any
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
-from sqlalchemy import delete, func, insert, select
+from sqlalchemy import delete, func, insert, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -45,14 +45,17 @@ from app.models import (
     ClienteleClassifLotLigne,
     ClienteleClassification,
     ClienteleClient,
+    ClienteleKyc,
+    ClienteleSituation,
 )
+from app.services.clientele.analystes import ClienteleAnalysteService
 from app.services.clientele.classification import (
     NIVEAUX, SOURCES_MANUELLES, ClienteleClassificationService, exiger_classement_masse_autorise,
     trace_evaluation,
 )
 from app.services.clientele.consolidation import normaliser_entete
 from app.services.clientele.scoring import INVALIDE, lire_oui_non
-from app.services.clientele.service import Ctx, ClienteleService, maintenant
+from app.services.clientele.service import Ctx, ClienteleService, conflit, maintenant
 from app.services.reporting_export import build_styled_workbook_multi
 
 TAILLE_MAX = 40 * 1024 * 1024
@@ -188,6 +191,16 @@ CATEGORIES_PROPOSITION = {
     "DONNEES_CONTRADICTOIRES": "Données contradictoires",
 }
 ALIAS_NOM = ("NOM CLIENT", "RAISON SOCIALE", "RAISON_SOCIAL", "NOM")
+CHAMPS_KYC_CONFLIT = (
+    ("date_eer", ("DATE EER", "DATE D EER"), "Date EER"),
+    ("profil", ("PROFIL",), "Profil"),
+    ("sous_profil", ("SOUS PROFIL", "SOUS_PROFIL"), "Sous-profil"),
+    ("statut_gel", ("STATUT GEL",), "Statut gel"),
+)
+COLONNES_OBLIGATOIRES = {"racine": "RACINE CLIENT", "nom": "NOM CLIENT", "analyste": "Analyste KYC"}
+# Clés de ``lot.stats`` calculées hors des lignes (analyse, intégration) : conservées à chaque recalcul.
+STATS_CONSERVEES = ("lignes_ignorees", "absents_du_fichier", "colonnes_manquantes", "integration")
+DECISIONS_PREPAREES = ("ACCEPTER", "MODIFIER", "REJETER")
 STATUT_CLIENT = {"OK": "EXISTANT", "INCONNUE": "NOUVEAU", "AMBIGU": "AMBIGU", "DOUBLON": "DOUBLON",
                  "INVALIDE": "INVALIDE"}
 
@@ -500,7 +513,7 @@ class ClienteleLotService:
     # ------------------------------------------------------------------ analyse
     async def analyser(self, contenu: bytes, nom_fichier: str, *, type_lot: str = "LISTE",
                        mapping: dict | None = None, periode_reference: date | None = None,
-                       lid: uuid.UUID | None = None) -> dict:
+                       lid: uuid.UUID | None = None, forcer: bool = False) -> dict:
         if not self.ctx.peut("clientele.import.execute", "clientele.classif.execute"):
             self.ctx.exiger("clientele.classif.execute")
         type_lot = type_lot if type_lot in TYPES else "LISTE"
@@ -510,6 +523,17 @@ class ClienteleLotService:
             raise AppError("Fichier trop volumineux (40 Mo maximum)", 413, code="FICHIER_TROP_VOLUMINEUX")
         if not nom_fichier.lower().endswith((".xlsx", ".xlsm")):
             raise AppError("Format non pris en charge : fichier .xlsx attendu", 422, code="FORMAT_NON_SUPPORTE")
+        sha = hashlib.sha256(contenu).hexdigest()
+        if not lid and type_lot == "LISTE" and not forcer:
+            deja = await self.db.scalar(
+                select(ClienteleClassifLot).where(ClienteleClassifLot.sha256 == sha,
+                                                  ClienteleClassifLot.type == "LISTE")
+                .order_by(ClienteleClassifLot.created_at.desc()).limit(1))
+            if deja:
+                raise conflit(
+                    f"Fichier identique déjà importé le {deja.created_at:%d/%m/%Y à %H:%M} "
+                    f"(« {deja.fichier_nom} »). Ouvrez ce lot depuis l'historique des imports, ou confirmez un "
+                    "nouvel import : il ne créera aucun doublon.", "FICHIER_DEJA_IMPORTE", lot_id=str(deja.id))
         try:
             wb = load_workbook(BytesIO(contenu), read_only=True, data_only=True)
         except Exception as exc:
@@ -542,7 +566,6 @@ class ClienteleLotService:
             wb.close()
 
         await self._controler(lignes, type_lot)
-        sha = hashlib.sha256(contenu).hexdigest()
         if lid:
             lot = await self._charger(lid)
             if lot.statut in ("ENREGISTRE", "FERME"):
@@ -567,7 +590,15 @@ class ClienteleLotService:
         lot.ligne_entete = ligne_entete
         lot.entetes = [e for e in entetes if e]
         lot.mapping = cols
-        lot.stats = self._stats(lignes, ignorees=lot_ignorees)
+        stats = self._stats(lignes, ignorees=lot_ignorees)
+        if type_lot == "LISTE":
+            manquantes = [lib for cible, lib in COLONNES_OBLIGATOIRES.items() if not cols.get(cible)]
+            if manquantes:
+                stats["colonnes_manquantes"] = manquantes
+            presents = {x["racine_client"] for x in lignes if x["statut"] == "OK"}
+            total = int(await self.db.scalar(select(func.count()).select_from(ClienteleClient)) or 0)
+            stats["absents_du_fichier"] = max(total - len(presents), 0)
+        lot.stats = stats
         lot.evaluation = None
         lot.statut = "ANALYSE"
         lot.updated_at = maintenant()
@@ -637,8 +668,61 @@ class ClienteleLotService:
                 if type_lot == "LISTE" and x["statut"] == "OK" else None)
         if type_lot == "LISTE":
             await self._verifier_identites(lignes)
+            await self._controler_hebdo(lignes, connus, objets)
             for x in lignes:
                 maj_proposition(x)
+
+    async def _controler_hebdo(self, lignes: list[dict], connus: dict[str, str],
+                               classes: dict[str, ClienteleClassification]) -> None:
+        """Analyste KYC (référentiel), champs obligatoires manquants, conflits avec la base. N'écrit rien
+        hors des lignes du lot ; aucune valeur n'est inventée ni complétée. L'état de l'analyste est une
+        photographie de l'analyse : la décision et l'intégration le vérifient de nouveau."""
+        index = await ClienteleAnalysteService(self.db, self.ctx).index()
+        racines = sorted(connus)
+        kyc: dict[str, ClienteleKyc] = {}
+        for i in range(0, len(racines), 5000):
+            for k in (await self.db.scalars(select(ClienteleKyc).where(
+                    ClienteleKyc.racine_client.in_(racines[i:i + 5000])))).all():
+                kyc[k.racine_client] = k
+        for x in lignes:
+            if x["statut"] not in ("OK", "INCONNUE", "AMBIGU"):
+                continue
+            det = dict(x.get("decision_detail") or {})
+            brut = x.get("analyste_kyc")
+            nom = index.resoudre(brut)
+            if not brut:
+                det["analyste"] = {"etat": "ABSENT", "nom": None}
+            elif not nom:
+                det["analyste"] = {"etat": "INCONNU", "nom": None, "brut": brut}
+            else:
+                det["analyste"] = {"etat": "RECONNU", "nom": nom}
+            d = x.get("donnees") or {}
+            manquants = [] if brut else ["Analyste KYC"]
+            if x["statut"] != "OK":
+                if not (valeur_source(d, *ALIAS_NOM) or x.get("nom")):
+                    manquants.append("NOM CLIENT")
+                if not (identifiant(valeur_source(d, "NNI")) or identifiant(valeur_source(d, "NIF"))):
+                    manquants.append("NNI ou NIF")
+            if manquants:
+                det["manquants"] = manquants
+            conflits = []
+            k = kyc.get(x["racine_client"])
+            for champ, alias, libelle in CHAMPS_KYC_CONFLIT:
+                v = valeur_source(d, *alias)
+                avant = getattr(k, champ, None) if k else None
+                if champ == "date_eer":
+                    lu = lire_date(v) if v else None
+                    v = lu.isoformat() if isinstance(lu, date) else None
+                    avant = avant.isoformat() if avant else None
+                if v and avant and str(avant).strip() != v:
+                    conflits.append(f"{libelle} : base « {avant} » → fichier « {v} »")
+            c = classes.get(x["racine_client"])
+            if c and c.source in SOURCES_MANUELLES and x.get("classe_source") and x["classe_source"] != c.niveau:
+                conflits.append(f"Classe du fichier {x['classe_source']} ≠ décision manuelle {c.niveau} "
+                                "(la décision manuelle est conservée)")
+            if conflits:
+                det["conflits"] = conflits
+            x["decision_detail"] = det or None
 
     async def _verifier_identites(self, lignes: list[Any]) -> None:
         """Racine reconnue : NOM / NNI / NIF du fichier comparés à ORION (écart → vérification manuelle,
@@ -715,9 +799,15 @@ class ClienteleLotService:
             x.source_actuelle = c.source if c else None
 
     @staticmethod
-    def _stats(lignes: list[Any], *, ignorees: int = 0) -> dict:
+    def _stats(lignes: list[Any], *, ignorees: int = 0, precedent: dict | None = None) -> dict:
         def g(x: Any, k: str) -> Any:
             return x.get(k) if isinstance(x, dict) else getattr(x, k)
+
+        def det(x: Any) -> dict:
+            return g(x, "decision_detail") or {}
+        conserves = {k: (precedent or {})[k] for k in STATS_CONSERVEES if k in (precedent or {})}
+        if precedent is not None:
+            ignorees = (precedent or {}).get("lignes_ignorees", ignorees)
 
         def n(pred) -> int:
             return sum(1 for x in lignes if pred(x))
@@ -760,11 +850,20 @@ class ClienteleLotService:
             "acceptees": n(lambda x: g(x, "decision") == "ACCEPTEE"),
             "modifiees": n(lambda x: g(x, "decision") == "MODIFIEE"),
             "rejetees": n(lambda x: g(x, "decision") == "REJETEE"),
+            "analyste_absent": n(lambda x: (det(x).get("analyste") or {}).get("etat") == "ABSENT"),
+            "analyste_inconnu": n(lambda x: (det(x).get("analyste") or {}).get("etat") == "INCONNU"),
+            "avec_manquants": n(lambda x: bool(det(x).get("manquants"))),
+            "conflits_base": n(lambda x: bool(det(x).get("conflits"))),
+            "preparees": n(lambda x: statut_decision(x) == "EN_ATTENTE"
+                           and (det(x).get("preparation") or {}).get("decision") in DECISIONS_PREPAREES),
+            "integrees": n(lambda x: (det(x).get("integration") or {}).get("etat") == "INTEGREE"),
+            "invalides_total": n(lambda x: g(x, "statut") in ("INVALIDE", "DOUBLON")),
+            **conserves,
         }
 
     # ------------------------------------------------------------------ lecture
     @staticmethod
-    def _ligne_dict(x: ClienteleClassifLotLigne) -> dict:
+    def _ligne_dict(x: ClienteleClassifLotLigne, profil: str | None = None) -> dict:
         moteur = None
         if x.statut_moteur:
             moteur = {"score": x.score, "niveau": x.niveau_propose, "statut": x.statut_moteur,
@@ -794,13 +893,41 @@ class ClienteleLotService:
             "statut_decision": statut_decision(x),
             "decision_ligne": (x.decision_detail or {}).get("decision_ligne"),
             "exclusion_groupe": exclusion_groupe(x),
+            "analyste_controle": (x.decision_detail or {}).get("analyste"),
+            "manquants": (x.decision_detail or {}).get("manquants") or [],
+            "conflits": (x.decision_detail or {}).get("conflits") or [],
+            "preparation": (x.decision_detail or {}).get("preparation"),
+            "integration": (x.decision_detail or {}).get("integration"),
+            "profil": profil,
         }
 
     async def _public(self, lot: ClienteleClassifLot, *, statut: str | None = None, page: int = 1,
-                      taille: int = APERCU) -> dict:
+                      taille: int = APERCU, recherche: str | None = None, profil: str | None = None) -> dict:
         L = ClienteleClassifLotLigne
         q = select(L).where(L.lot_id == lot.id)
-        if statut == "EN_ATTENTE":
+        if recherche and recherche.strip():
+            like = f"%{recherche.strip()}%"
+            q = q.where(or_(L.racine_client.like(like), L.brut.like(like), L.nom.ilike(like),
+                            L.analyste_kyc.ilike(like)))
+        if profil in ("PP", "PM", "NON_IDENTIFIE"):
+            q = q.where(L.racine_client.in_(
+                select(ClienteleSituation.racine_client).where(ClienteleSituation.profil_derive == profil)))
+        if statut == "PREPAREE":
+            q = q.where(L.decision.is_(None), L.decision_detail["preparation"]["decision"].astext.in_(
+                DECISIONS_PREPAREES))
+        elif statut == "ATTENTE_ANALYSTE":
+            q = q.where(L.decision.is_(None), L.decision_detail["preparation"]["decision"].astext == "ATTENTE")
+        elif statut == "INTEGREE":
+            q = q.where(L.decision_detail["integration"]["etat"].astext == "INTEGREE")
+        elif statut == "NON_INTEGREE":
+            q = q.where(L.decision_detail["integration"]["etat"].astext.in_(("NON_INTEGREE", "ERREUR")))
+        elif statut == "ANALYSTE":
+            q = q.where(L.decision_detail["analyste"]["etat"].astext.in_(("ABSENT", "INCONNU")))
+        elif statut == "MANQUANTS":
+            q = q.where(L.decision_detail["manquants"].is_not(None))
+        elif statut == "CONFLITS":
+            q = q.where(L.decision_detail["conflits"].is_not(None))
+        elif statut == "EN_ATTENTE":
             q = q.where(L.decision.is_(None), L.decision_detail["decision_controle"].is_(None))
         elif statut == "DECIDEE":
             q = q.where(L.decision.in_(DECISIONS_LIGNE))
@@ -832,6 +959,7 @@ class ClienteleLotService:
         total = await self.db.scalar(select(func.count()).select_from(q.subquery())) or 0
         page = max(1, page)
         rows = (await self.db.scalars(q.order_by(L.ligne).offset((page - 1) * taille).limit(taille))).all()
+        profils = await self._profils([x.racine_client for x in rows if x.racine_client])
         precedent = await self.db.scalar(
             select(ClienteleClassifLot).where(ClienteleClassifLot.sha256 == lot.sha256,
                                               ClienteleClassifLot.id != lot.id)
@@ -867,7 +995,7 @@ class ClienteleLotService:
             "stats": lot.stats or {}, "evaluation": lot.evaluation,
             "dernier_classement": lot.dernier_classement,
             "total_filtre": int(total), "page": page, "taille": taille,
-            "lignes": [self._ligne_dict(x) for x in rows],
+            "lignes": [self._ligne_dict(x, profils.get(x.racine_client or "")) for x in rows],
             "limite_evaluation": LIMITE_EVALUATION,
             "created_at": lot.created_at.isoformat() if lot.created_at else None,
             "fichier_disponible": self._xlsx(lot.id).exists(),
@@ -883,13 +1011,22 @@ class ClienteleLotService:
         for x in lignes:
             if statut_decision(x) == "EN_ATTENTE":
                 maj_proposition(x)
-        lot.stats = self._stats(lignes, ignorees=(lot.stats or {}).get("lignes_ignorees", 0))
+        lot.stats = self._stats(lignes, precedent=lot.stats)
         await self.db.flush()
 
-    async def detail(self, lid: uuid.UUID, *, statut: str | None = None, page: int = 1) -> dict:
+    async def detail(self, lid: uuid.UUID, *, statut: str | None = None, page: int = 1,
+                     q: str | None = None, profil: str | None = None) -> dict:
         lot = await self._charger(lid)
         await self.preparer(lot)
-        return await self._public(lot, statut=statut, page=page)
+        return await self._public(lot, statut=statut, page=page, recherche=q, profil=profil)
+
+    async def _profils(self, racines: list[str]) -> dict[str, str]:
+        """PP / PM dérivé d'ORION (vue situation) ; absent pour un client sans compte ORION."""
+        if not racines:
+            return {}
+        return dict((await self.db.execute(
+            select(ClienteleSituation.racine_client, ClienteleSituation.profil_derive)
+            .where(ClienteleSituation.racine_client.in_(sorted(set(racines)))))).all())
 
     async def lister(self, *, page: int = 1, taille: int = 30) -> dict:
         if not self.ctx.peut("clientele.import.execute", "clientele.classif.execute", "clientele.classif.view"):
@@ -994,7 +1131,7 @@ class ClienteleLotService:
         x.evaluation_id = None
         x.divergence_fichier_moteur = False
         maj_proposition(x)
-        lot.stats = self._stats(await self._lignes(lid), ignorees=(lot.stats or {}).get("lignes_ignorees", 0))
+        lot.stats = self._stats(await self._lignes(lid), precedent=lot.stats)
         await self.db.flush()
         await self.svc.audit("clientele.lot.date_ouverture", "clientele_classif_lot", lid,
                              before={"ligne": x.ligne, "date_ouverture": avant},
@@ -1065,7 +1202,7 @@ class ClienteleLotService:
         if lot.statut == "ANALYSE":
             lot.statut = "EVALUE"
         lot.stats = self._stats(await self._lignes(lid),
-                                ignorees=(lot.stats or {}).get("lignes_ignorees", 0))
+                                precedent=lot.stats)
         lot.updated_at = maintenant()
         await self.db.flush()
         await self.svc.audit("clientele.lot.evaluer", "clientele_classif_lot", lid,
@@ -1148,7 +1285,7 @@ class ClienteleLotService:
                   "force": forcer}
         await self._rafraichir_classes(lignes)
         lot.stats = self._stats(await self._lignes(lid),
-                                ignorees=(lot.stats or {}).get("lignes_ignorees", 0))
+                                precedent=lot.stats)
         lot.dernier_classement = resume
         lot.statut = "ENREGISTRE"
         lot.updated_at = maintenant()
@@ -1226,7 +1363,7 @@ class ClienteleLotService:
             faits += 1
         lignes = list(par_ligne.values())
         await self._rafraichir_classes(lignes)
-        lot.stats = self._stats(lignes, ignorees=(lot.stats or {}).get("lignes_ignorees", 0))
+        lot.stats = self._stats(lignes, precedent=lot.stats)
         lot.updated_at = maintenant()
         await self.db.flush()
         await self.svc.audit("clientele.lot.divergences", "clientele_classif_lot", lid, after={"decisions": faits})
@@ -1290,7 +1427,7 @@ class ClienteleLotService:
         x.decision = CHOIX_CONTROLE[choix]
         x.decision_detail = {**(x.decision_detail or {}), "controle": controle, "decision_controle": decision}
         await self._rafraichir_classes([x])
-        lot.stats = self._stats(await self._lignes(lid), ignorees=(lot.stats or {}).get("lignes_ignorees", 0))
+        lot.stats = self._stats(await self._lignes(lid), precedent=lot.stats)
         lot.updated_at = maintenant()
         await self.db.flush()
         await self.svc.audit(

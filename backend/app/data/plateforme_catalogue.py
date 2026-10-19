@@ -459,9 +459,10 @@ PLATEFORME_MODULES: list[ModuleDef] = [
             "non-conformités, compléments sur le même dossier, validation et archivage."
         ),
         "entry_path": "/eer/dashboard",
-        # Passe à « actif » via CORE ADMIN quand le dossier EER est livré.
-        "statut": "developpement",
-        "status_message": "Module en cours de construction — ouverture après livraison du dossier EER.",
+        # Désactivé (réversible) depuis la simplification Base Clientèle : tables et données conservées,
+        # réactivation par CORE ADMIN. Voir docs/conformite/eer-desactivation.md.
+        "statut": "inactif",
+        "status_message": "Module désactivé — données conservées, réactivation par l'administration.",
         "icon": "person_add",
         "sort_order": 1,
     },
@@ -484,10 +485,10 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "code": CLIENTELE_MODULE_CODE,
         "espace_code": ACC_ESPACE_CODE,
         "domaine_code": "conformite-securite-financiere",
-        "label": "Référentiel clients",
+        "label": "Base Clientèle",
         "description": (
             "Base clientèle consolidée sur la racine ORION (1 client, N comptes, N RIB) : "
-            "import État des comptes, Situation PP / PM, fiche client."
+            "clients PP / PM, import hebdomadaire, classification, fiche client."
         ),
         "entry_path": "/clientele/dashboard",
         "statut": "developpement",

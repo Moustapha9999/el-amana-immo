@@ -1,4 +1,9 @@
-"""Import hebdomadaire : décision humaine par ligne (accepter / modifier / rejeter), application, bilan.
+"""Import hebdomadaire : intégration dans la Base Clientèle, décisions de classification, bilan.
+
+Base Clientèle (``integrer``) : après récapitulatif (``apercu_integration``), création des nouveaux clients et
+mise à jour des données KYC autorisées, sans toucher à la classification ; rejouable sans doublon.
+Classification par lot : décisions préparées (``preparer_decisions``) puis confirmation globale
+(``confirmer``) ; ou décision immédiate par ligne (``decider``).
 
 Une proposition n'est jamais appliquée sans décision. Accepter ou modifier :
 - nouveau client (racine absente) : fiche créée seulement à ce moment, source ``IMPORT_HEBDO`` (sans compte
@@ -30,18 +35,22 @@ from app.models import (
     User,
 )
 from app.models.clientele import SOURCE_IMPORT_HEBDO
+from app.services.clientele.analystes import ClienteleAnalysteService
 from app.services.clientele.classification import (
     NIVEAUX, SOURCES_MANUELLES, ClienteleClassificationService, trace_evaluation,
 )
 from app.services.clientele.journal import LIBELLES_ACTION, journaliser
 from app.services.clientele.lots import (
-    ALIAS_NOM, ClienteleLotService, exclusion_groupe, identifiant, lire_date, proposition,
+    ALIAS_NOM, ClienteleLotService, exclusion_groupe, identifiant, lire_date, maj_proposition, proposition,
     statut_decision, valeur_source,
 )
 from app.services.clientele.service import Ctx, ClienteleService, maintenant
 from app.services.reporting_export import build_styled_workbook_multi
 
 MAX_GROUPE = 200
+MAX_PREPARATION = 2000
+STATUT_LIBELLES = {"OK": "Client existant", "INCONNUE": "Nouveau client", "AMBIGU": "Identité ambiguë",
+                   "DOUBLON": "Doublon dans le fichier", "INVALIDE": "Racine invalide"}
 DECISIONS = {"ACCEPTER": "ACCEPTEE", "MODIFIER": "MODIFIEE", "REJETER": "REJETEE"}
 ACTIONS_JOURNAL = {"ACCEPTER": "ACCEPTATION", "MODIFIER": "MODIFICATION", "REJETER": "REJET"}
 LIBELLES_DECISION = {"ACCEPTEE": "Acceptée", "MODIFIEE": "Modifiée", "REJETEE": "Rejetée",
@@ -70,6 +79,7 @@ class ClienteleDecisionLotService:
         self.svc = ClienteleService(db, ctx)
         self.lots = ClienteleLotService(db, ctx)
         self.classif = ClienteleClassificationService(db, ctx)
+        self.analystes = ClienteleAnalysteService(db, ctx)
 
     # ------------------------------------------------------------------ décision
     async def decider(self, lid: uuid.UUID, payload: dict) -> dict:
@@ -116,7 +126,7 @@ class ClienteleDecisionLotService:
         resultats = [await self._decider_ligne(lot, x, action, payload, motif, groupe_id, groupe)
                      for x in lignes]
         toutes = await self.lots._lignes(lid)
-        lot.stats = self.lots._stats(toutes, ignorees=(lot.stats or {}).get("lignes_ignorees", 0))
+        lot.stats = self.lots._stats(toutes, precedent=lot.stats)
         if lot.stats.get("en_attente") == 0:
             lot.statut = "ENREGISTRE"
         lot.updated_at = maintenant()
@@ -134,18 +144,24 @@ class ClienteleDecisionLotService:
             raise AppError(f"Ligne {x.ligne} déjà décidée : la décision est conservée", 409, code="DEJA_DECIDE")
         prop = proposition(x)
         racine = x.racine_client
-        analyste = ((payload.get("analyste_kyc") or "").strip() or (x.analyste_kyc or "").strip())[:120] or None
+        classe_precedente = x.classe_actuelle
+        brut_analyste = ((payload.get("analyste_kyc") or "").strip() or (x.analyste_kyc or "").strip())[:120]
+        if action == "REJETER":
+            analyste = (await self.analystes.resoudre(brut_analyste)) or brut_analyste or None
+        else:
+            if x.statut not in ("OK", "INCONNUE"):
+                raise AppError(f"Ligne {x.ligne} : {prop.get('raison') or 'identification à vérifier'} — "
+                               "seul le rejet est possible", 409, code="REJET_SEUL")
+            try:
+                analyste = await self.analystes.exiger(brut_analyste)
+            except AppError as exc:
+                raise AppError(f"Ligne {x.ligne} : {exc.message}", exc.status_code, code=exc.code) from None
         commun = {"origine": "IMPORT", "lot_id": lot.id, "ligne": x.ligne, "groupe_id": groupe_id,
                   "analyste": analyste}
         niveau = None
         client_cree = False
         maj_kyc: list[str] = []
         if action != "REJETER":
-            if x.statut not in ("OK", "INCONNUE"):
-                raise AppError(f"Ligne {x.ligne} : {prop.get('raison') or 'identification à vérifier'} — "
-                               "seul le rejet est possible", 409, code="REJET_SEUL")
-            if not analyste:
-                raise AppError(f"Ligne {x.ligne} : analyste KYC obligatoire", 422, code="ANALYSTE_OBLIGATOIRE")
             if action == "ACCEPTER":
                 niveau = prop.get("niveau")
                 if not niveau:
@@ -190,7 +206,8 @@ class ClienteleDecisionLotService:
             x.source_actuelle = k.source if k else None
         x.decision = DECISIONS[action]
         detail = {
-            "decision": x.decision, "niveau": niveau, "proposition": prop.get("niveau"),
+            "decision": x.decision, "niveau": niveau, "classe_precedente": classe_precedente,
+            "proposition": prop.get("niveau"),
             "etat_proposition": prop.get("etat"), "motif": motif or None, "analyste_kyc": analyste,
             "client_cree": client_cree, "maj_donnees": maj_kyc, "groupe_id": str(groupe_id) if groupe_id else None,
             "par": str(self.ctx.user.id), "par_nom": self.ctx.user.full_name or self.ctx.user.email,
@@ -241,9 +258,8 @@ class ClienteleDecisionLotService:
                     **{k: v for k, (v, _) in valeurs.items()}})
         return True
 
-    async def _appliquer_kyc(self, lot: ClienteleClassifLot, x: ClienteleClassifLotLigne, analyste: str | None,
-                             groupe_id: uuid.UUID | None) -> list[str]:
-        """Données KYC absentes d'ORION : mises à jour champ par champ, jamais effacées par une valeur vide."""
+    async def _kyc_a_appliquer(self, x: ClienteleClassifLotLigne, analyste: str | None
+                               ) -> tuple[ClienteleKyc | None, dict[str, object], list[str]]:
         d = x.donnees or {}
         nouvelles: dict[str, object] = {}
         for champ, alias, borne in CHAMPS_KYC:
@@ -262,8 +278,13 @@ class ClienteleDecisionLotService:
             nouvelles["date_creation_entreprise"] = x.date_ouverture_entreprise
         if analyste:
             nouvelles["analyste_kyc"] = analyste
-        kyc = await self.db.get(ClienteleKyc, x.racine_client)
-        changes = [k for k, v in nouvelles.items() if getattr(kyc, k, None) != v]
+        kyc = await self.db.get(ClienteleKyc, x.racine_client) if x.racine_client else None
+        return kyc, nouvelles, [k for k, v in nouvelles.items() if getattr(kyc, k, None) != v]
+
+    async def _appliquer_kyc(self, lot: ClienteleClassifLot, x: ClienteleClassifLotLigne, analyste: str | None,
+                             groupe_id: uuid.UUID | None) -> list[str]:
+        """Données KYC absentes d'ORION : mises à jour champ par champ, jamais effacées par une valeur vide."""
+        kyc, nouvelles, changes = await self._kyc_a_appliquer(x, analyste)
         if not changes:
             return []
         if kyc is None:
@@ -280,6 +301,268 @@ class ClienteleDecisionLotService:
         kyc.maj_par_id, kyc.maj_le = self.ctx.user.id, maintenant()
         await self.db.flush()
         return changes
+
+    # ------------------------------------------------------------------ intégration dans la Base Clientèle
+    async def _lot_liste(self, lid: uuid.UUID) -> ClienteleClassifLot:
+        lot = await self.lots._charger(lid)
+        if lot.statut == "FERME":
+            raise AppError("Lot fermé : aucune opération possible", 409, code="LOT_FIGE")
+        if lot.type != "LISTE":
+            raise AppError("Opération réservée à l'import hebdomadaire (liste de clients)", 409, code="TYPE_LOT")
+        await self.lots.preparer(lot)
+        return lot
+
+    def _trace_auteur(self) -> dict:
+        return {"par": str(self.ctx.user.id), "par_nom": self.ctx.user.full_name or self.ctx.user.email,
+                "le": maintenant().isoformat()}
+
+    async def _plan_integration(self, lot: ClienteleClassifLot) -> list[tuple[ClienteleClassifLotLigne, dict]]:
+        """Ce que l'intégration ferait, ligne par ligne, sans rien écrire. Aucune fusion sur le nom ; une identité
+        douteuse, un analyste absent / inconnu ou une donnée obligatoire manquante → ligne non intégrée."""
+        index = await self.analystes.index()
+        plan: list[tuple[ClienteleClassifLotLigne, dict]] = []
+        for x in await self.lots._lignes(lot.id):
+            det, d = x.decision_detail or {}, x.donnees or {}
+            if (det.get("integration") or {}).get("etat") == "INTEGREE":
+                plan.append((x, {"etat": "DEJA_INTEGREE"}))
+                continue
+            analyste = index.resoudre(x.analyste_kyc)
+            raison = None
+            if x.decision == "REJETEE":
+                raison = "Ligne rejetée : rien n'est modifié"
+            elif x.statut == "INVALIDE":
+                raison = "Racine client absente ou invalide"
+            elif x.statut == "DOUBLON":
+                raison = "Racine en double dans le fichier : seule la première ligne est intégrée"
+            elif x.statut == "AMBIGU":
+                raison = "Identité ambiguë : " + "; ".join(det.get("identite") or ["vérification manuelle"])
+            elif det.get("verification"):
+                raison = "Données contradictoires avec ORION : " + "; ".join(det["verification"])
+            elif not (x.analyste_kyc or "").strip():
+                raison = "Analyste KYC absent (obligatoire)"
+            elif not analyste:
+                raison = f"Analyste KYC inconnu : « {x.analyste_kyc} » absent du référentiel"
+            elif x.statut == "INCONNUE" and not (valeur_source(d, *ALIAS_NOM) or x.nom):
+                raison = "Nom client absent : fiche non créée"
+            elif x.statut == "INCONNUE" and not (identifiant(valeur_source(d, "NNI"))
+                                                 or identifiant(valeur_source(d, "NIF"))):
+                raison = "NNI ou NIF absent : identité du nouveau client non vérifiable"
+            if raison:
+                plan.append((x, {"etat": "NON_INTEGRABLE", "raison": raison}))
+                continue
+            _k, _n, champs = await self._kyc_a_appliquer(x, analyste)
+            etat = "A_CREER" if x.statut == "INCONNUE" else ("A_METTRE_A_JOUR" if champs else "INCHANGE")
+            plan.append((x, {"etat": etat, "analyste": analyste, "champs": champs}))
+        return plan
+
+    async def apercu_integration(self, lid: uuid.UUID) -> dict:
+        """Récapitulatif avant confirmation : créations, mises à jour, lignes non intégrées et pourquoi."""
+        self.ctx.exiger("clientele.import.execute")
+        lot = await self._lot_liste(lid)
+        plan = await self._plan_integration(lot)
+        compte = Counter(p["etat"] for _x, p in plan)
+        champs = Counter(c for _x, p in plan for c in p.get("champs") or [])
+        return {
+            "lot_id": str(lot.id), "fichier_nom": lot.fichier_nom, "lignes": len(plan),
+            "a_creer": compte.get("A_CREER", 0), "a_mettre_a_jour": compte.get("A_METTRE_A_JOUR", 0),
+            "inchangees": compte.get("INCHANGE", 0), "deja_integrees": compte.get("DEJA_INTEGREE", 0),
+            "non_integrables": compte.get("NON_INTEGRABLE", 0), "champs": dict(champs),
+            "absents_du_fichier": (lot.stats or {}).get("absents_du_fichier"),
+            "details_non_integrables": [
+                {"ligne": x.ligne, "racine": x.racine_client or x.brut, "nom": x.nom, "raison": p["raison"]}
+                for x, p in plan if p["etat"] == "NON_INTEGRABLE"][:500],
+            "regles": [
+                "Rapprochement par racine client uniquement (zéros de tête conservés), jamais par le nom seul.",
+                "Seules les données KYC absentes d'ORION sont mises à jour ; une donnée ORION n'est jamais "
+                "remplacée et une valeur vide n'efface rien.",
+                "Aucun client absent du fichier n'est supprimé ni désactivé.",
+                "La classification n'est pas modifiée par l'intégration (étape Classification par lot).",
+            ],
+        }
+
+    async def integrer(self, lid: uuid.UUID, payload: dict) -> dict:
+        """Crée les nouveaux clients et met à jour les données KYC autorisées. Rejouable : une ligne intégrée
+        ne l'est jamais deux fois ; un client existant n'est jamais recréé. Une erreur sur une ligne
+        n'annule pas les autres (point de sauvegarde par ligne)."""
+        self.ctx.exiger("clientele.import.execute")
+        lot = await self._lot_liste(lid)
+        motif = (payload.get("motif") or "").strip()
+        plan = await self._plan_integration(lot)
+        groupe_id = uuid.uuid4()
+        bilan = Counter()
+        for x, p in plan:
+            if p["etat"] == "DEJA_INTEGREE":
+                bilan["deja_integrees"] += 1
+                continue
+            if p["etat"] == "NON_INTEGRABLE":
+                x.decision_detail = {**(x.decision_detail or {}), "integration": {
+                    "etat": "NON_INTEGREE", "raison": p["raison"], **self._trace_auteur()}}
+                bilan["non_integrees"] += 1
+                continue
+            cree, maj = False, []
+            try:
+                async with self.db.begin_nested():
+                    if x.statut == "INCONNUE":
+                        cree = await self._creer_client(lot, x, p["analyste"], groupe_id, motif)
+                    maj = await self._appliquer_kyc(lot, x, p["analyste"], groupe_id)
+            except Exception as exc:  # noqa: BLE001 — ligne tracée en erreur, les autres continuent
+                await self.db.refresh(x)
+                message = getattr(exc, "message", None) or exc.__class__.__name__
+                x.decision_detail = {**(x.decision_detail or {}), "integration": {
+                    "etat": "ERREUR", "raison": str(message)[:500], **self._trace_auteur()}}
+                bilan["erreurs"] += 1
+                continue
+            if cree:
+                x.statut = "OK"
+            x.decision_detail = {**(x.decision_detail or {}), "integration": {
+                "etat": "INTEGREE", "client_cree": cree, "maj_donnees": maj, "analyste_kyc": p["analyste"],
+                "groupe_id": str(groupe_id), **self._trace_auteur()}}
+            maj_proposition(x)
+            bilan["integrees"] += 1
+            bilan["clients_crees"] += int(cree)
+            bilan["clients_mis_a_jour"] += int(bool(maj) and not cree)
+        lot.stats = self.lots._stats(await self.lots._lignes(lid), precedent=lot.stats)
+        lot.stats["integration"] = {**{k: bilan.get(k, 0) for k in (
+            "integrees", "clients_crees", "clients_mis_a_jour", "non_integrees", "erreurs", "deja_integrees")},
+            **self._trace_auteur()}
+        lot.updated_at = maintenant()
+        await self.db.flush()
+        await self.svc.audit("clientele.lot.integration", "clientele_classif_lot", lid,
+                             after={**lot.stats["integration"], "groupe_id": str(groupe_id)})
+        return {"bilan": lot.stats["integration"], "stats": lot.stats}
+
+    # ------------------------------------------------------------------ classification par lot (décisions préparées)
+    async def preparer_decisions(self, lid: uuid.UUID, payload: dict) -> dict:
+        """Prépare des décisions sans rien enregistrer : accepter / classe manuelle (motif) / rejeter /
+        laisser en attente. L'enregistrement se fait à la confirmation globale."""
+        self.ctx.exiger("clientele.classif.execute")
+        lot = await self._lot_liste(lid)
+        action = (payload.get("decision") or "").upper()
+        if action not in (*DECISIONS, "ATTENTE"):
+            raise AppError("Décision attendue : ACCEPTER, MODIFIER, REJETER ou ATTENTE", 422,
+                           code="DECISION_INVALIDE")
+        numeros = sorted({int(n) for n in (payload.get("lignes") or [])})
+        if not numeros:
+            raise AppError("Aucune ligne sélectionnée", 422, code="AUCUNE_LIGNE")
+        if len(numeros) > MAX_PREPARATION:
+            raise AppError(f"Préparation limitée à {MAX_PREPARATION} lignes à la fois", 422, code="GROUPE_TROP_GRAND")
+        motif = (payload.get("motif") or "").strip()
+        niveau = (payload.get("niveau") or "").upper() or None
+        if action == "MODIFIER" and niveau not in NIVEAUX:
+            raise AppError("Classe manuelle : niveau attendu (FAIBLE, MOYEN, ELEVE ou INTERDIT)", 422,
+                           code="NIVEAU_INVALIDE")
+        if action in ("MODIFIER", "REJETER") and not motif:
+            raise AppError("Motif obligatoire pour une classe manuelle ou un rejet", 422, code="MOTIF_OBLIGATOIRE")
+        index = await self.analystes.index()
+        brut_analyste = (payload.get("analyste_kyc") or "").strip()
+        L = ClienteleClassifLotLigne
+        lignes = list((await self.db.scalars(
+            select(L).where(L.lot_id == lid, L.ligne.in_(numeros)).order_by(L.ligne))).all())
+        refus: list[dict] = []
+        preparees = 0
+        for x in lignes:
+            raison, analyste, retenu = None, None, None
+            if statut_decision(x) != "EN_ATTENTE":
+                raison = "ligne déjà décidée"
+            elif action in ("ACCEPTER", "MODIFIER"):
+                analyste = index.resoudre(brut_analyste or x.analyste_kyc)
+                if x.statut not in ("OK", "INCONNUE"):
+                    raison = "identification à vérifier : seul le rejet est possible"
+                elif not analyste:
+                    raison = ("analyste KYC absent" if not (brut_analyste or x.analyste_kyc)
+                              else f"analyste KYC inconnu « {brut_analyste or x.analyste_kyc} »")
+                elif action == "ACCEPTER":
+                    retenu = proposition(x).get("niveau")
+                    if not retenu:
+                        raison = "aucune proposition à accepter (classe manuelle ou rejet)"
+                else:
+                    retenu = niveau
+            if raison:
+                refus.append({"ligne": x.ligne, "racine": x.racine_client or x.brut, "raison": raison})
+                continue
+            x.decision_detail = {**(x.decision_detail or {}), "preparation": {
+                "decision": action, "niveau": retenu, "motif": motif or None,
+                "analyste_kyc": analyste or ((brut_analyste or x.analyste_kyc) if action == "REJETER" else None),
+                **self._trace_auteur()}}
+            preparees += 1
+        lot.stats = self.lots._stats(await self.lots._lignes(lid), precedent=lot.stats)
+        lot.updated_at = maintenant()
+        await self.db.flush()
+        return {"preparees": preparees, "refus": refus[:500], "stats": lot.stats}
+
+    async def confirmer(self, lid: uuid.UUID, payload: dict) -> dict:
+        """Enregistre toutes les décisions préparées (circuit manuel : historique, journal, réexamens).
+        Une ligne en erreur (blocage INTERDIT, identité…) reste en attente, les autres sont enregistrées."""
+        self.ctx.exiger("clientele.classif.execute")
+        lot = await self._lot_liste(lid)
+        motif_global = (payload.get("motif") or "").strip()
+        lignes = [x for x in await self.lots._lignes(lid) if statut_decision(x) == "EN_ATTENTE"
+                  and ((x.decision_detail or {}).get("preparation") or {}).get("decision") in DECISIONS]
+        if not lignes:
+            raise AppError("Aucune décision préparée à confirmer", 422, code="AUCUNE_DECISION")
+        groupe_id = uuid.uuid4()
+        resultats, erreurs = [], []
+        for x in lignes:
+            prep = x.decision_detail["preparation"]
+            try:
+                async with self.db.begin_nested():
+                    resultats.append(await self._decider_ligne(
+                        lot, x, prep["decision"], {"niveau": prep.get("niveau"),
+                                                   "analyste_kyc": prep.get("analyste_kyc")},
+                        prep.get("motif") or motif_global, groupe_id, False))
+            except Exception as exc:  # noqa: BLE001 — ligne laissée en attente, motif rendu
+                await self.db.refresh(x)
+                message = getattr(exc, "message", None) or getattr(exc, "detail", None) or exc.__class__.__name__
+                erreurs.append({"ligne": x.ligne, "racine": x.racine_client, "message": str(message)[:500]})
+        lot.stats = self.lots._stats(await self.lots._lignes(lid), precedent=lot.stats)
+        if lot.stats.get("en_attente") == 0:
+            lot.statut = "ENREGISTRE"
+        lot.updated_at = maintenant()
+        await self.db.flush()
+        await self.svc.audit("clientele.lot.confirmation", "clientele_classif_lot", lid, after={
+            "groupe_id": str(groupe_id), "confirmees": len(resultats), "erreurs": len(erreurs),
+            "motif": motif_global or None})
+        return {"confirmees": len(resultats), "erreurs": erreurs, "groupe_id": str(groupe_id),
+                "resultats": resultats[:500], "stats": lot.stats, "statut_lot": lot.statut}
+
+    # ------------------------------------------------------------------ rapport des lignes rejetées / à corriger
+    async def rejets_xlsx(self, lid: uuid.UUID) -> tuple[bytes, str]:
+        lot = await self.lots._charger(lid)
+        lignes = []
+        for x in await self.lots._lignes(lid):
+            det = x.decision_detail or {}
+            integ = det.get("integration") or {}
+            an = det.get("analyste") or {}
+            motifs = [*(x.anomalies or []), *(det.get("identite") or []), *(det.get("verification") or [])]
+            if x.statut == "INVALIDE":
+                motifs.insert(0, "Racine client absente ou invalide")
+            elif x.statut == "DOUBLON":
+                motifs.insert(0, "Racine en double dans le fichier")
+            if an.get("etat") == "INCONNU":
+                motifs.append(f"Analyste KYC inconnu « {an.get('brut')} »")
+            if integ.get("etat") in ("NON_INTEGREE", "ERREUR"):
+                motifs.append(f"Intégration : {integ.get('raison')}")
+            if x.decision == "REJETEE":
+                motifs.append(f"Décision : rejetée — {(det.get('decision_ligne') or {}).get('motif') or ''}")
+            if not motifs and not det.get("manquants"):
+                continue
+            lignes.append([
+                x.ligne, x.racine_client or x.brut, x.nom, STATUT_LIBELLES.get(x.statut, x.statut),
+                " ; ".join(motifs) or None, ", ".join(det.get("manquants") or []) or None,
+                " ; ".join(det.get("conflits") or []) or None, x.analyste_kyc,
+                {"INTEGREE": "Intégrée", "NON_INTEGREE": "Non intégrée", "ERREUR": "Erreur"}.get(
+                    integ.get("etat") or "", "—"),
+                LIBELLES_DECISION.get(statut_decision(x)),
+            ])
+        await self.svc.audit("clientele.lot.rejets.export", "clientele_classif_lot", lid,
+                             after={"lignes": len(lignes)})
+        contenu = build_styled_workbook_multi(
+            report_title="Import hebdomadaire — lignes rejetées ou à corriger",
+            subtitle=lot.fichier_nom,
+            sheets=[("Rejets", "Lignes rejetées ou à corriger", [
+                "Ligne", "Racine", "Nom", "Statut", "Motifs", "Champs manquants", "Conflits avec la base",
+                "Analyste (fichier)", "Intégration", "Décision"], lignes)])
+        return contenu, f"rejets-import-{(lot.periode_reference or date.today()).isoformat()}.xlsx"
 
     # ------------------------------------------------------------------ bilan
     async def bilan(self, lid: uuid.UUID) -> dict:
@@ -322,6 +605,12 @@ class ClienteleDecisionLotService:
             ("Nouveaux clients", s.get("nouveaux")), ("Identités ambiguës", s.get("ambigus")),
             ("Doublons", s.get("doublons")), ("Racines invalides", s.get("invalides")),
             ("Données contradictoires", s.get("contradictions")), ("Lignes avec anomalie", s.get("avec_anomalie")),
+            ("Analyste KYC absent", s.get("analyste_absent")), ("Analyste KYC inconnu", s.get("analyste_inconnu")),
+            ("Champs obligatoires manquants", s.get("avec_manquants")), ("Conflits avec la base", s.get("conflits_base")),
+            ("Clients de la base absents du fichier (non modifiés)", s.get("absents_du_fichier")),
+            ("Intégration — lignes intégrées", (s.get("integration") or {}).get("integrees")),
+            ("Intégration — fiches créées", (s.get("integration") or {}).get("clients_crees")),
+            ("Intégration — non intégrées", (s.get("integration") or {}).get("non_integrees")),
             *[(f"Décision — {LIBELLES_DECISION[k]}", v) for k, v in dec.items()],
             ("Décisions groupées", b["groupes"]), ("Fiches clients créées", b["clients_crees"]),
             *[(f"Journal — {LIBELLES_ACTION[k]}", v) for k, v in ops.items()],
@@ -335,7 +624,8 @@ class ClienteleDecisionLotService:
                 x.ligne, x.racine_client or x.brut, x.nom, prop.get("etat"), prop.get("niveau"),
                 prop.get("origine"), prop.get("raison"), prop.get("niveau_moteur"),
                 "; ".join(x.anomalies or []) or None, x.analyste_kyc,
-                LIBELLES_DECISION.get(statut_decision(x)), dl.get("niveau"), dl.get("motif"),
+                LIBELLES_DECISION.get(statut_decision(x)), dl.get("classe_precedente"), dl.get("niveau"),
+                dl.get("motif"),
                 dl.get("analyste_kyc"), dl.get("par_nom"), dl.get("le", "")[:16].replace("T", " ") or None,
                 "Oui" if dl.get("client_cree") else None, dl.get("groupe_id"),
             ])
@@ -353,7 +643,8 @@ class ClienteleDecisionLotService:
                 ("Synthèse", "Synthèse", ["Élément", "Valeur"], synthese),
                 ("Lignes", "Lignes et décisions", [
                     "Ligne", "Racine", "Nom", "Proposition", "Niveau proposé", "Origine", "Raison",
-                    "Niveau moteur", "Anomalies", "Analyste (fichier)", "Décision", "Niveau retenu", "Motif",
+                    "Niveau moteur", "Anomalies", "Analyste (fichier)", "Décision", "Classe précédente",
+                    "Niveau retenu", "Motif",
                     "Analyste KYC", "Décidé par", "Décidé le", "Fiche créée", "Groupe"], lignes),
                 ("Journal", "Journal des opérations", [
                     "Date", "Racine", "Action", "Champ", "Ancienne valeur", "Nouvelle valeur", "Motif",

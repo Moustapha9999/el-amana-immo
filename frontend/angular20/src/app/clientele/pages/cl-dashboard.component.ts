@@ -26,7 +26,7 @@ const KPI_CONFORMITE = [
       <header class="bea-mg__head bea-cl-head">
         <div>
           <p class="bea-stock-page__kicker">Conformité &amp; sécurité financière</p>
-          <h1>Référentiel clients</h1>
+          <h1>Base Clientèle</h1>
           <p class="bea-cl-head__sub">Vue de synthèse pour les agents et responsables. Un client = une racine ORION (COUNT DISTINCT). Le mapping des colonnes est dans Imports → Mapping &amp; sources.</p>
         </div>
         <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/clientele/mapping"><mat-icon>account_tree</mat-icon> Mapping &amp; sources</a>

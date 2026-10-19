@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
@@ -12,7 +13,10 @@ import {
 import { ClienteleStore } from '../clientele.store';
 import { ClClasserClientComponent } from './cl-classer-client.component';
 import { ClClasserComponent } from './cl-classer.component';
-import { ClHebdoComponent } from './cl-hebdo.component';
+import { ClAnalystesComponent } from './cl-analystes.component';
+import { ClClassifHistoriqueComponent } from './cl-classif-historique.component';
+import { ClClassifManuellesComponent } from './cl-classif-manuelles.component';
+import { ClClassifResultatsComponent } from './cl-classif-resultats.component';
 import { ClJournalClientsComponent } from './cl-journal-clients.component';
 
 interface Item {
@@ -58,10 +62,11 @@ interface ValeurMaitre {
 }
 interface SyntheseValeurs { total?: number; total_filtre?: number; nb_conflits?: number; nb_blocking?: number; par_dimension?: Record<string, number>; }
 
-type Onglet = 'classer' | 'import' | 'clients' | 'reexamens' | 'journal'
+type Onglet = 'classer' | 'resultats' | 'manuelles' | 'historique' | 'analystes' | 'clients' | 'reexamens' | 'journal'
   | 'simulation' | 'referentiel' | 'criteres' | 'divergences' | 'versions' | 'masse';
 const ONGLETS: readonly Onglet[] = [
-  'classer', 'import', 'clients', 'reexamens', 'journal', 'simulation', 'referentiel', 'criteres', 'divergences', 'versions', 'masse',
+  'classer', 'resultats', 'manuelles', 'historique', 'analystes', 'clients', 'reexamens', 'journal',
+  'simulation', 'referentiel', 'criteres', 'divergences', 'versions', 'masse',
 ];
 const PARAMETRAGE: readonly Onglet[] = ['simulation', 'referentiel', 'criteres', 'divergences', 'versions', 'masse'];
 const STATUTS_DIVERGENCE: Record<string, string> = {
@@ -74,16 +79,17 @@ const TAILLE_VALEURS = 80;
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule, RouterLink, MatIconModule, ClienteleUiComponent, ClClasserComponent, ClClasserClientComponent,
-    ClHebdoComponent, ClJournalClientsComponent,
+    ClJournalClientsComponent, ClClassifResultatsComponent, ClClassifManuellesComponent, ClClassifHistoriqueComponent,
+    ClAnalystesComponent,
   ],
   template: `
     <bea-cl-styles />
     <div class="bea-mg bea-cl bea-cl--large">
       <header class="bea-mg__head bea-cl-head">
         <div>
-          <p class="bea-stock-page__kicker">Risque LBC/FT</p>
+          <p class="bea-stock-page__kicker">Classification</p>
           <h1>Classification des clients</h1>
-          <p class="bea-cl-head__sub">Classer un client, importer la liste hebdomadaire, décider des propositions. Au niveau CLIENT (racine 6 chiffres), jamais RIB.</p>
+          <p class="bea-cl-head__sub">Classe moteur et classe retenue séparées, décisions manuelles motivées et tracées. Au niveau CLIENT (racine 6 chiffres), jamais RIB. La classification par lot se fait depuis « Classification par lot ».</p>
         </div>
         @if (store.cap().classif_voir) {
           <div class="bea-mg__actions">
@@ -107,8 +113,17 @@ const TAILLE_VALEURS = 80;
         @case ('classer') {
           <bea-cl-classer-client />
         }
-        @case ('import') {
-          <bea-cl-hebdo />
+        @case ('resultats') {
+          <bea-cl-classif-resultats />
+        }
+        @case ('manuelles') {
+          <bea-cl-classif-manuelles />
+        }
+        @case ('historique') {
+          <bea-cl-classif-historique />
+        }
+        @case ('analystes') {
+          <bea-cl-analystes />
         }
         @case ('journal') {
           <bea-cl-journal-clients />
@@ -445,6 +460,7 @@ export class ClClassificationComponent implements OnInit {
   private readonly feedback = inject(FeedbackService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
   readonly store = inject(ClienteleStore);
   readonly matrice = MATRICE_LBC;
   readonly fiche = FICHE_SCORING;
@@ -491,7 +507,10 @@ export class ClClassificationComponent implements OnInit {
   readonly parametrage = signal(false);
   readonly onglets: { code: Onglet; libelle: string; icon: string; compte: () => number | null }[] = [
     { code: 'classer', libelle: 'Classer un client', icon: 'person_search', compte: () => null },
-    { code: 'import', libelle: 'Import hebdomadaire', icon: 'upload_file', compte: () => null },
+    { code: 'resultats', libelle: 'Résultats du moteur', icon: 'calculate', compte: () => null },
+    { code: 'manuelles', libelle: 'Décisions manuelles', icon: 'gavel', compte: () => null },
+    { code: 'historique', libelle: 'Historique', icon: 'history_edu', compte: () => null },
+    { code: 'analystes', libelle: 'Analystes KYC', icon: 'badge', compte: () => null },
     { code: 'clients', libelle: 'Clients classés', icon: 'verified_user', compte: () => this.total() },
     { code: 'reexamens', libelle: 'Réexamens', icon: 'pending_actions', compte: () => this.nbReex() || null },
     { code: 'journal', libelle: 'Journal', icon: 'history_edu', compte: () => null },
@@ -514,11 +533,16 @@ export class ClClassificationComponent implements OnInit {
 
   ngOnInit(): void {
     this.store.charger();
-    const o = this.route.snapshot.queryParamMap.get('onglet') as Onglet | null;
-    if (o && ONGLETS.includes(o)) {
-      this.onglet.set(o);
-      this.parametrage.set(PARAMETRAGE.includes(o));
-    }
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((qp) => {
+      const o = qp.get('onglet');
+      if (o === 'import') {
+        void this.router.navigate(['/clientele/classification-lot'], { replaceUrl: true });
+        return;
+      }
+      const cible = o && ONGLETS.includes(o as Onglet) ? (o as Onglet) : 'classer';
+      this.onglet.set(cible);
+      this.parametrage.set(PARAMETRAGE.includes(cible));
+    });
     this.api.get<{ versions: Version[]; avertissement: string }>(`${CL_BASE}/classification/referentiel`).subscribe({
       next: (r) => { this.versions.set(r.versions); this.avertissement.set(r.avertissement); },
       error: (e) => void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Référentiel indisponible')),
@@ -600,7 +624,7 @@ export class ClClassificationComponent implements OnInit {
 
   ouvrir(o: Onglet): void {
     this.onglet.set(o);
-    void this.router.navigate([], { relativeTo: this.route, queryParams: { onglet: o === 'classer' ? null : o }, replaceUrl: true });
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { onglet: o }, replaceUrl: true });
   }
 
   basculerParametrage(): void {

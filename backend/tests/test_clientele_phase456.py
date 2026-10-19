@@ -197,6 +197,9 @@ async def test_classification_moteur_configurable_et_manuel(db, masse_autorisee)
     assert "non-résident" in (courante["classification"]["motif_classement"] or "").lower() or (
         courante["classification"]["motifs"])
 
+    from app.models import ClienteleAnalysteKyc
+    db.add(ClienteleAnalysteKyc(nom="Analyste Test", nom_normalise="analyste test", actif=True))
+    await db.flush()
     await svc.modifier_individuel("000001", {
         "niveau": "MOYEN", "motif_classement": "TEST ajustement analyste", "motif_risque": "revue",
         "analyste_kyc": "Analyste Test",
@@ -215,9 +218,10 @@ async def test_classification_moteur_configurable_et_manuel(db, masse_autorisee)
     assert (await svc.courante("000001"))["classification"]["niveau"] == "MOYEN"
 
     await svc.appliquer_moteur(forcer=True)
-    assert (await svc.courante("000001"))["classification"]["niveau"] == "ELEVE"
+    assert (await svc.courante("000001"))["classification"]["niveau"] == "MOYEN"
+    assert (await svc.courante("000001"))["classification"]["source"] == "MANUEL"
     hist = courante["historique"] if False else (await svc.historique("000001"))
-    assert len(hist) >= 3
+    assert len(hist) >= 2
     with pytest.raises(Exception):
         await svc.modifier_individuel("000001", {
             "niveau": "FAIBLE", "motif_classement": "x", "racine_client": "000099",

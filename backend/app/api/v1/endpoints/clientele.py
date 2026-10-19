@@ -1,4 +1,4 @@
-"""API Référentiel clients — imports ORION, situation, rapprochement, classification, filtrage, indicateurs, déclaration BCM."""
+"""API Base Clientèle — imports ORION, situation, rapprochement, classification, filtrage, indicateurs, déclaration BCM."""
 
 from __future__ import annotations
 
@@ -47,6 +47,10 @@ from app.schemas.clientele import (
     LotDivergencesIn,
     LotLignesDecisionIn,
     LotMappingIn,
+    LotMotifIn,
+    LotPreparationIn,
+    AnalysteKycIn,
+    AnalysteKycMajIn,
     RapprochementIn,
     ReexamenTraiterIn,
     SicAgenceIn,
@@ -54,6 +58,7 @@ from app.schemas.clientele import (
     SicSecteurIn,
 )
 from app.data.clientele_import_hebdo import construire_modele
+from app.services.clientele.analystes import ClienteleAnalysteService
 from app.services.clientele.hebdo import ClienteleDecisionLotService
 from app.services.clientele.journal import lister_journal
 from app.services.clientele.lots import ClienteleLotService
@@ -75,7 +80,7 @@ from app.services.clientele.taches import ClienteleTacheService
 from app.services.clientele.vue360 import ClienteleVue360Service, filtres_depuis
 from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
 
-router = APIRouter(prefix="/clientele", tags=["Référentiel clients"])
+router = APIRouter(prefix="/clientele", tags=["Base Clientèle"])
 
 CAPACITES = {
     "voir": ("clientele.view",),
@@ -252,12 +257,45 @@ async def lot_modele(
 
 @router.post("/lots/analyse", status_code=201)
 async def lot_analyser(fichier: UploadFile = File(...), type: str = Query("LISTE"),
-                       periode_reference: date | None = Query(None),
+                       periode_reference: date | None = Query(None), forcer: bool = Query(False),
                        c: Ctx = Depends(ctx("clientele.import.execute", "clientele.classif.execute")),
                        db: AsyncSession = Depends(get_db)) -> dict:
     contenu = await fichier.read()
     return await ClienteleLotService(db, c).analyser(contenu, fichier.filename or "lot.xlsx", type_lot=type,
-                                                     periode_reference=periode_reference)
+                                                     periode_reference=periode_reference, forcer=forcer)
+
+
+@router.get("/lots/{lid}/integration")
+async def lot_integration_apercu(lid: uuid.UUID, c: Ctx = Depends(ctx("clientele.import.execute")),
+                                 db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleDecisionLotService(db, c).apercu_integration(lid)
+
+
+@router.post("/lots/{lid}/integrer")
+async def lot_integrer(lid: uuid.UUID, body: LotMotifIn, c: Ctx = Depends(ctx("clientele.import.execute")),
+                       db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleDecisionLotService(db, c).integrer(lid, body.model_dump())
+
+
+@router.get("/lots/{lid}/rejets.xlsx")
+async def lot_rejets(lid: uuid.UUID,
+                     c: Ctx = Depends(ctx("clientele.import.view", "clientele.import.execute",
+                                          "clientele.classif.execute")),
+                     db: AsyncSession = Depends(get_db)) -> Response:
+    contenu, nom = await ClienteleDecisionLotService(db, c).rejets_xlsx(lid)
+    return _xlsx(contenu, nom)
+
+
+@router.post("/lots/{lid}/lignes/preparer")
+async def lot_preparer(lid: uuid.UUID, body: LotPreparationIn, c: Ctx = Depends(ctx("clientele.classif.execute")),
+                       db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleDecisionLotService(db, c).preparer_decisions(lid, body.model_dump())
+
+
+@router.post("/lots/{lid}/confirmer")
+async def lot_confirmer(lid: uuid.UUID, body: LotMotifIn, c: Ctx = Depends(ctx("clientele.classif.execute")),
+                        db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleDecisionLotService(db, c).confirmer(lid, body.model_dump())
 
 
 @router.post("/lots/{lid}/date-ouverture")
@@ -283,9 +321,10 @@ async def lot_controle_decision(lid: uuid.UUID, body: LotControleDecisionIn,
 
 @router.get("/lots/{lid}")
 async def lot_detail(lid: uuid.UUID, statut: str | None = None, page: int = 1,
+                     q: str | None = Query(None, max_length=120), profil: str | None = None,
                      c: Ctx = Depends(ctx("clientele.import.execute", "clientele.classif.execute")),
                      db: AsyncSession = Depends(get_db)) -> dict:
-    return await ClienteleLotService(db, c).detail(lid, statut=statut, page=page)
+    return await ClienteleLotService(db, c).detail(lid, statut=statut, page=page, q=q, profil=profil)
 
 
 @router.post("/lots/{lid}/mapping")
@@ -484,11 +523,79 @@ async def classif_backtest(body: ClassifBacktestIn,
 @router.get("/classification")
 async def classif_liste(
     niveau: str | None = None, source: str | None = None, q: str | None = None,
+    analyste: str | None = Query(None, max_length=120),
     page: int = 1, taille: int = 50,
     c: Ctx = Depends(ctx("clientele.classif.view")), db: AsyncSession = Depends(get_db),
 ) -> dict:
     return await ClienteleClassificationService(db, c).lister(
-        niveau=niveau, source=source, q=q, page=page, taille=taille)
+        niveau=niveau, source=source, q=q, analyste=analyste, page=page, taille=taille)
+
+
+def _filtres_resultats(ecart: bool | None = None, niveau: str | None = None, statut: str | None = None,
+                       source: str | None = None, q: str | None = Query(None, max_length=120)) -> dict:
+    return {"ecart": ecart, "niveau": niveau, "statut": statut, "source": source, "q": q}
+
+
+@router.get("/classification/resultats")
+async def classif_resultats(f: dict = Depends(_filtres_resultats), page: int = 1, taille: int = 50,
+                            c: Ctx = Depends(ctx("clientele.classif.view")),
+                            db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleClassificationService(db, c).resultats(**f, page=page, taille=taille)
+
+
+@router.get("/classification/resultats.xlsx")
+async def classif_resultats_xlsx(f: dict = Depends(_filtres_resultats),
+                                 c: Ctx = Depends(ctx("clientele.classif.view")),
+                                 db: AsyncSession = Depends(get_db)) -> Response:
+    return _xlsx(await ClienteleClassificationService(db, c).resultats_xlsx(**f),
+                 f"resultats-moteur-{date.today().isoformat()}.xlsx")
+
+
+def _filtres_historique(q: str | None = Query(None, max_length=120), source: str | None = None,
+                        analyste: str | None = Query(None, max_length=120), lot_id: uuid.UUID | None = None,
+                        du: date | None = None, au: date | None = None) -> dict:
+    return {"q": q, "source": source, "analyste": analyste, "lot_id": lot_id, "du": du, "au": au}
+
+
+@router.get("/classification/historique")
+async def classif_historique_global(f: dict = Depends(_filtres_historique), page: int = 1, taille: int = 50,
+                                    c: Ctx = Depends(ctx("clientele.classif.view")),
+                                    db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleClassificationService(db, c).historique_global(**f, page=page, taille=taille)
+
+
+@router.get("/classification/historique.xlsx")
+async def classif_historique_xlsx(f: dict = Depends(_filtres_historique),
+                                  c: Ctx = Depends(ctx("clientele.classif.view")),
+                                  db: AsyncSession = Depends(get_db)) -> Response:
+    return _xlsx(await ClienteleClassificationService(db, c).historique_xlsx(**f),
+                 f"historique-classifications-{date.today().isoformat()}.xlsx")
+
+
+@router.get("/analystes")
+async def analystes_lister(c: Ctx = Depends(ctx("clientele.classif.view")),
+                           db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleAnalysteService(db, c).lister()
+
+
+@router.get("/analystes/utilisateurs")
+async def analystes_utilisateurs(q: str | None = Query(None, max_length=120),
+                                 c: Ctx = Depends(ctx("clientele.classif.admin")),
+                                 db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await ClienteleAnalysteService(db, c).utilisateurs(q)
+
+
+@router.post("/analystes", status_code=201)
+async def analystes_creer(body: AnalysteKycIn, c: Ctx = Depends(ctx("clientele.classif.admin")),
+                          db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleAnalysteService(db, c).creer(body.model_dump())
+
+
+@router.patch("/analystes/{aid}")
+async def analystes_modifier(aid: uuid.UUID, body: AnalysteKycMajIn,
+                             c: Ctx = Depends(ctx("clientele.classif.admin")),
+                             db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleAnalysteService(db, c).modifier(aid, body.model_dump(exclude_unset=True))
 
 
 @router.get("/classification/modele.xlsx")

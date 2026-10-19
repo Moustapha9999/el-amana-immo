@@ -101,12 +101,25 @@ async def db():
     await engine.dispose()
 
 
+async def ajouter_analyste(db, nom: str = "Analyste Test", user_id=None):
+    from app.models import ClienteleAnalysteKyc
+    from app.services.clientele.analystes import normaliser_nom
+
+    a = await db.scalar(select(ClienteleAnalysteKyc).where(ClienteleAnalysteKyc.nom_normalise == normaliser_nom(nom)))
+    if not a:
+        a = ClienteleAnalysteKyc(nom=nom, nom_normalise=normaliser_nom(nom), actif=True, user_id=user_id)
+        db.add(a)
+        await db.flush()
+    return a
+
+
 async def _jeu(db):
     from app.models import ClienteleClassification, ClienteleClient, User
 
     admin = await db.scalar(select(User).where(User.is_superuser.is_(True)).limit(1))
     if not admin:
         pytest.skip("Aucun administrateur")
+    await ajouter_analyste(db)
     K, C = ClienteleClassification, ClienteleClient
     moteurs = (await db.execute(
         select(C.racine_client, C.raison_sociale, C.nni).join(K, K.racine_client == C.racine_client)
@@ -354,3 +367,230 @@ async def test_modification_individuelle_exige_analyste(db, lot):
     assert r["classification"]["niveau"] == "ELEVE" if "classification" in r else r["niveau"] == "ELEVE"
     res = await svc.rechercher(racine)
     assert res["items"][0]["racine_client"] == racine
+
+
+# --------------------------------------------------------------------------- Base Clientèle (simplification)
+def _classeur(rows: list[list]) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "CLIENTS"
+    ws.append(ENTETES)
+    for r in rows:
+        ws.append(r)
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_racine_zeros_initiaux_conserves():
+    from app.services.clientele.lots import normaliser_racine
+
+    assert normaliser_racine("000042") == "000042"
+    assert normaliser_racine(42) == "000042"
+    assert normaliser_racine(42.0) == "000042"
+    assert normaliser_racine("1234567") is None
+    assert normaliser_racine("12A") is None
+
+
+async def test_apercu_analyste_manquants_conflits(db, lot):
+    ctx, lid, jeu, L = lot
+    assert L[2]["analyste_controle"] == {"etat": "RECONNU", "nom": "Analyste Test"}
+    assert L[2]["profil"] in ("PP", "PM", "NON_IDENTIFIE", None)
+    from app.services.clientele.lots import ClienteleLotService
+
+    d = await ClienteleLotService(db, ctx).detail(lid)
+    s = d["stats"]
+    assert s["nouveaux"] == 1 and s["ambigus"] == 1 and s["doublons"] == 1 and s["contradictions"] == 1
+    assert s["analyste_absent"] == 0 and s["analyste_inconnu"] == 0
+    assert s["absents_du_fichier"] > 0 and "colonnes_manquantes" not in s
+    filtre = await ClienteleLotService(db, ctx).detail(lid, q=jeu["n1"])
+    assert [x["ligne"] for x in filtre["lignes"]] == [4]
+
+
+async def test_analyste_inconnu_signale_jamais_invente(db, lot):
+    from app.services.clientele.lots import ClienteleLotService
+
+    ctx, _, jeu, _ = lot
+    b = jeu["b"]
+    contenu = _classeur([[b.racine_client, b.raison_sociale, None, None, None, "Faible", "Personne Inconnue"],
+                         [jeu["c"].racine_client, jeu["c"].raison_sociale, None, None, None, "Faible", None]])
+    r = await ClienteleLotService(db, ctx).analyser(contenu, "inconnu.xlsx", type_lot="LISTE")
+    lid = uuid.UUID(r["id"])
+    try:
+        L = {x["ligne"]: x for x in r["lignes"]}
+        assert L[2]["analyste_controle"]["etat"] == "INCONNU" and L[2]["analyste"] == "Personne Inconnue"
+        assert L[3]["analyste_controle"]["etat"] == "ABSENT" and "Analyste KYC" in L[3]["manquants"]
+        assert r["stats"]["analyste_inconnu"] == 1 and r["stats"]["analyste_absent"] == 1
+        with pytest.raises(AppError) as e:
+            await _svc(db, ctx).decider(lid, {"lignes": [2], "decision": "ACCEPTER"})
+        assert e.value.code == "ANALYSTE_INCONNU"
+        prep = await _svc(db, ctx).preparer_decisions(lid, {"lignes": [2, 3], "decision": "ACCEPTER"})
+        assert prep["preparees"] == 0 and len(prep["refus"]) == 2
+        apercu = await _svc(db, ctx).apercu_integration(lid)
+        assert apercu["non_integrables"] == 2 and apercu["a_mettre_a_jour"] == 0
+        await _svc(db, ctx).decider(lid, {"lignes": [2], "decision": "ACCEPTER",
+                                          "analyste_kyc": "analyste  TEST"})
+        from app.models import ClienteleClassification
+
+        assert (await db.get(ClienteleClassification, b.racine_client)).analyste_kyc == "Analyste Test"
+    finally:
+        p = ClienteleLotService(db, ctx)._xlsx(lid)
+        if p.exists():
+            p.unlink()
+
+
+async def test_integration_rejouable_sans_doublon(db, lot):
+    from app.models import ClienteleClassification, ClienteleClient, ClienteleKyc
+    from app.services.clientele.lots import ClienteleLotService
+
+    ctx, lid, jeu, _ = lot
+    nb_clients = await db.scalar(select(func.count()).select_from(ClienteleClient))
+    manuel_avant = (await db.get(ClienteleClassification, jeu["manuel"].racine_client)).niveau
+    apercu = await _svc(db, ctx).apercu_integration(lid)
+    assert apercu["a_creer"] == 1 and apercu["non_integrables"] == 3
+    assert {x["ligne"] for x in apercu["details_non_integrables"]} == {5, 6, 8}
+    r = await _svc(db, ctx).integrer(lid, {})
+    assert r["bilan"]["clients_crees"] == 1 and r["bilan"]["integrees"] == 4 and r["bilan"]["non_integrees"] == 3
+    client = await db.scalar(select(ClienteleClient).where(ClienteleClient.racine_client == jeu["n1"]))
+    assert client.source == "IMPORT_HEBDO"
+    assert await db.get(ClienteleClassification, jeu["n1"]) is None
+    assert (await db.get(ClienteleKyc, jeu["a"].racine_client)).date_eer.isoformat() == "2020-01-15"
+    assert (await db.get(ClienteleClassification, jeu["manuel"].racine_client)).niveau == manuel_avant
+    assert await db.scalar(select(func.count()).select_from(ClienteleClient)) == nb_clients + 1
+
+    r2 = await _svc(db, ctx).integrer(lid, {})
+    assert r2["bilan"]["deja_integrees"] == 4 and r2["bilan"]["clients_crees"] == 0
+
+    svc = ClienteleLotService(db, ctx)
+    p = svc._xlsx(lid)
+    contenu = p.read_bytes()
+    with pytest.raises(HTTPException) as e:
+        await svc.analyser(contenu, "hebdo-test.xlsx", type_lot="LISTE")
+    assert e.value.status_code == 409 and e.value.detail["code"] == "FICHIER_DEJA_IMPORTE"
+    r3 = await svc.analyser(contenu, "hebdo-test.xlsx", type_lot="LISTE", forcer=True)
+    lid3 = uuid.UUID(r3["id"])
+    try:
+        assert {x["ligne"]: x["statut"] for x in r3["lignes"]}[4] == "OK"
+        r4 = await _svc(db, ctx).integrer(lid3, {})
+        assert r4["bilan"]["clients_crees"] == 0
+        assert await db.scalar(select(func.count()).select_from(ClienteleClient)) == nb_clients + 1
+        assert await db.scalar(select(func.count()).select_from(ClienteleClient)
+                               .where(ClienteleClient.racine_client == jeu["n1"])) == 1
+    finally:
+        p3 = svc._xlsx(lid3)
+        if p3.exists():
+            p3.unlink()
+    contenu_rejets, _ = await _svc(db, ctx).rejets_xlsx(lid)
+    assert contenu_rejets[:2] == b"PK"
+
+
+async def test_classification_par_lot_preparee_puis_confirmee(db, lot):
+    from app.models import ClienteleClassifHistorique, ClienteleClassification
+
+    ctx, lid, jeu, _ = lot
+    with pytest.raises(AppError) as e:
+        await _svc(db, ctx).preparer_decisions(lid, {"lignes": [7], "decision": "MODIFIER", "niveau": "ELEVE"})
+    assert e.value.code == "MOTIF_OBLIGATOIRE"
+    await _svc(db, ctx).preparer_decisions(lid, {"lignes": [7], "decision": "MODIFIER", "niveau": "ELEVE",
+                                                 "motif": "Revue KYC lot"})
+    await _svc(db, ctx).preparer_decisions(lid, {"lignes": [2, 3], "decision": "ACCEPTER"})
+    r = await _svc(db, ctx).preparer_decisions(lid, {"lignes": [8], "decision": "ATTENTE"})
+    assert r["stats"]["preparees"] == 3
+    b = jeu["b"].racine_client
+    avant_b = (await db.get(ClienteleClassification, b)).niveau
+
+    c = await _svc(db, ctx).confirmer(lid, {})
+    assert c["confirmees"] == 2
+    assert [x["ligne"] for x in c["erreurs"]] == [3]
+    assert (await db.get(ClienteleClassification, jeu["manuel"].racine_client)).niveau == jeu["manuel"].niveau
+    k = await db.get(ClienteleClassification, b)
+    await db.refresh(k)
+    assert (k.niveau, k.source, k.analyste_kyc, k.motif_decision_manuelle) == (
+        "ELEVE", "MANUEL", "Analyste Test", "Revue KYC lot")
+    h = await db.scalar(select(ClienteleClassifHistorique).where(
+        ClienteleClassifHistorique.racine_client == b, ClienteleClassifHistorique.lot_id == lid))
+    assert h.ancienne_classe == avant_b and h.nouvelle_classe == "ELEVE" and h.created_by_id == ctx.user.id
+    from app.services.clientele.lots import ClienteleLotService
+
+    d = await ClienteleLotService(db, ctx).detail(lid, statut="ATTENTE_ANALYSTE")
+    assert [x["ligne"] for x in d["lignes"]] == [8]
+    ligne7 = (await ClienteleLotService(db, ctx).detail(lid, q=b))["lignes"]
+    assert ligne7[0]["decision_ligne"]["classe_precedente"] == avant_b
+    encore = await _svc(db, ctx).confirmer(lid, {})
+    assert encore["confirmees"] == 0 and [x["ligne"] for x in encore["erreurs"]] == [3]
+    await _svc(db, ctx).preparer_decisions(lid, {"lignes": [3], "decision": "ATTENTE"})
+    with pytest.raises(AppError) as e:
+        await _svc(db, ctx).confirmer(lid, {})
+    assert e.value.code == "AUCUNE_DECISION"
+
+
+async def test_classe_moteur_et_retenue_separees_trace_complete(db, lot):
+    from app.models import User
+    from app.services.clientele.classification import ClienteleClassificationService
+
+    ctx, _, jeu, _ = lot
+    admin = await db.get(User, ctx.user.id)
+    await ajouter_analyste(db, "Mariem Test", user_id=admin.id)
+    ctx.permissions.add("clientele.export")
+    svc = ClienteleClassificationService(db, ctx)
+    racine = jeu["c"].racine_client
+    with pytest.raises(AppError) as e:
+        await svc.modifier_individuel(racine, {"niveau": "ELEVE", "motif_classement": "  ",
+                                               "analyste_kyc": "Analyste Test"})
+    assert e.value.code == "MOTIF_OBLIGATOIRE"
+    r = await svc.modifier_individuel(racine, {"niveau": "ELEVE", "motif_classement": "Activité à risque",
+                                               "analyste_kyc": admin.email})
+    assert r["classification"]["niveau"] == "ELEVE" and r["classification"]["analyste_kyc"] == "Mariem Test"
+    calcul = r["dernier_calcul"]
+    assert calcul and calcul["version_moteur"] and calcul["date_calcul"]
+    assert r["ecart"] == (calcul["admissible"] and calcul["niveau"] != "ELEVE")
+    res = await svc.resultats(q=racine)
+    item = res["items"][0]
+    assert item["retenue"]["niveau"] == "ELEVE" and item["retenue"]["source"] == "MANUEL"
+    assert item["calcul"]["evaluation_id"] == calcul["evaluation_id"]
+    h = (await svc.historique_global(q=racine, source="MANUELLES"))["items"][0]
+    assert (h["nouvelle_classe"], h["analyste_kyc"], h["motif_decision_manuelle"]) == (
+        "ELEVE", "Mariem Test", "Activité à risque")
+    assert h["utilisateur"] == admin.full_name and h["date"]
+    manuelles = await svc.lister(source="MANUELLES", q=racine)
+    assert manuelles["items"][0]["racine_client"] == racine
+    assert (await svc.resultats_xlsx(q=racine))[:2] == b"PK"
+    assert (await svc.historique_xlsx(q=racine, source=None, analyste=None, lot_id=None, du=None, au=None))[:2] == b"PK"
+
+
+async def test_permissions_base_clientele(db, lot):
+    from app.services.clientele.analystes import ClienteleAnalysteService
+
+    ctx, lid, _, _ = lot
+    with pytest.raises(HTTPException) as e:
+        await ClienteleAnalysteService(db, ctx).creer({"nom": "Nouvel analyste"})
+    assert e.value.status_code == 403
+    ctx.permissions.add("clientele.classif.admin")
+    liste = await ClienteleAnalysteService(db, ctx).creer({"nom": "Nouvel  Analyste"})
+    assert any(a["nom"] == "Nouvel Analyste" for a in liste["items"])
+    with pytest.raises(AppError) as e:
+        await ClienteleAnalysteService(db, ctx).creer({"nom": "nouvel analyste"})
+    assert e.value.code == "ANALYSTE_EXISTANT"
+    ctx.permissions.discard("clientele.classif.admin")
+    ctx.permissions.discard("clientele.import.execute")
+    with pytest.raises(HTTPException) as e:
+        await _svc(db, ctx).integrer(lid, {})
+    assert e.value.status_code == 403
+    ctx.permissions.discard("clientele.classif.execute")
+    with pytest.raises(HTTPException) as e:
+        await _svc(db, ctx).preparer_decisions(lid, {"lignes": [2], "decision": "ACCEPTER"})
+    assert e.value.status_code == 403
+
+
+async def test_eer_desactive_donnees_conservees(db):
+    row = (await db.execute(text(
+        "SELECT statut, is_active FROM plateforme_modules WHERE code = 'eer'"))).first()
+    if not row:
+        pytest.skip("Module EER absent du catalogue")
+    assert tuple(row) == ("inactif", False)
+    for table in ("eer_dossiers", "eer_parties", "eer_parties_physiques"):
+        assert await db.scalar(text(f"SELECT to_regclass('public.{table}') IS NOT NULL"))
+    from app.data.plateforme_catalogue import PLATEFORME_MODULES
+
+    eer = next(m for m in PLATEFORME_MODULES if m["code"] == "eer")
+    assert eer["statut"] == "inactif"

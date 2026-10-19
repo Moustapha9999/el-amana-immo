@@ -182,7 +182,27 @@ export interface SituationLigne {
   nb_comptes: number;
   nb_comptes_ouverts: number;
   nb_agences: number;
+  classe_retenue?: string | null;
+  source_classe?: string | null;
+  classe_moteur?: string | null;
+  ecart_moteur?: boolean;
+  analyste_kyc?: string | null;
+  classifie_le?: string | null;
 }
+
+/** Dernier calcul du moteur (photographie), distinct de la classe retenue. */
+export interface CalculMoteur {
+  evaluation_id: string; niveau: string | null; statut: string; admissible: boolean; score: number | null;
+  version_moteur: string | null; version_regles: string | null; date_calcul: string | null;
+  date_reference: string | null; motif: string | null; lot_id: string | null; ligne_source: number | null;
+}
+
+export interface AnalysteKyc {
+  id: string; nom: string; actif: boolean; user_id: string | null; utilisateur: string | null;
+  email: string | null; created_at: string | null;
+}
+
+export const SOURCES_MANUELLES = ['MANUEL', 'MANUEL_SURCHARGE'];
 
 export interface PageSituation {
   total: number;
@@ -217,6 +237,8 @@ export interface FicheClient {
   alertes_ouvertes: { id: string; statut: string; motif: string; precedent_faux_positif: boolean }[];
   sources: SourceColonne[];
   kyc: DonneesKyc | null;
+  dernier_calcul?: CalculMoteur | null;
+  ecart_moteur?: boolean;
 }
 
 export interface DonneesKyc {
@@ -267,8 +289,38 @@ export interface LigneHebdo {
   decision_ligne: {
     decision: string; niveau: string | null; motif: string | null; analyste_kyc: string | null;
     client_cree: boolean; groupe_id: string | null; par_nom: string | null; le: string | null;
+    classe_precedente?: string | null;
   } | null;
+  analyste_controle?: { etat: 'ABSENT' | 'INCONNU' | 'RECONNU'; nom: string | null; brut: string | null } | null;
+  manquants?: string[];
+  conflits?: string[];
+  preparation?: {
+    decision: 'ACCEPTER' | 'MODIFIER' | 'REJETER' | 'ATTENTE'; niveau: string | null; motif: string | null;
+    analyste_kyc: string | null; par_nom: string | null; le: string | null;
+  } | null;
+  integration?: {
+    etat: 'INTEGREE' | 'NON_INTEGREE' | 'ERREUR'; raison?: string | null; client_cree?: boolean;
+    maj_donnees?: string[]; par_nom: string | null; le: string | null;
+  } | null;
+  profil?: string | null;
+  moteur?: { score: number | null; niveau: string | null; statut: string; motif: string | null; classable: boolean } | null;
 }
+
+export interface ApercuIntegration {
+  lot_id: string; fichier_nom: string; lignes: number; a_creer: number; a_mettre_a_jour: number;
+  inchangees: number; deja_integrees: number; non_integrables: number; champs: Record<string, number>;
+  absents_du_fichier: number | null;
+  details_non_integrables: { ligne: number; racine: string | null; nom: string | null; raison: string }[];
+  regles: string[];
+}
+
+export const LIB_INTEGRATION: Record<string, string> = {
+  INTEGREE: 'Intégrée', NON_INTEGREE: 'Non intégrée', ERREUR: 'Erreur',
+};
+
+export const LIB_PREPARATION: Record<string, string> = {
+  ACCEPTER: 'Accepter', MODIFIER: 'Classe manuelle', REJETER: 'Rejeter', ATTENTE: 'En attente analyste',
+};
 
 export interface LotHebdo {
   id: string; fichier_nom: string; type: string; statut_lot: string; periode_reference: string | null;
