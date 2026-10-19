@@ -68,6 +68,17 @@ const ONGLETS: readonly Onglet[] = [
   'classer', 'resultats', 'manuelles', 'historique', 'analystes', 'clients', 'reexamens', 'journal',
   'simulation', 'referentiel', 'criteres', 'divergences', 'versions', 'masse',
 ];
+/** Écrans ouverts directement depuis le menu latéral : pas de barre d'onglets, titre propre. */
+const PAGES_MENU: Partial<Record<Onglet, { titre: string; sous: string }>> = {
+  resultats: { titre: 'Résultats du moteur', sous: 'Dernier calcul du moteur par client, à côté de la classe retenue. Un écart est signalé, jamais appliqué automatiquement.' },
+  manuelles: { titre: 'Décisions manuelles', sous: 'Classes retenues par décision motivée : ni l’import ni le moteur ne les remplacent.' },
+  historique: { titre: 'Historique des classifications', sous: 'Tous les changements de classe, en ajout seul : ancienne et nouvelle classe, motif, analyste, auteur, date.' },
+  analystes: { titre: 'Analystes KYC', sous: 'Référentiel des analystes reconnus dans l’import hebdomadaire et les décisions de classification.' },
+};
+const ENTETE_DEFAUT = {
+  titre: 'Classification individuelle',
+  sous: 'Classer un client, consulter les clients classés, les réexamens et le journal. Au niveau CLIENT (racine 6 chiffres), jamais RIB.',
+};
 const PARAMETRAGE: readonly Onglet[] = ['simulation', 'referentiel', 'criteres', 'divergences', 'versions', 'masse'];
 const STATUTS_DIVERGENCE: Record<string, string> = {
   A_ARBITRER: 'À arbitrer', VALIDEE: 'Validée', INVALIDE_SOURCE: 'Source invalidée', ALIGNEE: 'Alignée',
@@ -88,10 +99,10 @@ const TAILLE_VALEURS = 80;
       <header class="bea-mg__head bea-cl-head">
         <div>
           <p class="bea-stock-page__kicker">Classification</p>
-          <h1>Classification des clients</h1>
-          <p class="bea-cl-head__sub">Classe moteur et classe retenue séparées, décisions manuelles motivées et tracées. Au niveau CLIENT (racine 6 chiffres), jamais RIB. La classification par lot se fait depuis « Classification par lot ».</p>
+          <h1>{{ entete().titre }}</h1>
+          <p class="bea-cl-head__sub">{{ entete().sous }}</p>
         </div>
-        @if (store.cap().classif_voir) {
+        @if (store.cap().classif_voir && !pageMenu()) {
           <div class="bea-mg__actions">
             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [class.is-on]="parametrage()" (click)="basculerParametrage()">
               <mat-icon>tune</mat-icon> {{ parametrage() ? 'Retour au module' : 'Paramétrage Conformité' }}
@@ -100,14 +111,16 @@ const TAILLE_VALEURS = 80;
         }
       </header>
 
-      <nav class="bea-cl-tabs" role="tablist" aria-label="Classification">
-        @for (o of ongletsVisibles(); track o.code) {
-          <button type="button" role="tab" [class.is-on]="onglet() === o.code" [attr.aria-selected]="onglet() === o.code" (click)="ouvrir(o.code)">
-            <mat-icon>{{ o.icon }}</mat-icon>{{ o.libelle }}
-            @if (o.compte(); as c) { <span class="bea-cl-tabs__n">{{ n(c) }}</span> }
-          </button>
-        }
-      </nav>
+      @if (!pageMenu()) {
+        <nav class="bea-cl-tabs" role="tablist" aria-label="Classification">
+          @for (o of ongletsVisibles(); track o.code) {
+            <button type="button" role="tab" [class.is-on]="onglet() === o.code" [attr.aria-selected]="onglet() === o.code" (click)="ouvrir(o.code)">
+              <mat-icon>{{ o.icon }}</mat-icon>{{ o.libelle }}
+              @if (o.compte(); as c) { <span class="bea-cl-tabs__n">{{ n(c) }}</span> }
+            </button>
+          }
+        </nav>
+      }
 
       @switch (onglet()) {
         @case ('classer') {
@@ -507,10 +520,6 @@ export class ClClassificationComponent implements OnInit {
   readonly parametrage = signal(false);
   readonly onglets: { code: Onglet; libelle: string; icon: string; compte: () => number | null }[] = [
     { code: 'classer', libelle: 'Classer un client', icon: 'person_search', compte: () => null },
-    { code: 'resultats', libelle: 'Résultats du moteur', icon: 'calculate', compte: () => null },
-    { code: 'manuelles', libelle: 'Décisions manuelles', icon: 'gavel', compte: () => null },
-    { code: 'historique', libelle: 'Historique', icon: 'history_edu', compte: () => null },
-    { code: 'analystes', libelle: 'Analystes KYC', icon: 'badge', compte: () => null },
     { code: 'clients', libelle: 'Clients classés', icon: 'verified_user', compte: () => this.total() },
     { code: 'reexamens', libelle: 'Réexamens', icon: 'pending_actions', compte: () => this.nbReex() || null },
     { code: 'journal', libelle: 'Journal', icon: 'history_edu', compte: () => null },
@@ -521,6 +530,9 @@ export class ClClassificationComponent implements OnInit {
     { code: 'versions', libelle: 'Versions', icon: 'history', compte: () => null },
     { code: 'masse', libelle: 'Classification massive', icon: 'lock', compte: () => null },
   ];
+  readonly pageMenu = computed(() => PAGES_MENU[this.onglet()] ?? null);
+  readonly entete = computed(() =>
+    this.pageMenu() ?? (this.parametrage() ? { titre: 'Paramétrage Conformité', sous: 'Simulation, référentiel maître, critères, divergences, versions et classification massive.' } : ENTETE_DEFAUT));
   readonly ongletsVisibles = computed(() =>
     this.onglets.filter((o) => PARAMETRAGE.includes(o.code) === this.parametrage()));
   niveau = '';
