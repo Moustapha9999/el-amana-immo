@@ -77,6 +77,8 @@ async def env():
                             hashed_password=get_password_hash(MOT_DE_PASSE))
                 s.add(user)
                 await s.flush()
+            user.is_active, user.deleted_at = True, None
+            user.hashed_password = get_password_hash(MOT_DE_PASSE)
             user.agence_id = agences[rang].id if rang is not None else None
             params = {"u": user.id, "e": espace.id, "m": module.id}
             if nom in SANS_ACCES_MODULE:

@@ -44,6 +44,15 @@ remplacement d’ORION.
    `core.admin.access`) : `docs/core-admin.md` — pas le rôle immo
    `administrateur`.
 
+## Base Clientèle / EER
+
+- Module `clientele` = **Base Clientèle** (`docs/conformite/README.md`). Une décision manuelle
+ de classification n’est jamais remplacée par le moteur ni par un import ; analyste KYC
+ obligatoire et issu du référentiel `clientele_analystes_kyc`. Aucun client absent d’un
+ fichier n’est supprimé ni désactivé.
+- Module `eer` **désactivé** (réversible, tables conservées) :
+ `docs/conformite/eer-desactivation.md`. Ne pas supprimer les tables `eer_*` (lues par la SIC).
+
 ## Base de données
 
 - Une seule `DATABASE_URL` vers le service `postgres` du compose racine.

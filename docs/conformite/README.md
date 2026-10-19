@@ -12,7 +12,7 @@ Audit, Contrôle & Conformité            (plateforme_espaces)
 ├── Contrôle permanent & périmètre op.   domaine — bientôt
 ├── Conformité & sécurité financière     domaine — actif
 │   ├── KYC                              sous-domaine — actif
-│   │   └── Gestion des Entrées en Relation (module eer) — en développement
+│   │   └── Gestion des Entrées en Relation (module eer) — désactivé, données conservées
 │   ├── Formation & Sensibilisation (module formation) — actif
 │   └── LBC-FT, FATCA, Gestion des dossiers clients, Demandes de prêt,
 │       Déclarations BCM, Correspondants bancaires,
@@ -88,6 +88,9 @@ cloisonnées, notifications, échéances (job de fond `EER_ECHEANCES_INTERVAL_HE
 PDF / Excel (détail : [eer-architecture-metier.md](eer-architecture-metier.md) §21 et §23 bis).
 L’ouverture (statut `actif`) reste une décision CORE ADMIN.
 
+**19/10/2026 : module désactivé (réversible, données conservées)** — migration `20261020_clientele_14`.
+Détail, dépendances conservées et réactivation : [eer-desactivation.md](eer-desactivation.md).
+
 Reste dépendant du métier ou de l’exploitation :
 
 - **Source `[1]FLUX`** (`TABLEAU DE SUIVI EER 2026 v2.xlsx`) : rapprochement du reporting
@@ -112,6 +115,28 @@ Reste dépendant du métier ou de l’exploitation :
   Déclaration : `/clientele/declarations`, snapshot à la validation, pas d’invention de formules.
   Ne pas exécuter les anciens prompts « 28 rapports » / « reporting BCM PDF ».
   Pont EER : `GET /api/v1/eer/clientele/{racine}`, préremplissage ORION sans écrasement.
+
+### Base Clientèle et classification simplifiées (19/10/2026)
+
+Module `clientele` renommé **Base Clientèle** (migration `20261020_clientele_14`, additive).
+
+| Écran | Route front | API |
+|-------|-------------|-----|
+| Vue d’ensemble / Clients PP / Clients PM | `/clientele/dashboard`, `/clientele/situation-pp`, `/clientele/situation-pm` | `/situation` (classe retenue, classe moteur, écart, analyste) |
+| Import hebdomadaire | `/clientele/import-hebdo` | `POST /lots/analyse` (`forcer` si fichier déjà importé), `GET /lots/{id}/integration`, `POST /lots/{id}/integrer`, `GET /lots/{id}/rejets.xlsx` |
+| Historique des imports | `/clientele/imports-historique` | `GET /lots` |
+| Classification individuelle | `/clientele/classification?onglet=classer` | `POST /clients/{racine}/classification` |
+| Classification par lot | `/clientele/classification-lot` | `POST /lots/{id}/lignes/preparer`, `POST /lots/{id}/confirmer` |
+| Résultats du moteur | `?onglet=resultats` | `GET /classification/resultats(.xlsx)` |
+| Décisions manuelles | `?onglet=manuelles` | `GET /classification?source=MANUELLES` |
+| Historique des classifications | `?onglet=historique` | `GET /classification/historique(.xlsx)` |
+| Analystes KYC | `?onglet=analystes` | `GET/POST /analystes`, `PATCH /analystes/{id}` (`clientele.classif.admin`) |
+
+Règles : rapprochement par racine uniquement ; aucun client absent du fichier supprimé ou
+désactivé ; intégration rejouable sans doublon ; l’intégration ne touche jamais la classification ;
+une décision manuelle n’est jamais remplacée par le moteur ni par un import ; analyste KYC
+obligatoire et présent dans le référentiel `clientele_analystes_kyc` (vide après migration :
+à alimenter avant toute décision).
 
 ## Module Formation & Sensibilisation (07/10/2026)
 
