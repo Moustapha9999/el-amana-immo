@@ -5,6 +5,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ApiService } from '../../core/services/api.service';
+import { ClExportComponent } from '../cl-export.component';
 import {
   ApercuIntegration, CL_BASE, ETATS_PROPOSITION, LIB_INTEGRATION, LIB_PREPARATION, LigneHebdo, LotHebdo,
   SOURCES_MANUELLES, STATUTS_CLIENT, STATUTS_DECISION, dateFr, dateHeureFr, n, telecharger,
@@ -67,9 +68,33 @@ const LIB_ANALYSTE: Record<string, string> = { ABSENT: 'Absent', INCONNU: 'Incon
 @Component({
   selector: 'bea-cl-hebdo',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, MatIconModule],
+  imports: [FormsModule, RouterLink, MatIconModule, ClExportComponent],
   styles: `
-    .bea-hb-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+    .bea-hb-table { table-layout: fixed; width: 100%; }
+    .bea-hb-table th, .bea-hb-table td { padding: 0.6rem 0.7rem; }
+    .bea-hb-table th { white-space: normal; line-height: 1.25; vertical-align: bottom; }
+    .bea-hb-table td { vertical-align: top; overflow-wrap: anywhere; }
+    .bea-hb-table td code, .bea-hb-table td .bea-cl-badge { white-space: nowrap; overflow-wrap: normal; }
+    .bea-hb-table input[type='checkbox'] { width: auto; }
+    .bea-hb-table .w-chk { width: 2.75rem; }
+    .bea-hb-table .w-l { width: 3.25rem; }
+    .bea-hb-table .w-racine { width: 7.5rem; }
+    .bea-hb-table .w-profil { width: 7rem; }
+    .bea-hb-table .w-id { width: 13rem; }
+    .bea-hb-table .w-classe { width: 8.5rem; }
+    .bea-hb-table .w-prop { width: 14rem; }
+    .bea-hb-table .w-statut { width: 9.5rem; }
+    .bea-hb-table .w-analyste { width: 9.5rem; }
+    .bea-hb-table .w-motif { width: 10rem; }
+    .bea-hb-table .w-date { width: 9.5rem; }
+    .bea-hb-table .w-act { width: 15.5rem; position: sticky; right: 0; z-index: 1; background: #fff; box-shadow: -8px 0 10px -8px rgba(15, 23, 42, 0.25); }
+    .bea-hb-table thead .w-act { z-index: 2; background: #f8fafc; }
+    .bea-hb-table tr.is-sel td { background: #eff6ff; }
+    .bea-hb-table tr.is-prep td { background: #f0fdf4; }
+    :host-context(html[data-theme='dark']) .bea-hb-table .w-act { background: #1f1f1f; }
+    :host-context(html[data-theme='dark']) .bea-hb-table thead .w-act { background: #152332; }
+    .bea-hb-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; align-items: center; }
+    .bea-hb-actions select { width: auto; min-width: 9rem; flex: 1 1 9rem; }
     .bea-hb-actions button { display: inline-flex; align-items: center; gap: 0.2rem; font: inherit; font-size: 0.78rem; font-weight: 600; padding: 0.3rem 0.55rem; border-radius: 0.45rem; border: 1px solid #cbd5e1; background: #fff; color: #0f172a; cursor: pointer; }
     .bea-hb-actions button mat-icon { font-size: 1rem; width: 1rem; height: 1rem; }
     .bea-hb-actions button.is-ok { border-color: #16a34a; color: #166534; }
@@ -78,6 +103,7 @@ const LIB_ANALYSTE: Record<string, string> = { ABSENT: 'Absent', INCONNU: 'Incon
     .bea-hb-actions select { font: inherit; font-size: 0.78rem; padding: 0.25rem; border: 1px solid #cbd5e1; border-radius: 0.45rem; }
     .bea-hb-raison { display: block; max-width: 22rem; font-size: 0.75rem; color: #64748b; white-space: normal; }
     .bea-hb-alerte { display: block; max-width: 22rem; font-size: 0.75rem; color: #9a3412; white-space: normal; }
+    .bea-hb-table .bea-hb-raison, .bea-hb-table .bea-hb-alerte { max-width: none; margin-top: 0.2rem; line-height: 1.3; }
     .bea-hb-groupe { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; padding: 0.7rem 1.1rem; background: #0f2a43; color: #fff; border-radius: 0.75rem; margin-top: 0.6rem; z-index: 2; }
     .bea-hb-groupe .bea-mg__btn { background: #fff; }
     .bea-hb-groupe select { font: inherit; font-size: 0.82rem; padding: 0.35rem; border-radius: 0.45rem; }
@@ -121,7 +147,12 @@ const LIB_ANALYSTE: Record<string, string> = { ABSENT: 'Absent', INCONNU: 'Incon
       <section class="bea-mg__panel">
         <div class="bea-mg__panel-top">
           <h2>{{ mode() === 'lot' ? 'Fichiers à classifier' : mode() === 'historique' ? 'Historique des imports' : 'Derniers imports' }}</h2>
-          <span class="bea-mg__count">{{ listeLots().length }}</span>
+          <span class="bea-cl-actions">
+            <span class="bea-mg__count">{{ listeLots().length }}</span>
+            @if (mode() === 'historique') {
+              <bea-cl-export [chemin]="base + '/lots/export'" libelle="Historique des imports" nomFichier="historique-imports" />
+            }
+          </span>
         </div>
         <div class="bea-mg__table-wrap">
           <table class="bea-mg__table">
@@ -303,8 +334,8 @@ const LIB_ANALYSTE: Record<string, string> = { ABSENT: 'Absent', INCONNU: 'Incon
 
         <div class="bea-mg__table-wrap">
           @if (mode() === 'import') {
-            <table class="bea-mg__table">
-              <thead><tr><th>L.</th><th>Racine</th><th>Identité</th><th>PP/PM</th><th>Client</th><th>Analyste KYC</th><th>Champs manquants</th><th>Conflits avec la base</th><th>Intégration</th></tr></thead>
+            <table class="bea-mg__table bea-hb-table">
+              <thead><tr><th class="w-l">L.</th><th class="w-racine">Racine</th><th class="w-id">Identité</th><th class="w-profil">PP/PM</th><th class="w-prop">Client</th><th class="w-analyste">Analyste KYC</th><th class="w-motif">Champs manquants</th><th class="w-prop">Conflits avec la base</th><th class="w-statut">Intégration</th></tr></thead>
               <tbody>
                 @for (x of l.lignes; track x.ligne) {
                   <tr>
@@ -342,11 +373,11 @@ const LIB_ANALYSTE: Record<string, string> = { ABSENT: 'Absent', INCONNU: 'Incon
               </tbody>
             </table>
           } @else {
-            <table class="bea-mg__table">
+            <table class="bea-mg__table bea-hb-table">
               <thead><tr>
-                @if (peutDecider()) { <th><input type="checkbox" [checked]="toutSelectionne()" (change)="toutSelectionner($any($event.target).checked)" aria-label="Tout sélectionner" /></th> }
-                <th>L.</th><th>Racine</th><th>PP/PM</th><th>Identité</th><th>Classe précédente</th><th>Classe moteur</th><th>Classe proposée</th><th>Classe retenue</th><th>Statut</th><th>Analyste</th><th>Motif</th><th>Date</th>
-                @if (peutDecider()) { <th></th> }
+                @if (peutDecider()) { <th class="w-chk"><input type="checkbox" [checked]="toutSelectionne()" (change)="toutSelectionner($any($event.target).checked)" aria-label="Tout sélectionner" /></th> }
+                <th class="w-l">L.</th><th class="w-racine">Racine</th><th class="w-profil">PP/PM</th><th class="w-id">Identité</th><th class="w-classe">Classe précédente</th><th class="w-classe">Classe moteur</th><th class="w-prop">Classe proposée</th><th class="w-classe">Classe retenue</th><th class="w-statut">Statut</th><th class="w-analyste">Analyste</th><th class="w-motif">Motif</th><th class="w-date">Date</th>
+                @if (peutDecider()) { <th class="w-act">Actions</th> }
               </tr></thead>
               <tbody>
                 @for (x of l.lignes; track x.ligne) {
@@ -390,7 +421,7 @@ const LIB_ANALYSTE: Record<string, string> = { ABSENT: 'Absent', INCONNU: 'Incon
                     <td>@if (d?.motif || prep?.motif) { <small class="bea-hb-raison">« {{ d?.motif || prep?.motif }} »</small> } @else { — }</td>
                     <td>@if (d) { {{ dh(d.le) }} <small class="bea-hb-raison">{{ d.par_nom }}</small> } @else if (prep) { <small class="bea-hb-raison">préparée {{ dh(prep.le) }} · {{ prep.par_nom }}</small> } @else { — }</td>
                     @if (peutDecider()) {
-                      <td>
+                      <td class="w-act">
                         @if (x.statut_decision === 'EN_ATTENTE') {
                           <div class="bea-hb-actions">
                             @if (p.niveau && (x.statut === 'OK' || x.statut === 'INCONNUE')) {
@@ -467,6 +498,7 @@ export class ClHebdoComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   readonly store = inject(ClienteleStore);
+  readonly base = CL_BASE;
   readonly mode = input<ModeHebdo>('import');
   readonly historique = signal<LotResume[]>([]);
   readonly lot = signal<LotHebdo | null>(null);

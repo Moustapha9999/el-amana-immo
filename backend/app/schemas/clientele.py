@@ -82,6 +82,13 @@ class LotPreparationIn(BaseModel):
     analyste_kyc: str | None = Field(None, max_length=120)
 
 
+class LotSelectionIn(BaseModel):
+    profil: Literal["PP", "PM"]
+    racines: list[str] = Field(..., min_length=1, max_length=2000)
+    analyste_kyc: str | None = Field(None, max_length=120)
+    periode_reference: date | None = None
+
+
 class LotMotifIn(BaseModel):
     motif: str | None = Field(None, max_length=2000)
 

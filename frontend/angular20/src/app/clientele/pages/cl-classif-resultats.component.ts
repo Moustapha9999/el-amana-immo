@@ -48,7 +48,7 @@ interface Resultat {
       </div>
       <div class="bea-mg__table-wrap">
         <table class="bea-mg__table">
-          <thead><tr><th>Racine</th><th>PP/PM</th><th>Identité</th><th>Classe moteur</th><th>Calculé le</th><th>Classe retenue</th><th>Analyste</th><th>Écart</th></tr></thead>
+          <thead><tr><th class="c-sm">Racine</th><th class="c-sm">PP/PM</th><th class="c-lg">Identité</th><th class="c-md">Classe moteur</th><th class="c-date">Calculé le</th><th class="c-md">Classe retenue</th><th class="c-md">Analyste</th><th class="c-sm">Écart</th></tr></thead>
           <tbody>
             @for (r of items(); track r.racine_client) {
               <tr>

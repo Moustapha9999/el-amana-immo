@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import auth_http_error, get_current_user
+from app.core.exceptions import AppError
 from app.db.session import get_db
 from app.models import Agence, User
 from app.schemas.clientele import (
@@ -49,6 +50,7 @@ from app.schemas.clientele import (
     LotMappingIn,
     LotMotifIn,
     LotPreparationIn,
+    LotSelectionIn,
     AnalysteKycIn,
     AnalysteKycMajIn,
     RapprochementIn,
@@ -76,6 +78,7 @@ from app.services.clientele.rapprochement import ClienteleRapprochementService
 from app.services.clientele.service import Ctx
 from app.services.clientele.sic import ClienteleSicService
 from app.services.clientele.situation import ClienteleSituationService, SOURCES_COLONNES
+from app.services.clientele.suivi import ClienteleSuiviService
 from app.services.clientele.taches import ClienteleTacheService
 from app.services.clientele.vue360 import ClienteleVue360Service, filtres_depuis
 from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
@@ -162,6 +165,90 @@ async def situation(
     return await ClienteleSituationService(db, c).lister(
         profil=profil, q=q, racine=racine, nom=nom, compte=compte, rib=rib, agence=agence,
         etat=etat, type_identifiant=type_identifiant, page=page, taille=taille)
+
+
+def _filtres_situation(q: str | None = Query(None, max_length=120), racine: str | None = Query(None, max_length=6),
+                       nom: str | None = Query(None, max_length=120), compte: str | None = Query(None, max_length=11),
+                       rib: str | None = Query(None, max_length=23), agence: str | None = Query(None, max_length=10),
+                       etat: str | None = None, type_identifiant: str | None = None) -> dict:
+    return {"q": q, "racine": racine, "nom": nom, "compte": compte, "rib": rib, "agence": agence, "etat": etat,
+            "type_identifiant": type_identifiant}
+
+
+@router.get("/situation/export/apercu")
+async def situation_export_apercu(profil: str = Query(..., pattern="^(PP|PM)$"),
+                                  f: dict = Depends(_filtres_situation),
+                                  c: Ctx = Depends(ctx("clientele.export")),
+                                  db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleSituationService(db, c).apercu_export(profil=profil, **f)
+
+
+@router.get("/situation/export.{fmt}")
+async def situation_export(fmt: str, profil: str = Query(..., pattern="^(PP|PM)$"),
+                           portee: str = Query("filtre", pattern="^(filtre|tout)$"),
+                           f: dict = Depends(_filtres_situation),
+                           c: Ctx = Depends(ctx("clientele.export")),
+                           db: AsyncSession = Depends(get_db)) -> Response:
+    if fmt not in ("xlsx", "pdf"):
+        raise AppError("Format attendu : xlsx ou pdf", 422, code="FORMAT_NON_SUPPORTE")
+    contenu, nom = await ClienteleSituationService(db, c).exporter(profil=profil, format=fmt, portee=portee, **f)
+    return _pdf(contenu, nom) if fmt == "pdf" else _xlsx(contenu, nom)
+
+
+def _filtres_suivi(perimetre: str = Query("TOUS", pattern="^(TOUS|OUVERTS)$"),
+                   q: str | None = Query(None, max_length=120), racine: str | None = Query(None, max_length=6),
+                   nom: str | None = Query(None, max_length=120), agence: str | None = Query(None, max_length=10),
+                   classe: str | None = Query(None, max_length=12), statut: str | None = Query(None, max_length=20),
+                   analyste: str | None = Query(None, max_length=120),
+                   source: str | None = Query(None, pattern="^(MOTEUR|MANUELLES|FICHIER)$"),
+                   etat: str | None = Query(None, pattern="^(OUVERT|CLOTURE)$"),
+                   du: date | None = None, au: date | None = None) -> dict:
+    return {"perimetre": perimetre, "q": q, "racine": racine, "nom": nom, "agence": agence, "classe": classe,
+            "statut": statut, "analyste": analyste, "source": source, "etat": etat, "du": du, "au": au}
+
+
+@router.get("/suivi/progression")
+async def suivi_progression(perimetre: str = Query("TOUS", pattern="^(TOUS|OUVERTS)$"),
+                            c: Ctx = Depends(ctx("clientele.view")),
+                            db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleSuiviService(db, c).progression(perimetre=perimetre)
+
+
+@router.get("/suivi/progression.{fmt}")
+async def suivi_progression_export(fmt: str, perimetre: str = Query("TOUS", pattern="^(TOUS|OUVERTS)$"),
+                                   c: Ctx = Depends(ctx("clientele.export")),
+                                   db: AsyncSession = Depends(get_db)) -> Response:
+    if fmt not in ("xlsx", "pdf"):
+        raise AppError("Format attendu : xlsx ou pdf", 422, code="FORMAT_NON_SUPPORTE")
+    contenu, nom = await ClienteleSuiviService(db, c).exporter_progression(perimetre=perimetre, format=fmt)
+    return _pdf(contenu, nom) if fmt == "pdf" else _xlsx(contenu, nom)
+
+
+@router.get("/suivi/clients")
+async def suivi_clients(profil: str = Query(..., pattern="^(PP|PM)$"), f: dict = Depends(_filtres_suivi),
+                        page: int = 1, taille: int = 50,
+                        c: Ctx = Depends(ctx("clientele.classif.view")),
+                        db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleSuiviService(db, c).lister(profil=profil, page=page, taille=taille, **f)
+
+
+@router.get("/suivi/export/apercu")
+async def suivi_export_apercu(profil: str = Query(..., pattern="^(PP|PM)$"), f: dict = Depends(_filtres_suivi),
+                              c: Ctx = Depends(ctx("clientele.export")),
+                              db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleSuiviService(db, c).apercu_export(profil=profil, **f)
+
+
+@router.get("/suivi/export.{fmt}")
+async def suivi_export(fmt: str, profil: str = Query(..., pattern="^(PP|PM)$"),
+                       portee: str = Query("filtre", pattern="^(filtre|tout)$"),
+                       f: dict = Depends(_filtres_suivi),
+                       c: Ctx = Depends(ctx("clientele.export")),
+                       db: AsyncSession = Depends(get_db)) -> Response:
+    if fmt not in ("xlsx", "pdf"):
+        raise AppError("Format attendu : xlsx ou pdf", 422, code="FORMAT_NON_SUPPORTE")
+    contenu, nom = await ClienteleSuiviService(db, c).exporter(profil=profil, format=fmt, portee=portee, **f)
+    return _pdf(contenu, nom) if fmt == "pdf" else _xlsx(contenu, nom)
 
 
 @router.get("/clients/{racine}")
@@ -255,14 +342,36 @@ async def lot_modele(
     return _xlsx(construire_modele(), "modele-import-hebdomadaire-classification.xlsx")
 
 
+@router.get("/lots/export.xlsx")
+async def lots_export_xlsx(c: Ctx = Depends(ctx("clientele.export")), db: AsyncSession = Depends(get_db)) -> Response:
+    contenu, nom = await ClienteleLotService(db, c).exporter_historique(format="xlsx")
+    return _xlsx(contenu, nom)
+
+
+@router.get("/lots/export.pdf")
+async def lots_export_pdf(c: Ctx = Depends(ctx("clientele.export")), db: AsyncSession = Depends(get_db)) -> Response:
+    contenu, nom = await ClienteleLotService(db, c).exporter_historique(format="pdf")
+    return _pdf(contenu, nom)
+
+
 @router.post("/lots/analyse", status_code=201)
 async def lot_analyser(fichier: UploadFile = File(...), type: str = Query("LISTE"),
                        periode_reference: date | None = Query(None), forcer: bool = Query(False),
+                       profil: str | None = Query(None, pattern="^(PP|PM)$"),
                        c: Ctx = Depends(ctx("clientele.import.execute", "clientele.classif.execute")),
                        db: AsyncSession = Depends(get_db)) -> dict:
     contenu = await fichier.read()
     return await ClienteleLotService(db, c).analyser(contenu, fichier.filename or "lot.xlsx", type_lot=type,
-                                                     periode_reference=periode_reference, forcer=forcer)
+                                                     periode_reference=periode_reference, forcer=forcer,
+                                                     profil=profil)
+
+
+@router.post("/lots/depuis-selection", status_code=201)
+async def lot_depuis_selection(body: LotSelectionIn, c: Ctx = Depends(ctx("clientele.classif.execute")),
+                               db: AsyncSession = Depends(get_db)) -> dict:
+    return await ClienteleLotService(db, c).depuis_selection(
+        profil=body.profil, racines=body.racines, analyste_kyc=body.analyste_kyc,
+        periode_reference=body.periode_reference)
 
 
 @router.get("/lots/{lid}/integration")
@@ -553,8 +662,9 @@ async def classif_resultats_xlsx(f: dict = Depends(_filtres_resultats),
 
 def _filtres_historique(q: str | None = Query(None, max_length=120), source: str | None = None,
                         analyste: str | None = Query(None, max_length=120), lot_id: uuid.UUID | None = None,
-                        du: date | None = None, au: date | None = None) -> dict:
-    return {"q": q, "source": source, "analyste": analyste, "lot_id": lot_id, "du": du, "au": au}
+                        du: date | None = None, au: date | None = None,
+                        profil: str | None = Query(None, pattern="^(PP|PM)$")) -> dict:
+    return {"q": q, "source": source, "analyste": analyste, "lot_id": lot_id, "du": du, "au": au, "profil": profil}
 
 
 @router.get("/classification/historique")
@@ -564,12 +674,36 @@ async def classif_historique_global(f: dict = Depends(_filtres_historique), page
     return await ClienteleClassificationService(db, c).historique_global(**f, page=page, taille=taille)
 
 
+def _portee_historique(f: dict, portee: str) -> dict:
+    return {"profil": f.get("profil")} if portee == "tout" else f
+
+
 @router.get("/classification/historique.xlsx")
 async def classif_historique_xlsx(f: dict = Depends(_filtres_historique),
+                                  portee: str = Query("filtre", pattern="^(filtre|tout)$"),
                                   c: Ctx = Depends(ctx("clientele.classif.view")),
                                   db: AsyncSession = Depends(get_db)) -> Response:
-    return _xlsx(await ClienteleClassificationService(db, c).historique_xlsx(**f),
+    return _xlsx(await ClienteleClassificationService(db, c).historique_xlsx(**_portee_historique(f, portee)),
                  f"historique-classifications-{date.today().isoformat()}.xlsx")
+
+
+@router.get("/classification/historique.pdf")
+async def classif_historique_pdf(f: dict = Depends(_filtres_historique),
+                                 portee: str = Query("filtre", pattern="^(filtre|tout)$"),
+                                 c: Ctx = Depends(ctx("clientele.classif.view")),
+                                 db: AsyncSession = Depends(get_db)) -> Response:
+    return _pdf(await ClienteleClassificationService(db, c).historique_pdf(**_portee_historique(f, portee)),
+                f"historique-classifications-{date.today().isoformat()}.pdf")
+
+
+@router.get("/classification/historique/export/apercu")
+async def classif_historique_apercu(f: dict = Depends(_filtres_historique),
+                                    c: Ctx = Depends(ctx("clientele.export")),
+                                    db: AsyncSession = Depends(get_db)) -> dict:
+    svc = ClienteleClassificationService(db, c)
+    return {"filtre": await svc.historique_compter(**f),
+            "tout": await svc.historique_compter(profil=f.get("profil")),
+            "max_xlsx": 100_000, "max_pdf": 5_000}
 
 
 @router.get("/analystes")

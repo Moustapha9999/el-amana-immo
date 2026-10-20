@@ -5,7 +5,8 @@ import { MatIconModule } from '@angular/material/icon';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
 import { FeedbackService } from '../../core/feedback/feedback.service';
 import { ApiService } from '../../core/services/api.service';
-import { CL_BASE, MODES_DECISION, TraceClassification, dateHeureFr, n, telecharger } from '../clientele.models';
+import { ClExportComponent } from '../cl-export.component';
+import { CL_BASE, MODES_DECISION, TraceClassification, dateHeureFr, n } from '../clientele.models';
 import { ClienteleStore } from '../clientele.store';
 
 type Entree = {
@@ -17,17 +18,23 @@ type Entree = {
 @Component({
   selector: 'bea-cl-classif-historique',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, MatIconModule],
+  imports: [FormsModule, RouterLink, MatIconModule, ClExportComponent],
   template: `
     <section class="bea-mg__panel">
       <div class="bea-mg__panel-top">
         <h2>Historique des classifications</h2>
-        @if (store.cap().exporter) {
-          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="exporter()" [disabled]="busy()"><mat-icon>download</mat-icon> Export Excel</button>
-        }
+        <bea-cl-export [chemin]="base + '/classification/historique'" [apercu]="base + '/classification/historique/export/apercu'"
+          [params]="paramsExport()" [filtresActifs]="filtresActifs()" libelle="Historique des classifications"
+          nomFichier="historique-classifications"
+          [perimetre]="profil ? 'Tout l’historique des clients ' + profil + '.' : 'Tout l’historique (PP et PM).'" />
       </div>
       <p class="bea-cl-hint" style="padding:0 1.1rem 0.6rem">Historique en ajout seul : chaque changement de classe est conservé (ancienne et nouvelle classe, classe moteur, mode, motif, analyste, auteur, date, lot et ligne du fichier).</p>
       <div class="bea-cl-filters">
+        <label>Profil
+          <select [(ngModel)]="profil" (ngModelChange)="charger(1)">
+            <option value="">PP et PM</option><option value="PP">Personnes physiques</option><option value="PM">Personnes morales</option>
+          </select>
+        </label>
         <label>Source
           <select [(ngModel)]="source" (ngModelChange)="charger(1)">
             <option value="">Toutes</option><option value="MANUELLES">Décisions manuelles</option>
@@ -41,7 +48,7 @@ type Entree = {
       </div>
       <div class="bea-mg__table-wrap">
         <table class="bea-mg__table">
-          <thead><tr><th>Date</th><th>Racine</th><th>Identité</th><th>Ancienne</th><th>Nouvelle</th><th>Classe moteur</th><th>Mode</th><th>Motif</th><th>Analyste KYC</th><th>Auteur</th><th>Lot / ligne</th></tr></thead>
+          <thead><tr><th class="c-date">Date</th><th class="c-sm">Racine</th><th class="c-lg">Identité</th><th class="c-sm">Ancienne</th><th class="c-sm">Nouvelle</th><th class="c-sm">Classe moteur</th><th class="c-sm">Mode</th><th class="c-xl">Motif</th><th class="c-md">Analyste KYC</th><th class="c-md">Auteur</th><th class="c-sm">Lot / ligne</th></tr></thead>
           <tbody>
             @for (h of items(); track h.id) {
               <tr>
@@ -79,15 +86,24 @@ export class ClClassifHistoriqueComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly feedback = inject(FeedbackService);
   readonly store = inject(ClienteleStore);
+  readonly base = CL_BASE;
   readonly items = signal<Entree[]>([]);
   readonly total = signal(0);
   readonly page = signal(1);
-  readonly busy = signal(false);
   readonly taille = 50;
   readonly nbPages = computed(() => Math.max(1, Math.ceil(this.total() / this.taille)));
   readonly modes = MODES_DECISION;
   readonly n = n;
   readonly dh = dateHeureFr;
+  /** Filtres de la liste affichée (hors profil, qui définit le périmètre). */
+  readonly applique = signal<Record<string, string>>({});
+  readonly profilApplique = signal('');
+  readonly filtresActifs = computed(() => Object.keys(this.applique()).length > 0);
+  readonly paramsExport = computed(() => {
+    const p = this.profilApplique();
+    return p ? { ...this.applique(), profil: p } : this.applique();
+  });
+  profil = '';
   source = '';
   analyste = '';
   du = '';
@@ -109,17 +125,11 @@ export class ClClassifHistoriqueComponent implements OnInit {
   }
 
   charger(page: number): void {
-    this.api.get<{ total: number; items: Entree[] }>(`${CL_BASE}/classification/historique`, { ...this.filtres(), page, taille: this.taille }).subscribe({
+    this.applique.set(this.filtres());
+    this.profilApplique.set(this.profil);
+    this.api.get<{ total: number; items: Entree[] }>(`${CL_BASE}/classification/historique`, { ...this.paramsExport(), page, taille: this.taille }).subscribe({
       next: (r) => { this.items.set(r.items || []); this.total.set(r.total || 0); this.page.set(page); },
       error: (e) => void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Historique indisponible')),
-    });
-  }
-
-  exporter(): void {
-    this.busy.set(true);
-    this.api.download(`${CL_BASE}/classification/historique.xlsx`, this.filtres()).subscribe({
-      next: (b) => { this.busy.set(false); telecharger(b, `historique-classifications-${new Date().toISOString().slice(0, 10)}.xlsx`); },
-      error: (e) => { this.busy.set(false); void describeApiErrorAsync(e).then((i) => this.feedback.apiError(i, 'Export indisponible')); },
     });
   }
 }

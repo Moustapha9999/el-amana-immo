@@ -26,7 +26,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
 from sqlalchemy import delete, func, insert, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,7 +56,7 @@ from app.services.clientele.classification import (
 from app.services.clientele.consolidation import normaliser_entete
 from app.services.clientele.scoring import INVALIDE, lire_oui_non
 from app.services.clientele.service import Ctx, ClienteleService, conflit, maintenant
-from app.services.reporting_export import build_styled_workbook_multi
+from app.services.reporting_export import build_styled_pdf, build_styled_workbook, build_styled_workbook_multi
 
 TAILLE_MAX = 40 * 1024 * 1024
 LIGNES_MAX = 80_000
@@ -199,7 +199,8 @@ CHAMPS_KYC_CONFLIT = (
 )
 COLONNES_OBLIGATOIRES = {"racine": "RACINE CLIENT", "nom": "NOM CLIENT", "analyste": "Analyste KYC"}
 # Clés de ``lot.stats`` calculées hors des lignes (analyse, intégration) : conservées à chaque recalcul.
-STATS_CONSERVEES = ("lignes_ignorees", "absents_du_fichier", "colonnes_manquantes", "integration")
+STATS_CONSERVEES = ("lignes_ignorees", "absents_du_fichier", "colonnes_manquantes", "integration", "profil",
+                    "origine")
 DECISIONS_PREPAREES = ("ACCEPTER", "MODIFIER", "REJETER")
 STATUT_CLIENT = {"OK": "EXISTANT", "INCONNUE": "NOUVEAU", "AMBIGU": "AMBIGU", "DOUBLON": "DOUBLON",
                  "INVALIDE": "INVALIDE"}
@@ -513,7 +514,7 @@ class ClienteleLotService:
     # ------------------------------------------------------------------ analyse
     async def analyser(self, contenu: bytes, nom_fichier: str, *, type_lot: str = "LISTE",
                        mapping: dict | None = None, periode_reference: date | None = None,
-                       lid: uuid.UUID | None = None, forcer: bool = False) -> dict:
+                       lid: uuid.UUID | None = None, forcer: bool = False, profil: str | None = None) -> dict:
         if not self.ctx.peut("clientele.import.execute", "clientele.classif.execute"):
             self.ctx.exiger("clientele.classif.execute")
         type_lot = type_lot if type_lot in TYPES else "LISTE"
@@ -566,6 +567,16 @@ class ClienteleLotService:
             wb.close()
 
         await self._controler(lignes, type_lot)
+        if profil:
+            if profil not in ("PP", "PM"):
+                raise AppError("Profil attendu : PP ou PM", 422, code="PROFIL_INVALIDE")
+            connues = [x["racine_client"] for x in lignes if x["statut"] == "OK"]
+            profils = await self._profils(connues)
+            autres = sorted({r for r in connues if profils.get(r) != profil})
+            if autres:
+                raise AppError(
+                    f"{len(autres)} racine(s) du fichier ne sont pas des {profil} (ex. {', '.join(autres[:5])}) : "
+                    f"déposez un fichier ne contenant que des {profil}.", 422, code="PROFIL_MELANGE")
         if lid:
             lot = await self._charger(lid)
             if lot.statut in ("ENREGISTRE", "FERME"):
@@ -598,6 +609,8 @@ class ClienteleLotService:
             presents = {x["racine_client"] for x in lignes if x["statut"] == "OK"}
             total = int(await self.db.scalar(select(func.count()).select_from(ClienteleClient)) or 0)
             stats["absents_du_fichier"] = max(total - len(presents), 0)
+        if profil:
+            stats["profil"] = profil
         lot.stats = stats
         lot.evaluation = None
         lot.statut = "ANALYSE"
@@ -1049,6 +1062,88 @@ class ClienteleLotService:
                 "supprimer": not any((x.stats or {}).get(k) for k in ("acceptees", "modifiees", "rejetees")),
             },
         } for x in rows]}
+
+    async def exporter_historique(self, *, format: str = "xlsx") -> tuple[bytes, str]:
+        """Historique des imports / lots, même visibilité que ``lister`` (ses lots, ou tous pour l'admin)."""
+        self.ctx.exiger("clientele.export")
+        if not self.ctx.peut("clientele.import.execute", "clientele.classif.execute", "clientele.classif.view"):
+            self.ctx.exiger("clientele.classif.view")
+        q = select(ClienteleClassifLot)
+        if not self.ctx.peut("clientele.admin"):
+            q = q.where(ClienteleClassifLot.created_by_id == self.ctx.user.id)
+        lots = (await self.db.scalars(q.order_by(ClienteleClassifLot.created_at.desc()).limit(5_000))).all()
+        libelles = {"ANALYSE": "Analysé", "EVALUE": "Évalué", "ENREGISTRE": "Tout décidé", "FERME": "Fermé"}
+        entetes = ["Déposé le", "Fichier", "Profil", "Période", "Statut", "Lignes", "Nouveaux", "Intégrées",
+                   "À décider", "Acceptées", "Modifiées", "Rejetées"]
+        rows = []
+        for x in lots:
+            s = x.stats or {}
+            rows.append([
+                x.created_at.strftime("%d/%m/%Y %H:%M") if x.created_at else None,
+                " " + x.fichier_nom if (x.fichier_nom or "").startswith("=") else x.fichier_nom,
+                s.get("profil") or "PP + PM",
+                x.periode_reference.strftime("%d/%m/%Y") if x.periode_reference else None,
+                libelles.get(x.statut, x.statut),
+                int(s.get("lignes") or 0), int(s.get("nouveaux") or 0), int(s.get("integrees") or 0),
+                int(s.get("en_attente") or 0), int(s.get("acceptees") or 0), int(s.get("modifiees") or 0),
+                int(s.get("rejetees") or 0),
+            ])
+        titre = "Historique des imports de classification"
+        jour = date.today().isoformat()
+        await self.svc.audit("clientele.lots.export", "clientele_classif_lot", None,
+                             after={"format": format, "lignes": len(rows)})
+        if format == "pdf":
+            return (build_styled_pdf(report_title=titre, headers=entetes, rows=rows, landscape_mode=True),
+                    f"historique-imports-{jour}.pdf")
+        return (build_styled_workbook(sheet_title="Historique imports", report_title=titre, headers=entetes,
+                                      rows=rows), f"historique-imports-{jour}.xlsx")
+
+    async def depuis_selection(self, *, profil: str, racines: list[str], analyste_kyc: str | None,
+                               periode_reference: date | None = None) -> dict:
+        """Lot de classification à partir de racines sélectionnées, d'un seul profil (PP ou PM).
+
+        Même circuit que le dépôt d'un fichier : contrôle des racines et doublons, moteur, décisions
+        préparées puis confirmées. Un client d'un autre profil bloque la création (pas de mélange).
+        """
+        self.ctx.exiger("clientele.classif.execute")
+        if profil not in ("PP", "PM"):
+            raise AppError("Profil attendu : PP ou PM", 422, code="PROFIL_INVALIDE")
+        propres = [normaliser_racine(r) for r in racines]
+        if not racines or any(r is None for r in propres):
+            raise AppError("Sélection vide ou racine invalide (6 chiffres attendus)", 422, code="RACINE_INVALIDE")
+        uniques = list(dict.fromkeys(propres))
+        if len(uniques) > LIMITE_EVALUATION:
+            raise AppError(f"{len(uniques)} clients sélectionnés : {LIMITE_EVALUATION} au maximum par lot.", 422,
+                           code="LOT_TROP_GRAND")
+        profils = await self._profils(uniques)
+        autres = [r for r in uniques if profils.get(r) != profil]
+        if autres:
+            raise AppError(
+                f"{len(autres)} client(s) ne sont pas des {profil} (ex. {', '.join(autres[:5])}) : "
+                "un lot ne mélange jamais PP et PM.", 422, code="PROFIL_MELANGE")
+        noms = dict((await self.db.execute(
+            select(ClienteleSituation.racine_client, ClienteleSituation.nom_client)
+            .where(ClienteleSituation.racine_client.in_(uniques)))).all())
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "CLIENTS"
+        ws.append(["RACINE CLIENT", "NOM CLIENT", "Analyste KYC"])
+        for r in uniques:
+            ws.append([r, noms.get(r), analyste_kyc])
+        for (cell,) in ws.iter_rows(min_row=2, max_col=1):
+            cell.number_format = "@"
+        buf = BytesIO()
+        wb.save(buf)
+        horodatage = maintenant().strftime("%Y%m%d-%H%M%S")
+        lot = await self.analyser(buf.getvalue(), f"selection-{profil.lower()}-{horodatage}.xlsx",
+                                  type_lot="LISTE", periode_reference=periode_reference, forcer=True,
+                                  profil=profil)
+        obj = await self._charger(uuid.UUID(lot["id"]))
+        obj.stats = {**(obj.stats or {}), "origine": "SELECTION"}
+        await self.db.flush()
+        await self.svc.audit("clientele.lot.selection", "clientele_classif_lot", obj.id,
+                             after={"profil": profil, "racines": len(uniques)})
+        return {"id": str(obj.id), "profil": profil, "racines": len(uniques)}
 
     async def mettre_a_jour(self, lid: uuid.UUID, payload: dict) -> dict:
         """Met à jour le libellé et/ou la période (lot non fermé)."""

@@ -56,6 +56,7 @@ from app.services.clientele.scoring import (
     matrice_maitre_dict, nommer, valeurs_maitre_dict,
 )
 from app.services.clientele.service import Ctx, ClienteleService, maintenant
+from app.services.reporting_export import build_styled_pdf, build_styled_workbook
 
 NIVEAUX = ("FAIBLE", "MOYEN", "ELEVE", "INTERDIT")
 SOURCES_MANUELLES = ("MANUEL", "MANUEL_SURCHARGE")
@@ -175,25 +176,14 @@ def _date_fr(iso: str | None, *, heure: bool = False) -> str | None:
 
 def _xlsx(titre: str, entetes: list[str], lignes: list[list]) -> bytes:
     """Export tabulaire : racines et identifiants en texte (zéros de tête conservés)."""
-    wb = Workbook()
-    ws = wb.active
-    ws.title = titre[:31]
-    ws.append(entetes)
-    for lg in lignes:
-        ws.append(lg)
-    for row in ws.iter_rows(min_row=2, max_col=1):
-        for cell in row:
-            cell.number_format = "@"
-    entete = PatternFill("solid", fgColor="1E3A5F")
-    for i, cell in enumerate(ws[1], start=1):
-        cell.fill = entete
-        cell.font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
-        ws.column_dimensions[get_column_letter(i)].width = max(12, min(40, len(entetes[i - 1]) + 6))
-    ws.freeze_panes = "A2"
-    ws.auto_filter.ref = ws.dimensions
-    buf = BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
+    return build_styled_workbook(
+        sheet_title=titre, report_title=titre, headers=entetes,
+        rows=[[" " + v if isinstance(v, str) and v.startswith("=") else v for v in lg] for lg in lignes])
+
+
+def _pdf(titre: str, entetes: list[str], lignes: list[list], *, sous_titre: str | None = None) -> bytes:
+    return build_styled_pdf(report_title=titre, headers=entetes, rows=lignes, subtitle=sous_titre,
+                            landscape_mode=len(entetes) > 6)
 
 
 class ClienteleClassificationService:
@@ -855,12 +845,14 @@ class ClienteleClassificationService:
 
     def _requete_historique(self, *, q: str | None = None, source: str | None = None,
                             analyste: str | None = None, lot_id: uuid.UUID | None = None,
-                            du: date | None = None, au: date | None = None):
+                            du: date | None = None, au: date | None = None, profil: str | None = None):
         H = ClienteleClassifHistorique
         stmt = (select(H, User.full_name, ClienteleClient.raison_sociale, ClienteleSituation.profil_derive)
                 .outerjoin(User, User.id == H.created_by_id)
                 .outerjoin(ClienteleClient, ClienteleClient.racine_client == H.racine_client)
                 .outerjoin(ClienteleSituation, ClienteleSituation.racine_client == H.racine_client))
+        if profil in ("PP", "PM"):
+            stmt = stmt.where(ClienteleSituation.profil_derive == profil)
         if q:
             like = f"%{q.strip()}%"
             stmt = stmt.where(or_(H.racine_client.like(like), ClienteleClient.raison_sociale.ilike(like)))
@@ -889,11 +881,12 @@ class ClienteleClassificationService:
 
     async def historique_global(self, *, q: str | None = None, source: str | None = None,
                                 analyste: str | None = None, lot_id: uuid.UUID | None = None,
-                                du: date | None = None, au: date | None = None,
+                                du: date | None = None, au: date | None = None, profil: str | None = None,
                                 page: int = 1, taille: int = 50) -> dict:
         """Historique de toutes les classifications (table en ajout seul)."""
         self.ctx.exiger("clientele.classif.view")
-        stmt = self._requete_historique(q=q, source=source, analyste=analyste, lot_id=lot_id, du=du, au=au)
+        stmt = self._requete_historique(q=q, source=source, analyste=analyste, lot_id=lot_id, du=du, au=au,
+                                        profil=profil)
         page, taille = max(1, page), min(max(1, taille), 200)
         total = await self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
         rows = (await self.db.execute(
@@ -919,11 +912,44 @@ class ClienteleClassificationService:
                 d["lot_id"], d["ligne_source"],
             ])
         await self.svc.audit("clientele.classif.historique.export", "clientele_classif_historique", None,
-                             after={"lignes": len(lignes)})
+                             after={"lignes": len(lignes), "format": "xlsx",
+                                    "filtres": sorted(k for k, v in filtres.items() if v)})
         return _xlsx("Historique classifications", [
             "Racine", "PP/PM", "Identité", "Ancienne classe", "Nouvelle classe", "Classe moteur", "Score",
             "Version moteur", "Source", "Mode", "Motif", "Analyste KYC", "Utilisateur", "Date", "Lot",
             "Ligne du fichier",
+        ], lignes)
+
+    async def historique_compter(self, **filtres) -> int:
+        self.ctx.exiger("clientele.classif.view")
+        stmt = self._requete_historique(**filtres)
+        return int(await self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
+
+    async def historique_pdf(self, **filtres) -> bytes:
+        """Version imprimable : colonnes de décision seulement (les traces techniques restent dans l'Excel)."""
+        self.ctx.exiger("clientele.export")
+        total = await self.historique_compter(**filtres)
+        if total > 5_000:
+            raise AppError(f"{total} lignes : le PDF est limité à 5 000 lignes. Utilisez l'export Excel ou "
+                           "affinez les filtres.", 422, code="EXPORT_TROP_VOLUMINEUX")
+        stmt = self._requete_historique(**filtres)
+        rows = (await self.db.execute(stmt.order_by(ClienteleClassifHistorique.created_at.desc()))).all()
+        lignes = []
+        for r in rows:
+            d = self._historique_dict(*r)
+            lignes.append([
+                _date_fr(d["date"], heure=True), d["racine_client"], d["profil"], d["raison_sociale"],
+                d["ancienne_classe"], d["nouvelle_classe"], d["niveau_propose"],
+                d["mode_decision"] or MODE_PAR_SOURCE.get(d["source"] or ""),
+                d["motif_decision_manuelle"] or d["motif_classement"], d["analyste_kyc"], d["utilisateur"],
+            ])
+        await self.svc.audit("clientele.classif.historique.export", "clientele_classif_historique", None,
+                             after={"lignes": len(lignes), "format": "pdf",
+                                    "filtres": sorted(k for k, v in filtres.items() if v)})
+        profil = filtres.get("profil")
+        return _pdf(f"Historique des classifications{' ' + profil if profil in ('PP', 'PM') else ''}", [
+            "Date", "Racine", "PP/PM", "Identité", "Ancienne", "Nouvelle", "Classe moteur", "Mode", "Motif",
+            "Analyste KYC", "Utilisateur",
         ], lignes)
 
     async def appliquer_moteur(self, *, racine: str | None = None, forcer: bool = False) -> dict:

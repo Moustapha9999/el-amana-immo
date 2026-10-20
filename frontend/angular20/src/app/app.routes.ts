@@ -76,6 +76,8 @@ const clSituation = () => import('./clientele/pages/cl-situation.component').the
 const clFiche = () => import('./clientele/pages/cl-fiche.component').then((m) => m.ClFicheComponent);
 const clRapprochements = () => import('./clientele/pages/cl-rapprochements.component').then((m) => m.ClRapprochementsComponent);
 const clClassification = () => import('./clientele/pages/cl-classification.component').then((m) => m.ClClassificationComponent);
+const clClassifSuivi = () => import('./clientele/pages/cl-classif-suivi.component').then((m) => m.ClClassifSuiviComponent);
+const clClassifProfil = () => import('./clientele/pages/cl-classif-profil.component').then((m) => m.ClClassifProfilComponent);
 const clHebdoPage = () => import('./clientele/pages/cl-hebdo-page.component').then((m) => m.ClHebdoPageComponent);
 const clFiltrage = () => import('./clientele/pages/cl-filtrage.component').then((m) => m.ClFiltrageComponent);
 const clAlerte = () => import('./clientele/pages/cl-alerte.component').then((m) => m.ClAlerteComponent);
@@ -331,6 +333,9 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'mapping', loadComponent: clMapping },
       { path: 'rapprochements', loadComponent: clRapprochements },
       { path: 'classification', loadComponent: clClassification },
+      { path: 'classification-suivi', loadComponent: clClassifSuivi },
+      { path: 'classification-pp', loadComponent: clClassifProfil, data: { profil: 'PP' } },
+      { path: 'classification-pm', loadComponent: clClassifProfil, data: { profil: 'PM' } },
       { path: 'import-hebdo', loadComponent: clHebdoPage, data: { mode: 'import' } },
       { path: 'imports-historique', loadComponent: clHebdoPage, data: { mode: 'historique' } },
       { path: 'classification-lot', loadComponent: clHebdoPage, data: { mode: 'lot' } },

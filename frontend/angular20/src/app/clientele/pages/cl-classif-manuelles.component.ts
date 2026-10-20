@@ -39,7 +39,7 @@ type Manuelle = {
       </div>
       <div class="bea-mg__table-wrap">
         <table class="bea-mg__table">
-          <thead><tr><th>Racine</th><th>Identité</th><th>Classe retenue</th><th>Classe moteur (au moment de la décision)</th><th>Analyste KYC</th><th>Motif</th><th>Date</th></tr></thead>
+          <thead><tr><th class="c-sm">Racine</th><th class="c-lg">Identité</th><th class="c-sm">Classe retenue</th><th class="c-md">Classe moteur (au moment de la décision)</th><th class="c-md">Analyste KYC</th><th class="c-xl">Motif</th><th class="c-date">Date</th></tr></thead>
           <tbody>
             @for (i of items(); track i.racine_client) {
               <tr>

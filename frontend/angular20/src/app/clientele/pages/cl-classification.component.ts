@@ -173,7 +173,7 @@ const TAILLE_VALEURS = 80;
             </div>
             <div class="bea-mg__table-wrap">
               <table class="bea-mg__table">
-                <thead><tr><th>Racine</th><th>Nom</th><th>Niveau</th><th>Source</th><th>Motifs</th><th>Le</th></tr></thead>
+                <thead><tr><th class="c-sm">Racine</th><th class="c-lg">Nom</th><th class="c-sm">Niveau</th><th class="c-sm">Source</th><th class="c-xl">Motifs</th><th class="c-date">Le</th></tr></thead>
                 <tbody>
                   @for (i of items(); track i.racine_client) {
                     <tr class="is-click" [routerLink]="['/clientele/clients', i.racine_client]" style="cursor:pointer">
@@ -413,7 +413,7 @@ const TAILLE_VALEURS = 80;
             <p class="bea-cl-hint" style="padding:0 1.1rem 0.6rem">Ouverts lorsqu’un import ou le moteur propose un niveau différent d’une décision manuelle : la décision manuelle n’est jamais remplacée silencieusement.</p>
             <div class="bea-mg__table-wrap">
               <table class="bea-mg__table">
-                <thead><tr><th>Ouvert le</th><th>Racine</th><th>Nom</th><th>Actuel</th><th>Suggéré</th><th>Origine</th><th>Motif</th><th></th></tr></thead>
+                <thead><tr><th class="c-date">Ouvert le</th><th class="c-sm">Racine</th><th class="c-lg">Nom</th><th class="c-sm">Actuel</th><th class="c-sm">Suggéré</th><th class="c-sm">Origine</th><th class="c-xl">Motif</th><th class="c-act"></th></tr></thead>
                 <tbody>
                   @for (r of reexamens(); track r.id) {
                     <tr>

@@ -39,7 +39,7 @@ interface Resultat {
       @if (cherche()) {
         <div class="bea-mg__table-wrap">
           <table class="bea-mg__table">
-            <thead><tr><th>Racine</th><th>Nom</th><th>NNI / NIF</th><th>Comptes</th><th>Classification</th><th>Décision</th><th></th></tr></thead>
+            <thead><tr><th class="c-sm">Racine</th><th class="c-lg">Nom</th><th class="c-md">NNI / NIF</th><th class="c-xs">Comptes</th><th class="c-md">Classification</th><th class="c-md">Décision</th><th class="c-act"></th></tr></thead>
             <tbody>
               @for (r of resultats(); track r.racine_client) {
                 <tr>

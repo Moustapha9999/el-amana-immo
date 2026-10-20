@@ -250,7 +250,7 @@ const RESULTATS: Record<string, string> = {
             <div class="bea-mg__panel-top"><h2>Historique de classification</h2><span class="bea-mg__count">{{ historique().length }}</span></div>
             <div class="bea-mg__table-wrap">
               <table class="bea-mg__table">
-                <thead><tr><th>Date</th><th>Utilisateur</th><th>Ancien → nouveau</th><th>Mode</th><th>Score / proposé</th><th>Fichier</th><th>Motif</th><th>Analyste KYC</th><th>Lot / ligne</th></tr></thead>
+                <thead><tr><th class="c-date">Date</th><th class="c-md">Utilisateur</th><th class="c-md">Ancien → nouveau</th><th class="c-sm">Mode</th><th class="c-sm">Score / proposé</th><th class="c-md">Fichier</th><th class="c-xl">Motif</th><th class="c-md">Analyste KYC</th><th class="c-sm">Lot / ligne</th></tr></thead>
                 <tbody>
                   @for (h of historique(); track h.id) {
                     <tr>

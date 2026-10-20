@@ -171,7 +171,6 @@ tr.is-off td { color: #94a3b8; }
 .bea-cl-pager,.bea-cl-pager span,.bea-cl-pager label{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem}
 .bea-cl-pager{justify-content:space-between;padding:.7rem 1.1rem;border-top:1px solid #eef2f7;font-size:.84rem}
 .bea-cl-pager input{width:4rem;font:inherit;padding:.3rem;border:1px solid #dbe3ee;border-radius:.4rem}
-.bea-cl .bea-mg__table-wrap { overflow-x: auto; }
 .bea-cl-lot-table { min-width: 64rem; width: 100%; }
 .bea-cl-lot-table th, .bea-cl-lot-table td { white-space: nowrap; vertical-align: middle; }
 .bea-cl-lot-table .bea-cl-nom { width: 30%; max-width: 26rem; overflow: hidden; text-overflow: ellipsis; }

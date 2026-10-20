@@ -35,7 +35,7 @@ const TAILLE = 50;
       }
       <div class="bea-mg__table-wrap">
         <table class="bea-mg__table">
-          <thead><tr><th>Date</th>@if (!racine()) {<th>Client</th>}<th>Action</th><th>Champ</th><th>Ancienne → nouvelle</th><th>Motif</th><th>Analyste KYC</th><th>Source</th><th>Utilisateur</th></tr></thead>
+          <thead><tr><th class="c-date">Date</th>@if (!racine()) {<th class="c-lg">Client</th>}<th class="c-md">Action</th><th class="c-sm">Champ</th><th class="c-lg">Ancienne → nouvelle</th><th class="c-xl">Motif</th><th class="c-md">Analyste KYC</th><th class="c-sm">Source</th><th class="c-md">Utilisateur</th></tr></thead>
           <tbody>
             @for (j of items(); track j.id) {
               <tr>
@@ -46,7 +46,7 @@ const TAILLE = 50;
                 <td><span class="bea-cl-badge" [attr.data-s]="j.type_action">{{ j.libelle_action }}</span></td>
                 <td>{{ j.champ || '—' }}</td>
                 <td>{{ j.ancienne_valeur || '—' }} → <strong>{{ j.nouvelle_valeur || '—' }}</strong></td>
-                <td style="max-width:24rem">{{ j.motif || '—' }}</td>
+                <td>{{ j.motif || '—' }}</td>
                 <td>{{ j.analyste_kyc || '—' }}</td>
                 <td>{{ j.origine === 'IMPORT' ? 'Import' + (j.ligne_source ? ' · L' + j.ligne_source : '') : 'Saisie' }}@if (j.groupe_id) { <small class="bea-cl-hint"> · groupe</small> }</td>
                 <td>{{ j.utilisateur || '—' }}</td>

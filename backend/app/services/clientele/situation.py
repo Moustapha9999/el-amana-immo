@@ -28,8 +28,16 @@ from app.models import (
 )
 from app.services.clientele.classification import ClienteleClassificationService
 from app.services.clientele.service import Ctx, ClienteleService
+from app.services.reporting_export import build_styled_pdf, build_styled_workbook
 
 VERSION_MAPPING_SITUATION = "2026.10.situation.1"
+EXPORT_MAX_XLSX = 100_000
+EXPORT_MAX_PDF = 5_000
+
+
+def _texte_xlsx(v):
+    """Une chaîne commençant par « = » serait lue par Excel comme une formule."""
+    return " " + v if isinstance(v, str) and v.startswith("=") else v
 
 _MOIS_FR = (
     "", "janvier", "février", "mars", "avril", "mai", "juin",
@@ -218,6 +226,14 @@ class ClienteleSituationService:
             base.order_by(ClienteleSituation.racine_client)
             .offset((page - 1) * taille).limit(taille)
         )).all())
+        return {
+            "total": int(total),
+            "page": page,
+            "taille": taille,
+            "items": await self._enrichir(rows),
+        }
+
+    async def _enrichir(self, rows: list[ClienteleSituation]) -> list[dict]:
         racines = [r.racine_client for r in rows]
         classes = {c.racine_client: c for c in (await self.db.scalars(
             select(ClienteleClassification).where(ClienteleClassification.racine_client.in_(racines)))).all()}
@@ -240,12 +256,89 @@ class ClienteleSituationService:
                 "analyste_kyc": (c.analyste_kyc if c and c.analyste_kyc else None) or kyc.get(r.racine_client),
                 "classifie_le": c.classifie_le.isoformat() if c and c.classifie_le else None,
             }
-        return {
-            "total": int(total),
-            "page": page,
-            "taille": taille,
-            "items": [ligne(r) for r in rows],
-        }
+        return [ligne(r) for r in rows]
+
+    async def apercu_export(self, *, profil: str, **filtres) -> dict:
+        """Lignes exportées : filtres actuels vs toute la population du profil."""
+        self.ctx.exiger("clientele.export")
+        self.ctx.exiger("clientele.view")
+        profil = self._profil_export(profil)
+        compter = lambda f: self.db.scalar(select(func.count()).select_from(  # noqa: E731
+            self._filtre(select(ClienteleSituation), profil=profil, **f).subquery()))
+        return {"filtre": int(await compter(self._filtres_export(filtres)) or 0),
+                "tout": int(await compter(self._filtres_export({})) or 0),
+                "max_xlsx": EXPORT_MAX_XLSX, "max_pdf": EXPORT_MAX_PDF}
+
+    @staticmethod
+    def _profil_export(profil: str | None) -> str:
+        if profil not in ("PP", "PM"):
+            raise AppError("Profil attendu : PP ou PM", 422, code="PROFIL_INVALIDE")
+        return profil
+
+    @staticmethod
+    def _filtres_export(f: dict) -> dict:
+        cles = ("recherche", "racine", "nom", "compte", "rib", "agence", "etat", "type_identifiant")
+        out = {k: f.get(k) for k in cles}
+        if f.get("q") and not out["recherche"]:
+            out["recherche"] = f["q"]
+        return out
+
+    async def exporter(self, *, profil: str, format: str, portee: str = "filtre", **filtres) -> tuple[bytes, str]:
+        """Liste Clients PP ou PM (jamais mélangés) en Excel ou PDF ; sortie seule, aucune écriture."""
+        self.ctx.exiger("clientele.export")
+        self.ctx.exiger("clientele.view")
+        profil = self._profil_export(profil)
+        fmt = "pdf" if format == "pdf" else "xlsx"
+        actifs = self._filtres_export(filtres if portee == "filtre" else {})
+        base = self._filtre(select(ClienteleSituation), profil=profil, **actifs)
+        limite = EXPORT_MAX_PDF if fmt == "pdf" else EXPORT_MAX_XLSX
+        total = int(await self.db.scalar(select(func.count()).select_from(base.subquery())) or 0)
+        if total > limite:
+            raise AppError(
+                f"{total} lignes : l'export {fmt.upper()} est limité à {limite} lignes. "
+                + ("Utilisez l'export Excel ou affinez les filtres." if fmt == "pdf" else "Affinez les filtres."),
+                422, code="EXPORT_TROP_VOLUMINEUX")
+        lignes: list[dict] = []
+        for i in range(0, total, 2000):
+            rows = list((await self.db.scalars(
+                base.order_by(ClienteleSituation.racine_client).offset(i).limit(2000))).all())
+            lignes.extend(await self._enrichir(rows))
+
+        pp = profil == "PP"
+        entetes = (["Racine client", "Nom", "Prénom(s)"] if pp else ["Racine client", "Raison sociale"]) + [
+            "Agence", "Date d'ouverture", "État", "Comptes ouverts / total", "NNI" if pp else "NIF",
+            "Classe retenue", "Classe moteur", "Analyste KYC"]
+        rows_out = []
+        for x in lignes:
+            ident = [x["racine_client"], x["nom_client"]] + ([x["prenoms"]] if pp else [])
+            rows_out.append([_texte_xlsx(v) for v in ident + [
+                f"{x['code_agence']} — {x['agence']}" if x["code_agence"] and x["agence"] else x["code_agence"],
+                x["date_ouverture"] and date.fromisoformat(x["date_ouverture"]).strftime("%d/%m/%Y"),
+                x["etat_client"], f"{x['nb_comptes_ouverts']} / {x['nb_comptes']}",
+                x["nni"] if pp else x["nif"], x["classe_retenue"] or "Non classé", x["classe_moteur"],
+                x["analyste_kyc"],
+            ]])
+        classes = sum(1 for x in lignes if x["classe_retenue"])
+        libelle = "personnes physiques (PP)" if pp else "personnes morales (PM)"
+        titre = f"Clients {libelle}"
+        filtres_txt = ", ".join(f"{k} = {v}" for k, v in actifs.items() if v)
+        taux = f"{classes / len(lignes) * 100:.1f} %".replace(".", ",") if lignes else "Non applicable"
+        sous_titre = (f"{'Filtres : ' + filtres_txt if filtres_txt else 'Toute la population ' + profil} · "
+                      f"Classés : {classes} / {len(lignes)} ({taux})")
+        nom = f"clients-{profil.lower()}-{'filtre' if portee == 'filtre' else 'complet'}-{date.today().isoformat()}.{fmt}"
+        if fmt == "pdf":
+            garder = [i for i, h in enumerate(entetes) if h != "Comptes ouverts / total"]
+            contenu = build_styled_pdf(report_title=titre, headers=[entetes[i] for i in garder],
+                                       rows=[[r[i] for i in garder] for r in rows_out], subtitle=sous_titre,
+                                       landscape_mode=True)
+        else:
+            contenu = build_styled_workbook(sheet_title=f"Clients {profil}", report_title=titre,
+                                            headers=entetes, rows=rows_out, subtitle=sous_titre)
+        await self.svc.audit("clientele.situation.export", "clientele_situation", None, after={
+            "profil": profil, "format": fmt, "portee": portee, "lignes": len(lignes),
+            "filtres": sorted(k for k, v in actifs.items() if v),
+        })
+        return contenu, nom
 
     async def tableau_de_bord(self) -> dict:
         self.ctx.exiger("clientele.view")

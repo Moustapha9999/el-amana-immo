@@ -138,6 +138,27 @@ une décision manuelle n’est jamais remplacée par le moteur ni par un import 
 obligatoire et présent dans le référentiel `clientele_analystes_kyc` (vide après migration :
 à alimenter avant toute décision).
 
+### Suivi de la classification PP/PM et exports (20/10/2026)
+
+Aucune migration : lecture des tables existantes (`clientele_situation`, `clientele_classifications`,
+`clientele_classif_evaluations`).
+
+| Écran | Route front | API |
+|-------|-------------|-----|
+| Tableau de bord de classification | `/clientele/classification-suivi` | `GET /suivi/progression?perimetre=TOUS\|OUVERTS`, `GET /suivi/progression.{xlsx,pdf}` |
+| Classification PP / PM | `/clientele/classification-pp`, `/clientele/classification-pm` | `GET /suivi/clients?profil=`, `GET /suivi/export/apercu`, `GET /suivi/export.{xlsx,pdf}?portee=filtre\|tout` |
+| Classer une entité (depuis la liste) | idem | `POST /clients/{racine}/classification` |
+| Lot depuis une sélection | idem | `POST /lots/depuis-selection` (un seul profil, 2 000 racines max) ; `POST /lots/analyse?profil=` refuse un fichier mixte (`PROFIL_MELANGE`) |
+| Exports Clients PP / PM | `/clientele/situation-pp`, `/clientele/situation-pm` | `GET /situation/export/apercu`, `GET /situation/export.{xlsx,pdf}` |
+| Exports historique | onglet historique, `/clientele/imports-historique` | `GET /classification/historique.{xlsx,pdf}?profil=&portee=`, `GET /classification/historique/export/apercu`, `GET /lots/export.{xlsx,pdf}` |
+
+Définitions : « classé » = classification retenue avec un niveau du référentiel ; % = classés / total
+(0–100, « Non applicable » si total = 0) ; périmètre « ouverts » = au moins un compte ouvert ; profils
+non identifiés hors pourcentages. Exports : permission `clientele.export`, audités
+(`clientele.suivi.export`, `clientele.situation.export`), limites 100 000 lignes Excel / 5 000 PDF,
+identifiants en texte (zéros conservés). Les exports BCM / SIC gardent leurs modèles officiels.
+Limite connue : PDF en Helvetica (pas de caractères arabes).
+
 ## Module Formation & Sensibilisation (07/10/2026)
 
 Remplace le fichier Excel de suivi des formations. Code `formation`, URLs `/formation/...`,

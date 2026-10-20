@@ -384,6 +384,55 @@ export interface AnomaliePage {
   items: { numero: number; racine_client: string | null; code: string; message: string; bloquante: boolean }[];
 }
 
+/** Progression de la classification d'une population (PP, PM ou PP + PM). */
+export interface BlocProgression {
+  profil: 'PP' | 'PM' | 'GLOBAL';
+  total: number; classes: number; non_classes: number;
+  /** Non classés avec une proposition moteur exploitable (décision à prendre). */
+  a_valider: number;
+  /** Non classés dont le dernier calcul moteur n'a pas donné de niveau exploitable. */
+  non_classables: number;
+  sans_calcul: number; ecarts_moteur: number; manuels: number;
+  /** null = population vide (non applicable). */
+  pourcentage: number | null;
+  par_niveau: { niveau: string; clients: number }[];
+}
+
+export interface ProgressionClassification {
+  perimetre: 'TOUS' | 'OUVERTS';
+  perimetre_libelle: string;
+  calcule_le: string;
+  definition_classe: string;
+  pp: BlocProgression; pm: BlocProgression; global: BlocProgression;
+  hors_perimetre: { non_identifies: number };
+  lots_ouverts: number;
+}
+
+export type StatutClassification = 'CLASSE' | 'A_VALIDER' | 'NON_CLASSABLE' | 'NON_CALCULE';
+
+export const STATUTS_CLASSIFICATION: Record<StatutClassification, string> = {
+  CLASSE: 'Classé',
+  A_VALIDER: 'Proposition à valider',
+  NON_CLASSABLE: 'Moteur sans résultat',
+  NON_CALCULE: 'Non calculé',
+};
+
+export interface LigneSuivi {
+  racine_client: string; nom_client: string; prenoms: string | null; nni: string | null; nif: string | null;
+  profil: string; etat_client: string; code_agence: string | null; agence: string | null;
+  classe_moteur: string | null; statut_moteur: string | null; calcule_le: string | null;
+  classe_retenue: string | null; source: string | null; mode_decision: string | null;
+  analyste_kyc: string | null; classifie_le: string | null;
+  statut_classification: StatutClassification; ecart_moteur: boolean;
+}
+
+export interface PageSuivi { total: number; page: number; taille: number; items: LigneSuivi[] }
+
+export function pourcentageFr(v: number | null | undefined): string {
+  if (v === null || v === undefined) return 'Non applicable';
+  return `${v.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}\u00a0%`;
+}
+
 export function dateFr(iso: string | null | undefined): string {
   if (!iso) return '—';
   const [y, m, d] = iso.slice(0, 10).split('-');
