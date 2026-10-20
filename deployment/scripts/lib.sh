@@ -58,21 +58,52 @@ charger_archive_images() {
   docker load -i "$IMAGES_TAR"
 }
 
-# Attend /health/ready (base + Redis) puis vérifie que /version annonce la version attendue.
+# Révision Alembic réellement enregistrée en base (indépendante de l'image qui tourne).
+revision_base() {
+  compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
+    "SELECT version_num FROM alembic_version LIMIT 1;" 2>/dev/null | tr -d '[:space:]'
+}
+
+# Compatibilité retour arrière des migrations entre <révision> et la head de l'image <version>.
+# Affiche le détail ; positionne RETOUR_ARRIERE=aucune_migration|compatible|restauration.
+analyser_retour() {
+  local version="$1" depuis="$2" sortie
+  sortie="$(BEA_VERSION="$version" compose run --rm --no-deps -T --entrypoint python backend \
+    scripts/migrations_retour.py "$depuis" 2>&1 || true)"
+  echo "$sortie" | grep -v '^RETOUR_ARRIERE=' || true
+  RETOUR_ARRIERE="$(echo "$sortie" | sed -n 's/^RETOUR_ARRIERE=//p' | tail -1)"
+  RETOUR_ARRIERE="${RETOUR_ARRIERE:-restauration}"
+}
+
+# Santé du worker : état du healthcheck Docker (ping Celery), le worker n'ayant pas d'URL.
+worker_sain() {
+  local id
+  id="$(compose ps -q worker 2>/dev/null)"
+  [[ -n "$id" ]] && [[ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$id" 2>/dev/null)" == "healthy" ]]
+}
+
+# Attend /health/ready (base + Redis) et /version = version attendue, puis le worker sain.
+# /health (sans suffixe) ne teste que le processus API : il sert au healthcheck Docker du conteneur.
 controle_sante() {
-  local attendue="$1" i
+  local attendue="$1" i api_ok=0
   for i in $(seq 1 "$HEALTH_RETRIES"); do
-    if curl -fsS "$BASE_URL/health/ready" > /tmp/bea-ready.json 2>/dev/null; then
+    if [[ "$api_ok" -eq 0 ]] && curl -fsS "$BASE_URL/health/ready" > /tmp/bea-ready.json 2>/dev/null; then
       local v
       v="$(curl -fsS "$BASE_URL/version" 2>/dev/null | sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p')"
       if [[ "$v" == "$attendue" ]]; then
-        echo "Santé OK (tentative $i) — version ${v}"
+        echo "API OK (tentative $i) — version ${v}"
         cat /tmp/bea-ready.json; echo
-        return 0
+        api_ok=1
+      else
+        echo "  version servie « ${v} » ≠ « ${attendue} » (tentative $i)"
       fi
-      echo "  version servie « ${v} » ≠ « ${attendue} » (tentative $i)"
+    fi
+    if [[ "$api_ok" -eq 1 ]] && worker_sain; then
+      echo "Worker OK (tentative $i)"
+      return 0
     fi
     sleep "$HEALTH_SLEEP"
   done
+  [[ "$api_ok" -eq 1 ]] && echo "ERREUR: worker non sain (healthcheck Celery)" >&2
   return 1
 }

@@ -6,8 +6,10 @@
 #   Registre (GitLab / registre interne) :
 #     BEA_VERSION=v1.6.0 BEA_IMAGE_BACKEND=registre/bea/backend BEA_IMAGE_FRONTEND=registre/bea/frontend ./deployment/scripts/deploy.sh
 #
-# Étapes : images → base non vide → sauvegarde vérifiée → migrations (nouvelle image) → redémarrage
-#          → contrôle /health/ready + /version. Échec du contrôle : retour automatique à la version précédente.
+# Étapes : images → base non vide → sauvegarde vérifiée → analyse des migrations → migrations (nouvelle
+#          image) → redémarrage → contrôle /health/ready + /version + worker.
+# Échec du contrôle : retour automatique à la version précédente SEULEMENT si aucune migration n'a été
+# appliquée ou si toutes déclarent retour_arriere = "compatible" ; sinon arrêt et commande de restauration.
 # Ne supprime jamais de volume ni de donnée.
 set -euo pipefail
 
@@ -21,7 +23,7 @@ CIBLE="$BEA_VERSION"
 charger_env
 BEA_VERSION="$CIBLE"; export BEA_VERSION
 export GIT_SHA="${GIT_SHA:-unknown}"
-mkdir -p "$ETAT_DIR" backups storage/uploads storage/ged
+mkdir -p "$ETAT_DIR/revisions" "$ETAT_DIR/sauvegardes" backups storage/uploads storage/ged
 
 PRECEDENTE=""
 [[ -f "$ETAT_DIR/version_courante" ]] && PRECEDENTE="$(cat "$ETAT_DIR/version_courante")"
@@ -54,21 +56,30 @@ Les migrations ne s'appliquent jamais sur une base vide."
 fi
 
 # 3. Sauvegarde vérifiée -----------------------------------------------------
+SAUVEGARDE=""
 if [[ "${SKIP_BACKUP:-0}" == "1" ]]; then
   echo "ATTENTION: sauvegarde ignorée (SKIP_BACKUP=1)"
 else
-  BEA_VERSION="avant_${CIBLE}" bash deployment/scripts/backup-pre-deploy.sh
+  BEA_VERSION="avant_${CIBLE}" NOTER_SAUVEGARDE="$ETAT_DIR/sauvegardes/avant_${CIBLE}" \
+    bash deployment/scripts/backup-pre-deploy.sh
+  SAUVEGARDE="$(cat "$ETAT_DIR/sauvegardes/avant_${CIBLE}")"
 fi
 
 # 4. Migrations avec l'image de la nouvelle version ---------------------------
+REV_AVANT="$(revision_base)"
+[[ -n "$REV_AVANT" ]] || echec "révision Alembic illisible en base (table alembic_version absente ?)"
+[[ -n "$PRECEDENTE" && ! -f "$ETAT_DIR/revisions/$PRECEDENTE" ]] && echo "$REV_AVANT" > "$ETAT_DIR/revisions/$PRECEDENTE"
+etape "Analyse des migrations à appliquer (depuis ${REV_AVANT})"
+analyser_retour "$CIBLE" "$REV_AVANT"
+echo "Retour arrière sans restauration : ${RETOUR_ARRIERE}"
+
 etape "Migrations de base (alembic upgrade head)"
-REV_AVANT="$(compose run --rm --no-deps -T --entrypoint alembic backend current 2>/dev/null | tail -1 || true)"
-echo "Révision avant : ${REV_AVANT:-inconnue}"
 compose run --rm --no-deps -T --entrypoint alembic backend upgrade head \
   || echec "migrations en échec : aucune application redémarrée, version ${PRECEDENTE:-précédente} toujours en place. \
-Restaurer la sauvegarde si la base est incohérente (deployment/scripts/restore.sh)."
-REV_APRES="$(compose run --rm --no-deps -T --entrypoint alembic backend current 2>/dev/null | tail -1 || true)"
-echo "Révision après : ${REV_APRES:-inconnue}"
+Vérifier la révision en base ; si elle a changé, restaurer : REMPLACER=1 VERSION_APPLI=${PRECEDENTE:-<version>} ./deployment/scripts/restore.sh ${SAUVEGARDE:-<sauvegarde>}"
+REV_APRES="$(revision_base)"
+echo "Révision : ${REV_AVANT} → ${REV_APRES:-inconnue}"
+[[ "$REV_APRES" == "$REV_AVANT" ]] && RETOUR_ARRIERE="aucune_migration"
 
 # 5. Redémarrage applicatif --------------------------------------------------
 etape "Redémarrage backend, worker, frontend en ${CIBLE}"
@@ -80,7 +91,8 @@ etape "Contrôle de santé ${BASE_URL}"
 if [[ "$DEMARRE" -eq 1 ]] && controle_sante "$CIBLE"; then
   [[ -n "$PRECEDENTE" && "$PRECEDENTE" != "$CIBLE" ]] && echo "$PRECEDENTE" > "$ETAT_DIR/version_precedente"
   echo "$CIBLE" > "$ETAT_DIR/version_courante"
-  echo "$(date '+%F %T') DEPLOY ${CIBLE} OK (avant: ${PRECEDENTE:-aucune}, sha: ${GIT_SHA}, rev: ${REV_APRES})" >> "$ETAT_DIR/historique.log"
+  echo "$REV_APRES" > "$ETAT_DIR/revisions/$CIBLE"
+  echo "$(date '+%F %T') DEPLOY ${CIBLE} OK (avant: ${PRECEDENTE:-aucune}, sha: ${GIT_SHA}, rev: ${REV_AVANT} → ${REV_APRES}, retour: ${RETOUR_ARRIERE})" >> "$ETAT_DIR/historique.log"
   compose ps
   echo "DEPLOY_OK version=${CIBLE}"
   exit 0
@@ -88,9 +100,22 @@ fi
 
 echo "ERREUR: contrôle de santé en échec pour ${CIBLE}" >&2
 compose logs --tail=80 backend worker >&2 || true
-echo "$(date '+%F %T') DEPLOY ${CIBLE} ECHEC" >> "$ETAT_DIR/historique.log"
-if [[ -n "$PRECEDENTE" && "$PRECEDENTE" != "$CIBLE" ]]; then
-  etape "Retour automatique à ${PRECEDENTE}"
-  BEA_VERSION="$PRECEDENTE" bash deployment/scripts/rollback.sh "$PRECEDENTE" || true
+echo "$(date '+%F %T') DEPLOY ${CIBLE} ECHEC (rev: ${REV_AVANT} → ${REV_APRES}, retour: ${RETOUR_ARRIERE})" >> "$ETAT_DIR/historique.log"
+[[ -n "$PRECEDENTE" && "$PRECEDENTE" != "$CIBLE" ]] || exit 1
+
+if [[ "$RETOUR_ARRIERE" == "aucune_migration" || "$RETOUR_ARRIERE" == "compatible" ]]; then
+  etape "Retour automatique à ${PRECEDENTE} (schéma : ${RETOUR_ARRIERE})"
+  SCHEMA_VERIFIE=1 DEPUIS="$CIBLE" BEA_VERSION="$PRECEDENTE" bash deployment/scripts/rollback.sh "$PRECEDENTE" || true
+  exit 1
 fi
+
+cat >&2 <<EOF
+
+ARRÊT SANS RETOUR AUTOMATIQUE : les migrations ${REV_AVANT} → ${REV_APRES} ne sont pas déclarées
+compatibles avec ${PRECEDENTE}. Relancer ${PRECEDENTE} sur ce schéma risquerait des erreurs ou des
+écritures incohérentes. Décision de l'exploitant (DSI) :
+  - corriger et livrer une nouvelle version, ou
+  - restaurer la base d'avant la mise à jour et relancer ${PRECEDENTE} dessus :
+      REMPLACER=1 VERSION_APPLI=${PRECEDENTE} ./deployment/scripts/restore.sh ${SAUVEGARDE:-<aucune sauvegarde : SKIP_BACKUP=1>}
+EOF
 exit 1

@@ -44,4 +44,10 @@ if [[ "$RETENTION_JOURS" -gt 0 ]]; then
   find backups -maxdepth 1 -type f -name 'bea_*' -mtime "+${RETENTION_JOURS}" -print -delete || true
 fi
 
+if [[ -n "${NOTER_SAUVEGARDE:-}" ]]; then
+  ARCHIVE=""
+  [[ -f "backups/${NOM}_fichiers.tar.gz" ]] && ARCHIVE=" backups/${NOM}_fichiers.tar.gz"
+  echo "${DUMP}${ARCHIVE}" > "$NOTER_SAUVEGARDE"
+fi
+
 echo "BACKUP_OK=${DUMP} (${TAILLE} octets)"

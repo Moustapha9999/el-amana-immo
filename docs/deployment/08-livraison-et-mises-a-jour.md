@@ -15,7 +15,8 @@ numéro (`vX.Y.Z`) ; `/version` indique ce qui tourne réellement.
 | `redis` | `redis:7-alpine` | file de tâches, anti-doublon | réseau interne |
 
 Données persistantes sur l'hôte : volume `bea_postgres_data`, `storage/uploads` (pièces),
-`storage/ged` (GED), `backups/`. Logs Docker limités à 5 × 20 Mo par conteneur.
+`storage/ged` (GED), `backups/`. Journaux Docker : `json-file`, 5 fichiers de 20 Mo, soit 100 Mo
+maximum par conteneur (détail : [04-docker-production.md](04-docker-production.md)).
 
 ## Côté développement — produire une version
 
@@ -77,11 +78,20 @@ BEA_VERSION=v1.1.0 IMAGES_TAR=releases/v1.1.0/images.tar ./deployment/scripts/de
 2. refus si la base est vide (les migrations ne s'appliquent jamais sur une base vide) ;
 3. **sauvegarde vérifiée** : dump PostgreSQL (taille minimale + relecture `pg_restore --list`),
    archive des pièces et de la GED, empreintes, purge au-delà de 30 jours ;
-4. migrations `alembic upgrade head` avec l'image de la nouvelle version — en cas d'échec, rien
-   n'est redémarré, l'ancienne version reste en service ;
-5. redémarrage `backend`, `worker`, `frontend` ;
-6. contrôle `/health/ready` (base + Redis) **et** `/version` = version attendue ;
-7. échec du contrôle → **retour automatique** à la version précédente, code de sortie ≠ 0.
+4. analyse des migrations à appliquer : chacune déclare si l'ancienne version reste compatible
+   (voir § Retour arrière) ;
+5. migrations `alembic upgrade head` avec l'image de la nouvelle version, dans **une seule
+   transaction** : en cas d'échec, la base reste à la révision précédente, rien n'est redémarré,
+   l'ancienne version reste en service ;
+6. redémarrage `backend`, `worker`, `frontend` ;
+7. contrôle `/health/ready` (PostgreSQL + Redis), `/version` = version attendue, worker sain ;
+8. échec du contrôle :
+   - aucune migration appliquée, ou toutes déclarées `compatible` → **retour automatique** à la
+     version précédente ;
+   - sinon → **arrêt sans retour automatique** ; le script affiche la commande de restauration de la
+     sauvegarde prise à l'étape 3. Code de sortie ≠ 0 dans les deux cas.
+
+`/health` seul ne teste que le processus API (healthcheck Docker) ; il ne prouve pas l'accès à la base.
 
 ### Retour arrière / reprise
 
@@ -89,11 +99,33 @@ BEA_VERSION=v1.1.0 IMAGES_TAR=releases/v1.1.0/images.tar ./deployment/scripts/de
 |-----------|----------|
 | Revenir à la version précédente | `./deployment/scripts/rollback.sh` |
 | Revenir à une version donnée | `./deployment/scripts/rollback.sh v1.0.0` |
-| Restaurer une sauvegarde (incident de données) | `REMPLACER=1 ./deployment/scripts/restore.sh backups/bea_….dump backups/bea_…_fichiers.tar.gz` |
+| Restaurer une sauvegarde et relancer une version compatible | `REMPLACER=1 VERSION_APPLI=v1.0.0 ./deployment/scripts/restore.sh backups/bea_….dump backups/bea_…_fichiers.tar.gz` |
 
-Le retour arrière ne touche pas la base : les migrations sont additives, l'ancienne version
-fonctionne sur la base migrée. `REMPLACER=1` sauvegarde d'abord l'état actuel, puis remplace la base
-et relance l'application.
+**Le retour arrière du code ne modifie pas la base.** Il n'est donc sûr que si l'ancienne version
+fonctionne sur le schéma migré. Ce n'est **pas** garanti par principe : sur les 93 révisions
+existantes au 20/10/2026, 31 contiennent dans `upgrade()` des opérations non additives
+(changement de type, suppression de contrainte, `UPDATE` / `DELETE` de données).
+
+La compatibilité est donc déclarée migration par migration, par le développeur, et vérifiée par les
+scripts :
+
+- chaque révision postérieure à `20261020_clientele_14` porte `retour_arriere = "compatible"` ou
+  `"restauration"` ; `release.ps1` et les tests refusent une révision sans déclaration ;
+- les révisions antérieures, non déclarées, comptent comme `restauration` ;
+- `deploy.sh` enregistre la révision de chaque version (`deployment/state/revisions/<version>`) et la
+  sauvegarde prise avant elle (`deployment/state/sauvegardes/avant_<version>`) ;
+- `rollback.sh` compare la révision en base à celle de la version cible :
+
+| Cas | Comportement |
+|-----|--------------|
+| Révision identique | retour autorisé |
+| Migrations intermédiaires toutes `compatible` | retour autorisé |
+| Au moins une `restauration`, non déclarée, ou révision cible inconnue | **refus** ; affiche la commande `restore.sh` de la sauvegarde d'avant la mise à jour |
+| `SCHEMA_VERIFIE=1` | l'exploitant atteste la compatibilité (vérifiée hors script) ; retour forcé |
+
+Restaurer la sauvegarde d'avant mise à jour fait **perdre les saisies postérieures** : décision DSI
+et métier, jamais automatique. `REMPLACER=1` sauvegarde d'abord l'état actuel, remplace la base, puis
+relance `VERSION_APPLI` (par défaut la version courante) et enregistre la révision restaurée.
 
 ### Sauvegarde planifiée (en plus des sauvegardes de déploiement)
 
@@ -116,5 +148,15 @@ première installation (200 tables, révision `20261020_clientele_14`), déploie
 mise à jour volontairement cassée (retour automatique), retour arrière manuel, reprise après
 incident (`REMPLACER=1`). Reste à valider sur l'infrastructure réelle : reverse proxy HTTPS,
 SMTP, sauvegardes externalisées, supervision.
+
+Compatibilité de schéma (même serveur simulé, migrations d'essai) :
+
+| Scénario | Résultat |
+|----------|----------|
+| Mise à jour avec migration `compatible`, puis `rollback.sh` | retour autorisé, ancienne version saine sur le schéma migré |
+| Migration `restauration` + version qui ne démarre pas | **pas** de retour automatique, commande de restauration affichée ; exécutée telle quelle → version précédente saine, révision d'avant |
+| Migration `restauration`, version saine, puis `rollback.sh` | **refus** ; la commande affichée restaure et relance la version cible |
+| Migration `compatible` + version qui ne démarre pas | retour automatique, version précédente saine |
+| Contrôle de santé | `/health/ready` (base + Redis), `/version`, worker Celery sain à chaque étape |
 
 **Interdit : `docker compose down -v`** (efface la base).

@@ -45,6 +45,11 @@ if ($LASTEXITCODE -ne 0) { Echec "l'application backend ne démarre pas" }
 $head = (& backend\.venv\Scripts\python.exe -c "import sys,os; os.chdir('backend'); from alembic.config import Config; from alembic.script import ScriptDirectory; print(','.join(ScriptDirectory.from_config(Config('alembic.ini')).get_heads()))").Trim()
 if ($head -match ',') { Echec "plusieurs têtes de migration ($head) : fusionner avant de livrer" }
 Write-Host "Révision de base attendue : $head"
+Push-Location backend
+& .\.venv\Scripts\python.exe scripts\migrations_retour.py --verifier
+$rc = $LASTEXITCODE
+Pop-Location
+if ($rc -ne 0) { Echec "migration sans déclaration retour_arriere (voir docs/runbook-migrations.md)" }
 
 if ($Tests) {
   Etape "Tests backend (base de test locale bea_digital_clientele_test)"

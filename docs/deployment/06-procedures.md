@@ -20,7 +20,7 @@
 5. Maintenance CORE ADMIN si migration risquée.
 6. `deploy.sh` : pull images taguées, recreate FE/BE **sans** `-v`.
 7. Migrations selon [runbook-migrations.md](../runbook-migrations.md).
-8. Healthcheck `/health` + `/version`.
+8. Contrôle `/health/ready` (base + Redis) + `/version` + worker sain (fait par `deploy.sh`).
 9. Lever maintenance ; noter version dans les ops CORE ADMIN si utile.
 
 ## Hotfix
@@ -30,8 +30,9 @@ Branche `hotfix/*` depuis `main` → tests → tag patch → même chaîne appro
 ## Incident / rollback
 
 1. Maintenance si besoin.
-2. `rollback.sh` vers tag précédent connu.
-3. Healthcheck.
+2. `rollback.sh` vers tag précédent connu — refusé si le schéma n'est pas compatible
+   (voir [08-livraison-et-mises-a-jour.md](08-livraison-et-mises-a-jour.md) § Retour arrière).
+3. Contrôle `/health/ready` + `/version` + worker (fait par le script).
 4. Si corruption données : restore backup (procédure DSI) — analyser dépendances CORE / modules avant restore partiel (voir [core-admin-ops.md](../core-admin-ops.md)).
 
 ## Maintenance applicative

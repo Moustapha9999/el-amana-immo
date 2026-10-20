@@ -5,7 +5,8 @@
 #   Premier chargement d'un serveur sans Internet : IMAGES_TAR=releases/vX.Y.Z/images.tar (charge postgres/redis).
 #
 # Par défaut, refuse si la base contient déjà des tables (premier chargement).
-# Reprise après incident : REMPLACER=1 → sauvegarde de l'état actuel, puis remplacement du schéma public.
+# Reprise après incident : REMPLACER=1 → sauvegarde de l'état actuel, puis remplacement du schéma public,
+# puis relance de version_courante, ou de VERSION_APPLI=vX.Y.Z (version compatible avec la base restaurée).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -63,11 +64,20 @@ for q in \
   sql "$q" 2>/dev/null || true
 done
 
-if [[ "${REMPLACER:-0}" == "1" && -f "$ETAT_DIR/version_courante" ]]; then
-  BEA_VERSION="$(cat "$ETAT_DIR/version_courante")"; export BEA_VERSION
-  etape "Redémarrage de l'application ${BEA_VERSION}"
-  compose up -d --no-deps backend worker frontend || true
+COURANTE="$(cat "$ETAT_DIR/version_courante" 2>/dev/null || true)"
+RELANCER="${VERSION_APPLI:-$COURANTE}"
+if [[ "${REMPLACER:-0}" == "1" && -n "$RELANCER" ]]; then
+  BEA_VERSION="$RELANCER"; export BEA_VERSION
+  etape "Redémarrage de l'application ${BEA_VERSION} sur la base restaurée"
+  compose up -d --no-deps --force-recreate backend worker frontend || true
   controle_sante "$BEA_VERSION" || echec "application non saine après restauration — voir docker compose logs backend"
+  mkdir -p "$ETAT_DIR/revisions"
+  revision_base > "$ETAT_DIR/revisions/$RELANCER"
+  if [[ "$RELANCER" != "$COURANTE" ]]; then
+    echo "$RELANCER" > "$ETAT_DIR/version_courante"
+    [[ -n "$COURANTE" ]] && echo "$COURANTE" > "$ETAT_DIR/version_precedente"
+  fi
+  echo "$(date '+%F %T') RESTORE ${NOM} → ${RELANCER} OK" >> "$ETAT_DIR/historique.log"
 fi
 
 echo

@@ -51,7 +51,23 @@ cd backend
 
 Contraintes :
 
+- Déclarer au niveau du module, juste après `depends_on` :
+
+  ```python
+  retour_arriere = "compatible"    # la version précédente du code fonctionne sur le schéma migré
+  # ou
+  retour_arriere = "restauration"  # revenir à la version précédente exige la sauvegarde d'avant
+  ```
+
+  `compatible` seulement si l'ancien code lit **et écrit** sans erreur après migration : ajout de table,
+  ajout de colonne nullable ou avec valeur par défaut, ajout d'index. Tout le reste est `restauration` :
+  suppression ou renommage, colonne `NOT NULL` sans défaut, changement de type, contrainte nouvelle que
+  l'ancien code peut violer, réécriture de données (`UPDATE` / `DELETE`) dont l'ancien code dépend.
+  Vérifié par `python scripts/migrations_retour.py --verifier` (tests, `release.ps1`) et appliqué par
+  `deployment/scripts/rollback.sh`.
 - Révisions **additives** (CREATE TABLE / ADD COLUMN) de préférence.
+- Pas d'`autocommit_block` (ex. `CREATE INDEX CONCURRENTLY`) sans le signaler : il sort de la transaction
+  unique et un échec laisserait la base partiellement migrée.
 - Pas de `DROP` destructif sans plan backup + validation Comptabilité.
 - Ne pas coder dans `app/` + `alembic/` à la **racine** du dépôt (dette).
 

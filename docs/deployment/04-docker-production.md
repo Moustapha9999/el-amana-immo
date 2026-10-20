@@ -39,6 +39,22 @@ Chemins certificats, domaine et ports = décisions IT (inventaire).
 
 ## Santé
 
-- `GET /health` — liveness (status + service + version + git_sha)
-- `GET /version` — version / git_sha / env (sans secrets)
-- Compose healthcheck backend : HTTP `/health`
+| Contrôle | Ce qu'il vérifie | Utilisé par |
+|----------|------------------|-------------|
+| `GET /health` | processus API vivant (ne teste **ni** PostgreSQL **ni** Redis) | healthcheck Docker du conteneur `backend` |
+| `GET /health/ready` | `SELECT 1` sur PostgreSQL **et** `PING` Redis ; 503 si l'un échoue | `deploy.sh`, `rollback.sh`, `restore.sh`, supervision |
+| `GET /version` | version / git_sha / env (sans secrets) | `deploy.sh` (version servie = version attendue) |
+| `pg_isready` | PostgreSQL accepte les connexions | healthcheck Docker `postgres` |
+| `redis-cli ping` | Redis répond | healthcheck Docker `redis` |
+| `celery inspect ping` | worker Celery actif | healthcheck Docker `worker`, lu par `deploy.sh` |
+
+Le healthcheck Docker du backend reste volontairement sur `/health` : une panne de base ou de Redis
+ne doit pas faire redémarrer l'API en boucle. Le feu vert de déploiement exige `/health/ready`, la bonne
+version et le worker sain. La supervision doit interroger `/health/ready`.
+
+## Journaux Docker
+
+Pilote `json-file`, `max-size: 20m`, `max-file: 5` (ancre `x-logging` de
+`deployment/docker-compose.prod.yml`) : au plus 5 fichiers de 20 Mo, soit **100 Mo par conteneur**,
+500 Mo pour les 5 conteneurs. Au-delà, les journaux les plus anciens sont supprimés : la conservation
+longue durée relève d'une collecte centrale (DSI).
