@@ -1,47 +1,39 @@
 #!/usr/bin/env bash
-# Rollback images vers un tag précédent connu.
-# Ne restaure PAS automatiquement la base — voir docs/deployment/06-procedures.md
+# Retour à une version précédente (images déjà présentes sur le serveur, sinon registre).
+#   ./deployment/scripts/rollback.sh            → version_precedente enregistrée par deploy.sh
+#   ./deployment/scripts/rollback.sh v1.5.2     → version donnée
+# Ne restaure PAS la base : les migrations sont additives, l'ancienne version fonctionne sur la base
+# migrée. Si une restauration est nécessaire : deployment/scripts/restore.sh (procédure DSI).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
+# shellcheck source=lib.sh
+source deployment/scripts/lib.sh
 
-ENV_FILE="${ENV_FILE:-.env.production}"
-COMPOSE_FILE="${COMPOSE_FILE:-deployment/docker-compose.prod.yml}"
-HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8080/health}"
-RETRIES="${HEALTH_RETRIES:-30}"
-SLEEP_S="${HEALTH_SLEEP:-2}"
-
-: "${BEA_VERSION:?BEA_VERSION requis (tag précédent, ex. v1.4.2)}"
-: "${BEA_IMAGE_BACKEND:?BEA_IMAGE_BACKEND requis}"
-: "${BEA_IMAGE_FRONTEND:?BEA_IMAGE_FRONTEND requis}"
-
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "ERREUR: $ENV_FILE introuvable" >&2
-  exit 1
+CIBLE="${1:-}"
+if [[ -z "$CIBLE" && -f "$ETAT_DIR/version_precedente" ]]; then
+  CIBLE="$(cat "$ETAT_DIR/version_precedente")"
 fi
+[[ -n "$CIBLE" ]] || echec "aucune version précédente connue : préciser la version (ex. v1.5.2)"
 
-export BEA_VERSION BEA_IMAGE_BACKEND BEA_IMAGE_FRONTEND
+BEA_VERSION="$CIBLE"
+charger_env
+BEA_VERSION="$CIBLE"; export BEA_VERSION
 export GIT_SHA="${GIT_SHA:-rollback}"
 
-echo "==> Rollback vers ${BEA_VERSION}"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull backend frontend
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --no-deps --force-recreate backend frontend
-
-ok=0
-for i in $(seq 1 "$RETRIES"); do
-  if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
-    echo "Health OK après rollback (tentative $i)"
-    ok=1
-    break
-  fi
-  sleep "$SLEEP_S"
-done
-
-if [[ "$ok" -ne 1 ]]; then
-  echo "ERREUR: healthcheck rollback échoué" >&2
-  exit 1
+etape "Retour à ${CIBLE}"
+if ! image_presente "${BEA_IMAGE_BACKEND}:${CIBLE}" || ! image_presente "${BEA_IMAGE_FRONTEND}:${CIBLE}"; then
+  compose pull backend frontend || echec "images ${CIBLE} introuvables (charger l'archive de cette version)"
 fi
+compose up -d --no-deps --force-recreate backend worker frontend
 
-echo "ROLLBACK_OK version=${BEA_VERSION}"
-echo "NOTE: restauration DB = procédure manuelle si migration incompatible."
+if controle_sante "$CIBLE"; then
+  ACTUELLE="$(cat "$ETAT_DIR/version_courante" 2>/dev/null || true)"
+  echo "$CIBLE" > "$ETAT_DIR/version_courante"
+  echo "$(date '+%F %T') ROLLBACK ${CIBLE} OK (depuis: ${ACTUELLE:-?})" >> "$ETAT_DIR/historique.log"
+  echo "ROLLBACK_OK version=${CIBLE}"
+else
+  echo "$(date '+%F %T') ROLLBACK ${CIBLE} ECHEC" >> "$ETAT_DIR/historique.log"
+  echec "contrôle de santé en échec après retour à ${CIBLE} — escalader (logs : docker compose logs backend)"
+fi

@@ -1,58 +1,47 @@
 #!/usr/bin/env bash
-# Backup vérifié avant déploiement production.
-# Prérequis : exécuter depuis la racine du dépôt déployé sur le serveur,
-#             Docker Compose + .env.production + conteneur postgres healthy.
+# Sauvegarde vérifiée : base PostgreSQL + pièces (storage/uploads) + GED (storage/ged).
+# Utilisée par deploy.sh avant toute mise à jour ; peut aussi être planifiée (cron) chaque nuit.
+# Échoue (code ≠ 0) si le dump est absent, trop petit ou illisible par pg_restore.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
+# shellcheck source=lib.sh
+source deployment/scripts/lib.sh
 
-ENV_FILE="${ENV_FILE:-.env.production}"
-COMPOSE_FILE="${COMPOSE_FILE:-deployment/docker-compose.prod.yml}"
-VERSION_LABEL="${BEA_VERSION:-unknown}"
+LABEL="${BEA_VERSION:-${1:-manuel}}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-DUMP_NAME="prod_before_${VERSION_LABEL}_${STAMP}.dump"
-MIN_BYTES="${BACKUP_MIN_BYTES:-1024}"
+NOM="bea_${LABEL}_${STAMP}"
+MIN_BYTES="${BACKUP_MIN_BYTES:-102400}"
+RETENTION_JOURS="${BACKUP_RETENTION_DAYS:-30}"
 
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "ERREUR: $ENV_FILE introuvable" >&2
-  exit 1
-fi
-
-# shellcheck disable=SC1090
-set -a
-# Extraire POSTGRES_* sans sourcer tout le fichier (valeurs avec espaces/quotes)
-POSTGRES_USER="$(grep -E '^POSTGRES_USER=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
-POSTGRES_DB="$(grep -E '^POSTGRES_DB=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
-set +a
-POSTGRES_USER="${POSTGRES_USER:-bea_digital_app}"
-POSTGRES_DB="${POSTGRES_DB:-bea_digital}"
-
+charger_env
 mkdir -p backups
 
-echo "==> pg_dump → backups/${DUMP_NAME}"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T postgres \
-  pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-  --format=custom --no-owner --no-acl \
-  --file="/backups/${DUMP_NAME}"
+etape "pg_dump → backups/${NOM}.dump"
+compose exec -T postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+  --format=custom --no-owner --no-acl --file="/backups/${NOM}.dump"
 
-HOST_DUMP="backups/${DUMP_NAME}"
-if [[ ! -f "$HOST_DUMP" ]]; then
-  echo "ERREUR: dump manquant: $HOST_DUMP" >&2
-  exit 1
-fi
-SIZE="$(wc -c < "$HOST_DUMP" | tr -d ' ')"
-if [[ "$SIZE" -lt "$MIN_BYTES" ]]; then
-  echo "ERREUR: dump trop petit (${SIZE} o < ${MIN_BYTES}) — backup non exploitable" >&2
-  exit 1
-fi
+DUMP="backups/${NOM}.dump"
+[[ -f "$DUMP" ]] || echec "dump manquant : $DUMP"
+TAILLE="$(wc -c < "$DUMP" | tr -d ' ')"
+[[ "$TAILLE" -ge "$MIN_BYTES" ]] || echec "dump trop petit (${TAILLE} o < ${MIN_BYTES} o) : sauvegarde inexploitable"
+compose exec -T postgres pg_restore --list "/backups/${NOM}.dump" > /dev/null \
+  || echec "dump illisible par pg_restore : $DUMP"
 
-echo "==> Dump OK (${SIZE} octets): $HOST_DUMP"
-
-if [[ -d storage/uploads ]]; then
-  UP_DST="backups/uploads_${VERSION_LABEL}_${STAMP}"
-  echo "==> Copie storage/uploads → ${UP_DST}"
-  cp -a storage/uploads "$UP_DST"
+FICHIERS=()
+for d in storage/uploads storage/ged; do
+  [[ -d "$d" ]] && FICHIERS+=("$d")
+done
+if [[ ${#FICHIERS[@]} -gt 0 ]]; then
+  etape "Archive des fichiers (${FICHIERS[*]}) → backups/${NOM}_fichiers.tar.gz"
+  tar -czf "backups/${NOM}_fichiers.tar.gz" "${FICHIERS[@]}"
 fi
 
-echo "BACKUP_OK=${HOST_DUMP}"
+( cd backups && sha256sum "${NOM}"* > "${NOM}.sha256" )
+
+if [[ "$RETENTION_JOURS" -gt 0 ]]; then
+  find backups -maxdepth 1 -type f -name 'bea_*' -mtime "+${RETENTION_JOURS}" -print -delete || true
+fi
+
+echo "BACKUP_OK=${DUMP} (${TAILLE} octets)"

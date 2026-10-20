@@ -79,3 +79,6 @@ storage/*.tar.gz
 
 # Modèle BCM avec chiffres réels (test de comparaison local uniquement)
 Déclaration mensuelle - BEA - *.xlsx
+
+# Etat local des deploiements (version courante / precedente, historique) - propre a chaque serveur
+deployment/state/

@@ -29,6 +29,9 @@ validate:structure:
     - test -f deployment/docker-compose.prod.yml
     - test -f deployment/scripts/deploy.sh
     - test -f deployment/scripts/backup-pre-deploy.sh
+    - test -f deployment/scripts/rollback.sh
+    - test -f deployment/scripts/restore.sh
+    - test -f deployment/scripts/lib.sh
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH
@@ -198,7 +201,7 @@ deploy:production:
       export BEA_IMAGE_FRONTEND="${FRONTEND_IMAGE}"
       export ENV_FILE=".env.production"
       export COMPOSE_FILE="deployment/docker-compose.prod.yml"
-      bash deployment/scripts/backup-pre-deploy.sh
+      git fetch --tags && git checkout -q "${TAG}"
       bash deployment/scripts/deploy.sh
       EOF
   environment:
