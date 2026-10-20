@@ -72,11 +72,12 @@ echo "Révision après : ${REV_APRES:-inconnue}"
 
 # 5. Redémarrage applicatif --------------------------------------------------
 etape "Redémarrage backend, worker, frontend en ${CIBLE}"
-compose up -d --no-deps --force-recreate backend worker frontend
+DEMARRE=1
+compose up -d --no-deps --force-recreate backend worker frontend || DEMARRE=0
 
 # 6. Contrôle ----------------------------------------------------------------
 etape "Contrôle de santé ${BASE_URL}"
-if controle_sante "$CIBLE"; then
+if [[ "$DEMARRE" -eq 1 ]] && controle_sante "$CIBLE"; then
   [[ -n "$PRECEDENTE" && "$PRECEDENTE" != "$CIBLE" ]] && echo "$PRECEDENTE" > "$ETAT_DIR/version_precedente"
   echo "$CIBLE" > "$ETAT_DIR/version_courante"
   echo "$(date '+%F %T') DEPLOY ${CIBLE} OK (avant: ${PRECEDENTE:-aucune}, sha: ${GIT_SHA}, rev: ${REV_APRES})" >> "$ETAT_DIR/historique.log"

@@ -12,5 +12,6 @@ Pack documentation pour GitLab + Runner réseau BEA + serveur production.
 | [05-pipeline-gitlab.md](05-pipeline-gitlab.md) | Stages CI/CD |
 | [06-procedures.md](06-procedures.md) | Initial / MAJ / hotfix / rollback |
 | [07-core-admin-vs-cicd.md](07-core-admin-vs-cicd.md) | Frontière CORE ADMIN / GitLab |
+| [08-livraison-et-mises-a-jour.md](08-livraison-et-mises-a-jour.md) | **Procédure en vigueur** : release, installation, mise à jour, retour arrière, reprise |
 
 Artefacts : dossier [`deployment/`](../../deployment/).

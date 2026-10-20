@@ -26,11 +26,13 @@ etape "Retour à ${CIBLE}"
 if ! image_presente "${BEA_IMAGE_BACKEND}:${CIBLE}" || ! image_presente "${BEA_IMAGE_FRONTEND}:${CIBLE}"; then
   compose pull backend frontend || echec "images ${CIBLE} introuvables (charger l'archive de cette version)"
 fi
-compose up -d --no-deps --force-recreate backend worker frontend
+DEMARRE=1
+compose up -d --no-deps --force-recreate backend worker frontend || DEMARRE=0
 
-if controle_sante "$CIBLE"; then
+if [[ "$DEMARRE" -eq 1 ]] && controle_sante "$CIBLE"; then
   ACTUELLE="$(cat "$ETAT_DIR/version_courante" 2>/dev/null || true)"
   echo "$CIBLE" > "$ETAT_DIR/version_courante"
+  [[ -n "$ACTUELLE" && "$ACTUELLE" != "$CIBLE" ]] && echo "$ACTUELLE" > "$ETAT_DIR/version_precedente"
   echo "$(date '+%F %T') ROLLBACK ${CIBLE} OK (depuis: ${ACTUELLE:-?})" >> "$ETAT_DIR/historique.log"
   echo "ROLLBACK_OK version=${CIBLE}"
 else

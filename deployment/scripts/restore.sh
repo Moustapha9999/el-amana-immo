@@ -63,6 +63,13 @@ for q in \
   sql "$q" 2>/dev/null || true
 done
 
+if [[ "${REMPLACER:-0}" == "1" && -f "$ETAT_DIR/version_courante" ]]; then
+  BEA_VERSION="$(cat "$ETAT_DIR/version_courante")"; export BEA_VERSION
+  etape "Redémarrage de l'application ${BEA_VERSION}"
+  compose up -d --no-deps backend worker frontend || true
+  controle_sante "$BEA_VERSION" || echec "application non saine après restauration — voir docker compose logs backend"
+fi
+
 echo
-echo "RESTORE_OK tables=${APRES}. Déployer ensuite la version : deployment/scripts/deploy.sh"
+echo "RESTORE_OK tables=${APRES}. Première installation : déployer ensuite la version (deployment/scripts/deploy.sh)."
 echo "Ne jamais : docker compose down -v"
