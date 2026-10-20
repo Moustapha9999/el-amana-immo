@@ -35,7 +35,8 @@ charger_env() {
 }
 
 compose() {
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+  # BEA_VERSION est requis par le fichier compose même pour postgres/redis seuls (premier chargement).
+  BEA_VERSION="${BEA_VERSION:-non-deployee}" docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
 image_presente() {
