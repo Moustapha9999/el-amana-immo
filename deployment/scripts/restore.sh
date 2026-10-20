@@ -2,6 +2,7 @@
 # Restauration d'une sauvegarde BEA DIGITAL sur le serveur (premier chargement ou reprise après incident).
 #
 #   ./deployment/scripts/restore.sh backups/bea_xxx.dump [backups/bea_xxx_fichiers.tar.gz]
+#   Premier chargement d'un serveur sans Internet : IMAGES_TAR=releases/vX.Y.Z/images.tar (charge postgres/redis).
 #
 # Par défaut, refuse si la base contient déjà des tables (premier chargement).
 # Reprise après incident : REMPLACER=1 → sauvegarde de l'état actuel, puis remplacement du schéma public.
@@ -20,6 +21,7 @@ mkdir -p backups
 NOM="$(basename "$DUMP")"
 [[ "$(cd "$(dirname "$DUMP")" && pwd)" == "$(cd backups && pwd)" ]] || cp -f "$DUMP" "backups/$NOM"
 
+charger_archive_images
 compose up -d --wait postgres redis
 compose exec -T postgres pg_restore --list "/backups/$NOM" > /dev/null || echec "dump illisible : $NOM"
 

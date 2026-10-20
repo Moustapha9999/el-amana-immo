@@ -116,7 +116,8 @@ Sur le serveur (Linux, dossier d'installation /opt/bea-digital) :
   1. Copier ce dossier dans /opt/bea-digital/releases/$Version/
   2. Première installation uniquement :
        cd /opt/bea-digital && tar -xzf releases/$Version/deploiement.tar.gz
-       cp deployment/env.production.example .env.production   (puis renseigner les secrets)
+       cp deployment/env.production.example .env.production   (puis renseigner les secrets, chmod 600)
+       IMAGES_TAR=releases/$Version/images.tar ./deployment/scripts/restore.sh backups/<dump de reprise>.dump [backups/<fichiers>.tar.gz]
   3. Mise à jour (ou installation) :
        cd /opt/bea-digital
        tar -xzf releases/$Version/deploiement.tar.gz           (scripts à jour)

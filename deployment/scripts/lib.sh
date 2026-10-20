@@ -43,6 +43,21 @@ image_presente() {
   docker image inspect "$1" > /dev/null 2>&1
 }
 
+# Charge l'archive IMAGES_TAR (livraison hors ligne) après contrôle de son empreinte SHA-256.
+charger_archive_images() {
+  [[ -n "${IMAGES_TAR:-}" ]] || return 0
+  [[ -f "$IMAGES_TAR" ]] || echec "archive introuvable : $IMAGES_TAR"
+  if [[ -f "${IMAGES_TAR}.sha256" ]]; then
+    etape "Contrôle d'intégrité de l'archive"
+    ( cd "$(dirname "$IMAGES_TAR")" && sha256sum -c "$(basename "$IMAGES_TAR").sha256" ) \
+      || echec "empreinte SHA-256 invalide : archive corrompue ou modifiée"
+  else
+    echo "ATTENTION: pas de fichier ${IMAGES_TAR}.sha256 — intégrité non vérifiée"
+  fi
+  etape "Chargement des images (docker load)"
+  docker load -i "$IMAGES_TAR"
+}
+
 # Attend /health/ready (base + Redis) puis vérifie que /version annonce la version attendue.
 controle_sante() {
   local attendue="$1" i

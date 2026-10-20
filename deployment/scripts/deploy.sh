@@ -32,16 +32,7 @@ etape "Déploiement ${CIBLE} (version en place : ${PRECEDENTE:-aucune}) — $(da
 
 # 1. Images ------------------------------------------------------------------
 if [[ -n "${IMAGES_TAR:-}" ]]; then
-  [[ -f "$IMAGES_TAR" ]] || echec "archive introuvable : $IMAGES_TAR"
-  if [[ -f "${IMAGES_TAR}.sha256" ]]; then
-    etape "Contrôle d'intégrité de l'archive"
-    ( cd "$(dirname "$IMAGES_TAR")" && sha256sum -c "$(basename "$IMAGES_TAR").sha256" ) \
-      || echec "empreinte SHA-256 invalide : archive corrompue ou modifiée"
-  else
-    echo "ATTENTION: pas de fichier ${IMAGES_TAR}.sha256 — intégrité non vérifiée"
-  fi
-  etape "Chargement des images (docker load)"
-  docker load -i "$IMAGES_TAR"
+  charger_archive_images
 elif ! image_presente "$IMG_BE" || ! image_presente "$IMG_FE"; then
   etape "Téléchargement des images depuis le registre"
   compose pull backend frontend
