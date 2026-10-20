@@ -1,8 +1,9 @@
 from io import BytesIO
 
-from openpyxl import Workbook, load_workbook
-
 from pathlib import Path
+
+import pytest
+from openpyxl import Workbook, load_workbook
 
 from app.data.clientele_import_hebdo import (
     COLONNES_EXPORT, colonnes_export, construire_modele, date_ouverture_interdite,
@@ -13,8 +14,7 @@ from app.services.clientele.lots import (
     _detecter, lire_ligne, resoudre_mapping, normaliser_niveau, normaliser_racine,
 )
 
-HEBDO = Path(r"C:\Users\sallm\bea-digital\File-uploade-par-semaine.xlsx")
-EXPLICATIF = Path(r"C:\Users\sallm\bea-digital\file explicatif.xlsx")
+HEBDO = Path(__file__).resolve().parents[2] / "File-uploade-par-semaine.xlsx"
 
 
 def test_racine_zeros_restaures():
@@ -104,9 +104,8 @@ def test_detection_feuille_clients_prioritaire():
     lu.close()
 
 
+@pytest.mark.skipif(not HEBDO.exists(), reason="Classeur hebdomadaire réel absent (données nominatives, hors dépôt)")
 def test_classeur_hebdo_listes_pas_des_clients():
-    if not HEBDO.exists():
-        return
     wb = load_workbook(HEBDO, read_only=True, data_only=True)
     lignes, feuille, ligne, cols = _lignes_clients(wb)
     wb.close()

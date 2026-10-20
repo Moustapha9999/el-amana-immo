@@ -304,7 +304,9 @@ def divergences_pays(fusion: list[dict]) -> list[dict]:
 
 def main() -> int:
     if not MATRICE.exists() or not SCORING.exists():
-        print("Excel manquants", file=sys.stderr)
+        print(f"Excel manquants : déposer « {MATRICE.name} » et « {SCORING.name} » à la racine du dépôt "
+              "(hors Git) pour régénérer le référentiel. Le référentiel déjà généré reste valable.",
+              file=sys.stderr)
         return 1
 
     wb_m = load_workbook(MATRICE, data_only=True)

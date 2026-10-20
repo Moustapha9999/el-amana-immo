@@ -59,6 +59,14 @@ de la base. D’ici là, FastAPI reste le seul point de contrôle
 
 ## Fichier source analysé
 
+Les classeurs et formulaires métier cités dans `docs/conformite/` (Situation des comptes, Etat Compte,
+Matrice des risques, Scoring V4, Déclaration mensuelle, fichier hebdomadaire, fiches KYC interactives…)
+ont servi à l'analyse et ne sont **pas conservés dans le dépôt** (données nominatives ou documents
+internes ; `/*.xlsx` et `/*.pdf` ignorés). Leur contenu utile est repris dans le code
+(`backend/app/data/`). Les tests qui les lisent s'ignorent s'ils sont absents ;
+`backend/scripts/extract_classif_lbc.py` exige la Matrice et le Scoring à la racine pour régénérer
+le référentiel.
+
 `Suivi-entre-en-relation.xlsx` : 16 colonnes de suivi. La colonne
 « CONFORMITE DU FLUX » dépend d’un classeur externe (`[1]FLUX!`) absent :
 `Z:\Conformite\Conformité AML\Analyse Conformité\TABLEAU DE SUIVI EER 2026 v2.xlsx`
