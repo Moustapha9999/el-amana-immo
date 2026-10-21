@@ -1,10 +1,10 @@
-import { ChangeDetectionStrategy, Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { CoreAdminDialogComponent } from './core-admin-dialog.component';
 import { BeaAdminDialogService } from './core-admin-dialog.service';
 import { CoreAdminIconComponent } from './core-admin-icon.component';
-import { CORE_ADMIN_NAV } from './core-admin-nav';
+import { CORE_ADMIN_NAV, coreAdminNavVisible } from './core-admin-nav';
 import { ThemeToggleComponent } from '../chrome/theme-toggle.component';
 
 const SIDEBAR_COLLAPSED_KEY = 'bea.coreAdmin.sidebarCollapsed';
@@ -52,7 +52,7 @@ interface SidebarTooltip {
           </div>
         </a>
         <nav class="bea-admin__nav" (scroll)="hideTooltip()">
-          @for (group of nav; track group.label ?? 'dashboard') {
+          @for (group of nav(); track group.label ?? 'dashboard') {
             <div class="bea-admin__group">
               @if (group.label) {
                 <p class="bea-admin__group-label">{{ group.label }}</p>
@@ -134,7 +134,10 @@ interface SidebarTooltip {
 })
 export class CoreAdminLayoutComponent implements OnInit, OnDestroy {
   readonly auth = inject(AuthService);
-  readonly nav = CORE_ADMIN_NAV;
+  readonly nav = computed(() => {
+    const u = this.auth.user();
+    return coreAdminNavVisible(CORE_ADMIN_NAV, u?.permission_codes ?? [], !!u?.is_superuser);
+  });
   readonly collapsed = signal(false);
   readonly tooltip = signal<SidebarTooltip | null>(null);
   private readonly dialogs = inject(BeaAdminDialogService);

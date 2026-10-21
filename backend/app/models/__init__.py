@@ -7,6 +7,17 @@ from app.models.associations import (
 from app.models.archive import ArchiveDossier, ArchiveFichier, ArchiveLigne
 from app.models.audit import AuditLog, Notification
 from app.models.core_query import CoreQueryFavorite, CoreQueryLog
+from app.models.integrations import (
+    IntegrationClient,
+    IntegrationClientGrant,
+    IntegrationClientGrantEvent,
+    IntegrationAlerte,
+    IntegrationDestination,
+    IntegrationExecution,
+    IntegrationFournisseur,
+    IntegrationFournisseurOperation,
+    IntegrationFournisseurSpec,
+)
 from app.models.auth import Agence, AuthLoginAttempt, AuthSession, Permission, Role, User
 from app.models.security_extra import PasswordHistory, PasswordResetJti, SecurityIncident
 from app.models.supervision import ApiErrorEvent
@@ -245,6 +256,15 @@ __all__ = [
     "PlatformBackup",
     "CoreQueryLog",
     "CoreQueryFavorite",
+    "IntegrationClient",
+    "IntegrationClientGrant",
+    "IntegrationClientGrantEvent",
+    "IntegrationAlerte",
+    "IntegrationDestination",
+    "IntegrationExecution",
+    "IntegrationFournisseur",
+    "IntegrationFournisseurOperation",
+    "IntegrationFournisseurSpec",
     "PlatformRestore",
     "PlatformModuleVersion",
     "PlatformOpsFlag",

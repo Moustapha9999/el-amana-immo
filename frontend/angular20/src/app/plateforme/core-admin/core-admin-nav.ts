@@ -4,12 +4,41 @@ export interface CoreAdminNavItem {
   path?: string;
   soon?: boolean;
   exact?: boolean;
+  /** Entrée masquée sans cette permission (confort d'affichage : le serveur revérifie). */
+  permission?: string;
+  /** Entrée masquée si aucune de ces permissions n'est détenue. */
+  anyPermission?: readonly string[];
 }
 
 export interface CoreAdminNavGroup {
   label?: string;
   items: CoreAdminNavItem[];
 }
+
+/** Groupes et entrées visibles pour ces permissions ; une entrée sans `permission` ni `anyPermission` reste toujours visible. */
+export function coreAdminNavVisible(
+  nav: CoreAdminNavGroup[],
+  codes: readonly string[],
+  superuser: boolean,
+): CoreAdminNavGroup[] {
+  const tout = superuser || codes.includes('*');
+  const visible = (i: CoreAdminNavItem) =>
+    tout ||
+    ((!i.permission || codes.includes(i.permission)) && (!i.anyPermission || i.anyPermission.some((p) => codes.includes(p))));
+  return nav
+    .map((group) => ({ ...group, items: group.items.filter(visible) }))
+    .filter((group) => group.items.length > 0);
+}
+
+const STUDIO_ENTREE = [
+  'core.admin.integrations.view',
+  'core.admin.integrations.clients.view',
+  'core.admin.integrations.fournisseurs.view',
+  'core.admin.integrations.destinations.view',
+  'core.admin.integrations.tests.view',
+  'core.admin.integrations.tests.execute',
+  'core.admin.integrations.supervision.view',
+] as const;
 
 export const CORE_ADMIN_NAV: CoreAdminNavGroup[] = [
   {
@@ -52,6 +81,56 @@ export const CORE_ADMIN_NAV: CoreAdminNavGroup[] = [
       { label: 'SQL', path: '/admin/core-query/sql', icon: 'code' },
       { label: 'Requêtes favorites', path: '/admin/core-query/favoris', icon: 'star' },
       { label: 'Historique', path: '/admin/core-query/historique', icon: 'history' },
+    ],
+  },
+  {
+    label: 'Studio d’intégration API',
+    items: [
+      { label: 'Vue d’ensemble', path: '/admin/integrations', icon: 'hub', exact: true, anyPermission: STUDIO_ENTREE },
+      { label: 'Catalogue API', path: '/admin/integrations/catalogue', icon: 'menu_book', permission: 'core.admin.integrations.view' },
+      { label: 'Console (lecture)', path: '/admin/integrations/console', icon: 'terminal', permission: 'core.admin.integrations.view' },
+      {
+        label: 'Applications clientes',
+        path: '/admin/integrations/clients',
+        icon: 'apps',
+        permission: 'core.admin.integrations.clients.view',
+      },
+      {
+        label: 'Fournisseurs externes',
+        path: '/admin/integrations/fournisseurs',
+        icon: 'cloud',
+        permission: 'core.admin.integrations.fournisseurs.view',
+      },
+      {
+        label: 'Destinations TEST',
+        path: '/admin/integrations/destinations',
+        icon: 'public',
+        permission: 'core.admin.integrations.destinations.view',
+      },
+      {
+        label: 'Tests d’intégration',
+        path: '/admin/integrations/tests',
+        icon: 'science',
+        anyPermission: ['core.admin.integrations.tests.execute', 'core.admin.integrations.tests.view'],
+      },
+      {
+        label: 'Historique des exécutions',
+        path: '/admin/integrations/executions',
+        icon: 'history',
+        permission: 'core.admin.integrations.tests.view',
+      },
+      {
+        label: 'Supervision',
+        path: '/admin/integrations/supervision',
+        icon: 'timeline',
+        permission: 'core.admin.integrations.supervision.view',
+      },
+      {
+        label: 'Alertes',
+        path: '/admin/integrations/alertes',
+        icon: 'notifications_active',
+        permission: 'core.admin.integrations.supervision.view',
+      },
     ],
   },
   {

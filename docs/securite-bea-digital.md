@@ -43,6 +43,29 @@ Internet
 
 Ne jamais committer `.env`, `.env.docker`, dumps, clés.
 
+### IP cliente (rate limiting, audit, tentatives de connexion, erreurs API)
+
+Une seule fonction : `get_client_ip` (`backend/app/core/request_client.py`), utilisée par le
+rate limiting, `auth_login_attempts`, `auth_sessions`, `audit_logs`, `api_error_events` et les
+contextes des modules.
+
+- Point de départ : le pair réseau (`request.client.host`).
+- `X-Forwarded-For` / `X-Real-IP` ne sont lus **que** si ce pair figure dans `TRUSTED_PROXIES`
+  (IP, CIDR ou nom de service Docker, résolu avec un cache de 30 s). Vide = aucun en-tête lu.
+- `X-Forwarded-For` est remonté **de droite à gauche** tant que l'adresse courante est un proxy
+  de confiance ; le premier saut non fiable est l'IP cliente. Le premier élément (fourni par le
+  navigateur) n'est jamais pris d'office. Un élément mal formé arrête la remontée.
+- Jamais `0.0.0.0/0` ni un réseau public dans `TRUSTED_PROXIES`.
+
+| Environnement | Chaîne | `TRUSTED_PROXIES` |
+|---------------|--------|-------------------|
+| Local hors Docker (`ng serve` + uvicorn) | navigateur → proxy Angular (127.0.0.1) → uvicorn | vide (uvicorn relit déjà `X-Forwarded-For` depuis 127.0.0.1, `FORWARDED_ALLOW_IPS`) |
+| Local Docker (`docker-compose.yml`, `.dev.yml`) | navigateur → nginx `frontend` → backend | `frontend` (défaut du compose) |
+| TEST / PROD (`deployment/`) | navigateur → reverse proxy HTTPS hôte → nginx `frontend` → backend | `frontend,<adresse du reverse proxy vue par le conteneur frontend>` (à relever par l'IT) |
+
+Sans l'adresse du reverse proxy hôte en TEST/PROD, l'IP retenue est celle de ce proxy pour tous
+les agents : pas de falsification possible, mais un compteur de rate limiting commun.
+
 ## 3. Checklist serveur (intervention manuelle)
 
 ### HTTPS / TLS
@@ -145,6 +168,37 @@ Ne pas mettre à jour automatiquement une dépendance critique sans test.
 
 - JWT secret, DB password, clés, secrets MFA, tokens complets
 - Uniquement statuts : Configuré / Non configuré / Non vérifié / À changer
+- Secret ou jeton d’application cliente (aucun n’existe : M2M non activé)
+- Secret fournisseur, mot de passe ou `Authorization` dans une fiche « API externes »
+
+## 9 bis. Studio d’intégration API
+
+- **M2M** : aucun jeton d’application n’est émis. Ne pas réutiliser les JWT
+  utilisateurs ni `SECRET_KEY` comme secret universel. Décision DSI requise
+  avant toute émission ([studio-integration-api.md](studio-integration-api.md) § 12).
+- **API externes** : les URL et spécifications sont des métadonnées. Le parseur
+  OpenAPI ne sort jamais du processus (pas de `$ref` distant, pas de
+  téléchargement). Un exemple d’appel n’est pas une exécution.
+- **Exécution (Phase 5)** : aucun proxy générique. L’URL est construite
+  serveur (destination TEST approuvée + chemin d’opération). SSRF :
+  HTTPS, pas de `userinfo`, DNS `is_global` sur toutes les adresses,
+  épinglage IP + SNI, redirections refusées, timeouts et taille bornés.
+  Pas de cookie ni jeton Login 1/2. Opérations authentifiées bloquées
+  (pas de coffre de secrets approuvé). Quotas Redis fail-closed.
+- **Supervision (Phase 6)** : historique technique sans secret ni corps
+  complet ; alertes dédupliquées ; aucune sonde automatique ; export CSV
+  neutralisé. Login 2 refusé.
+- **Interface Studio** : menu filtré comme le serveur, accès direct sans
+  permission = message explicite sans appel réseau ; aucune exécution sans
+  aperçu puis confirmation, aperçu invalidé à toute modification ; aucune
+  nouvelle fonction d’appel sortant ajoutée pour l’interface.
+- **Suppressions Studio** : bilan des dépendances côté serveur, jamais de
+  cascade, révision vérifiée, journal d’audit ; exécutions et alertes jamais
+  supprimables (preuves) ; opérations importées non supprimables
+  individuellement ([studio-integration-api.md](studio-integration-api.md) § 17).
+- `python-jose` 3.3.0 signe les JWT **utilisateurs** uniquement (HS256,
+  `algorithms` restreint). Ne pas l’étendre à un serveur d’autorisation M2M
+  ni aux appels sortants.
 
 ## 10. Limite honnête
 

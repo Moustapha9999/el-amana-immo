@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import auth_http_error, get_current_user
+from app.core.request_client import get_client_ip
 from app.db.session import get_db
 from app.models import (
     Agence,
@@ -129,7 +130,7 @@ def _acteur(*codes: str) -> Callable[..., Awaitable[Acteur]]:
             raise auth_http_error(status.HTTP_403_FORBIDDEN, "PERMISSION_DENIED", "Permission refusée",
                                   required=list(codes))
         return Acteur(user, permissions, session_id=getattr(request.state, "bea_session_id", None),
-                      ip_address=request.client.host if request.client else None)
+                      ip_address=get_client_ip(request))
 
     return dependance
 

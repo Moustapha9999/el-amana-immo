@@ -5,6 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import bearer_scheme, get_platform_user
+from app.core.request_client import get_client_ip
 from app.core.security import decode_token, verify_password
 from app.db.session import get_db
 from app.models import User
@@ -36,12 +37,8 @@ router = APIRouter(tags=["auth"])
 
 
 def _client_meta(request: Request) -> tuple[str | None, str | None]:
-    forwarded = request.headers.get("x-forwarded-for")
-    ip = (forwarded.split(",")[0].strip() if forwarded else None) or (
-        request.client.host if request.client else None
-    )
     ua = request.headers.get("user-agent")
-    return ip, ua
+    return get_client_ip(request), ua
 
 
 @router.post("/auth/login", response_model=TokenPair)

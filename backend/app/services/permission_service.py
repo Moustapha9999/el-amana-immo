@@ -25,23 +25,35 @@ def permission_codes_from_user(user: User) -> set[str]:
     return codes
 
 
-def _module_of(code: str) -> str | None:
-    if "." not in code:
+# Espaces transverses : chaque permission y est accordée explicitement, sans racine `{espace}.admin`.
+NAMESPACES_SANS_ADMIN_RACINE = frozenset({"core", "plateforme", "ged", "org"})
+
+
+def admin_root_module(code: str) -> str | None:
+    """Module couvert par une permission racine `{module}.admin` (exactement deux segments).
+
+    `immobilisations.admin` → `immobilisations`. Les codes `.admin` plus profonds
+    (`core.admin.query.admin`, `mg.request.admin`, `clientele.classif.admin`, …) sont des
+    permissions exactes et ne couvrent rien d'autre qu'eux-mêmes.
+    """
+    parts = code.split(".")
+    if len(parts) != 2 or parts[1] != "admin" or not parts[0]:
         return None
-    return code.split(".", 1)[0]
+    if parts[0] in NAMESPACES_SANS_ADMIN_RACINE:
+        return None
+    return parts[0]
 
 
 def user_has_permission_codes(have: set[str], *needed: str) -> bool:
-    """True si au moins un code demandé est détenu, ou couvert par `{module}.admin`."""
+    """True si au moins un code demandé est détenu exactement, ou couvert par une racine `{module}.admin`."""
     if not needed:
         return True
     if "*" in have:
         return True
     if have.intersection(needed):
         return True
-    admin_modules = {_module_of(code) for code in have if code.endswith(".admin")}
-    admin_modules.discard(None)
-    return any(_module_of(code) in admin_modules for code in needed)
+    admin_modules = {m for m in (admin_root_module(code) for code in have) if m}
+    return any(code.split(".", 1)[0] in admin_modules for code in needed if "." in code)
 
 
 async def load_user_permission_codes(db: AsyncSession, user: User) -> set[str]:

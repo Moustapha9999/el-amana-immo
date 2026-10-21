@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import auth_http_error, get_current_user
 from app.core.exceptions import AppError
+from app.core.request_client import get_client_ip
 from app.db.session import get_db
 from app.models import Agence, User
 from app.schemas.clientele import (
@@ -118,7 +119,7 @@ def ctx(*codes: str):
         if codes and not (user.is_superuser or user_has_permission_codes(perms, *codes)):
             raise auth_http_error(status.HTTP_403_FORBIDDEN, "PERMISSION_DENIED", "Permission refusée",
                                   required=list(codes))
-        return Ctx(user=user, permissions=perms, ip_address=request.client.host if request.client else None,
+        return Ctx(user=user, permissions=perms, ip_address=get_client_ip(request),
                    session_id=getattr(request.state, "bea_session_id", None))
 
     return dependance

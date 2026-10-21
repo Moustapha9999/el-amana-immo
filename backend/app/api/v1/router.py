@@ -9,6 +9,12 @@ from app.api.v1.endpoints import (
     core_admin_audit,
     core_admin_catalogue,
     core_admin_control,
+    core_admin_integration_clients,
+    core_admin_integration_destinations,
+    core_admin_integration_fournisseurs,
+    core_admin_integration_supervision,
+    core_admin_integration_tests,
+    core_admin_integrations,
     core_admin_ops,
     core_admin_org,
     core_admin_query,
@@ -52,6 +58,12 @@ api_router.include_router(core_admin_ops.router)
 api_router.include_router(core_admin_control.router)
 api_router.include_router(core_admin_query.router)
 api_router.include_router(core_admin_org.router)
+api_router.include_router(core_admin_integrations.router)
+api_router.include_router(core_admin_integration_clients.router)
+api_router.include_router(core_admin_integration_fournisseurs.router)
+api_router.include_router(core_admin_integration_destinations.router)
+api_router.include_router(core_admin_integration_tests.router)
+api_router.include_router(core_admin_integration_supervision.router)
 api_router.include_router(org_referentiel.router)
 api_router.include_router(users.router)
 api_router.include_router(notifications.router)

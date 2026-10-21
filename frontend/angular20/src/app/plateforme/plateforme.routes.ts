@@ -189,6 +189,127 @@ export const PLATEFORME_ROUTES: Routes = [
         loadComponent: () =>
           import('./core-admin/core-admin-sauvegardes.component').then((m) => m.CoreAdminSauvegardesHistoryComponent),
       },
+      {
+        path: 'integrations',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integrations.component').then((m) => m.CoreAdminIntegrationsOverviewComponent),
+      },
+      {
+        path: 'integrations/catalogue',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integrations.component').then((m) => m.CoreAdminIntegrationsCatalogueComponent),
+      },
+      {
+        path: 'integrations/catalogue/:operationId',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-fiche.component').then((m) => m.CoreAdminIntegrationFicheComponent),
+      },
+      {
+        path: 'integrations/console',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integrations-console.component').then((m) => m.CoreAdminIntegrationsConsoleComponent),
+      },
+      {
+        path: 'integrations/clients',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-clients.component').then((m) => m.CoreAdminIntegrationClientsComponent),
+      },
+      {
+        path: 'integrations/clients/nouveau',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-client-form.component').then((m) => m.CoreAdminIntegrationClientFormComponent),
+      },
+      {
+        path: 'integrations/clients/:id/modifier',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-client-form.component').then((m) => m.CoreAdminIntegrationClientFormComponent),
+      },
+      {
+        path: 'integrations/clients/:id',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-client-fiche.component').then((m) => m.CoreAdminIntegrationClientFicheComponent),
+      },
+      {
+        path: 'integrations/destinations',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-destinations.component').then((m) => m.CoreAdminIntegrationDestinationsComponent),
+      },
+      {
+        path: 'integrations/destinations/nouvelle',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-destination-form.component').then((m) => m.CoreAdminIntegrationDestinationFormComponent),
+      },
+      {
+        path: 'integrations/destinations/:id/modifier',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-destination-form.component').then((m) => m.CoreAdminIntegrationDestinationFormComponent),
+      },
+      {
+        path: 'integrations/destinations/:id',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-destination-fiche.component').then((m) => m.CoreAdminIntegrationDestinationFicheComponent),
+      },
+      {
+        path: 'integrations/supervision',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-supervision.component').then((m) => m.CoreAdminIntegrationSupervisionComponent),
+      },
+      {
+        path: 'integrations/tests',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-tests-page.component').then((m) => m.CoreAdminIntegrationTestsPageComponent),
+      },
+      {
+        path: 'integrations/executions',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-executions.component').then((m) => m.CoreAdminIntegrationExecutionsComponent),
+      },
+      {
+        path: 'integrations/alertes',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-alertes.component').then((m) => m.CoreAdminIntegrationAlertesComponent),
+      },
+      {
+        path: 'integrations/fournisseurs',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-fournisseurs.component').then((m) => m.CoreAdminIntegrationFournisseursComponent),
+      },
+      {
+        path: 'integrations/fournisseurs/nouveau',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-fournisseur-form.component').then((m) => m.CoreAdminIntegrationFournisseurFormComponent),
+      },
+      {
+        path: 'integrations/fournisseurs/:id/modifier',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-fournisseur-form.component').then((m) => m.CoreAdminIntegrationFournisseurFormComponent),
+      },
+      {
+        path: 'integrations/fournisseurs/:id/operations/nouvelle',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-fournisseur-operation-form.component').then(
+            (m) => m.CoreAdminIntegrationFournisseurOperationFormComponent,
+          ),
+      },
+      {
+        path: 'integrations/fournisseurs/:id/operations/:opId/modifier',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-fournisseur-operation-form.component').then(
+            (m) => m.CoreAdminIntegrationFournisseurOperationFormComponent,
+          ),
+      },
+      {
+        path: 'integrations/fournisseurs/:id/operations/:opId',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-fournisseur-operation.component').then(
+            (m) => m.CoreAdminIntegrationFournisseurOperationComponent,
+          ),
+      },
+      {
+        path: 'integrations/fournisseurs/:id',
+        loadComponent: () =>
+          import('./core-admin/core-admin-integration-fournisseur-fiche.component').then((m) => m.CoreAdminIntegrationFournisseurFicheComponent),
+      },
       { path: 'backups', pathMatch: 'full', redirectTo: 'sauvegardes' },
       { path: 'recovery', pathMatch: 'full', redirectTo: 'sauvegardes/recovery' },
       { path: 'supervision', component: CoreAdminSupervisionComponent },

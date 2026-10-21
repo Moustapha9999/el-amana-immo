@@ -106,8 +106,8 @@ async def env():
 
     app.dependency_overrides[get_db] = _get_db
     ip = f"10.{random.randint(0, 255)}.{random.randint(0, 255)}.{random.randint(1, 254)}"
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test",
-                           headers={"X-Forwarded-For": ip}) as client:
+    async with AsyncClient(transport=ASGITransport(app=app, client=(ip, 50000)),
+                           base_url="http://test") as client:
         yield {"client": client, "ids": ids, "agences": [a.id for a in agences]}
     app.dependency_overrides.pop(get_db, None)
     await engine.dispose()

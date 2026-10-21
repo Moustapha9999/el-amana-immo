@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import auth_http_error, get_current_user
 from app.core.exceptions import AppError
+from app.core.request_client import get_client_ip
 from app.db.session import get_db
 from app.models import User
 from app.schemas.reclamations import (
@@ -70,7 +71,7 @@ router = APIRouter(prefix="/reclamations", tags=["Gestion des réclamations"])
 def scope(*codes: str):
     async def dependance(request: Request, user: User = Depends(get_current_user),
                          db: AsyncSession = Depends(get_db)) -> ReclamationsScope:
-        s = await charger_scope(db, user, ip_address=request.client.host if request.client else None,
+        s = await charger_scope(db, user, ip_address=get_client_ip(request),
                                 session_id=getattr(request.state, "bea_session_id", None))
         if codes and not s.peut(*codes):
             raise auth_http_error(403, "PERMISSION_DENIED", "Permission refusée", required=list(codes))

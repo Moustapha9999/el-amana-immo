@@ -25,6 +25,9 @@ x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-bea_digital_app}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-bea_digital}
   DATABASE_SSL: ${DATABASE_SSL:-false}
   SKIP_MIGRATIONS: "1"
+  # Proxys autorisés à transmettre l'IP cliente : conteneur frontend + passerelle du reverse proxy
+  # HTTPS de l'hôte (à fournir par l'IT, voir env.production.example).
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-frontend}
   REDIS_URL: redis://redis:6379/0
   CELERY_BROKER_URL: redis://redis:6379/1
   CELERY_RESULT_BACKEND: redis://redis:6379/2

@@ -1,6 +1,7 @@
 /**
  * Dev proxy : forward l'IP réelle du navigateur vers FastAPI
  * (X-Forwarded-For / X-Real-IP) pour l'audit.
+ * Seule l'adresse de la socket compte : un X-Forwarded-For envoyé par le navigateur est ignoré.
  */
 export default {
   '/api': {
@@ -11,12 +12,7 @@ export default {
     logLevel: 'warn',
     configure: (proxy) => {
       proxy.on('proxyReq', (proxyReq, req) => {
-        const existing = req.headers['x-forwarded-for'];
-        let ip =
-          (typeof existing === 'string' && existing.split(',')[0].trim()) ||
-          req.socket?.remoteAddress ||
-          req.connection?.remoteAddress ||
-          '';
+        let ip = req.socket?.remoteAddress || req.connection?.remoteAddress || '';
         if (ip.toLowerCase().startsWith('::ffff:')) {
           ip = ip.slice(7);
         }

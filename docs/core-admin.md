@@ -94,6 +94,72 @@ Permissions : `core.admin.query.view|execute|sql|export`. Routes UI :
 `/admin/core-query` (Assistant), `/builder`, `/sql`, `/favoris`, `/historique`.
 API : `/api/v1/plateforme/admin/core-query/*`. Migration `20261008_core_query`.
 
+### Studio d’intégration API (lecture seule) — voir [studio-integration-api.md](studio-integration-api.md)
+
+Permission : `core.admin.integrations.view` (seedée par le catalogue, **attribuée à
+aucun rôle**, superuser implicite). Login 1 obligatoire ; jeton Login 2 refusé.
+Routes UI : `/admin/integrations` (vue d’ensemble), `/catalogue`,
+`/catalogue/:operationId`, `/console`. API : `/api/v1/plateforme/admin/integrations/*`.
+Aucune migration, aucune table. Pour atteindre les pages, le compte doit aussi
+avoir `core.admin.access` (garde du shell `/admin`).
+
+Attribution ultérieure (décision du responsable, non faite en Phase 1) : CORE ADMIN →
+Rôles → créer ou choisir un rôle **plateforme** dédié → cocher
+`core.admin.integrations.view` (+ `core.admin.access`) → affecter le rôle au compte.
+Ne pas l’ajouter au rôle `administrateur` immo ni à un code `*.admin`.
+
+### Studio — applications clientes (Phase 2) — voir [studio-integration-api.md](studio-integration-api.md) § 11
+
+Permissions (seedées par le catalogue, **attribuées à aucun rôle**, superuser implicite) :
+`core.admin.integrations.clients.view`, `core.admin.integrations.clients.manage`,
+`core.admin.integrations.grants.view`, `core.admin.integrations.grants.manage`,
+`core.admin.integrations.grants.approve`, `core.admin.integrations.export`.
+Routes UI : `/admin/integrations/clients`, `/clients/nouveau`, `/clients/:id`,
+`/clients/:id/modifier`. Migration `20261021_integrations_01` (3 tables, additive).
+Attribution : même procédure que ci-dessus (rôle plateforme dédié). Séparer de
+préférence `grants.manage` (demandeur) et `grants.approve` (approbateur).
+
+L’authentification machine-à-machine n’est **pas** activée
+([studio-integration-api.md](studio-integration-api.md) § 12) : pas de route
+d’émission, pas de secret client, pas d’UI d’identifiants.
+
+### Studio — API externes (Phase 4) — voir [studio-integration-api.md](studio-integration-api.md) § 13
+
+Permissions (seedées par le catalogue, **attribuées à aucun rôle**, superuser implicite) :
+`core.admin.integrations.fournisseurs.view`,
+`core.admin.integrations.fournisseurs.manage`,
+`core.admin.integrations.fournisseurs.validate`.
+Routes UI : `/admin/integrations/fournisseurs`, `/fournisseurs/nouveau`,
+`/fournisseurs/:id`, `/fournisseurs/:id/modifier`,
+`/fournisseurs/:id/operations/…`. API :
+`/api/v1/plateforme/admin/integrations/fournisseurs/*`.
+Migration `20261021_integrations_02` (3 tables, additive) — **non appliquée**
+sur la base réelle. Configuration seulement jusqu’à la Phase 5 : aucun secret
+stocké. Attribution : rôle plateforme dédié ; séparer `manage`
+(configuration, import) et `validate` (validation / suspension).
+
+### Studio — exécution et supervision (Phases 5–6) — voir [studio-integration-api.md](studio-integration-api.md) § 14–15
+
+Permissions (catalogue, **attribuées à aucun rôle**) :
+`core.admin.integrations.destinations.view|manage|approve`,
+`core.admin.integrations.tests.view|execute`,
+`core.admin.integrations.supervision.view|manage|export`.
+Routes UI : `/admin/integrations/destinations…`, `/admin/integrations/tests`,
+`/admin/integrations/executions`, `/admin/integrations/supervision`,
+`/admin/integrations/alertes`, onglet test du fournisseur. Menu filtré
+entrée par entrée sur les permissions serveur (catalogue et console exigent
+`core.admin.integrations.view`) ; groupe masqué sans aucune permission Studio.
+Diagnostic de visibilité et attribution manuelle :
+[studio-integration-api.md](studio-integration-api.md) § 16.
+API : `/destinations`, `/tests/apercu`, `/tests/executer`, `/executions`,
+`/supervision`. Migrations `20261021_integrations_01..03` **appliquées sur
+`bea_digital` le 21/10/2026** (sauvegarde préalable
+`backups/local-20261021-115657.dump`). Appels sortants uniquement vers une
+destination TEST approuvée, GET/HEAD, sans secret. Pas de sonde automatique.
+Refonte UI/UX (CRUD, suppression sûre sans cascade, assistant de test en
+étapes, graphiques CSS/SVG, alertes rouvrables) :
+[studio-integration-api.md](studio-integration-api.md) § 17.
+
 ## Phases
 
 | Phase | Contenu |
@@ -163,8 +229,14 @@ ayant un accès actif (`user_module_acces.status = 'actif'`) au module
   `ROLE_PERMISSIONS` Python).
 - Rôles : liste, KPI (total, système, personnalisés, avec utilisateurs),
   création, fiche, édition des grants, suppression.
-- Permissions : mêmes actions, filtre par module. `{module}.admin` couvre
-  `{module}.*`.
+- Permissions : mêmes actions, filtre par module. Seule une racine à deux
+  segments `{module}.admin` (ex. `immobilisations.admin`, `credit.admin`)
+  couvre `{module}.*`. Un code `.admin` plus profond (`core.admin.query.admin`,
+  `mg.request.admin`, `clientele.classif.admin`, `plateforme.users.admin`) est
+  une permission **exacte**. Les espaces transverses `core`, `plateforme`, `ged`,
+  `org` n’ont pas de racine : `core.admin` n’ouvre rien d’autre que lui-même.
+  Règle : `admin_root_module` (`services/permission_service.py`), tests
+  `test_permission_wildcard.py`.
 - Protections : codes `RBAC_ROLES` (consultation…administrateur) et
   `FUNCTIONAL_PERMISSIONS` non supprimables, code figé. Le rôle
   `administrateur` immo ne peut pas recevoir `core.admin.*`.

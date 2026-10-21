@@ -11,6 +11,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from app.core.api_errors import error_body
+from app.core.request_client import get_client_ip
 from app.services.security_policy_service import get_cached_security_policy
 
 
@@ -36,12 +37,7 @@ _BUCKET = _SlidingWindow()
 
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip() or "unknown"
-    if request.client and request.client.host:
-        return request.client.host
-    return "unknown"
+    return get_client_ip(request) or "unknown"
 
 
 def _category(path: str) -> str | None:

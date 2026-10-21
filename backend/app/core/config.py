@@ -99,6 +99,11 @@ class Settings(BaseSettings):
 
     cors_origins: str = Field(default="http://localhost", alias="CORS_ORIGINS")
 
+    # Reverse proxys autorisés à transmettre l'IP cliente (X-Forwarded-For / X-Real-IP) :
+    # IP, CIDR ou nom de service Docker, séparés par des virgules. Vide = pair réseau seul.
+    # Voir docs/securite-bea-digital.md § IP cliente.
+    trusted_proxies: str = Field(default="", alias="TRUSTED_PROXIES")
+
     # Phase de test Achats : lève les verrous de statut (modification / suppression en cascade).
     # À couper (0) avant la mise en production.
     achats_mode_test: bool = Field(default=False, alias="ACHATS_MODE_TEST")
