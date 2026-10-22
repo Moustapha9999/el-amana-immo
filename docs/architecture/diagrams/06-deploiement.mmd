@@ -1,0 +1,52 @@
+%% Diagramme 6 — Déploiement
+%% Gauche : instance locale constatée le 22/10/2026 (docker-compose.yml, poste Windows + Docker Desktop).
+%% Droite : cible TEST/PROD décrite par deployment/docker-compose.prod.yml — jamais constatée sur un serveur réel.
+flowchart TB
+    subgraph LOCAL["Instance locale constatée (docker-compose.yml)"]
+        direction TB
+        L_FE["bea-frontend<br/>0.0.0.0:80 → 80"]
+        L_BE["bea-backend :8000<br/>(non publié)"]
+        L_WK["bea-worker"]
+        L_PG[("bea-postgres 17-alpine<br/>0.0.0.0:5432 → 5432")]
+        L_RD[("bea-redis :6379<br/>(non publié)")]
+        L_PGA["bea-pgadmin<br/>0.0.0.0:5050 → 80"]
+        L_VOL[("volume bea_postgres_data<br/>volume bea_pgadmin_data")]
+        L_BIND[("bind mounts : storage/uploads,<br/>storage/ged, backups/, database/init")]
+        L_FE --> L_BE
+        L_BE --> L_PG
+        L_BE --> L_RD
+        L_WK --> L_RD
+        L_WK --> L_PG
+        L_PGA --> L_PG
+        L_PG --- L_VOL
+        L_BE --- L_BIND
+    end
+
+    subgraph CIBLE["Cible TEST / PROD (deployment/docker-compose.prod.yml) — non constatée"]
+        direction TB
+        P_RP["Reverse proxy HTTPS hôte<br/>:80 → redirection, :443 TLS 1.2/1.3<br/>(modèle à adapter par l'IT)"]
+        P_FE["bea-frontend<br/>127.0.0.1:8080 → 80"]
+        P_BE["bea-backend :8000"]
+        P_WK["bea-worker"]
+        P_PG[("bea-postgres 17 (Debian)<br/>aucun port publié")]
+        P_RD[("bea-redis<br/>sans persistance, aucun port publié")]
+        P_VOL[("volume bea_postgres_data<br/>+ storage/ et backups/ sur l'hôte")]
+        P_LOG["journaux Docker json-file<br/>5 x 20 Mo par conteneur"]
+        P_RP --> P_FE --> P_BE
+        P_BE --> P_PG
+        P_BE --> P_RD
+        P_WK --> P_RD
+        P_WK --> P_PG
+        P_PG --- P_VOL
+        P_BE --- P_LOG
+    end
+
+    REL["Livraison : scripts/release.ps1 → images.tar + SHA-256<br/>ou registre GitLab (.gitlab-ci.yml, tag v*)"]
+    REL -. "deploy.sh : sauvegarde vérifiée → migrations →<br/>redémarrage → /health/ready + /version → retour arrière conditionnel" .-> CIBLE
+
+    classDef verifie fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b1b1b;
+    classDef futur fill:#f5f5f5,stroke:#757575,stroke-width:1px,stroke-dasharray:2 3,color:#424242;
+    classDef risque fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#1b1b1b;
+    class L_FE,L_BE,L_WK,L_RD,L_VOL,L_BIND verifie;
+    class L_PG,L_PGA risque;
+    class P_RP,P_FE,P_BE,P_WK,P_PG,P_RD,P_VOL,P_LOG,REL futur;

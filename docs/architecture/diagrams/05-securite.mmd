@@ -1,0 +1,51 @@
+%% Diagramme 5 — Architecture de sécurité et frontières de confiance
+%% Trait plein = contrôle constaté dans le code ; pointillé = contrôle prévu, optionnel ou non configuré.
+flowchart LR
+    subgraph Z0["Zone non maîtrisée : poste utilisateur"]
+        U["Navigateur<br/>jetons access/refresh en localStorage<br/>(Login 1 et Login 2)"]
+    end
+
+    subgraph Z1["Zone d'exposition (hôte)"]
+        TLS["Terminaison TLS<br/>reverse proxy HTTPS — modèle,<br/>non déployé (HTTP seul en local)"]
+        NG["nginx frontend<br/>en-têtes nosniff, DENY, Referrer-Policy<br/>pas de CSP sur la SPA<br/>client_max_body_size 50 Mo"]
+    end
+
+    subgraph Z2["Zone applicative (réseau Docker bea_internal)"]
+        MW["Middlewares FastAPI<br/>request_id, CSP API, rate limit mémoire,<br/>anti-doublon"]
+        AUTH["Authentification<br/>bcrypt, verrouillage 5 échecs / 15 min,<br/>TOTP optionnel, JWT HS256 + session en base"]
+        AUTHZ["Autorisation backend<br/>espace → module → permission<br/>(api/deps.py)"]
+        AUD["Traçabilité<br/>audit_logs, auth_login_attempts,<br/>api_error_events, core_query_logs"]
+        SEC["Secrets<br/>SECRET_KEY (JWT + chiffrement TOTP),<br/>variables .env hors Git"]
+    end
+
+    subgraph Z3["Zone données"]
+        PG[("PostgreSQL 17<br/>compte applicatif superuser<br/>SSL désactivé")]
+        FS[("Fichiers<br/>uploads, GED, sauvegardes<br/>sur le même hôte")]
+        RD[("Redis<br/>sans mot de passe")]
+    end
+
+    ADMDB["pgAdmin :5050 et PostgreSQL :5432<br/>publiés sur toutes les interfaces<br/>(compose local uniquement)"]
+
+    U -. "HTTPS 443 (cible)" .-> TLS
+    U -- "HTTP 80 (local)" --> NG
+    TLS -. "HTTP 127.0.0.1:8080" .-> NG
+    NG -- "HTTP interne + X-Forwarded-For<br/>(TRUSTED_PROXIES)" --> MW
+    MW --> AUTH
+    MW --> AUTHZ
+    AUTH --> AUD
+    AUTHZ --> AUD
+    AUTH --> SEC
+    AUTHZ --> PG
+    AUD --> PG
+    AUTHZ --> FS
+    MW --> RD
+    ADMDB -. "accès direct hors application" .-> PG
+
+    classDef verifie fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b1b1b;
+    classDef partiel fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,stroke-dasharray:6 3,color:#1b1b1b;
+    classDef futur fill:#f5f5f5,stroke:#757575,stroke-width:1px,stroke-dasharray:2 3,color:#424242;
+    classDef risque fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#1b1b1b;
+    class MW,AUTH,AUTHZ,AUD verifie;
+    class NG,SEC,FS partiel;
+    class TLS futur;
+    class U,PG,RD,ADMDB risque;

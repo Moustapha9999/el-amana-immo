@@ -1,0 +1,38 @@
+%% Diagramme 2 — Conteneurs techniques (C4 niveau 2)
+%% Source : docker-compose.yml (local) et deployment/docker-compose.prod.yml (TEST/PROD).
+%% Trait plein = flux constaté ; pointillé = flux conditionnel ou cible non déployée.
+flowchart TB
+    NAV["Navigateur utilisateur<br/>SPA Angular 20.3<br/>jetons JWT en localStorage"]
+
+    RP["Reverse proxy HTTPS de l'hôte<br/>nginx — modèle seulement<br/>deployment/nginx/bea-digital.conf.template"]
+
+    subgraph DOCKER["Hôte Docker — réseau bridge bea_internal"]
+        FE["frontend<br/>nginx 1.27-alpine<br/>fichiers statiques Angular<br/>+ proxy /api/, /health, /version"]
+        BE["backend<br/>Python 3.13 / FastAPI 0.115.6<br/>Uvicorn 0.34 (1 processus)"]
+        WK["worker<br/>Celery 5.4 + beat embarqué (-B)<br/>même image que backend"]
+        RD[("redis<br/>Redis 7-alpine<br/>db0 anti-doublon / quotas<br/>db1 broker, db2 résultats")]
+        PG[("postgres<br/>PostgreSQL 17<br/>base unique bea_digital")]
+        PGA["pgadmin<br/>dpage/pgadmin4<br/>(compose local uniquement)"]
+    end
+
+    FS[("Stockage hôte<br/>storage/uploads, storage/ged,<br/>backups/")]
+
+    NAV -- "HTTP :80 (local)" --> FE
+    NAV -. "HTTPS :443 (cible TEST/PROD)" .-> RP
+    RP -. "HTTP 127.0.0.1:8080" .-> FE
+    FE -- "HTTP :8000 /api/*<br/>X-Forwarded-For" --> BE
+    BE -- "TCP 5432 asyncpg<br/>SSL désactivé (DATABASE_SSL=false)" --> PG
+    BE -- "TCP 6379 RESP<br/>sans authentification" --> RD
+    BE -- "Tâches Celery (OCR)" --> RD
+    RD -- "consommation des tâches" --> WK
+    WK -- "TCP 5432 psycopg2 (OCR, supervision)<br/>et asyncpg (contrats, stock)" --> PG
+    BE -- "lecture / écriture fichiers<br/>pg_dump / pg_restore (CORE ADMIN)" --> FS
+    WK -- "lecture GED (OCR Tesseract)" --> FS
+    PGA -- "TCP 5432" --> PG
+
+    classDef verifie fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b1b1b;
+    classDef partiel fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,stroke-dasharray:6 3,color:#1b1b1b;
+    classDef futur fill:#f5f5f5,stroke:#757575,stroke-width:1px,stroke-dasharray:2 3,color:#424242;
+    class NAV,FE,BE,WK,RD,PG,FS verifie;
+    class PGA partiel;
+    class RP futur;

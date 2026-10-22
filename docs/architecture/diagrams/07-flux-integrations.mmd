@@ -1,0 +1,43 @@
+%% Diagramme 7 — Flux de données et intégrations
+%% Trait plein = échange actif constaté dans le code ; pointillé = échange manuel, conditionnel ou futur.
+flowchart LR
+    ORION["ORION<br/>(core banking)"]
+    OPS["Agent habilité<br/>(Conformité, Comptabilité)"]
+
+    subgraph BEA["BEA DIGITAL"]
+        IMP["Imports fichiers<br/>Excel ORION (clientèle, hebdo),<br/>historique Formation, réclamations"]
+        SOL["Saisie soldes ORION<br/>(comptes 140000 / 142000 / 145300)"]
+        DB[("PostgreSQL<br/>clientele_*, soldes_compte_orion,<br/>immobilisations, …")]
+        EXP["Exports<br/>Excel / PDF / CSV<br/>(BCM, SIC, rapports)"]
+        OCR["OCR asynchrone<br/>Celery + Tesseract"]
+        STUDIO["Studio d'intégration<br/>exécuteur HTTPS anti-SSRF"]
+        MAIL["Mailer SMTP<br/>(rappels contrats)"]
+        AV["Contrôle antivirus<br/>clamd"]
+    end
+
+    BCM["Banque Centrale<br/>de Mauritanie"]
+    EXT["API externe de TEST<br/>(destination approuvée)"]
+    SMTP["SMTP interne"]
+    CLAM["ClamAV DSI"]
+    M2M["Applications clientes M2M"]
+
+    ORION -. "extraction manuelle<br/>(hors application)" .-> OPS
+    OPS -- "HTTPS multipart<br/>upload .xlsx / .xls" --> IMP
+    OPS -- "formulaire" --> SOL
+    IMP -- "analyse → aperçu →<br/>confirmation SQL" --> DB
+    SOL --> DB
+    DB --> EXP
+    EXP -- "téléchargement navigateur" --> OPS
+    OPS -. "transmission hors<br/>application (procédure à confirmer)" .-> BCM
+    DB -- "file Celery (Redis)" --> OCR
+    STUDIO -. "HTTPS 443 GET/HEAD<br/>sans secret, quotas Redis" .-> EXT
+    MAIL -. "SMTP STARTTLS<br/>inactif : SMTP_HOST vide" .-> SMTP
+    AV -. "TCP 3310 INSTREAM<br/>inactif : CLAMAV_HOST vide" .-> CLAM
+    M2M -. "aucun mécanisme M2M<br/>(Phase 3 arrêtée)" .-> STUDIO
+
+    classDef verifie fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b1b1b;
+    classDef partiel fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,stroke-dasharray:6 3,color:#1b1b1b;
+    classDef futur fill:#f5f5f5,stroke:#757575,stroke-width:1px,stroke-dasharray:2 3,color:#424242;
+    class IMP,SOL,DB,EXP,OCR,OPS verifie;
+    class STUDIO,ORION,BCM,EXT partiel;
+    class MAIL,AV,SMTP,CLAM,M2M futur;

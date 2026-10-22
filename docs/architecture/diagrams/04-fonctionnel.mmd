@@ -1,0 +1,61 @@
+%% Diagramme 4 — Architecture fonctionnelle : espaces, modules et socle commun
+%% Statuts lus dans plateforme_modules de l'instance locale le 22/10/2026 (modifiables par CORE ADMIN).
+%% Vert = actif ; orange = actif mais en construction / partiel ; gris = désactivé ou « bientôt ».
+flowchart TB
+    subgraph CORE["Socle CORE commun (tous les espaces)"]
+        direction LR
+        C1["Auth Login 1 / Login 2<br/>sessions"]
+        C2["RBAC<br/>rôles, permissions, grants"]
+        C3["Audit<br/>audit_logs"]
+        C4["Notifications<br/>cloisonnées"]
+        C5["GED<br/>ged_documents + OCR"]
+        C6["Référentiel organisationnel<br/>departements, agences"]
+    end
+
+    ADM["CORE ADMIN (/admin, Login 1)<br/>utilisateurs, rôles, modules, sessions,<br/>audit, sécurité, sauvegardes, CORE QUERY,<br/>Studio d'intégration API"]
+
+    subgraph COMPTA["Espace Comptabilité"]
+        IMMO["Immobilisations & Amortissements"]
+        DCPT["Demandes"]
+        RAPP["Rapprochements (bientôt)"]
+    end
+
+    subgraph MG["Espace Moyens Généraux"]
+        STK["Stock & Fournitures"]
+        ACH["Achats & Approvisionnements"]
+        NDF["Notes de frais"]
+        CTR["Contrats & Échéances"]
+        FAC["Facturation Fournisseurs"]
+        AMG["Archives MG"]
+        DMG["Demandes MG"]
+    end
+
+    subgraph ACC["Espace Audit, Contrôle & Conformité"]
+        CLI["Base Clientèle (clientele)"]
+        EER["Entrées en Relation (eer)<br/>désactivé"]
+        FOR["Formation & Sensibilisation"]
+        REC["Gestion des réclamations"]
+    end
+
+    subgraph AUTRES["Autres espaces"]
+        ARG["Archive Générale"]
+        DEM["Demandes Crédit / RH / Informatique"]
+        DEMP["Demandes employés<br/>désactivé"]
+    end
+
+    ADM --> CORE
+    COMPTA --> CORE
+    MG --> CORE
+    ACC --> CORE
+    AUTRES --> CORE
+    EER -. "pont racine ORION<br/>(lecture)" .-> CLI
+    REC -. "racine client facultative" .-> CLI
+    DMG -. "regroupement en<br/>demande d'achat" .-> ACH
+    FAC -. "contrats / points<br/>de facturation" .-> CTR
+
+    classDef actif fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b1b1b;
+    classDef partiel fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,stroke-dasharray:6 3,color:#1b1b1b;
+    classDef inactif fill:#f5f5f5,stroke:#757575,stroke-width:1px,stroke-dasharray:2 3,color:#424242;
+    class C1,C2,C3,C4,C5,C6,ADM,IMMO,DCPT,STK,ACH,NDF,CTR,FAC,AMG,DMG,FOR,ARG,DEM actif;
+    class CLI,REC partiel;
+    class EER,DEMP,RAPP inactif;

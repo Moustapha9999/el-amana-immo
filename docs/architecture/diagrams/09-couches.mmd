@@ -1,0 +1,37 @@
+%% Diagramme 9 — Couches techniques (Frontend, API, Backend, Docker, Base)
+%% Trait plein = flux constaté ; pointillé = cible TEST/PROD ou option non configurée.
+flowchart TB
+    subgraph FRONT["Frontend"]
+        SPA["SPA Angular 20.3<br/>frontend/angular20/<br/>jetons dans localStorage"]
+    end
+    subgraph DOCKER["Docker — réseau bea_internal"]
+        NGX["nginx 1.27<br/>conteneur frontend<br/>fichiers statiques + proxy /api/"]
+        API["API FastAPI /api/v1<br/>conteneur backend :8000"]
+        SVC["Services backend<br/>métier + CORE + workers"]
+        WK["Worker Celery + beat<br/>même image que le backend"]
+        RD[("Redis 7<br/>broker, anti-doublon, quotas")]
+        PG[("PostgreSQL 17<br/>base unique bea_digital")]
+    end
+    FS[("Disque hôte<br/>storage/ uploads + ged<br/>backups/")]
+
+    SPA -- "HTTP :80 (local)" --> NGX
+    NGX -- "HTTP interne /api/*" --> API
+    API --> SVC
+    SVC -- "asyncpg" --> PG
+    SVC -- "fichiers, pg_dump" --> FS
+    API -- "tâches OCR" --> RD
+    RD --> WK
+    WK --> PG
+    WK --> FS
+    SVC --> RD
+
+    classDef front fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#1b1b1b;
+    classDef api fill:#fff8e1,stroke:#f9a825,stroke-width:2px,color:#1b1b1b;
+    classDef back fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px,color:#1b1b1b;
+    classDef docker fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b1b1b;
+    classDef db fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#1b1b1b;
+    class SPA front;
+    class API api;
+    class SVC,WK back;
+    class NGX,RD docker;
+    class PG,FS db;

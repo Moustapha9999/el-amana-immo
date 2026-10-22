@@ -1,0 +1,70 @@
+%% Diagramme 3 — Composants du backend FastAPI (C4 niveau 3)
+%% Source : backend/app/main.py, api/deps.py, api/v1/router.py, services/, workers/.
+%% Ordre d'exécution des middlewares sur la requête : de haut en bas.
+flowchart TB
+    REQ["Requête HTTP /api/v1/*<br/>(depuis nginx frontend)"]
+
+    subgraph MW["Middlewares Starlette (app/main.py, app/middleware/)"]
+        M1["RequestContextMiddleware<br/>request_id, journal d'accès JSON,<br/>enregistrement api_error_events"]
+        M2["SecurityHeadersMiddleware<br/>CSP, X-Frame-Options, HSTS hors dev"]
+        M3["RateLimitMiddleware<br/>fenêtre glissante en mémoire du processus<br/>par IP et catégorie"]
+        M4["IdempotencyMiddleware<br/>en-tête Idempotency-Key, Redis"]
+        M5["CORSMiddleware<br/>CORS_ORIGINS"]
+    end
+
+    subgraph API["Couche API (app/api/v1/endpoints/, 43 fichiers)"]
+        R1["auth.py<br/>Login 1, Login 2, refresh,<br/>logout, TOTP"]
+        R2["core_admin_*.py<br/>/plateforme/admin/*"]
+        R3["Routeurs métier<br/>immobilisations, mg_*, clientele,<br/>eer, formation, reclamations, documents, ged"]
+    end
+
+    subgraph DEPS["Dépendances de sécurité (app/api/deps.py)"]
+        D1["Décodage JWT HS256<br/>+ session active en base (auth_sessions)"]
+        D2["get_platform_user /<br/>require_platform_permission<br/>(Login 1, MFA CORE ADMIN si politique)"]
+        D3["require_module_access /<br/>require_demandes_module<br/>(Login 2 + module actif + grant)"]
+        D4["require_permission<br/>(codes permissions RBAC)"]
+    end
+
+    subgraph SVC["Services applicatifs (app/services/, ~200 fichiers)"]
+        S1["Services métier<br/>(stock, achats, clientèle, EER,<br/>réclamations, formation, immo)"]
+        S2["amortissement_engine.py<br/>(règle VNC — figé)"]
+        S3["Services transverses<br/>audit, notifications, GED,<br/>politique sécurité, sauvegardes"]
+        S4["CORE QUERY<br/>validateur SQL + rôle restreint"]
+        S5["Studio d'intégration<br/>catalogue, console ASGI,<br/>exécuteur HTTPS anti-SSRF"]
+    end
+
+    subgraph DATA["Accès aux données"]
+        ORM["SQLAlchemy 2.0 async<br/>AsyncSession par requête<br/>commit / rollback auto (db/session.py)"]
+        RO["Moteur lecture seule<br/>(db/lecture_seule.py)"]
+        FILES["Stockage fichiers local<br/>(core/fichiers.py : signature,<br/>macros refusées, 25 Mo, clamd optionnel)"]
+    end
+
+    PG[("PostgreSQL 17")]
+    RD[("Redis 7")]
+    CEL["Worker Celery<br/>OCR, supervision, rappels contrats,<br/>seuils stock"]
+
+    REQ --> M1 --> M2 --> M3 --> M4 --> M5 --> API
+    R1 --> D1
+    R2 --> D2
+    R3 --> D3
+    R3 --> D4
+    D2 --> D1
+    D3 --> D1
+    D4 --> D1
+    API --> SVC
+    S1 --> S2
+    SVC --> ORM
+    S4 --> RO
+    S1 --> FILES
+    S3 --> FILES
+    ORM --> PG
+    RO --> PG
+    M4 --> RD
+    S5 --> RD
+    S3 -- "ocr_document.delay()" --> RD
+    RD --> CEL
+    CEL --> PG
+
+    classDef verifie fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b1b1b;
+    classDef partiel fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,stroke-dasharray:6 3,color:#1b1b1b;
+    class M1,M2,M3,M4,M5,R1,R2,R3,D1,D2,D3,D4,S1,S2,S3,S4,S5,ORM,RO,FILES,PG,RD,CEL verifie;
