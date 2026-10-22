@@ -20,6 +20,7 @@ import { OrgReferentielService } from '../core/org/org-referentiel.service';
 import { OrgAgenceOption, OrgEntiteOption } from '../core/org/org-referentiel.models';
 import { QuantitePipe, formatQuantite } from '../shared/montant.pipe';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
+import { AUTRE, CHAMP_AUTRE_PAR_CODE, corpsOrg, erreurAutre, libelleOrg } from './org-autre';
 import { StockMouvementRow } from './stock-mouvement-edit.component';
 
 export interface SortieArticle {
@@ -64,7 +65,9 @@ type Champ =
   | 'article_id'
   | 'quantite'
   | 'departement_id'
+  | 'departement_autre'
   | 'service_id'
+  | 'service_autre'
   | 'agence_id'
   | 'demandeur'
   | 'motif_id'
@@ -89,6 +92,7 @@ const CHAMP_PAR_CODE: Record<string, Champ> = {
   DEMANDEUR_REFERENCE_REQUIS: 'demandeur',
   MOTIF_INVALIDE: 'motif_id',
   OBSERVATION_OBLIGATOIRE: 'observation',
+  ...CHAMP_AUTRE_PAR_CODE,
 };
 
 /**
@@ -179,6 +183,7 @@ const CHAMP_PAR_CODE: Record<string, Champ> = {
                       @for (d of departements(); track d.id) {
                         <option [value]="d.id">{{ indent(d) }}{{ d.libelle }}{{ d.sigle ? ' (' + d.sigle + ')' : '' }}{{ d.a_confirmer ? ' — à confirmer' : '' }}</option>
                       }
+                      <option [value]="AUTRE">Autre (préciser)…</option>
                     </select>
                     @if (erreur('departement_id'); as e) { <small class="bea-sortie__err">{{ e }}</small> }
                   </label>
@@ -189,10 +194,31 @@ const CHAMP_PAR_CODE: Record<string, Champ> = {
                       @for (s of services(); track s.id) {
                         <option [value]="s.id">{{ indentService(s) }}{{ s.libelle }}{{ s.a_confirmer ? ' — à confirmer' : '' }}</option>
                       }
+                      @if (departementId()) {
+                        <option [value]="AUTRE">Autre (préciser)…</option>
+                      }
                     </select>
                     @if (erreur('service_id'); as e) { <small class="bea-sortie__err">{{ e }}</small> }
+                    @else if (departementAutre()) { <small class="bea-sortie__hint">Département saisi : précisez le service avec « Autre » ou laissez vide.</small> }
                     @else { <small class="bea-sortie__hint">Limité aux services du département choisi.</small> }
                   </label>
+                  @if (departementAutre()) {
+                    <label>
+                      Nom du département *
+                      <input formControlName="departement_autre" maxlength="120" autocomplete="off"
+                             placeholder="Département absent de la liste" [attr.aria-invalid]="!!erreur('departement_autre')" />
+                      @if (erreur('departement_autre'); as e) { <small class="bea-sortie__err">{{ e }}</small> }
+                      @else { <small class="bea-sortie__hint">Enregistré tel quel sur la sortie, sans être ajouté à l’organigramme.</small> }
+                    </label>
+                  }
+                  @if (serviceAutre()) {
+                    <label>
+                      Nom du service *
+                      <input formControlName="service_autre" maxlength="120" autocomplete="off"
+                             placeholder="Service absent de la liste" [attr.aria-invalid]="!!erreur('service_autre')" />
+                      @if (erreur('service_autre'); as e) { <small class="bea-sortie__err">{{ e }}</small> }
+                    </label>
+                  }
                 } @else {
                   <label class="bea-mg__span2">
                     Agence destinataire *
@@ -317,7 +343,9 @@ export class StockSortieFormComponent implements OnInit {
     quantite: [1 as number | null, Validators.required],
     destination_type: ['DEPARTEMENT' as 'DEPARTEMENT' | 'AGENCE'],
     departement_id: [''],
+    departement_autre: [''],
     service_id: [''],
+    service_autre: [''],
     agence_id: [''],
     demandeur_id: [''],
     demandeur_nom: [''],
@@ -334,6 +362,9 @@ export class StockSortieFormComponent implements OnInit {
   readonly motif = computed(() => this.ref()?.motifs.find((m) => m.id === this.valeurs().motif_id) ?? null);
   readonly destination = computed(() => this.valeurs().destination_type ?? 'DEPARTEMENT');
   readonly departementId = computed(() => this.valeurs().departement_id || '');
+  readonly departementAutre = computed(() => this.departementId() === AUTRE);
+  readonly serviceAutre = computed(() => this.valeurs().service_id === AUTRE);
+  protected readonly AUTRE = AUTRE;
   readonly stockApres = computed(() => {
     const a = this.article();
     const q = Number(this.valeurs().quantite);
@@ -360,14 +391,22 @@ export class StockSortieFormComponent implements OnInit {
   constructor() {
     this.form.controls.destination_type.valueChanges.subscribe((type) => {
       if (type === 'AGENCE') {
-        this.form.patchValue({ departement_id: '', service_id: '' }, { emitEvent: false });
+        this.form.patchValue(
+          { departement_id: '', departement_autre: '', service_id: '', service_autre: '' },
+          { emitEvent: false },
+        );
       } else {
         this.form.patchValue({ agence_id: '' }, { emitEvent: false });
       }
       this.form.updateValueAndValidity();
     });
-    this.form.controls.departement_id.valueChanges.subscribe(() => {
-      this.form.controls.service_id.setValue('', { emitEvent: false });
+    this.form.controls.departement_id.valueChanges.subscribe((id) => {
+      this.form.patchValue({ service_id: '', service_autre: '' }, { emitEvent: false });
+      if (id !== AUTRE) this.form.controls.departement_autre.setValue('', { emitEvent: false });
+      this.form.updateValueAndValidity();
+    });
+    this.form.controls.service_id.valueChanges.subscribe((id) => {
+      if (id !== AUTRE) this.form.controls.service_autre.setValue('', { emitEvent: false });
     });
     for (const [nom, ctrl] of Object.entries(this.form.controls) as [string, AbstractControl][]) {
       const champ = (nom === 'demandeur_nom' || nom === 'demandeur_id' ? 'demandeur' : nom) as Champ;
@@ -483,8 +522,7 @@ export class StockSortieFormComponent implements OnInit {
       stock_attendu: article.stock_actuel,
     };
     if (v.destination_type === 'DEPARTEMENT') {
-      body['departement_id'] = v.departement_id;
-      if (v.service_id) body['service_id'] = v.service_id;
+      Object.assign(body, corpsOrg(v));
     } else {
       body['agence_id'] = v.agence_id;
     }
@@ -530,9 +568,7 @@ export class StockSortieFormComponent implements OnInit {
     if (v.destination_type === 'AGENCE') {
       return this.agences().find((a) => a.id === v.agence_id)?.libelle ?? 'l’agence';
     }
-    const dep = this.entites().find((e) => e.id === v.departement_id)?.libelle ?? 'le département';
-    const srv = this.entites().find((e) => e.id === v.service_id)?.libelle;
-    return srv ? `${dep} › ${srv}` : dep;
+    return libelleOrg(v, this.entites(), 'le département');
   }
 
   private surErreur(e: ApiErrorInfo): void {
@@ -580,6 +616,14 @@ export class StockSortieFormComponent implements OnInit {
       }
       case 'departement_id':
         return v.destination_type === 'DEPARTEMENT' && !v.departement_id ? 'Choisissez le département destinataire.' : null;
+      case 'departement_autre':
+        return v.destination_type === 'DEPARTEMENT' && v.departement_id === AUTRE
+          ? erreurAutre(v.departement_autre, 'département', this.entites())
+          : null;
+      case 'service_autre':
+        return v.destination_type === 'DEPARTEMENT' && v.service_id === AUTRE
+          ? erreurAutre(v.service_autre, 'service', this.entites())
+          : null;
       case 'agence_id':
         return v.destination_type === 'AGENCE' && !v.agence_id ? 'Choisissez l’agence destinataire.' : null;
       case 'demandeur': {
@@ -600,7 +644,18 @@ export class StockSortieFormComponent implements OnInit {
   }
 
   private premierChampEnErreur(): Champ | null {
-    const ordre: Champ[] = ['article_id', 'quantite', 'departement_id', 'service_id', 'agence_id', 'demandeur', 'motif_id', 'observation'];
+    const ordre: Champ[] = [
+      'article_id',
+      'quantite',
+      'departement_id',
+      'departement_autre',
+      'service_id',
+      'service_autre',
+      'agence_id',
+      'demandeur',
+      'motif_id',
+      'observation',
+    ];
     return ordre.find((c) => this.erreurLocale(c) || this.erreursServeur()[c]) ?? null;
   }
 

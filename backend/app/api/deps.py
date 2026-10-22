@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.models import Role, User
 from app.models.auth import SESSION_KIND_MODULE, SESSION_KIND_PLATFORM
 from app.services.auth_session_service import AuthSessionService
+from app.services.notification_service import NotificationScope
 from app.services.permission_service import load_user_permission_codes, user_has_permission_codes
 from app.services.plateforme_access_service import PlateformeAccessService
 
@@ -116,6 +117,34 @@ async def get_platform_user(
     return user
 
 
+async def _verify_module_session(db: AsyncSession, user: User, session: object, module_code: str):
+    """Session module valide (parent Login 1 actif), module ouvert et accordé à l'utilisateur."""
+    parent_id = session.parent_session_id
+    if parent_id is None:
+        raise auth_http_error(
+            status.HTTP_401_UNAUTHORIZED,
+            "PLATFORM_SESSION_EXPIRED",
+            "Session BEA DIGITAL expirée ou révoquée",
+        )
+    parent = await AuthSessionService(db).get_active_session(parent_id)
+    if parent is None or (parent.kind or SESSION_KIND_PLATFORM) != SESSION_KIND_PLATFORM:
+        raise auth_http_error(
+            status.HTTP_401_UNAUTHORIZED,
+            "PLATFORM_SESSION_EXPIRED",
+            "Session BEA DIGITAL expirée ou révoquée",
+        )
+    access = PlateformeAccessService(db)
+    module = await access.get_module(module_code)
+    if module is None or not module.is_active or module.statut != "actif":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Module indisponible")
+    if not await access.user_has_module(user, module_code):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "MODULE_FORBIDDEN", "message": "Module non autorisé", "module": module_code},
+        )
+    return module
+
+
 def require_module_access(module_code: str):
     async def _checker(
         request: Request,
@@ -131,35 +160,31 @@ def require_module_access(module_code: str):
                 "Authentification du module requise",
                 module=module_code,
             )
-        parent_id = session.parent_session_id
-        if parent_id is None:
-            raise auth_http_error(
-                status.HTTP_401_UNAUTHORIZED,
-                "PLATFORM_SESSION_EXPIRED",
-                "Session BEA DIGITAL expirée ou révoquée",
-            )
-        parent = await AuthSessionService(db).get_active_session(parent_id)
-        if parent is None or (parent.kind or SESSION_KIND_PLATFORM) != SESSION_KIND_PLATFORM:
-            raise auth_http_error(
-                status.HTTP_401_UNAUTHORIZED,
-                "PLATFORM_SESSION_EXPIRED",
-                "Session BEA DIGITAL expirée ou révoquée",
-            )
-        access = PlateformeAccessService(db)
-        module = await access.get_module(module_code)
-        if module is None or not module.is_active or module.statut != "actif":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Module indisponible")
-        if not await access.user_has_module(user, module_code):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "MODULE_FORBIDDEN", "message": "Module non autorisé", "module": module_code},
-            )
+        module = await _verify_module_session(db, user, session, module_code)
         request.state.bea_module_code = module_code
         request.state.bea_espace_code = module.espace.code if module.espace else None
         request.state.bea_session_id = getattr(session, "id", None)
         return user
 
     return _checker
+
+
+async def get_notification_context(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> tuple[User, NotificationScope]:
+    """Espace de notifications de la session : module (Login 2) ou plateforme (Login 1)."""
+    user, session, _ = await _load_user_and_session(credentials, db, request)
+    kind = getattr(session, "kind", None) or SESSION_KIND_PLATFORM
+    if kind != SESSION_KIND_MODULE:
+        _bind_request_session(request, session)
+        return user, NotificationScope.plateforme()
+    module_code = (session.module_code or "").strip().lower()
+    module = await _verify_module_session(db, user, session, module_code)
+    espace_code = module.espace.code if module.espace else None
+    _bind_request_session(request, session, module_code=module_code, espace_code=espace_code)
+    return user, NotificationScope.module(module_code, espace_code)
 
 
 def require_demandes_module():
@@ -180,29 +205,7 @@ def require_demandes_module():
                 "Authentification du module Demandes requise",
                 module="demandes",
             )
-        parent_id = session.parent_session_id
-        if parent_id is None:
-            raise auth_http_error(
-                status.HTTP_401_UNAUTHORIZED,
-                "PLATFORM_SESSION_EXPIRED",
-                "Session BEA DIGITAL expirée ou révoquée",
-            )
-        parent = await AuthSessionService(db).get_active_session(parent_id)
-        if parent is None or (parent.kind or SESSION_KIND_PLATFORM) != SESSION_KIND_PLATFORM:
-            raise auth_http_error(
-                status.HTTP_401_UNAUTHORIZED,
-                "PLATFORM_SESSION_EXPIRED",
-                "Session BEA DIGITAL expirée ou révoquée",
-            )
-        access = PlateformeAccessService(db)
-        module = await access.get_module(module_code)
-        if module is None or not module.is_active or module.statut != "actif":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Module indisponible")
-        if not await access.user_has_module(user, module_code):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "MODULE_FORBIDDEN", "message": "Module non autorisé", "module": module_code},
-            )
+        module = await _verify_module_session(db, user, session, module_code)
         request.state.bea_module_code = module_code
         request.state.bea_espace_code = module.espace.code if module.espace else None
         request.state.bea_session_id = getattr(session, "id", None)

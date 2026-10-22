@@ -84,6 +84,7 @@ def check_server_error_spike() -> int:
                     entity="api_error_events",
                     entity_id=None,
                     module_code="core",
+                    portee="core_admin",
                     lu=False,
                     categorie="systeme",
                     priorite="haute",

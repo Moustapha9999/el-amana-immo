@@ -72,6 +72,7 @@ DEMANDE_STATUTS = frozenset(
 class MgStockService:
     def __init__(self, db: AsyncSession):
         self.db = db
+        self._alertes = None
 
     @staticmethod
     def niveau_stock(article: MgArticle) -> str:
@@ -404,6 +405,7 @@ class MgStockService:
         article.stock_actuel = new_stock
         if periode is not None:
             await MgStockPeriodeService(self.db).touch_solde(periode, article, mvt.type_mouvement, delta_qty)
+        await self._suivre_seuil(article, mouvement_reference=mvt.reference)
 
     async def update_mouvement(
         self, mvt_id: uuid.UUID, data: MouvementUpdate
@@ -540,6 +542,7 @@ class MgStockService:
                     solde.ecart = Decimal(solde.stock_physique) - Decimal(solde.stock_theorique)
                 elif solde.stock_final is not None:
                     solde.stock_final = Decimal(solde.stock_final) - effet
+        await self._suivre_seuil(article, mouvement_reference=mvt.reference)
         before = self.mouvement_snapshot(mvt)
         await self.db.delete(mvt)
         return before
@@ -751,6 +754,10 @@ class MgStockService:
             cloturee = bool(periode and periode.statut == "CLOTUREE")
             agence_libelle = agences.get(m.agence_id) if m.agence_id else None
             service_libelle = entites.get(m.service_id) if m.service_id else None
+            departement_autre = getattr(m, "departement_autre", False) is True
+            service_autre = getattr(m, "service_autre", False) is True
+            if service_libelle is None and service_autre:
+                service_libelle = m.service_libelle
             if m.destination_type == "AGENCE":
                 destination_libelle = agence_libelle
             elif m.destination_type == "DEPARTEMENT":
@@ -804,6 +811,8 @@ class MgStockService:
                     "org_entite_id": m.org_entite_id,
                     "service_id": m.service_id,
                     "service_libelle": service_libelle,
+                    "departement_autre": departement_autre,
+                    "service_autre": service_autre,
                     "agence_libelle": agence_libelle,
                     "destination_libelle": destination_libelle,
                     "demandeur_id": m.demandeur_id,
@@ -828,7 +837,7 @@ class MgStockService:
             agence_id=agence.id,
             agence_libelle_snapshot=agence.libelle,
             agence_adresse_snapshot=agence.adresse,
-            departement=data.departement,
+            departement=" ".join((data.departement or "").split()) or None,
             demandeur_id=user.id,
             demandeur_nom=user.full_name,
             fonction=data.fonction,
@@ -848,7 +857,7 @@ class MgStockService:
         if demande.statut != "BROUILLON":
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Seuls les brouillons sont modifiables")
         if data.departement is not None:
-            demande.departement = data.departement
+            demande.departement = " ".join(data.departement.split()) or None
         if data.fonction is not None:
             demande.fonction = data.fonction
         if data.observation is not None:
@@ -1142,22 +1151,27 @@ class MgStockService:
     async def list_alertes(
         self, *, agence_id: uuid.UUID | None = None
     ) -> list[dict]:
-        articles, _ = await self.list_articles(bas_stock=True, agence_id=agence_id, size=500)
+        from app.services.mg_stock_alertes import FiltresAlertes, MgStockAlerteService, TYPE_RUPTURE
+
+        actives, _ = await MgStockAlerteService(self.db).lister(
+            FiltresAlertes(actives=True, agence_id=agence_id), size=500
+        )
         out = [
             {
-                "article_id": a.id,
-                "code": a.code,
-                "designation": a.designation,
-                "stock_actuel": a.stock_actuel,
-                "stock_min": a.stock_min,
-                "niveau": self.niveau_stock(a),
-                "agence_id": a.agence_id,
-                "type_alerte": "RUPTURE" if self.niveau_stock(a) == "epuise" else "STOCK_FAIBLE",
-                "titre": "Rupture" if self.niveau_stock(a) == "epuise" else "Stock faible",
-                "message": f"{a.code} — {a.designation}",
-                "lien": "/stock-fournitures/alertes",
+                "alerte_id": a["id"],
+                "article_id": a["article_id"],
+                "code": a["article_code"],
+                "designation": a["article_designation"],
+                "stock_actuel": a["stock_actuel"],
+                "stock_min": a["seuil"],
+                "niveau": "epuise" if a["type_alerte"] == TYPE_RUPTURE else "faible",
+                "agence_id": a["agence_id"],
+                "type_alerte": a["type_alerte"],
+                "titre": a["type_libelle"],
+                "message": f"{a['article_code']} — {a['article_designation']}",
+                "lien": f"/stock-fournitures/alertes?alerte={a['id']}",
             }
-            for a in articles
+            for a in actives
         ]
         try:
             psvc = MgStockPeriodeService(self.db)
@@ -1486,7 +1500,24 @@ class MgStockService:
         await self.db.flush()
         if type_mouvement in {"ENTREE", "SORTIE", "AJUSTEMENT"}:
             await psvc.touch_solde(periode, article, type_mouvement, mvt_qty)
+        await self._suivre_seuil(article, mouvement_id=mvt.id, mouvement_reference=mvt.reference)
         return mvt
+
+    async def _suivre_seuil(
+        self,
+        article: MgArticle,
+        *,
+        mouvement_id: uuid.UUID | None = None,
+        mouvement_reference: str | None = None,
+    ) -> None:
+        """Règle d'alerte de stock bas, dans la transaction du mouvement qui a changé le stock."""
+        from app.services.mg_stock_alertes import MgStockAlerteService
+
+        if self._alertes is None:
+            self._alertes = MgStockAlerteService(self.db)
+        await self._alertes.evaluer(
+            article, mouvement_id=mouvement_id, mouvement_reference=mouvement_reference
+        )
 
     async def _next_mvt_ref(self, type_mouvement: str) -> str:
         defaults = {"ENTREE": "ENT", "SORTIE": "SOR", "AJUSTEMENT": "AJU", "INVENTAIRE": "INV"}

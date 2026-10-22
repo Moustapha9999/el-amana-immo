@@ -1,5 +1,12 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, forwardRef, inject, input, signal } from '@angular/core';
-import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
+import {
+  AbstractControl,
+  ControlValueAccessor,
+  NG_VALIDATORS,
+  NG_VALUE_ACCESSOR,
+  ValidationErrors,
+  Validator,
+} from '@angular/forms';
 import { OrgReferentielService } from './org-referentiel.service';
 import { OrgEntiteOption, OrgTypeEntite } from './org-referentiel.models';
 
@@ -13,6 +20,14 @@ export function orgCle(texte: string | null | undefined): string {
     .trim();
 }
 
+/** Valeur sentinelle de l'option « Autre (préciser) ». */
+export const AUTRE_LIBELLE = '__AUTRE__';
+
+/** Espaces superflus retirés, comme `nettoyer_libelle` côté serveur. */
+export function nettoyerLibelle(valeur: string | null | undefined): string {
+  return (valeur ?? '').replace(/\s+/g, ' ').trim();
+}
+
 /**
  * Sélecteur d'entité de l'organigramme pour les champs « département / service » encore stockés en
  * texte (`departement`). Valeur = libellé exact de l'entité : la base rattache alors `org_entite_id`
@@ -22,7 +37,10 @@ export function orgCle(texte: string | null | undefined): string {
 @Component({
   selector: 'bea-org-entite-libelle-select',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  providers: [{ provide: NG_VALUE_ACCESSOR, useExisting: forwardRef(() => OrgEntiteLibelleSelectComponent), multi: true }],
+  providers: [
+    { provide: NG_VALUE_ACCESSOR, useExisting: forwardRef(() => OrgEntiteLibelleSelectComponent), multi: true },
+    { provide: NG_VALIDATORS, useExisting: forwardRef(() => OrgEntiteLibelleSelectComponent), multi: true },
+  ],
   template: `
     <select
       class="bea-org-select"
@@ -32,15 +50,37 @@ export function orgCle(texte: string | null | undefined): string {
       (blur)="onTouched()"
     >
       <option value="" [selected]="!value()">{{ placeholder() }}</option>
-      @if (ancienneSaisie(); as ancienne) {
+      @if (!autre() && ancienneSaisie(); as ancienne) {
         <option [value]="ancienne" selected>{{ ancienne }} — ancienne saisie, non rattachée</option>
       }
       @for (e of options(); track e.id) {
-        <option [value]="e.libelle" [selected]="e.id === selectionId()">
+        <option [value]="e.libelle" [selected]="!saisieLibre() && e.id === selectionId()">
           {{ indent(e) }}{{ e.libelle }}{{ e.sigle ? ' (' + e.sigle + ')' : '' }}{{ e.a_confirmer ? ' — à confirmer' : '' }}
         </option>
       }
+      @if (autre()) {
+        <option [value]="AUTRE" [selected]="saisieLibre()">Autre (préciser)…</option>
+      }
     </select>
+    @if (saisieLibre()) {
+      <input
+        class="bea-org-select bea-org-select__autre"
+        maxlength="120"
+        autocomplete="off"
+        placeholder="Département ou service absent de la liste"
+        aria-label="Département / service saisi (Autre)"
+        [disabled]="disabled()"
+        [value]="texteLibre()"
+        [attr.aria-invalid]="!!erreurLibre()"
+        (input)="saisir($any($event.target).value)"
+        (blur)="libreTouche.set(true); onTouched()"
+      />
+      @if (erreurLibre(); as e) {
+        <small class="bea-org-select__err">{{ e }}</small>
+      } @else {
+        <small class="bea-org-select__hint">Enregistré tel quel, sans être ajouté à l’organigramme.</small>
+      }
+    }
   `,
   styles: [
     `
@@ -65,11 +105,33 @@ export function orgCle(texte: string | null | undefined): string {
       .bea-org-select:disabled {
         opacity: 0.6;
       }
+      .bea-org-select__autre {
+        margin-top: 0.4rem;
+      }
+      .bea-org-select__err,
+      .bea-org-select__hint {
+        display: block;
+        margin-top: 0.25rem;
+        font-size: 0.78rem;
+      }
+      .bea-org-select__err {
+        color: var(--bea-danger, #c0392b);
+      }
+      .bea-org-select__hint {
+        opacity: 0.7;
+      }
     `,
   ],
 })
-export class OrgEntiteLibelleSelectComponent implements ControlValueAccessor, OnInit {
+export class OrgEntiteLibelleSelectComponent implements ControlValueAccessor, Validator, OnInit {
   private readonly referentiel = inject(OrgReferentielService);
+  protected readonly AUTRE = AUTRE_LIBELLE;
+
+  /** Ajoute « Autre (préciser) » : libellé libre, enregistré sans créer d'entité. */
+  readonly autre = input(false);
+  readonly saisieLibre = signal(false);
+  readonly texteLibre = signal('');
+  protected readonly libreTouche = signal(false);
 
   /** Par défaut : niveaux opérationnels (pas le Conseil ni les comités). */
   readonly types = input<OrgTypeEntite[]>(['DIRECTION_GENERALE', 'DIRECTION', 'DEPARTEMENT', 'SERVICE', 'SECTION', 'CELLULE']);
@@ -98,11 +160,19 @@ export class OrgEntiteLibelleSelectComponent implements ControlValueAccessor, On
     return v && !this.selectionId() && this.entites().length ? v : null;
   });
 
+  readonly erreurLibre = computed(() => (this.libreTouche() ? this.erreurTexte() : null));
+
   private onChange: (v: string | null) => void = () => {};
+  private onValidatorChange: () => void = () => {};
   onTouched: () => void = () => {};
 
   ngOnInit(): void {
-    this.referentiel.entitesActives().subscribe({ next: (items) => this.entites.set(items) });
+    this.referentiel.entitesActives().subscribe({
+      next: (items) => {
+        this.entites.set(items);
+        this.basculerSaisieLibre();
+      },
+    });
   }
 
   indent(e: OrgEntiteOption): string {
@@ -110,13 +180,62 @@ export class OrgEntiteLibelleSelectComponent implements ControlValueAccessor, On
   }
 
   choisir(libelle: string): void {
+    if (libelle === AUTRE_LIBELLE) {
+      this.saisieLibre.set(true);
+      this.libreTouche.set(false);
+      this.texteLibre.set('');
+      this.value.set(null);
+      this.onChange(null);
+      this.onValidatorChange();
+      return;
+    }
+    this.saisieLibre.set(false);
     const v = libelle || null;
+    this.value.set(v);
+    this.onChange(v);
+    this.onValidatorChange();
+  }
+
+  saisir(texte: string): void {
+    this.texteLibre.set(texte);
+    this.libreTouche.set(true);
+    const v = nettoyerLibelle(texte) || null;
     this.value.set(v);
     this.onChange(v);
   }
 
   writeValue(v: string | null): void {
     this.value.set(v || null);
+    this.saisieLibre.set(false);
+    this.basculerSaisieLibre();
+  }
+
+  validate(_control: AbstractControl): ValidationErrors | null {
+    const e = this.erreurTexte();
+    return e ? { orgAutre: e } : null;
+  }
+
+  registerOnValidatorChange(fn: () => void): void {
+    this.onValidatorChange = fn;
+  }
+
+  /** Valeur texte hors référentiel avec `autre` actif : affichée comme saisie « Autre ». */
+  private basculerSaisieLibre(): void {
+    const v = this.value();
+    if (this.autre() && v && this.entites().length && !this.selectionId()) {
+      this.saisieLibre.set(true);
+      this.texteLibre.set(v);
+    }
+  }
+
+  private erreurTexte(): string | null {
+    if (!this.saisieLibre()) return null;
+    const v = nettoyerLibelle(this.texteLibre());
+    if (!v) return 'Saisissez le nom du département ou du service.';
+    if (v.length > 120) return '120 caractères au plus.';
+    const cle = orgCle(v);
+    const existante = this.entites().find((e) => orgCle(e.libelle) === cle || (e.alias ?? []).includes(cle));
+    return existante ? `« ${existante.libelle} » existe déjà dans la liste : sélectionnez-le au lieu de « Autre ».` : null;
   }
 
   registerOnChange(fn: (v: string | null) => void): void {

@@ -37,6 +37,7 @@ from app.schemas.mg_requests import (
 from app.services.mg_pdf_service import pdf_employee_request
 from app.services.mg_requests_events import audit_request
 from app.services.mg_requests_service import MgRequestsService
+from app.services.notification_service import NotificationScope
 from app.services.request_access import require_owner, require_target
 
 me_router = APIRouter(prefix="/me/requests", tags=["demandes"])
@@ -76,10 +77,14 @@ async def me_refs(
 
 @me_router.get("/dashboard", response_model=MineDashboardOut, dependencies=_me)
 async def me_dashboard(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.request.mine.view")),
 ):
-    return await MgRequestsService(db).mine_dashboard(user.id)
+    espace, module = _source(request)
+    return await MgRequestsService(db).mine_dashboard(
+        user.id, notification_scope=NotificationScope.module(module, espace)
+    )
 
 
 @me_router.get("/documents", response_model=MineDocumentListOut, dependencies=_me)

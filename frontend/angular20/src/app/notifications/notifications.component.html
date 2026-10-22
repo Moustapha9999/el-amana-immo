@@ -2,17 +2,26 @@
   <header class="ntf__hero">
     <div>
       <h1 class="ntf__title">Notifications</h1>
-      <p class="ntf__lead">
-        @if (unread() > 0) {
-          {{ unread() }} non lue(s) — fin d’amortissement et écarts inventaire.
-        } @else {
-          Fin d’amortissement et écarts inventaire.
-        }
-        Consultez aussi
-        <a routerLink="/inventaire" class="app-link">Inventaire</a>
-        et
-        <a routerLink="/amortissements" class="app-link">Amortissements</a>.
-      </p>
+      @if (moduleTitre(); as titre) {
+        <p class="ntf__lead">
+          @if (unread() > 0) {
+            {{ unread() }} non lue(s) —
+          }
+          Notifications du module {{ titre }} uniquement.
+        </p>
+      } @else {
+        <p class="ntf__lead">
+          @if (unread() > 0) {
+            {{ unread() }} non lue(s) — fin d’amortissement et écarts inventaire.
+          } @else {
+            Fin d’amortissement et écarts inventaire.
+          }
+          Consultez aussi
+          <a routerLink="/inventaire" class="app-link">Inventaire</a>
+          et
+          <a routerLink="/amortissements" class="app-link">Amortissements</a>.
+        </p>
+      }
     </div>
     <div class="ntf__hero-actions">
       <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()">

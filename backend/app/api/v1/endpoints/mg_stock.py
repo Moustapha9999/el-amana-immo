@@ -16,7 +16,13 @@ from app.schemas.common import PaginatedResponse
 from app.schemas.nombres import as_qty
 from app.schemas.mg_ops import BonOut
 from app.schemas.mg_stock import (
+    AlerteControleOut,
+    AlerteDetailOut,
     AlerteOut,
+    AlerteSuiviListOut,
+    AlerteSuiviOut,
+    AlerteSuppression,
+    AlerteUpdate,
     ArticleCreate,
     ArticleFicheOut,
     ArticleOut,
@@ -67,6 +73,8 @@ from app.services.mg_inventaire_import import InventaireImportService
 from app.services.mg_inventaire_reference import InventaireReferenceService
 from app.services.mg_inventaire_service import MgInventaireService
 from app.services.mg_stock_events import audit_stock, notify_stock_roles, notify_stock_user
+from app.services.mg_stock_alertes import FUSEAU as FUSEAU_ALERTES
+from app.services.mg_stock_alertes import FiltresAlertes, MgStockAlerteService
 from app.services.mg_stock_entrees import MgStockEntreeService
 from app.services.mg_stock_service import MgStockService
 from app.services.mg_stock_sorties import (
@@ -90,6 +98,19 @@ def _filtre_texte(rows, q, champs):
     if not terme:
         return rows
     return [r for r in rows if any(terme in str(v or "").lower() for v in champs(r))]
+
+
+def _date_heure(valeur) -> str:
+    return valeur.astimezone(FUSEAU_ALERTES).strftime("%d/%m/%Y %H:%M") if valeur else ""
+
+
+def _destination_export(m: dict) -> str:
+    libelle = m.get("destination_libelle") or " · ".join(
+        x for x in (m.get("provenance_libelle"), m.get("piece_reference")) if x
+    )
+    if libelle and (m.get("departement_autre") or m.get("service_autre")):
+        libelle += " (saisie « Autre »)"
+    return libelle
 
 
 def _article_out(svc: MgStockService, article) -> ArticleOut:
@@ -382,8 +403,7 @@ async def export_mouvements(
             as_qty(m["quantite"] or 0),
             float(m["stock_disponible"] or 0) if m.get("stock_disponible") is not None else "",
             m.get("initiateur_nom") or "",
-            m.get("destination_libelle")
-            or " · ".join(x for x in (m.get("provenance_libelle"), m.get("piece_reference")) if x),
+            _destination_export(m),
             m.get("demandeur_nom") or "",
             m.get("motif") or "",
         ]
@@ -1001,24 +1021,151 @@ async def list_alertes(
     return await MgStockService(db).list_alertes(agence_id=agence_id)
 
 
+def _filtres_alertes(
+    statut: str | None = Query(None, pattern="^(NOUVELLE|EN_COURS|RESOLUE|CLOTUREE)$"),
+    type_alerte: str | None = Query(None, pattern="^(STOCK_FAIBLE|RUPTURE)$"),
+    agence_id: UUID | None = None,
+    famille_id: UUID | None = None,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    q: str | None = Query(None, max_length=120),
+    actives: bool = False,
+    supprimees: bool = False,
+) -> FiltresAlertes:
+    return FiltresAlertes(
+        statut=statut,
+        type_alerte=type_alerte,
+        agence_id=agence_id,
+        famille_id=famille_id,
+        date_debut=date_debut,
+        date_fin=date_fin,
+        q=q,
+        actives=actives,
+        supprimees=supprimees,
+    )
+
+
+async def _voir_supprimees(db: AsyncSession, user: User, filtres: FiltresAlertes) -> None:
+    if filtres.supprimees and "mg.stock.alert.delete" not in await load_user_permission_codes(db, user):
+        raise AppError("Consultation des alertes supprimées non autorisée.", 403, code="PERMISSION_REFUSEE")
+
+
+@router.get("/alertes/suivi", response_model=AlerteSuiviListOut, dependencies=_module)
+async def suivi_alertes(
+    filtres: FiltresAlertes = Depends(_filtres_alertes),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.view")),
+):
+    await _voir_supprimees(db, user, filtres)
+    svc = MgStockAlerteService(db)
+    items, total = await svc.lister(filtres, page=page, size=size)
+    kpis = await svc.kpis(agence_id=filtres.agence_id, famille_id=filtres.famille_id)
+    return {"items": items, "total": total, "page": page, "size": size, "kpis": kpis}
+
+
+@router.get("/alertes/suivi/responsables", dependencies=_module)
+async def responsables_alertes(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.alert.manage")),
+):
+    return await MgStockAlerteService(db).responsables()
+
+
+@router.post("/alertes/suivi/controle", response_model=AlerteControleOut, dependencies=_module)
+async def controle_alertes(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.alert.manage")),
+):
+    resultat = await MgStockAlerteService(db).controle(user)
+    await db.commit()
+    return resultat
+
+
+@router.post("/alertes/suivi/suppression", dependencies=_module)
+async def supprimer_alertes(
+    data: AlerteSuppression,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.alert.delete")),
+):
+    n = await MgStockAlerteService(db).supprimer(data.ids, data.motif, user)
+    await db.commit()
+    return {"supprimees": n}
+
+
+@router.get("/alertes/suivi/{alerte_id}", response_model=AlerteDetailOut, dependencies=_module)
+async def detail_alerte(
+    alerte_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.view")),
+):
+    svc = MgStockAlerteService(db)
+    peut_voir_supprimee = "mg.stock.alert.delete" in await load_user_permission_codes(db, user)
+    alerte = await svc.get(alerte_id, supprimee_ok=peut_voir_supprimee)
+    (item,) = await svc.enrichir([alerte])
+    return {**item, "historique": await svc.historique(alerte_id)}
+
+
+@router.patch("/alertes/suivi/{alerte_id}", response_model=AlerteSuiviOut, dependencies=_module)
+async def modifier_alerte(
+    alerte_id: UUID,
+    data: AlerteUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.alert.manage")),
+):
+    svc = MgStockAlerteService(db)
+    alerte = await svc.modifier(alerte_id, data.model_dump(exclude_unset=True), user)
+    await db.commit()
+    (item,) = await svc.enrichir([await svc.get(alerte.id)])
+    return item
+
+
+@router.delete("/alertes/suivi/{alerte_id}", dependencies=_module)
+async def supprimer_alerte(
+    alerte_id: UUID,
+    motif: str = Query(..., min_length=3, max_length=500),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("mg.stock.alert.delete")),
+):
+    n = await MgStockAlerteService(db).supprimer([alerte_id], motif, user)
+    await db.commit()
+    return {"supprimees": n}
+
+
 @router.get("/alertes/export", dependencies=_module)
 async def export_alertes(
-    agence_id: UUID | None = None,
-    q: str | None = None,
+    filtres: FiltresAlertes = Depends(_filtres_alertes),
     format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("mg.stock.export")),
+    user: User = Depends(require_permission("mg.stock.export")),
 ):
-    rows = await MgStockService(db).list_alertes(agence_id=agence_id)
-    rows = _filtre_texte(rows, q, lambda a: (a.get("code"), a.get("designation"), a.get("titre")))
-    headers = ["Code", "Désignation", "Stock", "Min", "Niveau"]
+    await _voir_supprimees(db, user, filtres)
+    rows, _ = await MgStockAlerteService(db).lister(filtres, size=500)
+    headers = [
+        "Alerte",
+        "Article",
+        "Agence / emplacement",
+        "Type",
+        "Statut",
+        "Quantité disponible",
+        "Seuil",
+        "Détectée le",
+        "Retour à la normale",
+        "Responsable",
+    ]
     data_rows = [
         [
-            a["code"],
-            a["designation"],
-            as_qty(a["stock_actuel"] or 0),
-            as_qty(a["stock_min"] or 0),
-            a["niveau"],
+            a["reference"],
+            f"{a['article_code']} — {a['article_designation']}",
+            " · ".join(x for x in (a["agence_libelle"], a["emplacement"]) if x),
+            a["type_libelle"],
+            a["statut_libelle"],
+            as_qty(a["quantite_actuelle"] or 0),
+            as_qty(a["seuil"] or 0),
+            _date_heure(a["detectee_at"]),
+            _date_heure(a["retour_normal_at"]),
+            a["responsable_nom"] or "",
         ]
         for a in rows
     ]

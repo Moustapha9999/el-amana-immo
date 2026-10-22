@@ -192,6 +192,7 @@ class CoreAdminOpsService:
         espace_code: str | None = None,
         periode: str | None = None,
         user_id: str | None = None,
+        portee: str | None = None,
     ) -> tuple[list[dict], int, dict]:
         from datetime import datetime, timedelta, timezone
 
@@ -216,6 +217,8 @@ class CoreAdminOpsService:
             stmt = stmt.where(Notification.module_code == module_code)
         if espace_code:
             stmt = stmt.where(Notification.espace_code == espace_code)
+        if portee:
+            stmt = stmt.where(Notification.portee == portee)
         if categorie:
             stmt = stmt.where(Notification.categorie == categorie)
         if priorite:
@@ -299,6 +302,7 @@ class CoreAdminOpsService:
                     "entity_id": notif.entity_id,
                     "espace_code": notif.espace_code,
                     "module_code": notif.module_code,
+                    "portee": getattr(notif, "portee", None) or "module",
                     "categorie": cat,
                     "categorie_label": NOTIFICATION_CATEGORIES.get(cat, cat),
                     "priorite": prio,

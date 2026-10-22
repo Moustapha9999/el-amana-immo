@@ -32,7 +32,7 @@ est encore valide. Détail auth : [socle-bea-digital.md](socle-bea-digital.md).
 | E | Modules | `plateforme_modules` | Actifs : `immobilisations`, `stock-fournitures` (+ stubs bientôt). `domaine_id` (nullable) + `icon` |
 | F | Accès | `user_espace_acces`, `user_module_acces` | User → département, User → module |
 | G | Audit | `audit_logs` | Qui, quoi, quand, espace, module, action, session |
-| H | Notifications | `notifications` | Filtrables par `espace_code` / `module_code`. Enum Postgres historique immo ; nouveaux modules → `event_type` libre + `categorie` (`notification_taxonomy`) |
+| H | Notifications | `notifications` | Cloisonnées par `portee` (`module` / `core_admin` / `plateforme`) + `espace_code` / `module_code` (voir ci-dessous). Enum Postgres historique immo ; nouveaux modules → `event_type` libre + `categorie` (`notification_taxonomy`) |
 | I | Sessions | `auth_sessions` | `kind=platform` (BEA DIGITAL) et `kind=module` |
 | J | GED | `ged_documents` | Lecture CORE ADMIN + API métier `/api/v1/ged/*`. `pieces_jointes` / `archive_*` restent immo |
 
@@ -64,6 +64,26 @@ Ces URLs restent `/api/v1/...` (pas de préfixe `/comptabilite/`).
 
 Le métier immo (`/immobilisations`, `/amortissements`, écritures, …) exige
 toujours Login 2 `immobilisations`.
+
+## Cloisonnement des notifications
+
+Migration `20261022_notifications_01` (colonne `notifications.portee`, additive).
+
+- **Périmètre déduit du contexte authentifié, jamais d’un paramètre** :
+  `get_notification_context` (`api/deps.py`) → session Login 2 d’un module = portée `module`
+  + `module_code` (alias `immobilisations` ⇄ `immos`) + `espace_code` du catalogue ;
+  sinon Login 1 = portée `plateforme`. `/notifications`, `/notifications/unread-count`,
+  `/{id}/read`, `/read-all` n’acceptent aucun filtre d’espace ; lire / marquer une notification
+  hors périmètre → 404.
+- `NotificationService.create` exige une portée valide ; portée `module` sans module refusée.
+  Notifications d’exploitation CORE ADMIN (`plateforme_module`, `platform_restore`,
+  `api_error_events`, supervision) → `core_admin`, visibles uniquement dans `/admin`.
+- Multi-espaces : `create_multi_espaces` uniquement pour une route déclarée dans
+  `data/notification_routing.ROUTES_AUTORISEES` (vide par défaut) — jamais implicite.
+- Historique : rattachement déduit de données fiables (entité / `module_code`) ; une
+  notification sans module reste en portée `plateforme` (Login 1), sans attribution arbitraire.
+- Front : entrée « Notifications » `/{code}/notifications` dans chaque module (immobilisations
+  inchangé : `/notifications`) ; badge = `GET /notifications/unread-count`.
 
 ## GED (Document Service central)
 

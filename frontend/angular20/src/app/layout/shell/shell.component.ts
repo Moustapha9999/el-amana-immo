@@ -78,6 +78,12 @@ export class ShellComponent implements OnInit {
     }
     this.hydrateModuleContext(code);
     this.loadNotificationCount();
+    this.router.events
+      .pipe(
+        filter((e) => e instanceof NavigationEnd),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe(() => this.loadNotificationCount());
     if (code === 'stock-fournitures') this.watchStockAlertes();
   }
 
@@ -146,13 +152,12 @@ export class ShellComponent implements OnInit {
     });
   }
 
+  /** Compteur de l'espace de la session (module + département), calculé par le backend. */
   loadNotificationCount(): void {
-    this.api
-      .get<{ items: { lu: boolean }[] }>('/notifications', { page: 1, size: 50, unread_only: 'true' })
-      .subscribe({
-        next: (res) => this.notificationUnread.set(res.items.filter((n) => !n.lu).length),
-        error: () => this.notificationUnread.set(0),
-      });
+    this.api.get<{ count: number }>('/notifications/unread-count').subscribe({
+      next: (res) => this.notificationUnread.set(res.count),
+      error: () => this.notificationUnread.set(0),
+    });
   }
 
   unreadForPath(path: string): number | null {
@@ -160,7 +165,7 @@ export class ShellComponent implements OnInit {
       const n = this.stockAlertes.count();
       return n > 0 ? n : null;
     }
-    if (path !== '/notifications') {
+    if (path !== '/notifications' && !path.endsWith('/notifications')) {
       return null;
     }
     const n = this.notificationUnread();

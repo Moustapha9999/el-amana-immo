@@ -121,6 +121,9 @@ class SortieCreate(BaseModel):
     destination_type: Literal["DEPARTEMENT", "AGENCE"]
     departement_id: UUID | None = None
     service_id: UUID | None = None
+    # Option « Autre » : texte saisi hors référentiel (None = valeur choisie dans la liste).
+    departement_autre: str | None = Field(default=None, max_length=120)
+    service_autre: str | None = Field(default=None, max_length=120)
     agence_id: UUID | None = None
     demandeur_id: UUID | None = None
     demandeur_nom: str | None = Field(default=None, max_length=255)
@@ -140,6 +143,8 @@ class EntreeCreate(BaseModel):
     piece_reference: str | None = Field(default=None, max_length=80)
     departement_id: UUID | None = None
     service_id: UUID | None = None
+    departement_autre: str | None = Field(default=None, max_length=120)
+    service_autre: str | None = Field(default=None, max_length=120)
     agence_id: UUID | None = None
     remis_par: str | None = Field(default=None, max_length=255)
     motif_id: UUID
@@ -227,6 +232,8 @@ class MouvementOut(BaseModel):
     org_entite_id: UUID | None = None
     service_id: UUID | None = None
     service_libelle: str | None = None
+    departement_autre: bool = False
+    service_autre: bool = False
     agence_libelle: str | None = None
     destination_libelle: str | None = None
     demandeur_id: UUID | None = None
@@ -286,6 +293,8 @@ class DemandeOut(BaseModel):
     agence_id: UUID
     agence_libelle_snapshot: str | None
     departement: str | None
+    # NULL avec un libellé = saisie « Autre », hors référentiel (rattachement par déclencheur sinon).
+    org_entite_id: UUID | None = None
     demandeur_id: UUID | None
     demandeur_nom: str | None
     fonction: str | None
@@ -559,6 +568,7 @@ class InventaireImportOptions(BaseModel):
 
 
 class AlerteOut(BaseModel):
+    alerte_id: UUID | None = None
     article_id: UUID | None = None
     code: str | None = None
     designation: str | None = None
@@ -570,6 +580,96 @@ class AlerteOut(BaseModel):
     titre: str | None = None
     message: str | None = None
     lien: str | None = None
+
+
+class AlerteSuiviOut(BaseModel):
+    id: UUID
+    reference: str
+    article_id: UUID
+    article_code: str | None = None
+    article_reference: str | None = None
+    article_designation: str | None = None
+    famille_id: UUID | None = None
+    famille_libelle: str | None = None
+    agence_id: UUID | None = None
+    agence_libelle: str | None = None
+    emplacement: str | None = None
+    uom: str | None = None
+    type_alerte: str
+    type_libelle: str
+    statut: str
+    statut_libelle: str
+    origine: str
+    seuil: Qty
+    quantite_detection: Qty
+    quantite_actuelle: Qty
+    stock_actuel: Qty | None = None
+    detectee_at: datetime
+    rupture_at: datetime | None = None
+    retour_normal_at: datetime | None = None
+    quantite_retour: Qty | None = None
+    episode_ouvert: bool
+    mouvement_reference: str | None = None
+    responsable_id: UUID | None = None
+    responsable_nom: str | None = None
+    commentaire: str | None = None
+    traite_par_nom: str | None = None
+    traite_at: datetime | None = None
+    deleted_at: datetime | None = None
+    deleted_by_nom: str | None = None
+    motif_suppression: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class AlerteKpisOut(BaseModel):
+    seuil: Qty
+    alertes_actives: bool
+    articles_stock_faible: int
+    articles_rupture: int
+    alertes_non_traitees: int
+    alertes_en_cours: int
+    alertes_resolues: int
+    alertes_cloturees: int
+
+
+class AlerteSuiviListOut(BaseModel):
+    items: list[AlerteSuiviOut]
+    total: int
+    page: int
+    size: int
+    kpis: AlerteKpisOut
+
+
+class AlerteHistoriqueOut(BaseModel):
+    action: str
+    user_nom: str | None = None
+    created_at: datetime
+    before: dict | None = None
+    after: dict | None = None
+
+
+class AlerteDetailOut(AlerteSuiviOut):
+    historique: list[AlerteHistoriqueOut] = Field(default_factory=list)
+
+
+class AlerteUpdate(BaseModel):
+    statut: Literal["NOUVELLE", "EN_COURS", "RESOLUE", "CLOTUREE"] | None = None
+    responsable_id: UUID | None = None
+    commentaire: str | None = Field(default=None, max_length=2000)
+
+
+class AlerteSuppression(BaseModel):
+    ids: list[UUID] = Field(min_length=1, max_length=500)
+    motif: str = Field(min_length=3, max_length=500)
+
+
+class AlerteControleOut(BaseModel):
+    seuil: Qty | None = None
+    articles: int
+    ouvertes: int
+    ruptures: int
+    retours: int
 
 
 class PeriodeOut(BaseModel):

@@ -1,10 +1,11 @@
 import { DatePipe } from '@angular/common';
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { ApiService } from '../core/services/api.service';
+import { PlateformeContextService } from '../plateforme/plateforme-context.service';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 
 interface NotificationRow {
@@ -33,6 +34,7 @@ export class NotificationsComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
   private readonly dialogs = inject(UiDialogService);
+  private readonly ctx = inject(PlateformeContextService);
 
   readonly rows = signal<NotificationRow[]>([]);
   readonly unread = signal(0);
@@ -43,18 +45,28 @@ export class NotificationsComponent implements OnInit {
     this.load();
   }
 
+  /** Espace d'un module (/{code}/notifications) ; sinon Immobilisations (URL racine figée). */
+  readonly moduleTitre = computed(() => (this.router.url.split('?')[0] === '/notifications' ? null : this.ctx.moduleTitre()));
+
   load(): void {
     this.loading.set(true);
+    this.loadUnread();
     this.api.get<Paginated<NotificationRow>>('/notifications', { page: 1, size: 100 }).subscribe({
       next: (res) => {
         this.rows.set(res.items);
-        this.unread.set(res.items.filter((n) => !n.lu).length);
         this.loading.set(false);
       },
       error: () => {
         this.loading.set(false);
         void this.dialogs.error('Impossible de charger les notifications').subscribe();
       },
+    });
+  }
+
+  private loadUnread(): void {
+    this.api.get<{ count: number }>('/notifications/unread-count').subscribe({
+      next: (res) => this.unread.set(res.count),
+      error: () => this.unread.set(this.rows().filter((n) => !n.lu).length),
     });
   }
 
@@ -85,6 +97,21 @@ export class NotificationsComponent implements OnInit {
     if (row.entity === 'eer_dossier' && row.entity_id) {
       return `/eer/dossiers/${row.entity_id}`;
     }
+    if (row.entity === 'mg_stock_alerte' && row.entity_id) {
+      return `/stock-fournitures/alertes?alerte=${row.entity_id}`;
+    }
+    if (row.entity === 'mg_demande_fourniture' && row.entity_id) {
+      return `/stock-fournitures/demandes/${row.entity_id}`;
+    }
+    if (row.entity === 'note_frais' && row.entity_id) {
+      return `/notes-frais/notes/${row.entity_id}`;
+    }
+    if (row.entity === 'mg_bon_commande' && row.entity_id) {
+      return `/achats-appro/bons/${row.entity_id}`;
+    }
+    if (row.entity === 'mg_achat_demande' && row.entity_id) {
+      return `/achats-appro/demandes/${row.entity_id}`;
+    }
     if (row.type_notification === 'inventaire') {
       return '/inventaire';
     }
@@ -114,14 +141,16 @@ export class NotificationsComponent implements OnInit {
       next: () => {
         row.lu = true;
         this.rows.set([...this.rows()]);
-        this.unread.set(this.rows().filter((n) => !n.lu).length);
+        this.loadUnread();
       },
+      error: () => void this.dialogs.error('Impossible de marquer la notification comme lue').subscribe(),
     });
   }
 
   markAllRead(): void {
     this.api.post<{ message: string }>('/notifications/read-all', {}).subscribe({
       next: () => this.load(),
+      error: () => void this.dialogs.error('Impossible de marquer les notifications comme lues').subscribe(),
     });
   }
 }

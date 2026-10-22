@@ -189,10 +189,11 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'inventaires', loadComponent: () => import('./stock-fournitures/inventaire/stock-inventaires.component').then((m) => m.StockInventairesComponent) },
       { path: 'inventaires/:id', loadComponent: () => import('./stock-fournitures/inventaire/stock-inventaire-detail.component').then((m) => m.StockInventaireDetailComponent) },
       { path: 'inventaire', pathMatch: 'full', redirectTo: 'inventaires' },
-      { path: 'alertes', loadComponent: () => import('./stock-fournitures/stock-pages.component').then((m) => m.StockAlertesComponent) },
+      { path: 'alertes', loadComponent: () => import('./stock-fournitures/stock-alertes.component').then((m) => m.StockAlertesComponent) },
       { path: 'rapports', loadComponent: () => import('./stock-fournitures/stock-rapports.component').then((m) => m.StockRapportsComponent) },
       { path: 'rapports/:key', loadComponent: () => import('./stock-fournitures/stock-rapport-viewer.component').then((m) => m.StockRapportViewerComponent) },
       { path: 'parametres', loadComponent: () => import('./stock-fournitures/stock-pages.component').then((m) => m.StockParametresComponent) },
+      { path: 'notifications', component: NotificationsComponent },
     ],
   },
   {
@@ -224,6 +225,7 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'rapports', component: AchatsRapportsComponent },
       { path: 'rapports/:key', component: AchatsRapportViewerComponent },
       { path: 'parametres', component: AchatsParametresComponent },
+      { path: 'notifications', component: NotificationsComponent },
     ],
   },
   {
@@ -239,6 +241,7 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'paiements', component: NotesPaiementsComponent },
       { path: 'rapports', component: NotesRapportsComponent },
       { path: 'parametres', component: NotesParametresComponent },
+      { path: 'notifications', component: NotificationsComponent },
     ],
   },
   {
@@ -260,6 +263,7 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'factures', pathMatch: 'full', redirectTo: '/facturation-fournisseurs/dashboard' },
       { path: 'factures/liste', redirectTo: '/facturation-fournisseurs/factures' },
       { path: 'factures/:page', redirectTo: '/facturation-fournisseurs/:page' },
+      { path: 'notifications', component: NotificationsComponent },
       { path: ':id', component: ContratsFicheComponent },
     ],
   },
@@ -281,6 +285,7 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'analyses', loadComponent: fxAnalyses },
       { path: 'rapports', loadComponent: fxRapports },
       { path: 'parametres', loadComponent: fxParametres },
+      { path: 'notifications', component: NotificationsComponent },
     ],
   },
   {
@@ -313,6 +318,7 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'imports', loadComponent: foImports },
       { path: 'historique', loadComponent: foHistorique },
       { path: 'reporting', loadComponent: foReporting },
+      { path: 'notifications', component: NotificationsComponent },
     ],
   },
   {
@@ -344,6 +350,7 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'situation-pp', loadComponent: clSituation, data: { profil: 'PP' } },
       { path: 'situation-pm', loadComponent: clSituation, data: { profil: 'PM' } },
       { path: 'clients/:racine', loadComponent: clFiche },
+      { path: 'notifications', component: NotificationsComponent },
     ],
   },
   {
@@ -364,6 +371,7 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'rapports', loadComponent: rcRapports, data: { title: 'Rapports & statistiques' } },
       { path: 'parametres', loadComponent: rcParametres, data: { title: 'Paramètres' } },
       { path: 'admin', loadComponent: rcAdmin, data: { title: 'Admin' } },
+      { path: 'notifications', component: NotificationsComponent },
     ],
   },
   {
@@ -383,6 +391,7 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'dossiers/:module/:type/:id', component: ArchivesDossierComponent },
       { path: 'registre', component: ArchivesRegistreComponent },
       { path: 'rapports', component: ArchivesRapportsComponent, data: { archivesMode: 'mg' } },
+      { path: 'notifications', component: NotificationsComponent },
     ],
   },
   {
@@ -405,6 +414,7 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'activite', component: ArchivesGeneralesActiviteComponent },
       { path: 'parametres', component: ArchivesGeneralesParametresComponent },
       { path: 'rapports', component: ArchivesRapportsComponent, data: { archivesMode: 'general' } },
+      { path: 'notifications', component: NotificationsComponent },
     ],
   },
   {

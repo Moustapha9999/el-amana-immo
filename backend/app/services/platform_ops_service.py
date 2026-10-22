@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
+from app.data.notification_routing import PORTEE_CORE_ADMIN
 from app.models import User
 from app.models.enums import TypeNotification
 from app.models.plateforme import PlateformeEspace, PlateformeModule
@@ -253,6 +254,7 @@ class PlatformOpsService:
                 entity_id=str(row.id),
                 espace_code=row.espace.code if row.espace else None,
                 module_code=row.code,
+                portee=PORTEE_CORE_ADMIN,
             )
 
         await self.db.flush()

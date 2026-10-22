@@ -4,6 +4,8 @@ import { ApiService } from '../core/services/api.service';
 import { FeedbackService } from '../core/feedback/feedback.service';
 
 export interface StockAlerteLive {
+  /** Alerte persistante (épisode de stock bas) ; absent pour les avertissements de période. */
+  alerte_id?: string | null;
   article_id: string | null;
   code: string | null;
   designation: string | null;
@@ -13,6 +15,7 @@ export interface StockAlerteLive {
   type_alerte?: string;
   titre?: string | null;
   message?: string | null;
+  lien?: string | null;
 }
 
 const ALERTES_PATH = '/stock-fournitures/alertes';
@@ -84,7 +87,7 @@ export class StockAlertesWatcherService {
   }
 
   static cle(a: StockAlerteLive): string {
-    return `${a.type_alerte || a.niveau}|${a.article_id || a.code}`;
+    return `${a.type_alerte || a.niveau}|${a.alerte_id || a.article_id || a.code}`;
   }
 
   private signalerNouvelles(rows: StockAlerteLive[]): void {
@@ -112,8 +115,8 @@ export class StockAlertesWatcherService {
     const rupture = a.niveau === 'epuise';
     const details = a.article_id
       ? [
-          { label: 'Stock actuel', value: String(a.stock_actuel ?? 0) },
-          { label: 'Seuil minimum', value: String(a.stock_min ?? 0) },
+          { label: 'Stock disponible', value: String(a.stock_actuel ?? 0) },
+          { label: 'Seuil d’alerte', value: String(a.stock_min ?? 0) },
         ]
       : undefined;
     const message = {
@@ -121,7 +124,7 @@ export class StockAlertesWatcherService {
       message: a.article_id ? a.designation || undefined : a.designation || a.message || undefined,
       details,
       duration: rupture ? 0 : 12_000,
-      action: { label: 'Voir les alertes', run: () => void this.router.navigateByUrl(ALERTES_PATH) },
+      action: { label: 'Voir l’alerte', run: () => void this.router.navigateByUrl(a.lien || ALERTES_PATH) },
     };
     if (rupture) this.feedback.error(message);
     else this.feedback.warning(message);

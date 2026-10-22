@@ -88,6 +88,10 @@ class MgStockMouvement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     demandeur_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # « Autre » : département / service saisis hors référentiel (jamais ajoutés à l'organigramme).
+    departement_autre: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    service_autre: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    service_libelle: Mapped[str | None] = mapped_column(String(120), nullable=True)
     motif_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("mg_stock_motifs_sortie.id", ondelete="RESTRICT"), nullable=True, index=True
     )
@@ -114,6 +118,55 @@ class MgStockMotifSortie(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, B
     libelle: Mapped[str] = mapped_column(String(160))
     observation_obligatoire: Mapped[bool] = mapped_column(Boolean, default=False)
     ordre: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class MgStockAlerte(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Épisode de stock bas d'un article : ouvert au franchissement du seuil, fermé au retour au-dessus.
+
+    Un seul épisode ouvert (``retour_normal_at`` NULL) par article, même supprimé : la suppression
+    masque l'alerte sans relancer de détection tant que le stock reste sous le seuil.
+    """
+
+    __tablename__ = "mg_stock_alertes"
+
+    reference: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_articles.id", ondelete="RESTRICT"), index=True
+    )
+    agence_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agences.id"), nullable=True, index=True
+    )
+    emplacement: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    type_alerte: Mapped[str] = mapped_column(String(20), index=True)  # STOCK_FAIBLE | RUPTURE
+    statut: Mapped[str] = mapped_column(String(20), default="NOUVELLE", index=True)
+    origine: Mapped[str] = mapped_column(String(20), default="AUTOMATIQUE")  # AUTOMATIQUE | CONTROLE
+    seuil: Mapped[Decimal] = mapped_column(Numeric(18, 3))
+    quantite_detection: Mapped[Decimal] = mapped_column(Numeric(18, 3))
+    quantite_actuelle: Mapped[Decimal] = mapped_column(Numeric(18, 3))
+    uom: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    detectee_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    rupture_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retour_normal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    quantite_retour: Mapped[Decimal | None] = mapped_column(Numeric(18, 3), nullable=True)
+    mouvement_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_stock_mouvements.id", ondelete="SET NULL"), nullable=True
+    )
+    mouvement_reference: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    responsable_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    commentaire: Mapped[str | None] = mapped_column(Text, nullable=True)
+    traite_par: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    traite_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    deleted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    motif_suppression: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    article: Mapped[MgArticle] = relationship()
 
 
 class MgDemandeFourniture(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):

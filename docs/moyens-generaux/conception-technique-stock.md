@@ -37,9 +37,46 @@ BROUILLON → SOUMIS → VISA_AGENCE → PREPARATION → SERVIE → ARCHIVEE
 Compat ancienne : `ACCORDEE` ≈ PREPARATION ; `CLOTUREE` ≈ ARCHIVEE.
 ## Permissions
 
-`mg.stock.view`, `mg.stock.create`, `mg.stock.entry`, `mg.stock.exit`, `mg.stock.adjust`, `mg.stock.inventory`, `mg.stock.approve`, `mg.stock.export`
+`mg.stock.view`, `mg.stock.create`, `mg.stock.entry`, `mg.stock.exit`, `mg.stock.adjust`, `mg.stock.inventory`, `mg.stock.approve`, `mg.stock.export`,
+`mg.stock.alert.manage` (magasinier, valideur, admin), `mg.stock.alert.delete` (admin)
 
 Rôles module : `stock-fournitures.lecteur`, `stock-fournitures.magasinier`, `stock-fournitures.valideur`, `stock-fournitures.admin`.
+
+## Alertes de stock (`mg_stock_alertes`)
+
+Service `app/services/mg_stock_alertes.py`, migration `20261022_mg_stock_alertes`.
+
+- Seuil global `mg_stock_parametres.alerte_seuil_unites` (défaut **5**, « 5 unités ou moins ») ;
+  `alerte_seuil_actif` = interrupteur (`0` / `non` désactive). `stock_min` par article reste
+  utilisé par le tableau de bord, pas par les alertes.
+- Évaluation sur le **stock réel** après chaque mouvement validé (`_appliquer_effet`,
+  `_apply_mouvement`, suppression forcée / annulation) : jamais sur une saisie d’écran.
+- **Épisode** : un seul épisode ouvert par article (index unique partiel
+  `uq_mg_stock_alertes_episode_ouvert`). Franchissement 6 → 5 : ouverture + notification ;
+  5 → 4 : mise à jour de la quantité, pas de notification ; → 0 : passage `RUPTURE` notifié
+  une fois ; retour > seuil : `retour_normal_at`, statut `RESOLUE`, prochain franchissement
+  = nouvel épisode.
+- Périmètre = la ligne article (chaque agence / emplacement a sa propre ligne) : les stocks
+  ne sont jamais additionnés.
+- Contrôle initial / rattrapage idempotent : `POST /mg/stock/alertes/suivi/controle` et
+  Celery beat `stock-controle-seuils` (7h00).
+- Statuts : `NOUVELLE → EN_COURS → RESOLUE / CLOTUREE` ; `RESOLUE` refusé tant que le stock
+  reste sous le seuil. Responsable = utilisateur actif titulaire d’un rôle `stock-fournitures.*`.
+- Suppression **logique** avec motif obligatoire, auditée (`audit_logs`), sans effet sur le stock
+  ni les mouvements ; une alerte supprimée n’est pas recréée tant que l’épisode reste ouvert.
+- API : `GET /alertes/suivi`, `GET|PATCH|DELETE /alertes/suivi/{id}`,
+  `POST /alertes/suivi/suppression` (masse), `GET /alertes/suivi/responsables`, `/alertes/export`.
+
+## Département / service « Autre »
+
+Sorties (`DEPARTEMENT`) et entrées (`RETOUR_DEPARTEMENT`) : option « Autre (préciser) » sur
+Département et Service. L’API reçoit soit `departement_id` / `service_id`, soit
+`departement_autre` / `service_autre` (libellé nettoyé, obligatoire, refusé s’il correspond
+déjà à une entité : `DEPARTEMENT_EXISTANT` / `SERVICE_EXISTANT`). Stockage : texte dans
+`departement` / `service_libelle` + drapeaux `departement_autre` / `service_autre` ;
+`org_entite_id` reste NULL pour un département saisi. **Aucune entité n’est créée** dans
+l’organigramme. Demandes : `bea-org-entite-libelle-select [autre]="true"`. Exports et rapports
+signalent « (saisie « Autre ») ».
 
 ## Pagination
 

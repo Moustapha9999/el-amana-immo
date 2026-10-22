@@ -17,6 +17,8 @@ class NotificationRead(ORMModel):
     entity_id: str | None = None
     espace_code: str | None = None
     module_code: str | None = None
+    portee: str = "module"
+    priorite: str | None = None
     created_at: datetime
 
 

@@ -1,11 +1,21 @@
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.pagination import page_offset
+from app.data.notification_routing import (
+    PORTEE_CORE_ADMIN,
+    PORTEE_MODULE,
+    PORTEE_PLATEFORME,
+    PORTEES,
+    codes_module,
+    portee_par_defaut,
+    route_autorisee,
+)
 from app.data.notification_taxonomy import (
     categorie_from_type,
     coerce_type_notification,
@@ -18,6 +28,46 @@ from app.models.enums import TypeNotification
 def _event_code_for(notif_id: UUID, when: datetime | None = None) -> str:
     year = (when or datetime.now(timezone.utc)).year
     return f"EVT-{year}-{str(notif_id).replace('-', '')[:8].upper()}"
+
+
+@dataclass(frozen=True)
+class NotificationScope:
+    """Espace de notifications consulté, déduit de la session authentifiée (jamais de la requête)."""
+
+    portee: str
+    module_code: str | None = None
+    espace_code: str | None = None
+
+    @classmethod
+    def module(cls, module_code: str, espace_code: str | None) -> "NotificationScope":
+        return cls(PORTEE_MODULE, module_code.strip().lower(), espace_code)
+
+    @classmethod
+    def plateforme(cls) -> "NotificationScope":
+        return cls(PORTEE_PLATEFORME)
+
+    @classmethod
+    def core_admin(cls) -> "NotificationScope":
+        return cls(PORTEE_CORE_ADMIN)
+
+    def filters(self) -> list:
+        if self.portee == PORTEE_MODULE:
+            if not self.module_code or not self.espace_code:
+                return [Notification.id.is_(None)]
+            return [
+                Notification.portee == PORTEE_MODULE,
+                Notification.module_code.in_(codes_module(self.module_code)),
+                Notification.espace_code == self.espace_code,
+            ]
+        if self.portee == PORTEE_PLATEFORME:
+            # Anciennes notifications sans module d'origine connu : visibles ici seulement.
+            return [
+                or_(
+                    Notification.portee == PORTEE_PLATEFORME,
+                    and_(Notification.portee == PORTEE_MODULE, Notification.module_code.is_(None)),
+                )
+            ]
+        return [Notification.portee == PORTEE_CORE_ADMIN]
 
 
 class NotificationService:
@@ -35,6 +85,7 @@ class NotificationService:
         entity_id: str | None = None,
         espace_code: str | None = None,
         module_code: str | None = None,
+        portee: str | None = None,
         categorie: str | None = None,
         priorite: str | None = None,
         event_type: str | None = None,
@@ -44,6 +95,11 @@ class NotificationService:
         destinataire_label: str | None = None,
         actor_user_id: UUID | None = None,
     ) -> Notification:
+        portee = portee or portee_par_defaut(module_code)
+        if portee not in PORTEES:
+            raise ValueError(f"Portée de notification inconnue : {portee}")
+        if portee == PORTEE_MODULE and not module_code:
+            raise ValueError("Une notification de module exige son module d'origine")
         raw_type = (
             type_notification.value
             if hasattr(type_notification, "value")
@@ -59,6 +115,7 @@ class NotificationService:
             entity_id=entity_id,
             espace_code=espace_code,
             module_code=module_code,
+            portee=portee,
             lu=False,
             categorie=categorie or categorie_from_type(raw_type, module_code=module_code),
             priorite=infer_priorite(titre, message, explicit=priorite),
@@ -82,6 +139,24 @@ class NotificationService:
                 await self.db.flush()
         return row
 
+    async def create_multi_espaces(
+        self,
+        *,
+        source_module: str,
+        destinations: list[tuple[str, str]],
+        **kwargs,
+    ) -> list[Notification]:
+        """Diffusion explicite : une notification par (espace_code, module_code) autorisé."""
+        refusees = [m for _e, m in destinations if not route_autorisee(source_module, m)]
+        if refusees:
+            raise ValueError(
+                f"Diffusion non autorisée depuis {source_module} vers : {', '.join(sorted(set(refusees)))}"
+            )
+        return [
+            await self.create(espace_code=espace, module_code=module, portee=PORTEE_MODULE, **kwargs)
+            for espace, module in dict.fromkeys(destinations)
+        ]
+
     async def notify_staff(
         self,
         *,
@@ -93,6 +168,7 @@ class NotificationService:
         entity_id: str | None = None,
         espace_code: str | None = None,
         module_code: str | None = None,
+        portee: str | None = None,
         categorie: str | None = None,
         priorite: str | None = None,
         event_type: str | None = None,
@@ -120,6 +196,7 @@ class NotificationService:
                     entity_id=entity_id,
                     espace_code=espace_code,
                     module_code=module_code,
+                    portee=portee,
                     categorie=categorie,
                     priorite=priorite,
                     event_type=event_type,
@@ -132,6 +209,10 @@ class NotificationService:
                 count += 1
         return count
 
+    @staticmethod
+    def _base_filters(user_id: UUID, scope: NotificationScope) -> list:
+        return [Notification.user_id == user_id, Notification.archived.is_(False), *scope.filters()]
+
     async def list_for_user(
         self,
         user_id: UUID,
@@ -140,8 +221,10 @@ class NotificationService:
         unread_only: bool = False,
         entity: str | None = None,
         event_type: str | None = None,
+        *,
+        scope: NotificationScope,
     ) -> tuple[list[Notification], int]:
-        filters = [Notification.user_id == user_id, Notification.archived.is_(False)]
+        filters = self._base_filters(user_id, scope)
         if unread_only:
             filters.append(Notification.lu.is_(False))
         if entity:
@@ -159,20 +242,34 @@ class NotificationService:
         )
         return list(result.scalars().all()), total
 
-    async def mark_read(self, notification_id: UUID, user_id: UUID) -> Notification | None:
-        row = await self.db.get(Notification, notification_id)
-        if row is None or row.user_id != user_id:
+    async def count_unread(
+        self, user_id: UUID, *, scope: NotificationScope, entity: str | None = None
+    ) -> int:
+        filters = [*self._base_filters(user_id, scope), Notification.lu.is_(False)]
+        if entity:
+            filters.append(Notification.entity == entity)
+        return int(
+            (await self.db.scalar(select(func.count()).select_from(Notification).where(*filters))) or 0
+        )
+
+    async def mark_read(
+        self, notification_id: UUID, user_id: UUID, *, scope: NotificationScope
+    ) -> Notification | None:
+        row = await self.db.scalar(
+            select(Notification).where(
+                Notification.id == notification_id, *self._base_filters(user_id, scope)
+            )
+        )
+        if row is None:
             return None
         row.lu = True
         await self.db.flush()
         return row
 
-    async def mark_all_read(self, user_id: UUID, entity: str | None = None) -> int:
-        filters = [
-            Notification.user_id == user_id,
-            Notification.lu.is_(False),
-            Notification.archived.is_(False),
-        ]
+    async def mark_all_read(
+        self, user_id: UUID, entity: str | None = None, *, scope: NotificationScope
+    ) -> int:
+        filters = [*self._base_filters(user_id, scope), Notification.lu.is_(False)]
         if entity:
             filters.append(Notification.entity == entity)
         result = await self.db.execute(select(Notification).where(*filters))

@@ -46,7 +46,8 @@ def test_suppressions_exigent_la_permission_de_gestion():
     for chemin, permission in attendues.items():
         assert suppressions[chemin].permissions == [permission]
         assert suppressions[chemin].authentification == cat.AUTH_LOGIN1
-    assert not any(op.methode == "DELETE" and ("/executions" in op.chemin or "/alertes" in op.chemin)
+    assert not any(op.methode == "DELETE" and "/integrations/" in op.chemin
+                   and ("/executions" in op.chemin or "/alertes" in op.chemin)
                    for op in index.values())
 
 

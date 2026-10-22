@@ -29,6 +29,7 @@ interface Demande {
   agence_id: string;
   agence_libelle_snapshot: string | null;
   departement: string | null;
+  org_entite_id?: string | null;
   demandeur_nom: string | null;
   fonction: string | null;
   statut: string;
@@ -228,7 +229,7 @@ interface Paginated<T> {
               </label>
               <label>
                 Département / service
-                <bea-org-entite-libelle-select formControlName="departement" />
+                <bea-org-entite-libelle-select formControlName="departement" [autre]="true" />
               </label>
               <label class="bea-mg__span2">
                 Fonction
@@ -328,7 +329,7 @@ interface Paginated<T> {
               </label>
               <label>
                 Département
-                <input [value]="d.departement || '—'" readonly />
+                <input [value]="d.departement ? d.departement + (d.org_entite_id ? '' : ' (saisie « Autre »)') : '—'" readonly />
               </label>
               <label>
                 Fonction
@@ -654,7 +655,10 @@ export class StockDemandesComponent implements OnInit {
   }
 
   create(): void {
-    if (this.form.invalid) return;
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
     const raw = this.form.getRawValue();
     const lignes = raw.lignes.map((l) => {
       const match = this.articles().find((a) => a.designation === l.designation);

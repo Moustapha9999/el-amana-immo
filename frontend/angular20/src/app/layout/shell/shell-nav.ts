@@ -771,9 +771,31 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
   ],
 };
 
+/** Modules dont le menu reçoit « Notifications » (/{code}/notifications, espace propre au module). */
+const MODULES_NOTIFICATIONS = new Set([
+  'stock-fournitures',
+  'achats-appro',
+  'notes-frais',
+  'contrats-echeances',
+  'facturation-fournisseurs',
+  'formation',
+  'clientele',
+  'reclamations',
+  'archives-mg',
+  'archives-generales',
+]);
+
 export function navForModule(moduleCode: string | null | undefined): ShellNavItem[] {
   const code = (moduleCode || 'immobilisations').trim().toLowerCase();
-  return MODULE_SHELL_NAV[code] ?? SHELL_NAV;
+  const items = MODULE_SHELL_NAV[code] ?? SHELL_NAV;
+  if (!MODULES_NOTIFICATIONS.has(code) || items.some((i) => i.path.endsWith('/notifications'))) {
+    return items;
+  }
+  const section = items[0]?.section ?? 'Pilotage';
+  const apres = items.findIndex((i) => i.section !== section);
+  const entree: ShellNavItem = { section, label: 'Notifications', path: `/${code}/notifications`, icon: 'notifications' };
+  const position = apres === -1 ? items.length : apres;
+  return [...items.slice(0, position), entree, ...items.slice(position)];
 }
 
 export function filterNavByPermissions(

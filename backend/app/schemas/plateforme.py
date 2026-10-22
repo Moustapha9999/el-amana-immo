@@ -854,6 +854,7 @@ class CoreAdminNotificationRead(BaseModel):
     entity_id: str | None = None
     espace_code: str | None = None
     module_code: str | None = None
+    portee: str = "module"
     categorie: str = "systeme"
     categorie_label: str = "Système"
     priorite: str = "info"

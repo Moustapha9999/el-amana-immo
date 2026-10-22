@@ -917,8 +917,11 @@ class MgRequestsService:
             "par_source": par_source,
         }
 
-    async def mine_dashboard(self, user_id: uuid.UUID) -> dict:
+    async def mine_dashboard(self, user_id: uuid.UUID, *, notification_scope=None) -> dict:
         from app.models.audit import Notification
+        from app.services.notification_service import NotificationScope
+
+        notification_scope = notification_scope or NotificationScope.module("demandes-mg", "moyens-generaux")
 
         scope = [MgEmployeeRequest.requester_id == user_id]
         statuses = (
@@ -965,6 +968,7 @@ class MgRequestsService:
                         Notification.archived.is_(False),
                         Notification.lu.is_(False),
                         Notification.entity == "mg_employee_request",
+                        *notification_scope.filters(),
                     )
                 )
             )

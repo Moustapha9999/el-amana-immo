@@ -79,6 +79,7 @@ async def list_admin_notifications(
     priorite: str | None = None,
     periode: str | None = Query(None, pattern="^(tous|aujourd_hui|7j|30j|mois)?$"),
     user_id: str | None = None,
+    portee: str | None = Query(None, pattern="^(module|core_admin|plateforme)$"),
     _: User = Depends(_SETTINGS),
     db: AsyncSession = Depends(get_db),
 ):
@@ -93,6 +94,7 @@ async def list_admin_notifications(
         priorite=priorite,
         periode=periode,
         user_id=user_id,
+        portee=portee,
     )
     return {"items": items, "total": total, "page": page, "size": size, "kpis": kpis}
 

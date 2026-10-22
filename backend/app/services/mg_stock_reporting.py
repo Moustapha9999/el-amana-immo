@@ -317,6 +317,7 @@ AXES_CONSOMMATION = {
 COLONNES_DETAIL_ARTICLE = {"article_code", "article"}
 NON_RENSEIGNE = "Non renseigné"
 LIBELLE_HISTORIQUE = "Libellé historique, non rattaché au référentiel"
+LIBELLE_SAISIE_LIBRE = "Saisie « Autre », hors référentiel"
 
 
 def _colonnes(spec: ReportDef, f: dict, columns: list[str] | None) -> list[ReportColumn]:
@@ -997,6 +998,9 @@ class MgStockReportingService:
                 func.coalesce(func.sum(M.quantite), 0),
                 func.count(M.id),
                 func.max(M.date_mouvement),
+                M.departement_autre,
+                M.service_autre,
+                M.service_libelle,
             )
             .join(MgArticle, MgArticle.id == M.article_id)
             .where(M.type_mouvement == "SORTIE")
@@ -1011,6 +1015,9 @@ class MgStockReportingService:
                 MgArticle.code,
                 MgArticle.designation,
                 M.departement,
+                M.departement_autre,
+                M.service_autre,
+                M.service_libelle,
             )
         )
         if f.get("annee"):
@@ -1038,6 +1045,9 @@ class MgStockReportingService:
                 "quantite": Decimal(r[10] or 0),
                 "nb": int(r[11] or 0),
                 "derniere": r[12],
+                "departement_autre": bool(r[13]),
+                "service_autre": bool(r[14]),
+                "service_libelle": r[15],
             }
             for r in (await self.db.execute(stmt)).all()
         ]
@@ -1094,8 +1104,16 @@ def _destination(ligne: dict, entites: dict, agences: dict) -> str:
         a = agences.get(ligne["agence_id"])
         return a["libelle"] if a else ""
     dep = _libelle_entite(entites, ligne["org_entite_id"])
+    if not dep and ligne.get("departement_autre"):
+        dep = _texte(ligne.get("departement"))
     srv = _libelle_entite(entites, ligne["service_id"])
-    return f"{dep} › {srv}" if dep and srv else dep or srv or " ".join((ligne.get("departement") or "").split())
+    if not srv and ligne.get("service_autre"):
+        srv = _texte(ligne.get("service_libelle"))
+    return f"{dep} › {srv}" if dep and srv else dep or srv or _texte(ligne.get("departement"))
+
+
+def _texte(valeur: str | None) -> str:
+    return " ".join((valeur or "").split())
 
 
 def _cle_axe(ligne: dict, axe: str, entites: dict, agences: dict, users: dict) -> tuple[str, str, str] | None:
@@ -1119,6 +1137,18 @@ def _cle_axe(ligne: dict, axe: str, entites: dict, agences: dict, users: dict) -
     if vers_agence:
         return None
     entite = ligne["org_entite_id"]
+    if axe == "departement" and ligne.get("departement_autre") and not entite:
+        texte = _texte(ligne.get("departement"))
+        return (f"a:{texte.casefold()}", texte, LIBELLE_SAISIE_LIBRE) if texte else None
+    if axe != "departement" and ligne.get("service_autre") and not ligne["service_id"]:
+        texte = _texte(ligne.get("service_libelle"))
+        if not texte:
+            return None
+        if entite:
+            dep = _libelle_entite(entites, _ancetre(entites, entite, TYPES_DEPARTEMENT))
+        else:
+            dep = _texte(ligne.get("departement"))
+        return f"as:{dep.casefold()}|{texte.casefold()}", texte, dep or LIBELLE_SAISIE_LIBRE
     if axe == "departement":
         dep = _ancetre(entites, entite, TYPES_DEPARTEMENT)
         if dep is None:

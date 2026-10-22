@@ -44,6 +44,7 @@ from app.models.plateforme import PlateformeEspace
 from app.models.platform_ops import PlatformBackup, PlatformRestore
 from app.services import platform_backup_engine as engine
 from app.services.audit_helpers import record_audit
+from app.data.notification_routing import PORTEE_CORE_ADMIN
 from app.services.notification_service import NotificationService
 
 # Ré-exports historiques (supervision, hub).
@@ -816,6 +817,7 @@ class PlatformBackupService:
                 entity_id=str(restore.id),
                 espace_code=restore.espace_code,
                 module_code=restore.module_code or "core",
+                portee=PORTEE_CORE_ADMIN,
                 priorite=priorite,
                 emetteur_type="utilisateur",
                 emetteur_label=actor.full_name or actor.email,

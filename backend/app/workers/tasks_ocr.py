@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import text
 
 from app.core.config import get_settings
+from app.data.notification_routing import portee_par_defaut
 from app.db.sync_session import sync_session
 from app.models.audit import AuditLog, Notification
 from app.models.enums import TypeNotification
@@ -82,6 +83,7 @@ def _notify_uploader(
         entity_id=document_id,
         espace_code=espace_code,
         module_code=module_code,
+        portee=portee_par_defaut(module_code),
         lu=False,
         categorie="ged",
         priorite=priorite,

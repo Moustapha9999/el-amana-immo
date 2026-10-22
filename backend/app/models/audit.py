@@ -27,6 +27,8 @@ class Notification(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     entity_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     espace_code: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     module_code: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    # Espace de destination : module (module_code + espace_code) | core_admin | plateforme.
+    portee: Mapped[str] = mapped_column(String(20), default="module", server_default="module")
     # Centre global (enrichissement ops) — distinct du journal d'audit.
     categorie: Mapped[str] = mapped_column(String(40), default="systeme", index=True)
     priorite: Mapped[str] = mapped_column(String(20), default="info", index=True)

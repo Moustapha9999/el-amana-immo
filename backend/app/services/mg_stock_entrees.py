@@ -25,7 +25,13 @@ from app.models.organisation import Fournisseur
 from app.schemas.mg_stock import EntreeCreate
 from app.schemas.nombres import format_qty
 from app.services.mg_stock_service import MgStockService
-from app.services.mg_stock_sorties import Destination, MgStockSortieService, quantite_entiere_requise
+from app.services.mg_stock_sorties import (
+    Destination,
+    MgStockSortieService,
+    champs_autres,
+    normaliser_autres,
+    quantite_entiere_requise,
+)
 
 SOURCE_ENTREE = "entree_manuelle"
 
@@ -37,6 +43,8 @@ class Provenance:
     departement_id: uuid.UUID | None
     service_id: uuid.UUID | None
     agence_id: uuid.UUID | None
+    departement_autre: str | None = None
+    service_autre: str | None = None
 
 
 def normaliser_provenance(data: EntreeCreate) -> Provenance:
@@ -47,9 +55,14 @@ def normaliser_provenance(data: EntreeCreate) -> Provenance:
             raise AppError("Choisissez le fournisseur.", code="FOURNISSEUR_OBLIGATOIRE")
         return Provenance(t, data.fournisseur_id, None, None, None)
     if t == "RETOUR_DEPARTEMENT":
-        if data.departement_id is None:
-            raise AppError("Choisissez le département qui retourne l'article.", code="DEPARTEMENT_OBLIGATOIRE")
-        return Provenance(t, None, data.departement_id, data.service_id, None)
+        dep_id, srv_id, dep_autre, srv_autre = normaliser_autres(
+            data.departement_id,
+            data.service_id,
+            getattr(data, "departement_autre", None),
+            getattr(data, "service_autre", None),
+            message_obligatoire="Choisissez le département qui retourne l'article.",
+        )
+        return Provenance(t, None, dep_id, srv_id, None, dep_autre, srv_autre)
     if t == "RETOUR_AGENCE":
         if data.agence_id is None:
             raise AppError("Choisissez l'agence qui retourne l'article.", code="AGENCE_OBLIGATOIRE")
@@ -123,14 +136,15 @@ class MgStockEntreeService(MgStockSortieService):
             )
 
         fournisseur = await self._fournisseur(provenance.fournisseur_id)
-        departement, service = await self._verifier_departement(
-            Destination(
-                "DEPARTEMENT" if provenance.type == "RETOUR_DEPARTEMENT" else provenance.type,
-                provenance.departement_id,
-                provenance.service_id,
-                None,
-            )
+        destination = Destination(
+            "DEPARTEMENT" if provenance.type == "RETOUR_DEPARTEMENT" else provenance.type,
+            provenance.departement_id,
+            provenance.service_id,
+            None,
+            provenance.departement_autre,
+            provenance.service_autre,
         )
+        departement, service = await self._verifier_departement(destination)
         if provenance.type == "RETOUR_AGENCE":
             await self._agence(provenance.agence_id)
 
@@ -155,7 +169,7 @@ class MgStockEntreeService(MgStockSortieService):
             initiateur=user,
             motif=motif.libelle,
             observation=observation,
-            departement=departement.libelle if departement else None,
+            departement=departement.libelle if departement else provenance.departement_autre,
             source_type=SOURCE_ENTREE,
             extra={
                 "provenance_type": provenance.type,
@@ -163,6 +177,7 @@ class MgStockEntreeService(MgStockSortieService):
                 "piece_reference": piece if fournisseur else None,
                 "org_entite_id": departement.id if departement else None,
                 "service_id": service.id if service else None,
+                **champs_autres(destination),
                 "demandeur_nom": remis_par,
                 "motif_id": motif.id,
                 "cle_idempotence": cle,

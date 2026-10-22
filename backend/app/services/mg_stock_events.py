@@ -77,6 +77,8 @@ async def notify_stock_roles(
     entity_id=None,
     event_type: str = "stock.workflow",
     actor: User | None = None,
+    priorite: str | None = None,
+    destinataire_label: str | None = None,
 ) -> int:
     return await NotificationService(db).notify_staff(
         role_codes=role_codes,
@@ -87,8 +89,11 @@ async def notify_stock_roles(
         entity_id=str(entity_id) if entity_id is not None else None,
         espace_code=ESPACE,
         module_code=MODULE,
+        portee="module",
+        priorite=priorite,
         event_type=event_type,
         emetteur_type="utilisateur" if actor else "systeme",
         emetteur_label=(actor.full_name if actor and actor.full_name else "Système"),
+        destinataire_label=destinataire_label,
         actor_user_id=actor.id if actor else None,
     )

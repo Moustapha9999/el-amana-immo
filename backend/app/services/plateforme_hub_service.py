@@ -9,6 +9,7 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.data.notification_routing import PORTEE_CORE_ADMIN
 from app.models import AuditLog, AuthSession, Notification, User
 from app.models.plateforme import PlateformeModule
 from app.services.core_admin_service import FUSEAU
@@ -305,6 +306,7 @@ class PlateformeHubService:
                 .where(
                     Notification.archived.is_(False),
                     Notification.lu.is_(False),
+                    Notification.portee != PORTEE_CORE_ADMIN,
                     or_(
                         Notification.espace_code.in_(granted_espace_codes),
                         Notification.module_code.in_(granted_module_codes or ["__none__"]),
@@ -527,6 +529,7 @@ class PlateformeHubService:
                 Notification.user_id == user_id,
                 Notification.lu.is_(False),
                 Notification.archived.is_(False),
+                Notification.portee != PORTEE_CORE_ADMIN,
             )
         )
 

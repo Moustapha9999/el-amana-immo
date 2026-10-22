@@ -15,7 +15,7 @@ import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
@@ -44,17 +44,75 @@ class Destination:
     departement_id: uuid.UUID | None
     service_id: uuid.UUID | None
     agence_id: uuid.UUID | None
+    # Option « Autre » : libellé saisi, jamais ajouté au référentiel.
+    departement_autre: str | None = None
+    service_autre: str | None = None
+
+
+def nettoyer_libelle(valeur: str | None) -> str:
+    return " ".join((valeur or "").split())
+
+
+def normaliser_autres(
+    departement_id: uuid.UUID | None,
+    service_id: uuid.UUID | None,
+    departement_autre: str | None,
+    service_autre: str | None,
+    *,
+    message_obligatoire: str = "Choisissez le département destinataire.",
+) -> tuple[uuid.UUID | None, uuid.UUID | None, str | None, str | None]:
+    """Département et service : une valeur du référentiel OU un libellé « Autre », jamais les deux."""
+    dep_autre = None
+    if departement_autre is not None:
+        dep_autre = nettoyer_libelle(departement_autre)
+        if not dep_autre:
+            raise AppError("Saisissez le nom du département (option « Autre »).", code="DEPARTEMENT_AUTRE_VIDE")
+        if departement_id is not None:
+            raise AppError(
+                "Choisissez un département de la liste ou « Autre », pas les deux.",
+                code="DEPARTEMENT_AUTRE_AMBIGU",
+            )
+    elif departement_id is None:
+        raise AppError(message_obligatoire, code="DEPARTEMENT_OBLIGATOIRE")
+    srv_autre = None
+    if service_autre is not None:
+        srv_autre = nettoyer_libelle(service_autre)
+        if not srv_autre:
+            raise AppError("Saisissez le nom du service (option « Autre »).", code="SERVICE_AUTRE_VIDE")
+        if service_id is not None:
+            raise AppError(
+                "Choisissez un service de la liste ou « Autre », pas les deux.", code="SERVICE_AUTRE_AMBIGU"
+            )
+    elif service_id is not None and dep_autre is not None:
+        raise AppError(
+            "Un département saisi (« Autre ») n'a pas de services dans le référentiel : "
+            "saisissez aussi le service ou laissez-le vide.",
+            code="SERVICE_HORS_DEPARTEMENT",
+        )
+    return departement_id, service_id, dep_autre, srv_autre
 
 
 def normaliser_destination(data: SortieCreate) -> Destination:
     """Ne garde que les champs de la destination choisie ; les champs masqués à l'écran sont ignorés."""
     if data.destination_type == "DEPARTEMENT":
-        if data.departement_id is None:
-            raise AppError("Choisissez le département destinataire.", code="DEPARTEMENT_OBLIGATOIRE")
-        return Destination("DEPARTEMENT", data.departement_id, data.service_id, None)
+        dep_id, srv_id, dep_autre, srv_autre = normaliser_autres(
+            data.departement_id,
+            data.service_id,
+            getattr(data, "departement_autre", None),
+            getattr(data, "service_autre", None),
+        )
+        return Destination("DEPARTEMENT", dep_id, srv_id, None, dep_autre, srv_autre)
     if data.agence_id is None:
         raise AppError("Choisissez l'agence destinataire.", code="AGENCE_OBLIGATOIRE")
     return Destination("AGENCE", None, None, data.agence_id)
+
+
+def champs_autres(destination: Destination) -> dict:
+    return {
+        "departement_autre": destination.departement_autre is not None,
+        "service_autre": destination.service_autre is not None,
+        "service_libelle": destination.service_autre,
+    }
 
 
 def quantite_entiere_requise(uom: str | None) -> bool:
@@ -244,12 +302,13 @@ class MgStockSortieService:
             initiateur=user,
             motif=motif.libelle,
             observation=observation,
-            departement=departement.libelle if departement else None,
+            departement=departement.libelle if departement else destination.departement_autre,
             source_type=SOURCE_SORTIE,
             extra={
                 "destination_type": destination.type,
                 "org_entite_id": departement.id if departement else None,
                 "service_id": service.id if service else None,
+                **champs_autres(destination),
                 "demandeur_id": demandeur_id,
                 "demandeur_nom": demandeur_nom,
                 "motif_id": motif.id,
@@ -277,6 +336,9 @@ class MgStockSortieService:
     ) -> tuple[OrgEntite | None, OrgEntite | None]:
         if destination.type != "DEPARTEMENT":
             return None, None
+        await self._verifier_autres(destination)
+        if destination.departement_id is None:
+            return None, None
         departement = await self.db.get(OrgEntite, destination.departement_id)
         if (
             departement is None
@@ -301,6 +363,24 @@ class MgStockSortieService:
                 code="SERVICE_HORS_DEPARTEMENT",
             )
         return departement, service
+
+    async def _verifier_autres(self, destination: Destination) -> None:
+        """Un libellé « Autre » qui existe déjà dans le référentiel doit être choisi dans la liste."""
+        for texte, champ in (
+            (destination.departement_autre, "département"),
+            (destination.service_autre, "service"),
+        ):
+            if not texte:
+                continue
+            existante = await self.db.scalar(text("SELECT org_entite_par_texte(:t)"), {"t": texte})
+            if existante is not None:
+                entite = await self.db.get(OrgEntite, existante)
+                nom = entite.libelle if entite is not None else texte
+                raise AppError(
+                    f"« {texte} » existe déjà dans la liste ({nom}) : sélectionnez ce {champ} "
+                    "au lieu de « Autre ».",
+                    code="DEPARTEMENT_EXISTANT" if champ == "département" else "SERVICE_EXISTANT",
+                )
 
     async def _agence(self, agence_id: uuid.UUID | None) -> Agence:
         agence = await self.db.get(Agence, agence_id) if agence_id else None
