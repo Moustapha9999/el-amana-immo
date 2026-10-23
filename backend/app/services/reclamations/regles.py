@@ -34,6 +34,7 @@ class Exigences:
     devises: frozenset[str] = frozenset({C.DEVISE})
     motif_id: uuid.UUID | None = None
     statut_validation: str | None = None
+    validation_origine: str | None = None
 
     @property
     def champs_requis(self) -> frozenset[str]:
@@ -55,6 +56,7 @@ class Exigences:
             "motif_id": str(self.motif_id) if self.motif_id else None,
             "personnalisee": self.statut_validation is not None,
             "statut_validation": self.statut_validation,
+            **_validation(self.statut_validation, self.validation_origine),
             "champs_requis": sorted(self.champs_requis),
             "operations_min": int(self.regle.get("operations_min") or 0),
             "nature_attendue": self.nature_attendue,
@@ -65,6 +67,15 @@ class Exigences:
             "consigne": self.regle.get("consigne"),
             "devises": sorted(self.devises, key=lambda d: (d != C.DEVISE, d)),
         }
+
+
+def _validation(statut: str | None, origine: str | None) -> dict:
+    return {
+        "statut_validation_libelle": C.VALIDATION_REGLE_LIBELLES.get(statut or ""),
+        "validation_origine": origine if statut == "VALIDEE" else None,
+        "validation_origine_libelle": (C.ORIGINE_VALIDATION_REGLE_LIBELLES.get(origine or "")
+                                       if statut == "VALIDEE" else None),
+    }
 
 
 def normaliser_regle(brute: dict | None) -> dict:
@@ -108,7 +119,7 @@ async def exigences(db: AsyncSession, motif_id: uuid.UUID | None) -> Exigences:
     if r is None:
         return Exigences(devises=devises, motif_id=motif_id)
     return Exigences(regle=normaliser_regle(r.regles), devises=devises, motif_id=motif_id,
-                     statut_validation=r.statut_validation)
+                     statut_validation=r.statut_validation, validation_origine=r.validation_origine)
 
 
 async def nb_justificatifs(db: AsyncSession, rid: uuid.UUID) -> int:
@@ -145,6 +156,7 @@ def _regle_dict(m: ReclamationReferentiel, r: ReclamationRegleMotif | None, type
         "motif_id": str(m.id), "motif": m.libelle, "motif_code": m.code, "motif_actif": m.actif,
         "type_id": str(m.parent_id) if m.parent_id else None, "type": t.libelle if t else None,
         "personnalisee": r is not None, "statut_validation": r.statut_validation if r else None,
+        **_validation(r.statut_validation if r else None, r.validation_origine if r else None),
         "valide_le": iso(r.valide_le) if r else None, "updated_at": iso(r.updated_at) if r else None,
         **regle,
     }
@@ -182,7 +194,8 @@ async def enregistrer(db: AsyncSession, s: ReclamationsScope, motif_id: uuid.UUI
         db.add(r)
     else:
         if r.regles != regle:
-            r.statut_validation, r.valide_par_id, r.valide_le = "PROPOSEE", None, None
+            # Valeurs modifiées : la validation (porteur du projet ou habilité) portait sur les anciennes.
+            r.statut_validation, r.valide_par_id, r.valide_le, r.validation_origine = "PROPOSEE", None, None, None
         r.regles, r.updated_by_id = regle, s.user_id
     await db.flush()
     await auditer(db, s, "reclamations.regle_motif.update", "reclamation_regle_motif", r.id,
@@ -198,13 +211,15 @@ async def valider(db: AsyncSession, s: ReclamationsScope, motif_id: uuid.UUID, s
         raise erreur("Aucune règle enregistrée pour ce motif", "NOT_FOUND", 404)
     if statut not in ("VALIDEE", "PROPOSEE"):
         raise erreur("Statut de validation inconnu", "STATUT_INVALIDE")
-    avant = r.statut_validation
+    avant = {"statut_validation": r.statut_validation, "validation_origine": r.validation_origine}
     r.statut_validation = statut
     r.valide_par_id, r.valide_le = (s.user_id, maintenant()) if statut == "VALIDEE" else (None, None)
+    r.validation_origine = "HABILITE" if statut == "VALIDEE" else None
     await db.flush()
     m = await db.get(ReclamationReferentiel, motif_id)
     await auditer(db, s, "reclamations.regle_motif.validation", "reclamation_regle_motif", r.id,
-                  before={"statut_validation": avant}, after={"statut_validation": statut, "motif": m.libelle})
+                  before=avant, after={"statut_validation": statut, "validation_origine": r.validation_origine,
+                                       "motif": m.libelle})
     types = {m.parent_id: await db.get(ReclamationReferentiel, m.parent_id)} if m.parent_id else {}
     return _regle_dict(m, r, types)
 

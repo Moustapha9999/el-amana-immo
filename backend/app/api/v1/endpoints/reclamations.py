@@ -155,6 +155,8 @@ async def config(s: ReclamationsScope = Depends(scope(VUE)), db: AsyncSession = 
             "statuts_reponse": _libelles(C.STATUT_REPONSE_LIBELLES),
             "evaluations": _libelles(C.EVALUATION_LIBELLES),
             "validations_referentiel": _libelles(C.VALIDATION_REFERENTIEL_LIBELLES),
+            "validations_regle": _libelles(C.VALIDATION_REGLE_LIBELLES),
+            "origines_validation_regle": _libelles(C.ORIGINE_VALIDATION_REGLE_LIBELLES),
             "statuts_identification": _libelles(C.STATUT_IDENTIFICATION_LIBELLES),
             "natures_mouvement": _libelles(C.NATURE_LIBELLES),
             "roles_operation": _libelles(C.ROLE_OPERATION_LIBELLES),
@@ -558,6 +560,18 @@ async def rouvrir(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends
 async def archiver(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends(scope("reclamations.archive")),
                    db: AsyncSession = Depends(get_db)) -> dict:
     return await circuit.archiver(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/suspendre")
+async def suspendre(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends(scope("reclamations.assign")),
+                    db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.suspendre(db, s, rid, body.model_dump())
+
+
+@router.post("/dossiers/{rid}/reprendre")
+async def reprendre(rid: uuid.UUID, body: ActionIn, s: ReclamationsScope = Depends(scope("reclamations.assign")),
+                    db: AsyncSession = Depends(get_db)) -> dict:
+    return await circuit.reprendre(db, s, rid, body.model_dump())
 
 
 @router.post("/dossiers/{rid}/regularisation")

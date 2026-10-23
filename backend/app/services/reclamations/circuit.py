@@ -53,6 +53,8 @@ def _ouvert(r: Reclamation) -> None:
         raise conflit("Dossier archivé", "DOSSIER_ARCHIVE")
     if r.statut in C.STATUTS_TERMINAUX:
         raise conflit("Dossier terminé : action impossible", "DOSSIER_TERMINE")
+    if r.statut == C.STATUT_SUSPENDU:
+        raise conflit("Dossier suspendu : reprenez le traitement avant toute action du circuit", "DOSSIER_SUSPENDU")
 
 
 def _revision(r: Reclamation, data: dict) -> None:
@@ -77,9 +79,10 @@ async def _appliquer(db: AsyncSession, s: ReclamationsScope, r: Reclamation, *,
                      statut: str, type_evenement: str, commentaire: str | None = None,
                      donnees: dict | None = None, unite_id: uuid.UUID | None = None,
                      affectation_id: uuid.UUID | None = None, reponse_id: uuid.UUID | None = None,
-                     destinataires: set[uuid.UUID] | None = None, titre: str | None = None) -> None:
+                     destinataires: set[uuid.UUID] | None = None, titre: str | None = None,
+                     etape: str | None = None) -> None:
     avant_s, avant_e = r.statut, r.etape
-    r.statut, r.etape = statut, C.ETAPE_DU_STATUT[statut]
+    r.statut, r.etape = statut, etape or C.ETAPE_DU_STATUT[statut]
     r.revision += 1
     r.updated_by_id = s.user_id
     ev = _evenement(r, s, type_evenement, statut_avant=avant_s, etape_avant=avant_e,
@@ -103,7 +106,10 @@ def actions(s: ReclamationsScope, r: Reclamation, *,
     ouvert = r.statut not in C.STATUTS_TERMINAUX and not r.archivee_le
     service = s.membre_de(r.unite_traitement_id) or s.peut("reclamations.scope.all")
     avant = ouvert and r.statut in AVANT_AFFECTATION
+    pilote = s.peut("reclamations.assign") and service_central(s)
     base.update({
+        "suspendre": ouvert and r.statut in C.STATUTS_SUSPENDABLES and pilote,
+        "reprendre": r.statut == C.STATUT_SUSPENDU and not r.archivee_le and pilote,
         "affecter": avant and s.peut("reclamations.assign"),
         "traiter_interne": avant and s.peut("reclamations.qualify"),
         "retourner": ouvert and r.statut == "EN_TRAITEMENT" and a is not None
@@ -559,6 +565,48 @@ async def rouvrir(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data: 
     return await fiche(db, s, r)
 
 
+def _exiger_pilote(s: ReclamationsScope) -> None:
+    s.exiger("reclamations.assign")
+    if not service_central(s):
+        raise erreur("Seul le Service Réclamations central suspend ou reprend un dossier", "SUSPENSION_RESERVEE_SR",
+                     403)
+
+
+async def suspendre(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data: dict) -> dict:
+    """Arrêt temporaire du circuit (motif obligatoire). Étape conservée ; aucune échéance, aucun délai.
+
+    Les actions du circuit sont bloquées jusqu'à la reprise ; pièces, notes et corrections restent possibles."""
+    r = await _charger(db, s, rid, data)
+    _ouvert(r)
+    _exiger_pilote(s)
+    if r.statut not in C.STATUTS_SUSPENDABLES:
+        raise conflit("Ce dossier ne peut pas être suspendu dans cet état", "ACTION_INVALIDE")
+    motif = _motif(data)
+    statut_avant = r.statut
+    r.statut_avant_suspension, r.motif_suspension, r.date_suspension = statut_avant, motif, maintenant()
+    await _appliquer(db, s, r, statut=C.STATUT_SUSPENDU, type_evenement="SUSPENSION", commentaire=motif,
+                     etape=r.etape, donnees={"statut_avant_suspension": statut_avant})
+    return await fiche(db, s, r)
+
+
+async def reprendre(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data: dict) -> dict:
+    """Reprise : le dossier retrouve le statut (et l'étape) qu'il avait avant la suspension."""
+    r = await _charger(db, s, rid, data)
+    if r.archivee_le:
+        raise conflit("Dossier archivé", "DOSSIER_ARCHIVE")
+    _exiger_pilote(s)
+    if r.statut != C.STATUT_SUSPENDU:
+        raise conflit("Ce dossier n'est pas suspendu", "ACTION_INVALIDE")
+    statut = r.statut_avant_suspension
+    if statut not in C.STATUTS_SUSPENDABLES:
+        raise conflit("Statut d'avant suspension inconnu : reprise impossible", "SUSPENSION_INCOHERENTE")
+    suspendu_le = iso(r.date_suspension)
+    r.statut_avant_suspension, r.motif_suspension, r.date_suspension = None, None, None
+    await _appliquer(db, s, r, statut=statut, type_evenement="REPRISE", commentaire=_motif(data, obligatoire=False),
+                     donnees={"suspendu_le": suspendu_le})
+    return await fiche(db, s, r)
+
+
 async def archiver(db: AsyncSession, s: ReclamationsScope, rid: uuid.UUID, data: dict) -> dict:
     r = await _charger(db, s, rid, data)
     s.exiger("reclamations.archive")
@@ -590,6 +638,8 @@ ACTIONS = {
     "cloturer": cloturer,
     "rouvrir": rouvrir,
     "archiver": archiver,
+    "suspendre": suspendre,
+    "reprendre": reprendre,
     "confirmer_regularisation": confirmer_regularisation,
 }
 

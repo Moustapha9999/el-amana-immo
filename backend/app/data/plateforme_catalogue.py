@@ -504,7 +504,7 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "label": "Gestion des réclamations",
         "description": (
             "Réclamations clients pilotées par le Service Réclamations : réception multicanal, "
-            "qualification, transfert aux services, réponse au client, clôture, délais et tableau de bord 360°."
+            "qualification, transfert aux services, réponse au client, clôture et tableau de bord 360°."
         ),
         "entry_path": "/reclamations/dashboard",
         "statut": "actif",
@@ -841,7 +841,7 @@ RBAC_ROLES: list[tuple[str, str, str]] = [
      "Pilotage global, validation des réponses, refus, clôtures et réouvertures"),
     ("reclamations.lecteur", "Réclamations — Consultation / audit",
      "Consultation de tous les dossiers, rapports et audit, sans action métier"),
-    ("reclamations.admin", "Réclamations — Admin", "Administration complète : paramètres, délais, droits"),
+    ("reclamations.admin", "Réclamations — Admin", "Administration complète : paramètres, référentiels, droits"),
 ]
 
 # Codes courts réservés au module Immobilisations (ne pas créer pour Crédit / RH / …).

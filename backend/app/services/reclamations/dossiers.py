@@ -337,6 +337,11 @@ async def detail(db: AsyncSession, s: ReclamationsScope, r: Reclamation, ctx: Co
         "resultat": r.resultat, "resultat_libelle": C.RESULTAT_LIBELLES.get(r.resultat or ""),
         "motif_resolution": r.motif_resolution, "nb_reouvertures": r.nb_reouvertures, "nb_renvois": r.nb_renvois,
         "archivee_le": iso(r.archivee_le),
+        "suspension": {
+            "depuis": iso(r.date_suspension), "motif": r.motif_suspension,
+            "statut_avant": r.statut_avant_suspension,
+            "statut_avant_libelle": libelle_statut(r.statut_avant_suspension),
+        } if r.statut == C.STATUT_SUSPENDU else None,
         "appels": [_appel_dict(a, noms) for a in appels],
         "cree_par": noms.get(r.created_by_id) if r.created_by_id else None, "created_at": iso(r.created_at),
         "modifie_par": noms.get(r.updated_by_id) if r.updated_by_id else None,

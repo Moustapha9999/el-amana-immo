@@ -308,7 +308,9 @@ async def test_donnees_existantes_conservees_apres_migration(db):
     spec.loader.exec_module(mig)
     assert set(mig.ANCIENS_STATUTS) - {"ATTENTE_INFO", "SUSPENDUE"} == set(mig.CORRESPONDANCE)
     assert set(mig.CORRESPONDANCE.values()) <= set(C.STATUT_LIBELLES)
-    assert all(C.ETAPE_DU_STATUT[s] in C.ETAPE_LIBELLES for s in C.STATUT_LIBELLES)
+    # Un dossier suspendu garde l'étape où il se trouvait : pas d'étape propre.
+    assert all(C.ETAPE_DU_STATUT[s] in C.ETAPE_LIBELLES for s in C.STATUT_LIBELLES if s != C.STATUT_SUSPENDU)
+    assert C.STATUT_SUSPENDU not in C.ETAPE_DU_STATUT
 
     version = await db.scalar(text("SELECT version_num FROM alembic_version"))
     # Révisions préfixées par la date : toute révision ultérieure (autre module compris) inclut la 02.

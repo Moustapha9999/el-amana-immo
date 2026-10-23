@@ -115,7 +115,7 @@ Définition des états utilisés :
 | Base Clientèle (`clientele`) — « Clientèle » et « Base Clientèle » désignent le **même** module | Audit, Contrôle & Conformité | Partiel / en construction : actif en base locale, statut par défaut du catalogue = `developpement` ; classement de masse verrouillé (`CLIENTELE_CLASSEMENT_MASSE_ACTIF=false`) | `/clientele/*` | `/clientele/*` | 166 | `clientele_*` (46 tables) | Imports ORION (fichiers), GED, audit |
 | Entrées en Relation (`eer`) | Audit, Contrôle & Conformité | Désactivé le 19/10/2026 (réversible, tables `eer_*` conservées et lues par la SIC) | `/eer/*` | `/eer/*` | 59 | `eer_*` (22 tables) | Base Clientèle (pont racine) |
 | Formation & Sensibilisation (`formation`) | Audit, Contrôle & Conformité | Actif — non vérifié | `/formation/*` | `/formation/*` | 44 | `formation_*` (9 tables) | GED (feuilles signées), audit |
-| Gestion des réclamations (`reclamations`) | Audit, Contrôle & Conformité | Partiel / en construction (documenté ainsi dans `docs/conformite/README.md`) | `/reclamations/*` | `/reclamations/*` | 55 | `reclamation*` (18 tables) | Base Clientèle (racine facultative), GED |
+| Gestion des réclamations (`reclamations`) | Audit, Contrôle & Conformité | Partiel / en construction (documenté ainsi dans `docs/conformite/README.md`) | `/reclamations/*` | `/reclamations/*` | 57 | `reclamation*` (18 tables) | Base Clientèle (racine facultative), GED |
 | Rapprochements, contrôles, clôture, reporting comptable, dossiers crédit, RH, tickets SI, achats (ancien espace) | Divers | Bientôt (cartes sans module) | — | — | — | — | — |
 
 Le nombre d'endpoints est un comptage des décorateurs de route par fichier au 22/10/2026 (ordre de
@@ -179,8 +179,9 @@ tâche planifiée `tasks_stock.py` (07:00), écran `/stock-fournitures/alertes`.
 - **EER** : complet côté application selon la documentation, mais **désactivé** depuis le
   19/10/2026 ; ne pas supprimer les tables (`docs/conformite/eer-desactivation.md`).
 - **Formation** : remplace un fichier Excel de suivi ; feuilles de présence signées en GED.
-- **Réclamations** : circuit de traitement (réception, qualification, affectation, réponse, clôture),
-  délais, tableau de bord ; rôles `reclamations.point_reception|agent_sr|responsable_sr|…`.
+- **Réclamations** : circuit de traitement (réception, qualification, affectation, suspension /
+  reprise, réponse, clôture), tableau de bord ; rôles
+  `reclamations.point_reception|agent_sr|responsable_sr|…`.
 
 ## 5. Dépendances communes
 

@@ -26,7 +26,7 @@ export interface RefItem {
   ordre: number;
   actif: boolean;
   usage: number;
-  /** Types, motifs, sous-motifs : valeur proposée ou validée par la Conformité. */
+  /** Types, motifs, sous-motifs : valeur proposée ou validée par la banque (Conformité). */
   a_valider?: boolean;
   statut_validation?: 'PROPOSEE' | 'VALIDEE' | null;
   statut_validation_libelle?: string | null;
@@ -120,6 +120,9 @@ export interface RegleMotif extends RegleContenu {
   type: string | null;
   personnalisee: boolean;
   statut_validation: 'PROPOSEE' | 'VALIDEE' | null;
+  statut_validation_libelle?: string | null;
+  validation_origine?: 'PORTEUR_PROJET' | 'HABILITE' | null;
+  validation_origine_libelle?: string | null;
   valide_le: string | null;
   updated_at: string | null;
 }
@@ -129,6 +132,9 @@ export interface RegleEffective extends RegleContenu {
   motif_id: string | null;
   personnalisee: boolean;
   statut_validation: 'PROPOSEE' | 'VALIDEE' | null;
+  statut_validation_libelle?: string | null;
+  validation_origine?: 'PORTEUR_PROJET' | 'HABILITE' | null;
+  validation_origine_libelle?: string | null;
   controle_libelle: string | null;
   devises: string[];
 }
@@ -203,6 +209,8 @@ export interface RcConfig {
     statuts_reponse: CodeLibelle[];
     evaluations: CodeLibelle[];
     validations_referentiel: CodeLibelle[];
+    validations_regle?: CodeLibelle[];
+    origines_validation_regle?: CodeLibelle[];
     statuts_identification: CodeLibelle[];
   };
   parametres: {
@@ -348,6 +356,12 @@ export interface Dossier extends Omit<DossierLigne, 'suppression'> {
   nb_reouvertures: number;
   nb_renvois: number;
   archivee_le: string | null;
+  suspension: {
+    depuis: string | null;
+    motif: string | null;
+    statut_avant: string | null;
+    statut_avant_libelle: string | null;
+  } | null;
   appels: Appel[];
   cree_par: string | null;
   created_at: string | null;
@@ -651,6 +665,7 @@ export interface Compteur {
 export interface TableauBord {
   total: number;
   ouvertes: number;
+  suspendues?: number;
   volume_30j: number;
   volume_30j_precedent: number;
   cloturees_30j: number;
@@ -843,6 +858,8 @@ export function toneStatut(statut: string): string {
       return 'ACTIF';
     case 'ANNULEE':
       return 'ANNULEE';
+    case 'SUSPENDUE':
+      return 'SUSPENDU';
     default:
       return 'INFO';
   }

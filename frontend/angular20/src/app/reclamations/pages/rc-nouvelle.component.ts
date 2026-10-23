@@ -69,7 +69,7 @@ function aujourdhui(): string {
                 <div class="bea-rc-row">
                   <label>Date et heure de réception par la banque <em>*</em>
                     <input type="datetime-local" formControlName="date_premiere_reception" [max]="maintenant" />
-                    <span class="bea-rc-hint">Cachet d’arrivée, horodatage de l’e-mail… Les délais partent de cette date.</span>
+                    <span class="bea-rc-hint">Cachet d’arrivée, horodatage de l’e-mail… Les durées mesurées (prise en charge, clôture) partent de cette date.</span>
                   </label>
                 </div>
               }

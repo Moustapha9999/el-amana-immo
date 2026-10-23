@@ -72,6 +72,10 @@ const DUREE_ANIMATION = 900;
             <span class="rcd-kpi__ico"><mat-icon>pending_actions</mat-icon></span>
             <p>Ouvertes</p><strong>{{ n(d.ouvertes) }}</strong><small>{{ pct(d.ouvertes, d.total) }} % du total</small>
           </a>
+          <a class="rcd-kpi" style="--i: 6" routerLink="/reclamations/dossiers" [queryParams]="kpi('suspendues')">
+            <span class="rcd-kpi__ico"><mat-icon>pause_circle</mat-icon></span>
+            <p>Suspendues</p><strong>{{ n(d.suspendues ?? 0) }}</strong><small>circuit arrêté, hors clôture</small>
+          </a>
           <a class="rcd-kpi" style="--i: 2" routerLink="/reclamations/dossiers" [queryParams]="kpi('volume_30j')">
             <span class="rcd-kpi__ico"><mat-icon>calendar_month</mat-icon></span>
             <p>Reçues 30 j</p><strong>{{ n(d.volume_30j) }}</strong>
@@ -257,7 +261,7 @@ export class RcDashboardComponent implements OnInit {
   readonly toneStatut = toneStatut;
   readonly tonePriorite = tonePriorite;
   readonly periodes = PERIODES;
-  readonly squelette = [0, 1, 2, 3, 4, 5];
+  readonly squelette = [0, 1, 2, 3, 4, 5, 6];
   readonly data = signal<TableauBord | null>(null);
   readonly erreur = signal(false);
   readonly chargement = signal(false);

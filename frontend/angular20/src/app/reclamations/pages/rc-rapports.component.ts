@@ -54,6 +54,7 @@ import { RcExportComponent } from '../shared/rc-export.component';
         <div class="bea-rc-kpis">
           <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="kpi('total')"><mat-icon>forum</mat-icon><p>Reçues</p><strong>{{ d.total }}</strong></a>
           <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="kpi('ouvertes')"><mat-icon>pending_actions</mat-icon><p>Ouvertes</p><strong>{{ d.ouvertes }}</strong></a>
+          <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="kpi('suspendues')"><mat-icon>pause_circle</mat-icon><p>Suspendues</p><strong>{{ d.suspendues ?? 0 }}</strong></a>
           <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="kpi('operations')"><mat-icon>receipt_long</mat-icon><p>Opérations</p><strong>{{ d.nb_operations }}</strong><small>dans {{ d.dossiers_avec_operations }} dossier(s)</small></a>
           <a class="bea-rc-kpi" routerLink="/reclamations/dossiers" [queryParams]="kpi('operations')"><mat-icon>payments</mat-icon><p>Montant total</p><strong>{{ montant(d.montant_total, d.devise) }}</strong></a>
         </div>

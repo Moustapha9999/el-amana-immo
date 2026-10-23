@@ -122,8 +122,9 @@ function normaliser(texte: string): string {
 
             <section class="bea-mg__panel">
               <div class="bea-mg__panel-top"><h2>Règles par motif</h2></div>
-              <p class="bea-rc-hint bea-rc-pad">Champs exigés pour chaque opération, contrôle spécifique et pièces attendues. Une règle proposée s’applique déjà
-                mais doit être validée par la Conformité ; toute modification la repasse en « proposée ». Sans règle personnalisée, la règle par défaut s’applique
+              <p class="bea-rc-hint bea-rc-pad">Champs exigés pour chaque opération, contrôle spécifique et pièces attendues. Une règle proposée s’applique déjà ;
+                la validation (porteur du projet ou utilisateur habilité) est fonctionnelle, pas une validation réglementaire de la Conformité.
+                Toute modification la repasse en « proposée ». Sans règle personnalisée, la règle par défaut s’applique
                 ({{ libellesChamps(rg.defaut.champs_requis) }}).</p>
               <div class="bea-mg__table-wrap">
                 <table class="bea-mg__table">
@@ -138,7 +139,8 @@ function normaliser(texte: string): string {
                         <td>{{ r.justificatif_requis ? 'Justificatif exigé' : '—' }}@if (r.regularisation) { <small class="bea-ct-sub">Régularisation à confirmer si favorable</small> }</td>
                         <td>
                           @if (!r.personnalisee) { <span class="bea-ct-badge" data-tone="SUSPENDU">Règle par défaut</span> }
-                          @else { <span class="bea-ct-badge" [attr.data-tone]="r.statut_validation === 'VALIDEE' ? 'ACTIF' : 'ATTENTION'">{{ r.statut_validation === 'VALIDEE' ? 'Validée' : 'Proposée' }}</span> }
+                          @else { <span class="bea-ct-badge" [attr.data-tone]="r.statut_validation === 'VALIDEE' ? 'ACTIF' : 'ATTENTION'">{{ r.statut_validation_libelle ?? (r.statut_validation === 'VALIDEE' ? 'Validée' : 'Proposée') }}</span> }
+                          @if (r.validation_origine_libelle) { <small class="bea-ct-sub">{{ r.validation_origine_libelle }}</small> }
                           @if (r.valide_le) { <small class="bea-ct-sub">{{ dateFr(r.valide_le) }}</small> }
                         </td>
                         @if (gererRefs() || validerRefs()) {
@@ -148,7 +150,7 @@ function normaliser(texte: string): string {
                             }
                             @if (validerRefs() && r.personnalisee) {
                               @if (r.statut_validation !== 'VALIDEE') {
-                                <button type="button" class="bea-mg__icon-btn" title="Valider (Conformité)" [disabled]="busy()" (click)="validerRegle(r, 'VALIDEE')"><mat-icon>verified</mat-icon></button>
+                                <button type="button" class="bea-mg__icon-btn" title="Valider (utilisateur habilité — validation fonctionnelle)" [disabled]="busy()" (click)="validerRegle(r, 'VALIDEE')"><mat-icon>verified</mat-icon></button>
                               } @else {
                                 <button type="button" class="bea-mg__icon-btn" title="Repasser en « proposée »" [disabled]="busy()" (click)="validerRegle(r, 'PROPOSEE')"><mat-icon>undo</mat-icon></button>
                               }
@@ -199,7 +201,7 @@ function normaliser(texte: string): string {
               <table class="bea-mg__table bea-rc-refs">
                 <thead><tr><th class="bea-rc-refs__lib">Libellé</th><th class="bea-rc-refs__code">Code</th><th class="bea-rc-refs__niv">Niveau</th>
                   <th class="bea-rc-refs__num" title="Dossiers et éléments rattachés">Utilisations</th><th class="bea-rc-refs__etat">État</th>
-                  @if (vue() === 'CLASSEMENT') { <th class="bea-rc-refs__val" title="Valeur proposée ou validée par la Conformité">Validation</th> }
+                  @if (vue() === 'CLASSEMENT') { <th class="bea-rc-refs__val" title="Nomenclature : proposée ou validée par la banque (Conformité)">Validation</th> }
                   @if (gererRefs() || validerRefs()) { <th class="bea-rc-refs__act"></th> }</tr></thead>
                 <tbody>
                   @for (l of lignesRef(); track l.item.id) {
@@ -890,7 +892,7 @@ export class RcParametresComponent implements OnInit {
       .run(() => this.rc.enregistrerRegle(b.motif_id, corps), {
         busy: this.busy,
         loading: 'Enregistrement…',
-        success: (r) => ({ title: 'Règle enregistrée', message: 'Elle est « proposée » jusqu’à la validation de la Conformité.',
+        success: (r) => ({ title: 'Règle enregistrée', message: 'Elle est « proposée » jusqu’à validation fonctionnelle (porteur du projet ou utilisateur habilité).',
           details: [{ label: 'Motif', value: r.motif }, { label: 'Champs obligatoires', value: this.libellesChamps(r.champs_requis) }] }),
         errorTitle: 'Enregistrement refusé',
         errorHint: 'Vos saisies ont été conservées.',
@@ -909,8 +911,8 @@ export class RcParametresComponent implements OnInit {
         confirm: {
           title: statut === 'VALIDEE' ? 'Valider la règle' : 'Repasser en « proposée »',
           message: statut === 'VALIDEE'
-            ? `La règle du motif « ${r.motif} » sera marquée comme validée par la Conformité.`
-            : `La règle du motif « ${r.motif} » redeviendra proposée, en attente de validation.`,
+            ? `La règle du motif « ${r.motif} » sera marquée comme validée par un utilisateur habilité (validation fonctionnelle, hors validation Conformité).`
+            : `La règle du motif « ${r.motif} » redeviendra proposée, en attente de validation fonctionnelle.`,
           confirmLabel: statut === 'VALIDEE' ? 'Valider' : 'Repasser en proposée',
           tone: statut === 'VALIDEE' ? 'success' : 'warn',
         },

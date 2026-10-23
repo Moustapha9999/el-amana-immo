@@ -51,7 +51,11 @@ STATUTS = (
     "REJETEE",
     "ANNULEE",
     "REOUVERTE",
+    "SUSPENDUE",
 )
+# Statuts ouverts depuis lesquels un dossier peut être suspendu (et qu'il retrouve à la reprise).
+STATUTS_SUSPENDABLES = ("A_QUALIFIER", "A_AFFECTER", "EN_TRAITEMENT", "RETOUR_RECU", "A_CLOTURER", "REOUVERTE")
+ORIGINES_VALIDATION_REGLE = ("PORTEUR_PROJET", "HABILITE")
 ETAPES = ("RECEPTION", "AFFECTATION", "TRAITEMENT", "CLOTURE")
 PRIORITES = ("BASSE", "NORMALE", "HAUTE", "URGENTE")
 CATEGORIES_CLIENT = ("PP", "PM", "NON_CLIENT")
@@ -257,6 +261,10 @@ class Reclamation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __mapper_args__ = {"eager_defaults": True}
     __table_args__ = (
         CheckConstraint(_in("statut", STATUTS), name="ck_reclamations_statut"),
+        CheckConstraint(
+            "statut <> 'SUSPENDUE' OR (statut_avant_suspension IS NOT NULL AND "
+            f"statut_avant_suspension IN ({','.join(repr(s) for s in STATUTS_SUSPENDABLES)}))",
+            name="ck_reclamations_suspension"),
         CheckConstraint(_in("etape", ETAPES), name="ck_reclamations_etape"),
         CheckConstraint(_in("priorite", PRIORITES), name="ck_reclamations_priorite"),
         CheckConstraint(_in("client_categorie", CATEGORIES_CLIENT, nullable=True), name="ck_reclamations_client"),
@@ -411,6 +419,8 @@ class ReclamationRegleMotif(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint(_in("statut_validation", VALIDATIONS_REFERENTIEL),
                         name="ck_reclamation_regles_motif_validation"),
+        CheckConstraint(_in("validation_origine", ORIGINES_VALIDATION_REGLE, nullable=True),
+                        name="ck_reclamation_regles_motif_origine"),
     )
 
     motif_id: Mapped[uuid.UUID] = mapped_column(
@@ -419,6 +429,8 @@ class ReclamationRegleMotif(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     statut_validation: Mapped[str] = mapped_column(String(20), default="PROPOSEE", server_default="PROPOSEE")
     valide_par_id: Mapped[uuid.UUID | None] = _user_fk()
     valide_le: Mapped[datetime | None] = _ts()
+    # PORTEUR_PROJET : validation fonctionnelle du porteur du projet, pas une validation de la Conformité.
+    validation_origine: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_by_id: Mapped[uuid.UUID | None] = _user_fk()
     updated_by_id: Mapped[uuid.UUID | None] = _user_fk()
 

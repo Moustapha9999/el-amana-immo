@@ -165,6 +165,7 @@ def liens_kpi(filtres: dict, aujourdhui) -> dict:
         "delai_moyen": {"indicateur": "delai_cloture_termines", "kpi_debut": _jour_iso(debut),
                         "kpi_fin": _jour_iso(fin)},
         "total": {"date_debut": _jour_iso(debut), "date_fin": _jour_iso(fin)},
+        "suspendues": {"date_debut": _jour_iso(debut), "date_fin": _jour_iso(fin), "statut": C.STATUT_SUSPENDU},
     }
 
 
@@ -203,6 +204,7 @@ async def tableau_de_bord(db: AsyncSession, s: ReclamationsScope, filtres: dict 
     return {
         "total": len(rows),
         "ouvertes": len(ouvertes),
+        "suspendues": sum(1 for r in ouvertes if r.statut == C.STATUT_SUSPENDU),
         "volume_30j": sum(1 for r in rows if r.date_premiere_reception >= depuis),
         "volume_30j_precedent": sum(1 for r in rows if depuis - timedelta(days=30) <= r.date_premiere_reception < depuis),
         "cloturees_30j": sum(1 for r in rows if r.date_cloture and r.date_cloture >= depuis),

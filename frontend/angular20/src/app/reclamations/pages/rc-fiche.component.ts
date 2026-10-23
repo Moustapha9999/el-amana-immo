@@ -91,6 +91,7 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
               }
               @if (d.archivee_le) { <span class="bea-ct-badge" data-tone="ANNULEE">Archivée</span> }
               @if (d.supprimee_le) { <span class="bea-ct-badge" data-tone="URGENT">Supprimée</span> }
+              @if (d.suspension) { <span class="bea-ct-badge" data-tone="SUSPENDU">Suspendue</span> }
             </div>
           </div>
           <div class="bea-mg__actions">
@@ -113,6 +114,15 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
             <span>
               <strong>Dossier supprimé</strong> le {{ date(d.suppression.supprimee_le, true) }}{{ d.suppression.supprimee_par ? ' par ' + d.suppression.supprimee_par : '' }}
               — motif : {{ d.suppression.motif }}. Il n’apparaît plus dans les listes, indicateurs ni exports : restaurez-le ou supprimez-le définitivement.
+            </span>
+          </div>
+        }
+        @if (d.suspension; as sus) {
+          <div class="bea-rc-note bea-rc-note--warn bea-rc-fiche__alerte"><mat-icon>pause_circle</mat-icon>
+            <span>
+              <strong>Dossier suspendu</strong>{{ sus.depuis ? ' depuis le ' + date(sus.depuis, true) : '' }}
+              {{ sus.statut_avant_libelle ? ' — statut avant suspension : ' + sus.statut_avant_libelle : '' }}.
+              Motif : {{ sus.motif ?? '—' }}. Aucune échéance n’est associée à cet état ; le circuit reprend au statut d’origine.
             </span>
           </div>
         }
@@ -423,6 +433,16 @@ const NIVEAUX_CLASSEMENT = ['type_id', 'motif_id', 'motif_autre', 'sous_motif_id
                     @if (rg.commentaire) { <dt>Commentaire</dt><dd>{{ rg.commentaire }}</dd> }
                   </dl>
                 }
+              </section>
+            }
+            @if (d.suspension; as sus) {
+              <section class="bea-mg__panel">
+                <div class="bea-mg__panel-top"><h2>Suspension</h2></div>
+                <dl class="bea-rc-dl">
+                  <dt>Depuis</dt><dd>{{ date(sus.depuis, true) }}</dd>
+                  <dt>Statut d’origine</dt><dd>{{ sus.statut_avant_libelle ?? sus.statut_avant ?? '—' }}</dd>
+                  <dt>Motif</dt><dd>{{ sus.motif ?? '—' }}</dd>
+                </dl>
               </section>
             }
             @if (d.date_cloture || d.motif_refus || d.motif_annulation) {

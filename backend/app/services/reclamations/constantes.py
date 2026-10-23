@@ -17,7 +17,13 @@ STATUT_LIBELLES: dict[str, str] = {
     "REJETEE": "Rejetée",
     "ANNULEE": "Annulée",
     "REOUVERTE": "Réouverte",
+    "SUSPENDUE": "Suspendue",
 }
+# Suspension : arrêt temporaire du circuit, sans délai ni alerte. Le dossier garde son étape et
+# reprend le statut ouvert qu'il avait avant (``statut_avant_suspension``).
+STATUT_SUSPENDU = "SUSPENDUE"
+STATUTS_SUSPENDABLES = frozenset({"A_QUALIFIER", "A_AFFECTER", "EN_TRAITEMENT", "RETOUR_RECU", "A_CLOTURER",
+                                  "REOUVERTE"})
 # Statuts du circuit précédent (avant 20261014_reclamations_02) : lus uniquement dans l'historique.
 STATUT_LIBELLES_HISTORIQUES: dict[str, str] = {
     "RECUE": "Reçue initialement",
@@ -26,7 +32,6 @@ STATUT_LIBELLES_HISTORIQUES: dict[str, str] = {
     "ATTENTE_INFO": "En attente d'information",
     "REPONSE_A_PREPARER": "Réponse à préparer",
     "REPONSE_ENVOYEE": "Réponse envoyée — à clôturer",
-    "SUSPENDUE": "Suspendue",
     "REFUSEE": "Refusée / irrecevable",
 }
 
@@ -61,6 +66,7 @@ STATUT_GROUPES: dict[str, str] = {
     "RETOUR_RECU": "EN_COURS",
     "A_CLOTURER": "EN_COURS",
     "REOUVERTE": "EN_COURS",
+    "SUSPENDUE": "EN_COURS",
     "CLOTUREE": "CLOTUREE",
     "REJETEE": "REJETEE",
     "ANNULEE": "ANNULEE",
@@ -224,6 +230,15 @@ EVALUATION_LIBELLES: dict[str, str] = {
 VALIDATION_REFERENTIEL_LIBELLES: dict[str, str] = {
     "PROPOSEE": "Proposée — en attente de validation",
     "VALIDEE": "Validée par la banque",
+}
+# Règles par motif : qui a validé. PORTEUR_PROJET = validation fonctionnelle, pas réglementaire.
+VALIDATION_REGLE_LIBELLES: dict[str, str] = {
+    "PROPOSEE": "Proposée — en attente de validation",
+    "VALIDEE": "Validée",
+}
+ORIGINE_VALIDATION_REGLE_LIBELLES: dict[str, str] = {
+    "PORTEUR_PROJET": "Validée par le porteur du projet (validation fonctionnelle, hors validation Conformité)",
+    "HABILITE": "Validée par un utilisateur habilité",
 }
 # Paramètre (``reclamation_parametres``) : la banque autorise-t-elle la référence d'enregistrement d'appel ?
 PARAM_ENREGISTREMENT_APPELS = "enregistrement_appels_autorise"

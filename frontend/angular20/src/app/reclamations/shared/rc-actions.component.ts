@@ -39,6 +39,8 @@ const BOUTONS: DefAction[] = [
   { code: 'annuler', libelle: 'Annuler / doublon', icone: 'content_copy', verbe: 'annuler', danger: true, motif: true },
   { code: 'rouvrir', libelle: 'Rouvrir', icone: 'lock_open', verbe: 'rouvrir', motif: true },
   { code: 'archiver', libelle: 'Archiver', icone: 'inventory_2', verbe: 'archiver', motif: false },
+  { code: 'suspendre', libelle: 'Suspendre', icone: 'pause_circle', verbe: 'suspendre', motif: true },
+  { code: 'reprendre', libelle: 'Reprendre', icone: 'play_circle', verbe: 'reprendre', primaire: true, motif: false },
 ];
 
 const PLACEHOLDERS: Record<string, string> = {
@@ -46,6 +48,8 @@ const PLACEHOLDERS: Record<string, string> = {
   refuser: 'Motif du rejet (irrecevable, hors périmètre…)',
   annuler: 'Saisie en double, erreur de saisie…',
   rouvrir: 'Élément nouveau justifiant la réouverture',
+  suspendre: 'Motif de la suspension (pièce attendue, instruction en cours…)',
+  reprendre: 'Élément permettant la reprise (facultatif)',
 };
 
 /** Actions du circuit (Réception → Affectation → Traitement → Clôture) : formulaire motivé, puis appel backend. */
@@ -64,6 +68,12 @@ const PLACEHOLDERS: Record<string, string> = {
     </div>
     @if (dossier().statut === 'A_CLOTURER' && !dossier().actions['cloturer']) {
       <div class="bea-rc-note"><mat-icon>info</mat-icon><span>La clôture est réservée au Service Réclamations central.</span></div>
+    }
+    @if (dossier().statut === 'SUSPENDUE') {
+      <div class="bea-rc-note"><mat-icon>pause_circle</mat-icon>
+        <span>Dossier suspendu{{ dossier().suspension?.statut_avant_libelle ? ' (était : ' + dossier().suspension?.statut_avant_libelle + ')' : '' }}
+          — le circuit est arrêté jusqu’à la reprise. Pièces et notes restent possibles.</span>
+      </div>
     }
     @if (enCours(); as a) {
       <div class="bea-mg__backdrop" (click)="fermer()"></div>

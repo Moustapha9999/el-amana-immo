@@ -11,11 +11,14 @@ statut CORE `actif`.
 | Pilotage | Service Réclamations central (unité `est_service_reclamations`, une seule active) |
 | Clôture | Service Réclamations central uniquement (403 `CLOTURE_RESERVEE_SR` sinon), après retour jugé suffisant du service concerné (ou traitement interne SR). Résultat choisi à la clôture. Plus d’action « Qualifier » ni « Enregistrer la réponse envoyée » dans l’interface : le type se renseigne à la saisie ou via « Corriger les données » ; la réponse au client et sa preuve se joignent en pièces jointes |
 | Délais | Fonctionnalité « Délais & alertes » retirée (voir plus bas) : aucune échéance ni alerte |
-| Unités | Liste réelle des entités BEA (reprise du module Formation) + création de directions, départements, services, agences, cellules dans le module. La table org `departements` (vide) n’est pas utilisée |
+| Unités | Unités du module (`reclamation_unites`) + rattachement à l’organigramme CORE (`departements`) via `org_entite_id`. La liste officielle des départements / services de la banque n’est pas inventée : elle s’importe dans CORE ADMIN (voir plus bas) |
+| Règles par motif | Validées par le **porteur du projet** (octobre 2026) : valeurs inchangées, appliquées. Validation fonctionnelle, **pas** une validation réglementaire de la Conformité (`validation_origine = PORTEUR_PROJET`) |
+| État Suspendue | Arrêt temporaire du circuit (motif obligatoire), étape conservée, reprise au statut d’origine. Distinct de clôturé, archivé, supprimé. Aucun délai ni alerte |
+| Marketing | Deux libellés distincts du référentiel métier : « MARKETING & COMMUNICATION » (département) et « MARKETING ET COMMUNICATION » (service). Sélectionnables dans les formulaires, filtres, rattachements et rapports |
 | Données | Aucune donnée fictive : seuls les canaux, canaux de réponse et une proposition de types et de motifs (marquée « Proposition initiale — nomenclature à valider par la banque ») sont insérés. L’option « Autre » (saisie libre) existe à chaque niveau motif / sous-motif |
 | Documents | GED (`ged_documents`, entité `reclamation`), plusieurs pièces par dossier, original jamais écrasé, retrait logique avec motif et audit. Aucun rôle du module ne reçoit `ged.*` |
 
-## Modèle (migration `20261013_reclamations_01`)
+## Modèle (migrations `20261013_reclamations_01` … `20261023_reclamations_12`)
 
 | Table | Rôle |
 |-------|------|
@@ -44,14 +47,21 @@ Pipeline en 4 étapes : **Réception → Affectation → Traitement → Clôture
 | Réouverte | Affectation | idem « À affecter » |
 | En traitement | Traitement | Retour du service → Retour reçu |
 | Retour reçu | Clôture | Examiner : suffisant → À clôturer ; insuffisant (commentaire obligatoire) → nouvelle fiche, En traitement |
-| À clôturer | Clôture | Enregistrer la réponse envoyée ; Clôturer (SR central, réponse enregistrée) → Clôturée |
+| À clôturer | Clôture | Clôturer (SR central) → Clôturée |
+| Suspendue | (étape d’origine, inchangée) | Reprendre → statut d’avant la suspension. Aucune autre action du circuit |
 | Clôturée / Rejetée | Clôture | Rouvrir (motif) → Réouverte ; Archiver |
 | Annulée | Clôture | Archiver |
 
-Terminaux : Clôturée, Rejetée, Annulée. Retirés de l’interface : la page « Réponse client »
-(brouillon / validation), la page « Audit », l’action « Demander une information » et la
-suspension. Les traces historiques (événements, audit, anciennes réponses) sont conservées ;
-les anciens codes de statut / d’étape restent lisibles dans l’historique.
+Terminaux : Clôturée, Rejetée, Annulée. **Suspendue n’est pas terminal** (groupe « En cours »).
+Suspension et reprise : `POST /dossiers/{id}/suspendre` et `/reprendre`, permission
+`reclamations.assign` **et** Service Réclamations central (pas de 29ᵉ permission : l’ancienne
+`reclamations.suspend` reste retirée). Motif obligatoire à la suspension ; pièces, notes et
+corrections restent possibles. Aucune échéance, aucun délai.
+
+Retirés de l’interface : la page « Réponse client » (brouillon / validation), la page « Audit »,
+l’action « Demander une information ». Les traces historiques (événements, audit, anciennes
+réponses) sont conservées ; les anciens codes de statut / d’étape restent lisibles dans
+l’historique.
 
 Reprise des dossiers existants : RECUE / RECUE_SR → À qualifier ; A_QUALIFIER → À affecter ;
 AFFECTEE / EN_TRAITEMENT → En traitement ; RETOUR_RECU → Retour reçu ; REPONSE_* → À clôturer ;
@@ -120,12 +130,17 @@ Réclamations ; choix demandé seulement si ambigu), l’unité concernée (déd
 l’agence du client (reprise d’ORION à la recherche du client) et le point de réception
 (`POINT_RECEPTION`, conservé en base pour l’historique, plus proposé).
 
-**Règle par motif** (`reclamation_regles_motifs`, onglet Paramètres → « Règles par motif &
+**Règle par motif** (`reclamation_regles_motif`, onglet Paramètres → « Règles par motif &
 devises ») : champs obligatoires par opération, opérations minimum, nature attendue (D/C),
 contrôle spécifique (extourne partielle, doublon, mauvais compte, montant incorrect…),
 justificatif exigé, régularisation à confirmer. Gestion `references.manage`, validation
-`references.validate` ; toute modification repasse la règle en « proposée ». Sans règle : règle
-par défaut (référence + montant). Les règles chargées sont des **propositions** à valider.
+`references.validate` ; toute modification repasse la règle en « proposée » et efface
+`validation_origine`. Sans règle : règle par défaut (référence + montant). Les 12 règles du type
+« Extournes et annulations d’opérations » sont **validées par le porteur du projet**
+(`PORTEUR_PROJET`, valeurs inchangées, appliquées quel que soit le statut). Une validation
+ultérieure par un utilisateur habilité porte `HABILITE`. **Ce n’est pas une validation
+réglementaire de la Conformité.** La nomenclature des 26 types reste, elle, en attente de la
+Conformité.
 
 **Opérations** : client, compte, référence, date, nature D/C, devise, montant initial, montant à
 extourner, motif ligne, commentaire (+ montant attendu, compte attendu, rôle selon le motif).
@@ -211,7 +226,7 @@ unités. Un dossier hors périmètre répond `404`.
 | `PUT /dossiers/{id}/operations` | Remplacement de la liste des opérations (révision, motif facultatif, tracé) |
 | `GET /dossiers/{id}/chronologie` | Historique des événements |
 | `GET/POST /dossiers/{id}/documents`, `POST …/{did}/retrait`, `GET …/{did}/fichier?apercu=` | Pièces GED |
-| `POST /dossiers/{id}/qualifier`, `affecter`, `traiter-interne`, `retourner`, `evaluer`, `cloturer`, `refuser`, `annuler`, `rouvrir`, `archiver` | Actions du circuit (statut uniquement par ces routes) |
+| `POST /dossiers/{id}/qualifier`, `affecter`, `traiter-interne`, `retourner`, `evaluer`, `cloturer`, `refuser`, `annuler`, `rouvrir`, `archiver`, `suspendre`, `reprendre` | Actions du circuit (statut uniquement par ces routes) |
 | `POST /dossiers/{id}/reponse` | Enregistrement de la réponse envoyée (contenu, canal, date d’envoi) |
 | `POST /referentiels/{id}/validation` | Validation Conformité d’un type, motif ou sous-motif |
 | `GET /tableau-de-bord`, `GET /comparaison`, `GET /circuit` | Tableau de bord, comparaison A/B, kanban |
@@ -305,7 +320,8 @@ taux de réouverture restent utilisés par la comparaison A/B et par les filtres
 (`indicateur` + `kpi_debut` / `kpi_fin` / `kpi_unite_id`, même condition SQL que le calcul).
 
 **KPI cliquables** du tableau de bord (`liens` fournis par le serveur) : total, ouvertes,
-reçues 30 j, délai moyen de clôture, opérations et montant. L’agence choisie est conservée.
+suspendues, reçues 30 j, délai moyen de clôture, opérations et montant. L’agence choisie est
+conservée.
 
 ## Comparaison de deux périodes
 
@@ -363,12 +379,31 @@ journal reste lisible dans l’onglet Historique de chaque fiche. `reclamations.
 Inchangé : `enregistrement_appels_autorise` absent = refusé. Seule une **référence** externe est
 saisissable quand le paramètre est activé ; aucun fichier audio n’est stocké, aucun lien public.
 
-## Marketing (vérification)
+## Marketing
 
-Deux unités actives, sans membre ni dossier : département « MARKETING & COMMUNICATION » (racine)
-et service « MARKETING ET COMMUNICATION » rattaché à ce département. Ce rattachement reproduit
-la source Formation (deux libellés distincts) : **rien n’a été déplacé**. Fusion ou renommage =
-décision de la banque.
+Deux libellés distincts, repris tels quels du référentiel métier (unités Réclamations, liste
+Formation) — **ni fusionnés, ni inventés** :
+
+| Libellé | Niveau CORE | Code | Unité Réclamations |
+|---------|-------------|------|--------------------|
+| MARKETING & COMMUNICATION | `DEPARTEMENT` (racine) | `MKT-COM` | `DEPARTEMENT` |
+| MARKETING ET COMMUNICATION | `SERVICE` (enfant du premier) | `MKT-COM-SVC` | `SERVICE` |
+
+Ajoutés à `departements` par la migration `20261023_reclamations_11` (`source =
+REFERENTIEL_METIER_2026_10`, `a_confirmer = true`, note : rattachement hiérarchique à confirmer
+par la banque). Les unités Réclamations de même libellé y sont rattachées (`org_entite_id`).
+Sélectionnables comme département / service concernés (formulaires, filtres, rattachements,
+rapports). Distincts de « Direction Marketing » / « Analyse et Stratégie Marketing »
+(organigramme 2024).
+
+## Départements et services — import de la liste de la banque
+
+Aucune liste locale n’est inventée. Procédure (CORE ADMIN, Login 1,
+`core.admin.organisation`) : **Organigramme → Import Excel**. Détail et colonnes :
+`docs/referentiel-organisationnel.md` § Import Excel. Modèle : `GET
+/api/v1/plateforme/admin/organisation/import/modele`. Aperçu puis application ; aucune
+suppression automatique des absentes. Les entités Marketing ci-dessus restent « à confirmer »
+jusqu’à cet import ou une confirmation manuelle.
 
 ## Avancement
 
@@ -385,32 +420,57 @@ décision de la banque.
 | Désactivation / suppression des types et motifs (masqués des listes) | implémenté et testé |
 | Dossier multi-comptes / multi-clients, masquage des clients associés | implémenté et testé |
 | Import Excel des opérations (modèle, aperçu, confirmation) | implémenté et testé |
-| Règles par motif, devises, rattachement département / service, régularisation, pièces par opération | implémenté et testé (backend) ; écrans vérifiés par build |
-| Import de l’organigramme (CORE ADMIN → Organigramme → Import Excel) | implémenté et testé (backend) ; liste de la banque à importer |
-| Référence d’enregistrement d’appel | en attente de décision (désactivée) |
-| Unités Marketing | en attente de décision (non déplacées) |
-| État « suspendu » | non implémenté (pas de suspension dans le circuit) |
-| Écrans front | vérifiés par build ; pas de tests automatisés front |
+| Règles par motif, devises, rattachement département / service, régularisation, pièces par opération | implémenté et testé ; règles Extournes validées par le porteur du projet (pas par la Conformité) |
+| Import de l’organigramme (CORE ADMIN → Organigramme → Import Excel) | implémenté et testé (backend) ; liste officielle de la banque à importer |
+| Référence d’enregistrement d’appel | désactivée, facultative ; n’empêche ni la réception ni le traitement |
+| Unités Marketing | deux libellés distincts dans le CORE, sélectionnables, à confirmer par la banque |
+| État « Suspendue » | implémenté et testé (backend + front) : transitions, permissions, reprise, filtres, fiche, KPI, exports |
+| Écrans front | tests Karma (actions, clôture SR, réouverture, suspension, teintes, navigation sans « Délais & alertes », KPI, comparaison, exports, import) |
 
-Tests : `test_reclamations_finalisation.py` (quatre durées avec dates présentes, absentes et
-incohérentes ; réouvertures simple et multiple ; services et opérations multiples ; filtre agence ;
-KPI = listes et absence des KPI d’échéance ; comparaison et exports ; permissions retirées, dont
-`delais.*` ; référentiels ; Marketing ; appels ; périmètre) et `test_reclamations_circuit.py`
-(aucune échéance calculée à la création) — transactions annulées.
+Tests backend : `test_reclamations_fondations.py`, `test_reclamations_dossiers.py`,
+`test_reclamations_circuit.py`, `test_reclamations_regles.py`, `test_reclamations_multi_clients.py`,
+`test_reclamations_notes_suppression.py`, `test_reclamations_finalisation.py`,
+`test_reclamations_tableau_bord.py`, `test_reclamations_suspension.py` — transactions annulées.
+
+Tests front : `frontend/angular20/src/app/reclamations/**/*.spec.ts`.
+
+## Distinctions à ne pas confondre
+
+1. **Validation du porteur du projet** (règles par motif, `PORTEUR_PROJET`) ≠ **validation
+   réglementaire de la Conformité**.
+2. **Règles par motif** (champs, contrôles, justificatifs) ≠ **nomenclature des 26 types**
+   (toujours en attente de la Conformité ; aucun sous-motif inventé).
+3. **Suspendue** ≠ **clôturée** (la clôture reste réservée au SR ; un dossier suspendu est ouvert).
+4. **Suspendue** ≠ **archivée** (`archivee_le` : les terminaux seulement).
+5. **Suspendue** ≠ **supprimée** (corbeille / suppression définitive).
+6. **Durées mesurées** (prise en charge, clôture, comparaison A/B) ≠ fonctionnalité **« Délais &
+   alertes »** (retirée : plus de règles, échéances, alertes ni menu).
+7. **Unités Réclamations** (`reclamation_unites`) ≠ **organigramme CORE** (`departements`) : le
+   module se rattache via `org_entite_id`, jamais par une liste locale.
+8. **« MARKETING & COMMUNICATION »** (département) ≠ **« MARKETING ET COMMUNICATION »** (service).
+9. **Login 1** (plateforme / CORE ADMIN) ≠ **Login 2** (module). Déconnexion module →
+   `/comptabilite`, jamais Login 1.
+10. **Référence d’enregistrement d’appel** (paramètre désactivé, facultatif) ≠ **canal téléphone**
+    (actif ; l’absence de référence n’empêche ni la réception ni le traitement).
+11. **Liste Formation / référentiel métier** (source des deux libellés Marketing) ≠ **organigramme
+    officiel juillet 2024** (« Direction Marketing », « Analyse et Stratégie Marketing »).
+12. **Permission `reclamations.assign`** (pilotage SR : affectation, suspension, reprise) ≠
+    ancienne **`reclamations.suspend`** (retirée ; le module reste à 28 permissions).
 
 ## En attente de la Conformité / du métier
 
-- Validation de la nomenclature (types, motifs, sous-motifs).
+- Validation de la nomenclature (26 types, motifs ; aucun sous-motif fourni).
 - Preuve d’envoi de la réponse : facultative pour clôturer.
 - Canal « Papier » renommé « Dépôt physique (agence / siège) ».
 - Date de réclamation connue sans heure : enregistrée comme date seule ; la réception par la
   banque, horodatée, reste le point de départ des durées mesurées.
-- Autorisation d’enregistrer une référence d’enregistrement d’appel.
-- Unités « MARKETING & COMMUNICATION » / « MARKETING ET COMMUNICATION » (voir ci-dessus).
-- Règles par motif : toutes « proposées », à valider (champs exigés, contrôles, justificatifs).
-- Liste réelle des départements et services de la banque : à fournir puis importer dans le CORE.
+- Autorisation d’enregistrer une référence d’enregistrement d’appel (reste désactivée et
+  facultative ; rien n’est simulé).
+- Confirmation du rattachement hiérarchique des deux libellés Marketing dans l’organigramme.
+- Liste réelle des départements et services de la banque : à fournir puis importer dans le CORE
+  (modèle Excel, CORE ADMIN → Organigramme).
 - Devise par défaut MRU à l’import quand le motif n’exige pas la devise.
 - Preuve jointe obligatoire pour confirmer une régularisation ; agent = utilisateur connecté.
 - Import tout ou rien (pas d’import partiel des lignes valides).
 
-Le module n’est **pas** déclaré validé par la Conformité tant que ces décisions ne sont pas prises.
+Le module n'est pas déclaré validé par la Conformité tant que ces décisions ne sont pas prises.
