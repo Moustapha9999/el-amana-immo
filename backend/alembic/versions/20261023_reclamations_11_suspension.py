@@ -27,6 +27,7 @@ revision: str = "20261023_reclamations_11"
 down_revision: Union[str, None] = "20261022_mg_stock_alertes"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+retour_arriere = "compatible"
 
 STATUTS_AVANT = ("A_QUALIFIER", "A_AFFECTER", "EN_TRAITEMENT", "RETOUR_RECU", "A_CLOTURER", "CLOTUREE", "REJETEE",
                  "ANNULEE", "REOUVERTE")
