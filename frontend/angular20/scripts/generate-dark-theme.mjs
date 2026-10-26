@@ -321,8 +321,12 @@ writeFileSync(OUT, contenu);
 
 // Le bundle non injecté n'est pas haché : version dans l'URL pour invalider le cache navigateur.
 const version = createHash('sha256').update(contenu).digest('hex').slice(0, 10);
-const INDEX = join(SRC, 'index.html');
-writeFileSync(INDEX, readFileSync(INDEX, 'utf8').replace(/theme-dark\.css(\?v=[0-9a-f]*)?/g, `theme-dark.css?v=${version}`));
+for (const fichier of [join(SRC, 'index.html'), join(ROOT, 'public', 'theme-init.js')]) {
+  writeFileSync(
+    fichier,
+    readFileSync(fichier, 'utf8').replace(/theme-(dark\.css|init\.js)(\?v=[0-9a-f]*)?/g, `theme-$1?v=${version}`),
+  );
+}
 writeFileSync(
   join(SRC, 'app', 'core', 'services', 'theme-dark.version.ts'),
   `// Généré par scripts/generate-dark-theme.mjs.\nexport const THEME_DARK_VERSION = '${version}';\n`,

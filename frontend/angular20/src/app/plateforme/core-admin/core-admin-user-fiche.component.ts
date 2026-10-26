@@ -179,9 +179,14 @@ import { CoreAdminUserOrgComponent } from './core-admin-user-org.component';
             </label>
             @if (isCreate()) {
               <p class="bea-admin-panel__hint">
-                Un mot de passe temporaire sera généré à la création. Communiquez-le une seule fois,
-                puis gérez les accès via CORE ADMIN → Sécurité → Mots de passe.
+                Un mot de passe temporaire sera généré à la création. Communiquez-le une seule fois :
+                l’utilisateur devra le changer à sa première connexion.
               </p>
+            } @else {
+              <label class="bea-admin-check" [class.bea-admin-check--on]="form.controls.must_change_password.value">
+                <input type="checkbox" formControlName="must_change_password" />
+                Changement de mot de passe obligatoire à la prochaine connexion
+              </label>
             }
             @if (canGrantSuperuser()) {
               <label class="bea-admin-check" [class.bea-admin-check--on]="form.controls.is_superuser.value">
@@ -458,6 +463,7 @@ export class CoreAdminUserFicheComponent implements OnInit {
     email: ['', [Validators.required, Validators.email]],
     phone: [''],
     is_superuser: [false],
+    must_change_password: [false],
   });
 
   ngOnInit(): void {
@@ -585,6 +591,9 @@ export class CoreAdminUserFicheComponent implements OnInit {
     };
     if (this.canGrantSuperuser()) {
       body['is_superuser'] = value.is_superuser;
+    }
+    if (!this.isCreate()) {
+      body['must_change_password'] = value.must_change_password;
     }
     if (this.isCreate()) {
       this.api
@@ -714,6 +723,7 @@ export class CoreAdminUserFicheComponent implements OnInit {
           email: fiche.email,
           phone: fiche.phone ?? '',
           is_superuser: fiche.is_superuser,
+          must_change_password: !!fiche.must_change_password,
         });
         this.selectedRoles.set(fiche.roles.map((role) => role.code));
         this.selectedEspaces.set(fiche.espace_codes ?? []);

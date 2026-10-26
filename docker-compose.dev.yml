@@ -13,7 +13,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-immo_pass}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres_data_dev:/var/lib/postgresql/data
       - ./database/init:/docker-entrypoint-initdb.d:ro
@@ -27,7 +27,7 @@ services:
     image: redis:7-alpine
     container_name: bea-redis-dev
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -93,7 +93,7 @@ services:
       dockerfile: Dockerfile
     container_name: bea-frontend-dev
     ports:
-      - "8080:80"
+      - "8080:8080"
     depends_on:
       - backend
 

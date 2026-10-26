@@ -65,6 +65,6 @@ def test_login_lockout_threshold_from_settings():
 
     settings = get_settings()
     assert settings.login_lockout_max_failures == 5
-    assert settings.login_lockout_window_minutes == 15
+    assert settings.login_lockout_window_minutes == 10
     assert settings.module_refresh_token_expire_minutes == 45
     assert LoginAttemptService is not None

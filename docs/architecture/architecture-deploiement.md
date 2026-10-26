@@ -25,7 +25,7 @@ Source éditable : [diagrams/06-deploiement.mmd](diagrams/06-deploiement.mmd).
 flowchart TB
     subgraph LOCAL["Instance locale constatée (docker-compose.yml)"]
         direction TB
-        L_FE["bea-frontend<br/>0.0.0.0:80 → 80"]
+        L_FE["bea-frontend<br/>0.0.0.0:80 → 8080"]
         L_BE["bea-backend :8000<br/>(non publié)"]
         L_WK["bea-worker"]
         L_PG[("bea-postgres 17-alpine<br/>0.0.0.0:5432 → 5432")]
@@ -45,7 +45,7 @@ flowchart TB
     subgraph CIBLE["Cible TEST / PROD (deployment/docker-compose.prod.yml) — non constatée"]
         direction TB
         P_RP["Reverse proxy HTTPS hôte<br/>:80 → redirection, :443 TLS 1.2/1.3<br/>(modèle à adapter par l'IT)"]
-        P_FE["bea-frontend<br/>127.0.0.1:8080 → 80"]
+        P_FE["bea-frontend<br/>127.0.0.1:8080 → 8080"]
         P_BE["bea-backend :8000"]
         P_WK["bea-worker"]
         P_PG[("bea-postgres 17 (Debian)<br/>aucun port publié")]

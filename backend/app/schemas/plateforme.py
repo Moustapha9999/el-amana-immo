@@ -242,8 +242,8 @@ class CoreAdminUserCreateResult(BaseModel):
     user: UserRead
     temporary_password: str
     message: str = (
-        "Compte créé. Communiquez le mot de passe temporaire une seule fois, "
-        "puis orientez l’utilisateur vers un changement via CORE ADMIN → Sécurité."
+        "Compte créé. Communiquez le mot de passe temporaire une seule fois : "
+        "l’utilisateur devra le changer à sa première connexion."
     )
 
 
@@ -252,6 +252,7 @@ class CoreAdminUserUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=255)
     phone: str | None = None
     password: str | None = Field(default=None, min_length=8)
+    must_change_password: bool | None = None
     is_superuser: bool | None = None
     role_codes: list[str] | None = None
     espace_codes: list[str] | None = None

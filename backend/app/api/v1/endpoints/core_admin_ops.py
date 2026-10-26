@@ -571,7 +571,10 @@ async def create_security_incident(
     except Exception as exc:
         raise HTTPException(
             status_code=503,
-            detail="Table security_incidents indisponible — appliquer les migrations sécurité.",
+            detail={
+                "code": "MIGRATION_REQUISE",
+                "message": "Table security_incidents indisponible — appliquer les migrations sécurité.",
+            },
         ) from exc
     await record_audit(
         db,

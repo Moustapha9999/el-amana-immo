@@ -17,19 +17,64 @@ export interface UserProfile {
   email: string;
   full_name: string;
   is_superuser: boolean;
+  must_change_password?: boolean;
   roles: { code: string; label: string }[];
   espace_codes?: string[];
   module_codes?: string[];
   permission_codes?: string[];
 }
 
-const PLATFORM_ACCESS_KEY = 'bea_access';
-const PLATFORM_REFRESH_KEY = 'bea_refresh';
-const MODULE_ACCESS_KEY = 'bea_mod_access';
-const MODULE_REFRESH_KEY = 'bea_mod_refresh';
+/** Écran imposé tant qu'un mot de passe fixé par un administrateur n'a pas été changé. */
+export const CHANGE_PASSWORD_PATH = '/changer-mot-de-passe';
+
+/**
+ * Jetons d'accès en mémoire uniquement ; refresh tokens en cookies HttpOnly posés par le backend
+ * (en-tête X-BEA-Auth: cookie ajouté par l'intercepteur sur /auth/*). Le localStorage ne garde que
+ * des indicateurs non secrets.
+ */
+const SESSION_HINT_KEY = 'bea_session';
 const MODULE_CODE_KEY = 'bea_mod_code';
-const LEGACY_ACCESS_KEY = 'immo_access';
-const LEGACY_REFRESH_KEY = 'immo_refresh';
+const LEGACY_PLATFORM_REFRESH_KEYS = ['bea_refresh', 'immo_refresh'];
+const LEGACY_TOKEN_KEYS = ['bea_access', 'bea_refresh', 'bea_mod_access', 'bea_mod_refresh', 'immo_access', 'immo_refresh'];
+const REFRESH_LOCK = 'bea-auth-refresh';
+
+/** Sérialise les renouvellements entre onglets : le cookie tourne à chaque refresh. */
+function withRefreshLock<T>(source: Observable<T>): Observable<T> {
+  const locks = (navigator as Navigator & { locks?: LockManager }).locks;
+  if (!locks) {
+    return source;
+  }
+  return new Observable<T>((subscriber) => {
+    let inner: { unsubscribe(): void } | null = null;
+    let release: () => void = () => undefined;
+    let closed = false;
+    void locks.request(REFRESH_LOCK, () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+        if (closed) {
+          resolve();
+          return;
+        }
+        inner = source.subscribe({
+          next: (v) => subscriber.next(v),
+          error: (e) => {
+            resolve();
+            subscriber.error(e);
+          },
+          complete: () => {
+            resolve();
+            subscriber.complete();
+          },
+        });
+      }),
+    );
+    return () => {
+      closed = true;
+      inner?.unsubscribe();
+      release();
+    };
+  });
+}
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -68,74 +113,83 @@ export class AuthService {
 
   private platformRefreshInFlight$: Observable<TokenPair> | null = null;
   private moduleRefreshInFlight$: Observable<TokenPair> | null = null;
-
-  constructor() {
-    this.migrateLegacyTokens();
-  }
-
-  private migrateLegacyTokens(): void {
-    const oldAccess = localStorage.getItem(LEGACY_ACCESS_KEY);
-    const oldRefresh = localStorage.getItem(LEGACY_REFRESH_KEY);
-    if (oldAccess && !localStorage.getItem(PLATFORM_ACCESS_KEY)) {
-      localStorage.setItem(PLATFORM_ACCESS_KEY, oldAccess);
-      if (oldRefresh) {
-        localStorage.setItem(PLATFORM_REFRESH_KEY, oldRefresh);
-      }
-    }
-    localStorage.removeItem(LEGACY_ACCESS_KEY);
-    localStorage.removeItem(LEGACY_REFRESH_KEY);
-  }
-
-  get accessToken(): string | null {
-    return this.platformAccessToken;
-  }
-
-  get refreshToken(): string | null {
-    return this.platformRefreshToken;
-  }
+  private moduleRefreshInFlightCode: string | null = null;
+  private platformAccess: string | null = null;
+  private moduleAccess: string | null = null;
+  private currentModuleCode: string | null = null;
 
   get platformAccessToken(): string | null {
-    return localStorage.getItem(PLATFORM_ACCESS_KEY);
-  }
-
-  get platformRefreshToken(): string | null {
-    return localStorage.getItem(PLATFORM_REFRESH_KEY);
+    return this.platformAccess;
   }
 
   get moduleAccessToken(): string | null {
-    return localStorage.getItem(MODULE_ACCESS_KEY);
-  }
-
-  get moduleRefreshToken(): string | null {
-    return localStorage.getItem(MODULE_REFRESH_KEY);
+    return this.moduleAccess;
   }
 
   get moduleCode(): string | null {
-    return localStorage.getItem(MODULE_CODE_KEY);
+    return this.currentModuleCode;
+  }
+
+  /** Session plateforme probablement ouverte (cookie HttpOnly illisible) : un refresh vaut la peine. */
+  get hasPlatformSessionHint(): boolean {
+    return !!this.platformAccess || localStorage.getItem(SESSION_HINT_KEY) === '1';
+  }
+
+  /** Dernier module ouvert dans ce navigateur (indicateur non secret). */
+  get lastModuleCode(): string | null {
+    return this.currentModuleCode ?? localStorage.getItem(MODULE_CODE_KEY);
   }
 
   private storePlatformTokens(tokens: TokenPair): void {
-    localStorage.setItem(PLATFORM_ACCESS_KEY, tokens.access_token);
-    localStorage.setItem(PLATFORM_REFRESH_KEY, tokens.refresh_token);
+    this.platformAccess = tokens.access_token;
+    localStorage.setItem(SESSION_HINT_KEY, '1');
   }
 
   private storeModuleTokens(tokens: TokenPair, moduleCode: string): void {
-    localStorage.setItem(MODULE_ACCESS_KEY, tokens.access_token);
-    localStorage.setItem(MODULE_REFRESH_KEY, tokens.refresh_token);
+    this.moduleAccess = tokens.access_token;
+    this.currentModuleCode = moduleCode;
     localStorage.setItem(MODULE_CODE_KEY, moduleCode);
   }
 
+  /**
+   * Au démarrage : reprend la session plateforme (puis module) via les cookies HttpOnly.
+   * Une session de l'ancien stockage localStorage est migrée une fois vers le cookie.
+   */
+  restoreSession(): Promise<void> {
+    const legacyRefresh = LEGACY_PLATFORM_REFRESH_KEYS.map((k) => localStorage.getItem(k)).find((v) => !!v) ?? null;
+    LEGACY_TOKEN_KEYS.forEach((k) => localStorage.removeItem(k));
+    if (!legacyRefresh && localStorage.getItem(SESSION_HINT_KEY) !== '1') {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      this.refreshPlatformTokens(legacyRefresh).subscribe({
+        next: () => {
+          const code = localStorage.getItem(MODULE_CODE_KEY);
+          if (!code) {
+            resolve();
+            return;
+          }
+          this.refreshModuleTokens(code).subscribe({ next: () => resolve(), error: () => resolve() });
+        },
+        error: () => {
+          localStorage.removeItem(SESSION_HINT_KEY);
+          resolve();
+        },
+      });
+    });
+  }
+
   clearModuleSession(): void {
-    localStorage.removeItem(MODULE_ACCESS_KEY);
-    localStorage.removeItem(MODULE_REFRESH_KEY);
+    this.moduleAccess = null;
+    this.currentModuleCode = null;
     localStorage.removeItem(MODULE_CODE_KEY);
     this.moduleRefreshInFlight$ = null;
     this.plateformeContext.clear();
   }
 
   clearLocalSession(): void {
-    localStorage.removeItem(PLATFORM_ACCESS_KEY);
-    localStorage.removeItem(PLATFORM_REFRESH_KEY);
+    this.platformAccess = null;
+    localStorage.removeItem(SESSION_HINT_KEY);
     this.user.set(null);
     this.platformRefreshInFlight$ = null;
     this.clearModuleSession();
@@ -158,45 +212,57 @@ export class AuthService {
     return this.api.get<UserProfile>('/auth/me').pipe(tap((profile) => this.user.set(profile)));
   }
 
+  changePassword(currentPassword: string, newPassword: string) {
+    return this.api
+      .post<{ message: string }>('/auth/change-password', {
+        current_password: currentPassword,
+        new_password: newPassword,
+      })
+      .pipe(
+        tap(() => {
+          const profile = this.user();
+          if (profile) {
+            this.user.set({ ...profile, must_change_password: false });
+          }
+        }),
+      );
+  }
+
   refreshTokens(): Observable<TokenPair> {
     return this.refreshPlatformTokens();
   }
 
-  refreshPlatformTokens(): Observable<TokenPair> {
-    const refresh = this.platformRefreshToken;
-    if (!refresh) {
-      return throwError(() => new Error('Aucun refresh token plateforme'));
-    }
+  /** `legacyRefresh` : jeton de l'ancien stockage, échangé une seule fois contre le cookie. */
+  refreshPlatformTokens(legacyRefresh?: string | null): Observable<TokenPair> {
     if (!this.platformRefreshInFlight$) {
-      this.platformRefreshInFlight$ = this.api
-        .post<TokenPair>('/auth/refresh', { refresh_token: refresh })
-        .pipe(
-          tap((tokens) => this.storePlatformTokens(tokens)),
-          finalize(() => {
-            this.platformRefreshInFlight$ = null;
-          }),
-          shareReplay(1),
-        );
+      const body = legacyRefresh ? { refresh_token: legacyRefresh } : {};
+      this.platformRefreshInFlight$ = withRefreshLock(this.api.post<TokenPair>('/auth/refresh', body)).pipe(
+        tap((tokens) => this.storePlatformTokens(tokens)),
+        finalize(() => {
+          this.platformRefreshInFlight$ = null;
+        }),
+        shareReplay(1),
+      );
     }
     return this.platformRefreshInFlight$;
   }
 
-  refreshModuleTokens(): Observable<TokenPair> {
-    const refresh = this.moduleRefreshToken;
-    const code = this.moduleCode;
-    if (!refresh || !code) {
-      return throwError(() => new Error('Aucun refresh token module'));
+  refreshModuleTokens(moduleCode?: string | null): Observable<TokenPair> {
+    const code = moduleCode ?? this.lastModuleCode;
+    if (!code) {
+      return throwError(() => new Error('Aucune session module'));
     }
-    if (!this.moduleRefreshInFlight$) {
-      this.moduleRefreshInFlight$ = this.api
-        .post<TokenPair>('/auth/modules/refresh', { refresh_token: refresh })
-        .pipe(
-          tap((tokens) => this.storeModuleTokens(tokens, code)),
-          finalize(() => {
-            this.moduleRefreshInFlight$ = null;
-          }),
-          shareReplay(1),
-        );
+    if (!this.moduleRefreshInFlight$ || this.moduleRefreshInFlightCode !== code) {
+      this.moduleRefreshInFlightCode = code;
+      this.moduleRefreshInFlight$ = withRefreshLock(
+        this.api.post<TokenPair>('/auth/modules/refresh', { module_code: code }),
+      ).pipe(
+        tap((tokens) => this.storeModuleTokens(tokens, code)),
+        finalize(() => {
+          this.moduleRefreshInFlight$ = null;
+        }),
+        shareReplay(1),
+      );
     }
     return this.moduleRefreshInFlight$;
   }
@@ -206,11 +272,9 @@ export class AuthService {
   }
 
   logoutPlatform(options?: { reason?: 'manual' | 'session' }): void {
-    const refresh = this.platformRefreshToken;
-    const hadSession = !!(this.platformAccessToken || refresh);
-    if (hadSession) {
+    if (this.hasPlatformSessionHint) {
       this.api
-        .post<{ message: string }>('/auth/logout', { refresh_token: refresh })
+        .post<{ message: string }>('/auth/logout', {})
         .pipe(catchError(() => of(null)))
         .subscribe();
     }
@@ -220,13 +284,12 @@ export class AuthService {
   }
 
   logoutModule(options?: { redirectTo?: string }): void {
-    const refresh = this.moduleRefreshToken;
-    const code = this.moduleCode;
+    const code = this.lastModuleCode;
     // Capturer la route espace AVANT clear (contexte session).
     const dest = options?.redirectTo ?? this.espaceRouteForModule(code);
-    if (this.moduleAccessToken || refresh) {
+    if (code) {
       this.api
-        .post<{ message: string }>('/auth/modules/logout', { refresh_token: refresh })
+        .post<{ message: string }>('/auth/modules/logout', { module_code: code })
         .pipe(catchError(() => of(null)))
         .subscribe();
     }

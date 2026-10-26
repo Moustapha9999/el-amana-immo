@@ -52,14 +52,17 @@ Règles :
 | Élément | Rôle |
 | --- | --- |
 | `core/request_context.py` + `middleware/request_context.py` | `request_id` (`REQ-AAAA-MM-JJ-XXXXXX`, ou `X-Request-ID` entrant), en-tête de réponse, log d’accès JSON `bea.access` (jamais de mot de passe, token, secret ni corps de requête) |
-| `core/api_errors.py` | Handlers globaux → `{success:false, code, message, user_message, errors[{field,code,message}], request_id, detail}` |
+| `core/error_catalog.py` | Codes transversaux (titre, message FR, statut, journal) — miroir `api-error.ts` ; détail : `docs/catalogue-erreurs.md` |
+| `core/api_errors.py` | Handlers globaux → `{type, title, status, success:false, code, message, user_message, errors[{field,code,message}], request_id, detail}` (RFC 9457 + contrat historique). 5xx sans message technique. Deadlock / pool / timeout SQL → 409 ou 503 typés. |
 | `middleware/idempotency.py` | Redis : rejoue la réponse pour une même `Idempotency-Key` (`Idempotent-Replayed: true`), 409 `DUPLICATE_REQUEST` si en cours ; passe-plat si Redis indisponible |
 | `models/audit.py` | `audit_logs.request_id` renseigné automatiquement (événement `before_insert`) ; recherche par `request_id` dans l’audit CORE ADMIN |
 
-Codes : `VALIDATION_ERROR` 422, `AUTH_REQUIRED` 401, `FORBIDDEN` 403,
-`NOT_FOUND` 404, `CONFLICT`/`DUPLICATE`/`DUPLICATE_REQUEST` 409,
-`RATE_LIMITED` 429, `DATABASE_ERROR` 503, `INTERNAL_ERROR` 500,
-`BUSINESS_RULE_ERROR` (défaut).
+Codes transversaux : voir `docs/catalogue-erreurs.md`. Principaux :
+`VALIDATION_ERROR` 422, `AUTH_REQUIRED` / `AUTH_INVALID_CREDENTIALS` /
+`PLATFORM_SESSION_EXPIRED` 401, `FORBIDDEN` 403, `NOT_FOUND` 404,
+`CONFLICT` / `DUPLICATE` / `DUPLICATE_REQUEST` / `CONCURRENT_UPDATE` 409,
+`RATE_LIMITED` / `LOGIN_LOCKED` 429, `DATABASE_ERROR` / `DATABASE_BUSY` /
+`DATABASE_TIMEOUT` 503, `INTERNAL_ERROR` 500, `BUSINESS_RULE_ERROR` (défaut 400).
 
 `detail` est conservé pour compatibilité (`err.error?.detail` lu par les
 écrans existants). Pour un code métier explicite :

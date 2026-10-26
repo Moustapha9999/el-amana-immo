@@ -20,23 +20,41 @@ La 1ʳᵉ révision (`20260723_el_amana`) est un `ALTER` de tables déjà prése
 6. Relancer le backend
 ```
 
-### Activer les migrations après restore
+### Appliquer les migrations
 
-`.env.docker` :
-
-```env
-SKIP_MIGRATIONS=0
-```
-
-Puis :
+Le backend et le worker se connectent avec `bea_app` (`database/roles/bea_app.sql`),
+qui n'a aucun droit de structure : `SKIP_MIGRATIONS` reste à `1` et les migrations
+passent par le service `migrate` (compte `admin`, jamais démarré par `up`) :
 
 ```powershell
-docker compose --env-file .env.docker up -d backend
-# ou dans le conteneur :
-docker compose exec backend alembic upgrade head
+docker compose --env-file .env.docker build
+docker compose --env-file .env.docker run --rm migrate
+docker compose --env-file .env.docker up -d --no-build
 ```
 
-Vérifier : `docker compose exec backend alembic current`
+Vérifier : `docker compose --env-file .env.docker run --rm migrate current`
+
+Les tables créées par une migration reçoivent automatiquement les droits de `bea_app`
+(privilèges par défaut). Après restauration d'un dump ou création d'une copie `*_test`,
+rejouer le script sur la base concernée :
+
+```powershell
+$env:BEA_APP_DB_PASSWORD = (Select-String -Path .env.docker -Pattern '^BEA_APP_DB_PASSWORD=(.*)$').Matches[0].Groups[1].Value.Trim()
+Get-Content database\roles\bea_app.sql -Raw | docker exec -i -e BEA_APP_DB_PASSWORD bea-postgres psql -U admin -d bea_digital -X -q
+Remove-Item Env:BEA_APP_DB_PASSWORD
+```
+
+### Droits des dossiers
+
+Backend et worker tournent sans root (uid 10001). Après une recopie de `storage/uploads`,
+`storage/ged` ou `backups` (restauration, nouveau serveur, fichiers déposés en root),
+redonner les dossiers à ce compte :
+
+```powershell
+docker run --rm --user 0 --entrypoint sh -v "${PWD}/storage/uploads:/u" -v "${PWD}/storage/ged:/g" -v "${PWD}/backups:/b" bea-digital-backend:latest -c "chown -R 10001:10001 /u /g /b"
+```
+
+Sur le serveur Linux TEST/PROD : `sudo chown -R 10001:10001 storage/uploads storage/ged backups`.
 
 ## Nouvelle révision (développeur)
 

@@ -20,11 +20,14 @@ class LoginRequest(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    # Absent en mode cookie (X-BEA-Auth: cookie) : lu dans le cookie HttpOnly.
+    refresh_token: str | None = None
+    module_code: str | None = None
 
 
 class LogoutRequest(BaseModel):
     refresh_token: str | None = None
+    module_code: str | None = None
 
 
 class RoleRead(ORMModel):
@@ -52,6 +55,7 @@ class UserRead(ORMModel):
     last_login_at: datetime | None = None
     created_at: datetime | None = None
     totp_enabled: bool = False
+    must_change_password: bool = False
     espace_codes: list[str] = Field(default_factory=list)
     module_codes: list[str] = Field(default_factory=list)
     permission_codes: list[str] = Field(default_factory=list)
@@ -78,6 +82,7 @@ class UserRead(ORMModel):
             "last_login_at": data.last_login_at,
             "created_at": getattr(data, "created_at", None),
             "totp_enabled": bool(data.totp_enabled),
+            "must_change_password": bool(getattr(data, "must_change_password", False)),
             "espace_codes": [e.code for e in espaces],
             "module_codes": [m.code for m in modules],
             "permission_codes": perms,
@@ -121,6 +126,7 @@ class UserUpdate(BaseModel):
     full_name: str | None = None
     phone: str | None = None
     password: str | None = Field(default=None, min_length=8)
+    must_change_password: bool | None = None
     is_active: bool | None = None
     is_superuser: bool | None = None
     role_codes: list[str] | None = None
@@ -155,6 +161,11 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str = Field(min_length=8)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=8, max_length=256)
 
 
 class ForgotPasswordResponse(BaseModel):

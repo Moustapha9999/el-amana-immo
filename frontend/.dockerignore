@@ -6,3 +6,9 @@ angular20/out-tsc
 **/*.log
 .git
 .gitignore
+.env
+.env.*
+**/.env
+**/.env.*
+*.pem
+*.key

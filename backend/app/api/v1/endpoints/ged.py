@@ -56,6 +56,16 @@ def _to_read(row) -> GedDocumentRead:
     return GedDocumentRead.model_validate(row)
 
 
+async def _assert_espace(db: AsyncSession, user: User, espace_code: str) -> None:
+    """Anti-IDOR : un document n'est déposé que dans un département (espace) de l'utilisateur."""
+    from app.services.document_query_service import DocumentQueryService
+
+    if user.is_superuser:
+        return
+    if espace_code not in await DocumentQueryService(db).user_espace_codes(user):
+        raise HTTPException(status_code=403, detail="Département hors périmètre d'accès")
+
+
 @router.post(
     "/documents",
     response_model=GedDocumentRead,
@@ -72,6 +82,7 @@ async def upload_document(
     db: AsyncSession = Depends(get_db),
 ):
     _hors_ged_generique(module_code, entity)
+    await _assert_espace(db, user, espace_code.strip().lower())
     try:
         from app.services.document_ingest_service import DocumentIngestService
         from app.services.mg_requests_service import MgRequestsService
@@ -116,6 +127,8 @@ async def list_documents(
     user: User = Depends(require_permission("ged.read")),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.core.exceptions import ForbiddenError
+    from app.services.document_query_service import DocumentQueryService
     from app.services.mg_requests_service import MgRequestsService
 
     _hors_ged_generique(module_code, entity)
@@ -125,7 +138,18 @@ async def list_documents(
         entity=entity.strip(),
         entity_id=entity_id.strip(),
     )
-    return GedDocumentListRead(items=[_to_read(r) for r in rows])
+    query = DocumentQueryService(db)
+    espaces = await query.user_espace_codes(user)
+    visibles = []
+    for row in rows:
+        if not user.is_superuser and row.espace_code not in espaces:
+            continue
+        try:
+            await query._assert_security_level(row, user)
+        except ForbiddenError:
+            continue
+        visibles.append(row)
+    return GedDocumentListRead(items=[_to_read(r) for r in visibles])
 
 
 @router.get("/documents/{document_id}/download")
@@ -135,7 +159,9 @@ async def download_document(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        row = await GedService(db).get(document_id)
+        from app.services.document_query_service import DocumentQueryService
+
+        row = await DocumentQueryService(db).get_accessible(document_id, user)
         _hors_ged_generique(row.module_code, row.entity)
         from app.services.mg_requests_service import MgRequestsService
 

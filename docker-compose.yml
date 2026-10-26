@@ -22,8 +22,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-bea_digital}
       POSTGRES_USER: ${POSTGRES_USER:-admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env.docker}
+    # Poste local uniquement (outils, pytest) : jamais exposé au réseau.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init:/docker-entrypoint-initdb.d:ro
@@ -57,16 +58,22 @@ services:
     pull_policy: missing
     container_name: bea-backend
     restart: unless-stopped
+    # Image sans root (uid 10001) : aucune capacité Linux, pas d'élévation de privilèges.
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
     env_file:
       - .env.docker
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-bea_digital}
+      # Compte limité (database/roles/bea_app.sql) : ni DDL ni superutilisateur.
+      # Les migrations passent par le service « migrate » (compte admin).
+      DATABASE_URL: postgresql+asyncpg://${BEA_APP_DB_USER:-bea_app}:${BEA_APP_DB_PASSWORD:?BEA_APP_DB_PASSWORD manquant dans .env.docker}@postgres:5432/${POSTGRES_DB:-bea_digital}
       DATABASE_SSL: "false"
       CORS_ORIGINS: http://localhost,http://localhost:80
       # Seul le nginx du conteneur frontend peut transmettre l'IP cliente (X-Forwarded-For).
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-frontend}
+      # Rester à 1 : bea_app ne peut pas migrer (service « migrate »).
       SKIP_MIGRATIONS: ${SKIP_MIGRATIONS:-1}
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
@@ -100,10 +107,12 @@ services:
     pull_policy: missing
     container_name: bea-worker
     restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
     env_file:
       - .env.docker
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-bea_digital}
+      DATABASE_URL: postgresql+asyncpg://${BEA_APP_DB_USER:-bea_app}:${BEA_APP_DB_PASSWORD:?BEA_APP_DB_PASSWORD manquant dans .env.docker}@postgres:5432/${POSTGRES_DB:-bea_digital}
       DATABASE_SSL: "false"
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
@@ -126,6 +135,27 @@ services:
     networks:
       - bea_internal
 
+  migrate:
+    # Migrations Alembic avec le compte propriétaire des tables (jamais démarré par « up ») :
+    #   docker compose --env-file .env.docker run --rm migrate
+    image: bea-digital-backend:latest
+    pull_policy: missing
+    profiles: ["outils"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    env_file:
+      - .env.docker
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-bea_digital}
+      DATABASE_SSL: "false"
+    entrypoint: ["alembic"]
+    command: ["upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - bea_internal
+
   frontend:
     image: bea-digital-frontend:latest
     build:
@@ -134,9 +164,11 @@ services:
     pull_policy: missing
     container_name: bea-frontend
     restart: unless-stopped
-    # Ouvrir l'application : http://localhost
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    # Ouvrir l'application : http://localhost (nginx sans root écoute sur 8080).
     ports:
-      - "80:80"
+      - "80:8080"
     depends_on:
       backend:
         condition: service_healthy
@@ -146,7 +178,7 @@ services:
   pgadmin:
     # Administration de la base : http://localhost:5050
     # Serveur à déclarer : hôte "postgres", port 5432, base bea_digital.
-    image: dpage/pgadmin4
+    image: dpage/pgadmin4:9.18@sha256:c332c5f6dfba995d9ebc4af261d93506d6876085d712eaaa3defc8dd1a3f26de
     pull_policy: missing
     container_name: bea-pgadmin
     restart: unless-stopped
@@ -169,8 +201,9 @@ services:
         printf 'postgres:5432:*:%s:%s\n' "$$BEA_PG_USER" "$$BEA_PG_PASSWORD" > "$$dir/pgpass"
         chmod 600 "$$dir/pgpass"
         exec /entrypoint.sh
+    # Poste local uniquement : pgAdmin détient le mot de passe PostgreSQL (pgpass).
     ports:
-      - "5050:80"
+      - "127.0.0.1:5050:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
       - ./deployment/pgadmin/servers.json:/pgadmin4/servers.json:ro

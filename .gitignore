@@ -80,5 +80,8 @@ storage/*.tar.gz
 # Modèle BCM avec chiffres réels (test de comparaison local uniquement)
 Déclaration mensuelle - BEA - *.xlsx
 
+# Rapports de test de charge (Locust)
+loadtest/reports/
+
 # Etat local des deploiements (version courante / precedente, historique) - propre a chaque serveur
 deployment/state/

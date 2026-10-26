@@ -20,6 +20,16 @@ from app.models.auth import SESSION_KIND_MODULE, SESSION_KIND_PLATFORM
 from app.schemas.auth import TokenPair
 from app.services.security_policy_service import get_cached_security_policy
 
+# Deux onglets peuvent présenter le même refresh token à quelques secondes d'écart :
+# ce n'est pas un vol, la session n'est pas révoquée.
+REFRESH_REUSE_GRACE_SECONDS = 20
+
+
+class RefreshTokenReuseError(ValueError):
+    """Refresh token déjà consommé présenté de nouveau : session révoquée (vol probable).
+
+    L'appelant doit valider la transaction avant de répondre, sinon la révocation est annulée."""
+
 
 class AuthSessionService:
     def __init__(self, db: AsyncSession):
@@ -42,6 +52,10 @@ class AuthSessionService:
             or settings.module_refresh_token_expire_minutes
         )
         return max(1, access_min), max(1, refresh_days), max(5, module_min)
+
+    def refresh_max_age_seconds(self, kind: str) -> int:
+        _access_min, refresh_days, module_min = self._ttl()
+        return module_min * 60 if kind == SESSION_KIND_MODULE else refresh_days * 86400
 
     def _pair_for(self, user: User, session: AuthSession, refresh_jti: str) -> TokenPair:
         _access_min, refresh_days, module_min = self._ttl()
@@ -127,15 +141,28 @@ class AuthSessionService:
         await self.db.flush()
         return self._pair_for(user, session, refresh_jti)
 
+    @staticmethod
+    def _expires_utc(session: AuthSession) -> datetime:
+        expires = session.expires_at
+        return expires.replace(tzinfo=UTC) if expires.tzinfo is None else expires
+
+    def _is_inactive(self, session: AuthSession) -> bool:
+        return session.revoked_at is not None or self._expires_utc(session) < datetime.now(UTC)
+
+    def _rotated_seconds_ago(self, session: AuthSession) -> float:
+        """Chaque émission/rotation fixe expires_at = maintenant + TTL : on en déduit son heure."""
+        _access_min, refresh_days, module_min = self._ttl()
+        ttl = (
+            timedelta(minutes=module_min)
+            if session.kind == SESSION_KIND_MODULE
+            else timedelta(days=refresh_days)
+        )
+        return (datetime.now(UTC) - (self._expires_utc(session) - ttl)).total_seconds()
+
     async def get_active_session(self, sid: UUID) -> AuthSession | None:
         result = await self.db.execute(select(AuthSession).where(AuthSession.id == sid))
         session = result.scalar_one_or_none()
-        if session is None or session.revoked_at is not None:
-            return None
-        expires = session.expires_at
-        if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=UTC)
-        if expires < datetime.now(UTC):
+        if session is None or self._is_inactive(session):
             return None
         return session
 
@@ -156,11 +183,18 @@ class AuthSessionService:
         if not sid_raw or not jti:
             raise ValueError("Refresh token invalide")
 
-        session = await self.get_active_session(UUID(str(sid_raw)))
-        if session is None or session.refresh_jti != jti:
+        session = await self.db.scalar(
+            select(AuthSession).where(AuthSession.id == UUID(str(sid_raw))).with_for_update()
+        )
+        if session is None or self._is_inactive(session):
             raise ValueError("Session invalide ou révoquée")
         if session.user_id != user.id:
             raise ValueError("Session invalide")
+        if session.refresh_jti != jti:
+            if self._rotated_seconds_ago(session) > REFRESH_REUSE_GRACE_SECONDS:
+                await self.revoke_session(session.id)
+                raise RefreshTokenReuseError("Réutilisation d'un jeton détectée : session révoquée")
+            raise ValueError("Session invalide ou révoquée")
         if (session.kind or SESSION_KIND_PLATFORM) != expected_kind:
             raise ValueError("Session invalide")
 

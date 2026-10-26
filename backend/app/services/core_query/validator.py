@@ -499,7 +499,39 @@ _ADMIN_BLOCKED: list[tuple[re.Pattern[str], str, str]] = [
                 re.I), "TRANSACTION",
      "Contrôle de transaction inutile : CORE QUERY exécute tout le script dans une transaction "
      "(Exécuter = COMMIT, Simuler = ROLLBACK)."),
+    # Code procédural / dynamique : son contenu (chaînes, blocs $$) échappe à toute vérification.
+    (re.compile(r"(^|;)\s*DO\b", re.I), "PROCEDURAL",
+     "Les blocs DO ne sont pas autorisés : écrivez les instructions SQL directement."),
+    (re.compile(
+        r"\b(CREATE|ALTER|DROP)\s+(OR\s+REPLACE\s+)?(TRUSTED\s+)?(PROCEDURAL\s+)?(CONSTRAINT\s+)?"
+        r"(FUNCTION|PROCEDURE|ROUTINE|TRIGGER|LANGUAGE|EXTENSION|EVENT\s+TRIGGER|RULE|AGGREGATE|OPERATOR|CAST)\b"
+        r"|\b(ENABLE|DISABLE)\s+(ALWAYS\s+|REPLICA\s+)?(TRIGGER|RULE)\b", re.I), "PROCEDURAL",
+     "Fonctions, procédures, triggers, règles, langages et extensions se livrent par migration (DSI)."),
+    (re.compile(r"(^|;)\s*(CALL|PREPARE|EXECUTE|DEALLOCATE)\b", re.I), "PROCEDURAL",
+     "Exécution dynamique (CALL / PREPARE / EXECUTE) non autorisée."),
+    (re.compile(
+        r"(^|;)\s*(GRANT|REVOKE)\b|\b(CREATE|ALTER|DROP)\s+(ROLE|USER|GROUP|POLICY)\b"
+        r"|\bSET\s+(LOCAL\s+|SESSION\s+)?(ROLE|SESSION\s+AUTHORIZATION)\b|\bOWNER\s+TO\b"
+        r"|\b(ENABLE|DISABLE|FORCE)\s+ROW\s+LEVEL\s+SECURITY\b", re.I), "PRIVILEGES",
+     "La gestion des rôles et privilèges PostgreSQL se fait hors application (DSI)."),
+    (re.compile(
+        r"\b(CREATE|ALTER|DROP)\s+(SERVER|FOREIGN\s+(TABLE|DATA\s+WRAPPER)|SUBSCRIPTION|PUBLICATION|TABLESPACE"
+        r"|USER\s+MAPPING)\b|\bIMPORT\s+FOREIGN\s+SCHEMA\b", re.I), "SERVER_ACCESS",
+     "Objets serveur (serveurs distants, réplication, tablespaces) hors périmètre de l'application."),
+    (re.compile(r"\bU&", re.I), "SYNTAX", "Identifiants Unicode échappés (U&\"…\") non autorisés."),
 ]
+
+# Écriture interdite même en mode administrateur : authentification, droits, audit, sécurité.
+ADMIN_PROTECTED_TABLES: frozenset[str] = frozenset({
+    "users", "roles", "permissions", "user_roles", "role_permissions",
+    "user_espace_acces", "user_module_acces",
+    "auth_sessions", "auth_login_attempts", "password_history", "password_reset_jtis",
+    "audit_logs", "core_query_logs", "security_incidents", "platform_ops_flags",
+    "integration_client_grants", "integration_client_grant_events", "alembic_version",
+})
+# Retire commentaires, chaînes et blocs $$ mais garde les identifiants "entre guillemets" (dé-guillemetés).
+_ADMIN_STRIP_KEEP_IDENT = re.compile(r"--[^\n]*|/\*.*?\*/|\$([A-Za-z_]\w*|)\$.*?\$\1\$|'(?:[^']|'')*'", re.S)
+_QUOTED_IDENT = re.compile(r"\"((?:[^\"]|\"\")*)\"")
 _ADMIN_WRITE = re.compile(
     r"\b(INSERT|UPDATE|DELETE|MERGE|TRUNCATE|CREATE|ALTER|DROP|GRANT|REVOKE|COMMENT|CALL|DO|REINDEX|CLUSTER"
     r"|VACUUM|REFRESH|SECURITY|LOCK|SET|RESET|DISCARD|NOTIFY|SELECT\s+.*\bINTO)\b",
@@ -529,4 +561,16 @@ def check_admin_sql(sql: str) -> AdminCheck:
     for pattern, code, message in _ADMIN_BLOCKED:
         if pattern.search(bare):
             raise QueryRefused(code, message)
-    return AdminCheck(sql=text, is_write=bool(_ADMIN_WRITE.search(bare)))
+    is_write = bool(_ADMIN_WRITE.search(bare))
+    if is_write:
+        idents = _QUOTED_IDENT.sub(
+            lambda m: " " + m[1].replace('""', '"') + " ", _ADMIN_STRIP_KEEP_IDENT.sub(" ", text)
+        ).lower()
+        touched = sorted(t for t in ADMIN_PROTECTED_TABLES if re.search(rf"(?<![\w$]){t}(?![\w$])", idents))
+        if touched:
+            raise QueryRefused(
+                "PROTECTED_TABLE",
+                "Écriture interdite sur les tables d'authentification, de droits et d'audit "
+                f"({', '.join(touched)}) : passez par CORE ADMIN.",
+            )
+    return AdminCheck(sql=text, is_write=is_write)

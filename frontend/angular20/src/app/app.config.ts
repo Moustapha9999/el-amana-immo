@@ -1,6 +1,12 @@
 import { registerLocaleData } from '@angular/common';
 import localeFr from '@angular/common/locales/fr';
-import { ApplicationConfig, LOCALE_ID, provideZoneChangeDetection } from '@angular/core';
+import {
+  ApplicationConfig,
+  LOCALE_ID,
+  inject,
+  provideAppInitializer,
+  provideZoneChangeDetection,
+} from '@angular/core';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
@@ -9,6 +15,7 @@ import { routes } from './app.routes';
 import { httpFeedbackInterceptor } from './core/feedback/http-feedback';
 import { idempotencyInterceptor } from './core/feedback/idempotency';
 import { authInterceptor } from './core/interceptors/auth.interceptor';
+import { AuthService } from './core/services/auth.service';
 
 registerLocaleData(localeFr);
 
@@ -19,5 +26,7 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes, withComponentInputBinding()),
     provideHttpClient(withInterceptors([httpFeedbackInterceptor, idempotencyInterceptor, authInterceptor])),
     provideAnimationsAsync(),
+    // Jetons d'accès en mémoire : reprise de session via cookie avant la première navigation.
+    provideAppInitializer(() => inject(AuthService).restoreSession()),
   ],
 };

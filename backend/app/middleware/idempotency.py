@@ -79,6 +79,7 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
                 message="Cette opération est déjà en cours de traitement. Patientez quelques instants.",
             )
             request.state.error_code = "DUPLICATE_REQUEST"
+            request.state.error_message = body["message"]
             return JSONResponse(status_code=409, content=body)
 
         response = await call_next(request)

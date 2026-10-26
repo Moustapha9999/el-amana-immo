@@ -17,6 +17,11 @@ x-logging: &logging
     max-size: "20m"
     max-file: "5"
 
+# Images sans root (backend uid 10001, frontend nginx) : aucune capacité Linux, pas d'élévation.
+x-hardening: &hardening
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+
 x-backend-env: &backend-env
   APP_ENV: ${APP_ENV:-production}
   APP_DEBUG: "false"
@@ -77,6 +82,7 @@ services:
     container_name: bea-backend
     restart: unless-stopped
     logging: *logging
+    <<: *hardening
     env_file:
       - ${ENV_FILE_PATH:-../.env.production}
     environment: *backend-env
@@ -104,6 +110,7 @@ services:
     container_name: bea-worker
     restart: unless-stopped
     logging: *logging
+    <<: *hardening
     env_file:
       - ${ENV_FILE_PATH:-../.env.production}
     environment: *backend-env
@@ -132,9 +139,10 @@ services:
     container_name: bea-frontend
     restart: unless-stopped
     logging: *logging
+    <<: *hardening
     # Le reverse proxy HTTPS de l'hôte pointe vers cette adresse (voir deployment/nginx/).
     ports:
-      - "${BEA_HTTP_BIND:-127.0.0.1:8080}:80"
+      - "${BEA_HTTP_BIND:-127.0.0.1:8080}:8080"
     depends_on:
       backend:
         condition: service_healthy

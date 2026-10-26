@@ -558,9 +558,10 @@ export class DocumentViewerComponent implements OnChanges {
     }
     popup.document.write(`<!DOCTYPE html><html><head><title>Impression</title>
       <style>body{font-family:sans-serif;padding:1rem}table{border-collapse:collapse;width:100%}
-      td,th{border:1px solid #ccc;padding:4px 6px;font-size:12px}</style></head><body>${html}
-      <script>window.onload=function(){window.print()}<\/script></body></html>`);
+      td,th{border:1px solid #ccc;padding:4px 6px;font-size:12px}</style></head><body>${html}</body></html>`);
     popup.document.close();
+    popup.focus();
+    popup.print();
   }
 
   private escapeHtml(value: string): string {

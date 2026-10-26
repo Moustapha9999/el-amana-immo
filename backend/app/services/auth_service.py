@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.password_policy import validate_password_policy
-from app.core.security import get_password_hash, verify_password
+from app.core.security import get_password_hash, verify_password, verify_password_async
 from app.data.plateforme_catalogue import DEFAULT_ESPACE_CODE, DEFAULT_MODULE_CODE
 from app.models import PasswordHistory, Role, User
 from app.models.associations import user_module_acces_table
@@ -80,7 +80,7 @@ class AuthService:
             .where(func.lower(User.email) == normalized, User.is_active.is_(True), User.deleted_at.is_(None))
         )
         user = result.scalar_one_or_none()
-        if user is None or not verify_password(password, user.hashed_password):
+        if not await verify_password_async(password, user.hashed_password if user else None):
             return None
         user.last_login_at = datetime.now(UTC)
         await self.db.flush()
@@ -118,6 +118,7 @@ class AuthService:
             is_superuser=payload.is_superuser,
             agence_id=payload.agence_id,
             phone=payload.phone,
+            must_change_password=True,
         )
         if payload.role_codes:
             user.roles = await self._roles_by_codes(payload.role_codes)
@@ -177,7 +178,10 @@ class AuthService:
             user.is_superuser = data["is_superuser"]
         if "password" in data and data["password"]:
             await _apply_password(self.db, user, data["password"])
+            user.must_change_password = True
             await AuthSessionService(self.db).revoke_all_for_user(user_id)
+        if data.get("must_change_password") is not None:
+            user.must_change_password = data["must_change_password"]
         if "role_codes" in data and data["role_codes"] is not None:
             user.roles = await self._roles_by_codes(data["role_codes"])
         if "espace_codes" in data or "module_codes" in data:
@@ -199,6 +203,14 @@ class AuthService:
         if refreshed is None:
             raise ValueError("Utilisateur introuvable")
         return refreshed
+
+    async def change_own_password(self, user: User, current_password: str, new_password: str) -> None:
+        """Seul chemin qui lève `must_change_password` : l'utilisateur choisit son mot de passe."""
+        if not verify_password(current_password, user.hashed_password):
+            raise PermissionError("Mot de passe actuel incorrect")
+        await _apply_password(self.db, user, new_password)
+        user.must_change_password = False
+        await self.db.flush()
 
     async def soft_delete_user(self, user_id: UUID, *, actor_id: UUID) -> None:
         if user_id == actor_id:

@@ -18,6 +18,9 @@ from app.services.plateforme_access_service import PlateformeAccessService
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
+# Seules routes servies tant qu'un mot de passe fixé par un administrateur n'a pas été changé.
+_PASSWORD_CHANGE_ALLOWED_PATHS = ("/auth/me", "/auth/change-password", "/auth/logout")
+
 _USER_LOAD = (
     selectinload(User.roles).selectinload(Role.permissions),
     selectinload(User.espaces),
@@ -71,6 +74,14 @@ async def _load_user_and_session(
     user = result.scalar_one_or_none()
     if user is None:
         raise auth_http_error(status.HTTP_401_UNAUTHORIZED, "USER_NOT_FOUND", "Utilisateur introuvable")
+    if user.must_change_password and not (
+        request is not None and request.url.path.endswith(_PASSWORD_CHANGE_ALLOWED_PATHS)
+    ):
+        raise auth_http_error(
+            status.HTTP_403_FORBIDDEN,
+            "PASSWORD_CHANGE_REQUIRED",
+            "Vous devez changer votre mot de passe avant de continuer.",
+        )
     if request is not None:
         request.state.bea_user_id = user.id
     return user, session, payload

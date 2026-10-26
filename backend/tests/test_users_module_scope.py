@@ -183,6 +183,84 @@ async def test_endpoint_users_suppression_refusee_si_autres_modules(api, session
 
 
 @pytest.mark.asyncio
+async def test_endpoint_users_superuser_refuse(api, session, scoped_users):
+    tag, _, actif, _ = scoped_users
+    for valeur in (True, False):
+        res = await api.patch(f"/api/v1/users/{actif.id}", json={"is_superuser": valeur})
+        assert res.status_code == 403, res.text
+    assert (await session.get(User, actif.id)).is_superuser is False
+
+    res = await api.post(
+        "/api/v1/users",
+        json={"email": f"scope-su-{tag}@el-amana.mr", "full_name": "Su", "is_superuser": True},
+    )
+    assert res.status_code == 403, res.text
+
+
+@pytest.mark.asyncio
+async def test_endpoint_users_roles_et_modules_hors_immo_refuses(api, session, scoped_users):
+    tag, _, actif, _ = scoped_users
+    res = await api.patch(f"/api/v1/users/{actif.id}", json={"role_codes": ["clientele.admin"]})
+    assert res.status_code == 403, res.text
+
+    other = await _other_module_code(session)
+    if other is not None:
+        res = await api.patch(f"/api/v1/users/{actif.id}", json={"module_codes": [MODULE, other]})
+        assert res.status_code == 403, res.text
+        assert other not in (await AuthService(session).get_by_id(actif.id)).module_codes
+
+    res = await api.post(
+        "/api/v1/users",
+        json={"email": f"scope-role-{tag}@el-amana.mr", "full_name": "Role", "role_codes": ["clientele.admin"]},
+    )
+    assert res.status_code == 403, res.text
+
+
+@pytest.mark.asyncio
+async def test_endpoint_users_roles_conserve_les_roles_des_autres_modules(api, session, scoped_users):
+    _, _, actif, _ = scoped_users
+    svc = AuthService(session)
+    try:
+        roles = await svc._roles_by_codes(["consultation", "stock-fournitures.lecteur"])
+    except ValueError:
+        pytest.skip("Rôles absents du catalogue")
+    cible = await svc.get_by_id(actif.id)
+    cible.roles = roles
+    await session.flush()
+
+    res = await api.patch(f"/api/v1/users/{actif.id}", json={"role_codes": ["comptable"]})
+    assert res.status_code == 200, res.text
+    codes = {r["code"] for r in res.json()["roles"]}
+    assert codes == {"comptable", "stock-fournitures.lecteur"}
+
+
+@pytest.mark.asyncio
+async def test_endpoint_users_admin_immo_ne_touche_pas_un_superuser(session, scoped_users):
+    _, _, actif, _ = scoped_users
+    actif.is_superuser = True
+    await session.flush()
+
+    async def _db():
+        yield session
+
+    async def _admin_immo():
+        return User(email="admin-immo@el-amana.mr", full_name="Admin immo", is_superuser=False)
+
+    app.dependency_overrides[get_db] = _db
+    app.dependency_overrides[users_endpoint._require_users_admin] = _admin_immo
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            res = await ac.patch(f"/api/v1/users/{actif.id}", json={"is_active": False})
+            assert res.status_code == 403, res.text
+            res = await ac.delete(f"/api/v1/users/{actif.id}")
+            assert res.status_code == 403, res.text
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(users_endpoint._require_users_admin, None)
+    assert (await session.get(User, actif.id)).is_active is True
+
+
+@pytest.mark.asyncio
 async def test_fk_users_intactes(session, scoped_users):
     tag, sans, _, _ = scoped_users
 
@@ -235,3 +313,13 @@ async def test_fk_users_intactes(session, scoped_users):
     with pytest.raises(IntegrityError):
         await session.flush()
     await nested.rollback()
+
+
+def test_immo_ne_peut_pas_lever_le_changement_de_mot_de_passe():
+    from fastapi import HTTPException
+
+    from app.schemas.auth import UserUpdate
+
+    with pytest.raises(HTTPException) as exc:
+        users_endpoint._verifier_perimetre(UserUpdate(must_change_password=False))
+    assert exc.value.status_code == 403

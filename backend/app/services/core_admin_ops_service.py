@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
+from app.services.security_policy_service import get_cached_security_policy
 from app.core.pagination import page_offset
 from app.models import AuditLog, Notification, User
 from app.models.auth import AuthLoginAttempt, AuthSession
@@ -110,9 +111,9 @@ class CoreAdminOpsService:
         search: str | None = None,
         kind: str = "echecs",
     ) -> tuple[list[dict], int, dict, dict]:
-        settings = get_settings()
+        policy = get_cached_security_policy()
         now = datetime.now(timezone.utc)
-        window = now - timedelta(minutes=settings.login_lockout_window_minutes)
+        window = now - timedelta(minutes=int(policy["login_lockout_window_minutes"]))
         stmt = select(AuthLoginAttempt)
         if kind == "echecs":
             stmt = stmt.where(AuthLoginAttempt.success.is_(False))
@@ -174,8 +175,8 @@ class CoreAdminOpsService:
                 "emails_suspects": suspects,
             },
             {
-                "lockout_window_minutes": settings.login_lockout_window_minutes,
-                "lockout_max_failures": settings.login_lockout_max_failures,
+                "lockout_window_minutes": int(policy["login_lockout_window_minutes"]),
+                "lockout_max_failures": int(policy["login_lockout_max_failures"]),
             },
         )
 

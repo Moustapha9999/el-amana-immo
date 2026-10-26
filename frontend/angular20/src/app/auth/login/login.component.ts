@@ -1,10 +1,10 @@
-import { HttpErrorResponse } from '@angular/common/http';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatIconModule } from '@angular/material/icon';
-import { AuthService } from '../../core/services/auth.service';
+import { describeApiError } from '../../core/feedback/api-error';
+import { AuthService, CHANGE_PASSWORD_PATH } from '../../core/services/auth.service';
 import { AuthScreenComponent } from '../auth-screen.component';
 
 @Component({
@@ -71,46 +71,23 @@ export class LoginComponent implements OnInit {
     this.auth.login(email, password, totp).subscribe({
       next: () => {
         this.auth.loadProfile().subscribe({
-          next: () => {
+          next: (profile) => {
             this.loading.set(false);
-            void this.router.navigate(['/accueil']);
+            void this.router.navigate([profile.must_change_password ? CHANGE_PASSWORD_PATH : '/accueil']);
           },
           error: () => {
             this.loading.set(false);
-            this.error.set('Profil inaccessible');
+            this.error.set('Connexion réussie, mais votre profil n’a pas pu être chargé. Réessayez dans quelques instants.');
           },
         });
       },
       error: (err: unknown) => {
         this.loading.set(false);
-        if (err instanceof HttpErrorResponse) {
-          if (err.status === 0) {
-            this.error.set('API inaccessible — vérifiez que le backend tourne sur le port 8000');
-            } else if (err.status === 429) {
-            const detail = err.error?.detail;
-            this.error.set(
-              typeof detail === 'object' && detail?.message
-                ? detail.message
-                : 'Trop de tentatives. Réessayez dans quelques minutes.',
-            );
-          } else if (err.status === 401) {
-            const detail = err.error?.detail;
-            if (typeof detail === 'object' && detail?.code === 'TOTP_REQUIRED') {
-              this.totpRequired.set(true);
-              this.error.set(detail.message ?? 'Code authenticator requis');
-            } else if (typeof detail === 'string' && detail.includes('2FA')) {
-              this.totpRequired.set(true);
-              this.error.set(detail);
-            } else {
-              this.error.set(typeof detail === 'string' ? detail : 'Identifiants invalides');
-            }
-          } else {
-            const message = typeof err.error?.detail === 'string' ? err.error.detail : 'Erreur de connexion';
-            this.error.set(message);
-          }
-        } else {
-          this.error.set('Identifiants invalides');
+        const info = describeApiError(err);
+        if (info.code === 'TOTP_REQUIRED' || info.code === 'TOTP_INVALID') {
+          this.totpRequired.set(true);
         }
+        this.error.set(info.status === 422 ? 'Vérifiez le format de l’adresse e-mail et du mot de passe.' : info.message);
       },
     });
   }

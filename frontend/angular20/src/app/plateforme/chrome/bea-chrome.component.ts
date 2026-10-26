@@ -25,7 +25,12 @@ import { ThemeToggleComponent } from './theme-toggle.component';
       <div class="bea-chrome__actions">
         <bea-theme-toggle />
         @if (auth.user(); as u) {
-          <div class="bea-chrome__userchip">
+          <a
+            routerLink="/securite-compte"
+            class="bea-chrome__userchip"
+            style="text-decoration: none; color: inherit"
+            title="Sécurité du compte (double authentification)"
+          >
             <span class="bea-chrome__avatar" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none">
                 <circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="1.7" />
@@ -38,7 +43,7 @@ import { ThemeToggleComponent } from './theme-toggle.component';
               </svg>
             </span>
             <span class="bea-chrome__user">{{ u.full_name }}</span>
-          </div>
+          </a>
         }
         <button type="button" class="bea-chrome__logout" (click)="logout()">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">

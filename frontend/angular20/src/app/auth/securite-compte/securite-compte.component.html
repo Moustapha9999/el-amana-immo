@@ -1,0 +1,100 @@
+<app-auth-screen>
+  <div class="login-panel">
+    <div class="login-panel__icon" aria-hidden="true">
+      <mat-icon>verified_user</mat-icon>
+    </div>
+
+    @if (mfaExigee && enabled() === false) {
+      <p class="login-panel__error">
+        CORE ADMIN exige la double authentification. Activez-la pour continuer.
+      </p>
+    }
+
+    @if (enabled() === null) {
+      <p class="login-panel__success">Chargement…</p>
+    } @else if (enabled()) {
+      <p class="login-panel__success">
+        La double authentification est active sur votre compte : un code vous est demandé à chaque connexion.
+      </p>
+      <button type="button" class="login-panel__submit" (click)="continuer()">CONTINUER</button>
+
+      <form [formGroup]="desactivation" (ngSubmit)="desactiver()" class="login-panel__form">
+        <p class="login-panel__success">Désactiver : saisissez votre mot de passe et un code de l’application.</p>
+        <div class="login-field">
+          <span class="login-field__icon" aria-hidden="true"><mat-icon>lock</mat-icon></span>
+          <input
+            class="login-field__input"
+            type="password"
+            formControlName="password"
+            autocomplete="current-password"
+            placeholder="Mot de passe"
+            aria-label="Mot de passe"
+          />
+        </div>
+        <div class="login-field">
+          <span class="login-field__icon" aria-hidden="true"><mat-icon>pin</mat-icon></span>
+          <input
+            class="login-field__input"
+            formControlName="code"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            placeholder="Code à 6 chiffres"
+            aria-label="Code à 6 chiffres"
+          />
+        </div>
+        @if (desactivation.touched && desactivation.invalid) {
+          <p class="login-panel__error">Mot de passe et code à 6 chiffres requis.</p>
+        }
+        <button type="submit" class="login-panel__submit" [disabled]="busy()">
+          {{ busy() ? 'DÉSACTIVATION…' : 'DÉSACTIVER LA DOUBLE AUTHENTIFICATION' }}
+        </button>
+      </form>
+    } @else if (setup(); as s) {
+      <p class="login-panel__success">
+        1. Scannez ce QR code avec votre application d’authentification (Google Authenticator,
+        Microsoft Authenticator…).
+      </p>
+      <img [src]="'data:image/png;base64,' + s.qr_image_base64" width="200" height="200"
+           alt="QR code de configuration de la double authentification" style="display:block;margin:0 auto 12px;background:#fff;padding:8px;border-radius:8px" />
+      <p class="login-panel__success">
+        Ou saisissez la clé manuellement : <code style="user-select:all;word-break:break-all">{{ s.secret }}</code>
+      </p>
+      <form [formGroup]="form" (ngSubmit)="activer()" class="login-panel__form">
+        <p class="login-panel__success">2. Saisissez le code à 6 chiffres affiché par l’application.</p>
+        <div class="login-field">
+          <span class="login-field__icon" aria-hidden="true">
+            <mat-icon>pin</mat-icon>
+          </span>
+          <input
+            class="login-field__input"
+            formControlName="code"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            placeholder="Code à 6 chiffres"
+            aria-label="Code à 6 chiffres"
+          />
+        </div>
+        @if (form.controls.code.touched && form.controls.code.invalid) {
+          <p class="login-panel__error">Saisissez le code à 6 chiffres.</p>
+        }
+        <button type="submit" class="login-panel__submit" [disabled]="busy()">
+          {{ busy() ? 'VÉRIFICATION…' : 'ACTIVER' }}
+        </button>
+      </form>
+    } @else {
+      <p class="login-panel__success">
+        Protégez votre compte : en plus du mot de passe, un code temporaire généré sur votre téléphone sera
+        demandé à chaque connexion.
+      </p>
+      <button type="button" class="login-panel__submit" (click)="demarrer()" [disabled]="busy()">
+        CONFIGURER LA DOUBLE AUTHENTIFICATION
+      </button>
+    }
+
+    @if (!enabled()) {
+      <button type="button" class="login-panel__submit" (click)="continuer()" [disabled]="busy()">
+        {{ mfaExigee ? 'RETOUR' : 'PLUS TARD' }}
+      </button>
+    }
+  </div>
+</app-auth-screen>

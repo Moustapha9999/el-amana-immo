@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.api.v1.endpoints.helpers import to_paginated
 from app.core.temp_password import generate_temporary_password
+from app.data.plateforme_catalogue import DEFAULT_ESPACE_CODE, IMMO_LEGACY_ROLE_CODES
 from app.db.session import get_db
 from app.models import User
 from app.schemas.auth import RoleRead, UserCreate, UserRead, UserUpdate
@@ -28,6 +29,41 @@ async def _require_in_module(service: AuthService, user_id: UUID) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cet utilisateur n’a pas accès au module Immobilisations : gérez-le depuis CORE ADMIN.",
         )
+
+
+def _refuser(detail: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+
+
+def _verifier_perimetre(
+    payload: UserCreate | UserUpdate,
+    *,
+    modules_actuels: list[str] | None = None,
+    espaces_actuels: list[str] | None = None,
+) -> None:
+    """Cette API ne gère que le module Immobilisations : superuser, rôles et accès
+    des autres modules se gèrent exclusivement dans CORE ADMIN."""
+    superuser = payload.is_superuser
+    if superuser or (isinstance(payload, UserUpdate) and superuser is not None):
+        raise _refuser("Le statut superutilisateur se gère depuis CORE ADMIN.")
+    if isinstance(payload, UserUpdate) and payload.must_change_password is not None:
+        raise _refuser("Le changement de mot de passe obligatoire se gère depuis CORE ADMIN.")
+    hors_roles = set(payload.role_codes or []) - IMMO_LEGACY_ROLE_CODES
+    if hors_roles:
+        raise _refuser(f"Rôle(s) hors module Immobilisations : {', '.join(sorted(hors_roles))}.")
+    if payload.module_codes is not None:
+        hors = set(payload.module_codes) - {MODULE_CODE} - set(modules_actuels or [])
+        if hors:
+            raise _refuser(f"Accès module(s) à gérer depuis CORE ADMIN : {', '.join(sorted(hors))}.")
+    if payload.espace_codes is not None:
+        hors = set(payload.espace_codes) - {DEFAULT_ESPACE_CODE} - set(espaces_actuels or [])
+        if hors:
+            raise _refuser(f"Accès département(s) à gérer depuis CORE ADMIN : {', '.join(sorted(hors))}.")
+
+
+def _refuser_cible_superuser(actor: User, target: User | None) -> None:
+    if target is not None and target.is_superuser and not actor.is_superuser:
+        raise _refuser("Ce compte superutilisateur se gère depuis CORE ADMIN.")
 
 
 async def _require_users_admin(
@@ -75,6 +111,7 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
 ):
     """Création sans MDP libre : mot de passe temporaire serveur."""
+    _verifier_perimetre(payload)
     data = payload.model_dump()
     data["password"] = generate_temporary_password()
     service = AuthService(db)
@@ -126,6 +163,16 @@ async def update_user(
         )
     service = AuthService(db)
     await _require_in_module(service, user_id)
+    target = await service.get_by_id(user_id, include_inactive=True)
+    _refuser_cible_superuser(actor, target)
+    _verifier_perimetre(
+        payload,
+        modules_actuels=target.module_codes if target else None,
+        espaces_actuels=target.espace_codes if target else None,
+    )
+    if payload.role_codes is not None and target is not None:
+        autres_roles = {r.code for r in target.roles or []} - IMMO_LEGACY_ROLE_CODES
+        payload = payload.model_copy(update={"role_codes": sorted(set(payload.role_codes) | autres_roles)})
     try:
         user = await service.update_user(user_id, payload, preserve_outside_module=MODULE_CODE)
     except ValueError as exc:
@@ -158,6 +205,7 @@ async def delete_user(
     service = AuthService(db)
     await _require_in_module(service, user_id)
     target = await service.get_by_id(user_id, include_inactive=True)
+    _refuser_cible_superuser(current, target)
     if target is not None and any(code != MODULE_CODE for code in target.module_codes):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -30,7 +30,7 @@ class LoginAttemptService:
         from app.services.security_policy_service import get_cached_security_policy
 
         pol = get_cached_security_policy()
-        minutes = int(pol.get("login_lockout_window_minutes") or 15)
+        minutes = int(pol.get("login_lockout_window_minutes") or 10)
         return datetime.now(UTC) - timedelta(minutes=minutes)
 
     async def assert_not_locked(

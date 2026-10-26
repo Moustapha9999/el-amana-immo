@@ -1,4 +1,6 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -10,6 +12,23 @@ from app.core.config import get_settings
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+
+
+@lru_cache(maxsize=1)
+def _dummy_hash() -> str:
+    return get_password_hash(uuid4().hex)
+
+
+async def verify_password_async(plain_password: str, hashed_password: str | None) -> bool:
+    """bcrypt (~250 ms CPU) hors de la boucle d'événements.
+
+    Sans hash (compte inconnu ou inactif), un hash factice est vérifié quand même :
+    même durée de réponse, pas d'énumération des comptes par le temps de réponse.
+    """
+    if not hashed_password:
+        await asyncio.to_thread(verify_password, plain_password, _dummy_hash())
+        return False
+    return await asyncio.to_thread(verify_password, plain_password, hashed_password)
 
 
 def get_password_hash(password: str) -> str:

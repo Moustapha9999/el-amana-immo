@@ -27,6 +27,15 @@ COPY . .
 
 COPY docker-entrypoint.py /docker-entrypoint.py
 
+# Compte non privilégié. Le code reste à root (lecture seule pour l'application) ; seuls les
+# dossiers de données lui appartiennent. Dossiers hôte montés : propriétaire uid 10001
+# (docs/runbook-migrations.md § Droits des dossiers).
+RUN groupadd --system --gid 10001 bea \
+    && useradd --system --uid 10001 --gid bea --home-dir /home/bea --create-home --shell /usr/sbin/nologin bea \
+    && mkdir -p /app/storage/uploads /app/storage/ged /backups \
+    && chown -R bea:bea /app/storage /backups
+USER bea
+
 EXPOSE 8000
 
 ENTRYPOINT ["python", "/docker-entrypoint.py"]

@@ -86,9 +86,12 @@ class CoreAdminService:
 
     async def dashboard(self) -> dict:
         now = datetime.now(timezone.utc)
+        from app.services.security_policy_service import get_cached_security_policy
+
         settings = get_settings()
         start, end = day_bounds_nouakchott(now)
-        lockout_from = now - timedelta(minutes=settings.login_lockout_window_minutes)
+        lockout_window = int(get_cached_security_policy()["login_lockout_window_minutes"])
+        lockout_from = now - timedelta(minutes=lockout_window)
 
         users_total = await self._count(
             select(func.count()).select_from(User).where(User.deleted_at.is_(None))

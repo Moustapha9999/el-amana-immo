@@ -2,7 +2,7 @@ import { HttpErrorResponse, HttpEvent, HttpHandlerFn, HttpInterceptorFn, HttpReq
 import { inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { Observable, catchError, switchMap, throwError } from 'rxjs';
-import { AuthService } from '../services/auth.service';
+import { AuthService, CHANGE_PASSWORD_PATH } from '../services/auth.service';
 import {
   LEGACY_ROOT_MODULE_CODE,
   resolveModuleCodeFromUrl,
@@ -32,6 +32,7 @@ function isPlatformApi(url: string): boolean {
   return (
     url.includes('/auth/me') ||
     url.includes('/auth/2fa') ||
+    url.includes('/auth/change-password') ||
     url.includes('/auth/logout') ||
     url.includes('/plateforme/')
   );
@@ -42,7 +43,11 @@ function isModuleLogoutUrl(url: string): boolean {
 }
 
 function authErrorCode(err: HttpErrorResponse): string | null {
-  const detail = err.error?.detail;
+  const body = err.error;
+  if (body && typeof body === 'object' && typeof body.code === 'string') {
+    return body.code;
+  }
+  const detail = body?.detail;
   if (detail && typeof detail === 'object' && typeof detail.code === 'string') {
     return detail.code;
   }
@@ -66,10 +71,14 @@ function redirectModuleLogin(auth: AuthService, router: Router, returnUrl: strin
   });
 }
 
-export const authInterceptor: HttpInterceptorFn = (req, next) => {
+export const authInterceptor: HttpInterceptorFn = (original, next) => {
   const auth = inject(AuthService);
   const router = inject(Router);
 
+  // Refresh tokens en cookie HttpOnly côté backend ; l'en-tête sert aussi de garde CSRF.
+  const req = original.url.includes('/auth/')
+    ? original.clone({ setHeaders: { 'X-BEA-Auth': 'cookie' } })
+    : original;
   let authedReq = req;
   if (!isAuthPublicUrl(req.url)) {
     if (isPlatformApi(req.url)) {
@@ -83,6 +92,18 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   return next(authedReq).pipe(
     catchError((err: unknown) => {
+      if (
+        err instanceof HttpErrorResponse &&
+        err.status === 403 &&
+        authErrorCode(err) === 'PASSWORD_CHANGE_REQUIRED'
+      ) {
+        void router.navigate([CHANGE_PASSWORD_PATH]);
+        return throwError(() => err);
+      }
+      if (err instanceof HttpErrorResponse && err.status === 403 && authErrorCode(err) === 'MFA_REQUIRED') {
+        void router.navigate(['/securite-compte'], { queryParams: { raison: 'mfa' } });
+        return throwError(() => err);
+      }
       if (!(err instanceof HttpErrorResponse) || err.status !== 401) {
         return throwError(() => err);
       }
@@ -122,7 +143,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       const usedModule =
         !isPlatformApi(req.url) || code === 'MODULE_AUTH_REQUIRED' || code === 'MODULE_SESSION_EXPIRED';
 
-      if (code === 'MODULE_AUTH_REQUIRED' || (usedModule && !auth.moduleRefreshToken)) {
+      if (code === 'MODULE_AUTH_REQUIRED' || (usedModule && !auth.lastModuleCode)) {
         redirectModuleLogin(
           auth,
           router,
@@ -132,7 +153,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       }
 
       if (usedModule && (code === 'MODULE_SESSION_EXPIRED' || !isPlatformApi(req.url))) {
-        if (!auth.moduleRefreshToken) {
+        if (!auth.lastModuleCode) {
           redirectModuleLogin(auth, router, router.url);
           return throwError(() => err);
         }
@@ -171,7 +192,7 @@ function refreshPlatformOrLogout(
   next: HttpHandlerFn,
   err: HttpErrorResponse,
 ): Observable<HttpEvent<unknown>> {
-  if (!auth.platformRefreshToken) {
+  if (!auth.hasPlatformSessionHint) {
     auth.logoutPlatform({ reason: 'session' });
     return throwError(() => err);
   }

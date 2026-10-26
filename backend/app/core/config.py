@@ -2,11 +2,16 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote, unquote
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
+
+DEFAULT_SECRET_KEY = "change-me"
+SECRET_KEY_MIN_LENGTH = 32
+# Seuls environnements où une clé faible est tolérée (poste développeur, CI).
+_ENV_CLE_FAIBLE_TOLEREE = frozenset({"development", "test"})
 
 
 class Settings(BaseSettings):
@@ -23,14 +28,16 @@ class Settings(BaseSettings):
     git_sha: str = Field(default="unknown", alias="GIT_SHA")
     api_v1_prefix: str = Field(default="/api/v1", alias="API_V1_PREFIX")
 
-    secret_key: str = Field(default="change-me", alias="SECRET_KEY")
+    secret_key: str = Field(default=DEFAULT_SECRET_KEY, alias="SECRET_KEY")
     # Access court + refresh pour session active ; idle timeout UI = 2 min (frontend)
     access_token_expire_minutes: int = Field(default=15, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
     refresh_token_expire_days: int = Field(default=1, alias="REFRESH_TOKEN_EXPIRE_DAYS")
     module_refresh_token_expire_minutes: int = Field(
         default=45, alias="MODULE_REFRESH_TOKEN_EXPIRE_MINUTES"
     )
-    login_lockout_window_minutes: int = Field(default=15, alias="LOGIN_LOCKOUT_WINDOW_MINUTES")
+    # Cookie HttpOnly du refresh token (front) : Secure exige HTTPS, sauf sur http://localhost.
+    auth_cookie_secure: bool = Field(default=True, alias="AUTH_COOKIE_SECURE")
+    login_lockout_window_minutes: int = Field(default=10, alias="LOGIN_LOCKOUT_WINDOW_MINUTES")
     login_lockout_max_failures: int = Field(default=5, alias="LOGIN_LOCKOUT_MAX_FAILURES")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
 
@@ -64,6 +71,11 @@ class Settings(BaseSettings):
     )
     database_ssl: bool = Field(default=False, alias="DATABASE_SSL")
     database_ssl_verify: bool = Field(default=True, alias="DATABASE_SSL_VERIFY")
+    # Pool SQLAlchemy (par processus uvicorn) : valeurs par défaut de SQLAlchemy.
+    # Pool saturé au-delà de DB_POOL_TIMEOUT secondes → 503 DATABASE_BUSY.
+    db_pool_size: int = Field(default=5, ge=1, alias="DB_POOL_SIZE")
+    db_max_overflow: int = Field(default=10, ge=0, alias="DB_MAX_OVERFLOW")
+    db_pool_timeout: float = Field(default=30.0, gt=0, alias="DB_POOL_TIMEOUT")
 
     supabase_url: str | None = Field(default=None, alias="SUPABASE_URL")
     supabase_publishable_key: str | None = Field(default=None, alias="SUPABASE_PUBLISHABLE_KEY")
@@ -84,6 +96,20 @@ class Settings(BaseSettings):
         if has_pwd:
             encoded += ":" + quote(unquote(pwd), safe="")
         return f"{scheme}://{encoded}@{hostpart}"
+
+    @model_validator(mode="after")
+    def _refuser_cle_faible(self) -> "Settings":
+        """Une clé connue ou courte permet de forger des JWT (y compris superuser) : démarrage refusé."""
+        if self.app_env in _ENV_CLE_FAIBLE_TOLEREE:
+            return self
+        cle = self.secret_key.strip()
+        if cle == DEFAULT_SECRET_KEY or len(cle) < SECRET_KEY_MIN_LENGTH:
+            raise ValueError(
+                f"SECRET_KEY absente, par défaut ou < {SECRET_KEY_MIN_LENGTH} caractères "
+                f"(APP_ENV={self.app_env}) : générer une clé aléatoire, ex. "
+                "python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+            )
+        return self
 
     @property
     def uses_supabase_host(self) -> bool:

@@ -58,6 +58,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                             "status": status_code,
                             "duration_ms": duration_ms,
                             "error_code": getattr(state, "error_code", None),
+                            "exception": getattr(state, "exception_type", None),
                         },
                         ensure_ascii=False,
                     ),

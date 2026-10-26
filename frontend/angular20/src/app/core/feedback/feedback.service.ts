@@ -80,6 +80,10 @@ const DEFAULT_DURATION: Record<FeedbackTone, number> = {
 };
 
 const MAX_TOASTS = 4;
+const MAX_SHOWN_REFERENCES = 50;
+
+const UNCERTAIN_HINT =
+  'L’opération a peut-être été enregistrée : actualisez la page et vérifiez son statut avant de la relancer.';
 
 /**
  * Système de feedback transversal BEA DIGITAL.
@@ -91,6 +95,7 @@ export class FeedbackService {
   private readonly dialogs = inject(UiDialogService);
   private readonly idempotency = inject(IdempotencyScope);
   private readonly timers = new Map<number, ReturnType<typeof setTimeout>>();
+  private readonly shownReferences = new Set<string>();
   private seq = 0;
 
   readonly toasts = signal<FeedbackToast[]>([]);
@@ -125,6 +130,11 @@ export class FeedbackService {
   /** Erreur API normalisée → toast d'erreur (avec référence support). */
   apiError(error: ApiErrorInfo, title?: string, action?: FeedbackAction, hint?: string): number {
     return this.error(this.errorMessage(error, title, action, hint));
+  }
+
+  /** Une erreur portant cette référence support a déjà été affichée (anti doublon). */
+  wasShown(requestId: string | null | undefined): boolean {
+    return !!requestId && this.shownReferences.has(requestId);
   }
 
   close(id: number): void {
@@ -185,7 +195,10 @@ export class FeedbackService {
         from(describeApiErrorAsync(err)).pipe(
           switchMap((info) => {
             options.onError?.(info);
-            const canRetry = options.retry !== false && info.retryable;
+            // Résultat inconnu sans clé d'idempotence : relancer pourrait exécuter l'opération deux fois.
+            const uncertain = info.outcomeUnknown && !key;
+            const canRetry = options.retry !== false && info.retryable && !uncertain;
+            const hint = uncertain ? [options.errorHint, UNCERTAIN_HINT].filter(Boolean).join('\n') : options.errorHint;
             return new Observable<T>((subscriber) => {
               options.busy?.set(false);
               const retry = canRetry
@@ -196,7 +209,7 @@ export class FeedbackService {
                     },
                   }
                 : undefined;
-              const msg = this.errorMessage(info, options.errorTitle, retry, options.errorHint);
+              const msg = this.errorMessage(info, options.errorTitle, retry, hint);
               if (handle) handle.error(msg);
               else this.error(msg);
               if (!canRetry) subscriber.complete();
@@ -230,6 +243,7 @@ export class FeedbackService {
 
   private push(tone: FeedbackTone, input: FeedbackMessage | string): number {
     const message: FeedbackMessage = typeof input === 'string' ? { title: input } : input;
+    if (message.requestId) this.rememberShown(message.requestId);
     const id = ++this.seq;
     const toast: FeedbackToast = { ...message, id, tone, createdAt: Date.now() };
     this.toasts.update((list) => {
@@ -244,11 +258,20 @@ export class FeedbackService {
     return id;
   }
 
+  private rememberShown(requestId: string): void {
+    this.shownReferences.add(requestId);
+    if (this.shownReferences.size > MAX_SHOWN_REFERENCES) {
+      const oldest = this.shownReferences.values().next().value;
+      if (oldest !== undefined) this.shownReferences.delete(oldest);
+    }
+  }
+
   private patch(id: number, message: Partial<FeedbackMessage>): void {
     this.toasts.update((list) => list.map((t) => (t.id === id ? { ...t, ...message } : t)));
   }
 
   private replace(id: number, tone: FeedbackTone, message: FeedbackMessage): void {
+    if (message.requestId) this.rememberShown(message.requestId);
     const exists = this.toasts().some((t) => t.id === id);
     if (!exists) {
       this.push(tone, message);

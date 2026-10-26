@@ -108,6 +108,7 @@ interface SidebarTooltip {
                 <span class="bea-admin__user">{{ u.full_name }}</span>
               </div>
             }
+            <a routerLink="/securite-compte" class="bea-admin__home">Sécurité du compte</a>
             <a routerLink="/accueil" class="bea-admin__home">Accueil</a>
             <button type="button" class="bea-admin__logout" (click)="logout()">Déconnexion</button>
           </div>

@@ -173,7 +173,7 @@ export class CoreAdminAlertsComponent implements OnInit {
         this.rows.set(data.items ?? []);
         this.total.set(data.total ?? 0);
         this.kpis.set(data.kpis ?? null);
-        this.lockoutWindow.set(data.lockout_window_minutes ?? 15);
+        this.lockoutWindow.set(data.lockout_window_minutes ?? 10);
         this.lockoutMax.set(data.lockout_max_failures ?? 5);
         this.loading.set(false);
       },

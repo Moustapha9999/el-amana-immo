@@ -2,6 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { describeApiError } from '../../core/feedback/api-error';
 import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { BeaChromeComponent } from '../chrome/bea-chrome.component';
@@ -173,14 +174,17 @@ export class ModuleAccesComponent implements OnInit {
       },
       error: (err: unknown) => {
         this.loading.set(false);
-        if (err instanceof HttpErrorResponse) {
-          const detail = err.error?.detail;
-          if (detail?.code === 'MODULE_UNAVAILABLE') {
-            this.applyBlock(detail.statut || 'maintenance', detail.message, null);
-            return;
-          }
+        const info = describeApiError(err);
+        if (info.code === 'MODULE_UNAVAILABLE') {
+          const detail = err instanceof HttpErrorResponse ? err.error?.detail : null;
+          this.applyBlock(
+            (detail && typeof detail === 'object' && detail.statut) || 'maintenance',
+            info.message,
+            null,
+          );
+          return;
         }
-        this.error.set('Identifiants invalides ou accès refusé.');
+        this.error.set(info.status === 422 ? 'Vérifiez le format de l’adresse e-mail et du mot de passe.' : info.message);
       },
     });
   }

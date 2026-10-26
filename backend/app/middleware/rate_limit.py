@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import math
 import threading
 import time
 from collections import defaultdict, deque
@@ -14,13 +16,23 @@ from app.core.api_errors import error_body
 from app.core.request_client import get_client_ip
 from app.services.security_policy_service import get_cached_security_policy
 
+log = logging.getLogger("bea.rate_limit")
+
+_MESSAGES = {
+    "login_platform": "Trop de tentatives de connexion. Patientez une minute avant de réessayer.",
+    "login_module": "Trop de tentatives de connexion. Patientez une minute avant de réessayer.",
+    "password_reset": "Trop de demandes de réinitialisation. Patientez une minute avant de réessayer.",
+    "sensitive": "Trop d’opérations sensibles en peu de temps. Patientez quelques instants avant de réessayer.",
+    "api": "Trop de requêtes en peu de temps. Patientez quelques instants avant de réessayer.",
+}
 
 class _SlidingWindow:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._hits: dict[str, deque[float]] = defaultdict(deque)
 
-    def hit(self, key: str, *, limit: int, window_seconds: float = 60.0) -> tuple[bool, int]:
+    def hit(self, key: str, *, limit: int, window_seconds: float = 60.0) -> tuple[bool, int, int]:
+        """(autorisé, restant, secondes avant qu'une place se libère)."""
         now = time.monotonic()
         with self._lock:
             q = self._hits[key]
@@ -28,9 +40,9 @@ class _SlidingWindow:
             while q and q[0] < cutoff:
                 q.popleft()
             if len(q) >= limit:
-                return False, 0
+                return False, 0, max(1, math.ceil(q[0] + window_seconds - now))
             q.append(now)
-            return True, max(0, limit - len(q))
+            return True, max(0, limit - len(q)), 0
 
 
 _BUCKET = _SlidingWindow()
@@ -77,9 +89,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         }
         limit = int(limits.get(cat, 60) or 60)
         ip = _client_ip(request)
-        ok, remaining = _BUCKET.hit(f"{cat}:{ip}", limit=limit)
+        ok, remaining, retry_after = _BUCKET.hit(f"{cat}:{ip}", limit=limit)
         if not ok:
-            message = "Trop de requêtes — réessayez dans une minute."
+            message = _MESSAGES.get(cat, _MESSAGES["api"])
+            request.state.error_code = "RATE_LIMITED"
+            request.state.error_message = f"{message} (catégorie {cat}, limite {limit}/min)"
+            log.warning("rate_limited category=%s limit=%s ip=%s route=%s", cat, limit, ip, request.url.path)
             return JSONResponse(
                 status_code=429,
                 content=error_body(
@@ -88,7 +103,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     message=message,
                     detail={"code": "RATE_LIMITED", "message": message, "category": cat},
                 ),
-                headers={"Retry-After": "60", "X-RateLimit-Limit": str(limit)},
+                headers={
+                    "Retry-After": str(retry_after),
+                    "X-RateLimit-Limit": str(limit),
+                    "X-RateLimit-Category": cat,
+                },
             )
         response = await call_next(request)
         response.headers["X-RateLimit-Limit"] = str(limit)

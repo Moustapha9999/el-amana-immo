@@ -1,6 +1,8 @@
 import { Routes } from '@angular/router';
-import { authGuard, guestGuard, moduleGuard } from './core/guards/auth.guard';
+import { authGuard, guestGuard, moduleGuard, mustChangePasswordGuard } from './core/guards/auth.guard';
+import { ChangePasswordComponent } from './auth/change-password/change-password.component';
 import { LoginComponent } from './auth/login/login.component';
+import { SecuriteCompteComponent } from './auth/securite-compte/securite-compte.component';
 import { ShellComponent } from './layout/shell/shell.component';
 import { DashboardComponent } from './dashboard/dashboard.component';
 import { ImmobilisationsListComponent } from './immobilisations/immobilisations-list.component';
@@ -166,6 +168,8 @@ const fxParametres = () =>
  */
 export const routes: Routes = withUnsavedChangesGuard([
   { path: 'login', component: LoginComponent, canActivate: [guestGuard] },
+  { path: 'changer-mot-de-passe', component: ChangePasswordComponent, canActivate: [mustChangePasswordGuard] },
+  { path: 'securite-compte', component: SecuriteCompteComponent, canActivate: [authGuard] },
   { path: 'forgot-password', redirectTo: 'login', pathMatch: 'full' },
   { path: 'reset-password', redirectTo: 'login', pathMatch: 'full' },
   { path: '', pathMatch: 'full', redirectTo: 'accueil' },
