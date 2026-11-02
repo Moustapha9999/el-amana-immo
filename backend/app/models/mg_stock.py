@@ -321,7 +321,11 @@ class MgInventaireLigne(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class MgStockPeriode(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Période mensuelle de stock — une seule ouverte par périmètre global."""
+    """Période mensuelle de stock : OUVERTE (saisie courante), ROUVERTE (régularisation admin), CLOTUREE.
+
+    Plusieurs périodes peuvent être ouvertes ; la clôture suit l'ordre chronologique.
+    ``cloture_at`` = dernière clôture (conservée à la réouverture), ``premiere_cloture_at`` = clôture initiale.
+    """
 
     __tablename__ = "mg_stock_periodes"
     __table_args__ = (UniqueConstraint("annee", "mois", name="uq_mg_stock_periodes_annee_mois"),)
@@ -351,6 +355,11 @@ class MgStockPeriode(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     reopen_motif: Mapped[str | None] = mapped_column(Text, nullable=True)
+    premiere_cloture_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    premiere_cloture_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    nb_reouvertures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     soldes: Mapped[list[MgStockSolde]] = relationship(
         back_populates="periode", cascade="all, delete-orphan"
@@ -382,3 +391,27 @@ class MgStockSolde(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     periode: Mapped[MgStockPeriode] = relationship(back_populates="soldes")
     article: Mapped[MgArticle] = relationship()
+
+
+class MgStockPeriodeEvenement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Historique des clôtures / réouvertures (réussies ou refusées) — jamais modifié ni supprimé.
+
+    ``details`` : contrôles de clôture, corrections, périodes suivantes impactées ; pour une
+    réouverture, l'instantané des soldes servant de référence aux contrôles de la reclôture.
+    """
+
+    __tablename__ = "mg_stock_periode_evenements"
+
+    periode_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mg_stock_periodes.id", ondelete="RESTRICT"), index=True
+    )
+    action: Mapped[str] = mapped_column(String(30), index=True)
+    resultat: Mapped[str] = mapped_column(String(10), default="SUCCES")
+    statut_avant: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    statut_apres: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    motif: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    user_nom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

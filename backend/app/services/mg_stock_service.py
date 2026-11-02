@@ -27,7 +27,7 @@ from app.models.mg_stock import (
 )
 from app.core.exceptions import AppError
 from app.schemas.nombres import as_qty
-from app.services.mg_stock_periodes import MgStockPeriodeService
+from app.services.mg_stock_periodes import CLOTUREE, MgStockPeriodeService, effet_mouvement, maintenant
 from app.schemas.mg_stock import (
     ArticleCreate,
     ArticleUpdate,
@@ -292,7 +292,9 @@ class MgStockService:
         await self.db.refresh(article)
         return article
 
-    async def create_mouvement(self, data: MouvementCreate, user: User) -> MgStockMouvement:
+    async def create_mouvement(
+        self, data: MouvementCreate, user: User, *, regularisation_autorisee: bool = False
+    ) -> MgStockMouvement:
         t = data.type_mouvement.strip().upper()
         if t not in MOUVEMENT_TYPES:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Type de mouvement invalide")
@@ -320,6 +322,7 @@ class MgStockService:
             source_type=data.source_type,
             source_id=data.source_id,
             allow_negative=bool(data.allow_negative),
+            regularisation_autorisee=regularisation_autorisee,
         )
         await self.db.commit()
         await self.db.refresh(mvt)
@@ -402,9 +405,14 @@ class MgStockService:
                 f"({as_qty(new_stock)}).",
                 code="STOCK_NEGATIF",
             )
+        if periode is not None:
+            psvc = MgStockPeriodeService(self.db)
+            await psvc.verifier_historique_positif(
+                periode, article, mvt.date_mouvement, effet_mouvement(mvt.type_mouvement, delta_qty)
+            )
         article.stock_actuel = new_stock
         if periode is not None:
-            await MgStockPeriodeService(self.db).touch_solde(periode, article, mvt.type_mouvement, delta_qty)
+            await psvc.touch_solde(periode, article, mvt.type_mouvement, delta_qty)
         await self._suivre_seuil(article, mouvement_reference=mvt.reference)
 
     async def update_mouvement(
@@ -433,6 +441,10 @@ class MgStockService:
         if nouvelle_date is not None:
             if nouvelle_date.tzinfo is None:
                 nouvelle_date = nouvelle_date.replace(tzinfo=timezone.utc)
+            if nouvelle_date.date() > maintenant().date():
+                raise AppError(
+                    "La date du mouvement ne peut pas être postérieure à aujourd'hui.", code="MVT_DATE_FUTURE"
+                )
             jour = nouvelle_date.date()
             if periode is not None and not (periode.date_debut <= jour <= periode.date_fin):
                 raise AppError(
@@ -751,7 +763,8 @@ class MgStockService:
             article = articles.get(m.article_id)
             initiateur = users.get(m.initiateur_id) if m.initiateur_id else None
             periode = periodes.get(m.periode_id) if m.periode_id else None
-            cloturee = bool(periode and periode.statut == "CLOTUREE")
+            cloturee = bool(periode and periode.statut == CLOTUREE)
+            enregistre = getattr(m, "created_at", None)
             agence_libelle = agences.get(m.agence_id) if m.agence_id else None
             service_libelle = entites.get(m.service_id) if m.service_id else None
             departement_autre = getattr(m, "departement_autre", False) is True
@@ -802,6 +815,11 @@ class MgStockService:
                     "periode_debut": periode.date_debut if periode else None,
                     "periode_fin": periode.date_fin if periode else None,
                     "periode_cloturee": cloturee,
+                    "periode_statut": periode.statut if periode else None,
+                    "date_enregistrement": enregistre,
+                    "saisie_retroactive": bool(
+                        enregistre and m.date_mouvement and m.date_mouvement.date() < enregistre.date()
+                    ),
                     "quantite_modifiable": (
                         not cloturee
                         and m.type_mouvement in MOUVEMENTS_EDITABLES
@@ -1175,10 +1193,8 @@ class MgStockService:
         ]
         try:
             psvc = MgStockPeriodeService(self.db)
-            periode = await psvc.periode_ouverte()
-            if periode is None:
-                periode = await psvc.ensure_open_periode()
-            code, message = await psvc.cloture_alerte(periode)
+            periode = await psvc.ensure_open_periode()
+            code, message = await psvc.cloture_alerte(await psvc.periode_a_cloturer() or periode)
             if code and message:
                 out.insert(
                     0,
@@ -1430,6 +1446,7 @@ class MgStockService:
         force_stock: Decimal | None = None,
         allow_negative: bool = False,
         extra: dict | None = None,
+        regularisation_autorisee: bool = False,
     ) -> MgStockMouvement:
         qty = Decimal(quantite)
         if type_mouvement == "AJUSTEMENT":
@@ -1451,8 +1468,17 @@ class MgStockService:
             if existing is not None:
                 return existing
 
+        if date_mouvement is not None and date_mouvement.tzinfo is None:
+            date_mouvement = date_mouvement.replace(tzinfo=timezone.utc)
         psvc = MgStockPeriodeService(self.db)
-        periode = await psvc.resolve_for_movement(date_mouvement)
+        periode = await psvc.resolve_for_movement(
+            date_mouvement,
+            regularisation_autorisee=regularisation_autorisee or source_type == "inventaire",
+        )
+        if date_mouvement is not None and not allow_negative:
+            await psvc.verifier_historique_positif(
+                periode, article, date_mouvement, effet_mouvement(type_mouvement, qty)
+            )
 
         current = Decimal(article.stock_actuel or 0)
         if type_mouvement == "ENTREE":
@@ -1590,7 +1616,7 @@ class MgStockService:
             psvc = MgStockPeriodeService(self.db)
             periode = await psvc.ensure_open_periode()
             totaux = await psvc.totaux_periode(periode)
-            code, message = await psvc.cloture_alerte(periode)
+            code, message = await psvc.cloture_alerte(await psvc.periode_a_cloturer() or periode)
             aj_count = int(
                 await self.db.scalar(
                     select(func.count())

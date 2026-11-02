@@ -103,7 +103,7 @@ const PERIODS: { value: PeriodKey; label: string }[] = [
               {{ per.libelle }}
             </span>
             <span class="bea-stock-badge" [attr.data-niveau]="per.statut === 'OUVERTE' ? 'normal' : 'epuise'">
-              {{ per.statut === 'OUVERTE' ? 'Ouverte' : 'Clôturée' }}
+              {{ per.statut === 'OUVERTE' ? 'Ouverte' : per.statut === 'ROUVERTE' ? 'Rouverte' : 'Clôturée' }}
             </span>
           </div>
         }

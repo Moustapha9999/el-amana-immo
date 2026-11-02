@@ -22,6 +22,15 @@ import { QuantitePipe, formatQuantite } from '../shared/montant.pipe';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 import { AUTRE, CHAMP_AUTRE_PAR_CODE, corpsOrg, erreurAutre, libelleOrg } from './org-autre';
 import { StockMouvementRow } from './stock-mouvement-edit.component';
+import {
+  DatesSaisie,
+  corpsDate,
+  dateMin,
+  erreurDate,
+  estRetroactive,
+  jourFr,
+  periodePourDate,
+} from './stock-date-mouvement';
 
 export interface SortieArticle {
   id: string;
@@ -39,7 +48,7 @@ export interface SortieMotif {
   observation_obligatoire: boolean;
 }
 
-interface SortieReferentiels {
+interface SortieReferentiels extends DatesSaisie {
   articles: SortieArticle[];
   motifs: SortieMotif[];
   demandeur_libre: boolean;
@@ -64,6 +73,7 @@ export interface SortieMouvement extends StockMouvementRow {
 type Champ =
   | 'article_id'
   | 'quantite'
+  | 'date_mouvement'
   | 'departement_id'
   | 'departement_autre'
   | 'service_id'
@@ -81,6 +91,12 @@ const CHAMP_PAR_CODE: Record<string, Champ> = {
   QUANTITE_ENTIERE: 'quantite',
   STOCK_INSUFFISANT: 'quantite',
   STOCK_MODIFIE: 'quantite',
+  MVT_DATE_FUTURE: 'date_mouvement',
+  PERIODE_CLOTUREE: 'date_mouvement',
+  PERIODE_INEXISTANTE: 'date_mouvement',
+  PERIODE_ROUVERTE_RESERVEE: 'date_mouvement',
+  STOCK_NEGATIF_HISTORIQUE: 'date_mouvement',
+  DOUBLON_PROBABLE: 'date_mouvement',
   DEPARTEMENT_OBLIGATOIRE: 'departement_id',
   DEPARTEMENT_INVALIDE: 'departement_id',
   SERVICE_INVALIDE: 'service_id',
@@ -159,6 +175,24 @@ const CHAMP_PAR_CODE: Record<string, Champ> = {
                     <span>Choisissez un article pour voir son stock.</span>
                   }
                 </div>
+                <label>
+                  Date du mouvement *
+                  <input type="date" formControlName="date_mouvement" [attr.min]="dateMin()" [attr.max]="ref()?.date_du_jour ?? null"
+                         [attr.aria-invalid]="!!erreur('date_mouvement')" />
+                  @if (erreur('date_mouvement'); as e) { <small class="bea-sortie__err">{{ e }}</small> }
+                  @else if (retroactive()) {
+                    <small class="bea-sortie__hint">
+                      Saisie rétroactive dans {{ periodeChoisie()?.libelle }}{{ periodeChoisie()?.statut === 'ROUVERTE' ? ' (période rouverte)' : '' }} :
+                      la date d’enregistrement reste celle du jour.
+                    </small>
+                  } @else { <small class="bea-sortie__hint">Date réelle de l’opération (aujourd’hui par défaut).</small> }
+                </label>
+                @if (doublonSignale()) {
+                  <label class="bea-mg__span2" style="flex-direction:row;align-items:center;gap:0.5rem">
+                    <input type="checkbox" formControlName="doublon_confirme" />
+                    Opération distincte confirmée (justification obligatoire en observation)
+                  </label>
+                }
               </div>
             </fieldset>
 
@@ -299,7 +333,7 @@ const CHAMP_PAR_CODE: Record<string, Champ> = {
               <legend><span>4</span> Traçabilité automatique</legend>
               <dl class="bea-sortie__trace">
                 <div><dt>Sorti par</dt><dd>{{ ref()?.utilisateur?.nom || '—' }}</dd></div>
-                <div><dt>Date et heure</dt><dd>Générées par le serveur à la validation</dd></div>
+                <div><dt>Date d’enregistrement</dt><dd>Générée par le serveur à la validation</dd></div>
                 <div><dt>Référence</dt><dd>Numéro unique attribué automatiquement</dd></div>
               </dl>
             </fieldset>
@@ -351,9 +385,15 @@ export class StockSortieFormComponent implements OnInit {
     demandeur_nom: [''],
     motif_id: ['', Validators.required],
     observation: [''],
+    date_mouvement: [''],
+    doublon_confirme: [false],
   });
 
   private readonly valeurs = toSignal(this.form.valueChanges, { initialValue: this.form.getRawValue() });
+  readonly doublonSignale = signal(false);
+  readonly dateMin = computed(() => dateMin(this.ref()));
+  readonly retroactive = computed(() => estRetroactive(this.ref(), this.valeurs().date_mouvement || ''));
+  readonly periodeChoisie = computed(() => periodePourDate(this.ref(), this.valeurs().date_mouvement || ''));
 
   readonly hasUnsavedChanges = unsavedChanges(() => this.form.dirty && !this.saving(), () => this.form);
 
@@ -409,7 +449,9 @@ export class StockSortieFormComponent implements OnInit {
       if (id !== AUTRE) this.form.controls.service_autre.setValue('', { emitEvent: false });
     });
     for (const [nom, ctrl] of Object.entries(this.form.controls) as [string, AbstractControl][]) {
-      const champ = (nom === 'demandeur_nom' || nom === 'demandeur_id' ? 'demandeur' : nom) as Champ;
+      const champ = (
+        nom === 'demandeur_nom' || nom === 'demandeur_id' ? 'demandeur' : nom === 'doublon_confirme' ? 'date_mouvement' : nom
+      ) as Champ;
       ctrl.valueChanges.subscribe(() => this.effacerErreurServeur(champ));
     }
   }
@@ -422,6 +464,7 @@ export class StockSortieFormComponent implements OnInit {
     }).subscribe({
       next: ({ ref, entites, agences }) => {
         this.ref.set(ref);
+        this.form.controls.date_mouvement.setValue(ref.date_du_jour ?? '');
         this.entites.set(entites);
         this.agences.set(agences);
         this.chargement.set(false);
@@ -520,6 +563,8 @@ export class StockSortieFormComponent implements OnInit {
       motif_id: v.motif_id,
       observation: v.observation.trim() || null,
       stock_attendu: article.stock_actuel,
+      date_mouvement: corpsDate(this.ref(), v.date_mouvement),
+      doublon_confirme: v.doublon_confirme,
     };
     if (v.destination_type === 'DEPARTEMENT') {
       Object.assign(body, corpsOrg(v));
@@ -536,8 +581,12 @@ export class StockSortieFormComponent implements OnInit {
         confirm: {
           action: 'validation',
           title: 'Valider la sortie de stock',
-          message: `Sortir ${quantite} de « ${article.designation} » vers ${destination} ?`,
-          hint: `Demandé par ${v.demandeur_nom.trim()} · motif : ${this.motif()?.libelle}. Le stock sera décrémenté immédiatement.`,
+          message: `Sortir ${quantite} de « ${article.designation} » vers ${destination}${
+            this.retroactive() ? `, datée du ${jourFr(v.date_mouvement)} (saisie rétroactive)` : ''
+          } ?`,
+          hint: `Demandé par ${v.demandeur_nom.trim()} · motif : ${this.motif()?.libelle}. Le stock sera décrémenté immédiatement${
+            this.retroactive() ? ' et les soldes des périodes suivantes recalculés' : ''
+          }.`,
         },
         loading: 'Validation de la sortie…',
         busy: this.saving,
@@ -574,6 +623,7 @@ export class StockSortieFormComponent implements OnInit {
   private surErreur(e: ApiErrorInfo): void {
     const champ = CHAMP_PAR_CODE[e.code];
     if (champ) this.erreursServeur.update((m) => ({ ...m, [champ]: e.message }));
+    if (e.code === 'DOUBLON_PROBABLE') this.doublonSignale.set(true);
     if (['STOCK_INSUFFISANT', 'STOCK_MODIFIE', 'ARTICLE_INACTIF', 'MOTIF_INVALIDE'].includes(e.code)) {
       this.rafraichirReferentiels();
     }
@@ -614,6 +664,8 @@ export class StockSortieFormComponent implements OnInit {
         }
         return null;
       }
+      case 'date_mouvement':
+        return erreurDate(this.ref(), v.date_mouvement);
       case 'departement_id':
         return v.destination_type === 'DEPARTEMENT' && !v.departement_id ? 'Choisissez le département destinataire.' : null;
       case 'departement_autre':
@@ -635,6 +687,7 @@ export class StockSortieFormComponent implements OnInit {
       case 'motif_id':
         return v.motif_id ? null : 'Choisissez le motif de la sortie.';
       case 'observation':
+        if (v.doublon_confirme && !v.observation.trim()) return 'Justifiez en observation pourquoi l’opération est distincte.';
         return this.motif()?.observation_obligatoire && !v.observation.trim()
           ? `Le motif « ${this.motif()?.libelle} » exige une observation.`
           : null;
@@ -647,6 +700,7 @@ export class StockSortieFormComponent implements OnInit {
     const ordre: Champ[] = [
       'article_id',
       'quantite',
+      'date_mouvement',
       'departement_id',
       'departement_autre',
       'service_id',

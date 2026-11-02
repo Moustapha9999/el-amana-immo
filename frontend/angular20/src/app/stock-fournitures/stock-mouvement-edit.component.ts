@@ -45,6 +45,10 @@ export interface StockMouvementRow {
   periode_debut?: string | null;
   periode_fin?: string | null;
   periode_cloturee?: boolean;
+  periode_statut?: string | null;
+  /** Date serveur de saisie ; distincte de `date_mouvement` (date réelle de l'opération). */
+  date_enregistrement?: string | null;
+  saisie_retroactive?: boolean;
   quantite_modifiable?: boolean;
   destination_type?: 'DEPARTEMENT' | 'AGENCE' | null;
   destination_libelle?: string | null;
@@ -151,6 +155,11 @@ export function raisonVerrouMouvement(m: StockMouvementRow): string {
   return '';
 }
 
+export function libellePeriode(m: StockMouvementRow): string {
+  if (m.periode_statut === 'ROUVERTE') return 'Rouverte (régularisation)';
+  return m.periode_cloturee || m.periode_statut === 'CLOTUREE' ? 'Clôturée' : 'Ouverte';
+}
+
 /** Fiche de consultation d'un mouvement (Entrées, Sorties, Journal). */
 @Component({
   selector: 'bea-stock-mouvement-view',
@@ -196,9 +205,20 @@ export function raisonVerrouMouvement(m: StockMouvementRow): string {
             </dd>
           </div>
           <div>
-            <dt><mat-icon>event</mat-icon> Date</dt>
+            <dt><mat-icon>event</mat-icon> Date du mouvement</dt>
             <dd>{{ m().date_mouvement | date: 'dd/MM/yyyy HH:mm' }}</dd>
           </div>
+          @if (m().date_enregistrement) {
+            <div>
+              <dt><mat-icon>edit_calendar</mat-icon> Enregistré le</dt>
+              <dd>
+                {{ m().date_enregistrement | date: 'dd/MM/yyyy HH:mm' }}
+                @if (m().saisie_retroactive) {
+                  <span class="bea-mvt-view__periode" data-cloturee="1">Saisie rétroactive</span>
+                }
+              </dd>
+            </div>
+          }
           <div>
             <dt><mat-icon>person</mat-icon> {{ m().type_mouvement === 'SORTIE' ? 'Sorti par' : m().type_mouvement === 'ENTREE' ? 'Reçu par' : 'Initiateur' }}</dt>
             <dd>{{ m().initiateur_nom || '—' }}</dd>
@@ -250,8 +270,8 @@ export function raisonVerrouMouvement(m: StockMouvementRow): string {
               <dt><mat-icon>date_range</mat-icon> Période</dt>
               <dd>
                 {{ m().periode_libelle }}
-                <span class="bea-mvt-view__periode" [attr.data-cloturee]="m().periode_cloturee ? '1' : '0'">
-                  {{ m().periode_cloturee ? 'Clôturée' : 'Ouverte' }}
+                <span class="bea-mvt-view__periode" [attr.data-cloturee]="m().periode_statut === 'OUVERTE' ? '0' : '1'">
+                  {{ libellePeriode(m()) }}
                 </span>
               </dd>
             </div>
@@ -288,6 +308,7 @@ export class StockMouvementViewComponent {
   readonly closed = output<void>();
   readonly modifier = output<void>();
   readonly supprimer = output<void>();
+  readonly libellePeriode = libellePeriode;
 
   vue() {
     return TYPE_VIEW[this.m().type_mouvement] ?? { label: this.m().type_mouvement, icon: 'swap_vert', qte: 'Quantité' };
@@ -341,7 +362,7 @@ function toLocalInput(iso: string): string {
               <mat-icon>event_note</mat-icon>
               <span>
                 Période <strong>{{ mouvement().periode_libelle }}</strong>
-                {{ mouvement().periode_cloturee ? '(clôturée)' : '(ouverte)' }} — la date doit rester entre le
+                ({{ libellePeriode(mouvement()).toLowerCase() }}) — la date doit rester entre le
                 {{ mouvement().periode_debut | date: 'dd/MM/yyyy' }} et le {{ mouvement().periode_fin | date: 'dd/MM/yyyy' }}.
                 @if (!mouvement().quantite_modifiable) {
                   <br />Article et quantité verrouillés : {{ raisonVerrou() }}
@@ -427,6 +448,7 @@ function toLocalInput(iso: string): string {
 })
 export class StockMouvementEditComponent implements OnInit {
   readonly mouvement = input.required<StockMouvementRow>();
+  readonly libellePeriode = libellePeriode;
   readonly agences = input<StockAgenceOption[]>([]);
   readonly saved = output<StockMouvementRow>();
   readonly closed = output<void>();

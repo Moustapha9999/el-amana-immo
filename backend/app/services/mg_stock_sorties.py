@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import or_, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
@@ -25,6 +26,7 @@ from app.models.organisation import OrgAffectation, OrgEntite
 from app.schemas.mg_stock import MotifSortieCreate, MotifSortieUpdate, SortieCreate
 from app.schemas.nombres import format_qty
 from app.services import org_referentiel as org
+from app.services.mg_stock_periodes import maintenant
 from app.services.mg_stock_service import MgStockService
 
 DESTINATIONS = ("DEPARTEMENT", "AGENCE")
@@ -247,7 +249,12 @@ class MgStockSortieService:
 
     # ------------------------------------------------------------------------ sortie
     async def creer(
-        self, data: SortieCreate, user: User, *, cle_idempotence: str | None = None
+        self,
+        data: SortieCreate,
+        user: User,
+        *,
+        cle_idempotence: str | None = None,
+        regularisation_autorisee: bool = False,
     ) -> tuple[MgStockMouvement, bool]:
         """Crée la sortie et décrémente le stock une seule fois. Renvoie (mouvement, rejoué)."""
         destination = normaliser_destination(data)
@@ -293,6 +300,19 @@ class MgStockSortieService:
             )
         quantite = Decimal(data.quantite)
         verifier_quantite(quantite, article.uom, stock)
+        await self._controler_doublon(
+            "SORTIE",
+            article,
+            quantite,
+            data.date_mouvement,
+            {
+                "destination_type": destination.type,
+                "org_entite_id": departement.id if departement else None,
+                "agence_id": destination.agence_id,
+            },
+            confirme=data.doublon_confirme,
+            observation=observation,
+        )
 
         mvt = await MgStockService(self.db)._apply_mouvement(
             article=article,
@@ -304,6 +324,8 @@ class MgStockSortieService:
             observation=observation,
             departement=departement.libelle if departement else destination.departement_autre,
             source_type=SOURCE_SORTIE,
+            date_mouvement=data.date_mouvement,
+            regularisation_autorisee=regularisation_autorisee,
             extra={
                 "destination_type": destination.type,
                 "org_entite_id": departement.id if departement else None,
@@ -318,6 +340,70 @@ class MgStockSortieService:
         await self.db.commit()
         await self.db.refresh(mvt)
         return mvt, False
+
+    async def _controler_doublon(
+        self,
+        type_mouvement: str,
+        article: MgArticle,
+        quantite: Decimal,
+        date_mouvement: datetime | None,
+        contrepartie: dict,
+        *,
+        confirme: bool,
+        observation: str | None,
+        fournisseur_id: uuid.UUID | None = None,
+        piece_reference: str | None = None,
+    ) -> None:
+        """Saisie antidatée : refuse un doublon probable sauf confirmation justifiée en observation.
+
+        Doublon probable = même article, type, quantité, jour et contrepartie, ou (entrée) même pièce
+        du même fournisseur. Les saisies du jour gardent les règles habituelles.
+        """
+        if date_mouvement is None:
+            return
+        if date_mouvement.tzinfo is None:
+            date_mouvement = date_mouvement.replace(tzinfo=timezone.utc)
+        if date_mouvement.date() >= maintenant().date():
+            return
+        criteres = [
+            MgStockMouvement.article_id == article.id,
+            MgStockMouvement.type_mouvement == type_mouvement,
+            MgStockMouvement.quantite == quantite,
+            func.date(MgStockMouvement.date_mouvement) == date_mouvement.date(),
+        ]
+        for champ, valeur in contrepartie.items():
+            colonne = getattr(MgStockMouvement, champ)
+            criteres.append(colonne.is_(None) if valeur is None else colonne == valeur)
+        refs = set((await self.db.scalars(select(MgStockMouvement.reference).where(*criteres))).all())
+        if fournisseur_id and piece_reference:
+            refs |= set(
+                (
+                    await self.db.scalars(
+                        select(MgStockMouvement.reference).where(
+                            MgStockMouvement.article_id == article.id,
+                            MgStockMouvement.type_mouvement == type_mouvement,
+                            MgStockMouvement.fournisseur_id == fournisseur_id,
+                            func.lower(MgStockMouvement.piece_reference) == piece_reference.lower(),
+                        )
+                    )
+                ).all()
+            )
+        if not refs:
+            return
+        liste = ", ".join(sorted(refs)[:5])
+        if not confirme:
+            raise AppError(
+                f"Doublon probable : {liste} déjà enregistré pour {article.code} "
+                f"({format_qty(quantite)} le {date_mouvement:%d/%m/%Y}, même contrepartie). "
+                "Vérifiez le journal ; si l'opération est bien distincte, confirmez-la en la justifiant en observation.",
+                409,
+                code="DOUBLON_PROBABLE",
+            )
+        if not observation:
+            raise AppError(
+                f"Doublon probable ({liste}) : justifiez en observation pourquoi cette opération est distincte.",
+                code="OBSERVATION_OBLIGATOIRE",
+            )
 
     async def _motif(self, motif_id: uuid.UUID, sens: str = "SORTIE") -> MgStockMotifSortie:
         motif = await self.db.get(MgStockMotifSortie, motif_id)

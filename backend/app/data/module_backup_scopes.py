@@ -179,6 +179,7 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
             "mg_stock_parametres",
             "mg_stock_periodes",
             "mg_stock_soldes",
+            "mg_stock_periode_evenements",
         ],
     ),
     "achats-appro": make_module_scope(

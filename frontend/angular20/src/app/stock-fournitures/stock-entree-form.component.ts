@@ -22,6 +22,15 @@ import { QuantitePipe, formatQuantite } from '../shared/montant.pipe';
 import { UiDialogService } from '../shared/ui-dialog/ui-dialog.service';
 import { AUTRE, CHAMP_AUTRE_PAR_CODE, corpsOrg, erreurAutre, libelleOrg } from './org-autre';
 import { SortieMotif, SortieMouvement } from './stock-sortie-form.component';
+import {
+  DatesSaisie,
+  corpsDate,
+  dateMin,
+  erreurDate,
+  estRetroactive,
+  jourFr,
+  periodePourDate,
+} from './stock-date-mouvement';
 
 type Provenance = 'FOURNISSEUR' | 'RETOUR_DEPARTEMENT' | 'RETOUR_AGENCE' | 'AUTRE';
 
@@ -42,7 +51,7 @@ interface EntreeFournisseur {
   raison_sociale: string;
 }
 
-interface EntreeReferentiels {
+interface EntreeReferentiels extends DatesSaisie {
   articles: EntreeArticle[];
   fournisseurs: EntreeFournisseur[];
   motifs: (SortieMotif & { code: string })[];
@@ -60,6 +69,7 @@ export interface EntreeMouvement extends SortieMouvement {
 type Champ =
   | 'article_id'
   | 'quantite'
+  | 'date_mouvement'
   | 'fournisseur_id'
   | 'piece_reference'
   | 'departement_id'
@@ -76,6 +86,12 @@ const CHAMP_PAR_CODE: Record<string, Champ> = {
   QUANTITE_INVALIDE: 'quantite',
   QUANTITE_ENTIERE: 'quantite',
   STOCK_MODIFIE: 'quantite',
+  MVT_DATE_FUTURE: 'date_mouvement',
+  PERIODE_CLOTUREE: 'date_mouvement',
+  PERIODE_INEXISTANTE: 'date_mouvement',
+  PERIODE_ROUVERTE_RESERVEE: 'date_mouvement',
+  STOCK_NEGATIF_HISTORIQUE: 'date_mouvement',
+  DOUBLON_PROBABLE: 'date_mouvement',
   FOURNISSEUR_OBLIGATOIRE: 'fournisseur_id',
   FOURNISSEUR_INVALIDE: 'fournisseur_id',
   DEPARTEMENT_OBLIGATOIRE: 'departement_id',
@@ -170,6 +186,24 @@ const LIBELLE_PROVENANCE: Record<Provenance, string> = {
                     <span>Choisissez un article pour voir son stock.</span>
                   }
                 </div>
+                <label>
+                  Date du mouvement *
+                  <input type="date" formControlName="date_mouvement" [attr.min]="dateMin()" [attr.max]="ref()?.date_du_jour ?? null"
+                         [attr.aria-invalid]="!!erreur('date_mouvement')" />
+                  @if (erreur('date_mouvement'); as e) { <small class="bea-sortie__err">{{ e }}</small> }
+                  @else if (retroactive()) {
+                    <small class="bea-sortie__hint">
+                      Saisie rétroactive dans {{ periodeChoisie()?.libelle }}{{ periodeChoisie()?.statut === 'ROUVERTE' ? ' (période rouverte)' : '' }} :
+                      la date d’enregistrement reste celle du jour.
+                    </small>
+                  } @else { <small class="bea-sortie__hint">Date réelle de réception (aujourd’hui par défaut).</small> }
+                </label>
+                @if (doublonSignale()) {
+                  <label class="bea-mg__span2" style="flex-direction:row;align-items:center;gap:0.5rem">
+                    <input type="checkbox" formControlName="doublon_confirme" />
+                    Opération distincte confirmée (justification obligatoire en observation)
+                  </label>
+                }
               </div>
             </fieldset>
 
@@ -311,7 +345,7 @@ const LIBELLE_PROVENANCE: Record<Provenance, string> = {
               <legend><span>4</span> Traçabilité automatique</legend>
               <dl class="bea-sortie__trace">
                 <div><dt>Reçu par</dt><dd>{{ ref()?.utilisateur?.nom || '—' }}</dd></div>
-                <div><dt>Date et heure</dt><dd>Générées par le serveur à la validation</dd></div>
+                <div><dt>Date d’enregistrement</dt><dd>Générée par le serveur à la validation</dd></div>
                 <div><dt>Référence</dt><dd>Numéro unique attribué automatiquement</dd></div>
               </dl>
             </fieldset>
@@ -369,9 +403,15 @@ export class StockEntreeFormComponent implements OnInit {
     remis_par: [''],
     motif_id: ['', Validators.required],
     observation: [''],
+    date_mouvement: [''],
+    doublon_confirme: [false],
   });
 
   private readonly valeurs = toSignal(this.form.valueChanges, { initialValue: this.form.getRawValue() });
+  readonly doublonSignale = signal(false);
+  readonly dateMin = computed(() => dateMin(this.ref()));
+  readonly retroactive = computed(() => estRetroactive(this.ref(), this.valeurs().date_mouvement || ''));
+  readonly periodeChoisie = computed(() => periodePourDate(this.ref(), this.valeurs().date_mouvement || ''));
 
   readonly hasUnsavedChanges = unsavedChanges(() => this.form.dirty && !this.saving(), () => this.form);
 
@@ -450,7 +490,8 @@ export class StockEntreeFormComponent implements OnInit {
       if (this.form.controls.motif_id.dirty) this.motifAuto = false;
     });
     for (const [nom, ctrl] of Object.entries(this.form.controls) as [string, AbstractControl][]) {
-      ctrl.valueChanges.subscribe(() => this.effacerErreurServeur(nom as Champ));
+      const champ = (nom === 'doublon_confirme' ? 'date_mouvement' : nom) as Champ;
+      ctrl.valueChanges.subscribe(() => this.effacerErreurServeur(champ));
     }
   }
 
@@ -462,6 +503,7 @@ export class StockEntreeFormComponent implements OnInit {
     }).subscribe({
       next: ({ ref, entites, agences }) => {
         this.ref.set(ref);
+        this.form.controls.date_mouvement.setValue(ref.date_du_jour ?? '');
         this.entites.set(entites);
         this.agences.set(agences);
         this.proposerMotif(this.form.controls.provenance_type.value);
@@ -530,6 +572,8 @@ export class StockEntreeFormComponent implements OnInit {
       observation: v.observation.trim() || null,
       remis_par: v.remis_par.trim() || null,
       stock_attendu: article.stock_actuel,
+      date_mouvement: corpsDate(this.ref(), v.date_mouvement),
+      doublon_confirme: v.doublon_confirme,
     };
     if (v.provenance_type === 'FOURNISSEUR') {
       body['fournisseur_id'] = v.fournisseur_id;
@@ -548,8 +592,12 @@ export class StockEntreeFormComponent implements OnInit {
         confirm: {
           action: 'validation',
           title: 'Valider l’entrée de stock',
-          message: `Entrer ${quantite} de « ${article.designation} » (${provenance}) ?`,
-          hint: `Motif : ${this.motif()?.libelle}${piece ? ` · pièce ${piece}` : ''}. Le stock sera incrémenté immédiatement.`,
+          message: `Entrer ${quantite} de « ${article.designation} » (${provenance})${
+            this.retroactive() ? `, datée du ${jourFr(v.date_mouvement)} (saisie rétroactive)` : ''
+          } ?`,
+          hint: `Motif : ${this.motif()?.libelle}${piece ? ` · pièce ${piece}` : ''}. Le stock sera incrémenté immédiatement${
+            this.retroactive() ? ' et les soldes des périodes suivantes recalculés' : ''
+          }.`,
         },
         loading: 'Validation de l’entrée…',
         busy: this.saving,
@@ -599,6 +647,7 @@ export class StockEntreeFormComponent implements OnInit {
   private surErreur(e: ApiErrorInfo): void {
     const champ = CHAMP_PAR_CODE[e.code];
     if (champ) this.erreursServeur.update((m) => ({ ...m, [champ]: e.message }));
+    if (e.code === 'DOUBLON_PROBABLE') this.doublonSignale.set(true);
     if (['STOCK_MODIFIE', 'ARTICLE_INACTIF', 'MOTIF_INVALIDE', 'FOURNISSEUR_INVALIDE'].includes(e.code)) {
       this.api.get<EntreeReferentiels>('/mg/stock/entrees/referentiels').subscribe({
         next: (ref) => this.ref.set(ref),
@@ -627,6 +676,8 @@ export class StockEntreeFormComponent implements OnInit {
         if (a?.quantite_entiere && !Number.isInteger(q)) return `Article compté à l’unité (${a.uom}) : quantité entière.`;
         return null;
       }
+      case 'date_mouvement':
+        return erreurDate(this.ref(), v.date_mouvement);
       case 'fournisseur_id':
         return v.provenance_type === 'FOURNISSEUR' && !v.fournisseur_id ? 'Choisissez le fournisseur.' : null;
       case 'departement_id':
@@ -646,6 +697,7 @@ export class StockEntreeFormComponent implements OnInit {
       case 'motif_id':
         return v.motif_id ? null : 'Choisissez le motif de l’entrée.';
       case 'observation':
+        if (v.doublon_confirme && !v.observation.trim()) return 'Justifiez en observation pourquoi l’opération est distincte.';
         if (v.observation.trim() || !this.observationObligatoire()) return null;
         return v.provenance_type === 'AUTRE'
           ? 'Précisez l’origine de l’entrée.'
@@ -659,6 +711,7 @@ export class StockEntreeFormComponent implements OnInit {
     const ordre: Champ[] = [
       'article_id',
       'quantite',
+      'date_mouvement',
       'fournisseur_id',
       'departement_id',
       'departement_autre',

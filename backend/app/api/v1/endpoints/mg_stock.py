@@ -75,7 +75,14 @@ from app.services.mg_inventaire_service import MgInventaireService
 from app.services.mg_stock_events import audit_stock, notify_stock_roles, notify_stock_user
 from app.services.mg_stock_alertes import FUSEAU as FUSEAU_ALERTES
 from app.services.mg_stock_alertes import FiltresAlertes, MgStockAlerteService
+from app.models.mg_stock import MgStockPeriode
 from app.services.mg_stock_entrees import MgStockEntreeService
+from app.services.mg_stock_periodes import (
+    PERMISSION_REGULARISATION,
+    ROUVERTE,
+    MgStockPeriodeService,
+    aujourdhui,
+)
 from app.services.mg_stock_service import MgStockService
 from app.services.mg_stock_sorties import (
     TYPES_DEPARTEMENT,
@@ -478,6 +485,40 @@ async def list_mouvements(
     return PaginatedResponse(items=items, total=total, page=page, size=size)
 
 
+async def _peut_regulariser(db: AsyncSession, user: User) -> bool:
+    from app.api.deps import user_has_permission_codes
+
+    return user_has_permission_codes(await load_user_permission_codes(db, user), PERMISSION_REGULARISATION)
+
+
+async def _dates_saisie(db: AsyncSession, user: User) -> dict:
+    """Bornes du champ « date du mouvement » : périodes ouvertes (et rouvertes pour un administrateur)."""
+    peut = await _peut_regulariser(db, user)
+    return {
+        "periodes_saisie": await MgStockPeriodeService(db).periodes_saisie(regularisation_autorisee=peut),
+        "peut_regulariser": peut,
+        "date_du_jour": aujourdhui().isoformat(),
+    }
+
+
+async def _audit_mouvement_saisi(db: AsyncSession, user: User, mvt, request: Request, svc: MgStockService, body) -> None:
+    """Création auditée ; une saisie antidatée est tracée comme régularisation (deux dates)."""
+    retro = mvt.date_mouvement.date() < (mvt.created_at or mvt.date_mouvement).date()
+    periode = await db.get(MgStockPeriode, mvt.periode_id) if mvt.periode_id else None
+    await audit_stock(
+        db, user, "create_retroactif" if retro else "create", "mg_stock_mouvement", mvt.id, request=request,
+        after=svc.mouvement_snapshot(mvt)
+        | {
+            "quantite": str(mvt.quantite),
+            "article_id": str(mvt.article_id),
+            "date_enregistrement": mvt.created_at.isoformat() if mvt.created_at else None,
+            "periode": periode.libelle if periode else None,
+            "periode_statut": periode.statut if periode else None,
+            "doublon_confirme": bool(getattr(body, "doublon_confirme", False)),
+        },
+    )
+
+
 @router.get("/sorties/referentiels", dependencies=_module)
 async def sortie_referentiels(
     db: AsyncSession = Depends(get_db),
@@ -486,6 +527,7 @@ async def sortie_referentiels(
     """Données du formulaire de sortie. Départements, services et agences : API CORE `/organisation`."""
     svc = MgStockSortieService(db)
     return {
+        **await _dates_saisie(db, user),
         "articles": [
             {
                 "id": str(a.id),
@@ -524,15 +566,15 @@ async def create_sortie(
 ):
     svc = MgStockService(db)
     mvt, rejoue = await MgStockSortieService(db).creer(
-        body, user, cle_idempotence=request.headers.get("Idempotency-Key")
+        body,
+        user,
+        cle_idempotence=request.headers.get("Idempotency-Key"),
+        regularisation_autorisee=await _peut_regulariser(db, user),
     )
     if rejoue:
         response.status_code = 200
     else:
-        await audit_stock(
-            db, user, "create", "mg_stock_mouvement", mvt.id, request=request,
-            after=svc.mouvement_snapshot(mvt) | {"quantite": str(mvt.quantite), "article_id": str(mvt.article_id)},
-        )
+        await _audit_mouvement_saisi(db, user, mvt, request, svc, body)
     return (await svc.enrich_mouvements([mvt]))[0]
 
 
@@ -544,6 +586,7 @@ async def entree_referentiels(
     """Données du formulaire d'entrée. Départements, services et agences : API CORE `/organisation`."""
     svc = MgStockEntreeService(db)
     return {
+        **await _dates_saisie(db, user),
         "articles": [
             {
                 "id": str(a.id),
@@ -578,15 +621,15 @@ async def create_entree(
 ):
     svc = MgStockService(db)
     mvt, rejoue = await MgStockEntreeService(db).creer(
-        body, user, cle_idempotence=request.headers.get("Idempotency-Key")
+        body,
+        user,
+        cle_idempotence=request.headers.get("Idempotency-Key"),
+        regularisation_autorisee=await _peut_regulariser(db, user),
     )
     if rejoue:
         response.status_code = 200
     else:
-        await audit_stock(
-            db, user, "create", "mg_stock_mouvement", mvt.id, request=request,
-            after=svc.mouvement_snapshot(mvt) | {"quantite": str(mvt.quantite), "article_id": str(mvt.article_id)},
-        )
+        await _audit_mouvement_saisi(db, user, mvt, request, svc, body)
     return (await svc.enrich_mouvements([mvt]))[0]
 
 
@@ -669,7 +712,9 @@ async def create_mouvement(
     if body.allow_negative and not (body.motif or "").strip():
         raise HTTPException(400, detail="Motif obligatoire pour un stock négatif.")
     svc = MgStockService(db)
-    mvt = await svc.create_mouvement(body, user)
+    mvt = await svc.create_mouvement(
+        body, user, regularisation_autorisee=user_has_permission_codes(have, PERMISSION_REGULARISATION)
+    )
     await audit_stock(
         db, user, "create", "mg_stock_mouvement", mvt.id, request=request,
         after={
@@ -703,6 +748,16 @@ async def _mouvement_autorise(db: AsyncSession, user: User, mvt_id: UUID):
     have = await load_user_permission_codes(db, user)
     if not user_has_permission_codes(have, needed):
         raise HTTPException(403, detail=f"Permission requise : {needed}")
+    periode = await db.get(MgStockPeriode, mvt.periode_id) if mvt.periode_id else None
+    if periode is not None and periode.statut == ROUVERTE and not user_has_permission_codes(
+        have, PERMISSION_REGULARISATION
+    ):
+        raise AppError(
+            f"Période {periode.libelle} rouverte pour régularisation : correction réservée aux "
+            f"administrateurs du stock (permission {PERMISSION_REGULARISATION}).",
+            403,
+            code="PERIODE_ROUVERTE_RESERVEE",
+        )
 
 
 _PERM_SUPPRESSION_FORCEE = "mg.stock.period.reopen"
@@ -1673,9 +1728,8 @@ async def list_periodes(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.stock.view")),
 ):
-    from app.services.mg_stock_periodes import MgStockPeriodeService
-
-    rows = await MgStockPeriodeService(db).list_periodes()
+    svc = MgStockPeriodeService(db)
+    rows = await svc.serialize_periodes(await svc.list_periodes())
     return [PeriodeOut.model_validate(r) for r in rows]
 
 
@@ -1684,14 +1738,22 @@ async def periode_active(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("mg.stock.view")),
 ):
-    from app.services.mg_stock_periodes import MgStockPeriodeService
-
+    """Période de saisie courante (mois du jour) et alerte sur la prochaine période à clôturer."""
     svc = MgStockPeriodeService(db)
     periode = await svc.ensure_open_periode(user)
     totaux = await svc.totaux_periode(periode)
-    code, message = await svc.cloture_alerte(periode)
+    code, message = await svc.cloture_alerte(await svc.periode_a_cloturer() or periode)
+    non_cloturees = [
+        {"id": str(p.id), "libelle": p.libelle, "statut": p.statut} for p in await svc.periodes_non_cloturees()
+    ]
     await db.commit()
-    return {**svc.serialize_periode(periode), **totaux, "cloture_statut": code, "cloture_message": message}
+    return {
+        **svc.serialize_periode(periode),
+        **totaux,
+        "cloture_statut": code,
+        "cloture_message": message,
+        "periodes_non_cloturees": non_cloturees,
+    }
 
 
 @router.get("/periodes/{periode_id}", dependencies=_module)
@@ -1700,12 +1762,10 @@ async def get_periode(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.stock.view")),
 ):
-    from app.services.mg_stock_periodes import MgStockPeriodeService
-
     svc = MgStockPeriodeService(db)
     periode = await svc.get_periode(periode_id)
     totaux = await svc.totaux_periode(periode)
-    return {**svc.serialize_periode(periode), **totaux}
+    return {**svc.serialize_periode(periode, noms=await svc.noms_utilisateurs([periode])), **totaux}
 
 
 @router.get("/periodes/{periode_id}/soldes", dependencies=_module)
@@ -1733,9 +1793,58 @@ async def preview_cloture(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission("mg.stock.view")),
 ):
-    from app.services.mg_stock_periodes import MgStockPeriodeService
-
     return await MgStockPeriodeService(db).preview_cloture(periode_id)
+
+
+@router.get("/periodes/{periode_id}/preview-reouverture", dependencies=_module)
+async def preview_reouverture(
+    periode_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission(PERMISSION_REGULARISATION)),
+):
+    return await MgStockPeriodeService(db).preview_reouverture(periode_id)
+
+
+@router.get("/periodes/{periode_id}/historique", dependencies=_module)
+async def historique_periode(
+    periode_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("mg.stock.period.view")),
+):
+    return await MgStockPeriodeService(db).historique(periode_id)
+
+
+def _message_erreur(exc: Exception) -> str:
+    if isinstance(exc, AppError):
+        return exc.message
+    detail = getattr(exc, "detail", None)
+    if isinstance(detail, dict):
+        return str(detail.get("message") or detail)
+    return str(detail or exc)
+
+
+async def _exiger_permission(db: AsyncSession, user: User, code: str) -> None:
+    from app.api.deps import user_has_permission_codes
+
+    if not user_has_permission_codes(await load_user_permission_codes(db, user), code):
+        raise AppError(f"Permission requise : {code}", 403, code="PERMISSION_REFUSEE")
+
+
+async def _tracer_refus(
+    db: AsyncSession, user: User, periode_id: UUID, action: str, request: Request, *, motif: str | None, exc: Exception
+) -> None:
+    """Refus d'une opération de période : annule l'opération puis trace le refus (historique + audit)."""
+    from types import SimpleNamespace
+
+    acteur = SimpleNamespace(id=user.id, full_name=user.full_name)  # le rollback expire l'objet User
+    await db.rollback()
+    erreur = _message_erreur(exc)
+    if await MgStockPeriodeService(db).journaliser_echec(periode_id, action, acteur, motif=motif, erreur=erreur):
+        await audit_stock(
+            db, acteur, action.lower(), "mg_stock_periode", periode_id, request=request,
+            after={"resultat": "ECHEC", "motif": motif, "erreur": erreur},
+        )
+        await db.commit()
 
 
 @router.post("/periodes/{periode_id}/cloturer", dependencies=_module)
@@ -1743,11 +1852,15 @@ async def cloturer_periode(
     periode_id: UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_permission("mg.stock.period.close")),
+    user: User = Depends(get_current_user),
 ):
-    from app.services.mg_stock_periodes import MgStockPeriodeService
-
-    result = await MgStockPeriodeService(db).cloturer(periode_id, user)
+    try:
+        await _exiger_permission(db, user, "mg.stock.period.close")
+        result = await MgStockPeriodeService(db).cloturer(periode_id, user)
+    except (AppError, HTTPException) as exc:
+        await _tracer_refus(db, user, periode_id, "CLOTURE_REFUSEE", request, motif=None, exc=exc)
+        raise
+    regularisation = result.get("regularisation") or {}
     await audit_stock(
         db,
         user,
@@ -1759,6 +1872,10 @@ async def cloturer_periode(
             "libelle": result["periode"]["libelle"],
             "periode_suivante": result["periode_suivante"]["libelle"],
             "articles": result["articles"],
+            "reports_corriges": result["reports_corriges"],
+            "recloture": bool(regularisation),
+            "corrections": len(regularisation.get("corrections") or []),
+            "resultat": "SUCCES",
         },
     )
     await db.commit()
@@ -1771,12 +1888,15 @@ async def rouvrir_periode(
     body: PeriodeReopenIn,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_permission("mg.stock.period.reopen")),
+    user: User = Depends(get_current_user),
 ):
-    from app.services.mg_stock_periodes import MgStockPeriodeService
-
     svc = MgStockPeriodeService(db)
-    periode, locked = await svc.rouvrir(periode_id, user, body.motif)
+    try:
+        await _exiger_permission(db, user, PERMISSION_REGULARISATION)
+        periode, impact = await svc.rouvrir(periode_id, user, body.motif)
+    except (AppError, HTTPException) as exc:
+        await _tracer_refus(db, user, periode_id, "REOUVERTURE_REFUSEE", request, motif=body.motif, exc=exc)
+        raise
     await audit_stock(
         db,
         user,
@@ -1784,10 +1904,19 @@ async def rouvrir_periode(
         "mg_stock_periode",
         periode.id,
         request=request,
-        after={"libelle": periode.libelle, "motif": body.motif, "verrouilee": locked},
+        after={
+            "libelle": periode.libelle,
+            "motif": periode.reopen_motif,
+            "periodes_suivantes": [p["libelle"] for p in impact["periodes_suivantes"]],
+            "resultat": "SUCCES",
+        },
     )
     await db.commit()
-    return {**svc.serialize_periode(periode), "periode_verrouillee": locked}
+    return {
+        **svc.serialize_periode(periode, noms=await svc.noms_utilisateurs([periode])),
+        "periode_verrouillee": None,
+        "impact": impact,
+    }
 
 
 @router.get("/rapports/catalog", dependencies=_module)

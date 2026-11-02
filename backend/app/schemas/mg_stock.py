@@ -131,6 +131,10 @@ class SortieCreate(BaseModel):
     observation: str | None = Field(default=None, max_length=2000)
     # Stock affiché à l'ouverture du formulaire : refus si le stock a bougé entre-temps.
     stock_attendu: Qty | None = None
+    # Date réelle de l'opération (None = maintenant) ; la date d'enregistrement reste celle du serveur.
+    date_mouvement: datetime | None = None
+    # Saisie antidatée signalée comme doublon probable : confirmation explicite + observation.
+    doublon_confirme: bool = False
 
 
 class EntreeCreate(BaseModel):
@@ -150,6 +154,8 @@ class EntreeCreate(BaseModel):
     motif_id: UUID
     observation: str | None = Field(default=None, max_length=2000)
     stock_attendu: Qty | None = None
+    date_mouvement: datetime | None = None
+    doublon_confirme: bool = False
 
 
 class MotifSortieOut(BaseModel):
@@ -222,6 +228,9 @@ class MouvementOut(BaseModel):
     periode_debut: date | None = None
     periode_fin: date | None = None
     periode_cloturee: bool = False
+    periode_statut: str | None = None
+    date_enregistrement: datetime | None = None
+    saisie_retroactive: bool = False
     quantite_modifiable: bool = False
     initiateur_id: UUID | None = None
     initiateur_nom: str | None = None
@@ -684,14 +693,21 @@ class PeriodeOut(BaseModel):
     statut: str
     agence_id: UUID | None = None
     periode_precedente_id: UUID | None = None
+    statut_libelle: str | None = None
+    premiere_cloture_at: datetime | None = None
+    premiere_cloture_par: str | None = None
     cloture_at: datetime | None = None
+    cloture_par: str | None = None
     reopen_at: datetime | None = None
+    reopen_par: str | None = None
     reopen_motif: str | None = None
+    nb_reouvertures: int = 0
     periode_verrouillee: dict | None = None
 
 
 class PeriodeReopenIn(BaseModel):
-    motif: str = Field(min_length=5, max_length=500)
+    # Longueur minimale vérifiée par le service : un refus (motif absent) est ainsi journalisé.
+    motif: str = Field(default="", max_length=500)
 
 
 class RapportExportIn(BaseModel):

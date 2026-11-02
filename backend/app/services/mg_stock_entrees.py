@@ -102,7 +102,12 @@ class MgStockEntreeService(MgStockSortieService):
         return list((await self.db.scalars(stmt)).all())
 
     async def creer(  # type: ignore[override]
-        self, data: EntreeCreate, user: User, *, cle_idempotence: str | None = None
+        self,
+        data: EntreeCreate,
+        user: User,
+        *,
+        cle_idempotence: str | None = None,
+        regularisation_autorisee: bool = False,
     ) -> tuple[MgStockMouvement, bool]:
         """Crée l'entrée et incrémente le stock une seule fois. Renvoie (mouvement, rejoué)."""
         provenance = normaliser_provenance(data)
@@ -161,6 +166,22 @@ class MgStockEntreeService(MgStockSortieService):
 
         piece = " ".join((data.piece_reference or "").split()) or None
         remis_par = " ".join((data.remis_par or "").split()) or None
+        await self._controler_doublon(
+            "ENTREE",
+            article,
+            quantite,
+            data.date_mouvement,
+            {
+                "provenance_type": provenance.type,
+                "fournisseur_id": fournisseur.id if fournisseur else None,
+                "org_entite_id": departement.id if departement else None,
+                "agence_id": provenance.agence_id,
+            },
+            confirme=data.doublon_confirme,
+            observation=observation,
+            fournisseur_id=fournisseur.id if fournisseur else None,
+            piece_reference=piece if fournisseur else None,
+        )
         mvt = await MgStockService(self.db)._apply_mouvement(
             article=article,
             type_mouvement="ENTREE",
@@ -171,6 +192,8 @@ class MgStockEntreeService(MgStockSortieService):
             observation=observation,
             departement=departement.libelle if departement else provenance.departement_autre,
             source_type=SOURCE_ENTREE,
+            date_mouvement=data.date_mouvement,
+            regularisation_autorisee=regularisation_autorisee,
             extra={
                 "provenance_type": provenance.type,
                 "fournisseur_id": fournisseur.id if fournisseur else None,
