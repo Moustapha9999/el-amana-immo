@@ -37,6 +37,11 @@ x-backend-env: &backend-env
   CELERY_BROKER_URL: redis://redis:6379/1
   CELERY_RESULT_BACKEND: redis://redis:6379/2
   GED_DIR: storage/ged
+  # Processus uvicorn (ignoré par Celery). Connexions PostgreSQL max =
+  # WEB_CONCURRENCY × (DB_POOL_SIZE + DB_MAX_OVERFLOW), à garder sous max_connections (100).
+  WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+  DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+  DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
 
 services:
   postgres:

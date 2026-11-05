@@ -1,9 +1,14 @@
-"""Rate limiting défensif en mémoire (par IP + catégorie)."""
+"""Rate limiting défensif par IP + catégorie.
+
+Compteurs dans Redis, partagés par tous les processus uvicorn (WEB_CONCURRENCY > 1) ;
+Redis indisponible → fenêtre en mémoire du processus (dégradation journalisée, jamais de blocage).
+"""
 
 from __future__ import annotations
 
 import logging
 import math
+import os
 import threading
 import time
 from collections import defaultdict, deque
@@ -47,6 +52,44 @@ class _SlidingWindow:
 
 _BUCKET = _SlidingWindow()
 
+# Fenêtre glissante atomique : ZSET des horodatages de la clé, purgé à chaque appel.
+_LUA_FENETRE = """
+local key, now, win, limit, membre = KEYS[1], tonumber(ARGV[1]), tonumber(ARGV[2]), tonumber(ARGV[3]), ARGV[4]
+redis.call('ZREMRANGEBYSCORE', key, '-inf', now - win)
+local n = redis.call('ZCARD', key)
+if n >= limit then
+  local premier = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+  return {0, 0, tostring(premier[2])}
+end
+redis.call('ZADD', key, now, membre)
+redis.call('PEXPIRE', key, math.ceil(win * 1000))
+return {1, limit - n - 1, '0'}
+"""
+# Après un échec Redis, repli mémoire sans réessayer pendant ce délai (évite d'attendre le
+# timeout de connexion à chaque requête).
+_REDIS_PAUSE_SECONDS = 30.0
+_redis_ko_jusqua = 0.0
+
+
+async def _hit_partage(key: str, *, limit: int, window_seconds: float = 60.0) -> tuple[bool, int, int]:
+    global _redis_ko_jusqua
+    from app.middleware.idempotency import _redis
+
+    now = time.time()
+    if now < _redis_ko_jusqua:
+        return _BUCKET.hit(key, limit=limit, window_seconds=window_seconds)
+    try:
+        ok, remaining, premier = await _redis().eval(
+            _LUA_FENETRE, 1, f"bea:rl:{key}", now, window_seconds, limit, f"{now}:{os.urandom(6).hex()}"
+        )
+    except Exception as exc:
+        _redis_ko_jusqua = now + _REDIS_PAUSE_SECONDS
+        log.warning("rate_limit_redis_indisponible (repli mémoire par processus %ss) : %s", _REDIS_PAUSE_SECONDS, exc)
+        return _BUCKET.hit(key, limit=limit, window_seconds=window_seconds)
+    if int(ok):
+        return True, int(remaining), 0
+    return False, 0, max(1, math.ceil(float(premier) + window_seconds - now))
+
 
 def _client_ip(request: Request) -> str:
     return get_client_ip(request) or "unknown"
@@ -89,7 +132,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         }
         limit = int(limits.get(cat, 60) or 60)
         ip = _client_ip(request)
-        ok, remaining, retry_after = _BUCKET.hit(f"{cat}:{ip}", limit=limit)
+        ok, remaining, retry_after = await _hit_partage(f"{cat}:{ip}", limit=limit)
         if not ok:
             message = _MESSAGES.get(cat, _MESSAGES["api"])
             request.state.error_code = "RATE_LIMITED"

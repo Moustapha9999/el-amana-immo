@@ -15,7 +15,7 @@
 |-------|------|
 | `mg_article_familles` | code, libelle (économat, papeterie, pre_imprime, conso_gab, …) |
 | `mg_articles` | code unique, designation, famille_id, uom, stock_actuel, stock_min, stock_max, agence_id, emplacement, is_active |
-| `mg_stock_mouvements` | type ENTREE/SORTIE/AJUSTEMENT/INVENTAIRE, article_id, quantite, agence_id, user_id, motif, source_type, source_id, date |
+| `mg_stock_mouvements` | type ENTREE/SORTIE/AJUSTEMENT/INVENTAIRE, article_id, quantite, agence_id, user_id, motif, source_type, source_id, date ; `reference` UNIQUE (voir [numerotation](../fiabilite/numerotation-references.md)) |
 | `mg_demandes_fourniture` | reference, date, agence_id (+ snapshot), departement, demandeur_id, fonction, statut, visas |
 | `mg_demande_fourniture_lignes` | demande_id, article_id nullable, designation, qty_demandee, qty_accordee |
 | `mg_inventaires` / `mg_inventaire_lignes` | campagnes de comptage (théorique / physique / écart) |

@@ -1559,15 +1559,14 @@ class MgStockService:
             )
             if row and row.valeur:
                 prefix = row.valeur.strip() or prefix
+        from app.services.sequences import prochain_numero
+
         year = datetime.now(timezone.utc).year
-        count = await self.db.scalar(
-            select(func.count())
-            .select_from(MgStockMouvement)
-            .where(MgStockMouvement.reference.like(f"{prefix}-{year}-%"))
-        )
-        return f"{prefix}-{year}-{(count or 0) + 1:05d}"
+        return await prochain_numero(self.db, MgStockMouvement.reference, prefix=prefix, annee=year, largeur=5)
 
     async def _next_demande_ref(self) -> str:
+        from app.services.sequences import prochain_numero
+
         prefix = "DF"
         row = await self.db.scalar(
             select(MgStockParametre).where(MgStockParametre.cle == "prefix_demande")
@@ -1575,12 +1574,7 @@ class MgStockService:
         if row and row.valeur:
             prefix = row.valeur.strip() or prefix
         year = datetime.now(timezone.utc).year
-        count = await self.db.scalar(
-            select(func.count())
-            .select_from(MgDemandeFourniture)
-            .where(MgDemandeFourniture.reference.like(f"{prefix}-{year}-%"))
-        )
-        return f"{prefix}-{year}-{(count or 0) + 1:05d}"
+        return await prochain_numero(self.db, MgDemandeFourniture.reference, prefix=prefix, annee=year, largeur=5)
 
     async def _existing_source_mvt(
         self,

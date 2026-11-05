@@ -25,12 +25,32 @@ async def lifespan(_: FastAPI):
             await SecurityPolicyService(session).ensure_cache()
     except Exception:
         pass
-    taches = []
+    taches = [asyncio.create_task(_boucle_politique_securite())]
     if get_settings().eer_echeances_interval_heures > 0:
         taches.append(asyncio.create_task(_boucle_echeances_eer(get_settings().eer_echeances_interval_heures)))
     yield
     for t in taches:
         t.cancel()
+
+
+# Avec plusieurs processus uvicorn, une modification CORE ADMIN ne met à jour que le cache du
+# processus qui l'a reçue : les autres relisent la politique en base à cet intervalle.
+POLITIQUE_SECURITE_RAFRAICHISSEMENT_S = 30
+
+
+async def _boucle_politique_securite() -> None:
+    from app.db.session import AsyncSessionLocal
+    from app.services.security_policy_service import SecurityPolicyService
+
+    while True:
+        await asyncio.sleep(POLITIQUE_SECURITE_RAFRAICHISSEMENT_S)
+        try:
+            async with AsyncSessionLocal() as session:
+                await SecurityPolicyService(session).ensure_cache()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.getLogger(__name__).warning("Politique sécurité : rafraîchissement du cache en échec")
 
 
 async def _boucle_echeances_eer(interval_heures: float) -> None:

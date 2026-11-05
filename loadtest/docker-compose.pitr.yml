@@ -1,0 +1,58 @@
+# PostgreSQL isolé pour la validation 4 (sauvegarde physique + WAL + PITR).
+# Volumes propres : jamais bea_postgres_data. Jamais docker compose down -v
+# sur le compose racine.
+#
+#   python loadtest/validation_pitr.py
+#
+# archive_mode=on uniquement ici. bea-postgres (bea_digital) inchangé.
+
+name: bea-pitr
+
+services:
+  pitr-postgres:
+    image: postgres:17-alpine
+    pull_policy: missing
+    container_name: bea-lt-pitr
+    user: "0"
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant}
+      LANG: en_US.utf8
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mkdir -p /wal-archive /basebackup
+        chown -R postgres:postgres /wal-archive /basebackup
+        exec docker-entrypoint.sh postgres \
+          -c wal_level=replica \
+          -c archive_mode=on \
+          -c archive_command='test ! -f /wal-archive/%f && cp %p /wal-archive/%f' \
+          -c archive_timeout=10 \
+          -c max_wal_senders=10
+    volumes:
+      - pitr_data:/var/lib/postgresql/data
+      - pitr_wal:/wal-archive
+      - pitr_base:/basebackup
+      - ../backups:/backups:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d postgres"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    networks:
+      bea_internal:
+        aliases: [pitr-postgres]
+
+volumes:
+  pitr_data:
+    name: bea_lt_pitr_data
+  pitr_wal:
+    name: bea_lt_pitr_wal
+  pitr_base:
+    name: bea_lt_pitr_base
+
+networks:
+  bea_internal:
+    external: true
+    name: bea_internal

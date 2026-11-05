@@ -53,7 +53,7 @@ class MgArticle(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
 class MgStockMouvement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "mg_stock_mouvements"
 
-    reference: Mapped[str] = mapped_column(String(40), index=True)
+    reference: Mapped[str] = mapped_column(String(40), unique=True, index=True)
     date_mouvement: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     type_mouvement: Mapped[str] = mapped_column(String(20), index=True)  # ENTREE|SORTIE|AJUSTEMENT|INVENTAIRE
     article_id: Mapped[uuid.UUID] = mapped_column(

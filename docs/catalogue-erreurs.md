@@ -66,7 +66,7 @@ affiché. Une redirection normale n'ouvre pas de toast.
 | `UNAUTHENTICATED` | 401 | Pas de jeton | Appel API sans session | Votre session a expiré… | INFO |
 | `TOKEN_INVALID` | 401 | Jeton illisible ou mauvais type | JWT corrompu | Votre session a expiré… | INFO |
 | `PLATFORM_SESSION_EXPIRED` | 401 | Session Login 1 expirée / révoquée | Idle, logout, révocation admin | Votre session a expiré… | INFO |
-| `MODULE_SESSION_EXPIRED` | 401 | Session Login 2 expirée | Idle module | Votre session sur ce module a expiré… | INFO |
+| `MODULE_SESSION_EXPIRED` | 401 | Session Login 2 expirée ou révoquée | Idle module, **ou second Login 2 du même compte sur le même module** (une seule session module active) | Votre session sur ce module a expiré… | INFO |
 | `MODULE_AUTH_REQUIRED` | 401 | Login 2 manquant | Token plateforme sur route module | Connectez-vous au module… | INFO |
 | `SESSION_REVOKED` | 401 | Refresh révoqué (réemploi) | Vol de jeton / double onglet | Votre session a été fermée… | WARNING |
 | `USER_NOT_FOUND` | 401 | Compte disparu / inactif après émission | Désactivation pendant la session | Votre session a expiré… (volontairement uniforme) | WARNING |

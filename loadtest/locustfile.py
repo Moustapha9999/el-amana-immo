@@ -1,4 +1,8 @@
-"""Test de charge BEA DIGITAL — plateforme + modules, scénario en LECTURE SEULE.
+"""Test de charge BEA DIGITAL — plateforme + modules.
+
+Lecture seule par défaut. --bea-writes (ou LOADTEST_WRITES=1) ajoute des écritures
+concurrentes : entrées/sorties de stock sur les mêmes articles, création de demandes.
+Chaque écriture acceptée est journalisée (LOADTEST_JOURNAL) pour le contrôle d'intégrité.
 
 Outil séparé : hors image Docker, hors `backend/requirements.txt`. Il vise
 l'application par nginx (http://localhost), comme un vrai utilisateur.
@@ -8,35 +12,39 @@ Parcours d'un utilisateur virtuel :
   (accueil, espaces, notifications) et, pour chaque module autorisé,
   Login 2 à la première visite puis consultations du module.
 
-Lancement (depuis la racine du dépôt, venv activé) :
+Cible : UNIQUEMENT l'environnement de charge isolé (loadtest/setup-env.ps1),
+http://127.0.0.1:8081 — base bea_digital_loadtest, données synthétiques. Toute
+autre cible (dont http://localhost, qui sert les vraies données) est refusée,
+sauf hôte ajouté explicitement dans LOADTEST_ALLOWED_HOSTS.
 
-    $env:LOADTEST_EMAIL = "compte.test@bea.mr"
-    $env:LOADTEST_PASSWORD = "..."
-    $env:LOADTEST_MODULES = "immobilisations,stock-fournitures"   # optionnel
-    locust -f loadtest/locustfile.py --host http://localhost
+Lancement : loadtest/run-locust.ps1 (paliers, rapports et logs) ou
 
-puis ouvrir http://localhost:8089.
+    $env:LOADTEST_PASSWORD = "..."          # loadtest/.env.loadtest
+    locust -f loadtest/locustfile.py --host http://127.0.0.1:8081
 
-Contraintes à connaître avant de lancer :
+Comptes : un compte synthétique distinct par utilisateur virtuel
+(lt.<profil>.<n>@loadtest.example.com), répartis selon --bea-profiles
+(défaut mg:40,compta:30,employe:80). --bea-email force un compte unique.
 
-- Une seule PostgreSQL (vraies données) : uniquement des GET métier. Les
-  connexions écrivent (sessions, `auth_login_attempts`, audit) ; chaque
-  utilisateur virtuel se déconnecte à l'arrêt.
-- Rate limit par IP (CORE ADMIN > Sécurité) : 300 requêtes API / min et
-  20 connexions / min par défaut, partagés par tous les utilisateurs virtuels
-  (même IP). Au-delà : 429 `RATE_LIMITED`, compté à part ("429 rate limit").
-  Pour mesurer la capacité réelle, relever ces seuils en local uniquement.
-- Chaque utilisateur fait 1 Login 1 + 1 Login 2 par module visité : garder un
-  spawn rate bas (≈ 0,1 utilisateur/s) ou restreindre LOADTEST_MODULES.
-- Compte de test sans 2FA, avec les grants espace / module à tester.
+- Lecture : GET métier. Écriture (optionnelle) : POST /mg/stock/entrees, /sorties,
+  /me/requests. Les connexions écrivent aussi (sessions, audit).
+- Chaque utilisateur virtuel se déconnecte à l'arrêt.
+- Rate limit par IP : tous les utilisateurs virtuels partagent l'IP du poste ;
+  l'environnement de charge relève les seuils (RATE_LIMIT_* dans le compose).
+- Chaque utilisateur fait 1 Login 1 + 1 Login 2 par module visité (bcrypt) :
+  monter progressivement (spawn rate ≈ 1 utilisateur/s).
 """
 
 from __future__ import annotations
 
+import itertools
+import json
 import logging
 import os
 import random
+import threading
 import time
+import uuid
 from datetime import date
 
 from locust import HttpUser, between, events, task
@@ -44,6 +52,8 @@ from locust.exception import StopUser
 
 API = "/api/v1"
 TOKEN_REFRESH_SECONDS = 12 * 60
+HOTES_AUTORISES = {"http://127.0.0.1:8081", "http://localhost:8081"}
+DOMAINE_TEST = "loadtest.example.com"
 
 log = logging.getLogger("bea.loadtest")
 _deja_signale: set[str] = set()
@@ -136,6 +146,27 @@ MODULES: dict[str, list[tuple[str, dict]]] = {
     ],
 }
 
+# Parcours demandeur (« mes demandes ») : sans mg.request.view, les routes /mg/requests
+# répondent 403 — l'application envoie ces comptes sur /me/requests.
+ROUTES_DEMANDEUR: list[tuple[str, dict]] = [
+    ("/me/requests/dashboard", {}),
+    ("/me/requests", {}),
+    ("/me/requests/categories", {}),
+]
+MODULES_DEMANDES = {"demandes-mg"}
+MARQUE_ECRITURE = "LT-CHARGE"
+NB_ARTICLES_CHAUDS = 8
+
+_refs_lock = threading.Lock()
+_refs: dict = {
+    "articles": [],
+    "motif_entree": None,
+    "motif_sortie": None,
+    "categories": [],
+    "pret": False,
+}
+_journal_lock = threading.Lock()
+
 
 @events.init_command_line_parser.add_listener
 def _add_args(parser) -> None:
@@ -151,6 +182,76 @@ def _add_args(parser) -> None:
         default=os.getenv("LOADTEST_MODULES", ""),
         help="Codes modules à tester, séparés par des virgules (défaut : tous ceux autorisés)",
     )
+    parser.add_argument(
+        "--bea-profiles",
+        default=os.getenv("LOADTEST_PROFILES", "mg:40,compta:30,employe:80"),
+        help="Comptes synthétiques profil:nombre (lt.<profil>.<n>@loadtest.example.com)",
+    )
+    parser.add_argument(
+        "--bea-writes",
+        action="store_true",
+        default=os.getenv("LOADTEST_WRITES", "").strip().lower() in {"1", "true", "oui"},
+        help="Écritures concurrentes (stock + demandes) + journal d'intégrité",
+    )
+
+
+def _cible_autorisee(hote: str | None) -> bool:
+    autorises = HOTES_AUTORISES | {
+        h.strip().rstrip("/") for h in os.getenv("LOADTEST_ALLOWED_HOSTS", "").split(",") if h.strip()
+    }
+    return (hote or "").rstrip("/") in autorises
+
+
+@events.test_start.add_listener
+def _verifier_cible(environment, **_kw) -> None:
+    if not _cible_autorisee(environment.host):
+        log.error("Cible %r refusée : seul l'environnement de charge isolé est autorisé (%s).",
+                  environment.host, ", ".join(sorted(HOTES_AUTORISES)))
+        environment.process_exit_code = 1
+        if environment.runner is not None:
+            environment.runner.quit()
+
+
+def _comptes(profils: str) -> list[str]:
+    """Comptes entrelacés au prorata des profils : chaque palier garde la même répartition."""
+    listes = []
+    for item in profils.split(","):
+        profil, _, nombre = item.strip().partition(":")
+        if profil and nombre.isdigit():
+            listes.append([f"lt.{profil}.{n:03d}@{DOMAINE_TEST}" for n in range(1, int(nombre) + 1)])
+    total = sum(len(lst) for lst in listes)
+    poses = sorted(
+        ((i + 0.5) / len(lst), email) for lst in listes for i, email in enumerate(lst)
+    ) if total else []
+    return [email for _, email in poses]
+
+
+_attribution_lock = threading.Lock()
+_attribution: itertools.cycle | None = None
+
+
+def _ecritures_actives(opts) -> bool:
+    return bool(getattr(opts, "bea_writes", False))
+
+
+def _journaliser(entree: dict) -> None:
+    chemin = os.getenv("LOADTEST_JOURNAL", "")
+    if not chemin:
+        return
+    with _journal_lock:
+        with open(chemin, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entree, ensure_ascii=False) + "\n")
+
+
+def _prochain_compte(profils: str) -> str:
+    global _attribution
+    with _attribution_lock:
+        if _attribution is None:
+            comptes = _comptes(profils)
+            if not comptes:
+                return ""
+            _attribution = itertools.cycle(comptes)
+        return next(_attribution)
 
 
 class UtilisateurBEA(HttpUser):
@@ -158,13 +259,21 @@ class UtilisateurBEA(HttpUser):
 
     def on_start(self) -> None:
         opts = self.environment.parsed_options
-        self.email = opts.bea_email
+        self.email = opts.bea_email or _prochain_compte(opts.bea_profiles)
         self.password = opts.bea_password
         demandes = {c.strip() for c in opts.bea_modules.split(",") if c.strip()}
         self.platform: dict[str, str] = {}
         self.platform_at = 0.0
         self.module_tokens: dict[str, tuple[dict[str, str], float]] = {}
         self.modules: list[str] = []
+        self.routes: dict[str, list[tuple[str, dict]]] = {}
+        self.agence_id = None
+        self.peut_entrer = self.peut_sortir = self.peut_demander = False
+        self.ecrit = False
+        if not _cible_autorisee(self.host):
+            _signaler_une_fois(f"Cible {self.host!r} refusée : environnement de charge isolé uniquement.")
+            self.actif = False
+            return
         if not self.email or not self.password:
             _signaler_une_fois("LOADTEST_EMAIL / LOADTEST_PASSWORD non définis : utilisateur virtuel arrêté.")
             self.actif = False
@@ -174,8 +283,20 @@ class UtilisateurBEA(HttpUser):
             return
 
         r = self._get("/auth/me", "auth/me")
-        autorises = set(r.json().get("module_codes", [])) if r.ok else set()
+        moi = r.json() if r.ok else {}
+        autorises = set(moi.get("module_codes", []))
+        traitant = "mg.request.view" in moi.get("permission_codes", [])
         self.modules = sorted(autorises & MODULES.keys() & (demandes or MODULES.keys()))
+        self.routes = {
+            code: ROUTES_DEMANDEUR if code in MODULES_DEMANDES and not traitant else MODULES[code]
+            for code in self.modules
+        }
+        perms = set(moi.get("permission_codes", []))
+        self.agence_id = moi.get("agence_id")
+        self.peut_entrer = "mg.stock.entry" in perms
+        self.peut_sortir = "mg.stock.exit" in perms
+        self.peut_demander = "mg.request.mine.create" in perms
+        self.ecrit = _ecritures_actives(opts)
 
     def on_stop(self) -> None:
         if self.platform:
@@ -284,6 +405,72 @@ class UtilisateurBEA(HttpUser):
                 r.success()
             return r
 
+    def _post(
+        self,
+        path: str,
+        name: str,
+        tokens: dict[str, str],
+        body: dict,
+        *,
+        ok=(200, 201),
+        attendus: set[str] | None = None,
+        cle_idempotence: str | None = None,
+    ):
+        with self.client.post(
+            f"{API}{path}",
+            json=body,
+            headers={
+                **self._bearer(tokens),
+                "Idempotency-Key": cle_idempotence or f"lt-{uuid.uuid4()}",
+            },
+            name=name,
+            catch_response=True,
+        ) as r:
+            code = _corps_erreur(r).get("code") or ""
+            if r.status_code in ok:
+                r.success()
+            elif attendus and (
+                code in attendus
+                or (r.status_code in {400, 409} and "stock" in (r.text or "").lower())
+            ):
+                r.success()
+            else:
+                r.failure(_message_serveur(r))
+                if r.status_code == 401:
+                    self.platform_at = 0.0
+                    self.module_tokens.clear()
+            return r
+
+    def _charger_refs_stock(self, tokens: dict[str, str]) -> None:
+        with _refs_lock:
+            if _refs["pret"]:
+                return
+        entrees = self._get("/mg/stock/entrees/referentiels", "[stock] refs entrees", tokens)
+        sorties = self._get("/mg/stock/sorties/referentiels", "[stock] refs sorties", tokens)
+        if not entrees.ok or not sorties.ok:
+            return
+        e, s = entrees.json(), sorties.json()
+        articles = sorted(e.get("articles") or [], key=lambda a: float(a.get("stock_actuel") or 0), reverse=True)
+        chauds = articles[:NB_ARTICLES_CHAUDS]
+        motif_e = next((m for m in (e.get("motifs") or []) if m.get("is_active")), None)
+        motif_s = next((m for m in (s.get("motifs") or []) if m.get("is_active")), None)
+        with _refs_lock:
+            if not _refs["pret"] and chauds and motif_e and motif_s:
+                _refs.update(articles=chauds, motif_entree=motif_e, motif_sortie=motif_s, pret=True)
+                log.info("Écritures stock : %s articles chauds (%s)", len(chauds),
+                         ", ".join(a.get("code", "?") for a in chauds))
+
+    def _charger_refs_demandes(self, tokens: dict[str, str]) -> None:
+        with _refs_lock:
+            if _refs["categories"]:
+                return
+        r = self._get("/me/requests/categories", "[demandes-mg] /me/requests/categories", tokens)
+        if r.ok:
+            cats = [c for c in r.json() if c.get("active", True)]
+            with _refs_lock:
+                if not _refs["categories"] and cats:
+                    _refs["categories"] = cats
+
     # --- Parcours -----------------------------------------------------------
 
     @task(3)
@@ -302,5 +489,153 @@ class UtilisateurBEA(HttpUser):
         tokens = self._ensure_module(code)
         if tokens is None:
             return
-        for path, params in random.sample(MODULES[code], k=min(3, len(MODULES[code]))):
+        routes = self.routes[code]
+        for path, params in random.sample(routes, k=min(3, len(routes))):
             self._get(path, f"[{code}] {path}", tokens, **params)
+
+    @task(5)
+    def ecrire_stock(self) -> None:
+        if not getattr(self, "ecrit", False) or not (self.peut_entrer or self.peut_sortir):
+            return
+        tokens = self._ensure_module("stock-fournitures")
+        if tokens is None:
+            return
+        self._charger_refs_stock(tokens)
+        if not _refs["pret"]:
+            return
+        article = random.choice(_refs["articles"])
+        marque = f"{MARQUE_ECRITURE} {uuid.uuid4()}"
+        if self.peut_entrer and (not self.peut_sortir or random.random() < 0.7):
+            body = {
+                "article_id": article["id"],
+                "quantite": random.randint(1, 5),
+                "provenance_type": "AUTRE",
+                "motif_id": _refs["motif_entree"]["id"],
+                "observation": marque,
+                "remis_par": self.email,
+            }
+            r = self._post("/mg/stock/entrees", "stock/entree", tokens, body)
+            if r.status_code in {200, 201}:
+                data = r.json()
+                _journaliser({
+                    "kind": "entree", "id": data.get("id"), "reference": data.get("reference"),
+                    "article_id": data.get("article_id"), "quantite": str(data.get("quantite")),
+                    "email": self.email,
+                })
+            return
+        if not self.peut_sortir or not self.agence_id:
+            return
+        body = {
+            "article_id": article["id"],
+            "quantite": 1,
+            "destination_type": "AGENCE",
+            "agence_id": self.agence_id,
+            "motif_id": _refs["motif_sortie"]["id"],
+            "demandeur_nom": self.email,
+            "observation": marque,
+        }
+        r = self._post(
+            "/mg/stock/sorties",
+            "stock/sortie",
+            tokens,
+            body,
+            attendus={"STOCK_NEGATIF", "STOCK_MODIFIE"},
+        )
+        if r.status_code in {200, 201}:
+            data = r.json()
+            _journaliser({
+                "kind": "sortie", "id": data.get("id"), "reference": data.get("reference"),
+                "article_id": data.get("article_id"), "quantite": str(data.get("quantite")),
+                "email": self.email,
+            })
+        elif r.status_code in {400, 409}:
+            _journaliser({
+                "kind": "refuse", "route": "sortie",
+                "code": _corps_erreur(r).get("code") or str(r.status_code),
+                "email": self.email,
+            })
+
+    @task(5)
+    def creer_demande(self) -> None:
+        if not getattr(self, "ecrit", False) or not self.peut_demander:
+            return
+        tokens = self._ensure_module("demandes-mg")
+        if tokens is None:
+            return
+        self._charger_refs_demandes(tokens)
+        cats = _refs["categories"]
+        if not cats or not self.agence_id:
+            return
+        cat = random.choice(cats)
+        titre = f"{MARQUE_ECRITURE} {uuid.uuid4()}"
+        body = {
+            "category_id": cat["id"],
+            "agency_id": self.agence_id,
+            "title": titre,
+            "description": "Demande synthétique — test de charge concurrent.",
+            "priority": "NORMALE",
+            "items": [{"description": "Fournitures de test", "quantity": 1, "unit": "U"}],
+        }
+        r = self._post("/me/requests", "demandes/creation", tokens, body)
+        if r.status_code in {200, 201}:
+            data = r.json()
+            _journaliser({
+                "kind": "demande", "id": data.get("id"), "number": data.get("request_number"),
+                "title": data.get("title"), "email": self.email,
+            })
+        elif r.status_code == 409:
+            _journaliser({
+                "kind": "refuse", "route": "demande",
+                "code": _corps_erreur(r).get("code") or "DUPLICATE",
+                "email": self.email,
+            })
+
+    @task(2)
+    def double_soumission(self) -> None:
+        """Deux POST identiques (même Idempotency-Key) = une seule opération."""
+        if not getattr(self, "ecrit", False) or not self.peut_entrer:
+            return
+        tokens = self._ensure_module("stock-fournitures")
+        if tokens is None:
+            return
+        self._charger_refs_stock(tokens)
+        if not _refs["pret"]:
+            return
+        article = random.choice(_refs["articles"])
+        marque = f"{MARQUE_ECRITURE} {uuid.uuid4()}"
+        cle = f"lt-dbl-{uuid.uuid4()}"
+        body = {
+            "article_id": article["id"],
+            "quantite": 1,
+            "provenance_type": "AUTRE",
+            "motif_id": _refs["motif_entree"]["id"],
+            "observation": marque,
+            "remis_par": self.email,
+        }
+        r1 = self._post("/mg/stock/entrees", "stock/entree (double-clic 1)", tokens, body, cle_idempotence=cle)
+        r2 = self._post(
+            "/mg/stock/entrees",
+            "stock/entree (double-clic 2)",
+            tokens,
+            body,
+            cle_idempotence=cle,
+            attendus={"DUPLICATE"},
+        )
+        if r1.status_code not in {200, 201}:
+            return
+        data = r1.json()
+        if r2.status_code in {200, 201}:
+            autre = r2.json().get("id")
+            if autre and autre != data.get("id"):
+                _journaliser({
+                    "kind": "refuse", "route": "double-clic",
+                    "code": "DOUBLE_OPERATION",
+                    "email": self.email,
+                    "ids": [data.get("id"), autre],
+                })
+                return
+        _journaliser({
+            "kind": "entree", "id": data.get("id"), "reference": data.get("reference"),
+            "article_id": data.get("article_id"), "quantite": str(data.get("quantite")),
+            "email": self.email, "double_clic": True,
+        })

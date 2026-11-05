@@ -198,13 +198,9 @@ class MgRequestsService:
         await self.db.flush()
 
     async def _next_number(self, model, field, prefix: str, width: int = 6) -> str:
-        year = date.today().year
-        like = f"{prefix}-{year}-%"
-        count = int(
-            (await self.db.scalar(select(func.count()).select_from(model).where(field.like(like))))
-            or 0
-        )
-        return f"{prefix}-{year}-{count + 1:0{width}d}"
+        from app.services.sequences import prochain_numero
+
+        return await prochain_numero(self.db, field, prefix=prefix, annee=date.today().year, largeur=width)
 
     async def _agence(self, agency_id: uuid.UUID) -> Agence:
         ag = await self.db.get(Agence, agency_id)

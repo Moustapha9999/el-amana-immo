@@ -16,6 +16,27 @@ Utilisateur
 Login 1 n’ouvre que la plateforme. Login 2 n’ouvre qu’un module, et seulement
 si Login 1 est encore valide.
 
+## Sessions concurrentes (règle figée)
+
+Login 1 et Login 2 ne suivent **pas** la même règle de concurrence. Code :
+`AuthSessionService.issue_platform_tokens` / `issue_module_tokens`.
+
+| | Session plateforme (Login 1) | Session module (Login 2) |
+|---|---|---|
+| Combien d’actives | **Plusieurs** par compte (un navigateur, un poste, un onglet = une session) | **Une seule** par compte **et par module** |
+| Autre navigateur / autre Login | N’invalide pas les sessions plateforme déjà ouvertes | Révoque immédiatement l’ancienne session **de ce module** (`revoke_module_sessions`) |
+| Durée refresh | 1 jour | 45 minutes ; refuse si le parent plateforme est révoqué ou expiré |
+| Déconnexion | Révoque cette session **et** toutes les sessions module enfants | Révoque **uniquement** cette session module ; Login 1 reste |
+| Réemploi d’un refresh déjà consommé (> 20 s) | Session révoquée (vol probable), enfants module compris | Idem sur la session module |
+
+Conséquences :
+
+- Deux agents qui se connectent au **même module** avec le **même compte** : le second
+  obtient `MODULE_SESSION_EXPIRED` sur le premier (c’est volontaire, pas une panne).
+- Deux connexions **plateforme** (Login 1) pour le même compte restent valides en parallèle.
+- Un test de charge doit utiliser **un compte distinct par utilisateur virtuel** ;
+  réutiliser un compte entre deux VU simule deux navigateurs sur le même Login 2.
+
 ## Login 1 — session BEA DIGITAL
 
 ```text

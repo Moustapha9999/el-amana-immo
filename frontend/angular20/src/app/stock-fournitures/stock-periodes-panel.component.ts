@@ -374,8 +374,9 @@ const PERM = {
               <ul class="bea-periode__list">
                 @for (s of reg.periodes_suivantes; track s.id) {
                   <li>
-                    {{ s.libelle }} ({{ statutLibelle(s.statut) }}) — stock initial {{ (s.variation_stock_initial ?? 0) >= 0 ? '+' : '' }}{{ s.variation_stock_initial | quantite }}
-                    sur {{ s.articles_impactes }} article(s)
+                    {{ s.libelle }} ({{ statutLibelle(s.statut) }}) — variation du stock initial
+                    {{ (s.variation_stock_initial ?? 0) >= 0 ? '+' : '' }}{{ s.variation_stock_initial | quantite }}
+                    (cumul des corrections) sur {{ s.articles_impactes }} article(s)
                   </li>
                 }
               </ul>

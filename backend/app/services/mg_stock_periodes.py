@@ -133,6 +133,25 @@ def effet_mouvement(type_mouvement: str, quantite: Decimal) -> Decimal:
     return Decimal("0")
 
 
+def doublon_criteres(m: MgStockMouvement) -> list:
+    """Même contrepartie que ``m`` (comparaison tolérant les valeurs absentes).
+
+    Sans bénéficiaire, service, destination et source identiques, deux mouvements de même
+    quantité le même jour sont deux opérations distinctes.
+    """
+    mv = MgStockMouvement
+    criteres = [
+        getattr(mv, champ).is_not_distinct_from(getattr(m, champ))
+        for champ in (
+            "destination_type", "agence_id", "org_entite_id", "service_id", "demandeur_id",
+            "provenance_type", "fournisseur_id", "source_type", "source_id",
+        )
+    ]
+    nom = (m.demandeur_nom or "").strip().lower() or None
+    criteres.append(func.nullif(func.lower(func.trim(mv.demandeur_nom)), "").is_not_distinct_from(nom))
+    return criteres
+
+
 def _dec(valeur) -> Decimal | None:
     return None if valeur is None else Decimal(str(valeur))
 
@@ -1149,23 +1168,31 @@ class MgStockPeriodeService:
             )
         )
 
-        # 3. Écarts d'inventaire de la période inchangés (sinon ajustement à saisir).
+        # 3. Écarts d'inventaire : recalculés (physique compté − théorique, ajustements inclus). Un écart
+        # nul est conforme ; un écart non nul n'est admis que s'il était déjà accepté à la clôture précédente.
         ecarts = []
         for s in soldes:
-            ref = reference.get(str(s.article_id))
-            if s.stock_physique is None or ref is None:
+            if s.stock_physique is None:
                 continue
-            if _dec(ref.get("ecart")) != (None if s.ecart is None else Decimal(s.ecart)):
-                ecarts.append(
-                    f"{code(s.article_id)} (écart {format_qty(_dec(ref.get('ecart')) or 0)} → {format_qty(s.ecart or 0)})"
-                )
+            ref = reference.get(str(s.article_id)) or {}
+            theorique = compute_theorique(s.stock_initial, s.entrees, s.sorties, s.ajustements)
+            ecart = Decimal(s.stock_physique) - theorique
+            accepte = _dec(ref.get("ecart"))
+            if ecart == 0 or ecart == accepte:
+                continue
+            ecarts.append(
+                f"{code(s.article_id)} (théorique {format_qty(theorique)}, physique {format_qty(s.stock_physique)}, "
+                f"écart {format_qty(ecart)}"
+                + (f", écart accepté à la clôture précédente {format_qty(accepte)}" if accepte else "")
+                + ")"
+            )
         controles.append(
             _controle(
                 "ecarts_inventaire",
-                "Écarts d'inventaire inchangés",
+                "Écarts d'inventaire régularisés",
                 not ecarts,
                 (
-                    "Régularisation antérieure au comptage — saisissez un ajustement : " + " ; ".join(ecarts)
+                    "Écart d'inventaire non régularisé — saisissez un ajustement : " + " ; ".join(ecarts)
                     if ecarts
                     else None
                 ),
@@ -1188,21 +1215,69 @@ class MgStockPeriodeService:
             )
         )
 
-        # 5. Doublons probables (avertissement) : même article, type, quantité et jour.
-        doublons = []
-        for m in corrections:
-            jour = m.date_mouvement.date()
-            autre = await self.db.scalar(
-                select(MgStockMouvement.reference).where(
-                    MgStockMouvement.id != m.id,
-                    MgStockMouvement.article_id == m.article_id,
-                    MgStockMouvement.type_mouvement == m.type_mouvement,
-                    MgStockMouvement.quantite == m.quantite,
-                    func.date(MgStockMouvement.date_mouvement) == jour,
-                ).limit(1)
+        # 5. Report vers la période suivante : stock initial suivant = stock final de la période, article par article.
+        suivante = await self.db.scalar(
+            select(MgStockPeriode)
+            .where(MgStockPeriode.date_debut > periode.date_debut)
+            .order_by(MgStockPeriode.date_debut)
+            .limit(1)
+        )
+        reports_ecarts = []
+        if suivante is not None:
+            initiaux = {
+                a: Decimal(i or 0)
+                for a, i in (
+                    await self.db.execute(
+                        select(MgStockSolde.article_id, MgStockSolde.stock_initial).where(
+                            MgStockSolde.periode_id == suivante.id
+                        )
+                    )
+                ).all()
+            }
+            for s in soldes:
+                final = stock_final_from_solde(s)
+                initial = initiaux.get(s.article_id, Decimal("0"))
+                if final != initial:
+                    reports_ecarts.append(f"{code(s.article_id)} ({format_qty(initial)} → {format_qty(final)})")
+        controles.append(
+            _controle(
+                "reports_suivante",
+                f"Stock initial de {suivante.libelle} = stock final de {periode.libelle}"
+                if suivante is not None
+                else "Report vers la période suivante",
+                not reports_ecarts,
+                (
+                    f"Reports réalignés à la clôture ({len(reports_ecarts)} article(s)) : "
+                    + " ; ".join(sorted(reports_ecarts))
+                )
+                if reports_ecarts
+                else None,
+                bloquant=False,
             )
-            if autre:
-                doublons.append(f"{m.reference} ≈ {autre}")
+        )
+
+        # 6. Doublons probables (avertissement, jamais bloquant) : même article, type, quantité et jour,
+        # même bénéficiaire, même service et même destination ; une source commune suffit.
+        doublons = []
+        paires: set[frozenset] = set()
+        for m in corrections:
+            autres = (
+                await self.db.execute(
+                    select(MgStockMouvement.id, MgStockMouvement.reference).where(
+                        MgStockMouvement.id != m.id,
+                        MgStockMouvement.article_id == m.article_id,
+                        MgStockMouvement.type_mouvement == m.type_mouvement,
+                        MgStockMouvement.quantite == m.quantite,
+                        func.date(MgStockMouvement.date_mouvement) == m.date_mouvement.date(),
+                        *doublon_criteres(m),
+                    )
+                )
+            ).all()
+            for autre_id, autre_ref in autres:
+                paire = frozenset((m.id, autre_id))
+                if paire not in paires:
+                    paires.add(paire)
+                    doublons.append(f"{m.reference} ≈ {autre_ref}")
         controles.append(
             _controle(
                 "doublons",
@@ -1321,6 +1396,8 @@ class MgStockPeriodeService:
             solde.stock_theorique = compute_theorique(
                 solde.stock_initial, solde.entrees, solde.sorties, solde.ajustements
             )
+            if solde.stock_physique is not None:
+                solde.ecart = Decimal(solde.stock_physique) - Decimal(solde.stock_theorique)
             solde.stock_final = stock_final_from_solde(solde)
 
         ny, nm = next_year_month(periode.annee, periode.mois)

@@ -21,6 +21,10 @@ Utilisateur → Espace (département) autorisé → Module autorisé et actif �
   `bientot`, `developpement`) modifiable dans CORE ADMIN.
 - **Login 1** ouvre la plateforme ; **Login 2** (nouvelle saisie des identifiants) ouvre un module,
   uniquement si la session Login 1 est encore valide.
+- **Sessions concurrentes** (détail : `docs/socle-bea-digital.md`) : plusieurs sessions
+  plateforme peuvent coexister pour un même compte ; **une seule** session module active
+  par compte et par module — un second Login 2 révoque le premier. Un test de charge
+  utilise un compte distinct par utilisateur virtuel.
 
 ## 2. Vue fonctionnelle
 

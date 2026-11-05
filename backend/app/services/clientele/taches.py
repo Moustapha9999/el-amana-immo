@@ -12,7 +12,7 @@ import logging
 import uuid
 from datetime import timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.core.exceptions import AppError, NotFoundError
 from app.db.session import AsyncSessionLocal
@@ -108,6 +108,8 @@ class ClienteleTacheService:
         return tache_dict(t)
 
     async def _exiger_aucune_active(self) -> None:
+        # Sérialise vérification + création jusqu'au commit, y compris entre processus uvicorn.
+        await self.db.execute(text("SELECT pg_advisory_xact_lock(hashtext('clientele.classif.tache'))"))
         await self._marquer_inactives()
         if await self._active():
             raise AppError("Une classification est déjà en cours. Attendez sa fin avant d’en lancer une autre.",

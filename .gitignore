@@ -73,6 +73,7 @@ storage/*.tar
 storage/*.tar.gz
 # Réglages Cursor locaux
 .cursor/settings.json
+.cursor/mcp.json
 # Extraits ORION / classeurs Conformité (données clients nominatives)
 /*.xlsx
 /*.pdf
@@ -80,8 +81,10 @@ storage/*.tar.gz
 # Modèle BCM avec chiffres réels (test de comparaison local uniquement)
 Déclaration mensuelle - BEA - *.xlsx
 
-# Rapports de test de charge (Locust)
+# Rapports, secrets et stockage de l'environnement de charge (Locust)
 loadtest/reports/
+loadtest/.env.loadtest
+loadtest/.storage/
 
 # Etat local des deploiements (version courante / precedente, historique) - propre a chaque serveur
 deployment/state/

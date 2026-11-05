@@ -1,0 +1,122 @@
+# BEA DIGITAL — environnement ISOLÉ de test de charge (Locust).
+#
+# Ne se lance pas à la main : loadtest/setup-env.ps1 prépare la base puis démarre la pile.
+#   docker compose -p bea-loadtest -f loadtest/docker-compose.loadtest.yml --env-file loadtest/.env.loadtest up -d
+#
+# Application de charge : http://127.0.0.1:8081 (jamais http://localhost, qui sert les vraies données).
+#
+# Isolation :
+# - base dédiée bea_digital_loadtest (schéma de bea_digital, référentiels sans personnes, données
+#   synthétiques) sur le serveur PostgreSQL unique (bea-postgres) : aucun second serveur ni volume ;
+# - Redis, backend, worker et nginx propres à ce projet ; SECRET_KEY propre (jetons incompatibles) ;
+# - le backend rejoint bea_internal uniquement pour joindre « postgres » ; nginx ne voit que
+#   lt_internal, où « backend » désigne lt-backend (jamais le backend réel).
+# Mêmes images, même configuration applicative que la pile locale (APP_ENV=production, 4 processus
+# uvicorn, pool 5+5 par processus) : seuls les limiteurs de débit par IP sont relevés, tous les
+# utilisateurs virtuels partageant l'IP du poste.
+
+name: bea-loadtest
+
+x-backend-env: &backend-env
+  APP_ENV: production
+  APP_DEBUG: "false"
+  DATABASE_URL: postgresql+asyncpg://bea_app:${BEA_APP_DB_PASSWORD:?BEA_APP_DB_PASSWORD manquant}@postgres:5432/bea_digital_loadtest
+  DATABASE_SSL: "false"
+  SECRET_KEY: ${LT_SECRET_KEY:?LT_SECRET_KEY manquant (relancer setup-env.ps1)}
+  SKIP_MIGRATIONS: "1"
+  TRUSTED_PROXIES: lt-frontend
+  CORS_ORIGINS: http://127.0.0.1:8081,http://localhost:8081
+  REDIS_URL: redis://lt-redis:6379/0
+  CELERY_BROKER_URL: redis://lt-redis:6379/1
+  CELERY_RESULT_BACKEND: redis://lt-redis:6379/2
+  GED_DIR: storage/ged
+  RATE_LIMIT_API_PER_MINUTE: ${LT_RATE_LIMIT_API:-10000}
+  RATE_LIMIT_LOGIN_PER_MINUTE: ${LT_RATE_LIMIT_LOGIN:-10000}
+  RATE_LIMIT_SENSITIVE_PER_MINUTE: ${LT_RATE_LIMIT_SENSITIVE:-10000}
+  WEB_CONCURRENCY: ${LT_WEB_CONCURRENCY:-4}
+  DB_POOL_SIZE: "5"
+  DB_MAX_OVERFLOW: "5"
+  # Comptes fictifs : aucun e-mail ne doit partir, même si .env.docker configure un SMTP.
+  SMTP_HOST: ""
+
+services:
+  lt-redis:
+    image: redis:7-alpine
+    pull_policy: missing
+    container_name: bea-lt-redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - lt_internal
+
+  lt-backend:
+    image: bea-digital-backend:latest
+    pull_policy: never
+    container_name: bea-lt-backend
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    env_file:
+      - ../.env.docker
+    environment: *backend-env
+    volumes:
+      - ./.storage/uploads:/app/storage/uploads
+      - ./.storage/ged:/app/storage/ged
+      - ./seed_loadtest.py:/loadtest/seed_loadtest.py:ro
+    depends_on:
+      lt-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      lt_internal:
+        aliases: [backend]
+      bea_internal: {}
+
+  lt-worker:
+    image: bea-digital-backend:latest
+    pull_policy: never
+    container_name: bea-lt-worker
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    env_file:
+      - ../.env.docker
+    environment: *backend-env
+    volumes:
+      - ./.storage/ged:/app/storage/ged
+    depends_on:
+      lt-redis:
+        condition: service_healthy
+    entrypoint: ["celery"]
+    command: ["-A", "app.workers.celery_app", "worker", "-B", "--schedule", "/tmp/celerybeat-schedule", "--loglevel=info", "-Q", "default,celery"]
+    networks:
+      - lt_internal
+      - bea_internal
+
+  lt-frontend:
+    image: bea-digital-frontend:latest
+    pull_policy: never
+    container_name: bea-lt-frontend
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    ports:
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      lt-backend:
+        condition: service_healthy
+    networks:
+      - lt_internal
+
+networks:
+  lt_internal:
+    name: bea_lt_internal
+  bea_internal:
+    external: true
+    name: bea_internal

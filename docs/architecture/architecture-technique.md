@@ -75,12 +75,12 @@ lues dans les conteneurs ou `node_modules` le 22/10/2026 (lecture seule).
 | Proxy TLS | nginx hôte | Non déployé | Terminaison HTTPS TEST/PROD | Modèle seulement (`deployment/nginx/`) |
 | Backend | Python | 3.13.17 (`python:3.13-slim`) | Langage serveur | Vérifié (conteneur) |
 | Backend | FastAPI | 0.115.6 | Framework API | Vérifié (conteneur) |
-| Backend | Uvicorn | 0.34.0 | Serveur ASGI, un seul processus (pas de `--workers`) | Vérifié (Dockerfile, conteneur) |
+| Backend | Uvicorn | 0.34.0 | Serveur ASGI, `WEB_CONCURRENCY` processus (4 en local) | Vérifié (compose, conteneur) |
 | Backend | Pydantic / pydantic-settings | 2.10.3 / 2.6.1 | Schémas, configuration | Vérifié (conteneur) |
 | Accès données | SQLAlchemy (async) | 2.0.36 | ORM, sessions par requête | Vérifié (conteneur) |
 | Accès données | asyncpg | 0.30.0 | Pilote PostgreSQL de l'API | Vérifié (conteneur) |
 | Accès données | psycopg2-binary | 2.9.10 | Pilote synchrone (Alembic, worker) | Déclaré |
-| Migrations | Alembic | 1.14.0 | 98 révisions dans `backend/alembic/versions/` | Vérifié ; révision locale `20261022_mg_stock_alertes` |
+| Migrations | Alembic | 1.14.0 | 103 révisions dans `backend/alembic/versions/` | Révision locale `20261105_mg_stock_mvt_ref_uq` |
 | Base de données | PostgreSQL | 17.11 (local, Alpine, collation `C`) ; `postgres:17` Debian prévu en TEST/PROD | Base unique | Vérifié en local ; TEST/PROD non constaté |
 | Cache / broker | Redis | 7.4.11 (`redis:7-alpine`) | Broker Celery, idempotence, quotas | Vérifié (conteneur) |
 | Traitements asynchrones | Celery (+ beat embarqué) | 5.4.0 | OCR, supervision, rappels, seuils stock | Vérifié (conteneur sain) ; exécution des tâches non observée |
@@ -150,7 +150,7 @@ signalée par `AGENTS.md` : 103 fichiers Python et 13 révisions non déployés)
 | Base | Une seule base `bea_digital` pour la plateforme et tous les modules | `AGENTS.md`, `docs/base-de-donnees-unique.md` |
 | Volume | Volume nommé `bea_postgres_data` ; interdiction documentée de `docker compose down -v` | Compose |
 | Taille du schéma | 210 tables en base locale (205 classes + 4 associations dans le code) | Requête `information_schema` (lecture seule) |
-| Migrations | 98 révisions Alembic dans `backend/alembic/versions/`, du 23/07/2026 au 22/10/2026. La première révision modifie des tables existantes : jamais d'Alembic sur base vide | `docs/runbook-migrations.md` |
+| Migrations | 103 révisions Alembic dans `backend/alembic/versions/`. Tête `20261105_mg_stock_mvt_ref_uq`. La première révision modifie des tables existantes : jamais d'Alembic sur base vide | `docs/runbook-migrations.md` |
 | Déclaration de retour arrière | `retour_arriere = "compatible" / "restauration"` exigé après `20261020_clientele_14` (5 révisions concernées) ; les antérieures comptent comme `restauration` | `backend/scripts/migrations_retour.py`, `docs/deployment/08-livraison-et-mises-a-jour.md` |
 | Initialisation | Restauration d'un dump (`scripts/db-restore.*`, `deployment/scripts/restore.sh`). Le seed (`init_db.py`, `seed_data.py`) est réservé aux bases jetables de test | `AGENTS.md` |
 | Collation | `C` en local (Alpine/musl) ; alignement sur le dump attendu en TEST/PROD | Commentaires compose |
