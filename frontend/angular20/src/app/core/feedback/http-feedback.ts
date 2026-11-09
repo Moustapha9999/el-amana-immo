@@ -20,7 +20,7 @@ const FALLBACK_DELAY_MS = 600;
 /** Une même erreur globale (famille + code) n'est notifiée qu'une fois sur cette durée. */
 const FALLBACK_DEDUP_MS = 15000;
 /** Appels techniques : jamais d'indicateur « en cours » ni de notification de secours. */
-const SILENT = [/\/auth\//, /\/notifications/, /\/health/];
+const SILENT = [/\/auth\//, /\/notifications/, /\/health/, /\/version(?:\?|$)/];
 /** Erreurs sans contexte d'écran : notifiées si aucun écran ne les a affichées. */
 const GLOBAL_KINDS = new Set<ApiErrorKind>(['network', 'temporary', 'server', 'rate_limit']);
 

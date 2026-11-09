@@ -38,7 +38,12 @@
         />
       </div>
       <div class="login-screen__brand-intro">
-        <p class="login-screen__brand-tagline">BEA DIGITAL — plateforme interne</p>
+        <div class="login-screen__brand-caption">
+          <p class="login-screen__brand-tagline">BEA DIGITAL — plateforme interne</p>
+          @if (version(); as version) {
+            <p class="login-screen__signature">Version {{ version }} · Développé par M.S</p>
+          }
+        </div>
       </div>
       <p class="login-screen__copyright">Copyright © 2026 BEA DIGITAL — Banque El Amana. Tous droits réservés.</p>
     </aside>
