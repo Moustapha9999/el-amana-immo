@@ -3,8 +3,8 @@
  * (X-Forwarded-For / X-Real-IP) pour l'audit.
  * Seule l'adresse de la socket compte : un X-Forwarded-For envoyé par le navigateur est ignoré.
  */
-function versBackend() {
-  return {
+export default {
+  '/api': {
     target: 'http://127.0.0.1:8000',
     secure: false,
     changeOrigin: true,
@@ -22,10 +22,5 @@ function versBackend() {
         }
       });
     },
-  };
-}
-
-export default {
-  '/api': versBackend(),
-  '/version': versBackend(),
+  },
 };
