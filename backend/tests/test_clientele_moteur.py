@@ -103,6 +103,16 @@ def _par(tableau: dict, code: str) -> dict:
     return next(i for i in tableau["indicateurs"] if i["code"] == code)
 
 
+async def _valeurs(svc, debut: date, fin: date, codes: tuple[str, ...]) -> dict[str, int]:
+    t = await svc.tableau(periode="personnalisee", date_debut=debut, date_fin=fin)
+    return {c: _par(t, c)["valeur"] for c in codes}
+
+
+def _ecart(apres: dict[str, int], avant: dict[str, int]) -> dict[str, int]:
+    """Indicateurs globaux : la base de test contient d'autres clients, seul l'écart est vérifié."""
+    return {c: apres[c] - avant[c] for c in apres}
+
+
 def test_catalogue_reporting_view():
     perms = {c for c, _l, m in FUNCTIONAL_PERMISSIONS if m == "clientele"}
     assert "clientele.reporting.view" in perms
@@ -133,29 +143,38 @@ def test_periode_personnalisee_refusee_si_inversee():
 @pytest.mark.asyncio
 async def test_un_client_trois_comptes_distinct(db):
     ctx = await _ctx(db)
-    await _importer(db, ctx)
     svc = ClienteleIndicateursService(db, ctx)
-    t = await svc.tableau(periode="personnalisee", date_debut=DEBUT, date_fin=FIN)
-    assert _par(t, "cli.stock")["valeur"] == 2
-    assert _par(t, "cli.comptes")["valeur"] == 4
-    assert _par(t, "cli.pp")["valeur"] == 2
-    assert _par(t, "cli.nouveaux")["valeur"] == 2
+    codes = ("cli.stock", "cli.comptes", "cli.pp", "cli.nouveaux")
+    avant = await _valeurs(svc, DEBUT, FIN, codes)
+    stock_avant = (await svc.detail("cli.stock", periode="personnalisee", date_debut=DEBUT, date_fin=FIN,
+                                    page=1, taille=1))["total"]
+    comptes_avant = (await svc.detail("cli.comptes", periode="personnalisee",
+                                      date_debut=DEBUT, date_fin=FIN))["total"]
+    await _importer(db, ctx)
+    apres = await _valeurs(svc, DEBUT, FIN, codes)
+    assert _ecart(apres, avant) == {"cli.stock": 2, "cli.comptes": 4, "cli.pp": 2, "cli.nouveaux": 2}
     d = await svc.detail("cli.stock", periode="personnalisee", date_debut=DEBUT, date_fin=FIN,
                          page=1, taille=1)
-    assert d["total"] == 2
+    assert d["total"] - stock_avant == 2
     assert d["taille"] == 1
     assert len(d["items"]) == 1
     trop = await svc.detail("cli.stock", periode="personnalisee", date_debut=DEBUT, date_fin=FIN,
                             page=1, taille=500)
     assert trop["taille"] == PAGE_MAX
     comptes = await svc.detail("cli.comptes", periode="personnalisee", date_debut=DEBUT, date_fin=FIN)
-    assert comptes["total"] == 4
-    assert all(r["code_agence"] for r in comptes["items"])
+    assert comptes["total"] - comptes_avant == 4
+    assert all(r["code_agence"] for r in comptes["items"] if r.get("racine_client") in ("000001", "000002"))
 
 
 @pytest.mark.asyncio
 async def test_classif_a_une_date(db):
     ctx = await _ctx(db)
+    svc = ClienteleIndicateursService(db, ctx)
+    debut_oct, fin_oct = date(2026, 10, 1), date(2026, 10, 10)
+    codes_avant = ("cli.risque.faible", "cli.risque.eleve")
+    codes_apres = ("cli.risque.eleve", "cli.risque.faible", "cli.reclass.faible_eleve", "cli.reclass.vers_eleve")
+    base_avant = await _valeurs(svc, debut_oct, fin_oct, codes_avant)
+    base_apres = await _valeurs(svc, DEBUT, FIN, codes_apres)
     await _importer(db, ctx)
     await db.execute(text("""
         INSERT INTO clientele_classif_historique
@@ -167,16 +186,11 @@ async def test_classif_a_une_date(db):
              '2026-10-15 12:00:00+00')
     """))
     await db.commit()
-    svc = ClienteleIndicateursService(db, ctx)
-    avant = await svc.tableau(periode="personnalisee",
-                              date_debut=date(2026, 10, 1), date_fin=date(2026, 10, 10))
-    assert _par(avant, "cli.risque.faible")["valeur"] == 1
-    assert _par(avant, "cli.risque.eleve")["valeur"] == 0
-    apres = await svc.tableau(periode="personnalisee", date_debut=DEBUT, date_fin=FIN)
-    assert _par(apres, "cli.risque.eleve")["valeur"] == 1
-    assert _par(apres, "cli.risque.faible")["valeur"] == 0
-    assert _par(apres, "cli.reclass.faible_eleve")["valeur"] == 1
-    assert _par(apres, "cli.reclass.vers_eleve")["valeur"] == 1
+    avant = await _valeurs(svc, debut_oct, fin_oct, codes_avant)
+    assert _ecart(avant, base_avant) == {"cli.risque.faible": 1, "cli.risque.eleve": 0}
+    apres = await _valeurs(svc, DEBUT, FIN, codes_apres)
+    assert _ecart(apres, base_apres) == {"cli.risque.eleve": 1, "cli.risque.faible": 0,
+                                         "cli.reclass.faible_eleve": 1, "cli.reclass.vers_eleve": 1}
 
 
 @pytest.mark.asyncio
@@ -203,6 +217,9 @@ async def test_a_configurer_sans_valeur_numerique(db):
 @pytest.mark.asyncio
 async def test_alertes_intervalle(db):
     ctx = await _ctx(db)
+    svc = ClienteleIndicateursService(db, ctx)
+    codes = ("alerte.stock", "alerte.faux_positifs")
+    base = await _valeurs(svc, DEBUT, FIN, codes)
     await _importer(db, ctx)
     await db.execute(text("""
         INSERT INTO clientele_alertes
@@ -214,9 +231,7 @@ async def test_alertes_intervalle(db):
              '2026-10-21 12:00:00+00')
     """))
     await db.commit()
-    svc = ClienteleIndicateursService(db, ctx)
+    assert _ecart(await _valeurs(svc, DEBUT, FIN, codes), base) == {"alerte.stock": 2, "alerte.faux_positifs": 1}
     t = await svc.tableau(periode="personnalisee", date_debut=DEBUT, date_fin=FIN)
-    assert _par(t, "alerte.stock")["valeur"] == 2
-    assert _par(t, "alerte.faux_positifs")["valeur"] == 1
     assert _par(t, "bcm.t2.suivi")["valeur"] is None
     assert _par(t, "bcm.t2.extraites")["statut"] == "A_CONFIGURER"

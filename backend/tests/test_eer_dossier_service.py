@@ -1,8 +1,9 @@
 """Service EER sur PostgreSQL — cycle réel complet, BE, versions immuables, références.
 
-Ignoré tant que les migrations eer_01…04 ne sont pas appliquées (base réelle intacte).
-Exécution : copie de la base (bea_digital_eer_test), migrations + scripts/eer_init_referentiel.py.
-Chaque test travaille dans une transaction annulée à la fin (sauf le compteur de références).
+Ignoré tant que les migrations eer_01…04 ne sont pas appliquées.
+Exécution : base de test bea_digital_test (scripts/test-db.ps1). Le module est désactivé :
+``_acteurs`` le réactive dans la transaction du test, annulée au rollback (sauf le compteur
+de références, qui commite uniquement son incrément).
 """
 
 from __future__ import annotations
@@ -86,6 +87,10 @@ async def _acteurs(db: AsyncSession) -> tuple[Acteur, Acteur, Acteur]:
     await db.execute(text("INSERT INTO user_roles (user_id, role_id) VALUES (:u, :r) ON CONFLICT DO NOTHING"),
                      {"u": users[1].id, "r": analyste.id})
     module = await db.scalar(select(PlateformeModule).where(PlateformeModule.code == "eer"))
+    # Désactivé en base : sans is_active, charger_permissions_eer retire tous les droits eer.*.
+    module.is_active = True
+    module.statut = "actif"
+    await db.flush()
     params = {"u": users[1].id, "e": module.espace_id, "m": module.id}
     await db.execute(text("INSERT INTO user_espace_acces (user_id, espace_id) VALUES (:u, :e) "
                           "ON CONFLICT DO NOTHING"), params)

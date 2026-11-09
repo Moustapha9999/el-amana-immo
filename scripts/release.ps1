@@ -52,9 +52,9 @@ Pop-Location
 if ($rc -ne 0) { Echec "migration sans déclaration retour_arriere (voir docs/runbook-migrations.md)" }
 
 if ($Tests) {
-  Etape "Tests backend (base de test locale bea_digital_clientele_test)"
+  Etape "Tests backend (base de test unique bea_digital_test, scripts/test-db.ps1)"
   $u = docker exec bea-backend printenv DATABASE_URL
-  $env:DATABASE_URL = ($u -replace '@postgres:5432/[^/?]+', '@localhost:5432/bea_digital_clientele_test')
+  $env:DATABASE_URL = ($u -replace '@postgres:5432/[^/?]+', '@localhost:5432/bea_digital_test')
   Push-Location backend
   & .\.venv\Scripts\python.exe -m pytest tests -q -p no:warnings
   $rc = $LASTEXITCODE

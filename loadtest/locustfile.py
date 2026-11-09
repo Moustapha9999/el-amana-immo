@@ -13,7 +13,7 @@ Parcours d'un utilisateur virtuel :
   Login 2 à la première visite puis consultations du module.
 
 Cible : UNIQUEMENT l'environnement de charge isolé (loadtest/setup-env.ps1),
-http://127.0.0.1:8081 — base bea_digital_loadtest, données synthétiques. Toute
+http://127.0.0.1:8081 — base bea_digital_test, comptes synthétiques. Toute
 autre cible (dont http://localhost, qui sert les vraies données) est refusée,
 sauf hôte ajouté explicitement dans LOADTEST_ALLOWED_HOSTS.
 
@@ -450,7 +450,9 @@ class UtilisateurBEA(HttpUser):
         if not entrees.ok or not sorties.ok:
             return
         e, s = entrees.json(), sorties.json()
-        articles = sorted(e.get("articles") or [], key=lambda a: float(a.get("stock_actuel") or 0), reverse=True)
+        # Articles synthétiques seulement (LT…) : la base de test contient aussi la copie des articles réels.
+        synthetiques = [a for a in (e.get("articles") or []) if str(a.get("code") or "").startswith("LT")]
+        articles = sorted(synthetiques, key=lambda a: float(a.get("stock_actuel") or 0), reverse=True)
         chauds = articles[:NB_ARTICLES_CHAUDS]
         motif_e = next((m for m in (e.get("motifs") or []) if m.get("is_active")), None)
         motif_s = next((m for m in (s.get("motifs") or []) if m.get("is_active")), None)

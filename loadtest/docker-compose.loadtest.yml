@@ -6,8 +6,9 @@
 # Application de charge : http://127.0.0.1:8081 (jamais http://localhost, qui sert les vraies données).
 #
 # Isolation :
-# - base dédiée bea_digital_loadtest (schéma de bea_digital, référentiels sans personnes, données
-#   synthétiques) sur le serveur PostgreSQL unique (bea-postgres) : aucun second serveur ni volume ;
+# - base de test unique bea_digital_test (scripts/test-db.ps1 : copie de bea_digital aux accès
+#   neutralisés + comptes synthétiques) sur le serveur PostgreSQL unique (bea-postgres) : aucun
+#   second serveur ni volume ;
 # - Redis, backend, worker et nginx propres à ce projet ; SECRET_KEY propre (jetons incompatibles) ;
 # - le backend rejoint bea_internal uniquement pour joindre « postgres » ; nginx ne voit que
 #   lt_internal, où « backend » désigne lt-backend (jamais le backend réel).
@@ -20,7 +21,7 @@ name: bea-loadtest
 x-backend-env: &backend-env
   APP_ENV: production
   APP_DEBUG: "false"
-  DATABASE_URL: postgresql+asyncpg://bea_app:${BEA_APP_DB_PASSWORD:?BEA_APP_DB_PASSWORD manquant}@postgres:5432/bea_digital_loadtest
+  DATABASE_URL: postgresql+asyncpg://bea_app:${BEA_APP_DB_PASSWORD:?BEA_APP_DB_PASSWORD manquant}@postgres:5432/bea_digital_test
   DATABASE_SSL: "false"
   SECRET_KEY: ${LT_SECRET_KEY:?LT_SECRET_KEY manquant (relancer setup-env.ps1)}
   SKIP_MIGRATIONS: "1"

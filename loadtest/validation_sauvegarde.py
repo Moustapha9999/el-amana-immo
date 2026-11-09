@@ -2,10 +2,10 @@
 
     python loadtest/validation_sauvegarde.py
 
-Cible : base bea_digital_loadtest sur le conteneur bea-postgres.
+Cible : base de test bea_digital_test sur le conteneur bea-postgres.
 Ne touche jamais à bea_digital. Ne fait jamais docker compose down -v.
 La pile de charge est reconnectée à la copie restaurée le temps des lectures,
-puis rétablie sur bea_digital_loadtest.
+puis rétablie sur bea_digital_test ; la copie restaurée est supprimée à la fin.
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ import requests
 
 HOTE = "http://127.0.0.1:8081"
 API = f"{HOTE}/api/v1"
-SOURCE = "bea_digital_loadtest"
-RESTAUREE = "bea_digital_restore_test"
+SOURCE = "bea_digital_test"
+RESTAUREE = "bea_digital_restauration_tmp"
 INTERDITES = {"bea_digital"}
 PG = "bea-postgres"
 DUMP_TMP = f"/tmp/{SOURCE}.dump"
@@ -491,7 +491,7 @@ def test_37(password: str, email: str) -> dict:
         url_apres = _url_backend()
     codes = [sondes.get(k) for k in ("health", "ready", "login", "me", "login2", "dashboard", "mouvements", "referentiels")]
     app_ok = sante_ok and all(c == 200 for c in codes)
-    bonne_base = RESTAUREE in url_pendant and SOURCE in url_apres
+    bonne_base = url_pendant.endswith("/" + RESTAUREE) and url_apres.endswith("/" + SOURCE)
     reussi = app_ok and bonne_base and "erreur" not in sondes
     return {
         "id": "3.7", "titre": "Reconnecter BEA DIGITAL à la base restaurée (lectures)",
@@ -569,6 +569,12 @@ def main() -> int:
     t37 = test_37(mot_de_passe(), "lt.mg.001@loadtest.example.com")
     tests.append(t37)
     print(f"  3.7 {'OK' if t37['reussi'] else 'KO'}  {t37['detail'][:180]}")
+
+    if RESTAUREE not in INTERDITES | {SOURCE}:
+        psql("postgres", f"select pg_terminate_backend(pid) from pg_stat_activity where datname = '{RESTAUREE}';")
+        psql("postgres", f"drop database if exists {RESTAUREE};")
+        journal({"etape": "fin", "action": "suppression_copie_restauree", "base": RESTAUREE})
+        print(f"  copie restaurée {RESTAUREE} supprimée")
 
     ecrire_rapport(tests)
     ok = all(t["reussi"] for t in tests)

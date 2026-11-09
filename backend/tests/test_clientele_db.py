@@ -1,7 +1,7 @@
 """Base clientèle sur PostgreSQL : consolidation, idempotence, contraintes.
 
 Ignoré tant que la migration ``20261008_clientele_01`` n'est pas appliquée.
-Exécution : copie de la base (bea_digital_clientele_test). Chaque test est annulé à la fin.
+Exécution : copie de la base (bea_digital_test). Chaque test est annulé à la fin.
 """
 
 from __future__ import annotations

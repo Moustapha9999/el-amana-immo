@@ -116,8 +116,9 @@ suivantes recalculées) est enregistrée dans l’événement `CLOTURE` (`reclot
 
 ## Tests
 
-- `backend/tests/test_mg_stock_regularisation_db.py` : 22 tests sur une base PostgreSQL isolée
-  `bea_digital_stock_test` (données synthétiques). Ils sont ignorés sur toute autre base.
+- `backend/tests/test_mg_stock_regularisation_db.py` : 22 tests sur la base de test unique
+  `bea_digital_test` (données synthétiques). Ils sont ignorés sur toute autre base. Ils vident les
+  tables de stock : recréer la base (`scripts/test-db.ps1 -Recreer`) avant une campagne de charge.
 - `backend/tests/sql/mg_stock_periodes_reprise_fixture.sql` : jeu synthétique pour vérifier la
   reprise de la migration.
 - `frontend/angular20/src/app/stock-fournitures/stock-date-mouvement.spec.ts`.

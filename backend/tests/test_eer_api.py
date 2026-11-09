@@ -68,6 +68,7 @@ async def env():
             pytest.skip("Deux agences actives nécessaires")
         module = await s.scalar(select(PlateformeModule).where(PlateformeModule.code == EER_MODULE_CODE))
         espace = await s.scalar(select(PlateformeEspace).where(PlateformeEspace.code == ACC_ESPACE_CODE))
+        etat_initial = (module.statut, module.is_active)
         module.statut, module.is_active = "actif", True
         ids = {}
         for nom, (role_code, rang) in COMPTES.items():
@@ -110,6 +111,11 @@ async def env():
                            base_url="http://test") as client:
         yield {"client": client, "ids": ids, "agences": [a.id for a in agences]}
     app.dependency_overrides.pop(get_db, None)
+    # Module EER désactivé en production (docs/conformite/eer-desactivation.md) : état rétabli.
+    async with fabrique() as s:
+        await s.execute(text("UPDATE plateforme_modules SET statut = :s, is_active = :a WHERE code = :c"),
+                        {"s": etat_initial[0], "a": etat_initial[1], "c": EER_MODULE_CODE})
+        await s.commit()
     await engine.dispose()
 
 

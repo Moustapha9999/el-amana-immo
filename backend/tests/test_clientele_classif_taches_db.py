@@ -31,6 +31,8 @@ PERMS = {"clientele.view", "clientele.classif.view", "clientele.classif.execute"
 async def db():
     if not (make_url(get_settings().database_url).database or "").endswith("_test"):
         pytest.skip("Tests réservés à une copie *_test de la base (jamais la base réelle)")
+    # Le pool global peut contenir des connexions ouvertes par un test précédent sur une autre boucle.
+    await engine.dispose()
     async with AsyncSessionLocal() as session:
         if not await session.scalar(text("SELECT to_regclass('public.clientele_classif_taches') IS NOT NULL")):
             pytest.skip("Migration 20261013_clientele_10 non appliquée")

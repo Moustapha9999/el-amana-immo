@@ -20,7 +20,7 @@ import requests
 
 HOTE = "http://127.0.0.1:8081"
 API = f"{HOTE}/api/v1"
-SOURCE = "bea_digital_loadtest"
+SOURCE = "bea_digital_test"
 INTERDITES = {"bea_digital"}
 PG = "bea-postgres"
 PITR = "bea-lt-pitr"

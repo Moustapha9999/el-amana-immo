@@ -1,4 +1,4 @@
-"""Données SYNTHÉTIQUES de l'environnement de charge (base bea_digital_loadtest uniquement).
+"""Données SYNTHÉTIQUES de l'environnement de charge (base bea_digital_test uniquement).
 
 Exécuté dans le conteneur lt-backend par loadtest/setup-env.ps1 :
     python /loadtest/seed_loadtest.py
@@ -11,7 +11,7 @@ Crée :
 - Immobilisations : parc d'immobilisations en service ;
 - notifications par utilisateur.
 
-Refuse toute autre base que bea_digital_loadtest. Idempotent : ne fait rien si les comptes existent.
+Refuse toute autre base que bea_digital_test. Idempotent : ne fait rien si les comptes existent.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from app.models.mg_stock import MgArticle, MgArticleFamille  # noqa: E402
 from app.services.mg_stock_periodes import MgStockPeriodeService  # noqa: E402
 from app.services.mg_stock_service import MgStockService  # noqa: E402
 
-BASE_AUTORISEE = "bea_digital_loadtest"
+BASE_AUTORISEE = "bea_digital_test"
 DOMAINE = "loadtest.example.com"
 MOIS_HISTORIQUE = 12
 N_ARTICLES = int(os.getenv("LT_ARTICLES", "300"))
@@ -161,20 +161,25 @@ async def creer_stock(db, auteur: User) -> None:
         articles.append(a)
     await db.flush()
 
+    # Base de test = copie de bea_digital : les périodes passées y sont clôturées, les mouvements
+    # synthétiques vont alors dans la seule période ouverte du mois courant.
+    copie = bool(await db.scalar(text("select count(*) from mg_stock_periodes")))
+    historique = 1 if copie else MOIS_HISTORIQUE
     psvc = MgStockPeriodeService(db)
-    await psvc._create_periode(*_mois(MOIS_HISTORIQUE - 1), user=auteur, precedente=None)
+    if not copie:
+        await psvc._create_periode(*_mois(historique - 1), user=auteur, precedente=None)
     await psvc.ensure_open_periode(auteur)
     await db.commit()
-    log(f"{len(articles)} articles, périodes depuis {_mois(MOIS_HISTORIQUE - 1)}")
+    log(f"{len(articles)} articles, mouvements depuis {_mois(historique - 1)}")
 
     svc = MgStockService(db)
     total = 0
     debut = time.monotonic()
     for i, article in enumerate(articles, 1):
         plan: list[tuple[datetime, str, Decimal]] = []
-        for decalage in range(MOIS_HISTORIQUE - 1, -1, -1):
+        for decalage in range(historique - 1, -1, -1):
             annee, mois = _mois(decalage)
-            if decalage == MOIS_HISTORIQUE - 1 or rnd.random() < 0.25:
+            if decalage == historique - 1 or rnd.random() < 0.25:
                 plan.append((_instant(annee, mois, 5), "ENTREE", Decimal(rnd.choice([50, 100, 200, 500]))))
             for _ in range(rnd.randint(0, 3)):
                 plan.append((_instant(annee, mois), "SORTIE", Decimal(rnd.randint(1, 20))))
@@ -198,6 +203,8 @@ async def creer_stock(db, auteur: User) -> None:
         if i % 50 == 0:
             log(f"  {i}/{len(articles)} articles, {total} mouvements ({time.monotonic() - debut:.0f} s)")
     log(f"{total} mouvements de stock créés")
+    if copie:
+        return
 
     clotures = 0
     for periode in sorted(await psvc.periodes_non_cloturees(), key=lambda p: p.date_debut)[:-2]:

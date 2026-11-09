@@ -56,6 +56,11 @@ remplacement d’ORION.
 ## Base de données
 
 - Une seule `DATABASE_URL` vers le service `postgres` du compose racine.
+- **Deux bases seulement** : `bea_digital` (réelle) et `bea_digital_test` (unique base de test :
+ pytest, charge, validations, répétitions). Construite par `scripts/test-db.ps1` (copie de
+ `bea_digital` aux accès neutralisés + Base Clientèle du dump `avant_purge_clientele_…`).
+ Aucune autre base de test. Ne jamais supprimer `avant_purge_clientele_20261022_104012.dump`
+ ni `local-20261021-115657.dump` (seules copies de la Base Clientèle).
 - Application unique : **http://localhost** (nginx Docker proxifie `/api/` et `/health`).
 - Volume nommé unique (`bea_postgres_data`). **Jamais** `docker compose down -v`.
   L’ancien nom `immo_postgres_data` a été copié une fois ; ne pas faire tourner

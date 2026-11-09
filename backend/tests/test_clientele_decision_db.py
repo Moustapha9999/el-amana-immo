@@ -1,6 +1,6 @@
 """Politique de décision de classification sur PostgreSQL (directive du 10/10/2026).
 
-Exécution uniquement sur une copie dont le nom se termine par ``_test`` (ex. bea_digital_clientele_test),
+Exécution uniquement sur une copie dont le nom se termine par ``_test`` (ex. bea_digital_test),
 migration ``20261010_clientele_08`` appliquée. Chaque test est annulé à la fin.
 """
 

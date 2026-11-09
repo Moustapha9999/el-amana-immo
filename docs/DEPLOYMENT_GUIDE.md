@@ -119,7 +119,10 @@ de production sans décision DSI.
 - Lecture stock / immobilisations selon les droits du compte.
 - Ne pas lancer Locust contre `http://localhost` de la base réelle.
   L’environnement de charge est `http://127.0.0.1:8081` /
-  `bea_digital_loadtest` ([loadtest](../loadtest/setup-env.ps1)).
+  `bea_digital_test` ([loadtest](../loadtest/setup-env.ps1)).
+- Base de test unique `bea_digital_test` : `.\scripts\test-db.ps1 -Recreer`
+  (copie de `bea_digital` aux accès neutralisés + Base Clientèle), puis
+  `.\loadtest\setup-env.ps1` pour les comptes synthétiques de charge.
 
 ## Arrêt propre
 

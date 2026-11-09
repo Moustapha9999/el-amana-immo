@@ -2,7 +2,7 @@
 
     python loadtest/validation_reprise.py
 
-Cible : http://127.0.0.1:8081 (bea_digital_loadtest). N'arrête jamais tous les
+Cible : http://127.0.0.1:8081 (bea_digital_test). N'arrête jamais tous les
 processus backend à la fois, ni PostgreSQL (validation 3). WEB_CONCURRENCY et
 pools inchangés.
 """
@@ -22,7 +22,7 @@ import requests
 
 HOTE = "http://127.0.0.1:8081"
 API = f"{HOTE}/api/v1"
-BASE = "bea_digital_loadtest"
+BASE = "bea_digital_test"
 MARQUE = "LT-REPRISE"
 TIMEOUT = 5
 RACINE = Path(__file__).resolve().parent.parent

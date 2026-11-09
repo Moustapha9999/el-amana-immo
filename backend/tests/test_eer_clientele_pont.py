@@ -114,7 +114,11 @@ async def test_apercu_et_prefill_sans_ecrasement(db):
     assert racine_champ.source == "ORION" or racine_champ.etat in (
         EtatChamp.A_CONFIRMER, EtatChamp.CONNU, EtatChamp.NON_APPLICABLE)
 
-    absent = await svc.apercu_orion("000099")
+    racine_absente = await db.scalar(text(
+        "SELECT lpad(n::text, 6, '0') FROM generate_series(999999, 1, -1) n "
+        "WHERE NOT EXISTS (SELECT 1 FROM clientele_clients c WHERE c.racine_client = lpad(n::text, 6, '0')) "
+        "LIMIT 1"))
+    absent = await svc.apercu_orion(racine_absente)
     assert absent["present"] is False
 
     with pytest.raises(AppError):

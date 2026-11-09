@@ -1,6 +1,6 @@
 """Stock — nouvelle clôture d'une période rouverte : écarts d'inventaire, reports, doublons, idempotence.
 
-Données SYNTHÉTIQUES sur la base isolée ``bea_digital_stock_test`` (voir test_mg_stock_regularisation_db).
+Données SYNTHÉTIQUES sur la base de test ``bea_digital_test`` (voir test_mg_stock_regularisation_db).
 Reproduit le cas d'Octobre 2026 : période rouverte sans comptage, corrections rétroactives, puis
 inventaire ajusté pendant la réouverture (écart final nul) ; l'ancien contrôle bloquait « écart 0 → 0 ».
 """

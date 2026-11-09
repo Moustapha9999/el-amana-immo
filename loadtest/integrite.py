@@ -1,11 +1,11 @@
-"""Snapshot et vérification d'intégrité — base bea_digital_loadtest uniquement.
+"""Snapshot et vérification d'intégrité — base bea_digital_test uniquement.
 
     python loadtest/integrite.py snapshot  loadtest/reports/<palier>
     python loadtest/integrite.py verifier  loadtest/reports/<palier>
 
 Compare le journal Locust (écritures acceptées) au contenu réel de la base :
 soldes (SF = SI + E − S ± A), stock_actuel, mouvements et demandes ni perdus
-ni dupliqués. Refuse toute autre base que bea_digital_loadtest.
+ni dupliqués. Refuse toute autre base que bea_digital_test.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from collections import Counter, defaultdict
 from decimal import Decimal
 from pathlib import Path
 
-BASE = "bea_digital_loadtest"
+BASE = "bea_digital_test"
 MARQUE = "LT-CHARGE"
 
 

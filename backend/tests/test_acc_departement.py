@@ -98,7 +98,10 @@ async def test_hub_expose_domaines_et_module_eer(client: AsyncClient):
     domaines = {d["id"]: d for d in acc["domaines"]}
     assert domaines["kyc"]["parent_id"] == "conformite-securite-financiere"
     assert domaines["audit-interne"]["statut"] == "bientot"
-    eer = next(m for m in acc["modules"] if m["id"] == EER_MODULE_CODE)
+    # Module désactivé : il disparaît du hub (docs/conformite/eer-desactivation.md).
+    eer = next((m for m in acc["modules"] if m["id"] == EER_MODULE_CODE), None)
+    if eer is None:
+        return
     assert eer["domaine_id"] == "kyc"
     if eer["statut"] != "actif":
         assert eer["accessible"] is False
@@ -238,4 +241,5 @@ async def test_login_module_eer_refuse_tant_que_non_actif(client: AsyncClient):
         json={"email": "admin@el-amana.mr", "password": os.environ.get("BEA_TEST_PASSWORD", "Admin@2026")},
         headers=headers,
     )
-    assert res.status_code in (400, 403, 423), res.text
+    # inactif : le module n'est plus résolu (404). bientot : refus explicite.
+    assert res.status_code in (400, 403, 404, 423), res.text

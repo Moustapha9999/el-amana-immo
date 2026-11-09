@@ -1,6 +1,6 @@
 """Stock — réouverture de période, saisie rétroactive et reclôture, sur PostgreSQL.
 
-Données SYNTHÉTIQUES uniquement, sur la base isolée ``bea_digital_stock_test`` (schéma seul, migrée) :
+Données SYNTHÉTIQUES uniquement, sur la base de test ``bea_digital_test`` (scripts/test-db.ps1) :
 chaque test vide les tables du module puis reconstruit son jeu de données. Ignoré sur toute autre base.
 
 Scénario de départ (M = mois courant) :
@@ -44,12 +44,16 @@ from app.services.mg_stock_periodes import CLOTUREE, OUVERTE, ROUVERTE, MgStockP
 from app.services.mg_stock_service import MgStockService
 from app.services.mg_stock_sorties import MgStockSortieService
 
-BASE_TEST = "bea_digital_stock_test"
+BASE_TEST = "bea_digital_test"
 DOMAINE = "@synthetique-stock.test"
 PREFIXE_ROLE = "tst-stock-"
 AGENCE = "TST01"
 # Vidées dans cet ordre (clés étrangères) ; jamais de TRUNCATE CASCADE (tables protégées par trigger).
+# La base de test est une copie de bea_digital : les lignes d'autres modules qui référencent des
+# articles sont supprimées d'abord, sinon mg_articles ne peut pas être vidée.
 TABLES_STOCK = (
+    "mg_procurement_batch_items", "mg_employee_request_items", "mg_achat_facture_lignes",
+    "mg_achat_reception_lignes", "mg_bc_lignes", "mg_achat_demande_lignes", "mg_demande_fourniture_lignes",
     "mg_stock_periode_evenements", "mg_stock_soldes", "mg_stock_alertes", "mg_stock_mouvements",
     "mg_inventaire_lignes", "mg_inventaires", "mg_stock_periodes", "mg_articles", "mg_article_familles",
     "mg_stock_motifs_sortie", "mg_stock_parametres",

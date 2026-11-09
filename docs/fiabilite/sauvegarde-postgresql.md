@@ -7,33 +7,31 @@ sauvegardes applicatives restent indépendantes.
 
 PostgreSQL **17** tourne dans le conteneur Docker `bea-postgres`
 (`postgres:17-alpine` du compose racine). Ce n’est pas une installation
-Windows. Volume unique `bea_postgres_data`. Une seule instance, plusieurs
-bases :
+Windows. Volume unique `bea_postgres_data`. Une seule instance, **deux**
+bases applicatives (plus la base système `postgres`) :
 
 | Base | Rôle |
 |---|---|
-| `bea_digital` | Instance locale métier — **intouchable** pendant la validation |
-| `bea_digital_loadtest` | Copie isolée de charge — source de la sauvegarde |
-| `bea_digital_restore_test` | Base vierge créée pour la restauration |
+| `bea_digital` | Base réelle de l’application — **intouchable** |
+| `bea_digital_test` | Base de test unique : tests, charge, validations, répétitions (`scripts/test-db.ps1`) |
 
 ## Méthode validée
 
 Sauvegarde logique `pg_dump -Fc` (format personnalisé), restauration
 `pg_restore` dans une **nouvelle** base — jamais par-dessus `bea_digital`
-ni `bea_digital_loadtest`.
+ni `bea_digital_test`. `loadtest/validation_sauvegarde.py` restaure dans
+`bea_digital_restauration_tmp`, contrôle, puis supprime cette base.
 
 ```text
-pg_dump -U admin -Fc -d bea_digital_loadtest -f bea_digital_loadtest.dump
-createdb bea_digital_restore_test
-pg_restore --dbname=bea_digital_restore_test bea_digital_loadtest.dump
-GRANT CONNECT, TEMPORARY ON DATABASE bea_digital_restore_test TO bea_app;
+pg_dump -U admin -Fc -d bea_digital_test -f bea_digital_test.dump
+createdb bea_digital_restauration_tmp
+pg_restore --dbname=bea_digital_restauration_tmp bea_digital_test.dump
+GRANT CONNECT, TEMPORARY ON DATABASE bea_digital_restauration_tmp TO bea_app;
 ```
 
-Sur la copie de charge, `exercices_comptables` est importé sans
-`archive_dossiers`. Une `archive_dossier_id` orpheline fait échouer
-`ADD CONSTRAINT` à la restauration. Avant le dump isolé, cette référence
-est remise à NULL (`ON DELETE SET NULL`, même sémantique que la FK).
-Une base métier cohérente n’a pas ce cas.
+`scripts/test-db.ps1` construit lui-même `bea_digital_test` par
+`pg_dump` de `bea_digital` puis `pg_restore` : chaque reconstruction de la
+base de test prouve donc aussi que le dump de la base réelle se restaure.
 
 `pg_dump` d’une base **ne contient pas** les rôles globaux du serveur
 (`admin`, `bea_app`, `bea_core_query_reader`, …) ni le `GRANT CONNECT`
@@ -79,7 +77,10 @@ même volume. Restaurer ce backup dans `bea_postgres_data` **écraserait**
 
 ## Sauvegardes physiques + WAL + PITR (validation 4)
 
-Cluster **dédié** `bea-lt-pitr` (`loadtest/docker-compose.pitr.yml`) :
+Cluster **dédié** `bea-lt-pitr` (`loadtest/docker-compose.pitr.yml`), recréé
+à la demande par `loadtest/validation_pitr.py` puis retiré après usage
+(`docker compose -p bea-pitr -f loadtest/docker-compose.pitr.yml down`, puis
+suppression explicite des volumes `bea_lt_pitr_*`) :
 
 | Volume | Rôle |
 |---|---|
@@ -93,13 +94,13 @@ passés en arguments de `postgres`, uniquement sur ce conteneur.
 
 Chaîne validée :
 
-1. Charger `bea_digital_loadtest` (dump logique) dans le cluster isolé.
+1. Charger `bea_digital_test` (dump logique) dans le cluster isolé.
 2. `pg_basebackup -Fp -Xs` = sauvegarde physique de référence.
 3. Transactions « bonnes », puis erreur métier volontaire.
 4. Arrêt, remplacement de PGDATA par le basebackup, `recovery.signal` +
    `restore_command` + `recovery_target_time` **avant** l’erreur.
 5. Reconnexion de la pile isolée (`http://127.0.0.1:8081`) au cluster
-   restauré, puis retour sur `bea-postgres` / `bea_digital_loadtest`.
+   restauré, puis retour sur `bea-postgres` / `bea_digital_test`.
 
 Preuve : `loadtest/reports/validation4-*/rapport.md`.
 

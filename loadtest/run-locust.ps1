@@ -24,7 +24,7 @@ param(
 $ErrorActionPreference = "Stop"
 $racine = Split-Path -Parent $PSScriptRoot
 $HOTE = "http://127.0.0.1:8081"
-$BASE = "bea_digital_loadtest"
+$BASE = "bea_digital_test"
 $python = Join-Path $racine "backend\.venv\Scripts\python.exe"
 $envLt = Join-Path $PSScriptRoot ".env.loadtest"
 
