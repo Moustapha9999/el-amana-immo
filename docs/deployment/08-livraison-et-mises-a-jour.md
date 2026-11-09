@@ -8,7 +8,7 @@ numéro (`vX.Y.Z`) ; `/version` indique ce qui tourne réellement.
 
 | Service | Image | Rôle | Exposition |
 |---------|-------|------|------------|
-| `frontend` | `bea-digital/frontend:vX.Y.Z` | Angular + nginx, proxifie `/api/`, `/health`, `/version` | `127.0.0.1:8080` (reverse proxy HTTPS de l'hôte) |
+| `frontend` | `bea-digital/frontend:vX.Y.Z` | Angular + nginx, proxifie `/api/`, `/health`, `/version` | `127.0.0.1:8088` (reverse proxy HTTPS de l'hôte ; 8080 est déjà pris sur srv-classification) |
 | `backend` | `bea-digital/backend:vX.Y.Z` | API FastAPI | réseau interne |
 | `worker` | même image que backend | tâches de fond (échéances, OCR, supervision) | réseau interne |
 | `postgres` | `postgres:17` (Debian) | base unique BEA DIGITAL | réseau interne, volume `bea_postgres_data` |
@@ -39,10 +39,12 @@ démarre pas ou s'il existe plusieurs têtes de migration.
 Numérotation : `vMAJEUR.MINEUR.CORRECTIF` — nouveau module = MINEUR (`v1.1.0`), correction = CORRECTIF
 (`v1.1.1`), rupture (changement de base non rétrocompatible) = MAJEUR.
 
-## Côté serveur — dossier `/opt/bea-digital`
+## Côté serveur — dossier `/home/moustapha/bea-digital`
+
+Docker est installé par Snap sur `srv-classification`. Un montage de `/opt` est refusé (`read-only file system`). Le dossier de déploiement est donc dans le répertoire personnel, que Snap peut monter. Mesure du 9 novembre 2026.
 
 ```text
-/opt/bea-digital/
+/home/moustapha/bea-digital/
   .env.production          secrets (chmod 600, hors Git)
   deployment/              scripts + compose (extraits de deploiement.tar.gz)
   deployment/state/        version_courante, version_precedente, historique.log
@@ -54,7 +56,7 @@ Numérotation : `vMAJEUR.MINEUR.CORRECTIF` — nouveau module = MINEUR (`v1.1.0`
 ### Première installation
 
 ```bash
-cd /opt/bea-digital
+cd /home/moustapha/bea-digital
 tar -xzf releases/v1.0.0/deploiement.tar.gz
 cp deployment/env.production.example .env.production && chmod 600 .env.production   # renseigner
 IMAGES_TAR=releases/v1.0.0/images.tar ./deployment/scripts/restore.sh backups/reprise.dump backups/reprise_fichiers.tar.gz
@@ -67,7 +69,7 @@ immobilisations, valeur brute, clients, classifications).
 ### Mise à jour
 
 ```bash
-cd /opt/bea-digital
+cd /home/moustapha/bea-digital
 tar -xzf releases/v1.1.0/deploiement.tar.gz
 BEA_VERSION=v1.1.0 IMAGES_TAR=releases/v1.1.0/images.tar ./deployment/scripts/deploy.sh
 ```
@@ -130,7 +132,7 @@ relance `VERSION_APPLI` (par défaut la version courante) et enregistre la révi
 ### Sauvegarde planifiée (en plus des sauvegardes de déploiement)
 
 ```cron
-30 1 * * * cd /opt/bea-digital && ./deployment/scripts/backup-pre-deploy.sh nuit >> backups/backup.log 2>&1
+30 1 * * * cd /home/moustapha/bea-digital && ./deployment/scripts/backup-pre-deploy.sh nuit >> backups/backup.log 2>&1
 ```
 
 Le dossier `backups/` doit être répliqué hors du serveur (politique DSI).

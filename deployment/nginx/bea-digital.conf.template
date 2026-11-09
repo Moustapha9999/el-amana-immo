@@ -1,9 +1,10 @@
 # Template reverse proxy HTTPS — BEA DIGITAL
 # À adapter avec l'IT : domaine, chemins certificats, ports.
-# Le conteneur frontend écoute en HTTP sur 127.0.0.1:8080 (compose prod).
+# Le conteneur frontend est publié sur 127.0.0.1:8088 (compose prod, srv-classification).
+# Le port 8080 de l'hôte est déjà utilisé par un autre service.
 
 upstream bea_frontend {
-  server 127.0.0.1:8080;
+  server 127.0.0.1:8088;
 }
 
 server {

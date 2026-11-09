@@ -4,7 +4,7 @@
 ENV_FILE="${ENV_FILE:-.env.production}"
 COMPOSE_FILE="${COMPOSE_FILE:-deployment/docker-compose.prod.yml}"
 ETAT_DIR="${ETAT_DIR:-deployment/state}"
-BASE_URL="${BASE_URL:-http://127.0.0.1:8080}"
+BASE_URL="${BASE_URL:-http://127.0.0.1:8088}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-40}"
 HEALTH_SLEEP="${HEALTH_SLEEP:-3}"
 

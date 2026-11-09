@@ -4,6 +4,7 @@ Pack documentation pour GitLab + Runner réseau BEA + serveur production.
 
 | Doc | Contenu |
 |-----|---------|
+| [AUDIT_TECHNIQUE_BEA_DIGITAL.md](AUDIT_TECHNIQUE_BEA_DIGITAL.md) | Audit du code au 9 novembre 2026 (phase 1, serveur non encore inspecté) |
 | [00-inventaire-bea.md](00-inventaire-bea.md) | Inventaire IT (à remplir — ne pas inventer) |
 | [01-architecture-cible.md](01-architecture-cible.md) | Schéma cible et principes |
 | [02-git-branches-versioning.md](02-git-branches-versioning.md) | Branches + SemVer |

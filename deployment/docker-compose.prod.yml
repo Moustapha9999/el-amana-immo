@@ -146,8 +146,10 @@ services:
     logging: *logging
     <<: *hardening
     # Le reverse proxy HTTPS de l'hôte pointe vers cette adresse (voir deployment/nginx/).
+    # 8080 est déjà pris sur srv-classification par un autre démon Docker. Le port
+    # interne du conteneur reste 8080 ; seul le port hôte change.
     ports:
-      - "${BEA_HTTP_BIND:-127.0.0.1:8080}:8080"
+      - "${BEA_HTTP_BIND:-127.0.0.1:8088}:8080"
     depends_on:
       backend:
         condition: service_healthy

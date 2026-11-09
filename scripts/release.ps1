@@ -116,15 +116,15 @@ $manifest | ConvertTo-Json | Set-Content "$out\manifest.json" -Encoding UTF8
 $lisezmoi = @"
 BEA DIGITAL $Version (commit $sha, révision de base $head)
 
-Sur le serveur (Linux, dossier d'installation /opt/bea-digital) :
+Sur le serveur (Linux, dossier d'installation /home/moustapha/bea-digital) :
 
-  1. Copier ce dossier dans /opt/bea-digital/releases/$Version/
+  1. Copier ce dossier dans /home/moustapha/bea-digital/releases/$Version/
   2. Première installation uniquement :
-       cd /opt/bea-digital && tar -xzf releases/$Version/deploiement.tar.gz
+       cd /home/moustapha/bea-digital && tar -xzf releases/$Version/deploiement.tar.gz
        cp deployment/env.production.example .env.production   (puis renseigner les secrets, chmod 600)
        IMAGES_TAR=releases/$Version/images.tar ./deployment/scripts/restore.sh backups/<dump de reprise>.dump [backups/<fichiers>.tar.gz]
   3. Mise à jour (ou installation) :
-       cd /opt/bea-digital
+       cd /home/moustapha/bea-digital
        tar -xzf releases/$Version/deploiement.tar.gz           (scripts à jour)
        BEA_VERSION=$Version IMAGES_TAR=releases/$Version/images.tar ./deployment/scripts/deploy.sh
   4. En cas de problème : ./deployment/scripts/rollback.sh
