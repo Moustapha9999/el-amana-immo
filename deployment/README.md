@@ -6,8 +6,11 @@
 # | env.production.example | Modèle secrets (copier → .env.production hors git) |
 # | nginx/bea-digital.conf.template | Reverse proxy HTTPS (IT) |
 # | scripts/backup-pre-deploy.sh | Backup vérifié avant deploy |
-# | scripts/deploy.sh | Pull + recreate + healthcheck |
+# | scripts/deploy.sh | Porte de release + pull/recreate + healthcheck |
+# | scripts/diagnose-readonly.sh | Diagnostic non destructif (état conteneurs, santé, montages) |
 # | scripts/rollback.sh | Retour image précédente |
 # | inventory.template.md | Inventaire DSI |
 #
 # Documentation : docs/deployment/
+# Porte de release : images + .sha256, SECRET_KEY verrouillée, pas de montage
+# release-source, sauvegarde obligatoire (voir docs/deployment/08 et 10–11).

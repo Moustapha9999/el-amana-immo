@@ -44,6 +44,7 @@ image_presente() {
 }
 
 # Charge l'archive IMAGES_TAR (livraison hors ligne) après contrôle de son empreinte SHA-256.
+# Sans .sha256 : refus sauf ALLOW_UNSIGNED_IMAGES=1 (dérogation explicite).
 charger_archive_images() {
   [[ -n "${IMAGES_TAR:-}" ]] || return 0
   [[ -f "$IMAGES_TAR" ]] || echec "archive introuvable : $IMAGES_TAR"
@@ -51,11 +52,76 @@ charger_archive_images() {
     etape "Contrôle d'intégrité de l'archive"
     ( cd "$(dirname "$IMAGES_TAR")" && sha256sum -c "$(basename "$IMAGES_TAR").sha256" ) \
       || echec "empreinte SHA-256 invalide : archive corrompue ou modifiée"
+  elif [[ "${ALLOW_UNSIGNED_IMAGES:-0}" == "1" ]]; then
+    echo "ATTENTION: pas de fichier ${IMAGES_TAR}.sha256 — ALLOW_UNSIGNED_IMAGES=1, intégrité non vérifiée"
   else
-    echo "ATTENTION: pas de fichier ${IMAGES_TAR}.sha256 — intégrité non vérifiée"
+    echec "empreinte absente : ${IMAGES_TAR}.sha256 requis (ou ALLOW_UNSIGNED_IMAGES=1 en dérogation)"
   fi
   etape "Chargement des images (docker load)"
   docker load -i "$IMAGES_TAR"
+}
+
+# Contrôle SECRET_KEY sans jamais l'afficher : unicité, format 64 hex, empreinte verrouillée.
+verifier_secret_key() {
+  local verrou="$ETAT_DIR/secret_key.sha256"
+  local nb cle empreinte attendue
+  [[ -f "$ENV_FILE" ]] || echec "$ENV_FILE introuvable"
+  nb="$(grep -cE '^SECRET_KEY=' "$ENV_FILE" || true)"
+  [[ "$nb" -eq 1 ]] || echec "SECRET_KEY : exactement une entrée attendue dans $ENV_FILE (trouvé: ${nb})"
+  cle="$(valeur_env SECRET_KEY)"
+  [[ "$cle" =~ ^[0-9a-fA-F]{64}$ ]] || echec "SECRET_KEY : format attendu = 64 caractères hexadécimaux"
+  if [[ -f "$verrou" ]]; then
+    empreinte="$(printf '%s' "$cle" | sha256sum | awk '{print $1}')"
+    attendue="$(tr -d '[:space:]' < "$verrou")"
+    [[ "$empreinte" == "$attendue" ]] || echec "SECRET_KEY : empreinte ≠ $verrou — ne pas régénérer la clé ; corriger .env.production"
+    echo "SECRET_KEY : empreinte conforme à $verrou"
+  else
+    echo "ATTENTION: pas de verrou $verrou — empreinte SECRET_KEY non contrôlée"
+  fi
+}
+
+# Refuse les montages persistants sous import/incoming/release-source (voir doc 11).
+verifier_montages_persistants() {
+  local dest
+  for dest in storage/uploads storage/ged backups; do
+    if [[ -e "$dest" ]]; then
+      local reel
+      reel="$(readlink -f "$dest" 2>/dev/null || realpath "$dest" 2>/dev/null || echo "$dest")"
+      if [[ "$reel" == *"/import/incoming/release-source"* ]]; then
+        if [[ "${ALLOW_RELEASE_SOURCE_MOUNTS:-0}" == "1" ]]; then
+          echo "ATTENTION: $dest → $reel (release-source) — ALLOW_RELEASE_SOURCE_MOUNTS=1"
+        else
+          echec "$dest résout vers release-source ($reel). Migrer vers un chemin stable (/srv/…) avant déploiement (docs/deployment/11-migration-stockage-persistant.md), ou ALLOW_RELEASE_SOURCE_MOUNTS=1 en dérogation."
+        fi
+      fi
+    fi
+  done
+}
+
+# Porte de release : artefacts + secrets + stockages + interdiction SKIP_BACKUP silencieux.
+verifier_porte_release() {
+  local version="$1"
+  etape "Porte de release ${version}"
+  [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] \
+    || echec "BEA_VERSION invalide (attendu vX.Y.Z) : $version"
+
+  if [[ "${SKIP_BACKUP:-0}" == "1" && "${ALLOW_SKIP_BACKUP:-0}" != "1" ]]; then
+    echec "SKIP_BACKUP=1 refusé sans ALLOW_SKIP_BACKUP=1 (sauvegarde fraîche obligatoire)"
+  fi
+
+  verifier_secret_key
+  verifier_montages_persistants
+
+  if [[ -n "${IMAGES_TAR:-}" ]]; then
+    [[ -f "$IMAGES_TAR" ]] || echec "IMAGES_TAR introuvable : $IMAGES_TAR"
+    local man
+    man="$(dirname "$IMAGES_TAR")/manifest.json"
+    if [[ -f "$man" ]]; then
+      echo "manifest.json présent : $man"
+    else
+      echo "ATTENTION: manifest.json absent à côté de l'archive ($man)"
+    fi
+  fi
 }
 
 # Révision Alembic réellement enregistrée en base (indépendante de l'image qui tourne).

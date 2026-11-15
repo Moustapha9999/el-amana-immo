@@ -39,24 +39,33 @@ démarre pas ou s'il existe plusieurs têtes de migration.
 Numérotation : `vMAJEUR.MINEUR.CORRECTIF` — nouveau module = MINEUR (`v1.1.0`), correction = CORRECTIF
 (`v1.1.1`), rupture (changement de base non rétrocompatible) = MAJEUR.
 
-## Côté serveur — dossier `/home/moustapha/bea-digital`
+## Côté serveur — deux hôtes documentés
 
-Docker est installé par Snap sur `srv-classification`. Un montage de `/opt` est refusé (`read-only file system`). Le dossier de déploiement est donc dans le répertoire personnel, que Snap peut monter. Mesure du 9 novembre 2026.
+| Hôte | Dossier | Particularité |
+|------|---------|---------------|
+| `srv-classification` (`192.168.1.22`) — PV du 9/11 | `/home/moustapha/bea-digital` | Docker **Snap** : `/opt` non montable → racine sous `$HOME` |
+| `srvsuividep-virtual-machine` (`192.168.1.55`) — transmission 13/11, **prod active v1.0.0** | `/opt/bea-digital` | Docker classique ; stockages GED/uploads encore sous `import/incoming/release-source` (à migrer, [doc 11](11-migration-stockage-persistant.md)) |
+
+Ne pas confondre les deux. Procédures ci-dessous : remplacer `RACINE` par le dossier réel de l’hôte.
 
 ```text
-/home/moustapha/bea-digital/
+RACINE/
   .env.production          secrets (chmod 600, hors Git)
   deployment/              scripts + compose (extraits de deploiement.tar.gz)
-  deployment/state/        version_courante, version_precedente, historique.log
+  deployment/state/        version_courante, secret_key.sha256, historique.log
   releases/vX.Y.Z/         livraisons reçues
   backups/                 sauvegardes (à répliquer hors serveur)
   storage/uploads, storage/ged
 ```
 
+Sur `srvsuividep` au 15/11 : `version_courante` a été initialisé à `v1.0.0` ; GED/uploads montés = vides ;
+`/srv/bea-digital/uploads` (structure `archives`/`clientele`/`pieces`) existe mais **n’est pas monté**.
+Détail : [10-dossier-transmission-2026-11-13.md](10-dossier-transmission-2026-11-13.md).
+
 ### Première installation
 
 ```bash
-cd /home/moustapha/bea-digital
+cd "$RACINE"   # ex. /opt/bea-digital ou /home/moustapha/bea-digital
 tar -xzf releases/v1.0.0/deploiement.tar.gz
 cp deployment/env.production.example .env.production && chmod 600 .env.production   # renseigner
 IMAGES_TAR=releases/v1.0.0/images.tar ./deployment/scripts/restore.sh backups/reprise.dump backups/reprise_fichiers.tar.gz
@@ -69,14 +78,33 @@ immobilisations, valeur brute, clients, classifications).
 ### Mise à jour
 
 ```bash
-cd /home/moustapha/bea-digital
+cd "$RACINE"
 tar -xzf releases/v1.1.0/deploiement.tar.gz
 BEA_VERSION=v1.1.0 IMAGES_TAR=releases/v1.1.0/images.tar ./deployment/scripts/deploy.sh
 ```
 
+Avant toute mise à jour sur `srvsuividep` : diagnostic lecture seule, montages hors `release-source`
+([11-migration-stockage-persistant.md](11-migration-stockage-persistant.md)), artefacts complets.
+
+### Porte de release
+
+`deploy.sh` refuse le déploiement si l’une des conditions suivantes n’est pas remplie :
+
+| Contrôle | Comportement | Dérogation explicite |
+|----------|--------------|----------------------|
+| `BEA_VERSION` format `vX.Y.Z` | refus | — |
+| `SECRET_KEY` : une entrée, 64 hex ; si `deployment/state/secret_key.sha256` existe, empreinte conforme | refus (jamais d’affichage de la clé) | — |
+| `storage/uploads`, `storage/ged`, `backups` ne résolvent pas vers `import/incoming/release-source` | refus | `ALLOW_RELEASE_SOURCE_MOUNTS=1` |
+| `SKIP_BACKUP=1` | refus | `ALLOW_SKIP_BACKUP=1` |
+| `IMAGES_TAR` fourni sans `images.tar.sha256` | refus | `ALLOW_UNSIGNED_IMAGES=1` |
+| Images `backend` / `frontend` absentes après chargement | refus | — |
+
+Ne pas utiliser les dérogations sur la machine bancaire « pour tester ». Sans images + checksum +
+sauvegarde fraîche : **rester sur `v1.0.0`**.
+
 Étapes automatiques de `deploy.sh` :
 
-1. contrôle SHA-256 de l'archive, chargement des images (ou téléchargement depuis un registre) ;
+1. porte de release (ci-dessus), puis contrôle SHA-256 de l'archive, chargement des images (ou téléchargement depuis un registre) ;
 2. refus si la base est vide (les migrations ne s'appliquent jamais sur une base vide) ;
 3. **sauvegarde vérifiée** : dump PostgreSQL (taille minimale + relecture `pg_restore --list`),
    archive des pièces et de la GED, empreintes, purge au-delà de 30 jours ;
@@ -132,7 +160,8 @@ relance `VERSION_APPLI` (par défaut la version courante) et enregistre la révi
 ### Sauvegarde planifiée (en plus des sauvegardes de déploiement)
 
 ```cron
-30 1 * * * cd /home/moustapha/bea-digital && ./deployment/scripts/backup-pre-deploy.sh nuit >> backups/backup.log 2>&1
+30 1 * * * cd /opt/bea-digital && ./deployment/scripts/backup-pre-deploy.sh nuit >> backups/backup.log 2>&1
+# srv-classification (Snap) : remplacer par /home/moustapha/bea-digital
 ```
 
 Le dossier `backups/` doit être répliqué hors du serveur (politique DSI).

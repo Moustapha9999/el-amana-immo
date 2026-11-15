@@ -14,5 +14,9 @@ Pack documentation pour GitLab + Runner réseau BEA + serveur production.
 | [06-procedures.md](06-procedures.md) | Initial / MAJ / hotfix / rollback |
 | [07-core-admin-vs-cicd.md](07-core-admin-vs-cicd.md) | Frontière CORE ADMIN / GitLab |
 | [08-livraison-et-mises-a-jour.md](08-livraison-et-mises-a-jour.md) | **Procédure en vigueur** : release, installation, mise à jour, retour arrière, reprise |
+| [09-proces-verbal-premiere-installation.md](09-proces-verbal-premiere-installation.md) | Procès-verbal du 9 novembre 2026 : première mise en service sur `srv-classification` |
+| [10-dossier-transmission-2026-11-13.md](10-dossier-transmission-2026-11-13.md) | Transmission du 13/11/2026 : état `v1.0.0` sur `srvsuividep` (`192.168.1.55`), règles de préservation, diagnostic reprise |
+| [11-migration-stockage-persistant.md](11-migration-stockage-persistant.md) | Plan de migration GED/uploads/backups hors `release-source` vers `/srv/bea-digital` |
 
-Artefacts : dossier [`deployment/`](../../deployment/).
+Artefacts : dossier [`deployment/`](../../deployment/).  
+Diagnostic lecture seule : [`deployment/scripts/diagnose-readonly.sh`](../../deployment/scripts/diagnose-readonly.sh).

@@ -17,9 +17,10 @@ x-logging: &logging
     max-size: "20m"
     max-file: "5"
 
-# Images sans root (backend uid 10001, frontend nginx) : aucune capacité Linux, pas d'élévation.
+# Images sans root (backend uid 10001, frontend nginx) : aucune capacité Linux.
+# no-new-privileges est refusé par le Docker Snap de srv-classification
+# (exec: operation not permitted, mesure du 9 novembre 2026). cap_drop ALL est conservé.
 x-hardening: &hardening
-  security_opt: ["no-new-privileges:true"]
   cap_drop: ["ALL"]
 
 x-backend-env: &backend-env

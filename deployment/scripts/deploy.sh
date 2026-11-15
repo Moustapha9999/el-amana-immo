@@ -32,6 +32,9 @@ IMG_FE="${BEA_IMAGE_FRONTEND}:${CIBLE}"
 
 etape "Déploiement ${CIBLE} (version en place : ${PRECEDENTE:-aucune}) — $(date '+%F %T')"
 
+# 0. Porte de release (artefacts, SECRET_KEY, stockages, sauvegarde) ----------
+verifier_porte_release "$CIBLE"
+
 # 1. Images ------------------------------------------------------------------
 if [[ -n "${IMAGES_TAR:-}" ]]; then
   charger_archive_images
@@ -40,7 +43,7 @@ elif ! image_presente "$IMG_BE" || ! image_presente "$IMG_FE"; then
   compose pull backend frontend
 fi
 for img in "$IMG_BE" "$IMG_FE"; do
-  image_presente "$img" || echec "image absente après chargement : $img"
+  image_presente "$img" || echec "image absente après chargement : $img — ne pas déployer sans artefacts vérifiés"
 done
 
 # 2. Infrastructure + base ---------------------------------------------------
