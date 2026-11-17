@@ -103,6 +103,30 @@ const rcDashboard = () =>
 const rcCircuit = () => import('./reclamations/pages/rc-circuit.component').then((m) => m.RcCircuitComponent);
 const rcRapports = () => import('./reclamations/pages/rc-rapports.component').then((m) => m.RcRapportsComponent);
 const rcAdmin = () => import('./reclamations/pages/rc-admin.component').then((m) => m.RcAdminComponent);
+const rbcmAccueil = () =>
+  import('./reporting-bcm-sm/pages/rbcm-accueil.component').then((m) => m.RbcmAccueilComponent);
+const rbcmCampagnes = () =>
+  import('./reporting-bcm-sm/pages/rbcm-campagnes.component').then((m) => m.RbcmCampagnesComponent);
+const rbcmNouvelle = () =>
+  import('./reporting-bcm-sm/pages/rbcm-campagne-nouvelle.component').then(
+    (m) => m.RbcmCampagneNouvelleComponent,
+  );
+const rbcmDetail = () =>
+  import('./reporting-bcm-sm/pages/rbcm-campagne-detail.component').then(
+    (m) => m.RbcmCampagneDetailComponent,
+  );
+const rbcmMapping = () =>
+  import('./reporting-bcm-sm/pages/rbcm-mapping.component').then((m) => m.RbcmMappingComponent);
+const rbcmImports = () =>
+  import('./reporting-bcm-sm/pages/rbcm-imports.component').then((m) => m.RbcmImportsComponent);
+const rbcmBalDet = () =>
+  import('./reporting-bcm-sm/pages/rbcm-bal-det.component').then((m) => m.RbcmBalDetComponent);
+const rbcmBalCond = () =>
+  import('./reporting-bcm-sm/pages/rbcm-bal-cond.component').then((m) => m.RbcmBalCondComponent);
+const rbcmRapprochement = () =>
+  import('./reporting-bcm-sm/pages/rbcm-rapprochement.component').then((m) => m.RbcmRapprochementComponent);
+const rbcmParametres = () =>
+  import('./reporting-bcm-sm/pages/rbcm-parametres.component').then((m) => m.RbcmParametresComponent);
 const achatsBons = () => import('./achats-appro/achats-bons.component').then((m) => m.AchatsBonsComponent);
 const achatsReceptions = () =>
   import('./achats-appro/achats-receptions.component').then((m) => m.AchatsReceptionsComponent);
@@ -375,6 +399,33 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'rapports', loadComponent: rcRapports, data: { title: 'Rapports & statistiques' } },
       { path: 'parametres', loadComponent: rcParametres, data: { title: 'Paramètres' } },
       { path: 'admin', loadComponent: rcAdmin, data: { title: 'Admin' } },
+      { path: 'notifications', component: NotificationsComponent },
+    ],
+  },
+  {
+    path: 'reporting-bcm-sm',
+    component: ShellComponent,
+    canActivate: [authGuard, moduleGuard('reporting-bcm-sm')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'accueil' },
+      { path: 'accueil', loadComponent: rbcmAccueil, data: { title: 'Reporting BCM SM' } },
+      { path: 'campagnes', loadComponent: rbcmCampagnes, data: { title: 'Situations mensuelles' } },
+      {
+        path: 'campagnes/nouvelle',
+        loadComponent: rbcmNouvelle,
+        data: { title: 'Nouvelle SM' },
+      },
+      {
+        path: 'campagnes/:id',
+        loadComponent: rbcmDetail,
+        data: { title: 'Fiche SM' },
+      },
+      { path: 'imports', loadComponent: rbcmImports, data: { title: 'Imports BCM SM' } },
+      { path: 'bal-det', loadComponent: rbcmBalDet, data: { title: 'BAL DET' } },
+      { path: 'bal-cond', loadComponent: rbcmBalCond, data: { title: 'Archives BAL COND' } },
+      { path: 'rapprochement', loadComponent: rbcmRapprochement, data: { title: 'Contrôles BAL DET' } },
+      { path: 'parametres', loadComponent: rbcmParametres, data: { title: 'Paramètres BCM SM' } },
+      { path: 'mapping', loadComponent: rbcmMapping, data: { title: 'Correspondances BCM SM' } },
       { path: 'notifications', component: NotificationsComponent },
     ],
   },

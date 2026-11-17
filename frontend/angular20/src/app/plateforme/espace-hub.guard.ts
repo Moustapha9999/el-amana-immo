@@ -34,6 +34,9 @@ const PLATEFORME_FIXED = [
   'employe',
   'eer',
   'formation',
+  'clientele',
+  'reclamations',
+  'reporting-bcm-sm',
 ] as const;
 
 export const ESPACE_HUB_RESERVED_SEGMENTS: ReadonlySet<string> = new Set([

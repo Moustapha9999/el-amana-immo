@@ -11091,8 +11091,8 @@ table.bea-fx-mini { display: table; width: 100%; font-size: 0.8rem; }
   .bea-pager, .bea-row-actions, .bea-list-tools__btns { display: none !important; }
 }
 .bea-row-menu__veil { position: fixed; inset: 0; z-index: 70; }
-.bea-row-menu { position: fixed; z-index: 71; min-width: 13.5rem; margin: 0; padding: 0.35rem; list-style: none; background: #fff; border: 1px solid #e2e8f0; border-radius: 0.8rem; box-shadow: 0 14px 34px rgba(15, 23, 42, 0.18); animation: beaMgFade 0.15s ease both; }
-.bea-row-menu button { display: flex; align-items: center; gap: 0.55rem; width: 100%; padding: 0.5rem 0.65rem; border: 0; border-radius: 0.55rem; background: none; font: inherit; font-size: 0.85rem; color: #0f172a; text-align: left; cursor: pointer; }
+.bea-row-menu { position: fixed; z-index: 71; width: max-content; max-width: calc(100vw - 16px); min-width: 12.5rem; margin: 0; padding: 0.4rem; list-style: none; background: #fff; border: 1px solid #e2e8f0; border-radius: 0.8rem; box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14); animation: beaMgFade 0.15s ease both; }
+.bea-row-menu button { display: flex; align-items: center; gap: 0.6rem; width: 100%; padding: 0.55rem 0.75rem; border: 0; border-radius: 0.55rem; background: none; font: inherit; font-size: 0.88rem; color: #0f172a; text-align: left; cursor: pointer; white-space: nowrap; }
 .bea-row-menu button:hover, .bea-row-menu button:focus-visible { background: #f1f5f9; outline: none; }
 .bea-row-menu button.is-danger { color: #b91c1c; }
 .bea-row-menu button.is-danger:hover { background: #fef2f2; }

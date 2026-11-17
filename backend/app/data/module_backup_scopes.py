@@ -330,10 +330,17 @@ MODULE_BACKUP_SCOPES: dict[str, ModuleBackupScope] = {
         ],
         table_prefixes=["reclamation_"],
     ),
+    "reporting-bcm-sm": make_module_scope(
+        label="Reporting BCM — Situation Mensuelle",
+        uploads_subdirs=["reporting-bcm-sm"],
+        ged_module_codes=["reporting-bcm-sm"],
+        exclusive_tables=[],
+        table_prefixes=["rbcm_"],
+    ),
 }
 
 ESPACE_MODULES: dict[str, list[str]] = {
-    "comptabilite": ["immobilisations", "demandes-comptabilite"],
+    "comptabilite": ["immobilisations", "demandes-comptabilite", "reporting-bcm-sm"],
     "credit": ["credit", "demandes-credit"],
     "rh": ["rh", "demandes-rh"],
     "informatique": ["tickets-si", "demandes-informatique"],

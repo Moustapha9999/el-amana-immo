@@ -124,6 +124,22 @@ const CATALOG: Record<string, { title: string; message: string }> = {
     title: 'Élément introuvable',
     message: 'Cette page ou cette ressource est introuvable ou n’est plus disponible.',
   },
+  DELIVERABLE_NOT_FOUND: {
+    title: 'Document introuvable',
+    message: 'Ce document n’appartient pas à cette situation mensuelle ou n’existe plus.',
+  },
+  DELIVERABLE_FILE_MISSING: {
+    title: 'Fichier indisponible',
+    message: 'Le fichier Excel n’est plus disponible sur le serveur. Contactez le support avec la référence indiquée.',
+  },
+  WORK_SHA_MISMATCH: {
+    title: 'Fichier altéré',
+    message: 'L’empreinte du fichier ne correspond pas à celle enregistrée. Le téléchargement a été refusé.',
+  },
+  TEMPLATE_PATH_UNSAFE: {
+    title: 'Téléchargement refusé',
+    message: 'Le fichier demandé n’a pas pu être servi. Contactez le support avec la référence indiquée.',
+  },
   GONE: { title: 'Élément retiré', message: 'Cette ressource a été définitivement retirée.' },
   METHOD_NOT_ALLOWED: { title: 'Action indisponible', message: 'Cette action n’est pas disponible de cette manière.' },
   CONFLICT: {

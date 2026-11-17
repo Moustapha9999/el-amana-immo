@@ -41,6 +41,7 @@ from app.api.v1.endpoints import (
     plateforme,
     reclamations,
     reporting,
+    reporting_bcm_sm,
     users,
 )
 from app.api.deps import require_module_access
@@ -84,6 +85,10 @@ api_router.include_router(eer.router, dependencies=[Depends(require_module_acces
 api_router.include_router(formation.router, dependencies=[Depends(require_module_access("formation"))])
 api_router.include_router(clientele.router, dependencies=[Depends(require_module_access("clientele"))])
 api_router.include_router(reclamations.router, dependencies=[Depends(require_module_access("reclamations"))])
+api_router.include_router(
+    reporting_bcm_sm.router,
+    dependencies=[Depends(require_module_access("reporting-bcm-sm"))],
+)
 
 _immo = [Depends(require_module_access("immobilisations"))]
 api_router.include_router(organisation.router, dependencies=_immo)

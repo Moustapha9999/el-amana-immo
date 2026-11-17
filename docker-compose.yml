@@ -68,7 +68,7 @@ services:
       APP_DEBUG: "false"
       # Compte limité (database/roles/bea_app.sql) : ni DDL ni superutilisateur.
       # Les migrations passent par le service « migrate » (compte admin).
-      DATABASE_URL: postgresql+asyncpg://${BEA_APP_DB_USER:-bea_app}:${BEA_APP_DB_PASSWORD:?BEA_APP_DB_PASSWORD manquant dans .env.docker}@postgres:5432/${POSTGRES_DB:-bea_digital}
+      DATABASE_URL: postgresql+asyncpg://${BEA_APP_DB_USER:-bea_app}:${BEA_APP_DB_PASSWORD_URLENC:-${BEA_APP_DB_PASSWORD:?BEA_APP_DB_PASSWORD manquant dans .env.docker}}@postgres:5432/${POSTGRES_DB:-bea_digital}
       DATABASE_SSL: "false"
       CORS_ORIGINS: http://localhost,http://localhost:80
       # Seul le nginx du conteneur frontend peut transmettre l'IP cliente (X-Forwarded-For).
@@ -117,7 +117,7 @@ services:
     env_file:
       - .env.docker
     environment:
-      DATABASE_URL: postgresql+asyncpg://${BEA_APP_DB_USER:-bea_app}:${BEA_APP_DB_PASSWORD:?BEA_APP_DB_PASSWORD manquant dans .env.docker}@postgres:5432/${POSTGRES_DB:-bea_digital}
+      DATABASE_URL: postgresql+asyncpg://${BEA_APP_DB_USER:-bea_app}:${BEA_APP_DB_PASSWORD_URLENC:-${BEA_APP_DB_PASSWORD:?BEA_APP_DB_PASSWORD manquant dans .env.docker}}@postgres:5432/${POSTGRES_DB:-bea_digital}
       DATABASE_SSL: "false"
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2

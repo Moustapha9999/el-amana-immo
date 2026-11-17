@@ -125,4 +125,16 @@ describe('describeApiError', () => {
     expect(info.code).toBe('MFA_REQUIRED');
     expect(info.kind).toBe('auth');
   });
+
+  it('titre le refus d’empreinte WORK', () => {
+    const info = describeApiError(
+      http(409, {
+        code: 'WORK_SHA_MISMATCH',
+        message: 'SHA fichier ≠ SHA colonne',
+        user_message: 'SHA fichier ≠ SHA colonne',
+      }),
+    );
+    expect(info.code).toBe('WORK_SHA_MISMATCH');
+    expect(info.title).toBe('Fichier altéré');
+  });
 });

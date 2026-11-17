@@ -205,6 +205,13 @@ export const MODULE_ROUTE_CONTRACTS: Readonly<Record<string, ModuleRouteContract
     espacePath: '/audit-controle-conformite',
     urlPrefix: '/reclamations',
   },
+  'reporting-bcm-sm': {
+    code: 'reporting-bcm-sm',
+    strategy: 'prefixed',
+    entryPath: '/reporting-bcm-sm/accueil',
+    espacePath: '/comptabilite',
+    urlPrefix: '/reporting-bcm-sm',
+  },
 };
 
 /** Modules dont le shell métier Angular est branché (Login 2 peut naviguer). */
@@ -226,6 +233,7 @@ export const MODULES_WITH_METIER_SHELL = new Set<string>([
   'formation',
   'clientele',
   'reclamations',
+  'reporting-bcm-sm',
 ]);
 
 export function moduleHasMetierShell(moduleCode: string): boolean {

@@ -46,6 +46,7 @@ EER_MODULE_CODE = "eer"
 FORMATION_MODULE_CODE = "formation"
 CLIENTELE_MODULE_CODE = "clientele"
 RECLAMATIONS_MODULE_CODE = "reclamations"
+REPORTING_BCM_SM_MODULE_CODE = "reporting-bcm-sm"
 
 # Toujours (re)créés s’ils manquent. Le reste du catalogue = seed **bootstrap**
 # seulement (CORE ADMIN peut supprimer sans resurrection au refresh).
@@ -279,6 +280,22 @@ PLATEFORME_MODULES: list[ModuleDef] = [
         "entry_path": None,
         "statut": "bientot",
         "sort_order": 5,
+    },
+    {
+        "code": REPORTING_BCM_SM_MODULE_CODE,
+        "espace_code": "comptabilite",
+        "label": "Reporting BCM — Situation Mensuelle",
+        "description": (
+            "Situation Mensuelle BCM : SM, balances DET (COND archives), paramètres, "
+            "correspondances comptables, calculs réglementaires, contrôles et livrables."
+        ),
+        "entry_path": "/reporting-bcm-sm/accueil",
+        "statut": "developpement",
+        "status_message": (
+            "Module en construction — socle SM, imports BAL DET et moteur (mapping A_VALIDER)."
+        ),
+        "icon": "assessment",
+        "sort_order": 6,
     },
     # --- Futurs (catalogue Étape 8 — statut bientôt, pas encore de shell métier) ---
     {
@@ -770,6 +787,20 @@ FUNCTIONAL_PERMISSIONS: list[tuple[str, str, str]] = [
     ("reclamations.references.validate", "Validation des types, motifs et sous-motifs proposés", "reclamations"),
     ("reclamations.services.manage", "Gestion des unités (services, départements) et de leurs membres", "reclamations"),
     ("reclamations.admin", "Administration du module Réclamations", "reclamations"),
+    # Reporting BCM SM (Comptabilité) — distinct de clientele.bcm.*
+    ("reporting-bcm-sm.view", "Consultation Reporting BCM SM", "reporting-bcm-sm"),
+    ("reporting-bcm-sm.prepare", "Préparation campagnes et saisie courante", "reporting-bcm-sm"),
+    ("reporting-bcm-sm.import", "Import des balances DET / COND", "reporting-bcm-sm"),
+    ("reporting-bcm-sm.parameters.write", "Saisie des paramètres mensuels", "reporting-bcm-sm"),
+    ("reporting-bcm-sm.mapping.propose", "Proposition / modification de règles de correspondance", "reporting-bcm-sm"),
+    ("reporting-bcm-sm.mapping.validate", "Validation / activation des règles de correspondance", "reporting-bcm-sm"),
+    ("reporting-bcm-sm.confirm", "Confirmation de valeurs calculées", "reporting-bcm-sm"),
+    ("reporting-bcm-sm.correct", "Correction manuelle documentée", "reporting-bcm-sm"),
+    ("reporting-bcm-sm.control", "Contrôle métier (visa contrôleur)", "reporting-bcm-sm"),
+    ("reporting-bcm-sm.approve", "Approbation finale (visa approbateur)", "reporting-bcm-sm"),
+    ("reporting-bcm-sm.export", "Exports Excel / livrables", "reporting-bcm-sm"),
+    ("reporting-bcm-sm.reopen", "Réouverture contrôlée d'une campagne", "reporting-bcm-sm"),
+    ("reporting-bcm-sm.admin", "Administration du module Reporting BCM SM", "reporting-bcm-sm"),
 ]
 
 # Rôles figés Login 2 / module Immobilisations (codes courts = legacy).
@@ -842,6 +873,12 @@ RBAC_ROLES: list[tuple[str, str, str]] = [
     ("reclamations.lecteur", "Réclamations — Consultation / audit",
      "Consultation de tous les dossiers, rapports et audit, sans action métier"),
     ("reclamations.admin", "Réclamations — Admin", "Administration complète : paramètres, référentiels, droits"),
+    ("reporting-bcm-sm.lecteur", "BCM SM — Lecteur", "Consultation campagnes, résultats et livrables"),
+    ("reporting-bcm-sm.preparateur", "BCM SM — Préparateur", "Campagnes, imports, paramètres, calculs, propositions"),
+    ("reporting-bcm-sm.controleur", "BCM SM — Contrôleur",
+     "Contrôle métier, contribution à la préparation et visas de contrôle"),
+    ("reporting-bcm-sm.approbateur", "BCM SM — Approbateur", "Approbation finale (séparation des tâches)"),
+    ("reporting-bcm-sm.admin", "BCM SM — Admin", "Administration complète du module Reporting BCM SM"),
 ]
 
 # Codes courts réservés au module Immobilisations (ne pas créer pour Crédit / RH / …).
@@ -1014,6 +1051,34 @@ _RECLAMATIONS_LECTEUR = (
     "reclamations.reporting.view",
     "reclamations.reporting.export",
     "reclamations.references.view",
+)
+_RBCM_ALL = tuple(
+    code for code, _label, module in FUNCTIONAL_PERMISSIONS if module == "reporting-bcm-sm"
+)
+_RBCM_LECTEUR = (
+    "reporting-bcm-sm.view",
+    "reporting-bcm-sm.export",
+)
+_RBCM_PREPARATEUR = _RBCM_LECTEUR + (
+    "reporting-bcm-sm.prepare",
+    "reporting-bcm-sm.import",
+    "reporting-bcm-sm.parameters.write",
+    "reporting-bcm-sm.mapping.propose",
+    "reporting-bcm-sm.confirm",
+    "reporting-bcm-sm.correct",
+)
+_RBCM_CONTROLEUR = _RBCM_LECTEUR + (
+    "reporting-bcm-sm.prepare",
+    "reporting-bcm-sm.import",
+    "reporting-bcm-sm.parameters.write",
+    "reporting-bcm-sm.correct",
+    "reporting-bcm-sm.control",
+    "reporting-bcm-sm.mapping.validate",
+    "reporting-bcm-sm.confirm",
+)
+_RBCM_APPROBATEUR = _RBCM_LECTEUR + (
+    "reporting-bcm-sm.approve",
+    "reporting-bcm-sm.reopen",
 )
 _CORE_ADMIN = (
     "plateforme.users.read",
@@ -1194,6 +1259,11 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "clientele.lecteur": _CLIENTELE_LECTEUR,
     "clientele.gestionnaire": _CLIENTELE_GESTIONNAIRE,
     "clientele.admin": _CLIENTELE_ALL,
+    "reporting-bcm-sm.lecteur": _RBCM_LECTEUR,
+    "reporting-bcm-sm.preparateur": _RBCM_PREPARATEUR,
+    "reporting-bcm-sm.controleur": _RBCM_CONTROLEUR,
+    "reporting-bcm-sm.approbateur": _RBCM_APPROBATEUR,
+    "reporting-bcm-sm.admin": _RBCM_ALL + _GED_RW,
     "reclamations.point_reception": _RECLAMATIONS_POINT_RECEPTION,
     "reclamations.agent_traitement": _RECLAMATIONS_AGENT_TRAITEMENT,
     "reclamations.responsable_service": _RECLAMATIONS_RESPONSABLE_SERVICE,
