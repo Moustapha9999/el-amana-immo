@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 import { DetailDrawerComponent } from '../../contrats-echeances/shared/detail-drawer.component';
 import { describeApiErrorAsync } from '../../core/feedback/api-error';
@@ -36,6 +37,7 @@ import {
     FormsModule,
     MatIconModule,
     JsonPipe,
+    RouterLink,
     DetailDrawerComponent,
     RbcmStylesComponent,
     RbcmCampaignPickerComponent,
@@ -54,8 +56,13 @@ import {
           </p>
         </div>
         <div class="bea-mg__actions">
+          @if (ctx.selected(); as c) {
+            <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="['/reporting-bcm-sm/campagnes', c.id]">
+              <mat-icon>folder_open</mat-icon> Fiche SM
+            </a>
+          }
           <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy() || !ctx.selectedId()" (click)="run()">
-            <mat-icon>fact_check</mat-icon> Lancer
+            <mat-icon>fact_check</mat-icon> Contrôler la BAL DET
           </button>
           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy() || !ctx.selectedId()" (click)="exportCsv()">
             <mat-icon>download</mat-icon> Export CSV
@@ -90,6 +97,17 @@ import {
           </div>
           @if (r.summary?.['historical_t1_note']; as note) {
             <p class="bea-rbcm-hint" style="margin-bottom:1rem">{{ note }}</p>
+          }
+          @if (ctx.selected(); as c) {
+            <div class="bea-rbcm-quick" style="margin-bottom:1rem">
+              <a
+                class="bea-mg__btn bea-mg__btn--primary"
+                [routerLink]="['/reporting-bcm-sm/campagnes', c.id]"
+                fragment="rbcm-completer"
+              >
+                <mat-icon>edit_note</mat-icon> Compléter les cellules manuelles
+              </a>
+            </div>
           }
           <div class="bea-rbcm-grid">
             <section class="bea-mg__panel bea-rbcm-span4">
@@ -221,6 +239,7 @@ import {
 export class RbcmRapprochementComponent implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
   private readonly feedback = inject(FeedbackService);
+  private readonly route = inject(ActivatedRoute);
   readonly ctx = inject(RbcmContextService);
 
   readonly loadingSummary = signal(false);
@@ -267,6 +286,7 @@ export class RbcmRapprochementComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.ctx.applyCampaignQuery(this.route);
     this.ctx.loadCampaigns();
   }
 

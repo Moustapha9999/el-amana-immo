@@ -469,15 +469,12 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
     { section: 'Administration', label: 'Admin', path: '/reclamations/admin', icon: 'admin_panel_settings', permissions: ['reclamations.admin'] },
   ],
   'reporting-bcm-sm': [
-    { section: 'Pilotage', label: 'Accueil', path: '/reporting-bcm-sm/accueil', icon: 'home', exact: true, permissions: ['reporting-bcm-sm.view'] },
-    { section: 'Situations mensuelles', label: 'Situations mensuelles', path: '/reporting-bcm-sm/campagnes', icon: 'calendar_month', exact: true, permissions: ['reporting-bcm-sm.view'] },
-    { section: 'Situations mensuelles', label: 'Nouvelle SM', path: '/reporting-bcm-sm/campagnes/nouvelle', icon: 'add', permissions: ['reporting-bcm-sm.prepare'] },
-    { section: 'Données', label: 'Imports', path: '/reporting-bcm-sm/imports', icon: 'upload_file', permissions: ['reporting-bcm-sm.view'] },
-    { section: 'Données', label: 'BAL DET', path: '/reporting-bcm-sm/bal-det', icon: 'table_rows', permissions: ['reporting-bcm-sm.view'] },
-    { section: 'Contrôles', label: 'Contrôles', path: '/reporting-bcm-sm/rapprochement', icon: 'fact_check', permissions: ['reporting-bcm-sm.view'] },
-    { section: 'Contrôles', label: 'Paramètres', path: '/reporting-bcm-sm/parametres', icon: 'tune', permissions: ['reporting-bcm-sm.view'] },
-    { section: 'Référentiel', label: 'Correspondances', path: '/reporting-bcm-sm/mapping', icon: 'account_tree', permissions: ['reporting-bcm-sm.view'] },
-    { section: 'Archives', label: 'Archives BAL COND', path: '/reporting-bcm-sm/bal-cond', icon: 'inventory_2', permissions: ['reporting-bcm-sm.view'] },
+    { section: 'Parcours', label: 'Accueil', path: '/reporting-bcm-sm/accueil', icon: 'home', exact: true, permissions: ['reporting-bcm-sm.view'] },
+    { section: 'Parcours', label: 'Situations mensuelles', path: '/reporting-bcm-sm/campagnes', icon: 'calendar_month', permissions: ['reporting-bcm-sm.view'] },
+    { section: 'Parcours', label: 'Imports BAL DET', path: '/reporting-bcm-sm/imports', icon: 'upload_file', permissions: ['reporting-bcm-sm.view'] },
+    { section: 'Parcours', label: 'Contrôles', path: '/reporting-bcm-sm/rapprochement', icon: 'fact_check', permissions: ['reporting-bcm-sm.view'] },
+    { section: 'Parcours', label: 'Paramètres', path: '/reporting-bcm-sm/parametres', icon: 'tune', permissions: ['reporting-bcm-sm.view'] },
+    { section: 'Parcours', label: 'Archives', path: '/reporting-bcm-sm/archives', icon: 'inventory_2', permissions: ['reporting-bcm-sm.view'] },
   ],
   'archives-mg': [
     {

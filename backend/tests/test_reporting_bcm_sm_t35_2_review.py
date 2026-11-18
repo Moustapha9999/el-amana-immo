@@ -83,6 +83,7 @@ def test_parametre_absent_nul_zero():
     assert ctrl.param_is_filled(None, "EN_ATTENTE") is False
     assert ctrl.display_amount(None) is None
     assert ctrl.param_is_filled(Decimal("0.00"), "CALCULE") is True
+    assert ctrl.param_is_filled(Decimal("0.00"), "EN_ATTENTE") is False
     assert ctrl.display_amount(Decimal("0.00")) == "0.00"
 
 

@@ -198,9 +198,12 @@ def inventory_official_xlsx(path: Path) -> tuple[list[CellSpec], dict]:
             f"feuilles inattendues: {names}",
             code="TEMPLATE_SHA_MISMATCH",
         )
-    if "AVERTISSEMENT" in names:
+    if "AVERTISSEMENT" in names or "À LIRE" in names:
         wb.close()
-        raise AppError("feuille AVERTISSEMENT interdite dans le canevas source", code="TEMPLATE_SHA_MISMATCH")
+        raise AppError(
+            "feuille explicative interdite dans le canevas source",
+            code="TEMPLATE_SHA_MISMATCH",
+        )
 
     specs: dict[tuple[str, str], CellSpec] = {}
 

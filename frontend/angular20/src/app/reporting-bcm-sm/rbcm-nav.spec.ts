@@ -3,7 +3,13 @@ import { MODULES_WITH_METIER_SHELL, getModuleRouteContract } from '../plateforme
 import { navForModule } from '../layout/shell/shell-nav';
 import { placeRowMenu } from '../contrats-echeances/shared/row-menu';
 import { rbcmPageWindow } from './rbcm-pager.component';
-import { RbcmCampaign, currentGuidedStep, guidedStepState } from './rbcm.models';
+import {
+  RbcmCampaign,
+  cellKind,
+  currentGuidedStep,
+  guidedStepState,
+  paramIsFilled,
+} from './rbcm.models';
 
 describe('Reporting BCM SM — navigation et routes', () => {
   it('enregistre le contrat préfixé et le shell métier', () => {
@@ -14,17 +20,26 @@ describe('Reporting BCM SM — navigation et routes', () => {
     expect(MODULES_WITH_METIER_SHELL.has('reporting-bcm-sm')).toBeTrue();
   });
 
-  it('expose les entrées de menu métier T3.4', () => {
-    const paths = navForModule('reporting-bcm-sm').map((i) => i.path);
-    expect(paths).toContain('/reporting-bcm-sm/accueil');
-    expect(paths).toContain('/reporting-bcm-sm/campagnes');
-    expect(paths).toContain('/reporting-bcm-sm/imports');
-    expect(paths).toContain('/reporting-bcm-sm/bal-det');
+  it('expose les six onglets du parcours comptable', () => {
+    const items = navForModule('reporting-bcm-sm');
+    const paths = items.map((i) => i.path);
+    expect(paths).toEqual([
+      '/reporting-bcm-sm/accueil',
+      '/reporting-bcm-sm/campagnes',
+      '/reporting-bcm-sm/imports',
+      '/reporting-bcm-sm/rapprochement',
+      '/reporting-bcm-sm/parametres',
+      '/reporting-bcm-sm/archives',
+    ]);
+    expect(items.map((i) => i.label)).toEqual([
+      'Accueil',
+      'Situations mensuelles',
+      'Imports BAL DET',
+      'Contrôles',
+      'Paramètres',
+      'Archives',
+    ]);
     expect(paths).not.toContain('/reporting-bcm-sm/bal-cond');
-    expect(paths).toContain('/reporting-bcm-sm/rapprochement');
-    expect(paths).toContain('/reporting-bcm-sm/parametres');
-    expect(paths).toContain('/reporting-bcm-sm/mapping');
-    expect(navForModule('reporting-bcm-sm').find((i) => i.path.includes('rapprochement'))?.label).toBe('Contrôles');
   });
 
   it('déclare les routes Angular sous reporting-bcm-sm', () => {
@@ -36,11 +51,15 @@ describe('Reporting BCM SM — navigation et routes', () => {
     expect(enfants).toContain('campagnes/:id');
     expect(enfants).toContain('imports');
     expect(enfants).toContain('bal-det');
-    // Route archives conservée (hors menu) — pas d’upload COND.
+    expect(enfants).toContain('archives');
+    // Route COND historique conservée (hors menu) — pas d’upload COND.
     expect(enfants).toContain('bal-cond');
     expect(enfants).toContain('rapprochement');
     expect(enfants).toContain('parametres');
     expect(enfants).toContain('mapping');
+    const accueil = (rbcm?.children ?? []).find((c) => c.path === 'accueil');
+    expect(accueil?.redirectTo).toBeUndefined();
+    expect(accueil?.loadComponent).toBeTruthy();
   });
 
   it('place une SM brouillon à l’étape BAL DET du parcours guidé', () => {
@@ -61,7 +80,7 @@ describe('Reporting BCM SM — navigation et routes', () => {
     expect(currentGuidedStep(c, null)).toBe(2);
     expect(guidedStepState(1, 2)).toBe('done');
     expect(guidedStepState(2, 2)).toBe('current');
-    expect(guidedStepState(5, 2)).toBe('blocked');
+    expect(guidedStepState(5, 2)).toBe('wait');
   });
 
   it('place une SM avec DET et contrôles à l’étape informations à compléter', () => {
@@ -81,7 +100,71 @@ describe('Reporting BCM SM — navigation et routes', () => {
     } as RbcmCampaign;
     expect(currentGuidedStep(c, { det_validated: true, last_control_run_id: 'r1' } as never)).toBe(4);
     expect(currentGuidedStep(c, { det_validated: true } as never)).toBe(3);
-    expect(guidedStepState(5, 4)).toBe('blocked');
+    expect(guidedStepState(5, 4)).toBe('wait');
+  });
+
+  it('place le canevas en dernière étape de travail, hors visa et approbation', () => {
+    const c = {
+      id: 'x',
+      period_year: 2026,
+      period_month: 10,
+      closing_date: null,
+      bank_code: 'BEA',
+      status: 'CALCULEE',
+      campaign_version: 1,
+      reopened_from_id: null,
+      preparer_id: 'a',
+      notes: null,
+      created_at: '',
+      updated_at: '',
+    } as RbcmCampaign;
+    expect(
+      currentGuidedStep(c, {
+        det_validated: true,
+        last_control_run_id: 'r1',
+        parameters_filled: 8,
+        parameters_total: 8,
+        last_calc_run_id: 'c1',
+      } as never),
+    ).toBe(5);
+    expect(
+      currentGuidedStep(c, {
+        det_validated: true,
+        last_control_run_id: 'r1',
+        parameters_filled: 8,
+        parameters_total: 8,
+        last_calc_run_id: 'c1',
+        work_document_id: 'w1',
+        work_stale: false,
+      } as never),
+    ).toBe(6);
+    expect(guidedStepState(5, 6)).toBe('done');
+    expect(guidedStepState(5, 5)).toBe('current');
+    expect(
+      currentGuidedStep({ ...c, status: 'A_CONTROLER' }, {
+        det_validated: true,
+        last_control_run_id: 'r1',
+        parameters_filled: 8,
+        parameters_total: 8,
+        last_calc_run_id: 'c1',
+        work_document_id: 'w1',
+        work_stale: false,
+      } as never),
+    ).toBe(6);
+  });
+
+  it('ne considère pas un zéro sans statut de saisie comme complété', () => {
+    expect(paramIsFilled({ status: 'EN_ATTENTE' })).toBeFalse();
+    expect(paramIsFilled({ status: 'SAISI' })).toBeTrue();
+    expect(paramIsFilled({ status: 'EN_ATTENTE', filled: false })).toBeFalse();
+    expect(paramIsFilled({ status: 'CALCULE' })).toBeTrue();
+  });
+
+  it('sépare les cellules calculées, manuelles et à ajuster', () => {
+    expect(cellKind('AUTO')).toBe('calculated');
+    expect(cellKind('COPY')).toBe('calculated');
+    expect(cellKind('MANUAL')).toBe('manual');
+    expect(cellKind('AUTO_THEN_ADJUST')).toBe('adjust');
   });
 
   it('calcule la plage affichée sans charger toute la liste', () => {

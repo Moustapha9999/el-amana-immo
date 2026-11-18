@@ -187,6 +187,17 @@ import {
                 <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reporting-bcm-sm/bal-det">Lignes</a>
               </div>
               <p class="bea-rbcm-hint">{{ nextAction(d) }}</p>
+              @if (d.status === 'VALIDATED') {
+                <div class="bea-rbcm-quick" style="margin-top:0.65rem">
+                  <a
+                    class="bea-mg__btn bea-mg__btn--primary"
+                    routerLink="/reporting-bcm-sm/rapprochement"
+                    [queryParams]="{ campaign: d.campaign_id }"
+                  >
+                    <mat-icon>fact_check</mat-icon> Contrôler la BAL DET
+                  </a>
+                </div>
+              }
             } @else {
               <div class="bea-rbcm-empty bea-rbcm-empty--compact">
                 <mat-icon>upload_file</mat-icon>
@@ -517,6 +528,7 @@ export class RbcmImportsComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.ctx.applyCampaignQuery(this.route);
     this.ctx.loadCampaigns();
   }
 
@@ -567,7 +579,7 @@ export class RbcmImportsComponent implements OnInit, OnDestroy {
       return 'Prochaine étape : confirmer pour charger les soldes NCG et lancer les contrôles internes.';
     }
     if (imp.status === 'VALIDATED') {
-      return 'BAL DET confirmée — contrôles internes disponibles, puis paramètres.';
+      return 'BAL DET confirmée — prochaine action : Contrôler la BAL DET.';
     }
     if (imp.status === 'SUPERSEDED') return 'Version remplacée — consulter l’historique.';
     if (imp.status === 'REJECTED') return 'Corriger le fichier puis réimporter.';

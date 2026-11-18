@@ -44,6 +44,24 @@ def test_param_is_filled_zero_calcule_is_real():
     assert ctrl.param_is_filled(None, "EN_ATTENTE") is False
     assert ctrl.param_is_filled(None, None) is False
     assert ctrl.param_is_filled(None, "SAISI") is True
+    assert ctrl.param_is_filled(Decimal("0.00"), "EN_ATTENTE") is False
+    assert ctrl.param_is_filled(Decimal("0.00"), None) is False
+    assert ctrl.param_is_filled(Decimal("12.00"), "EN_ATTENTE") is False
+
+
+def test_param_catalog_order_and_cell_hints():
+    assert ps.PARAM_DISPLAY_ORDER[:5] == (
+        "amort_frais_immo",
+        "dat_public",
+        "publics_mru",
+        "publics_dev",
+        "projets",
+    )
+    assert set(ps.PARAM_DISPLAY_ORDER) == set(PARAMETER_CODES)
+    assert ps.PARAM_CELL_HINTS["amort_frais_immo"] == "A:234:C"
+    assert ps.PARAM_CELL_HINTS["dat_public"] == "A:327:D"
+    assert ps.PARAM_NATURE["projets"] == "ajustement"
+    assert ps.PARAM_NATURE["caisse_devises"] == "calculable"
 
 
 def test_global_result_classification():

@@ -764,7 +764,7 @@ async def campaign_progress(db: AsyncSession, campaign_id: uuid.UUID) -> dict:
         if p.parameter_code in seen:
             continue
         seen.add(p.parameter_code)
-        if p.value is not None or p.status in ("SAISI", "CALCULE", "VALIDE"):
+        if p.status in ("SAISI", "CALCULE", "VALIDE"):
             filled += 1
         if p.status == "VALIDE":
             validated += 1
@@ -795,7 +795,36 @@ async def campaign_progress(db: AsyncSession, campaign_id: uuid.UUID) -> dict:
         "last_control_result": None,
         "last_control_at": None,
         "complements_open": 0,
+        "last_calc_run_id": None,
+        "last_calc_at": None,
+        "work_document_id": None,
+        "work_stale": False,
     }
+
+    calc = await db.scalar(
+        select(RbcmCalculationRun)
+        .where(
+            RbcmCalculationRun.campaign_id == campaign_id,
+            RbcmCalculationRun.status == "DONE",
+        )
+        .order_by(RbcmCalculationRun.created_at.desc())
+        .limit(1)
+    )
+    work = await db.scalar(
+        select(RbcmDeliverable).where(
+            RbcmDeliverable.campaign_id == campaign_id,
+            RbcmDeliverable.kind == "EXCEL",
+            RbcmDeliverable.status == "WORK",
+        )
+    )
+    if calc is not None:
+        out["last_calc_run_id"] = str(calc.id)
+        out["last_calc_at"] = calc.finished_at.isoformat() if calc.finished_at else (
+            calc.created_at.isoformat() if calc.created_at else None
+        )
+    if work is not None:
+        out["work_document_id"] = str(work.id)
+        out["work_stale"] = bool(calc is None or work.run_id != calc.id)
 
     from app.services.reporting_bcm_sm.control_service import GAP_STATES
 

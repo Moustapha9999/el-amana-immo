@@ -127,6 +127,8 @@ const rbcmRapprochement = () =>
   import('./reporting-bcm-sm/pages/rbcm-rapprochement.component').then((m) => m.RbcmRapprochementComponent);
 const rbcmParametres = () =>
   import('./reporting-bcm-sm/pages/rbcm-parametres.component').then((m) => m.RbcmParametresComponent);
+const rbcmArchives = () =>
+  import('./reporting-bcm-sm/pages/rbcm-archives.component').then((m) => m.RbcmArchivesComponent);
 const achatsBons = () => import('./achats-appro/achats-bons.component').then((m) => m.AchatsBonsComponent);
 const achatsReceptions = () =>
   import('./achats-appro/achats-receptions.component').then((m) => m.AchatsReceptionsComponent);
@@ -422,7 +424,8 @@ export const routes: Routes = withUnsavedChangesGuard([
       },
       { path: 'imports', loadComponent: rbcmImports, data: { title: 'Imports BCM SM' } },
       { path: 'bal-det', loadComponent: rbcmBalDet, data: { title: 'BAL DET' } },
-      { path: 'bal-cond', loadComponent: rbcmBalCond, data: { title: 'Archives BAL COND' } },
+      { path: 'bal-cond', loadComponent: rbcmBalCond, data: { title: 'BAL COND historique' } },
+      { path: 'archives', loadComponent: rbcmArchives, data: { title: 'Archives BCM SM' } },
       { path: 'rapprochement', loadComponent: rbcmRapprochement, data: { title: 'Contrôles BAL DET' } },
       { path: 'parametres', loadComponent: rbcmParametres, data: { title: 'Paramètres BCM SM' } },
       { path: 'mapping', loadComponent: rbcmMapping, data: { title: 'Correspondances BCM SM' } },

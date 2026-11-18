@@ -43,9 +43,13 @@ test.describe('Reporting BCM SM — T3.4-C', () => {
   test('accès Accueil et terminologie SM', async ({ page }) => {
     await openModulePath(page, '/reporting-bcm-sm/accueil');
     await expect(page.getByRole('heading', { name: /Reporting BCM/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Accueil$/ }).first()).toBeVisible();
     await expect(page.getByRole('link', { name: /Situations mensuelles/i }).first()).toBeVisible();
-    await expect(page.getByRole('link', { name: /Nouvelle SM/i }).first()).toBeVisible();
-    await expect(page.getByRole('link', { name: /Archives BAL COND/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: /Imports BAL DET/i }).first()).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Contrôles$/ }).first()).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Paramètres$/ }).first()).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Archives$/ }).first()).toBeVisible();
+    await expect(page.getByRole('link', { name: /Archives BAL COND/i })).toHaveCount(0);
     const body = await page.locator('body').innerText();
     expect(body).not.toMatch(/\bNouvelle campagne\b/);
     expect(body).not.toMatch(/\bFiche campagne\b/);
@@ -59,12 +63,16 @@ test.describe('Reporting BCM SM — T3.4-C', () => {
     await expect(page.locator('.bea-mg__table, .bea-rbcm-empty').first()).toBeVisible();
   });
 
-  test('fiche SM + bloc D01/D02', async ({ page }) => {
+  test('fiche SM + canevas et circuit réglementaire secondaire', async ({ page }) => {
     await openModulePath(page, '/reporting-bcm-sm/campagnes');
     const link = page.locator('a[href*="/reporting-bcm-sm/campagnes/"]').filter({ hasNotText: /nouvelle/i }).first();
     if (await link.count()) {
       await link.click();
       await expect(page.getByRole('heading', { name: /^SM / })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByRole('heading', { name: /Documents/i })).toBeVisible();
+      await expect(page.getByRole('button', { name: /Générer le canevas SM/i }).first()).toBeVisible();
+      await expect(page.getByRole('heading', { name: /Validation réglementaire/i })).toBeVisible();
+      await page.getByText(/Détails de validation réglementaire/).click();
       await expect(page.getByText(/D01/)).toBeVisible();
       await expect(page.getByText(/D02/)).toBeVisible();
     }
@@ -100,6 +108,10 @@ test.describe('Reporting BCM SM — T3.4-C', () => {
   });
 
   test('Archives BAL COND', async ({ page }) => {
+    await openModulePath(page, '/reporting-bcm-sm/archives');
+    await expect(page.getByRole('heading', { name: /^Archives$/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Archives BAL DET/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Archives Situations Mensuelles/i })).toBeVisible();
     await openModulePath(page, '/reporting-bcm-sm/bal-cond');
     await expect(page.locator('body')).toContainText(/BAL COND|Archives|historique/i);
   });
@@ -124,13 +136,13 @@ test.describe('Responsive Reporting BCM SM', () => {
       await page.setViewportSize({ width: vp.w, height: vp.h });
       await login1(page);
       await ensureModule(page);
-      await openModulePath(page, '/reporting-bcm-sm/accueil');
+      await openModulePath(page, '/reporting-bcm-sm/campagnes');
       const overflow = await page.evaluate(() => {
         const el = document.scrollingElement || document.documentElement;
         return el.scrollWidth - el.clientWidth;
       });
       expect(overflow).toBeLessThan(48);
-      await expect(page.getByRole('heading', { name: /Reporting BCM/i })).toBeVisible();
+      await expect(page.getByRole('heading', { name: /Situations mensuelles/i })).toBeVisible();
     });
   }
 });

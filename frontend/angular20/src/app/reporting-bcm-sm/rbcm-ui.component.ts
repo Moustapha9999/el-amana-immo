@@ -54,7 +54,7 @@ import { ChangeDetectionStrategy, Component, ViewEncapsulation } from '@angular/
     .bea-rbcm .bea-mg__panel {
       animation: bea-rbcm-in 0.35s ease both;
       min-width: 0;
-      overflow: hidden;
+      overflow: visible;
     }
     bea-rbcm-pager { display: block; width: 100%; min-width: 0; }
     .bea-rbcm .bea-rbcm-grid > .bea-mg__panel { margin-bottom: 0; }
@@ -162,6 +162,14 @@ import { ChangeDetectionStrategy, Component, ViewEncapsulation } from '@angular/
       max-height: 280px; overflow: auto; font-size: 0.8rem; border: 1px solid #e2e8f0;
     }
     .bea-rbcm .bea-rbcm-hint { color: #64748b; font-size: 0.86rem; margin: 0.35rem 0 0; }
+    .bea-rbcm .bea-rbcm-block { margin-top: 1.15rem; }
+    .bea-rbcm .bea-rbcm-block:first-child { margin-top: 0; }
+    .bea-rbcm .bea-rbcm-block > h3 {
+      margin: 0 0 0.35rem; font-size: 0.98rem; font-weight: 650;
+    }
+    .bea-rbcm .bea-rbcm-counts {
+      display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.35rem 0 0.75rem;
+    }
     .bea-rbcm .bea-rbcm-row { cursor: pointer; transition: background 0.15s ease; }
     .bea-rbcm .bea-rbcm-row:hover { background: color-mix(in srgb, #1a5278 6%, transparent); }
     .bea-rbcm .bea-rbcm-ellipsis {
@@ -305,6 +313,26 @@ import { ChangeDetectionStrategy, Component, ViewEncapsulation } from '@angular/
     }
     .bea-rbcm .bea-rbcm-tech { margin-top: 0.35rem; }
     .bea-rbcm .bea-rbcm-tech summary { cursor: pointer; color: #64748b; font-size: 0.85rem; }
+    .bea-rbcm .bea-rbcm-hub-kpis {
+      margin: 0 0 1rem;
+    }
+    .bea-rbcm .bea-rbcm-summary {
+      list-style: none; margin: 0.85rem 0 0; padding: 0.75rem 0.9rem;
+      display: grid; gap: 0.35rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+    }
+    .bea-rbcm .bea-rbcm-summary li { font-size: 0.86rem; color: #334155; overflow-wrap: anywhere; }
+    .bea-rbcm .bea-rbcm-summary strong { display: inline-block; min-width: 11.5rem; color: #0f172a; }
+    .bea-rbcm .bea-rbcm-inline {
+      border: 0; background: none; color: #1a5278; font-weight: 600; cursor: pointer; padding: 0;
+      text-decoration: underline;
+    }
+    .bea-rbcm details.bea-rbcm-reg {
+      margin-top: 0.85rem; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0.35rem 0.9rem 0.85rem;
+      background: #fff;
+    }
+    .bea-rbcm details.bea-rbcm-reg > summary {
+      cursor: pointer; font-weight: 650; padding: 0.7rem 0; color: #0f172a;
+    }
     .bea-rbcm .bea-mg__btn {
       min-height: 2.25rem; white-space: nowrap;
     }
@@ -324,6 +352,7 @@ import { ChangeDetectionStrategy, Component, ViewEncapsulation } from '@angular/
       .bea-rbcm .bea-rbcm-period-bar,
       .bea-rbcm .bea-rbcm-sources { grid-template-columns: 1fr; }
       .bea-rbcm .bea-rbcm-upload { max-width: none; }
+      .bea-rbcm .bea-rbcm-summary strong { display: block; min-width: 0; }
     }
     @media (max-width: 768px) {
       .bea-rbcm .bea-rbcm-filters .bea-mg__field { flex: 1 1 100%; min-width: 0; }

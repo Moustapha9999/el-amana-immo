@@ -30,7 +30,7 @@ import {
         <div class="bea-rbcm-quick">
           @if (canPrepare()) {
             <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy() || loading()" (click)="generateWork()">
-              <mat-icon>description</mat-icon> Générer le canevas
+              <mat-icon>description</mat-icon> Générer le canevas SM
             </button>
           }
           <button type="button" class="bea-mg__icon-btn" aria-label="Actualiser" [disabled]="busy() || loading()" (click)="reload()">

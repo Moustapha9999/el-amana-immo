@@ -32,6 +32,42 @@ PARAMETER_LABELS = {
     "cautions_dev": "Cautions devises",
 }
 
+# Ordre métier de l’étape 4 — les cinq codes demandés d’abord.
+PARAM_DISPLAY_ORDER = (
+    "amort_frais_immo",
+    "dat_public",
+    "publics_mru",
+    "publics_dev",
+    "projets",
+    "caisse_devises",
+    "prives_dev",
+    "cautions_dev",
+)
+
+PARAM_CELL_HINTS = {
+    "amort_frais_immo": "A:234:C",
+    "dat_public": "A:327:D",
+    "publics_mru": "A:322:D",
+    "publics_dev": "A:322:F",
+    "projets": "A:323:D (−) / A:403:D (+)",
+    "caisse_devises": "Proposition BAL DET",
+    "prives_dev": "Saisie mensuelle — cellule à confirmer (D05)",
+    "cautions_dev": "Saisie mensuelle — cellule à confirmer (D05)",
+}
+
+PARAM_NATURE = {
+    "amort_frais_immo": "manuel",
+    "dat_public": "manuel",
+    "publics_mru": "manuel",
+    "publics_dev": "manuel",
+    "projets": "ajustement",
+    "caisse_devises": "calculable",
+    "prives_dev": "manuel",
+    "cautions_dev": "manuel",
+}
+
+_PARAM_FILLED_STATUSES = ("SAISI", "CALCULE", "VALIDE")
+
 # Proposition dérivable caisse_devises — règle provisoire documentée (D04/D05 ouverts).
 # NCG classe caisse (préfixe 101) + devise EUR. Ne pas appliquer comme vérité définitive.
 CAISSE_DEVISES_NCG_PREFIX = "101"
@@ -75,24 +111,35 @@ async def current_values(db: AsyncSession, campaign_id: uuid.UUID) -> list[RbcmP
     return out
 
 
+def _param_rank(code: str) -> int:
+    try:
+        return PARAM_DISPLAY_ORDER.index(code)
+    except ValueError:
+        return 99
+
+
 async def parameter_catalog(db: AsyncSession, campaign_id: uuid.UUID) -> list[dict]:
     await ensure_definitions(db)
-    defs = (await db.scalars(select(RbcmParameterDefinition).order_by(RbcmParameterDefinition.code))).all()
+    defs = (await db.scalars(select(RbcmParameterDefinition))).all()
     current = {v.parameter_code: v for v in await current_values(db, campaign_id)}
     out = []
-    for d in defs:
+    for d in sorted(defs, key=lambda row: (_param_rank(row.code), row.code)):
         v = current.get(d.code)
+        status = v.status if v else "EN_ATTENTE"
         out.append(
             {
                 "code": d.code,
                 "label": d.label,
                 "calculable": d.calculable,
+                "nature": PARAM_NATURE.get(d.code, "manuel"),
+                "cell_hint": PARAM_CELL_HINTS.get(d.code),
                 "value": str(v.value) if v and v.value is not None else None,
                 "value_id": str(v.id) if v else None,
                 "source": v.source if v else None,
                 "justification": v.justification if v else None,
                 "justificatif_ref": v.justificatif_ref if v else None,
-                "status": v.status if v else "EN_ATTENTE",
+                "status": status,
+                "filled": status in _PARAM_FILLED_STATUSES,
                 "authored_by_id": str(v.authored_by_id) if v and v.authored_by_id else None,
                 "validated_by_id": str(v.validated_by_id) if v and v.validated_by_id else None,
                 "created_at": v.created_at.isoformat() if v else None,
@@ -114,8 +161,9 @@ async def set_parameter(
     justificatif_ref: str | None = None,
     expected_value_id: uuid.UUID | None = None,
 ) -> RbcmParameterValue:
-    if campaign.status in ("CLOTUREE", "APPROUVEE"):
-        raise AppError("Campagne figée : paramètres non modifiables.", status_code=409, code="CAMPAIGN_LOCKED")
+    from app.services.reporting_bcm_sm.workflow_service import assert_campaign_editable
+
+    assert_campaign_editable(campaign)
     if parameter_code not in PARAMETER_CODES:
         raise AppError(f"Paramètre inconnu : {parameter_code}", code="UNKNOWN_PARAMETER")
     if value is None and not (source or justification):
@@ -185,7 +233,7 @@ async def set_parameter(
     codes_filled = {
         p.parameter_code
         for p in filled
-        if p.value is not None or p.status in ("SAISI", "CALCULE", "VALIDE")
+        if p.status in _PARAM_FILLED_STATUSES
     }
     if len(codes_filled) >= len(PARAMETER_CODES) and campaign.status in (
         "IMPORTS",

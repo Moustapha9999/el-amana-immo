@@ -276,10 +276,16 @@ def test_pg_struct_repair_and_work_docs():
             assert file_sha256(p1) == older["sha256"]
             assert file_sha256(p2) == newer["sha256"]
             wb = load_workbook(p2, data_only=False)
-            assert wb.sheetnames[0] == "AVERTISSEMENT"
+            assert wb.sheetnames[0] == "À LIRE"
+            assert wb.sheetnames[1] == "AVERTISSEMENT"
             assert "ETAT A" in wb.sheetnames
-            official = [s for s in wb.sheetnames if s != "AVERTISSEMENT"]
+            official = [s for s in wb.sheetnames if s not in ("AVERTISSEMENT", "À LIRE")]
             assert len(official) == 8
+            cover = " ".join(
+                str(wb["À LIRE"].cell(row=r, column=1).value or "") for r in range(1, 12)
+            )
+            assert "DOCUMENT DE TRAVAIL — NON VALIDÉ" in cover
+            assert "03/2099" in cover or "mars 2099" in cover.lower()
             etat_a = wb["ETAT A"]
             blob = Path(p2).read_bytes()
             for lit in OCTOBER_LITERALS:

@@ -230,7 +230,8 @@ def _fill_line_totals(values: dict[str, CellValue]) -> None:
     prefixes: set[str] = set()
     for key in values:
         parts = key.split(":")
-        if len(parts) == 3 and parts[0] in {"A", "B", "C"}:
+        # H = total de ligne seulement sur ETAT A. Sur ETAT B, H = non-résidents.
+        if len(parts) == 3 and parts[0] == "A":
             prefixes.add(f"{parts[0]}:{parts[1]}")
     for prefix in prefixes:
         hkey = f"{prefix}:H"
@@ -327,6 +328,14 @@ def evaluate_sm(
                 traces=[{"decision": str(val)}],
             )
     return values
+
+
+def det_signed_gap(lines: list[DetLine]) -> Decimal:
+    """Déséquilibre BAL DET = Σ DEB − Σ CRE (toutes classes). Jamais de constante."""
+    total = ZERO
+    for line in lines:
+        total += (line.debit or ZERO) - (line.credit or ZERO)
+    return quantize_mru(total)
 
 
 def classes_1_8_gap(lines: list[DetLine]) -> Decimal:

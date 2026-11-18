@@ -42,14 +42,6 @@ import {
             Mapping non activé · ECART désactivé.
           </p>
         </div>
-        <div class="bea-mg__actions">
-          <a class="bea-mg__btn bea-mg__btn--primary" routerLink="/reporting-bcm-sm/campagnes/nouvelle">
-            <mat-icon>add</mat-icon> Nouvelle SM
-          </a>
-          <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reporting-bcm-sm/imports">
-            <mat-icon>upload_file</mat-icon> Imports
-          </a>
-        </div>
       </header>
 
       <bea-rbcm-campaign-picker />
@@ -135,19 +127,14 @@ import {
                     class="bea-rbcm-step"
                     [attr.data-state]="p.parameters_filled >= p.parameters_total ? 'done' : 'wait'"
                   >
-                    <mat-icon>tune</mat-icon>
-                    <span>4. Paramètres</span>
+                    <mat-icon>edit_note</mat-icon>
+                    <span>4. Cellules manuelles</span>
                     <small>{{ p.parameters_filled }}/{{ p.parameters_total }}</small>
                   </div>
-                  <div class="bea-rbcm-step" data-state="blocked">
-                    <mat-icon>account_tree</mat-icon>
-                    <span>5. Mapping</span>
-                    <small>Bloqué — D01</small>
-                  </div>
-                  <div class="bea-rbcm-step" data-state="blocked">
-                    <mat-icon>gavel</mat-icon>
-                    <span>6. Traitement / validation</span>
-                    <small>Bloqué — D01 / D02</small>
+                  <div class="bea-rbcm-step" [attr.data-state]="p.work_document_id ? 'done' : 'wait'">
+                    <mat-icon>description</mat-icon>
+                    <span>5. Canevas SM</span>
+                    <small>{{ p.work_document_id ? 'Document de travail' : 'À générer' }}</small>
                   </div>
                 </div>
               } @else {

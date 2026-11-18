@@ -166,7 +166,149 @@ export interface RbcmProgress {
   last_control_result?: string | null;
   last_control_at?: string | null;
   complements_open?: number;
+  last_calc_run_id?: string | null;
+  last_calc_at?: string | null;
+  work_document_id?: string | null;
+  work_stale?: boolean;
 }
+
+export interface RbcmReviewCheck {
+  code: string;
+  title: string;
+  state: 'ok' | 'fail' | 'missing' | 'wait' | 'stale' | string;
+  detail: string;
+  action?: string | null;
+}
+
+export interface RbcmReviewFinding {
+  code: string;
+  title: string;
+  category: 'structure' | 'donnees' | 'anomalie' | string;
+  severity: 'blocking' | 'warning' | 'info' | string;
+  status: 'ok' | 'fail' | 'pending' | string;
+  message: string;
+  sheet?: string | null;
+  cell?: string | null;
+  action?: string | null;
+}
+
+export interface RbcmWorkflowBlocker {
+  code: string;
+  title: string;
+  message: string;
+}
+
+export interface RbcmWorkflowAction {
+  allowed: boolean;
+  blockers: RbcmWorkflowBlocker[];
+  reason_required?: boolean;
+}
+
+export interface RbcmWorkflow {
+  campaign_id: string;
+  status: string;
+  gates: Record<string, boolean>;
+  open_gates: { code: string; label: string }[];
+  can_finalize_regulatory: boolean;
+  work_stale: boolean;
+  params_stale: boolean;
+  submitted: { at: string | null; actor_id: string | null; work_id: string | null };
+  control_visa: { at: string | null; actor_id: string | null };
+  approved: { at: string | null; actor_id: string | null; work_id: string | null };
+  rejected: { at: string | null };
+  sod: {
+    preparer_id: string | null;
+    reporting_owner_id: string | null;
+    current_user_id: string | null;
+    same_as_preparer: boolean;
+    same_as_owner: boolean;
+  };
+  submit: RbcmWorkflowAction;
+  control_ok: RbcmWorkflowAction;
+  approve: RbcmWorkflowAction;
+  reject: RbcmWorkflowAction;
+  work_download: {
+    allowed: boolean;
+    deliverable_id: string | null;
+    filename: string;
+    disclaimer: string;
+  };
+  final_download: {
+    allowed: boolean;
+    blockers: RbcmWorkflowBlocker[];
+    deliverable_id: string | null;
+    filename: string;
+  };
+  editable: boolean;
+}
+
+export const WORKFLOW_ACTION_LABELS: Record<string, string> = {
+  SUBMIT_CONTROL: 'Soumission au contrôle',
+  CONTROL_OK: 'Visa du contrôleur',
+  CONTROL_REJECT: 'Retour en correction',
+  APPROVE: 'Approbation',
+  REJECT_APPROVAL: 'Refus d’approbation',
+  REOPEN: 'Réouverture',
+  CLOSE: 'Clôture',
+  OWNER_ASSIGN: 'Changement de responsable',
+};
+
+export interface RbcmReview {
+  campaign_id: string;
+  preparation: {
+    verdict: 'ready' | 'complements' | 'decision' | 'blocked' | string;
+    verdict_label: string;
+    can_verify: boolean;
+    checks: RbcmReviewCheck[];
+    missing_params: { code: string; label: string; cell_hint?: string | null; nature?: string }[];
+    pending_manual: string[];
+    pending_adjust: string[];
+    decisions: { code: string; label: string; open: boolean; needed_for: string }[];
+    work_stale: boolean;
+    params_stale: boolean;
+  };
+  verification: {
+    verdict: 'conforme' | 'a_corriger' | 'a_completer' | 'decision' | string;
+    verdict_label: string;
+    can_finalize_regulatory: boolean;
+    stale: boolean;
+    work_id: string | null;
+    work_filename: string | null;
+    calc_run_id: string | null;
+    sheets: string[];
+    missing_sheets: string[];
+    findings: RbcmReviewFinding[];
+    counts: { blocking: number; warning: number; info: number; pending: number };
+  };
+}
+
+export const PREP_VERDICT_TONE: Record<string, 'ok' | 'warn' | 'danger' | 'info' | null> = {
+  ready: 'ok',
+  complements: 'warn',
+  decision: 'warn',
+  blocked: 'danger',
+};
+
+export const DOC_VERDICT_TONE: Record<string, 'ok' | 'warn' | 'danger' | 'info' | null> = {
+  conforme: 'ok',
+  a_completer: 'warn',
+  decision: 'warn',
+  a_corriger: 'danger',
+};
+
+export const CHECK_STATE_TONE: Record<string, 'ok' | 'warn' | 'danger' | 'info' | null> = {
+  ok: 'ok',
+  fail: 'danger',
+  missing: 'warn',
+  wait: 'warn',
+  stale: 'warn',
+};
+
+export const FINDING_CATEGORY_LABELS: Record<string, string> = {
+  structure: 'Structure du document',
+  donnees: 'Données comptables',
+  anomalie: 'Anomalies et avertissements',
+};
 
 export interface RbcmImport {
   id: string;
@@ -210,12 +352,15 @@ export interface RbcmParamCatalog {
   code: string;
   label: string;
   calculable: boolean;
+  nature?: 'manuel' | 'calculable' | 'ajustement' | string;
+  cell_hint?: string | null;
   value: string | null;
   value_id: string | null;
   source: string | null;
   justification: string | null;
   justificatif_ref?: string | null;
   status: string;
+  filled?: boolean;
   authored_by_id: string | null;
   validated_by_id: string | null;
   created_at: string | null;
@@ -360,22 +505,21 @@ export const IMPORT_STATUS_LABELS: Record<string, string> = {
 };
 
 export const SM_GUIDED_STEPS = [
-  { n: 1, key: 'infos', label: 'Informations de la SM' },
-  { n: 2, key: 'bal', label: 'BAL DET' },
+  { n: 1, key: 'infos', label: 'Situation mensuelle' },
+  { n: 2, key: 'bal', label: 'Import BAL DET' },
   { n: 3, key: 'controles', label: 'Contrôles' },
-  { n: 4, key: 'completer', label: 'Informations à compléter' },
-  { n: 5, key: 'preparer', label: 'Préparation' },
-  { n: 6, key: 'verifier', label: 'Vérification du document' },
-  { n: 7, key: 'valider', label: 'Validation et téléchargement' },
+  { n: 4, key: 'completer', label: 'Cellules manuelles' },
+  { n: 5, key: 'preparer', label: 'Canevas SM' },
 ] as const;
 
-/** Étape courante du parcours guidé (1–7). T3.5-2 : 5–7 restent ultérieures. */
-export function currentGuidedStep(c: RbcmCampaign, p?: RbcmProgress | null): number {
-  if (c.status === 'APPROUVEE' || c.status === 'CLOTUREE') return 7;
-  if (c.status === 'A_CONTROLER') return 6;
+/** Étape courante du parcours de travail (1–5). Un 6 signifie canevas généré (toutes les étapes terminées). Visa / approbation hors parcours. */
+export function currentGuidedStep(_c: RbcmCampaign, p?: RbcmProgress | null): number {
   if (!p?.det_validated) return 2;
   if (!p.last_control_run_id) return 3;
-  return 4;
+  const missing = (p.parameters_total ?? 8) - (p.parameters_filled ?? 0);
+  if (missing > 0 || !p.last_calc_run_id) return 4;
+  if (!p.work_document_id || p.work_stale) return 5;
+  return 6;
 }
 
 export const CONTROL_CATEGORY_LABELS: Record<string, string> = {
@@ -410,7 +554,6 @@ export function guidedStepState(
 ): 'done' | 'current' | 'wait' | 'blocked' {
   if (step < current) return 'done';
   if (step === current) return 'current';
-  if (step >= 5) return 'blocked';
   return 'wait';
 }
 
@@ -495,13 +638,58 @@ export interface RbcmCellResultList {
 }
 
 export const CELL_STATUS_LABELS: Record<string, string> = {
-  AUTOMATIQUE: 'Calculé depuis la BAL DET',
+  AUTOMATIQUE: 'Calculé',
   SAISIE_MANUELLE: 'Saisi',
-  A_AJUSTER: 'À ajuster après téléchargement',
+  A_AJUSTER: 'À ajuster',
   CORRECTION_MANUELLE: 'Corrigé manuellement',
   NON_RENSEIGNE: 'À compléter',
   A_CONFIRMER: 'À confirmer',
 };
+
+export const PARAM_STATUS_LABELS: Record<string, string> = {
+  EN_ATTENTE: 'À compléter',
+  SAISI: 'Saisi',
+  CALCULE: 'Calculé',
+  VALIDE: 'Saisi',
+  REJETE: 'À compléter',
+};
+
+export const PARAM_NATURE_LABELS: Record<string, string> = {
+  manuel: 'Saisie manuelle',
+  calculable: 'Proposition BAL DET',
+  ajustement: 'Ajustement',
+};
+
+export const CELL_ORIGIN_LABELS: Record<string, string> = {
+  AUTO: 'Calculé',
+  COPY: 'Calculé',
+  PCT: 'Calculé',
+  REMAINDER: 'Calculé',
+  MANUAL: 'Saisie manuelle',
+  AUTO_THEN_ADJUST: 'À ajuster',
+};
+
+export function paramIsFilled(p: Pick<RbcmParamCatalog, 'status' | 'filled'>): boolean {
+  if (typeof p.filled === 'boolean') return p.filled;
+  return p.status === 'SAISI' || p.status === 'CALCULE' || p.status === 'VALIDE';
+}
+
+export function paramStatusTone(status: string): 'ok' | 'warn' | 'info' | null {
+  if (status === 'SAISI' || status === 'VALIDE') return 'ok';
+  if (status === 'CALCULE') return 'info';
+  return 'warn';
+}
+
+export function cellKind(
+  origin: string | null | undefined,
+): 'calculated' | 'manual' | 'adjust' | 'other' {
+  if (origin === 'AUTO_THEN_ADJUST') return 'adjust';
+  if (origin === 'MANUAL') return 'manual';
+  if (origin === 'AUTO' || origin === 'COPY' || origin === 'PCT' || origin === 'REMAINDER') {
+    return 'calculated';
+  }
+  return 'other';
+}
 
 /** Libellés métier — WORK n’est jamais « validé ». */
 export const DOCUMENT_STATUS_LABELS: Record<string, string> = {

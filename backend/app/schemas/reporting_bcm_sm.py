@@ -97,6 +97,10 @@ class CampaignProgressOut(BaseModel):
     last_control_result: str | None = None
     last_control_at: str | None = None
     complements_open: int = 0
+    last_calc_run_id: str | None = None
+    last_calc_at: str | None = None
+    work_document_id: str | None = None
+    work_stale: bool = False
 
 
 class ValidationEventOut(BaseModel):

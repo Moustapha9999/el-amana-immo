@@ -1,4 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../core/services/api.service';
 import { RBCM_API, RbcmCampaign, RbcmCampaignList, periodLabel } from './rbcm.models';
 
@@ -45,6 +46,12 @@ export class RbcmContextService {
     this.selectedId.set(id);
     if (id) sessionStorage.setItem(KEY, id);
     else sessionStorage.removeItem(KEY);
+  }
+
+  /** Pré-sélectionne la SM indiquée dans `?campaign=` (parcours fiche → import / contrôles). */
+  applyCampaignQuery(route: ActivatedRoute): void {
+    const id = route.snapshot.queryParamMap.get('campaign');
+    if (id) this.select(id);
   }
 
   requireCampaignId(): string | null {

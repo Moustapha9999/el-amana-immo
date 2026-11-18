@@ -72,6 +72,7 @@ from app.services.reporting_bcm_sm import (
     excel_export,
     import_service,
     parameter_service,
+    review_service,
     workflow_service,
 )
 from app.services.reporting_bcm_sm.document_access import (
@@ -393,6 +394,26 @@ async def campaign_progress(
     return CampaignProgressOut.model_validate(
         await campaign_service.campaign_progress(db, campaign_id)
     )
+
+
+@router.get("/campaigns/{campaign_id}/review")
+async def campaign_review(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(PERM_VIEW)),
+):
+    camp = await campaign_service.get_campaign(db, campaign_id)
+    return await review_service.build_review(db, camp)
+
+
+@router.get("/campaigns/{campaign_id}/workflow")
+async def campaign_workflow(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(PERM_VIEW)),
+):
+    camp = await campaign_service.get_campaign(db, campaign_id)
+    return await workflow_service.workflow_state(db, camp, user=user)
 
 
 @router.get("/campaigns/{campaign_id}/history", response_model=list[ValidationEventOut])
@@ -1356,6 +1377,7 @@ async def calculate(
     user: User = Depends(require_permission(PERM_PREPARE)),
 ):
     camp = await campaign_service.get_campaign(db, campaign_id)
+    workflow_service.assert_campaign_editable(camp)
     run = await engine_runner.run_calculation(db, campaign=camp, user=user)
     work = None
     try:
@@ -1431,6 +1453,7 @@ async def generate_campaign_work(
     user: User = Depends(require_permission(PERM_PREPARE)),
 ):
     camp = await campaign_service.get_campaign(db, campaign_id)
+    workflow_service.assert_campaign_editable(camp)
     out = await generate_work(db, campaign=camp, user=user)
     await record_audit(
         db,
@@ -1456,6 +1479,7 @@ async def create_document_decision(
     user: User = Depends(require_permission(PERM_PREPARE)),
 ):
     camp = await campaign_service.get_campaign(db, campaign_id)
+    workflow_service.assert_campaign_editable(camp)
     template = None
     if camp.template_version_id:
         template = await db.get(RbcmTemplate, camp.template_version_id)
@@ -1696,6 +1720,52 @@ async def list_campaign_documents(
         after={"result": "ok", "count": len(items)},
     )
     return DocumentListOut(items=items, total=len(items))
+
+
+@router.get("/campaigns/{campaign_id}/documents/final/download")
+async def download_final_document(
+    campaign_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(PERM_EXPORT)),
+):
+    camp = await campaign_service.get_campaign(db, campaign_id)
+    download_name = sm_period_filename(camp.period_year, camp.period_month)
+    try:
+        d = await workflow_service.resolve_final_deliverable(db, camp)
+        path = resolve_deliverable_file(d)
+    except AppError as exc:
+        await _audit_doc(
+            db,
+            user=user,
+            request=request,
+            action="rbcm.document.final_download_denied",
+            entity="rbcm_campaign",
+            entity_id=str(campaign_id),
+            after={"result": "denied", "code": exc.code},
+        )
+        await db.commit()
+        raise
+    await _audit_doc(
+        db,
+        user=user,
+        request=request,
+        action="rbcm.document.final_download",
+        entity="rbcm_deliverable",
+        entity_id=str(d.id),
+        after={
+            "result": "ok",
+            "campaign_id": str(campaign_id),
+            "status": d.status,
+            "filename": download_name,
+            "sha256": d.sha256,
+        },
+    )
+    return FileResponse(
+        path,
+        filename=download_name,
+        media_type=XLSX_TYPE,
+    )
 
 
 @router.get(

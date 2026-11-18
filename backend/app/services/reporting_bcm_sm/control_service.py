@@ -44,9 +44,9 @@ def display_amount(value: Decimal | None) -> str | None:
 
 
 def param_is_filled(value: Decimal | None, status: str | None) -> bool:
-    if status in ("SAISI", "CALCULE", "VALIDE"):
-        return True
-    return value is not None
+    """Zéro n’est pas une complétion : seul un statut de saisie / calcul / validation compte."""
+    _ = value
+    return status in ("SAISI", "CALCULE", "VALIDE")
 
 
 def global_result(issues: list[RbcmReconcileIssue]) -> str:

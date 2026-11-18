@@ -12,27 +12,39 @@ import { RbcmStylesComponent } from '../rbcm-ui.component';
 import { RbcmCampagneDocumentsComponent } from './rbcm-campagne-documents.component';
 import { formatMontantOuTiret } from '../../shared/montant.pipe';
 import {
-  CONTROL_CATEGORY_LABELS,
   CONTROL_RESULT_LABELS,
   RBCM_API,
   RESOLUTION_LABELS,
   RbcmCampaign,
-  RbcmComplementItem,
   RbcmComplements,
   RbcmControlRun,
   RbcmDeleteCheck,
   RbcmHistoryEvent,
   RbcmOwnerCandidate,
   RbcmOwnerHistory,
+  RbcmParamCatalog,
   RbcmProgress,
+  RbcmReview,
+  RbcmReviewFinding,
+  RbcmWorkflow,
+  WORKFLOW_ACTION_LABELS,
   CELL_STATUS_LABELS,
+  CHECK_STATE_TONE,
+  DOC_VERDICT_TONE,
+  FINDING_CATEGORY_LABELS,
+  PREP_VERDICT_TONE,
+  PARAM_NATURE_LABELS,
+  PARAM_STATUS_LABELS,
   SM_GUIDED_STEPS,
   STATUS_LABELS,
   RbcmCellResult,
   RbcmCellResultList,
+  cellKind,
   currentGuidedStep,
   deleteCampaignConfirm,
   guidedStepState,
+  paramIsFilled,
+  paramStatusTone,
   periodLabel,
   statusTone,
 } from '../rbcm.models';
@@ -51,7 +63,7 @@ import {
           @if (camp(); as c) {
             <p class="bea-rbcm-statusline">
               <span class="bea-ct-badge" [attr.data-tone]="statusTone(c.status)">{{ STATUS_LABELS[c.status] || c.status }}</span>
-              <span class="bea-rbcm-hint">Étape {{ step() }} / 7 — {{ stepLabel() }}</span>
+              <span class="bea-rbcm-hint">Étape {{ displayStep() }} / {{ steps.length }} — {{ stepLabel() }}</span>
             </p>
           }
         </div>
@@ -70,8 +82,40 @@ import {
           <section class="bea-mg__panel bea-rbcm-span12">
             <div class="bea-mg__panel-top">
               <div>
-                <h2>Parcours</h2>
-                <p class="bea-rbcm-sub">Guidage métier — les détails techniques restent dans l’accès expert.</p>
+                <h2>Où en est cette SM</h2>
+                <p class="bea-rbcm-sub">{{ nextHint() }}</p>
+              </div>
+            </div>
+            <div class="bea-fx-kpis bea-rbcm-hub-kpis">
+              <div class="bea-fx-kpi" [attr.data-tone]="progress()?.det_validated ? 'ok' : 'warn'">
+                <mat-icon>upload_file</mat-icon>
+                <p>BAL DET</p>
+                <strong>{{ progress()?.det_validated ? 'Importée' : 'À importer' }}</strong>
+              </div>
+              <div class="bea-fx-kpi" [attr.data-tone]="controlKpiTone()">
+                <mat-icon>fact_check</mat-icon>
+                <p>Contrôles</p>
+                <strong>{{ controlKpiLabel() }}</strong>
+              </div>
+              <div class="bea-fx-kpi" [attr.data-tone]="calculatedCells().length ? 'ok' : null">
+                <mat-icon>auto_awesome</mat-icon>
+                <p>Cellules calculées</p>
+                <strong>{{ calculatedCells().length }}</strong>
+              </div>
+              <div class="bea-fx-kpi" [attr.data-tone]="paramCounts().missing ? 'warn' : 'ok'">
+                <mat-icon>edit_note</mat-icon>
+                <p>À compléter</p>
+                <strong>{{ paramCounts().missing }}</strong>
+              </div>
+              <div class="bea-fx-kpi" [attr.data-tone]="progress()?.work_document_id ? (progress()?.work_stale ? 'warn' : 'info') : null">
+                <mat-icon>description</mat-icon>
+                <p>Canevas</p>
+                <strong>{{ canvasKpiLabel() }}</strong>
+              </div>
+              <div class="bea-fx-kpi" [attr.data-tone]="validationKpiTone()">
+                <mat-icon>gavel</mat-icon>
+                <p>Réglementaire</p>
+                <strong>{{ validationKpiLabel() }}</strong>
               </div>
             </div>
             <div class="bea-rbcm-steps">
@@ -84,18 +128,38 @@ import {
               }
             </div>
             <div class="bea-rbcm-quick" style="margin-top:0.85rem">
-              @if (showImportAction()) {
-                <a class="bea-mg__btn bea-mg__btn--primary" routerLink="/reporting-bcm-sm/imports">
-                  <mat-icon>upload_file</mat-icon> Importer BAL DET
-                </a>
+              @if (primaryCta(); as cta) {
+                @if (cta.kind === 'link') {
+                  <a class="bea-mg__btn bea-mg__btn--primary" [routerLink]="cta.link" [queryParams]="cta.query">
+                    <mat-icon>{{ cta.icon }}</mat-icon> {{ cta.label }}
+                  </a>
+                } @else {
+                  <button
+                    type="button"
+                    class="bea-mg__btn bea-mg__btn--primary"
+                    [disabled]="busy() || cta.disabled"
+                    [title]="cta.reason || ''"
+                    (click)="runPrimary(cta)"
+                  >
+                    <mat-icon>{{ cta.icon }}</mat-icon> {{ cta.label }}
+                  </button>
+                }
               }
-              @if (showControlAction()) {
-                <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()" (click)="lancerControles()">
-                  <mat-icon>fact_check</mat-icon> {{ progress()?.last_control_run_id ? 'Relancer les contrôles' : 'Contrôler la SM' }}
+              @if (step() === 4 || step() >= 5) {
+                <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="scrollTo('rbcm-docs')">
+                  <mat-icon>download</mat-icon> {{ step() >= 5 ? 'Canevas de travail' : 'Saisie dans Excel' }}
                 </button>
               }
             </div>
-            <p class="bea-rbcm-hint" style="margin-top:0.65rem">{{ nextHint() }}</p>
+            @if (primaryCta()?.reason) {
+              <p class="bea-rbcm-hint" style="margin-top:0.65rem">{{ primaryCta()!.reason }}</p>
+            }
+            <ul class="bea-rbcm-summary" aria-label="Synthèse de la SM">
+              <li><strong>Canevas de travail</strong> {{ canvasKpiLabel() }}</li>
+              <li><strong>Informations à compléter</strong> {{ paramCounts().missing }}</li>
+              <li><strong>Contrôles</strong> {{ controlKpiLabel() }}</li>
+              <li><strong>Validation réglementaire</strong> {{ validationKpiLabel() }}</li>
+            </ul>
           </section>
 
           <section class="bea-mg__panel bea-rbcm-span6">
@@ -110,7 +174,7 @@ import {
               </div>
               <div><dt>Créée le</dt><dd>{{ c.created_at | date: 'dd/MM/yyyy HH:mm' }}</dd></div>
             </dl>
-            @if (canChangeOwner() && c.status !== 'APPROUVEE' && c.status !== 'CLOTUREE') {
+            @if (canChangeOwner() && !campaignReadOnly()) {
               <div class="bea-rbcm-form-grid" style="margin-top:0.85rem">
                 <label class="bea-mg__field bea-rbcm-form-wide">
                   <mat-icon>person</mat-icon>
@@ -133,7 +197,7 @@ import {
               </div>
             }
             <div class="bea-rbcm-quick" style="margin-top:0.75rem">
-              @if (canChangeOwner() && c.status !== 'APPROUVEE' && c.status !== 'CLOTUREE') {
+              @if (canChangeOwner() && !campaignReadOnly()) {
                 <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="editNotes()">
                   <mat-icon>edit</mat-icon> Modifier les notes
                 </button>
@@ -240,107 +304,95 @@ import {
             }
           </section>
 
-          <section class="bea-mg__panel bea-rbcm-span12">
+          <section class="bea-mg__panel bea-rbcm-span12" id="rbcm-completer">
             <div class="bea-mg__panel-top">
               <div>
-                <h2>Informations à compléter</h2>
-                <p class="bea-rbcm-sub">File métier A / B / C / D — les détails NCG et mapping restent dans l’accès expert.</p>
+                <h2>Cellules manuelles</h2>
+                <p class="bea-rbcm-sub">
+                  Option A — saisie dans BEA DIGITAL. Les valeurs sont conservées lors des recalculs. Un zéro n’est pas une information complétée.
+                </p>
+              </div>
+              <div class="bea-rbcm-quick">
+                <button
+                  type="button"
+                  class="bea-mg__btn bea-mg__btn--ghost"
+                  [disabled]="busy() || !progress()?.det_validated"
+                  (click)="calculer()"
+                >
+                  <mat-icon>calculate</mat-icon> Relancer l’alimentation
+                </button>
               </div>
             </div>
             @if (complements()?.technical_failure) {
-              <p class="bea-rbcm-hint">Le dernier contrôle a échoué techniquement. Il n’est pas un résultat métier OK. Relancez les contrôles.</p>
+              <p class="bea-rbcm-hint">Le dernier contrôle a échoué techniquement. Relancez les contrôles avant de clôturer la saisie.</p>
             }
-            @if (!complements()?.run) {
-              <p class="bea-rbcm-hint">Lancez les contrôles pour constituer la file.</p>
-            } @else {
-              <div class="bea-rbcm-quick" style="margin-bottom:0.75rem">
-                @for (cat of categories; track cat) {
-                  <button
-                    type="button"
-                    class="bea-mg__btn bea-mg__btn--ghost"
-                    [class.bea-mg__btn--primary]="catFilter() === cat"
-                    (click)="catFilter.set(cat)"
-                  >
-                    {{ cat }} · {{ complements()?.counts?.[cat] || 0 }}
-                  </button>
-                }
-              </div>
-              @for (cat of categories; track cat) {
-                @if (catFilter() === cat) {
-                  <h3 style="margin:0 0 0.5rem;font-size:0.95rem">{{ CONTROL_CATEGORY_LABELS[cat] }}</h3>
-                  @if (!(complements()?.by_category?.[cat] || []).length) {
-                    <p class="bea-rbcm-hint">Aucun élément dans cette catégorie.</p>
-                  } @else {
-                    <div class="bea-rbcm-sources">
-                      @for (it of complements()?.by_category?.[cat] || []; track it.id) {
-                        <article class="bea-rbcm-source" [attr.data-state]="itemState(it)">
-                          <header>
-                            <p class="bea-rbcm-source__name">{{ it.title }}</p>
-                            <span class="bea-ct-badge">{{ RESOLUTION_LABELS[it.live_state || it.resolution_state] || it.resolution_state }}</span>
-                          </header>
-                          <p class="bea-rbcm-hint">{{ it.message }}</p>
-                          <dl class="bea-rbcm-dl">
-                            <div><dt>Gravité</dt><dd>{{ it.severity }}</dd></div>
-                            @if (it.observed !== null && it.observed !== undefined) {
-                              <div><dt>Observé</dt><dd>{{ displayObserved(it.observed) }}</dd></div>
-                            }
-                            @if (it.expected) {
-                              <div><dt>Attendu</dt><dd>{{ it.expected }}</dd></div>
-                            }
-                            @if (it.source) {
-                              <div><dt>Source</dt><dd>{{ it.source }}</dd></div>
-                            }
-                            @if (it.expected_source) {
-                              <div><dt>Source attendue</dt><dd>{{ it.expected_source }}</dd></div>
-                            }
-                            @if (it.consequence) {
-                              <div><dt>Si absent</dt><dd>{{ it.consequence }}</dd></div>
-                            }
-                          </dl>
-                          <div class="bea-rbcm-quick">
-                            @for (a of it.available_actions || []; track a) {
-                              @if (a === 'CONSULTER') {
-                                <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="selected.set(it)">Consulter le détail</button>
-                              }
-                              @if (a === 'SAISIR') {
-                                <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="ouvrirSaisie(it)">Saisir une valeur</button>
-                              }
-                              @if (a === 'RELANCER') {
-                                <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()" (click)="lancerControles()">Relancer les contrôles</button>
-                              }
-                              @if (a === 'IMPORTER') {
-                                <a class="bea-mg__btn bea-mg__btn--primary" routerLink="/reporting-bcm-sm/imports">Importer BAL DET</a>
-                              }
-                            }
-                          </div>
-                        </article>
-                      }
-                    </div>
+            <div class="bea-rbcm-counts">
+              <span class="bea-ct-badge" [attr.data-tone]="paramCounts().missing ? 'warn' : 'ok'">
+                {{ paramCounts().missing }} à compléter
+              </span>
+              <span class="bea-ct-badge" [attr.data-tone]="paramCounts().saisi ? 'ok' : null">
+                {{ paramCounts().saisi }} saisi{{ paramCounts().saisi > 1 ? 's' : '' }}
+              </span>
+              <span class="bea-ct-badge" [attr.data-tone]="paramCounts().calcule ? 'info' : null">
+                {{ paramCounts().calcule }} calculé{{ paramCounts().calcule > 1 ? 's' : '' }}
+              </span>
+            </div>
+
+            <div class="bea-mg__table-wrap">
+              <table class="bea-mg__table">
+                <thead>
+                  <tr>
+                    <th>Information</th>
+                    <th>Cellule</th>
+                    <th>Nature</th>
+                    <th>Valeur</th>
+                    <th>Statut</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (p of params(); track p.code) {
+                    <tr>
+                      <td>
+                        <strong>{{ p.label }}</strong>
+                        <small class="bea-rbcm-hint" style="display:block;margin:0">{{ p.code }}</small>
+                      </td>
+                      <td class="bea-rbcm-mono">{{ p.cell_hint || '—' }}</td>
+                      <td>{{ PARAM_NATURE_LABELS[p.nature || 'manuel'] || p.nature }}</td>
+                      <td>{{ displayParamAmount(p.value) }}</td>
+                      <td>
+                        <span class="bea-ct-badge" [attr.data-tone]="paramStatusTone(p.status)">
+                          {{ PARAM_STATUS_LABELS[p.status] || p.status }}
+                        </span>
+                      </td>
+                      <td class="bea-rbcm-col-actions">
+                        @if (canSaisir() && !campaignReadOnly()) {
+                          <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="ouvrirSaisieParam(p)">
+                            {{ paramIsFilled(p) ? 'Modifier' : 'Saisir' }}
+                          </button>
+                        }
+                      </td>
+                    </tr>
                   }
-                }
-              }
-            }
-            @if (selected(); as it) {
+                </tbody>
+              </table>
+            </div>
+            <p class="bea-rbcm-hint">
+              Option B — saisir dans Excel via le canevas de travail (document non validé). Laisser une valeur vide signifie « non renseigné », jamais 0,00.
+            </p>
+
+            @if (saisieParam(); as p) {
               <div class="bea-mg__panel" style="margin-top:1rem">
                 <div class="bea-mg__panel-top">
-                  <div><h2>{{ it.title }}</h2><p class="bea-rbcm-sub">{{ CONTROL_CATEGORY_LABELS[it.category || ''] }} · {{ it.code }}</p></div>
-                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="selected.set(null)">Fermer</button>
+                  <div>
+                    <h2>{{ paramIsFilled(p) ? 'Modifier' : 'Saisir' }} — {{ p.label }}</h2>
+                    <p class="bea-rbcm-sub">{{ p.cell_hint || p.code }} · {{ PARAM_NATURE_LABELS[p.nature || 'manuel'] }}</p>
+                  </div>
+                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="saisieParam.set(null)">Annuler</button>
                 </div>
-                <p>{{ it.message }}</p>
-                @if (it.recommended_action) {
-                  <p class="bea-rbcm-hint">{{ it.recommended_action }}</p>
+                @if (p.code === 'caisse_devises' && caisseProposal()) {
+                  <p class="bea-rbcm-hint">Proposition BAL DET : {{ displayParamAmount(caisseProposal()) }}. Confirmation manuelle requise.</p>
                 }
-                @if (it.category === 'D') {
-                  <p class="bea-rbcm-hint">Décision métier — aucune activation automatique. Accès expert : Correspondances.</p>
-                }
-              </div>
-            }
-            @if (saisie(); as it) {
-              <div class="bea-mg__panel" style="margin-top:1rem">
-                <div class="bea-mg__panel-top">
-                  <div><h2>Saisir — {{ it.title }}</h2></div>
-                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="saisie.set(null)">Annuler</button>
-                </div>
                 <div class="bea-rbcm-form-grid">
                   <label class="bea-mg__field bea-rbcm-form-wide">
                     <mat-icon>payments</mat-icon>
@@ -356,10 +408,9 @@ import {
                   </label>
                   <label class="bea-mg__field bea-rbcm-form-wide bea-rbcm-form-textarea">
                     <mat-icon>notes</mat-icon>
-                    <textarea rows="3" [(ngModel)]="saisieForm.justification" name="saisieJustif" placeholder="Justification obligatoire"></textarea>
+                    <textarea rows="3" [(ngModel)]="saisieForm.justification" name="saisieJustif" placeholder="Justification (obligatoire si source absente)"></textarea>
                   </label>
                 </div>
-                <p class="bea-rbcm-hint">Une valeur vide n’est jamais transformée en 0,00. Relancez les contrôles après enregistrement.</p>
                 <div class="bea-rbcm-quick" style="margin-top:0.65rem">
                   <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy()" (click)="enregistrerSaisie()">Enregistrer</button>
                 </div>
@@ -370,44 +421,351 @@ import {
           <section class="bea-mg__panel bea-rbcm-span12">
             <div class="bea-mg__panel-top">
               <div>
-                <h2>Valeurs alimentées</h2>
-                <p class="bea-rbcm-sub">Calculées depuis la BAL DET. Les cellules orange restent à saisir (paramètres ou Excel après téléchargement).</p>
+                <h2>Cellules de la SM</h2>
+                <p class="bea-rbcm-sub">Trois listes distinctes — calculé, saisie manuelle, à ajuster. Les totaux de ligne (:H) restent dans Excel.</p>
               </div>
-              <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy() || !progress()?.det_validated" (click)="calculer()">
+              <button type="button" class="bea-mg__btn bea-mg__btn--primary" [disabled]="busy() || campaignReadOnly() || !progress()?.det_validated" (click)="calculer()">
                 <mat-icon>calculate</mat-icon> Alimenter depuis la BAL DET
               </button>
             </div>
             @if (!cells().length) {
               <p class="bea-rbcm-hint">Aucun calcul pour cette SM. Importez la BAL DET puis lancez l’alimentation.</p>
             } @else {
+              <div class="bea-rbcm-block">
+                <h3>Calculé ({{ calculatedCells().length }})</h3>
+                <p class="bea-rbcm-hint">Valeurs automatiques depuis la BAL DET. Lecture seule.</p>
+                <div class="bea-mg__table-wrap bea-rbcm-table-scroll">
+                  <table class="bea-mg__table">
+                    <thead>
+                      <tr><th>Cellule</th><th>Calculé</th><th>Retenu</th><th>Statut</th></tr>
+                    </thead>
+                    <tbody>
+                      @for (row of calculatedCells(); track row.cell_ref) {
+                        <tr>
+                          <td class="bea-rbcm-mono">{{ row.cell_ref }}</td>
+                          <td>{{ displayCellAmount(row.calculated_value) }}</td>
+                          <td>{{ displayCellAmount(row.retained_value) }}</td>
+                          <td>
+                            <span class="bea-ct-badge" data-tone="ok">{{ CELL_STATUS_LABELS[row.value_status] || row.value_status }}</span>
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="bea-rbcm-block">
+                <h3>Saisie manuelle ({{ manualCells().length }})</h3>
+                <p class="bea-rbcm-hint">Cellules alimentées par les paramètres ci-dessus après l’alimentation. A:114:D reste hors paramètre mensuel (D01).</p>
+                @if (!manualCells().length) {
+                  <p class="bea-rbcm-hint">Aucune cellule manuelle dans le dernier calcul.</p>
+                } @else {
+                  <div class="bea-mg__table-wrap">
+                    <table class="bea-mg__table">
+                      <thead>
+                        <tr><th>Cellule</th><th>Retenu</th><th>Statut</th></tr>
+                      </thead>
+                      <tbody>
+                        @for (row of manualCells(); track row.cell_ref) {
+                          <tr>
+                            <td class="bea-rbcm-mono">{{ row.cell_ref }}</td>
+                            <td>{{ displayCellAmount(row.retained_value) }}</td>
+                            <td>
+                              <span class="bea-ct-badge" [attr.data-tone]="row.value_status === 'SAISIE_MANUELLE' ? 'ok' : 'warn'">
+                                {{ CELL_STATUS_LABELS[row.value_status] || row.value_status }}
+                              </span>
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              </div>
+
+              <div class="bea-rbcm-block">
+                <h3>À ajuster ({{ adjustCells().length }})</h3>
+                <p class="bea-rbcm-hint">Lecture seule. Les règles d’ajustement Excel restent en attente des décisions D01/D02.</p>
+                @if (!adjustCells().length) {
+                  <p class="bea-rbcm-hint">Aucune cellule à ajuster dans le dernier calcul.</p>
+                } @else {
+                  <div class="bea-mg__table-wrap">
+                    <table class="bea-mg__table">
+                      <thead>
+                        <tr><th>Cellule</th><th>Calculé</th><th>Retenu</th><th>Statut</th></tr>
+                      </thead>
+                      <tbody>
+                        @for (row of adjustCells(); track row.cell_ref) {
+                          <tr>
+                            <td class="bea-rbcm-mono">{{ row.cell_ref }}</td>
+                            <td>{{ displayCellAmount(row.calculated_value) }}</td>
+                            <td>{{ displayCellAmount(row.retained_value) }}</td>
+                            <td>
+                              <span class="bea-ct-badge" data-tone="warn">{{ CELL_STATUS_LABELS[row.value_status] || row.value_status }}</span>
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              </div>
+            }
+          </section>
+
+          <div id="rbcm-docs" class="bea-rbcm-span12">
+            <bea-rbcm-campagne-documents [campaignId]="c.id" [refreshNonce]="docNonce()" />
+          </div>
+
+          <section class="bea-mg__panel bea-rbcm-span12" id="rbcm-prep">
+            <div class="bea-mg__panel-top">
+              <div>
+                <h2>Préparation</h2>
+                <p class="bea-rbcm-sub">Synthèse du dossier de travail. Distincte de la validation réglementaire.</p>
+              </div>
+              @if (review(); as rv) {
+                <span class="bea-ct-badge" [attr.data-tone]="PREP_VERDICT_TONE[rv.preparation.verdict]">
+                  {{ rv.preparation.verdict_label }}
+                </span>
+              }
+            </div>
+            @if (!review()) {
+              <p class="bea-rbcm-hint">Chargement de la synthèse…</p>
+            } @else {
               <div class="bea-mg__table-wrap">
                 <table class="bea-mg__table">
                   <thead>
-                    <tr>
-                      <th>Cellule</th>
-                      <th>Origine</th>
-                      <th>Calculé</th>
-                      <th>Retenu</th>
-                      <th>Statut</th>
-                    </tr>
+                    <tr><th>Contrôle</th><th>État</th><th>Détail</th><th>Action</th></tr>
                   </thead>
                   <tbody>
-                    @for (row of visibleCells(); track row.cell_ref) {
+                    @for (ck of review()!.preparation.checks; track ck.code) {
                       <tr>
-                        <td>{{ row.cell_ref }}</td>
-                        <td>{{ row.origin || '—' }}</td>
-                        <td>{{ displayCellAmount(row.calculated_value) }}</td>
-                        <td>{{ displayCellAmount(row.retained_value) }}</td>
-                        <td>{{ CELL_STATUS_LABELS[row.value_status] || row.value_status }}</td>
+                        <td>{{ ck.title }}</td>
+                        <td>
+                          <span class="bea-ct-badge" [attr.data-tone]="CHECK_STATE_TONE[ck.state]">
+                            {{ checkStateLabel(ck.state) }}
+                          </span>
+                        </td>
+                        <td>{{ ck.detail }}</td>
+                        <td>{{ ck.action || '—' }}</td>
                       </tr>
                     }
                   </tbody>
                 </table>
               </div>
+              @if (review()!.preparation.missing_params.length) {
+                <p class="bea-rbcm-hint">
+                  {{ review()!.preparation.missing_params.length }} information(s) encore à saisir :
+                  {{ missingParamLabels() }}.
+                </p>
+              }
+              @if (review()!.preparation.decisions.length || laterItems().length) {
+                <p class="bea-rbcm-hint">
+                  Validation réglementaire non disponible tant que les décisions métier restent ouvertes.
+                  <button type="button" class="bea-rbcm-inline" (click)="openRegulatoryDetails()">Voir les détails</button>
+                </p>
+              }
+              <div class="bea-rbcm-quick" style="margin-top:0.85rem">
+                <button type="button" class="bea-mg__btn bea-mg__btn--primary" (click)="scrollTo('rbcm-docs')">
+                  <mat-icon>description</mat-icon> Générer le canevas SM
+                </button>
+                @if (review()!.preparation.can_verify) {
+                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="scrollToVerif()">
+                    <mat-icon>fact_check</mat-icon> Vérifier le canevas
+                  </button>
+                } @else {
+                  <p class="bea-rbcm-hint">La vérification du canevas s’ouvre après import, contrôles et alimentation.</p>
+                }
+                @if (canSaisir() && !campaignReadOnly() && progress()?.det_validated) {
+                  <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="calculer()">
+                    <mat-icon>calculate</mat-icon> {{ review()!.preparation.work_stale ? 'Actualiser le canevas' : 'Relancer l’alimentation' }}
+                  </button>
+                }
+              </div>
             }
           </section>
 
-          <bea-rbcm-campagne-documents [campaignId]="c.id" [refreshNonce]="docNonce()" />
+          <section class="bea-mg__panel bea-rbcm-span12" id="rbcm-verif">
+            <div class="bea-mg__panel-top">
+              <div>
+                <h2>Vérification du document</h2>
+                <p class="bea-rbcm-sub">Contrôle du canevas de travail. N’ouvre pas le circuit Visa / Approbation.</p>
+              </div>
+              @if (review(); as rv) {
+                <span class="bea-ct-badge" [attr.data-tone]="DOC_VERDICT_TONE[rv.verification.verdict]">
+                  {{ rv.verification.verdict_label }}
+                </span>
+              }
+            </div>
+            @if (!review()) {
+              <p class="bea-rbcm-hint">Chargement de la vérification…</p>
+            } @else if (!review()!.preparation.can_verify) {
+              <p class="bea-rbcm-hint">{{ review()!.verification.findings[0]?.message || 'Conditions de vérification non réunies.' }}</p>
+            } @else {
+              @if (review()!.verification.stale) {
+                <p class="bea-rbcm-hint">Les résultats portent sur une version antérieure. Relancez l’alimentation pour les actualiser.</p>
+              }
+              @if (!review()!.verification.work_id) {
+                <p class="bea-rbcm-hint">Aucun canevas de travail. Générez-le dans Documents après l’alimentation.</p>
+              }
+              <p class="bea-rbcm-hint">
+                Canevas de travail uniquement — mention « Document de travail — non validé ».
+                {{ regulatoryUnavailable() ? 'La validation réglementaire reste non disponible.' : '' }}
+              </p>
+              @for (cat of findingCategories; track cat) {
+                <div class="bea-rbcm-block">
+                  <h3>{{ FINDING_CATEGORY_LABELS[cat] }}</h3>
+                  <div class="bea-mg__table-wrap">
+                    <table class="bea-mg__table">
+                      <thead>
+                        <tr><th>Contrôle</th><th>Feuille / cellule</th><th>Résultat</th><th>Explication</th><th>Action</th></tr>
+                      </thead>
+                      <tbody>
+                        @for (f of findingsOf(cat); track f.code) {
+                          <tr>
+                            <td>{{ f.title }}</td>
+                            <td class="bea-rbcm-mono">{{ f.sheet || '—' }}{{ f.cell ? ' · ' + f.cell : '' }}</td>
+                            <td>
+                              <span class="bea-ct-badge" [attr.data-tone]="findingTone(f)">
+                                {{ findingStatusLabel(f) }}
+                              </span>
+                            </td>
+                            <td>{{ f.message }}</td>
+                            <td>{{ f.action || '—' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              }
+            }
+          </section>
+
+          <section class="bea-mg__panel bea-rbcm-span12" id="rbcm-valider">
+            <div class="bea-mg__panel-top">
+              <div>
+                <h2>Validation réglementaire</h2>
+                <p class="bea-rbcm-sub">
+                  Circuit distinct du canevas de travail. Visa contrôleur et approbation n’entrent pas dans le parcours quotidien.
+                </p>
+              </div>
+              <span class="bea-ct-badge" [attr.data-tone]="validationKpiTone()">{{ validationKpiLabel() }}</span>
+            </div>
+            <ul class="bea-rbcm-summary">
+              <li><strong>Canevas de travail</strong> {{ canvasKpiLabel() }} — génération indépendante de ce circuit</li>
+              <li><strong>Informations à compléter</strong> {{ paramCounts().missing }}</li>
+              <li><strong>Contrôles</strong> {{ controlKpiLabel() }}</li>
+              <li><strong>Validation réglementaire</strong> {{ validationKpiLabel() }}</li>
+            </ul>
+            @if (!workflow()) {
+              <p class="bea-rbcm-hint">Chargement du circuit réglementaire…</p>
+            } @else {
+              <details class="bea-rbcm-reg">
+                <summary>Détails de validation réglementaire</summary>
+                <dl class="bea-rbcm-dl" style="margin-top:0.85rem">
+                  <div><dt>Soumission</dt><dd>{{ workflow()!.submitted.at ? (workflow()!.submitted.at | date: 'dd/MM/yyyy HH:mm') : 'Non soumise' }}</dd></div>
+                  <div><dt>Visa contrôleur</dt><dd>{{ workflow()!.control_visa.at ? (workflow()!.control_visa.at | date: 'dd/MM/yyyy HH:mm') : '—' }}</dd></div>
+                  <div><dt>Approbation</dt><dd>{{ workflow()!.approved.at ? (workflow()!.approved.at | date: 'dd/MM/yyyy HH:mm') : '—' }}</dd></div>
+                  <div><dt>Document final</dt><dd>{{ workflow()!.final_download.allowed ? 'Disponible' : 'Non disponible' }}</dd></div>
+                </dl>
+                @if (workflow()!.open_gates.length) {
+                  <div class="bea-rbcm-block">
+                    <h3>Décisions métier encore ouvertes</h3>
+                    <p class="bea-rbcm-hint">Elles bloquent uniquement le circuit réglementaire, pas la génération du canevas de travail.</p>
+                    <ul class="bea-rbcm-warn-list">
+                      @for (g of workflow()!.open_gates; track g.code) {
+                        <li>{{ g.code }} — {{ g.label }}</li>
+                      }
+                    </ul>
+                  </div>
+                }
+                @for (d of review()?.preparation?.decisions || []; track d.code) {
+                  <p class="bea-rbcm-hint">{{ d.code }} — {{ d.label }}</p>
+                }
+                @if (c.status === 'A_CONTROLER') {
+                  <p class="bea-rbcm-hint">Dossier soumis : les saisies et l’alimentation sont verrouillées. Un contrôleur peut renvoyer en correction.</p>
+                }
+                <div class="bea-rbcm-quick" style="margin-top:0.85rem">
+                  <button
+                    type="button"
+                    class="bea-mg__btn bea-mg__btn--ghost"
+                    [disabled]="busy() || !canPrepareWf() || !workflow()!.submit.allowed"
+                    [title]="actionTitle('submit')"
+                    (click)="soumettre()"
+                  >
+                    <mat-icon>{{ workflow()!.submit.allowed ? 'send' : 'lock' }}</mat-icon> Soumettre au contrôle
+                  </button>
+                  <button
+                    type="button"
+                    class="bea-mg__btn bea-mg__btn--ghost"
+                    [disabled]="busy() || !canControlWf() || !workflow()!.control_ok.allowed"
+                    [title]="actionTitle('control_ok')"
+                    (click)="visaControle()"
+                  >
+                    <mat-icon>{{ workflow()!.control_ok.allowed ? 'verified' : 'lock' }}</mat-icon> Visa contrôleur
+                  </button>
+                  <button
+                    type="button"
+                    class="bea-mg__btn bea-mg__btn--ghost"
+                    [disabled]="busy() || !canControlWf() || c.status !== 'A_CONTROLER'"
+                    [title]="c.status !== 'A_CONTROLER' ? 'Aucun dossier soumis à renvoyer.' : 'Renvoyer en correction'"
+                    (click)="rejeter()"
+                  >
+                    <mat-icon>undo</mat-icon> Renvoyer en correction
+                  </button>
+                  <button
+                    type="button"
+                    class="bea-mg__btn bea-mg__btn--ghost"
+                    [disabled]="busy() || !canApproveWf() || !workflow()!.approve.allowed"
+                    [title]="actionTitle('approve')"
+                    (click)="approuver()"
+                  >
+                    <mat-icon>{{ workflow()!.approve.allowed ? 'gavel' : 'lock' }}</mat-icon> Approuver
+                  </button>
+                  <button
+                    type="button"
+                    class="bea-mg__btn bea-mg__btn--ghost"
+                    [disabled]="busy() || !canExportWf() || !workflow()!.final_download.allowed"
+                    [title]="finalDownloadTitle()"
+                    (click)="telechargerFinal()"
+                  >
+                    <mat-icon>{{ workflow()!.final_download.allowed ? 'file_download' : 'lock' }}</mat-icon> Télécharger le document final
+                  </button>
+                </div>
+                <details class="bea-rbcm-tech" style="margin-top:0.85rem">
+                  <summary>Messages techniques (API)</summary>
+                  @if (!workflow()!.submit.allowed) {
+                    <p class="bea-rbcm-hint">Soumission : {{ workflowBlockerText(workflow()!.submit.blockers) || 'non autorisée' }}</p>
+                  }
+                  @if (!workflow()!.control_ok.allowed) {
+                    <p class="bea-rbcm-hint">Visa : {{ workflowBlockerText(workflow()!.control_ok.blockers) || 'non autorisé' }}</p>
+                  }
+                  @if (!workflow()!.approve.allowed) {
+                    <p class="bea-rbcm-hint">Approbation : {{ workflowBlockerText(workflow()!.approve.blockers) || 'non autorisée' }}</p>
+                  }
+                </details>
+                @if (history().length) {
+                  <div class="bea-mg__table-wrap" style="margin-top:0.85rem">
+                    <table class="bea-mg__table">
+                      <thead><tr><th>Date</th><th>Décision</th><th>De → Vers</th><th>Motif</th></tr></thead>
+                      <tbody>
+                        @for (h of history(); track h.id) {
+                          <tr>
+                            <td>{{ h.created_at | date: 'dd/MM/yyyy HH:mm' }}</td>
+                            <td>{{ WORKFLOW_ACTION_LABELS[h.action] || h.action }}</td>
+                            <td>{{ h.from_status || '—' }} → {{ h.to_status || '—' }}</td>
+                            <td>{{ h.comment || '—' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              </details>
+            }
+          </section>
 
           <section class="bea-mg__panel bea-rbcm-span12">
             <div class="bea-mg__panel-top">
@@ -417,19 +775,17 @@ import {
               </div>
             </div>
             <div class="bea-rbcm-quick">
-              <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reporting-bcm-sm/imports"><mat-icon>upload_file</mat-icon> Imports</a>
+              <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reporting-bcm-sm/imports" [queryParams]="{ campaign: c.id }"><mat-icon>upload_file</mat-icon> Imports</a>
               <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reporting-bcm-sm/bal-det"><mat-icon>table_rows</mat-icon> Lignes DET</a>
-              <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reporting-bcm-sm/rapprochement"><mat-icon>fact_check</mat-icon> Contrôles</a>
+              <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reporting-bcm-sm/rapprochement" [queryParams]="{ campaign: c.id }"><mat-icon>fact_check</mat-icon> Contrôles</a>
               <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reporting-bcm-sm/parametres"><mat-icon>tune</mat-icon> Paramètres</a>
               <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reporting-bcm-sm/mapping"><mat-icon>account_tree</mat-icon> Correspondances</a>
+              <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reporting-bcm-sm/archives"><mat-icon>inventory_2</mat-icon> Archives</a>
               @if (progress()?.cond_validated) {
-                <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reporting-bcm-sm/bal-cond"><mat-icon>inventory_2</mat-icon> Archives COND</a>
+                <a class="bea-mg__btn bea-mg__btn--ghost" routerLink="/reporting-bcm-sm/bal-cond"><mat-icon>history</mat-icon> Historique COND</a>
               }
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="true" title="Bloqué tant que D01 n’est pas validé">
-                <mat-icon>lock</mat-icon> Soumettre au contrôle
-              </button>
-              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="true" title="Bloqué — D01/D02">
-                <mat-icon>lock</mat-icon> Approuver
+              <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="openRegulatoryDetails()">
+                <mat-icon>gavel</mat-icon> Circuit réglementaire
               </button>
               <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="calculer()">
                 <mat-icon>calculate</mat-icon> Calcul (expert)
@@ -446,7 +802,7 @@ import {
                   @for (h of history(); track h.id) {
                     <tr>
                       <td>{{ h.created_at | date: 'dd/MM/yyyy HH:mm' }}</td>
-                      <td>{{ h.action }}</td>
+                      <td>{{ WORKFLOW_ACTION_LABELS[h.action] || h.action }}</td>
                       <td>{{ h.from_status || '—' }} → {{ h.to_status || '—' }}</td>
                     </tr>
                   }
@@ -470,14 +826,22 @@ export class RbcmCampagneDetailComponent implements OnInit {
 
   readonly STATUS_LABELS = STATUS_LABELS;
   readonly CELL_STATUS_LABELS = CELL_STATUS_LABELS;
+  readonly PARAM_STATUS_LABELS = PARAM_STATUS_LABELS;
+  readonly PARAM_NATURE_LABELS = PARAM_NATURE_LABELS;
   readonly CONTROL_RESULT_LABELS = CONTROL_RESULT_LABELS;
-  readonly CONTROL_CATEGORY_LABELS = CONTROL_CATEGORY_LABELS;
   readonly RESOLUTION_LABELS = RESOLUTION_LABELS;
+  readonly PREP_VERDICT_TONE = PREP_VERDICT_TONE;
+  readonly DOC_VERDICT_TONE = DOC_VERDICT_TONE;
+  readonly CHECK_STATE_TONE = CHECK_STATE_TONE;
+  readonly FINDING_CATEGORY_LABELS = FINDING_CATEGORY_LABELS;
+  readonly WORKFLOW_ACTION_LABELS = WORKFLOW_ACTION_LABELS;
+  readonly findingCategories = ['structure', 'donnees', 'anomalie'] as const;
   readonly statusTone = statusTone;
+  readonly paramStatusTone = paramStatusTone;
+  readonly paramIsFilled = paramIsFilled;
   readonly periodLabel = periodLabel;
   readonly guidedStepState = guidedStepState;
   readonly steps = SM_GUIDED_STEPS;
-  readonly categories = ['A', 'B', 'C', 'D'] as const;
 
   readonly loading = signal(true);
   readonly busy = signal(false);
@@ -490,9 +854,10 @@ export class RbcmCampagneDetailComponent implements OnInit {
   readonly runs = signal<RbcmControlRun[]>([]);
   readonly complements = signal<RbcmComplements | null>(null);
   readonly historicRun = signal<RbcmControlRun | null>(null);
-  readonly selected = signal<RbcmComplementItem | null>(null);
-  readonly saisie = signal<RbcmComplementItem | null>(null);
-  readonly catFilter = signal<'A' | 'B' | 'C' | 'D'>('C');
+  readonly params = signal<RbcmParamCatalog[]>([]);
+  readonly review = signal<RbcmReview | null>(null);
+  readonly workflow = signal<RbcmWorkflow | null>(null);
+  readonly saisieParam = signal<RbcmParamCatalog | null>(null);
   readonly cells = signal<RbcmCellResult[]>([]);
   readonly docNonce = signal(0);
   saisieForm = { value: '', source: '', justification: '', justificatif_ref: '' };
@@ -503,22 +868,43 @@ export class RbcmCampagneDetailComponent implements OnInit {
     const c = this.camp();
     return c ? currentGuidedStep(c, this.progress()) : 1;
   });
+  readonly displayStep = computed(() => Math.min(this.step(), this.steps.length));
   readonly stepLabel = computed(() => {
     const n = this.step();
+    if (n > this.steps.length) return 'Canevas généré';
     return this.steps.find((s) => s.n === n)?.label || '';
   });
-  readonly visibleCells = computed(() =>
-    this.cells().filter((r) => {
-      const origin = r.origin || '';
-      if (r.cell_ref.endsWith(':H')) return false;
-      return ['AUTO', 'MANUAL', 'AUTO_THEN_ADJUST', 'PCT', 'REMAINDER', 'COPY'].includes(origin);
-    }),
+  readonly paramCounts = computed(() => {
+    const rows = this.params();
+    const saisi = rows.filter((p) => p.status === 'SAISI' || p.status === 'VALIDE').length;
+    const calcule = rows.filter((p) => p.status === 'CALCULE').length;
+    const missing = rows.filter((p) => !paramIsFilled(p)).length;
+    return { total: rows.length, saisi, calcule, missing };
+  });
+  readonly calculatedCells = computed(() =>
+    this.cells().filter((r) => !r.cell_ref.endsWith(':H') && cellKind(r.origin) === 'calculated'),
+  );
+  readonly manualCells = computed(() =>
+    this.cells().filter((r) => !r.cell_ref.endsWith(':H') && cellKind(r.origin) === 'manual'),
+  );
+  readonly adjustCells = computed(() =>
+    this.cells().filter((r) => !r.cell_ref.endsWith(':H') && cellKind(r.origin) === 'adjust'),
+  );
+  readonly laterItems = computed(() =>
+    (this.complements()?.items || []).filter(
+      (it) => it.category === 'B' || it.category === 'D' || it.item_key === 'FPN:ANNEXES',
+    ),
+  );
+  readonly missingParamLabels = computed(() =>
+    (this.review()?.preparation?.missing_params || []).map((p) => p.label).join(', '),
   );
 
   ngOnInit(): void {
     this.id = this.route.snapshot.paramMap.get('id') || '';
     this.ctx.select(this.id);
     this.reload();
+    const frag = this.route.snapshot.fragment;
+    if (frag) setTimeout(() => this.scrollTo(frag), 700);
   }
 
   canChangeOwner(): boolean {
@@ -533,20 +919,88 @@ export class RbcmCampagneDetailComponent implements OnInit {
     );
   }
 
-  showImportAction(): boolean {
+  readonly primaryCta = computed(() => {
     const c = this.camp();
     const p = this.progress();
-    if (!c || c.status === 'APPROUVEE' || c.status === 'CLOTUREE') return false;
-    if (!this.canImport()) return false;
-    return !p?.det_validated;
+    const n = this.step();
+    if (!c) return null;
+    const q = { campaign: c.id };
+    if (n <= 2 && !p?.det_validated) {
+      return {
+        kind: 'link' as const,
+        label: 'Importer la BAL DET',
+        icon: this.canImport() ? 'upload_file' : 'lock',
+        link: '/reporting-bcm-sm/imports',
+        query: q,
+        disabled: !this.canImport(),
+        reason: this.canImport() ? undefined : 'Permission d’import requise.',
+      };
+    }
+    if (n === 3) {
+      return {
+        kind: 'link' as const,
+        label: 'Contrôler la BAL DET',
+        icon: this.canControl() ? 'fact_check' : 'lock',
+        link: '/reporting-bcm-sm/rapprochement',
+        query: q,
+        disabled: !this.canControl(),
+        reason: this.canControl() ? undefined : 'Permission de contrôle requise.',
+      };
+    }
+    if (n === 4) {
+      return {
+        kind: 'scroll' as const,
+        label: 'Compléter les cellules manuelles',
+        icon: 'edit_note',
+        target: 'rbcm-completer',
+      };
+    }
+    return {
+      kind: 'scroll' as const,
+      label: p?.work_document_id && !p.work_stale ? 'Télécharger le canevas SM' : 'Générer le canevas SM',
+      icon: 'description',
+      target: 'rbcm-docs',
+    };
+  });
+
+  controlKpiLabel(): string {
+    const p = this.progress();
+    if (!p?.det_validated) return 'Après import';
+    if (!p.last_control_run_id) return 'À lancer';
+    return CONTROL_RESULT_LABELS[p.last_control_result || ''] || 'Exécutés';
   }
 
-  showControlAction(): boolean {
-    const c = this.camp();
+  controlKpiTone(): 'ok' | 'warn' | 'danger' | null {
+    const r = this.progress()?.last_control_result;
+    if (!r) return this.progress()?.det_validated ? 'warn' : null;
+    if (r === 'OK') return 'ok';
+    if (r === 'BLOCKING' || r === 'FAILED') return 'danger';
+    return 'warn';
+  }
+
+  canvasKpiLabel(): string {
     const p = this.progress();
-    if (!c || c.status === 'APPROUVEE' || c.status === 'CLOTUREE') return false;
-    if (!p?.det_validated) return false;
-    return this.canControl();
+    if (!p?.work_document_id) return 'Non généré';
+    return p.work_stale ? 'À actualiser' : 'Travail';
+  }
+
+  validationKpiLabel(): string {
+    const st = this.camp()?.status;
+    if (st === 'APPROUVEE' || st === 'CLOTUREE') return STATUS_LABELS[st] || st;
+    if (st === 'A_CONTROLER') return 'Soumise';
+    if (this.regulatoryUnavailable()) return 'Non disponible';
+    return 'Non validée';
+  }
+
+  validationKpiTone(): 'ok' | 'warn' | 'info' | null {
+    const st = this.camp()?.status;
+    if (st === 'APPROUVEE' || st === 'CLOTUREE') return 'ok';
+    if (st === 'A_CONTROLER') return 'warn';
+    return 'info';
+  }
+
+  runPrimary(cta: { kind: string; target?: string }): void {
+    if (cta.kind === 'scroll' && cta.target) this.scrollTo(cta.target);
   }
 
   canControl(): boolean {
@@ -590,9 +1044,29 @@ export class RbcmCampagneDetailComponent implements OnInit {
     const p = this.progress();
     if (!p?.det_validated) return 'Étape suivante : importer et confirmer la BAL DET.';
     if (!p.last_control_run_id) return 'Étape suivante : lancer les contrôles de la SM.';
-    const n = p.complements_open ?? this.complements()?.counts?.['open'] ?? 0;
-    if (n > 0) return `${n} information(s) à compléter ou décision(s) en attente.`;
-    return 'Contrôles à jour. Alimentez la SM depuis la BAL DET puis générez le canevas.';
+    const missing = this.paramCounts().missing;
+    if (missing > 0) return `${missing} information(s) à saisir. Le canevas de travail reste générable.`;
+    if (!this.cells().length) return 'Paramètres enregistrés. Alimentez la SM depuis la BAL DET.';
+    if (p.work_stale) return 'Les données ont changé. Régénérez le canevas de travail.';
+    if (!p.work_document_id) return 'Prochaine action : générer le canevas SM (document de travail, non validé).';
+    return 'Canevas de travail disponible. La validation réglementaire est un circuit distinct.';
+  }
+
+  campaignLocked(): boolean {
+    const st = this.camp()?.status;
+    return st === 'APPROUVEE' || st === 'CLOTUREE';
+  }
+
+  campaignReadOnly(): boolean {
+    return this.campaignLocked() || this.camp()?.status === 'A_CONTROLER';
+  }
+
+  caisseProposal(): string | null {
+    const it = (this.complements()?.items || []).find((row) => row.parameter_code === 'caisse_devises');
+    if (!it) return null;
+    if (it.proposed_value) return it.proposed_value;
+    const fromDetails = it.details?.['proposed_value'];
+    return typeof fromDetails === 'string' ? fromDetails : null;
   }
 
   resultTone(result: string): 'ok' | 'warn' | 'danger' | 'info' | null {
@@ -602,17 +1076,9 @@ export class RbcmCampagneDetailComponent implements OnInit {
     return 'info';
   }
 
-  itemState(it: RbcmComplementItem): string {
-    if (it.live_state === 'SAISIE_A_RECONTROLER') return 'ready';
-    if (it.severity === 'BLOCKING' || it.resolution_state === 'STILL_BLOCKING') return 'error';
-    if (it.category === 'D') return 'missing';
-    return 'ready';
-  }
-
-  displayObserved(value: string | null | undefined): string {
+  displayParamAmount(value: string | number | null | undefined): string {
     if (value == null || value === '') return '—';
-    if (/^-?\d+([.,]\d+)?$/.test(value.trim())) return formatMontantOuTiret(value);
-    return value;
+    return formatMontantOuTiret(String(value));
   }
 
   stepIcon(n: number): string {
@@ -627,8 +1093,62 @@ export class RbcmCampagneDetailComponent implements OnInit {
     const st = guidedStepState(n, this.step());
     if (st === 'done') return 'Terminé';
     if (st === 'current') return 'En cours';
-    if (st === 'blocked') return n >= 5 ? 'Plus tard — D01/D02' : 'À venir';
     return 'À venir';
+  }
+
+  checkStateLabel(state: string): string {
+    if (state === 'ok') return 'OK';
+    if (state === 'fail') return 'Blocage';
+    if (state === 'missing') return 'À compléter';
+    if (state === 'stale') return 'À actualiser';
+    return 'En attente';
+  }
+
+  findingsOf(cat: string): RbcmReviewFinding[] {
+    return (this.review()?.verification?.findings || []).filter((f) => f.category === cat);
+  }
+
+  findingTone(f: RbcmReviewFinding): 'ok' | 'warn' | 'danger' | 'info' | null {
+    if (f.severity === 'blocking' && f.status === 'fail') return 'danger';
+    if (f.status === 'ok') return 'ok';
+    if (f.status === 'pending') return 'warn';
+    if (f.severity === 'warning') return 'warn';
+    return 'info';
+  }
+
+  findingStatusLabel(f: RbcmReviewFinding): string {
+    if (f.status === 'ok') return 'OK';
+    if (f.status === 'pending') return 'En attente';
+    if (f.severity === 'blocking') return 'Blocage';
+    return 'Avertissement';
+  }
+
+  scrollTo(id: string): void {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  scrollToVerif(): void {
+    this.scrollTo('rbcm-verif');
+  }
+
+  scrollToValider(): void {
+    this.scrollTo('rbcm-valider');
+  }
+
+  openRegulatoryDetails(): void {
+    setTimeout(() => {
+      const el = document.querySelector('#rbcm-valider details.bea-rbcm-reg') as HTMLDetailsElement | null;
+      if (el) el.open = true;
+      this.scrollTo('rbcm-valider');
+    }, 50);
+  }
+
+  regulatoryUnavailable(): boolean {
+    const st = this.camp()?.status;
+    if (st === 'APPROUVEE' || st === 'CLOTUREE') return false;
+    const wf = this.workflow();
+    if (!wf) return true;
+    return !wf.can_finalize_regulatory || wf.open_gates.length > 0;
   }
 
   reload(): void {
@@ -644,13 +1164,20 @@ export class RbcmCampagneDetailComponent implements OnInit {
           error: () => this.runs.set([]),
         });
         this.api.get<RbcmComplements>(`${RBCM_API}/campaigns/${this.id}/complements`).subscribe({
-          next: (cplt) => {
-            this.complements.set(cplt);
-            const order = ['C', 'D', 'B', 'A'] as const;
-            const first = order.find((k) => (cplt.counts?.[k] || 0) > 0);
-            if (first) this.catFilter.set(first);
-          },
+          next: (cplt) => this.complements.set(cplt),
           error: () => this.complements.set(null),
+        });
+        this.api.get<RbcmParamCatalog[]>(`${RBCM_API}/campaigns/${this.id}/parameters`).subscribe({
+          next: (rows) => this.params.set(rows || []),
+          error: () => this.params.set([]),
+        });
+        this.api.get<RbcmReview>(`${RBCM_API}/campaigns/${this.id}/review`).subscribe({
+          next: (rev) => this.review.set(rev),
+          error: () => this.review.set(null),
+        });
+        this.api.get<RbcmWorkflow>(`${RBCM_API}/campaigns/${this.id}/workflow`).subscribe({
+          next: (wf) => this.workflow.set(wf),
+          error: () => this.workflow.set(null),
         });
         this.api.get<RbcmHistoryEvent[]>(`${RBCM_API}/campaigns/${this.id}/history`).subscribe((h) => this.history.set(h));
         this.api
@@ -804,8 +1331,7 @@ export class RbcmCampagneDetailComponent implements OnInit {
       .subscribe({
         next: () => {
           this.historicRun.set(null);
-          this.selected.set(null);
-          this.saisie.set(null);
+          this.saisieParam.set(null);
           this.reload();
         },
       });
@@ -819,32 +1345,31 @@ export class RbcmCampagneDetailComponent implements OnInit {
     });
   }
 
-  ouvrirSaisie(it: RbcmComplementItem): void {
+  ouvrirSaisieParam(p: RbcmParamCatalog): void {
+    const proposal = p.code === 'caisse_devises' ? this.caisseProposal() : null;
     this.saisieForm = {
-      value: it.proposed_value || '',
-      source: it.expected_source || it.source || '',
-      justification: '',
-      justificatif_ref: '',
+      value: p.value || proposal || '',
+      source: p.source || '',
+      justification: p.justification || '',
+      justificatif_ref: p.justificatif_ref || '',
     };
-    this.saisie.set(it);
-    this.selected.set(null);
+    this.saisieParam.set(p);
   }
 
   enregistrerSaisie(): void {
-    const it = this.saisie();
-    const code = it?.parameter_code;
-    if (!it || !code) return;
+    const p = this.saisieParam();
+    if (!p) return;
     const value = this.saisieForm.value.trim() === '' ? null : this.saisieForm.value.trim();
     this.feedback
       .run(
         () =>
           this.api.post(`${RBCM_API}/campaigns/${this.id}/parameters`, {
-            parameter_code: code,
+            parameter_code: p.code,
             value,
             source: this.saisieForm.source || null,
             justification: this.saisieForm.justification || null,
             justificatif_ref: this.saisieForm.justificatif_ref || null,
-            expected_value_id: it.current_value_id || it.details?.['current_value_id'] || null,
+            expected_value_id: p.value_id,
           }),
         {
           busy: this.busy,
@@ -855,7 +1380,7 @@ export class RbcmCampagneDetailComponent implements OnInit {
       )
       .subscribe({
         next: () => {
-          this.saisie.set(null);
+          this.saisieParam.set(null);
           this.reload();
         },
       });
@@ -880,6 +1405,159 @@ export class RbcmCampagneDetailComponent implements OnInit {
   displayCellAmount(value: string | number | null | undefined): string {
     if (value == null || value === '') return '—';
     return formatMontantOuTiret(String(value));
+  }
+
+  canPrepareWf(): boolean {
+    return this.hasPerm('reporting-bcm-sm.prepare', 'reporting-bcm-sm.admin');
+  }
+
+  canControlWf(): boolean {
+    return this.hasPerm('reporting-bcm-sm.control', 'reporting-bcm-sm.admin');
+  }
+
+  canApproveWf(): boolean {
+    return this.hasPerm('reporting-bcm-sm.approve', 'reporting-bcm-sm.admin');
+  }
+
+  canExportWf(): boolean {
+    return this.hasPerm('reporting-bcm-sm.export', 'reporting-bcm-sm.admin');
+  }
+
+  workflowBlockerText(blockers: { code: string; title: string; message: string }[]): string {
+    if (!blockers.length) return '';
+    return blockers.map((b) => b.message).join(' ');
+  }
+
+  actionTitle(kind: 'submit' | 'approve' | 'control_ok'): string {
+    const wf = this.workflow();
+    if (!wf) return 'Chargement…';
+    if (kind === 'submit' && !this.canPrepareWf()) return 'Permission reporting-bcm-sm.prepare requise';
+    if (kind === 'approve' && !this.canApproveWf()) return 'Permission reporting-bcm-sm.approve requise';
+    if (kind === 'control_ok' && !this.canControlWf()) return 'Permission reporting-bcm-sm.control requise';
+    const action = wf[kind];
+    if (action.allowed) {
+      if (kind === 'submit') return 'Soumettre la dernière version vérifiée';
+      if (kind === 'approve') return 'Approuver le dossier soumis';
+      return 'Enregistrer le visa du contrôleur';
+    }
+    return this.workflowBlockerText(action.blockers) || 'Action bloquée';
+  }
+
+  finalDownloadTitle(): string {
+    const wf = this.workflow();
+    if (!wf) return 'Chargement…';
+    if (!this.canExportWf()) return 'Permission reporting-bcm-sm.export requise';
+    if (wf.final_download.allowed) return `Télécharger ${wf.final_download.filename}`;
+    return this.workflowBlockerText(wf.final_download.blockers);
+  }
+
+  soumettre(): void {
+    const wf = this.workflow();
+    if (!wf?.submit.allowed) return;
+    this.feedback
+      .runWithReason(
+        (comment) => this.api.post<RbcmCampaign>(`${RBCM_API}/campaigns/${this.id}/workflow/submit-control`, { comment }),
+        {
+          busy: this.busy,
+          reason: {
+            title: 'Soumettre au contrôle ?',
+            message: 'La dernière vérification et le canevas actuel seront figés pour le contrôle. Commentaire optionnel.',
+            confirmLabel: 'Soumettre',
+            required: false,
+          },
+          loading: 'Soumission…',
+          success: { title: 'SM soumise au contrôle' },
+          errorTitle: 'Soumission refusée',
+        },
+      )
+      .subscribe({ next: () => this.reload() });
+  }
+
+  visaControle(): void {
+    if (!this.workflow()?.control_ok.allowed) return;
+    this.feedback
+      .runWithReason(
+        (comment) => this.api.post<RbcmCampaign>(`${RBCM_API}/campaigns/${this.id}/workflow/control-ok`, { comment }),
+        {
+          busy: this.busy,
+          reason: {
+            title: 'Visa du contrôleur ?',
+            message: 'Le préparateur ne peut pas viser sa propre SM.',
+            confirmLabel: 'Enregistrer le visa',
+            required: false,
+          },
+          loading: 'Enregistrement…',
+          success: { title: 'Visa enregistré' },
+          errorTitle: 'Visa refusé',
+        },
+      )
+      .subscribe({ next: () => this.reload() });
+  }
+
+  rejeter(): void {
+    this.feedback
+      .runWithReason(
+        (comment) => this.api.post<RbcmCampaign>(`${RBCM_API}/campaigns/${this.id}/workflow/reject`, { comment }),
+        {
+          busy: this.busy,
+          reason: {
+            title: 'Renvoyer en correction ?',
+            message: 'Le dossier redevient modifiable. Le motif est obligatoire.',
+            confirmLabel: 'Renvoyer',
+            required: true,
+          },
+          loading: 'Renvoi…',
+          success: { title: 'Dossier renvoyé en correction' },
+          errorTitle: 'Renvoi impossible',
+        },
+      )
+      .subscribe({ next: () => this.reload() });
+  }
+
+  approuver(): void {
+    if (!this.workflow()?.approve.allowed) return;
+    this.feedback
+      .runWithReason(
+        (comment) => this.api.post<RbcmCampaign>(`${RBCM_API}/campaigns/${this.id}/workflow/approve`, { comment }),
+        {
+          busy: this.busy,
+          reason: {
+            title: 'Approuver la SM ?',
+            message: 'Le canevas actuel sera figé comme document final. Auto-approbation interdite.',
+            confirmLabel: 'Approuver',
+            required: false,
+          },
+          loading: 'Approbation…',
+          success: { title: 'SM approuvée' },
+          errorTitle: 'Approbation refusée',
+        },
+      )
+      .subscribe({ next: () => this.reload() });
+  }
+
+  telechargerFinal(): void {
+    const wf = this.workflow();
+    if (!wf?.final_download.allowed) return;
+    this.feedback
+      .run(
+        () => this.api.download(`${RBCM_API}/campaigns/${this.id}/documents/final/download`),
+        {
+          busy: this.busy,
+          loading: 'Téléchargement du document final…',
+          success: { title: 'Fichier prêt' },
+          errorTitle: 'Téléchargement final impossible',
+        },
+      )
+      .subscribe({
+        next: (blob) => {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = wf.final_download.filename || 'SM.xlsx';
+          a.click();
+          URL.revokeObjectURL(url);
+        },
+      });
   }
 
   exportExcel(): void {

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from calendar import monthrange
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -35,6 +35,7 @@ from app.services.reporting_bcm_sm.template_storage import (
     resolved_upload_root,
     verify_stored_template,
 )
+from app.services.reporting_bcm_sm.work_cover_sheet import attach_a_lire
 
 WORK_BANNER = (
     "VERSION DE TRAVAIL BEA DIGITAL — montants et totaux éventuellement incomplets "
@@ -44,6 +45,11 @@ WORK_BANNER = (
 _CLEAR_NATURES = ("OCTOBER_LEAF", "OCTOBER_CONSTANT_FORMULA")
 _WRITE_NATURES = frozenset({"OCTOBER_LEAF", "OCTOBER_CONSTANT_FORMULA", "LEAF"})
 _RCR_REF_FIXES = (("D14", "!B7", "!C7"), ("D15", "!B8", "!C8"))
+
+
+def _etat_b_col_h(sheet: str, addr: str) -> bool:
+    """ETAT B colonne H = non-résidents, pas un total de ligne moteur."""
+    return sheet == "ETAT B" and len(addr) >= 2 and addr[0] == "H" and addr[1:].isdigit()
 
 
 def work_dest_dir(campaign_id: uuid.UUID) -> Path:
@@ -195,10 +201,12 @@ async def generate_work(
     )
     engine_values: dict[str, object] = {}
     pending_manual: list[str] = []
+    cell_results: list[RbcmCellResult] = []
     if run is not None:
-        for r in (
-            await db.scalars(select(RbcmCellResult).where(RbcmCellResult.run_id == run.id))
-        ).all():
+        cell_results = list(
+            (await db.scalars(select(RbcmCellResult).where(RbcmCellResult.run_id == run.id))).all()
+        )
+        for r in cell_results:
             if r.retained_value is not None:
                 engine_values[r.cell_ref] = r.retained_value
         pending_manual = list((run.report or {}).get("pending_manual") or [])
@@ -228,6 +236,8 @@ async def generate_work(
             for (sheet, addr), cell in by_addr.items():
                 if sheet != name:
                     continue
+                if _etat_b_col_h(name, addr):
+                    continue
                 if cell.nature in _CLEAR_NATURES:
                     ws[addr].value = None
                 if cell.nature in _WRITE_NATURES and cell.document_cell_key in engine_values:
@@ -249,6 +259,17 @@ async def generate_work(
             sha=template.sha256,
             filled=filled,
             pending_manual=pending_manual,
+        )
+        await attach_a_lire(
+            wb,
+            db,
+            campaign=campaign,
+            template=template,
+            run=run,
+            gates_open=gates.as_dict(),
+            cell_results=cell_results,
+            bcm_by_key={c.document_cell_key: c.bcm_code for c in cells if c.bcm_code},
+            generated_at=datetime.now(timezone.utc),
         )
 
         wb.save(tmp_path)

@@ -51,10 +51,10 @@ import {
         <div>
           <p class="bea-stock-page__kicker">Reporting BCM SM</p>
           <h1>Situations mensuelles</h1>
-          <p class="bea-rbcm-sub">{{ total() }} SM — liste, filtres, actions CRUD contrôlées.</p>
+          <p class="bea-rbcm-sub">{{ total() }} SM — créez une situation, ouvrez-la, puis suivez le parcours sur sa fiche.</p>
         </div>
         <a class="bea-mg__btn bea-mg__btn--primary" routerLink="/reporting-bcm-sm/campagnes/nouvelle">
-          <mat-icon>add</mat-icon> Nouvelle
+          <mat-icon>add</mat-icon> Nouvelle Situation Mensuelle
         </a>
       </header>
 
