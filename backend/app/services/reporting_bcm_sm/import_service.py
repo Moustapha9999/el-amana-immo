@@ -36,6 +36,7 @@ from app.services.reporting_bcm_sm.constants import (
     IMPORT_STATUSES_UNCONFIRMED,
     MODULE_CODE,
 )
+from app.services.reporting_bcm_sm.engine.det_basis import canonical_ncg
 
 KNOWN_DEVISES = frozenset({"MRU", "MRO", "EUR", "USD", "GBP"})
 DET_HEADERS = ("NCG", "COMPTE", "LIBELLE", "DEVISE", "DEB", "CRE")
@@ -108,7 +109,7 @@ def analyze_bal_det(data: bytes) -> dict:
         if not cells or all(c is None or c == "" for c in cells[:6]):
             continue
         try:
-            ncg = _norm_str(cells[0] if len(cells) > 0 else None)
+            ncg = canonical_ncg(_norm_str(cells[0] if len(cells) > 0 else None) or "") or None
             compte = _norm_str(cells[1] if len(cells) > 1 else None)
             libelle = _norm_str(cells[2] if len(cells) > 2 else None)
             devise = (_norm_str(cells[3] if len(cells) > 3 else None) or "").upper() or None
@@ -592,6 +593,12 @@ async def confirm_import(
     # T3.5-2 : contrôles métier append-only (plus de suppression des anciennes anomalies).
     if imp.file_type == "BAL_DET":
         await run_det_coherence_controls(db, campaign, user=user)
+        # Rapport de structure NCG (descriptif). N'oriente aucune cellule.
+        from app.services.reporting_bcm_sm.ncg_structure_service import (
+            attach_structure_summary_to_import,
+        )
+
+        await attach_structure_summary_to_import(db, campaign=campaign, imp=imp)
     return imp
 
 

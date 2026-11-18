@@ -202,6 +202,192 @@ class DetLineListOut(BaseModel):
     page_size: int
 
 
+class NcgStructureCellOut(BaseModel):
+    cell_ref: str
+    basis: str
+    sign: int
+
+
+class NcgStructureItemOut(BaseModel):
+    ncg: str
+    libelle: str | None = None
+    tot_debit: str | None = None
+    tot_credit: str | None = None
+    status: str
+    present_zero: bool = False
+    reapparu: bool = False
+    covered_by_class: bool = False
+    cells: list[NcgStructureCellOut] = []
+    first_seen_period: str | None = None
+    last_seen_period: str | None = None
+    immediate_previous_period: str | None = None
+
+
+class NcgStructureAbsentOut(BaseModel):
+    ncg: str
+    status: str
+    cells: list[NcgStructureCellOut] = []
+    covered_by_class: bool = False
+    first_seen_period: str | None = None
+    last_seen_period: str | None = None
+
+
+class NcgStructurePeriodOut(BaseModel):
+    period_year: int
+    period_month: int
+    label: str
+
+
+class NcgStructureOut(BaseModel):
+    has_validated_det: bool
+    period_year: int | None = None
+    period_month: int | None = None
+    campaign_id: str | None = None
+    import_id: str | None = None
+    ncg_count: int = 0
+    history_period_count: int = 0
+    available_periods: list[NcgStructurePeriodOut] = []
+    counts: dict[str, int] = {}
+    items: list[NcgStructureItemOut] = []
+    absents: list[NcgStructureAbsentOut] = []
+    orientation_auto: bool = False
+    note: str | None = None
+
+
+class NcgOrientationTimelineOut(BaseModel):
+    kind: str
+    label: str
+    user_id: str | None = None
+    at: str | None = None
+    status_after: str | None = None
+    comment: str | None = None
+    cell_ref: str | None = None
+    operation: str | None = None
+
+
+class NcgOrientationOut(BaseModel):
+    id: str
+    ncg: str
+    ncg_libelle: str | None = None
+    sheet: str
+    cell_ref: str | None = None
+    currency_scope: str
+    residence_scope: str
+    operation: str | None = None
+    status: str
+    notes: str | None = None
+    prepared_by_id: str | None = None
+    prepared_at: str | None = None
+    submitted_by_id: str | None = None
+    submitted_at: str | None = None
+    validated_by_id: str | None = None
+    validated_at: str | None = None
+    rejected_by_id: str | None = None
+    rejected_at: str | None = None
+    deactivated_by_id: str | None = None
+    deactivated_at: str | None = None
+    decision_comment: str | None = None
+    supersedes_id: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    timeline: list[NcgOrientationTimelineOut] = []
+
+
+class NcgOrientationPrepareIn(BaseModel):
+    ncg: str
+    sheet: str
+    cell_ref: str | None = None
+    operation: str | None = None
+    currency_scope: str = "ALL"
+    residence_scope: str | None = None
+    ncg_libelle: str | None = None
+    notes: str | None = None
+
+
+class NcgOrientationUpdateIn(BaseModel):
+    sheet: str | None = None
+    cell_ref: str | None = None
+    operation: str | None = None
+    currency_scope: str | None = None
+    residence_scope: str | None = None
+    ncg_libelle: str | None = None
+    notes: str | None = None
+    clear_destination: bool = False
+
+
+class NcgOrientationDecisionIn(BaseModel):
+    comment: str | None = None
+
+
+class NcgOrientationDeferIn(BaseModel):
+    ncg: str
+    ncg_libelle: str | None = None
+    notes: str | None = None
+
+
+class NcgReviewCompteOut(BaseModel):
+    compte: str | None = None
+    devise: str | None = None
+    debit: str
+    credit: str
+    libelle: str | None = None
+
+
+class NcgReviewBalanceOut(BaseModel):
+    period_year: int
+    period_month: int
+    label: str
+    present: bool
+    tot_debit: str | None = None
+    tot_credit: str | None = None
+    libelle: str | None = None
+
+
+class NcgReviewRowOut(BaseModel):
+    ncg: str
+    libelle: str | None = None
+    structure_status: str
+    tot_debit: str | None = None
+    tot_credit: str | None = None
+    present_zero: bool = False
+    reapparu: bool = False
+    covered_by_class: bool = False
+    first_seen_period: str | None = None
+    last_seen_period: str | None = None
+    immediate_previous_period: str | None = None
+    balances: list[NcgReviewBalanceOut] = []
+    devises: list[str] = []
+    comptes: list[NcgReviewCompteOut] = []
+    line_count: int = 0
+    catalog_mappings: list[dict] = []
+    latest_orientation: NcgOrientationOut | None = None
+    orientations: list[NcgOrientationOut] = []
+    proposed_cell_ref: str | None = None
+    proposed_operation: str | None = None
+    proposed_status: str | None = None
+    needs_decision: bool = True
+    decision_deferred: bool = False
+
+
+class NcgReviewBoardOut(BaseModel):
+    campaign_id: str
+    period_year: int
+    period_month: int
+    has_validated_det: bool
+    import_id: str | None = None
+    structure_counts: dict[str, int] = {}
+    orientation_counts: dict[str, int] = {}
+    ncg_a_reviser: list[NcgReviewRowOut] = []
+    orientations: list[NcgOrientationOut] = []
+    target_cells: list[dict] = []
+    operations: list[str] = []
+    currency_scopes: list[str] = []
+    residence_scopes: list[str] = []
+    sheets: list[str] = []
+    statuses: list[str] = []
+    orientation_auto: bool = False
+    note: str | None = None
+
 class ReconcileIssueOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

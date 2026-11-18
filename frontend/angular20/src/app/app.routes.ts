@@ -129,6 +129,8 @@ const rbcmParametres = () =>
   import('./reporting-bcm-sm/pages/rbcm-parametres.component').then((m) => m.RbcmParametresComponent);
 const rbcmArchives = () =>
   import('./reporting-bcm-sm/pages/rbcm-archives.component').then((m) => m.RbcmArchivesComponent);
+const rbcmNcgRevue = () =>
+  import('./reporting-bcm-sm/pages/rbcm-ncg-revue.component').then((m) => m.RbcmNcgRevueComponent);
 const achatsBons = () => import('./achats-appro/achats-bons.component').then((m) => m.AchatsBonsComponent);
 const achatsReceptions = () =>
   import('./achats-appro/achats-receptions.component').then((m) => m.AchatsReceptionsComponent);
@@ -429,6 +431,11 @@ export const routes: Routes = withUnsavedChangesGuard([
       { path: 'rapprochement', loadComponent: rbcmRapprochement, data: { title: 'Contrôles BAL DET' } },
       { path: 'parametres', loadComponent: rbcmParametres, data: { title: 'Paramètres BCM SM' } },
       { path: 'mapping', loadComponent: rbcmMapping, data: { title: 'Correspondances BCM SM' } },
+      {
+        path: 'ncg-revue',
+        loadComponent: rbcmNcgRevue,
+        data: { title: 'Revue orientations NCG' },
+      },
       { path: 'notifications', component: NotificationsComponent },
     ],
   },

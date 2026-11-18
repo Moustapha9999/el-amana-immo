@@ -12,7 +12,7 @@ Voir `docs/conformite/` pour le BCM Clientèle — ne pas confondre.
 | Routes UI | `/reporting-bcm-sm/...` |
 | API | `/api/v1/reporting-bcm-sm/` |
 | Tables | préfixe `rbcm_` |
-| Statut chantier | **T3 en cours** sur `feat/reporting-bcm-sm-t3`. DEV `bea_digital` : Alembic **`20261116_rbcm_05`**. `bea_digital_test` : pas de schéma `rbcm_*`. T3.5-3-E livré DEV (UI documents WORK) ; F **non commencée**. |
+| Statut chantier | **T3 en cours** (DEV). Alembic head DEV : **`20261118_rbcm_06`** (orientations NCG). Catalogue moteur : **89** règles (`ALL_RULES`). Structure NCG + Revue Comptabilité livrés en DEV — **validation métier en attente** ; pas de déploiement. T3.5-3-F documentaire **non commencée**. |
 
 ## Documents
 
@@ -49,6 +49,8 @@ Voir `docs/conformite/` pour le BCM Clientèle — ne pas confondre.
 | [T3_5_3_D_REPORT.md](T3_5_3_D_REPORT.md) | T3.5-3-D — API liste / détail / téléchargement WORK (DEV) |
 | [T3_5_3_E_REPORT.md](T3_5_3_E_REPORT.md) | T3.5-3-E — UI consultation et téléchargement WORK (DEV) |
 | [GUIDE_UTILISATEUR.md](GUIDE_UTILISATEUR.md) | Guide utilisateur (SM) |
+| [GUIDE_TEST_COMPTABILITE_NCG.md](GUIDE_TEST_COMPTABILITE_NCG.md) | Guide test Comptabilité — Structure NCG & orientations |
+| [NCG_STRUCTURE_ET_ORIENTATIONS.md](NCG_STRUCTURE_ET_ORIENTATIONS.md) | Synthèse technique mécanisme NCG (phases 1–6, DEV) |
 
 ## Références amont
 
@@ -59,8 +61,10 @@ Voir `docs/conformite/` pour le BCM Clientèle — ne pas confondre.
 ## Règles d’or
 
 - Pas de float métier → `Decimal` / `Numeric`
-- Mapping initial en `A_VALIDER` uniquement
+- Catalogue central unique (`rules_catalog` / `ALL_RULES`) ; orientations `VALIDE_ACTIF` fusionnées au calcul uniquement
+- Aucune activation automatique d’orientation NCG ; séparation propose / validate
+- Mapping historique UI en `A_VALIDER` tant que D01 non tranché
 - 67 rubriques sans règle ≠ zéro automatique
 - Paramètres mensuels non reconduits
 - ECART calculé par période, inactif sans D02
-- Production `v1.0.0` intacte jusqu’à procédure de release
+- Production intacte jusqu’à procédure de release explicite

@@ -348,6 +348,182 @@ export interface RbcmDetLineList {
   page_size: number;
 }
 
+export interface RbcmNcgStructureCell {
+  cell_ref: string;
+  basis: string;
+  sign: number;
+}
+
+export interface RbcmNcgStructureItem {
+  ncg: string;
+  libelle: string | null;
+  tot_debit: string | null;
+  tot_credit: string | null;
+  status: string;
+  present_zero: boolean;
+  reapparu: boolean;
+  covered_by_class: boolean;
+  cells: RbcmNcgStructureCell[];
+  first_seen_period: string | null;
+  last_seen_period: string | null;
+  immediate_previous_period: string | null;
+}
+
+export interface RbcmNcgStructureAbsent {
+  ncg: string;
+  status: string;
+  cells: RbcmNcgStructureCell[];
+  covered_by_class: boolean;
+  first_seen_period: string | null;
+  last_seen_period: string | null;
+}
+
+export interface RbcmNcgStructure {
+  has_validated_det: boolean;
+  period_year: number | null;
+  period_month: number | null;
+  campaign_id: string | null;
+  import_id: string | null;
+  ncg_count: number;
+  history_period_count: number;
+  available_periods: { period_year: number; period_month: number; label: string }[];
+  counts: Record<string, number>;
+  items: RbcmNcgStructureItem[];
+  absents: RbcmNcgStructureAbsent[];
+  orientation_auto: boolean;
+  note: string | null;
+}
+
+export const NCG_STRUCTURE_STATUS_LABELS: Record<string, string> = {
+  nouveau: 'Nouveau',
+  connu_non_oriente: 'Connu non orienté',
+  deja_mappe: 'Déjà mappé',
+  absent_mappe: 'Absent (mappé)',
+  absent_historique: 'Absent (historique)',
+};
+
+export interface RbcmNcgOrientation {
+  id: string;
+  ncg: string;
+  ncg_libelle: string | null;
+  sheet: string;
+  cell_ref: string | null;
+  currency_scope: string;
+  residence_scope: string;
+  operation: string | null;
+  status: string;
+  notes: string | null;
+  prepared_by_id: string | null;
+  prepared_at: string | null;
+  submitted_by_id: string | null;
+  submitted_at: string | null;
+  validated_by_id: string | null;
+  validated_at: string | null;
+  rejected_by_id: string | null;
+  rejected_at: string | null;
+  deactivated_by_id: string | null;
+  deactivated_at: string | null;
+  decision_comment: string | null;
+  supersedes_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface RbcmNcgDetail {
+  ncg: string;
+  libelle: string | null;
+  detection: Record<string, unknown> | null;
+  structure_status: string | null;
+  balances: {
+    period_year: number;
+    period_month: number;
+    label: string;
+    present: boolean;
+    tot_debit: string | null;
+    tot_credit: string | null;
+    libelle: string | null;
+  }[];
+  catalog_mappings: { cell_ref: string; basis: string; sign: number; currency: string; source: string }[];
+  orientations: RbcmNcgOrientation[];
+  target_cells: { cell_ref: string; sheet: string; origin: string; notes: string | null; existing_ncgs: string[] }[];
+  operations: string[];
+  currency_scopes: string[];
+  residence_scopes: string[];
+  sheets: string[];
+  statuses: string[];
+  orientation_auto: boolean;
+  note: string | null;
+}
+
+export const NCG_ORIENTATION_STATUS_LABELS: Record<string, string> = {
+  A_ORIENTER: 'À orienter',
+  EN_ATTENTE_VALIDATION: 'En attente de validation',
+  VALIDE_ACTIF: 'Validé et actif',
+  REJETE: 'Rejeté',
+  DESACTIVE: 'Désactivé',
+};
+
+export const NCG_ORIENTATION_OPERATION_LABELS: Record<string, string> = {
+  ADD_DEBIT: 'Ajouter le solde débiteur (DEB)',
+  ADD_CREDIT: 'Ajouter le solde créditeur (CRE)',
+  SUB_DEBIT: 'Soustraire le solde débiteur (DEB)',
+  SUB_CREDIT: 'Soustraire le solde créditeur (CRE)',
+};
+
+export interface RbcmNcgReviewCompte {
+  compte: string | null;
+  devise: string | null;
+  debit: string;
+  credit: string;
+  libelle: string | null;
+}
+
+export interface RbcmNcgReviewRow {
+  ncg: string;
+  libelle: string | null;
+  structure_status: string;
+  tot_debit: string | null;
+  tot_credit: string | null;
+  present_zero: boolean;
+  reapparu: boolean;
+  covered_by_class: boolean;
+  first_seen_period: string | null;
+  last_seen_period: string | null;
+  immediate_previous_period: string | null;
+  balances: RbcmNcgDetail['balances'];
+  devises: string[];
+  comptes: RbcmNcgReviewCompte[];
+  line_count: number;
+  catalog_mappings: RbcmNcgDetail['catalog_mappings'];
+  latest_orientation: RbcmNcgOrientation | null;
+  orientations: RbcmNcgOrientation[];
+  proposed_cell_ref: string | null;
+  proposed_operation: string | null;
+  proposed_status: string | null;
+  needs_decision: boolean;
+  decision_deferred: boolean;
+}
+
+export interface RbcmNcgReviewBoard {
+  campaign_id: string;
+  period_year: number;
+  period_month: number;
+  has_validated_det: boolean;
+  import_id: string | null;
+  structure_counts: Record<string, number>;
+  orientation_counts: Record<string, number>;
+  ncg_a_reviser: RbcmNcgReviewRow[];
+  orientations: RbcmNcgOrientation[];
+  target_cells: RbcmNcgDetail['target_cells'];
+  operations: string[];
+  currency_scopes: string[];
+  residence_scopes: string[];
+  sheets: string[];
+  statuses: string[];
+  orientation_auto: boolean;
+  note: string | null;
+}
+
 export interface RbcmParamCatalog {
   code: string;
   label: string;

@@ -6,15 +6,15 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from app.services.reporting_bcm_sm.engine.amounts import ZERO, quantize_mru
-from app.services.reporting_bcm_sm.engine.det_basis import DetLine, aggregate
+from app.services.reporting_bcm_sm.engine.det_basis import DetLine, aggregate, term_ncg_coverage
 from app.services.reporting_bcm_sm.engine.rules_catalog import (
     ALL_RULES,
+    CellRule,
     ORIGIN_ADJUST,
     ORIGIN_COPY,
     ORIGIN_MANUAL,
     ORIGIN_PCT,
     ORIGIN_REMAINDER,
-    CellRule,
 )
 
 STATUS_AUTO = "AUTOMATIQUE"
@@ -82,6 +82,16 @@ def _eval_terms(rule: CellRule, lines: list[DetLine]) -> tuple[Decimal, list]:
             sign=term.sign,
         )
         total += amount
+        coverage = term_ncg_coverage(
+            lines,
+            ncgs=term.ncgs,
+            accounts=term.accounts,
+            currency=term.currency,
+            basis=term.basis,
+            sign=term.sign,
+        )
+        present = sum(1 for row in coverage if row["status"] == "PRESENT")
+        absent = sum(1 for row in coverage if row["status"] == "ABSENT")
         traces.append(
             {
                 "ncgs": list(term.ncgs) or None,
@@ -92,9 +102,46 @@ def _eval_terms(rule: CellRule, lines: list[DetLine]) -> tuple[Decimal, list]:
                 "sign": term.sign,
                 "amount": str(amount),
                 "lines": n,
+                "ncg_present": present,
+                "ncg_absent": absent,
+                "coverage": coverage,
             }
         )
     return quantize_mru(total), traces
+
+
+def mapping_coverage(values: dict[str, CellValue]) -> dict[str, list]:
+    """Rubriques du mapping absentes, ou présentes avec un montant nul.
+
+    Une rubrique absente ne retire pas les autres termes de la cellule.
+    Un montant nul sur une rubrique présente n'est pas une absence.
+    """
+    absent: list[dict] = []
+    present_zero: list[dict] = []
+    filtered: list[dict] = []
+    for key, cell in values.items():
+        for step in cell.traces:
+            if not isinstance(step, dict):
+                continue
+            for row in step.get("coverage") or []:
+                item = {
+                    "cell": key,
+                    "ncg": row["ncg"],
+                    "basis": step.get("basis"),
+                    "sign": step.get("sign"),
+                    "lines": row["lines"],
+                    "debit": row["debit"],
+                    "credit": row["credit"],
+                    "amount": row["amount"],
+                }
+                status = row["status"]
+                if status == "ABSENT":
+                    absent.append(item)
+                elif status == "FILTERED":
+                    filtered.append(item)
+                elif status == "PRESENT" and Decimal(row["amount"]) == 0:
+                    present_zero.append(item)
+    return {"absent": absent, "present_zero": present_zero, "filtered": filtered}
 
 
 def _apply_links(
@@ -261,8 +308,14 @@ def evaluate_sm(
     *,
     params: dict[str, Decimal | None] | None = None,
     decisions: dict[str, Decimal] | None = None,
+    rules: tuple[CellRule, ...] | None = None,
 ) -> dict[str, CellValue]:
-    """Calcule les cellules du catalogue. Les décisions écrasent le retenu, pas le calculé."""
+    """Calcule les cellules du catalogue. Les décisions écrasent le retenu, pas le calculé.
+
+    ``rules`` = catalogue effectif (ALL_RULES + orientations VALIDE_ACTIF fusionnées).
+    Par défaut : catalogue central seul.
+    """
+    catalog = rules if rules is not None else ALL_RULES
     params = {k: _as_dec(v) for k, v in (params or {}).items()}
     decided: dict[str, Decimal] = {}
     for key, raw in (decisions or {}).items():
@@ -273,7 +326,7 @@ def evaluate_sm(
 
     for _pass in range(8):
         changed = False
-        for rule in ALL_RULES:
+        for rule in catalog:
             calculated, traces = _eval_rule(rule, lines, values, params)
             from_param = False
             if rule.origin == ORIGIN_MANUAL and calculated is not None:

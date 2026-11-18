@@ -158,7 +158,10 @@ ETAT_A_RULES: tuple[CellRule, ...] = (
         ),
         Term(ncgs=("211100", "211110", "211130"), basis=BASIS_CREDIT, sign=-1),
         minus=("A:131:C",),
-        notes="D38 BCM 131 — Σ DEB 14 NCG − Σ CRE 211100+211110+211130 − C38. Sans compensation d’écart BAL.",
+        notes=(
+            "D38 BCM 131 — Σ DEB 14 NCG − Σ CRE 211100+211110+211130 − C38. "
+            "Montant métier uniquement. Aucun déséquilibre de bilan, aucun résiduel."
+        ),
     ),
     _auto("A:132:D", _t("220100")),
     _auto("A:133:D", _t("230000")),
@@ -185,6 +188,12 @@ ETAT_A_RULES: tuple[CellRule, ...] = (
             "218000",
             "218100",
             "218200",
+            "320000",
+            "320001",
+            "322000",
+            "323000",
+            "323005",
+            "323010",
             "323020",
             "323030",
             "323050",
@@ -205,7 +214,11 @@ ETAT_A_RULES: tuple[CellRule, ...] = (
             "359000",
             basis=BASIS_DEBIT,
         ),
-        notes="D47 débiteurs divers — Σ DEB 22 NCG (218000 une seule fois ; 352000 et 352001). 350000 ici, plus sur A:211:D.",
+        notes=(
+            "D47 débiteurs divers — Σ DEB des 28 NCG. 218000 une seule fois. "
+            "352000 et 352001. 320000, 320001, 322000, 323000, 323005, 323010 inclus. "
+            "350000 ici, pas sur A:211:D. Aucune soustraction CRE."
+        ),
     ),
     _auto(
         "A:211:D",
@@ -287,13 +300,18 @@ ETAT_A_RULES: tuple[CellRule, ...] = (
             "180000",
             "300000",
             "301110",
+            "311115",
             "311150",
             "315000",
+            "315100",
             "316000",
             "316100",
             basis=BASIS_CREDIT,
         ),
-        notes="D122 clientèle exigible après encaissement — Σ CRE NCG 102000+180000+300000+301110+311150+315000+316000+316100",
+        notes=(
+            "D122 clientèle exigible après encaissement — Σ CRE des 10 NCG. "
+            "311115 et 315100 inclus. Aucune soustraction DEB."
+        ),
     ),
     _adj(
         "A:403:D",

@@ -7,20 +7,26 @@
 - Accueil — pilotage et indicateurs
 - Situations mensuelles — liste des SM
 - Nouvelle SM — création d’un brouillon
-- Imports — BAL DET uniquement (analyse → prévisualisation → confirmation)
+- Imports — BAL DET uniquement (analyse → prévisualisation → confirmation) + **Structure NCG**
+- Revue NCG — décisions Comptabilité (proposer / confirmer / rejeter / différer)
 - BAL DET — consultation paginée (lecture seule)
 - Contrôles — contrôles internes BAL DET
 - Paramètres — huit paramètres mensuels (sans reconduction N−1)
-- Correspondances — 242 règles en `A_VALIDER` (pas d’activation)
+- Correspondances — consultation (pas d’activation automatique)
 - Archives BAL COND — historique uniquement, hors workflow
+
+Pour le test métier des NCG détectés et des orientations SM, voir
+[GUIDE_TEST_COMPTABILITE_NCG.md](GUIDE_TEST_COMPTABILITE_NCG.md).
 
 ## Cycle d’une SM
 
 1. Créer la SM (période / version)
 2. Importer et confirmer la BAL DET
-3. Consulter / lancer les contrôles internes
-4. Saisir et valider les paramètres
-5. Mapping et état réglementaire — **bloqués** tant que D01/D02 ne sont pas tranchés
+3. Consulter la **Structure NCG** (nouveaux / non orientés / absents…) puis, si besoin, la **Revue NCG** pour proposer / différer / faire valider une orientation (jamais d’activation automatique)
+4. Consulter / lancer les contrôles internes
+5. Saisir et valider les paramètres
+6. Canevas / documents WORK selon le parcours guidé
+7. Mapping historique UI et ECART — **bloqués** tant que D01/D02 ne sont pas tranchés
 
 ## Décisions bloquantes
 

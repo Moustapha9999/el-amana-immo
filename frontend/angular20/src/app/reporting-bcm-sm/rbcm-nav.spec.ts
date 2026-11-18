@@ -20,13 +20,14 @@ describe('Reporting BCM SM — navigation et routes', () => {
     expect(MODULES_WITH_METIER_SHELL.has('reporting-bcm-sm')).toBeTrue();
   });
 
-  it('expose les six onglets du parcours comptable', () => {
+  it('expose les onglets du parcours comptable', () => {
     const items = navForModule('reporting-bcm-sm');
     const paths = items.map((i) => i.path);
     expect(paths).toEqual([
       '/reporting-bcm-sm/accueil',
       '/reporting-bcm-sm/campagnes',
       '/reporting-bcm-sm/imports',
+      '/reporting-bcm-sm/ncg-revue',
       '/reporting-bcm-sm/rapprochement',
       '/reporting-bcm-sm/parametres',
       '/reporting-bcm-sm/archives',
@@ -35,6 +36,7 @@ describe('Reporting BCM SM — navigation et routes', () => {
       'Accueil',
       'Situations mensuelles',
       'Imports BAL DET',
+      'Revue NCG',
       'Contrôles',
       'Paramètres',
       'Archives',
@@ -57,6 +59,7 @@ describe('Reporting BCM SM — navigation et routes', () => {
     expect(enfants).toContain('rapprochement');
     expect(enfants).toContain('parametres');
     expect(enfants).toContain('mapping');
+    expect(enfants).toContain('ncg-revue');
     const accueil = (rbcm?.children ?? []).find((c) => c.path === 'accueil');
     expect(accueil?.redirectTo).toBeUndefined();
     expect(accueil?.loadComponent).toBeTruthy();

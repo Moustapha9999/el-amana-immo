@@ -158,6 +158,7 @@ class CoverPayload:
     det_controls: str | None
     det_import_id: str | None
     calc_run_id: str | None
+    det_absent_ncgs: str | None = None
     manual_rows: list[ManualCellRow] = field(default_factory=list)
     issue_rows: list[IssueRow] = field(default_factory=list)
     decision_rows: list[IssueRow] = field(default_factory=list)
@@ -428,6 +429,29 @@ def _det_counts(det: RbcmImport | None) -> tuple[str | None, str | None, str | N
     )
 
 
+def _absent_ncg_text(run: RbcmCalculationRun | None) -> str | None:
+    if run is None:
+        return None
+    coverage = (run.report or {}).get("mapping_coverage")
+    if not isinstance(coverage, dict) or "absent" not in coverage:
+        return None
+    rows = coverage.get("absent") or []
+    if not rows:
+        return (
+            "Aucune. Les rubriques prévues par le mapping et absentes de cette BAL "
+            "valent 0 ; elles n’annulent pas les autres termes de la cellule."
+        )
+    parts = [f"{row['ncg']} ({row['cell']})" for row in rows[:40]]
+    text = (
+        f"{len(rows)} rubrique(s) absente(s) de cette BAL, contribution nulle, "
+        "les autres termes restent calculés : "
+        + " ; ".join(parts)
+    )
+    if len(rows) > 40:
+        text += "…"
+    return text
+
+
 def build_cover_payload(
     *,
     campaign: RbcmCampaign,
@@ -581,6 +605,7 @@ def build_cover_payload(
         det_row_count=row_count,
         det_compte_count=compte_count,
         det_ncg_count=ncg_count,
+        det_absent_ncgs=_absent_ncg_text(run),
         det_analysis=_det_analysis_text(det),
         det_controls=ctrl_label,
         det_import_id=None if det is None else str(det.id),
@@ -754,6 +779,8 @@ def write_a_lire_sheet(wb, payload: CoverPayload) -> None:
         r = _kv(ws, r, "Lignes importées", payload.det_row_count)
         r = _kv(ws, r, "Comptes détectés", payload.det_compte_count, alt=True)
         r = _kv(ws, r, "NCG détectés", payload.det_ncg_count)
+        if payload.det_absent_ncgs:
+            r = _kv(ws, r, "Rubriques du mapping absentes", payload.det_absent_ncgs, alt=True)
         r = _kv(ws, r, "Résultat de l’analyse", payload.det_analysis, alt=True)
         r = _kv(ws, r, "Résultat des contrôles", payload.det_controls)
         r = _kv(ws, r, "Référence d’import", payload.det_import_id, alt=True)

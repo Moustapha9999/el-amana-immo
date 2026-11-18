@@ -55,6 +55,24 @@ HIST_T1_DET_COND_GAP_APPROX = "15.05"
 # Mapping lifecycle — un seul champ (T2 §4.4)
 MAPPING_LIFECYCLES = ("A_VALIDER", "ACTIVE", "REJECTED", "SUPERSEDED")
 
+# Orientations NCG → cellules SM (catalogue central unique, activation manuelle).
+NCG_ORIENTATION_STATUSES = (
+    "A_ORIENTER",
+    "EN_ATTENTE_VALIDATION",
+    "VALIDE_ACTIF",
+    "REJETE",
+    "DESACTIVE",
+)
+NCG_ORIENTATION_OPERATIONS = (
+    "ADD_DEBIT",
+    "ADD_CREDIT",
+    "SUB_DEBIT",
+    "SUB_CREDIT",
+)
+NCG_ORIENTATION_CURRENCIES = ("ALL", "LOCAL", "FX")
+NCG_ORIENTATION_RESIDENCES = ("RESIDENTS", "NON_RESIDENTS", "ALL")
+NCG_ORIENTATION_SHEETS = ("ETAT_A", "ETAT_B")
+
 # Bases de montant. D15 validée (Cellules SM) : DEBIT / CREDIT / NET / FX.
 # SD/SC NATURAL conservés pour l'ancien seed SCD A_VALIDER (non utilisé au calcul).
 AMOUNT_BASES = ("D", "C", "SD", "SC", "SIGNED")

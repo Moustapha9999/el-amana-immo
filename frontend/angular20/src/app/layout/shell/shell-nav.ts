@@ -472,6 +472,7 @@ export const MODULE_SHELL_NAV: Readonly<Record<string, ShellNavItem[]>> = {
     { section: 'Parcours', label: 'Accueil', path: '/reporting-bcm-sm/accueil', icon: 'home', exact: true, permissions: ['reporting-bcm-sm.view'] },
     { section: 'Parcours', label: 'Situations mensuelles', path: '/reporting-bcm-sm/campagnes', icon: 'calendar_month', permissions: ['reporting-bcm-sm.view'] },
     { section: 'Parcours', label: 'Imports BAL DET', path: '/reporting-bcm-sm/imports', icon: 'upload_file', permissions: ['reporting-bcm-sm.view'] },
+    { section: 'Parcours', label: 'Revue NCG', path: '/reporting-bcm-sm/ncg-revue', icon: 'rule', permissions: ['reporting-bcm-sm.view'] },
     { section: 'Parcours', label: 'Contrôles', path: '/reporting-bcm-sm/rapprochement', icon: 'fact_check', permissions: ['reporting-bcm-sm.view'] },
     { section: 'Parcours', label: 'Paramètres', path: '/reporting-bcm-sm/parametres', icon: 'tune', permissions: ['reporting-bcm-sm.view'] },
     { section: 'Parcours', label: 'Archives', path: '/reporting-bcm-sm/archives', icon: 'inventory_2', permissions: ['reporting-bcm-sm.view'] },

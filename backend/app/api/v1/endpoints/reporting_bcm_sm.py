@@ -53,6 +53,13 @@ from app.schemas.reporting_bcm_sm import (
     ImportOut,
     MappingRuleListOut,
     MappingRuleOut,
+    NcgOrientationDecisionIn,
+    NcgOrientationDeferIn,
+    NcgOrientationOut,
+    NcgOrientationPrepareIn,
+    NcgOrientationUpdateIn,
+    NcgReviewBoardOut,
+    NcgStructureOut,
     ParameterActionIn,
     ParameterValueIn,
     ParameterValueOut,
@@ -97,6 +104,8 @@ from app.services.reporting_bcm_sm.constants import (
     PERM_APPROVE,
     PERM_CONTROL,
     PERM_EXPORT,
+    PERM_MAP_PROPOSE,
+    PERM_MAP_VALIDATE,
     PERM_PREPARE,
     PERM_REOPEN,
     PERM_VIEW,
@@ -822,6 +831,274 @@ async def list_det_lines(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get("/campaigns/{campaign_id}/ncg-structure", response_model=NcgStructureOut)
+async def ncg_structure(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(PERM_VIEW)),
+):
+    """Structure NCG de la BAL DET : nouveaux / connus / mappés / absents / réapparus.
+
+    Descriptif uniquement. N'oriente aucun NCG vers une cellule.
+    """
+    from app.services.reporting_bcm_sm.ncg_structure_service import load_structure_report
+
+    camp = await campaign_service.get_campaign(db, campaign_id)
+    report = await load_structure_report(db, campaign=camp)
+    return NcgStructureOut.model_validate(report)
+
+
+@router.get("/campaigns/{campaign_id}/ncg/{ncg}/detail")
+async def ncg_detail(
+    campaign_id: uuid.UUID,
+    ncg: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(PERM_VIEW)),
+):
+    from app.services.reporting_bcm_sm import ncg_orientation_service as ori_svc
+
+    camp = await campaign_service.get_campaign(db, campaign_id)
+    return await ori_svc.ncg_detail_for_campaign(db, campaign=camp, ncg=ncg)
+
+
+@router.get("/campaigns/{campaign_id}/ncg-review", response_model=NcgReviewBoardOut)
+async def ncg_review_board(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(PERM_VIEW)),
+):
+    """Revue métier Comptabilité : NCG à orienter + cycle de validation."""
+    from app.services.reporting_bcm_sm.ncg_review_service import build_review_board
+
+    camp = await campaign_service.get_campaign(db, campaign_id)
+    board = await build_review_board(db, campaign=camp)
+    return NcgReviewBoardOut.model_validate(board)
+
+
+@router.get("/ncg-orientations", response_model=list[NcgOrientationOut])
+async def list_ncg_orientations(
+    ncg: str | None = None,
+    status: str | None = None,
+    cell_ref: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(PERM_VIEW)),
+):
+    from app.services.reporting_bcm_sm import ncg_orientation_service as ori_svc
+
+    rows = await ori_svc.list_orientations(db, ncg=ncg, status=status, cell_ref=cell_ref)
+    return [NcgOrientationOut.model_validate(ori_svc._ori_dict(r)) for r in rows]
+
+
+@router.post("/ncg-orientations", response_model=NcgOrientationOut, status_code=201)
+async def prepare_ncg_orientation(
+    body: NcgOrientationPrepareIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(PERM_MAP_PROPOSE)),
+):
+    from app.services.reporting_bcm_sm import ncg_orientation_service as ori_svc
+
+    row = await ori_svc.prepare_orientation(db, user=user, **body.model_dump())
+    await record_audit(
+        db,
+        user=user,
+        action="rbcm.ncg_orientation.prepare",
+        entity="rbcm_ncg_orientation",
+        entity_id=str(row.id),
+        request=request,
+        after=ori_svc._ori_dict(row),
+        module_code=MODULE_CODE,
+        espace_code="comptabilite",
+    )
+    await db.commit()
+    return NcgOrientationOut.model_validate(ori_svc._ori_dict(row))
+
+
+@router.post("/ncg-orientations/defer", response_model=NcgOrientationOut, status_code=201)
+async def defer_ncg_orientation(
+    body: NcgOrientationDeferIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(PERM_MAP_PROPOSE)),
+):
+    """Décision différée : NCG sans cellule ni opération (pas d'activation)."""
+    from app.services.reporting_bcm_sm import ncg_orientation_service as ori_svc
+
+    row = await ori_svc.defer_orientation(
+        db,
+        user=user,
+        ncg=body.ncg,
+        ncg_libelle=body.ncg_libelle,
+        notes=body.notes,
+    )
+    await record_audit(
+        db,
+        user=user,
+        action="rbcm.ncg_orientation.defer",
+        entity="rbcm_ncg_orientation",
+        entity_id=str(row.id),
+        request=request,
+        after=ori_svc._ori_dict(row),
+        module_code=MODULE_CODE,
+        espace_code="comptabilite",
+    )
+    await db.commit()
+    return NcgOrientationOut.model_validate(ori_svc._ori_dict(row))
+
+
+@router.patch("/ncg-orientations/{orientation_id}", response_model=NcgOrientationOut)
+async def update_ncg_orientation(
+    orientation_id: uuid.UUID,
+    body: NcgOrientationUpdateIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(PERM_MAP_PROPOSE)),
+):
+    from app.services.reporting_bcm_sm import ncg_orientation_service as ori_svc
+
+    row = await ori_svc.get_orientation(db, orientation_id)
+    before = ori_svc._ori_dict(row)
+    payload = body.model_dump()
+    clear = bool(payload.pop("clear_destination", False))
+    row = await ori_svc.update_orientation(
+        db,
+        orientation=row,
+        user=user,
+        clear_destination=clear,
+        **{k: v for k, v in payload.items() if v is not None},
+    )
+    await record_audit(
+        db,
+        user=user,
+        action="rbcm.ncg_orientation.update",
+        entity="rbcm_ncg_orientation",
+        entity_id=str(row.id),
+        request=request,
+        before=before,
+        after=ori_svc._ori_dict(row),
+        module_code=MODULE_CODE,
+        espace_code="comptabilite",
+    )
+    await db.commit()
+    return NcgOrientationOut.model_validate(ori_svc._ori_dict(row))
+
+
+@router.post("/ncg-orientations/{orientation_id}/submit", response_model=NcgOrientationOut)
+async def submit_ncg_orientation(
+    orientation_id: uuid.UUID,
+    body: NcgOrientationDecisionIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(PERM_MAP_PROPOSE)),
+):
+    from app.services.reporting_bcm_sm import ncg_orientation_service as ori_svc
+
+    row = await ori_svc.get_orientation(db, orientation_id)
+    before = ori_svc._ori_dict(row)
+    row = await ori_svc.submit_orientation(db, orientation=row, user=user, comment=body.comment)
+    await record_audit(
+        db,
+        user=user,
+        action="rbcm.ncg_orientation.submit",
+        entity="rbcm_ncg_orientation",
+        entity_id=str(row.id),
+        request=request,
+        before=before,
+        after=ori_svc._ori_dict(row),
+        module_code=MODULE_CODE,
+        espace_code="comptabilite",
+    )
+    await db.commit()
+    return NcgOrientationOut.model_validate(ori_svc._ori_dict(row))
+
+
+@router.post("/ncg-orientations/{orientation_id}/validate", response_model=NcgOrientationOut)
+async def validate_ncg_orientation(
+    orientation_id: uuid.UUID,
+    body: NcgOrientationDecisionIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(PERM_MAP_VALIDATE)),
+):
+    from app.services.reporting_bcm_sm import ncg_orientation_service as ori_svc
+
+    row = await ori_svc.get_orientation(db, orientation_id)
+    before = ori_svc._ori_dict(row)
+    row = await ori_svc.validate_orientation(db, orientation=row, user=user, comment=body.comment)
+    await record_audit(
+        db,
+        user=user,
+        action="rbcm.ncg_orientation.validate",
+        entity="rbcm_ncg_orientation",
+        entity_id=str(row.id),
+        request=request,
+        before=before,
+        after=ori_svc._ori_dict(row),
+        module_code=MODULE_CODE,
+        espace_code="comptabilite",
+    )
+    await db.commit()
+    return NcgOrientationOut.model_validate(ori_svc._ori_dict(row))
+
+
+@router.post("/ncg-orientations/{orientation_id}/reject", response_model=NcgOrientationOut)
+async def reject_ncg_orientation(
+    orientation_id: uuid.UUID,
+    body: NcgOrientationDecisionIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(PERM_MAP_VALIDATE)),
+):
+    from app.services.reporting_bcm_sm import ncg_orientation_service as ori_svc
+
+    row = await ori_svc.get_orientation(db, orientation_id)
+    before = ori_svc._ori_dict(row)
+    row = await ori_svc.reject_orientation(db, orientation=row, user=user, comment=body.comment)
+    await record_audit(
+        db,
+        user=user,
+        action="rbcm.ncg_orientation.reject",
+        entity="rbcm_ncg_orientation",
+        entity_id=str(row.id),
+        request=request,
+        before=before,
+        after=ori_svc._ori_dict(row),
+        module_code=MODULE_CODE,
+        espace_code="comptabilite",
+    )
+    await db.commit()
+    return NcgOrientationOut.model_validate(ori_svc._ori_dict(row))
+
+
+@router.post("/ncg-orientations/{orientation_id}/deactivate", response_model=NcgOrientationOut)
+async def deactivate_ncg_orientation(
+    orientation_id: uuid.UUID,
+    body: NcgOrientationDecisionIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(PERM_MAP_VALIDATE)),
+):
+    from app.services.reporting_bcm_sm import ncg_orientation_service as ori_svc
+
+    row = await ori_svc.get_orientation(db, orientation_id)
+    before = ori_svc._ori_dict(row)
+    row = await ori_svc.deactivate_orientation(db, orientation=row, user=user, comment=body.comment)
+    await record_audit(
+        db,
+        user=user,
+        action="rbcm.ncg_orientation.deactivate",
+        entity="rbcm_ncg_orientation",
+        entity_id=str(row.id),
+        request=request,
+        before=before,
+        after=ori_svc._ori_dict(row),
+        module_code=MODULE_CODE,
+        espace_code="comptabilite",
+    )
+    await db.commit()
+    return NcgOrientationOut.model_validate(ori_svc._ori_dict(row))
 
 
 # --- Réconciliation ---

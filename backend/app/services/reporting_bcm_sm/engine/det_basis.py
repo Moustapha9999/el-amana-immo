@@ -45,7 +45,7 @@ def is_fx(devise: str | None) -> bool:
 
 
 def line_from_row(row: dict) -> DetLine | None:
-    ncg = (row.get("ncg") or "").strip()
+    ncg = canonical_ncg(row.get("ncg"))
     if not ncg:
         return None
     debit = row.get("debit")
@@ -85,17 +85,46 @@ def account_matches(line: DetLine, accounts: tuple[str, ...]) -> bool:
     return False
 
 
+def canonical_ncg(value: str | None) -> str:
+    """Code NCG comparable d'un mois à l'autre.
+
+    Les règles listent des codes stables (ex. ``210000``). Un export peut
+    livrer le même code avec des espaces ou un suffixe ``.0``. Ce n'est pas
+    une autre rubrique. Les zéros de tête sont conservés.
+    """
+    if value is None:
+        return ""
+    raw = str(value).replace("\u00a0", "").replace(" ", "").strip()
+    if "." in raw:
+        head, frac = raw.split(".", 1)
+        if head.isdigit() and frac and set(frac) <= {"0"}:
+            return head
+    return raw
+
+
+_CANON_NCG_SETS: dict[tuple[str, ...], frozenset[str]] = {}
+
+
+def _canon_ncg_set(ncgs: tuple[str, ...]) -> frozenset[str]:
+    cached = _CANON_NCG_SETS.get(ncgs)
+    if cached is None:
+        cached = frozenset(canonical_ncg(n) for n in ncgs if canonical_ncg(n))
+        _CANON_NCG_SETS[ncgs] = cached
+    return cached
+
+
 def ncg_matches(
     ncg: str,
     *,
     ncgs: tuple[str, ...] = (),
     ncg_class: str | None = None,
 ) -> bool:
+    code = canonical_ncg(ncg)
     if ncg_class:
-        return bool(ncg) and ncg[0] == ncg_class
+        return bool(code) and code[0] == ncg_class
     if not ncgs:
         return True
-    return ncg in ncgs
+    return code in _canon_ncg_set(ncgs)
 
 
 def currency_ok(line: DetLine, currency: str) -> bool:
@@ -145,3 +174,60 @@ def aggregate(
         total += amount_of(line, basis)
         matched += 1
     return quantize_mru(total * Decimal(sign)), matched
+
+
+def term_ncg_coverage(
+    lines: list[DetLine],
+    *,
+    ncgs: tuple[str, ...] = (),
+    accounts: tuple[str, ...] = (),
+    currency: str = "ALL",
+    basis: str = BASIS_NET,
+    sign: int = 1,
+) -> list[dict]:
+    """Une ligne par NCG de la règle, sans abandonner les autres.
+
+    PRESENT : au moins une ligne entre dans le calcul (montant éventuellement nul).
+    FILTERED : le NCG est dans la BAL, mais le filtre devise ou compte l'écarte.
+    ABSENT : aucune ligne de ce NCG dans la BAL. Contribution nulle pour ce mois.
+    """
+    if not ncgs:
+        return []
+    order = [canonical_ncg(n) for n in ncgs]
+    seen = {code: False for code in order}
+    buckets = {code: {"debit": ZERO, "credit": ZERO, "lines": 0} for code in order}
+    for line in lines:
+        code = canonical_ncg(line.ncg)
+        if code not in buckets:
+            continue
+        seen[code] = True
+        if not currency_ok(line, currency) or not account_matches(line, accounts):
+            continue
+        bucket = buckets[code]
+        bucket["debit"] += line.debit or ZERO
+        bucket["credit"] += line.credit or ZERO
+        bucket["lines"] += 1
+    out: list[dict] = []
+    for code in order:
+        bucket = buckets[code]
+        if bucket["lines"]:
+            status = "PRESENT"
+        elif seen[code]:
+            status = "FILTERED"
+        else:
+            status = "ABSENT"
+        amount = amount_of(
+            DetLine(code, "", "", None, bucket["debit"], bucket["credit"]),
+            basis,
+        )
+        out.append(
+            {
+                "ncg": code,
+                "status": status,
+                "lines": bucket["lines"],
+                "debit": str(quantize_mru(bucket["debit"])),
+                "credit": str(quantize_mru(bucket["credit"])),
+                "amount": str(quantize_mru(amount * Decimal(sign))),
+            }
+        )
+    return out

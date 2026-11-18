@@ -2,9 +2,9 @@
 
 **Branche :** `feat/reporting-bcm-sm-t3`  
 **Commit de base (HEAD Git) :** `091b57c`  
-**Mise à jour documentation :** 16/11/2026 (T3.5-3-C graphe + WORK DEV)
+**Mise à jour documentation :** 18/11/2026 (mécanisme Structure NCG + orientations — phases 1–6 DEV)
 
-Le code T3 (rbcm_01–04, services, front) est dans le working tree, **non commité**.
+Le code T3 / NCG (rbcm_01–06, services, front) est dans le working tree, **non commité**.
 
 ## Conflit de périmètre
 
@@ -14,10 +14,10 @@ Voir [T3_SCOPE_AND_P2_DECISION.md](T3_SCOPE_AND_P2_DECISION.md).
 
 | Base | `alembic_version` | Tables `rbcm_*` |
 |------|-------------------|-----------------|
-| `bea_digital` (DEV métier) | **`20261116_rbcm_05`** | 23 tables (01–05 ; template / cellules / décisions documentaires) |
-| `bea_digital_test` | `20261105_mg_stock_mvt_ref_uq` | **0** |
+| `bea_digital` (DEV métier) | **`20261118_rbcm_06`** | tables 01–06 (+ `rbcm_ncg_orientation`) |
+| `bea_digital_test` | (selon copie locale) | schéma test à vérifier avant pytest DB |
 
-Production `v1.0.0` : non interrogée. `rbcm_05` appliquée **uniquement** sur `bea_digital` locale.
+Production : non interrogée. Migrations `rbcm_*` appliquées **uniquement** sur `bea_digital` locale DEV.
 
 Les mentions antérieures « `rbcm_01` non appliquée / Docker arrêté » décrivaient T3.2. Elles sont **obsolètes** pour `bea_digital`.
 
@@ -38,13 +38,15 @@ Les mentions antérieures « `rbcm_01` non appliquée / Docker arrêté » décr
 | T3.5-3-E UI documents WORK | **Fait DEV** | Voir `T3_5_3_E_REPORT.md` ; section Documents dans le détail SM ; pas d’API F |
 | T3.5-3-F | **Non commencée** | Décisions / corrections documentaires |
 | T3.6 Exports / recette | **Partiel** | Export technique ≠ canevas officiel ; PDF bloqué |
+| Structure NCG + orientations (P1–P6) | **Fait DEV** | Comparaison BAL DET, revue Comptabilité, `rbcm_06`, catalogue 89 règles ; **pas de déploiement** — voir `NCG_STRUCTURE_ET_ORIENTATIONS.md` |
 
 ## Tests (historique)
 
 Tests T3.5-3-B : `test_reporting_bcm_sm_t35_3_b.py` — **10 passed** (16/11/2026).  
 Tests T3.5-3-C : `test_reporting_bcm_sm_t35_3_c.py` — **5 passed** (16/11/2026).  
 Tests T3.5-3-D : `test_reporting_bcm_sm_t35_3_d.py` — **4 passed** (16/11/2026).  
-Tests T3.5-3-E : `rbcm-documents.spec.ts` + `api-error.spec.ts` — **14 SUCCESS** (17/11/2026).
+Tests T3.5-3-E : `rbcm-documents.spec.ts` + `api-error.spec.ts` — **14 SUCCESS** (17/11/2026).  
+Tests NCG (structure / orientation / phase3 / revue) : **36 passed** (18/11/2026).
 
 ## Décisions métier toujours ouvertes
 
@@ -53,5 +55,6 @@ P1 / P2 inchangés.
 
 ## Prochaine étape
 
-**Attendre une autorisation explicite** avant T3.5-3-F (décisions documentaires).  
-Ne pas activer le mapping, ne pas modifier `runner.py`, ne pas toucher aux SM 11/2026 et 01/2026.
+1. **Validation Comptabilité** du parcours Structure / Revue NCG (guide `GUIDE_TEST_COMPTABILITE_NCG.md`) — cas 847000 sans cellule forcée.
+2. Ensuite seulement : préparation de livraison / déploiement (autorisation explicite).
+3. T3.5-3-F (décisions documentaires) : attendre autorisation séparée.

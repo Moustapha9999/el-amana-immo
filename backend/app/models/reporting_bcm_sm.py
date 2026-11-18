@@ -40,6 +40,11 @@ from app.services.reporting_bcm_sm.constants import (
     IMPORT_FILE_TYPES,
     IMPORT_STATUSES,
     MAPPING_LIFECYCLES,
+    NCG_ORIENTATION_CURRENCIES,
+    NCG_ORIENTATION_OPERATIONS,
+    NCG_ORIENTATION_RESIDENCES,
+    NCG_ORIENTATION_SHEETS,
+    NCG_ORIENTATION_STATUSES,
     PARAMETER_VALUE_STATUSES,
 )
 
@@ -61,6 +66,11 @@ _IMPORT_STATUSES = ", ".join(f"'{s}'" for s in IMPORT_STATUSES)
 _MAP_LIFE = ", ".join(f"'{s}'" for s in MAPPING_LIFECYCLES)
 _PARAM_STAT = ", ".join(f"'{s}'" for s in PARAMETER_VALUE_STATUSES)
 _ECART = ", ".join(f"'{s}'" for s in ECART_STATES)
+_NCG_ORI_STAT = ", ".join(f"'{s}'" for s in NCG_ORIENTATION_STATUSES)
+_NCG_ORI_OPS = ", ".join(f"'{s}'" for s in NCG_ORIENTATION_OPERATIONS)
+_NCG_ORI_CUR = ", ".join(f"'{s}'" for s in NCG_ORIENTATION_CURRENCIES)
+_NCG_ORI_RES = ", ".join(f"'{s}'" for s in NCG_ORIENTATION_RESIDENCES)
+_NCG_ORI_SHEET = ", ".join(f"'{s}'" for s in NCG_ORIENTATION_SHEETS)
 
 
 class RbcmCampaign(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -322,6 +332,54 @@ class RbcmUnmappedRubric(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="NON_RESOLUE")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class RbcmNcgOrientation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Orientation métier NCG → cellule SM. Alimente le catalogue central une fois VALIDE_ACTIF.
+
+    Append-only logique : désactivation / rejet sans suppression. Jamais d'activation automatique.
+    Générique (tous les mois), jamais liée à une campagne.
+    """
+
+    __tablename__ = "rbcm_ncg_orientation"
+    __table_args__ = (
+        CheckConstraint(f"status IN ({_NCG_ORI_STAT})", name="ck_rbcm_ncg_orientation_status"),
+        CheckConstraint(f"operation IN ({_NCG_ORI_OPS})", name="ck_rbcm_ncg_orientation_operation"),
+        CheckConstraint(f"currency_scope IN ({_NCG_ORI_CUR})", name="ck_rbcm_ncg_orientation_currency"),
+        CheckConstraint(f"residence_scope IN ({_NCG_ORI_RES})", name="ck_rbcm_ncg_orientation_residence"),
+        CheckConstraint(f"sheet IN ({_NCG_ORI_SHEET})", name="ck_rbcm_ncg_orientation_sheet"),
+        Index(
+            "ix_rbcm_ncg_orientation_active_key",
+            "ncg",
+            "cell_ref",
+            "operation",
+            "currency_scope",
+        ),
+    )
+
+    ncg: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    ncg_libelle: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sheet: Mapped[str] = mapped_column(String(16), nullable=False)
+    cell_ref: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    currency_scope: Mapped[str] = mapped_column(String(16), nullable=False, default="ALL")
+    residence_scope: Mapped[str] = mapped_column(String(16), nullable=False, default="RESIDENTS")
+    operation: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="A_ORIENTER", index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prepared_by_id: Mapped[uuid.UUID | None] = _user_fk()
+    prepared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    submitted_by_id: Mapped[uuid.UUID | None] = _user_fk()
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    validated_by_id: Mapped[uuid.UUID | None] = _user_fk()
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejected_by_id: Mapped[uuid.UUID | None] = _user_fk()
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deactivated_by_id: Mapped[uuid.UUID | None] = _user_fk()
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), _fk("rbcm_ncg_orientation.id", "SET NULL"), nullable=True
+    )
 
 
 class RbcmCalculationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):

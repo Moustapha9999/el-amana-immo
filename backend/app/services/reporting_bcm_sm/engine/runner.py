@@ -22,8 +22,8 @@ from app.models.reporting_bcm_sm import (
     RbcmMappingVersion,
 )
 from app.services.reporting_bcm_sm.constants import ENGINE_VERSION
-from app.services.reporting_bcm_sm.engine.det_basis import DetLine
-from app.services.reporting_bcm_sm.engine.evaluate import classes_1_8_gap, evaluate_sm
+from app.services.reporting_bcm_sm.engine.det_basis import DetLine, canonical_ncg
+from app.services.reporting_bcm_sm.engine.evaluate import classes_1_8_gap, evaluate_sm, mapping_coverage
 from app.services.reporting_bcm_sm.engine.rules_catalog import (
     ADJUST_KEYS,
     MANUAL_KEYS,
@@ -83,7 +83,7 @@ async def run_calculation(
     )
     lines = [
         DetLine(
-            ncg=r.ncg or "",
+            ncg=canonical_ncg(r.ncg or ""),
             compte=r.compte or "",
             libelle=r.libelle or "",
             devise=r.devise,
@@ -120,20 +120,34 @@ async def run_calculation(
         if v.decided_value is not None
     }
 
+    from app.services.reporting_bcm_sm.ncg_orientation_service import (
+        list_active_orientations,
+        merge_active_orientations,
+    )
+
     stats = catalog_stats()
+    active_oris = await list_active_orientations(db)
+    catalog = merge_active_orientations(orientations=active_oris)
+    ori_fp = _fp(
+        *[
+            f"{o.ncg}:{o.cell_ref}:{o.operation}:{o.currency_scope}:{o.id}"
+            for o in sorted(active_oris, key=lambda r: str(r.id))
+        ]
+    )
     run = RbcmCalculationRun(
         campaign_id=campaign.id,
         engine_version=ENGINE_VERSION,
         status="RUNNING",
         fingerprint_imports=_fp(det.sha256),
-        fingerprint_mapping=_fp("CELLULES_SM", str(stats)),
+        fingerprint_mapping=_fp("CELLULES_SM", str(stats), f"ORI:{ori_fp}"),
         fingerprint_params=param_fp,
         started_by_id=user.id,
     )
     db.add(run)
     await db.flush()
 
-    evaluated = evaluate_sm(lines, params=param_map, decisions=decisions)
+    evaluated = evaluate_sm(lines, params=param_map, decisions=decisions, rules=catalog)
+    coverage = mapping_coverage(evaluated)
     ecart_amount = classes_1_8_gap(lines)
 
     db.add(
@@ -177,10 +191,27 @@ async def run_calculation(
         ("IMP_DET", "Import BAL DET validé (source unique)", "BLOCKING", "OK", None),
         (
             "MAP_CATALOG",
-            "Catalogue Cellules SM (règles BAL DET)",
+            "Catalogue Cellules SM (règles BAL DET, identiques pour chaque mois)",
             "INFO",
             "OK",
             f"{stats['auto']} AUTO / {stats['manual']} manuelles / {stats['adjust']} à ajuster",
+        ),
+        (
+            "NCG_ABSENTS",
+            "Rubriques du mapping absentes de cette BAL DET",
+            "INFO",
+            "OK",
+            (
+                "Aucune. Une rubrique absente vaut 0 pour ce mois ; "
+                "les autres termes de la cellule restent calculés."
+                if not coverage["absent"]
+                else (
+                    f"{len(coverage['absent'])} rubrique(s) absente(s), contribution nulle : "
+                    + ", ".join(
+                        f"{row['ncg']}→{row['cell']}" for row in coverage["absent"][:40]
+                    )
+                )
+            ),
         ),
         (
             "ECART_DET",
@@ -250,6 +281,7 @@ async def run_calculation(
         "can_finalize_regulatory": False,
         "can_download_work": True,
         "engine": "CELLULES_SM",
+        "mapping_coverage": coverage,
     }
     campaign.status = "CALCULEE"
     await db.flush()
