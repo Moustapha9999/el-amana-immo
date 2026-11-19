@@ -12,7 +12,7 @@ Voir `docs/conformite/` pour le BCM Clientèle — ne pas confondre.
 | Routes UI | `/reporting-bcm-sm/...` |
 | API | `/api/v1/reporting-bcm-sm/` |
 | Tables | préfixe `rbcm_` |
-| Statut chantier | **T3 en cours** (DEV). Alembic head DEV : **`20261118_rbcm_06`** (orientations NCG). Catalogue moteur : **89** règles (`ALL_RULES`). Structure NCG + Revue Comptabilité livrés en DEV — **validation métier en attente** ; pas de déploiement. T3.5-3-F documentaire **non commencée**. |
+| Statut chantier | **v1.1.0 en production** (19/11/2026, `192.168.1.55`). Alembic head : **`20261118_rbcm_06`**. Catalogue moteur : **89** règles (`ALL_RULES`). Canevas officiel **BEA-SM v1 CURRENT** (1 691 cellules). T3.5-3-F documentaire **non commencée**. Note : `BEA_DIGITAL_NOTE_DE_VERSION_v1.1.0.docx`. |
 
 ## Documents
 
@@ -48,6 +48,7 @@ Voir `docs/conformite/` pour le BCM Clientèle — ne pas confondre.
 | [T3_5_3_C_REPORT.md](T3_5_3_C_REPORT.md) | T3.5-3-C — graphe Decimal + génération WORK (DEV) |
 | [T3_5_3_D_REPORT.md](T3_5_3_D_REPORT.md) | T3.5-3-D — API liste / détail / téléchargement WORK (DEV) |
 | [T3_5_3_E_REPORT.md](T3_5_3_E_REPORT.md) | T3.5-3-E — UI consultation et téléchargement WORK (DEV) |
+| [BEA_DIGITAL_NOTE_DE_VERSION_v1.1.0.docx](../../../BEA_DIGITAL_NOTE_DE_VERSION_v1.1.0.docx) | Note de version production v1.1.0 |
 | [GUIDE_UTILISATEUR.md](GUIDE_UTILISATEUR.md) | Guide utilisateur (SM) |
 | [GUIDE_TEST_COMPTABILITE_NCG.md](GUIDE_TEST_COMPTABILITE_NCG.md) | Guide test Comptabilité — Structure NCG & orientations |
 | [NCG_STRUCTURE_ET_ORIENTATIONS.md](NCG_STRUCTURE_ET_ORIENTATIONS.md) | Synthèse technique mécanisme NCG (phases 1–6, DEV) |
