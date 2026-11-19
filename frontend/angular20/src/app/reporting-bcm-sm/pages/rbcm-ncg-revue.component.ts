@@ -157,27 +157,27 @@ type RowFilter = '' | 'nouveau' | 'connu_non_oriente' | 'deferred';
                 <table class="bea-mg__table">
                   <thead>
                     <tr>
-                      <th>NCG</th>
-                      <th>Libellé</th>
-                      <th>Statut</th>
-                      <th>Débit</th>
-                      <th>Crédit</th>
+                      <th class="bea-rbcm-col-ncg">NCG</th>
+                      <th class="bea-rbcm-col-libelle">Libellé</th>
+                      <th class="bea-rbcm-col-statut">Statut</th>
+                      <th class="bea-rbcm-col-montant bea-rbcm-num">Débit</th>
+                      <th class="bea-rbcm-col-montant bea-rbcm-num">Crédit</th>
                       <th>Proposition</th>
-                      <th>Décision</th>
+                      <th class="bea-rbcm-col-statut">Décision</th>
                     </tr>
                   </thead>
                   <tbody>
                     @for (row of filteredRows(); track row.ncg) {
                       <tr class="bea-rbcm-row" (click)="openRow(row)">
-                        <td class="bea-rbcm-mono">{{ row.ncg }}</td>
-                        <td class="bea-rbcm-ellipsis" [title]="row.libelle || ''">{{ row.libelle || '—' }}</td>
-                        <td>
+                        <td class="bea-rbcm-mono bea-rbcm-col-ncg">{{ row.ncg }}</td>
+                        <td class="bea-rbcm-col-libelle"><span class="bea-rbcm-ellipsis" [title]="row.libelle || ''">{{ row.libelle || '—' }}</span></td>
+                        <td class="bea-rbcm-col-statut">
                           <span class="bea-ct-badge" [attr.data-tone]="structureTone(row)">
                             {{ structureLabel(row) }}
                           </span>
                         </td>
-                        <td>{{ fmtMontant(row.tot_debit) }}</td>
-                        <td>{{ fmtMontant(row.tot_credit) }}</td>
+                        <td class="bea-rbcm-num bea-rbcm-col-montant">{{ fmtMontant(row.tot_debit) }}</td>
+                        <td class="bea-rbcm-num bea-rbcm-col-montant">{{ fmtMontant(row.tot_credit) }}</td>
                         <td>
                           @if (row.proposed_cell_ref) {
                             {{ row.proposed_cell_ref }}
@@ -190,7 +190,7 @@ type RowFilter = '' | 'nouveau' | 'connu_non_oriente' | 'deferred';
                             —
                           }
                         </td>
-                        <td>{{ row.needs_decision ? 'À traiter' : '—' }}</td>
+                        <td class="bea-rbcm-col-statut">{{ row.needs_decision ? 'À traiter' : '—' }}</td>
                       </tr>
                     } @empty {
                       <tr><td colspan="7">Aucun NCG à examiner pour ce filtre.</td></tr>
@@ -211,28 +211,30 @@ type RowFilter = '' | 'nouveau' | 'connu_non_oriente' | 'deferred';
                 <table class="bea-mg__table">
                   <thead>
                     <tr>
-                      <th>NCG</th>
-                      <th>Statut</th>
-                      <th>Cellule</th>
+                      <th class="bea-rbcm-col-ncg">NCG</th>
+                      <th class="bea-rbcm-col-statut">Statut</th>
+                      <th class="bea-rbcm-col-code">Cellule</th>
                       <th>Opération</th>
                       <th>Devise</th>
-                      <th>Motif</th>
+                      <th class="bea-rbcm-col-msg">Motif</th>
                     </tr>
                   </thead>
                   <tbody>
                     @for (o of filteredOrientations(); track o.id) {
                       <tr class="bea-rbcm-row" (click)="openOrientation(o)">
-                        <td class="bea-rbcm-mono">{{ o.ncg }}</td>
-                        <td>
+                        <td class="bea-rbcm-mono bea-rbcm-col-ncg">{{ o.ncg }}</td>
+                        <td class="bea-rbcm-col-statut">
                           <span class="bea-ct-badge" [attr.data-tone]="orientationTone(o.status)">
                             {{ statusLabel(o.status) }}
                           </span>
                         </td>
-                        <td>{{ o.cell_ref || '—' }}</td>
+                        <td class="bea-rbcm-col-code">{{ o.cell_ref || '—' }}</td>
                         <td>{{ opLabel(o.operation) }}</td>
                         <td>{{ currencyLabel(o.currency_scope) }}</td>
-                        <td class="bea-rbcm-ellipsis" [title]="o.decision_comment || o.notes || ''">
-                          {{ o.decision_comment || o.notes || '—' }}
+                        <td class="bea-rbcm-col-msg">
+                          <span class="bea-rbcm-ellipsis" [title]="o.decision_comment || o.notes || ''">
+                            {{ o.decision_comment || o.notes || '—' }}
+                          </span>
                         </td>
                       </tr>
                     } @empty {
@@ -257,14 +259,14 @@ type RowFilter = '' | 'nouveau' | 'connu_non_oriente' | 'deferred';
           <h3>Présence BAL DET</h3>
           <div class="bea-mg__table-wrap">
             <table class="bea-mg__table">
-              <thead><tr><th>Période</th><th>Présence</th><th>Débit</th><th>Crédit</th></tr></thead>
+              <thead><tr><th class="bea-rbcm-col-period">Période</th><th>Présence</th><th class="bea-rbcm-col-montant bea-rbcm-num">Débit</th><th class="bea-rbcm-col-montant bea-rbcm-num">Crédit</th></tr></thead>
               <tbody>
                 @for (bal of row.balances; track bal.label) {
                   <tr>
-                    <td>{{ bal.label }}</td>
+                    <td class="bea-rbcm-col-period">{{ bal.label }}</td>
                     <td>{{ bal.present ? 'Présent' : 'Absent' }}</td>
-                    <td>{{ fmtMontant(bal.tot_debit) }}</td>
-                    <td>{{ fmtMontant(bal.tot_credit) }}</td>
+                    <td class="bea-rbcm-num bea-rbcm-col-montant">{{ fmtMontant(bal.tot_debit) }}</td>
+                    <td class="bea-rbcm-num bea-rbcm-col-montant">{{ fmtMontant(bal.tot_credit) }}</td>
                   </tr>
                 }
               </tbody>
@@ -279,14 +281,14 @@ type RowFilter = '' | 'nouveau' | 'connu_non_oriente' | 'deferred';
           @if (row.comptes.length) {
             <div class="bea-mg__table-wrap">
               <table class="bea-mg__table">
-                <thead><tr><th>Compte</th><th>Devise</th><th>Débit</th><th>Crédit</th></tr></thead>
+                <thead><tr><th>Compte</th><th>Devise</th><th class="bea-rbcm-col-montant bea-rbcm-num">Débit</th><th class="bea-rbcm-col-montant bea-rbcm-num">Crédit</th></tr></thead>
                 <tbody>
                   @for (c of row.comptes; track c.compte + (c.devise || '') + c.debit + c.credit) {
                     <tr>
                       <td>{{ c.compte || '—' }}</td>
                       <td>{{ c.devise || '—' }}</td>
-                      <td>{{ fmtMontant(c.debit) }}</td>
-                      <td>{{ fmtMontant(c.credit) }}</td>
+                      <td class="bea-rbcm-num bea-rbcm-col-montant">{{ fmtMontant(c.debit) }}</td>
+                      <td class="bea-rbcm-num bea-rbcm-col-montant">{{ fmtMontant(c.credit) }}</td>
                     </tr>
                   }
                 </tbody>

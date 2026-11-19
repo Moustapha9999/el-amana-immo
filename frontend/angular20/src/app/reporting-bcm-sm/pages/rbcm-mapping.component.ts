@@ -120,10 +120,10 @@ interface MappingRule {
                   <tbody>
                     @for (r of rules(); track r.id) {
                       <tr class="bea-rbcm-row" (click)="open(r)">
-                        <td>{{ r.cell_ref }}</td>
-                        <td>{{ r.match_type }} {{ r.pattern }}</td>
+                        <td class="bea-rbcm-col-code"><span class="bea-rbcm-mono">{{ r.cell_ref }}</span></td>
+                        <td class="bea-rbcm-col-libelle"><span class="bea-rbcm-ellipsis" [title]="r.match_type + ' ' + r.pattern">{{ r.match_type }} {{ r.pattern }}</span></td>
                         <td>{{ r.amount_basis }}</td>
-                        <td><span class="bea-ct-badge">{{ r.lifecycle_status }}</span></td>
+                        <td class="bea-rbcm-col-statut"><span class="bea-ct-badge">{{ r.lifecycle_status }}</span></td>
                         <td>{{ r.provenance }}</td>
                         <td class="bea-rbcm-col-actions">
                           <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="$event.stopPropagation(); open(r)">Détail</button>

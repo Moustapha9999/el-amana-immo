@@ -18,6 +18,7 @@ revision: str = "20261118_rbcm_06"
 down_revision: Union[str, None] = "20261116_rbcm_05"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+retour_arriere = "compatible"
 
 _STAT = (
     "'A_ORIENTER','EN_ATTENTE_VALIDATION','VALIDE_ACTIF','REJETE','DESACTIVE'"

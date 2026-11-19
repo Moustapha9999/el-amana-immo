@@ -97,28 +97,28 @@ import {
           <table class="bea-mg__table">
             <thead>
               <tr>
-                <th>Période</th>
-                <th>Banque</th>
-                <th>Libellé / notes</th>
-                <th>Responsable</th>
-                <th>Statut</th>
-                <th>Créée</th>
+                <th class="bea-rbcm-col-period">Période</th>
+                <th class="bea-rbcm-col-code">Banque</th>
+                <th class="bea-rbcm-col-libelle">Libellé / notes</th>
+                <th class="bea-rbcm-col-libelle">Responsable</th>
+                <th class="bea-rbcm-col-statut">Statut</th>
+                <th class="bea-rbcm-col-date">Créée</th>
                 <th class="bea-rbcm-col-actions">Actions</th>
               </tr>
             </thead>
             <tbody>
               @for (c of items(); track c.id) {
                 <tr class="bea-rbcm-row" (click)="openDrawer(c)">
-                  <td><strong>{{ periodLabel(c) }}</strong></td>
-                  <td>{{ c.bank_code }}</td>
-                  <td>{{ labelOf(c) }}</td>
-                  <td>{{ c.reporting_owner_name || '—' }}</td>
-                  <td>
+                  <td class="bea-rbcm-col-period"><strong>{{ periodLabel(c) }}</strong></td>
+                  <td class="bea-rbcm-col-code">{{ c.bank_code }}</td>
+                  <td class="bea-rbcm-col-libelle"><span class="bea-rbcm-ellipsis" [title]="labelOf(c)">{{ labelOf(c) }}</span></td>
+                  <td class="bea-rbcm-col-libelle">{{ c.reporting_owner_name || '—' }}</td>
+                  <td class="bea-rbcm-col-statut">
                     <span class="bea-ct-badge" [attr.data-tone]="statusTone(c.status)">
                       {{ STATUS_LABELS[c.status] || c.status }}
                     </span>
                   </td>
-                  <td>{{ c.created_at | date: 'dd/MM/yyyy HH:mm' }}</td>
+                  <td class="bea-rbcm-col-date">{{ c.created_at | date: 'dd/MM/yyyy HH:mm' }}</td>
                   <td class="bea-rbcm-col-actions" (click)="$event.stopPropagation()">
                     <button
                       type="button"

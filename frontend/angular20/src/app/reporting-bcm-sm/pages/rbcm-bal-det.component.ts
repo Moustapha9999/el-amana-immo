@@ -85,17 +85,17 @@ import { RBCM_API, RbcmDetLineList } from '../rbcm.models';
         } @else if (data(); as L) {
           <div class="bea-mg__table-wrap">
             <table class="bea-mg__table">
-              <thead><tr><th>#</th><th>NCG</th><th>Compte</th><th>Libellé</th><th>Devise</th><th>Débit</th><th>Crédit</th></tr></thead>
+              <thead><tr><th class="bea-rbcm-num">#</th><th class="bea-rbcm-col-ncg">NCG</th><th class="bea-rbcm-col-code">Compte</th><th class="bea-rbcm-col-libelle">Libellé</th><th>Devise</th><th class="bea-rbcm-col-montant bea-rbcm-num">Débit</th><th class="bea-rbcm-col-montant bea-rbcm-num">Crédit</th></tr></thead>
               <tbody>
                 @for (r of L.items; track r.id) {
                   <tr>
-                    <td>{{ r.line_no }}</td>
-                    <td>{{ r.ncg }}</td>
-                    <td>{{ r.compte }}</td>
-                    <td>{{ r.libelle }}</td>
+                    <td class="bea-rbcm-num">{{ r.line_no }}</td>
+                    <td class="bea-rbcm-mono bea-rbcm-col-ncg">{{ r.ncg }}</td>
+                    <td class="bea-rbcm-col-code">{{ r.compte }}</td>
+                    <td class="bea-rbcm-col-libelle"><span class="bea-rbcm-ellipsis" [title]="r.libelle || ''">{{ r.libelle || '—' }}</span></td>
                     <td>{{ r.devise }}</td>
-                    <td>{{ r.debit | montant }}</td>
-                    <td>{{ r.credit | montant }}</td>
+                    <td class="bea-rbcm-num bea-rbcm-col-montant">{{ r.debit | montant }}</td>
+                    <td class="bea-rbcm-num bea-rbcm-col-montant">{{ r.credit | montant }}</td>
                   </tr>
                 } @empty {
                   <tr><td colspan="7">Aucune ligne (import DET validé requis).</td></tr>

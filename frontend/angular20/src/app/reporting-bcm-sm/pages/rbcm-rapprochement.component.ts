@@ -175,25 +175,25 @@ import {
                   <table class="bea-mg__table">
                     <thead>
                       <tr>
-                        <th>Type</th>
-                        <th>Réf. NCG</th>
-                        <th>Gravité</th>
-                        <th>Statut</th>
-                        <th>Message</th>
-                        <th></th>
+                        <th class="bea-rbcm-col-code">Type</th>
+                        <th class="bea-rbcm-col-ncg">Réf. NCG</th>
+                        <th class="bea-rbcm-col-statut">Gravité</th>
+                        <th class="bea-rbcm-col-statut">Statut</th>
+                        <th class="bea-rbcm-col-msg">Message</th>
+                        <th class="bea-rbcm-col-actions"></th>
                       </tr>
                     </thead>
                     <tbody>
                       @for (i of issues(); track i.id) {
                         <tr class="bea-rbcm-row" (click)="open(i)">
-                          <td>{{ i.code }}</td>
-                          <td>{{ i.ncg || '—' }}</td>
-                          <td>
+                          <td class="bea-rbcm-col-code">{{ i.code }}</td>
+                          <td class="bea-rbcm-mono bea-rbcm-col-ncg">{{ i.ncg || '—' }}</td>
+                          <td class="bea-rbcm-col-statut">
                             <span class="bea-ct-badge" [attr.data-tone]="sevTone(i.severity)">{{ i.severity }}</span>
                           </td>
-                          <td>{{ i.resolved ? 'Résolue' : 'Ouverte' }}</td>
-                          <td class="bea-rbcm-ellipsis" [title]="i.message">{{ i.message }}</td>
-                          <td>
+                          <td class="bea-rbcm-col-statut">{{ i.resolved ? 'Résolue' : 'Ouverte' }}</td>
+                          <td class="bea-rbcm-col-msg"><span class="bea-rbcm-ellipsis" [title]="i.message">{{ i.message }}</span></td>
+                          <td class="bea-rbcm-col-actions">
                             <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="$event.stopPropagation(); open(i)">
                               Détail
                             </button>

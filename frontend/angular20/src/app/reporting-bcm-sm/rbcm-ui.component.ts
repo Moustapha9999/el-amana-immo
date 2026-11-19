@@ -153,9 +153,14 @@ import { ChangeDetectionStrategy, Component, ViewEncapsulation } from '@angular/
     .bea-rbcm .bea-rbcm-list li:hover { background: #f8fafc; }
     .bea-rbcm .bea-rbcm-list strong { display: block; }
     .bea-rbcm .bea-rbcm-list small { color: #64748b; }
-    .bea-rbcm .bea-rbcm-mono { font-family: ui-monospace, monospace; font-size: 0.85rem; word-break: break-all; }
+    .bea-rbcm .bea-rbcm-mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.85rem; font-variant-numeric: tabular-nums;
+      white-space: nowrap; word-break: normal; overflow-wrap: normal;
+    }
     .bea-rbcm .bea-rbcm-sha-full {
       background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.55rem 0.7rem;
+      white-space: normal; word-break: break-all;
     }
     .bea-rbcm .bea-rbcm-pre {
       white-space: pre-wrap; background: #f8fafc; border-radius: 8px; padding: 0.75rem;
@@ -172,13 +177,16 @@ import { ChangeDetectionStrategy, Component, ViewEncapsulation } from '@angular/
     }
     .bea-rbcm .bea-rbcm-row { cursor: pointer; transition: background 0.15s ease; }
     .bea-rbcm .bea-rbcm-row:hover { background: color-mix(in srgb, #1a5278 6%, transparent); }
+    .bea-rbcm .bea-rbcm-row:hover > .bea-rbcm-col-actions {
+      background: color-mix(in srgb, #1a5278 6%, var(--app-surface, #fff));
+    }
     .bea-rbcm .bea-rbcm-ellipsis {
-      display: inline-block; max-width: min(28rem, 42vw); overflow: hidden;
-      text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
+      display: block; max-width: 100%; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; line-height: 1.35;
     }
     .bea-rbcm .bea-mg__table-wrap {
       width: 100%; max-width: 100%; max-height: none;
-      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      overflow-x: auto; overflow-y: visible; -webkit-overflow-scrolling: touch;
     }
     .bea-rbcm .bea-mg__table-wrap.bea-rbcm-table-scroll {
       max-height: min(52vh, 32rem);
@@ -194,13 +202,63 @@ import { ChangeDetectionStrategy, Component, ViewEncapsulation } from '@angular/
     .bea-rbcm .bea-mg__table-wrap.bea-rbcm-table-scroll thead .bea-rbcm-col-actions {
       z-index: 4;
     }
-    .bea-rbcm .bea-mg__table { width: 100%; min-width: 0; }
-    .bea-rbcm .bea-mg__table td { overflow-wrap: break-word; }
-    .bea-rbcm .bea-mg__table th { white-space: normal; line-height: 1.25; }
+    .bea-rbcm .bea-mg__table {
+      width: 100%; min-width: 0; table-layout: auto; border-collapse: collapse;
+    }
+    .bea-rbcm .bea-mg__table th,
+    .bea-rbcm .bea-mg__table td {
+      vertical-align: middle; line-height: 1.35;
+      padding: 0.7rem 0.85rem;
+    }
+    .bea-rbcm .bea-mg__table th {
+      white-space: nowrap; line-height: 1.25;
+    }
+    .bea-rbcm .bea-mg__table td {
+      overflow-wrap: break-word; word-break: normal;
+    }
     .bea-rbcm .bea-mg__table th:first-child,
     .bea-rbcm .bea-mg__table td:first-child { padding-left: 1.25rem; }
     .bea-rbcm .bea-mg__table th:last-child,
     .bea-rbcm .bea-mg__table td:last-child { padding-right: 1.25rem; }
+    .bea-rbcm .bea-mg__table td .bea-ct-badge,
+    .bea-rbcm .bea-mg__table td .bea-mg__btn {
+      vertical-align: middle;
+    }
+    .bea-rbcm .bea-mg__table td .bea-mg__btn {
+      margin: 0;
+    }
+    .bea-rbcm .bea-rbcm-num {
+      text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+      font-feature-settings: 'tnum' 1;
+    }
+    .bea-rbcm .bea-rbcm-col-ncg {
+      width: 6.5rem; min-width: 5.5rem; white-space: nowrap;
+    }
+    .bea-rbcm .bea-rbcm-col-statut {
+      width: 9.5rem; min-width: 8rem; white-space: nowrap;
+    }
+    .bea-rbcm .bea-rbcm-col-montant {
+      width: 9.5rem; min-width: 8rem;
+    }
+    .bea-rbcm .bea-rbcm-col-date {
+      width: 9.5rem; min-width: 8.5rem; white-space: nowrap;
+    }
+    .bea-rbcm .bea-rbcm-col-code {
+      width: 8.5rem; min-width: 6.5rem; white-space: nowrap;
+    }
+    .bea-rbcm .bea-rbcm-col-period {
+      width: 8.5rem; min-width: 7rem; white-space: nowrap;
+    }
+    .bea-rbcm .bea-rbcm-col-libelle {
+      min-width: 12rem; width: 22%;
+    }
+    .bea-rbcm .bea-rbcm-col-msg {
+      min-width: 14rem; width: 28%;
+    }
+    .bea-rbcm .bea-rbcm-col-libelle .bea-rbcm-ellipsis,
+    .bea-rbcm .bea-rbcm-col-msg .bea-rbcm-ellipsis {
+      max-width: 100%;
+    }
     .bea-rbcm .bea-rbcm-col-actions {
       position: sticky; right: 0; z-index: 2; width: 1%; white-space: nowrap; text-align: right;
       background: var(--app-surface, #fff); overflow: visible;
@@ -356,7 +414,8 @@ import { ChangeDetectionStrategy, Component, ViewEncapsulation } from '@angular/
     }
     @media (max-width: 768px) {
       .bea-rbcm .bea-rbcm-filters .bea-mg__field { flex: 1 1 100%; min-width: 0; }
-      .bea-rbcm .bea-rbcm-ellipsis { max-width: 12rem; }
+      .bea-rbcm .bea-rbcm-col-libelle { width: auto; min-width: 8rem; }
+      .bea-rbcm .bea-rbcm-col-msg { width: auto; min-width: 10rem; }
       .bea-rbcm .bea-rbcm-dl > div { grid-template-columns: 1fr; gap: 0.1rem; }
       .bea-rbcm .bea-rbcm-pager { justify-content: flex-start; }
       .bea-rbcm .bea-mg__actions .bea-mg__btn { flex: 1 1 auto; justify-content: center; }

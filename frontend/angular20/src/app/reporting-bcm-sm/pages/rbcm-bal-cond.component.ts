@@ -60,15 +60,15 @@ import { RBCM_API, RbcmCondLineList } from '../rbcm.models';
         } @else if (data(); as L) {
           <div class="bea-mg__table-wrap">
             <table class="bea-mg__table">
-              <thead><tr><th>NCG</th><th>Libellé</th><th>Tot. débit</th><th>Tot. crédit</th><th>VAR</th></tr></thead>
+              <thead><tr><th class="bea-rbcm-col-ncg">NCG</th><th class="bea-rbcm-col-libelle">Libellé</th><th class="bea-rbcm-col-montant bea-rbcm-num">Tot. débit</th><th class="bea-rbcm-col-montant bea-rbcm-num">Tot. crédit</th><th class="bea-rbcm-col-montant bea-rbcm-num">VAR</th></tr></thead>
               <tbody>
                 @for (r of L.items; track r.id) {
                   <tr>
-                    <td>{{ r.ncg }}</td>
-                    <td>{{ r.libelle }}</td>
-                    <td>{{ r.tot_debit | montant }}</td>
-                    <td>{{ r.tot_credit | montant }}</td>
-                    <td>{{ r.var | montant }}</td>
+                    <td class="bea-rbcm-mono bea-rbcm-col-ncg">{{ r.ncg }}</td>
+                    <td class="bea-rbcm-col-libelle"><span class="bea-rbcm-ellipsis" [title]="r.libelle || ''">{{ r.libelle || '—' }}</span></td>
+                    <td class="bea-rbcm-num bea-rbcm-col-montant">{{ r.tot_debit | montant }}</td>
+                    <td class="bea-rbcm-num bea-rbcm-col-montant">{{ r.tot_credit | montant }}</td>
+                    <td class="bea-rbcm-num bea-rbcm-col-montant">{{ r.var | montant }}</td>
                   </tr>
                 } @empty {
                   <tr><td colspan="5">Aucun solde COND (import COND validé requis).</td></tr>

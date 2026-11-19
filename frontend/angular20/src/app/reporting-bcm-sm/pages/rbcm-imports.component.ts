@@ -314,29 +314,29 @@ import {
               <table class="bea-mg__table">
                 <thead>
                   <tr>
-                    <th>NCG</th>
-                    <th>Libellé</th>
-                    <th>Statut</th>
-                    <th>Débit</th>
-                    <th>Crédit</th>
-                    <th>Cellules catalogue</th>
-                    <th>Vu</th>
+                    <th class="bea-rbcm-col-ncg">NCG</th>
+                    <th class="bea-rbcm-col-libelle">Libellé</th>
+                    <th class="bea-rbcm-col-statut">Statut</th>
+                    <th class="bea-rbcm-col-montant bea-rbcm-num">Débit</th>
+                    <th class="bea-rbcm-col-montant bea-rbcm-num">Crédit</th>
+                    <th class="bea-rbcm-col-msg">Cellules catalogue</th>
+                    <th class="bea-rbcm-col-period">Vu</th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (row of filteredStructureItems(); track row.ncg) {
                     <tr class="bea-rbcm-row" (click)="openNcg(row.ncg)">
-                      <td class="bea-rbcm-mono">{{ row.ncg }}</td>
-                      <td class="bea-rbcm-ellipsis" [title]="row.libelle || ''">{{ row.libelle || '—' }}</td>
-                      <td>
+                      <td class="bea-rbcm-mono bea-rbcm-col-ncg">{{ row.ncg }}</td>
+                      <td class="bea-rbcm-col-libelle"><span class="bea-rbcm-ellipsis" [title]="row.libelle || ''">{{ row.libelle || '—' }}</span></td>
+                      <td class="bea-rbcm-col-statut">
                         <span class="bea-ct-badge" [attr.data-tone]="structureTone(row)">
                           {{ structureStatusLabel(row) }}
                         </span>
                       </td>
-                      <td>{{ row.tot_debit | montant }}</td>
-                      <td>{{ row.tot_credit | montant }}</td>
-                      <td class="bea-rbcm-ellipsis" [title]="cellsLabel(row)">{{ cellsLabel(row) }}</td>
-                      <td>
+                      <td class="bea-rbcm-num bea-rbcm-col-montant">{{ row.tot_debit | montant }}</td>
+                      <td class="bea-rbcm-num bea-rbcm-col-montant">{{ row.tot_credit | montant }}</td>
+                      <td class="bea-rbcm-col-msg"><span class="bea-rbcm-ellipsis" [title]="cellsLabel(row)">{{ cellsLabel(row) }}</span></td>
+                      <td class="bea-rbcm-col-period">
                         {{ row.first_seen_period || '—' }}
                         @if (row.last_seen_period && row.last_seen_period !== row.first_seen_period) {
                           → {{ row.last_seen_period }}
@@ -361,19 +361,19 @@ import {
                 <table class="bea-mg__table">
                   <thead>
                     <tr>
-                      <th>NCG</th>
-                      <th>Statut</th>
-                      <th>Cellules</th>
-                      <th>Dernière vue</th>
+                      <th class="bea-rbcm-col-ncg">NCG</th>
+                      <th class="bea-rbcm-col-statut">Statut</th>
+                      <th class="bea-rbcm-col-msg">Cellules</th>
+                      <th class="bea-rbcm-col-period">Dernière vue</th>
                     </tr>
                   </thead>
                   <tbody>
                     @for (row of s.absents.slice(0, 80); track row.ncg) {
                       <tr>
-                        <td class="bea-rbcm-mono">{{ row.ncg }}</td>
-                        <td>{{ NCG_STRUCTURE_STATUS_LABELS[row.status] || row.status }}</td>
-                        <td class="bea-rbcm-ellipsis">{{ absentCellsLabel(row) }}</td>
-                        <td>{{ row.last_seen_period || '—' }}</td>
+                        <td class="bea-rbcm-mono bea-rbcm-col-ncg">{{ row.ncg }}</td>
+                        <td class="bea-rbcm-col-statut">{{ NCG_STRUCTURE_STATUS_LABELS[row.status] || row.status }}</td>
+                        <td class="bea-rbcm-col-msg"><span class="bea-rbcm-ellipsis" [title]="absentCellsLabel(row)">{{ absentCellsLabel(row) }}</span></td>
+                        <td class="bea-rbcm-col-period">{{ row.last_seen_period || '—' }}</td>
                       </tr>
                     }
                   </tbody>
@@ -439,29 +439,29 @@ import {
             <table class="bea-mg__table">
               <thead>
                 <tr>
-                  <th>Fichier</th>
-                  <th>SM</th>
-                  <th>Statut</th>
-                  <th>Lignes</th>
-                  <th>SHA-256</th>
-                  <th>Date</th>
-                  <th></th>
+                  <th class="bea-rbcm-col-libelle">Fichier</th>
+                  <th class="bea-rbcm-col-period">SM</th>
+                  <th class="bea-rbcm-col-statut">Statut</th>
+                  <th class="bea-rbcm-col-montant bea-rbcm-num">Lignes</th>
+                  <th class="bea-rbcm-col-code">SHA-256</th>
+                  <th class="bea-rbcm-col-date">Date</th>
+                  <th class="bea-rbcm-col-actions"></th>
                 </tr>
               </thead>
               <tbody>
                 @for (imp of items(); track imp.id) {
                   <tr class="bea-rbcm-row" (click)="open(imp)">
-                    <td class="bea-rbcm-ellipsis" [title]="imp.filename">{{ imp.filename }}</td>
-                    <td>{{ campaignLabel(imp.campaign_id) }}</td>
-                    <td>
+                    <td class="bea-rbcm-col-libelle"><span class="bea-rbcm-ellipsis" [title]="imp.filename">{{ imp.filename }}</span></td>
+                    <td class="bea-rbcm-col-period">{{ campaignLabel(imp.campaign_id) }}</td>
+                    <td class="bea-rbcm-col-statut">
                       <span class="bea-ct-badge" [attr.data-tone]="statusTone(imp.status)">
                         {{ statusLabel(imp.status) }}
                       </span>
                     </td>
-                    <td>{{ imp.row_count ?? '—' }}</td>
-                    <td class="bea-rbcm-mono" [title]="imp.sha256">{{ imp.sha256.slice(0, 10) }}…</td>
-                    <td>{{ imp.created_at | date: 'dd/MM/yyyy HH:mm' }}</td>
-                    <td (click)="$event.stopPropagation()">
+                    <td class="bea-rbcm-num bea-rbcm-col-montant">{{ imp.row_count ?? '—' }}</td>
+                    <td class="bea-rbcm-mono bea-rbcm-col-code" [title]="imp.sha256">{{ imp.sha256.slice(0, 10) }}…</td>
+                    <td class="bea-rbcm-col-date">{{ imp.created_at | date: 'dd/MM/yyyy HH:mm' }}</td>
+                    <td class="bea-rbcm-col-actions" (click)="$event.stopPropagation()">
                       <div class="bea-rbcm-quick">
                         <button type="button" class="bea-mg__btn bea-mg__btn--ghost" (click)="open(imp)">Voir</button>
                         @if (imp.status === 'ANALYZED') {

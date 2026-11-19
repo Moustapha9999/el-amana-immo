@@ -87,30 +87,30 @@ type ArchiveTab = 'det' | 'sm';
               <table class="bea-mg__table">
                 <thead>
                   <tr>
-                    <th>Période</th>
-                    <th>Fichier</th>
-                    <th>Statut</th>
-                    <th>Importé le</th>
-                    <th>Lignes</th>
-                    <th></th>
+                    <th class="bea-rbcm-col-period">Période</th>
+                    <th class="bea-rbcm-col-libelle">Fichier</th>
+                    <th class="bea-rbcm-col-statut">Statut</th>
+                    <th class="bea-rbcm-col-date">Importé le</th>
+                    <th class="bea-rbcm-col-montant bea-rbcm-num">Lignes</th>
+                    <th class="bea-rbcm-col-actions"></th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (imp of detItems(); track imp.id) {
                     <tr>
-                      <td>
+                      <td class="bea-rbcm-col-period">
                         <a [routerLink]="['/reporting-bcm-sm/campagnes', imp.campaign_id]">
                           {{ campaignLabel(imp.campaign_id) }}
                         </a>
                       </td>
-                      <td class="bea-rbcm-ellipsis" [title]="imp.filename">{{ imp.filename }}</td>
-                      <td>
+                      <td class="bea-rbcm-col-libelle"><span class="bea-rbcm-ellipsis" [title]="imp.filename">{{ imp.filename }}</span></td>
+                      <td class="bea-rbcm-col-statut">
                         <span class="bea-ct-badge" [attr.data-tone]="importTone(imp.status)">
                           {{ IMPORT_STATUS_LABELS[imp.status] || imp.status }}
                         </span>
                       </td>
-                      <td>{{ imp.created_at | date: 'dd/MM/yyyy HH:mm' }}</td>
-                      <td>{{ imp.row_count ?? '—' }}</td>
+                      <td class="bea-rbcm-col-date">{{ imp.created_at | date: 'dd/MM/yyyy HH:mm' }}</td>
+                      <td class="bea-rbcm-num bea-rbcm-col-montant">{{ imp.row_count ?? '—' }}</td>
                       <td class="bea-rbcm-col-actions">
                         <button type="button" class="bea-mg__btn bea-mg__btn--ghost" [disabled]="busy()" (click)="downloadDet(imp)">
                           <mat-icon>download</mat-icon> Télécharger
@@ -150,24 +150,24 @@ type ArchiveTab = 'det' | 'sm';
               <table class="bea-mg__table">
                 <thead>
                   <tr>
-                    <th>Période</th>
-                    <th>Statut réglementaire</th>
-                    <th>Validée le</th>
-                    <th>Responsable</th>
-                    <th></th>
+                    <th class="bea-rbcm-col-period">Période</th>
+                    <th class="bea-rbcm-col-statut">Statut réglementaire</th>
+                    <th class="bea-rbcm-col-date">Validée le</th>
+                    <th class="bea-rbcm-col-libelle">Responsable</th>
+                    <th class="bea-rbcm-col-actions"></th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (c of smItems(); track c.id) {
                     <tr>
-                      <td><strong>{{ periodLabel(c) }}</strong></td>
-                      <td>
+                      <td class="bea-rbcm-col-period"><strong>{{ periodLabel(c) }}</strong></td>
+                      <td class="bea-rbcm-col-statut">
                         <span class="bea-ct-badge" [attr.data-tone]="statusTone(c.status)">
                           {{ STATUS_LABELS[c.status] || c.status }}
                         </span>
                       </td>
-                      <td>{{ c.approved_at ? (c.approved_at | date: 'dd/MM/yyyy HH:mm') : (c.locked_at | date: 'dd/MM/yyyy HH:mm') }}</td>
-                      <td>{{ c.reporting_owner_name || c.preparer_name || '—' }}</td>
+                      <td class="bea-rbcm-col-date">{{ c.approved_at ? (c.approved_at | date: 'dd/MM/yyyy HH:mm') : (c.locked_at | date: 'dd/MM/yyyy HH:mm') }}</td>
+                      <td class="bea-rbcm-col-libelle">{{ c.reporting_owner_name || c.preparer_name || '—' }}</td>
                       <td class="bea-rbcm-col-actions">
                         <div class="bea-rbcm-quick">
                           <a class="bea-mg__btn bea-mg__btn--ghost" [routerLink]="['/reporting-bcm-sm/campagnes', c.id]">Fiche</a>
