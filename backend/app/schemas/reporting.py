@@ -121,6 +121,7 @@ class RecapImmobilisationsRead(BaseModel):
     date_cloture: str
     lignes: list[RecapImmobilisationsLigneRead]
     totaux: RecapImmobilisationsLigneRead
+    alertes: list[str] = []
 
 
 class CompteNatureLigneRead(BaseModel):

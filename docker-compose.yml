@@ -11,10 +11,9 @@
 
 services:
   postgres:
-    # Alpine OK en local. Ne PAS forcer LANG=fr_FR.utf8 :
-    # musl accepte le nom de locale mais la collation réelle reste C.
-    # TEST/PROD banque : image Debian postgres:17, collation alignée sur le dump.
-    image: postgres:17-alpine
+    # DEV aligné PROD : Debian postgres:17 (plus Alpine).
+    # Ne PAS forcer LANG=fr_FR.utf8. Ancien volume Alpine : bea_postgres_data (conservé).
+    image: postgres:17
     pull_policy: missing
     container_name: bea-postgres
     restart: unless-stopped
@@ -220,8 +219,9 @@ services:
 
 volumes:
   postgres_data:
-    # Volume unique BEA DIGITAL. Ne pas en créer un second.
-    name: bea_postgres_data
+    # Volume Debian DEV. Ancien Alpine conservé : bea_postgres_data (ne pas supprimer).
+    # Interdit : docker compose down -v
+    name: bea_postgres_data_debian
   pgadmin_data:
     # Configuration pgAdmin uniquement (jamais les données PostgreSQL).
     name: bea_pgadmin_data

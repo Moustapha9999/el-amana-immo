@@ -667,6 +667,7 @@ def _recap_immo_payload(result) -> dict:
             "cessions": float(result.totaux.cessions),
             "valeurs_cloture": float(result.totaux.valeurs_cloture),
         },
+        "alertes": list(getattr(result, "alertes", []) or []),
     }
 
 
@@ -688,6 +689,7 @@ async def get_recap_immobilisations(
         date_cloture=result.date_cloture.isoformat(),
         lignes=[_recap_immo_ligne_read(lg) for lg in result.lignes],
         totaux=_recap_immo_ligne_read(result.totaux),
+        alertes=list(getattr(result, "alertes", []) or []),
     )
 
 
